@@ -1051,9 +1051,10 @@ async fn stop_codex_discovery(
 }
 
 async fn abort_discovery_output(task: &mut JoinHandle<io::Result<Vec<u8>>>) {
-    if !task.is_finished() {
-        task.abort();
+    if task.is_finished() {
+        return;
     }
+    task.abort();
     let _ = tokio::time::timeout(DISCOVERY_CLEANUP_TIMEOUT, &mut *task).await;
 }
 
@@ -1557,12 +1558,67 @@ async fn cleanup_codex_with_status(
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct CodexStderrClassification {
+    model_refresh_failure: usize,
+    model_refresh_timeout: usize,
+    mcp_init_transport: usize,
+    bare_timeout: usize,
+}
+
+/// Classifies only bounded, sanitized startup stderr. These counters are
+/// telemetry evidence; retry decisions still require lifecycle state and
+/// confirmed process-tree cleanup.
+fn classify_codex_startup_stderr(stderr: &str, timed_out: bool) -> CodexStderrClassification {
+    let lower = sanitize_diagnostic(stderr).to_ascii_lowercase();
+    let model_refresh_failure = lower
+        .matches(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+        .count();
+    let model_refresh_timeout = lower
+        .matches("failed to refresh available models: timeout waiting for child process to exit")
+        .count();
+    let mcp_init_transport = lower
+        .lines()
+        .filter(|line| {
+            line.contains("mcp")
+                && line.contains("transport")
+                && (line.contains("error") || line.contains("failed") || line.contains("closed"))
+        })
+        .count();
+    let bare_timeout =
+        usize::from(timed_out && model_refresh_failure == 0 && mcp_init_transport == 0);
+    CodexStderrClassification {
+        model_refresh_failure,
+        model_refresh_timeout,
+        mcp_init_transport,
+        bare_timeout,
+    }
+}
+
+fn finish_first_item_observation(
+    started_at: Option<Instant>,
+    finished_at: &mut Option<Instant>,
+    outcome: &mut Option<&'static str>,
+    classification: &mut CodexStderrClassification,
+    stderr_tail: &SharedDiagnosticBuffer,
+    next_outcome: &'static str,
+) {
+    if started_at.is_none() || outcome.is_some() {
+        return;
+    }
+    *finished_at = Some(Instant::now());
+    *classification =
+        classify_codex_startup_stderr(&stderr_tail.tail(), next_outcome.ends_with("_timeout"));
+    *outcome = Some(next_outcome);
+}
+
 #[derive(Clone)]
 struct CodexObserver {
     state: Arc<Mutex<ObserverState>>,
     messages: mpsc::Sender<Message>,
     activity: mpsc::Sender<String>,
     turn_done: mpsc::Sender<bool>,
+    held_running_status: Arc<Mutex<Vec<Message>>>,
 }
 
 #[derive(Debug, Default)]
@@ -1597,6 +1653,7 @@ struct ObserverSnapshot {
     last_agent_message: String,
     turn_error: String,
     thread_id: String,
+    turn_id: String,
     turn_done: bool,
     usage: TokenUsage,
 }
@@ -1612,6 +1669,14 @@ impl CodexObserver {
             messages,
             activity,
             turn_done,
+            held_running_status: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    async fn flush_held_running_status(&self) {
+        let held = std::mem::take(&mut *self.held_running_status.lock().await);
+        for message in held {
+            let _ = self.messages.try_send(message);
         }
     }
 
@@ -1652,6 +1717,7 @@ impl CodexObserver {
             last_agent_message: state.last_agent_message.clone(),
             turn_error: state.turn_error.clone(),
             thread_id: state.thread_id.clone(),
+            turn_id: state.turn_id.clone(),
             turn_done: state.turn_done,
             usage: state.usage,
         }
@@ -2107,7 +2173,14 @@ impl CodexObserver {
     }
 
     async fn emit(&self, message: Message, activity: &str) {
-        let _ = self.messages.try_send(message);
+        let is_running_status =
+            message.message_type == MessageType::Status && message.status == "running";
+        if is_running_status {
+            self.held_running_status.lock().await.push(message);
+        } else {
+            self.flush_held_running_status().await;
+            let _ = self.messages.try_send(message);
+        }
         if !activity.is_empty() {
             let _ = self.activity.try_send(activity.to_string());
         }
@@ -2211,8 +2284,8 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
-        if options.cancellation.is_cancelled() || error.to_string().contains("execution cancelled")
-        {
+        let stderr = sanitize_diagnostic(&cleanup.stderr);
+        if options.cancellation.is_cancelled() || is_execution_cancelled(&error) {
             let _ = result_tx.send(codex_aborted_result(started));
             return;
         }
@@ -2301,6 +2374,15 @@ async fn run_codex(
                     return;
                 }
             }
+        }
+        // Startup stderr can contain opaque auth/config values. Keep it out of
+        // the task-visible result even when the failure is not a timeout.
+        if !stderr.is_empty() {
+            tracing::debug!(
+                provider = "codex",
+                stderr_bytes = stderr.len(),
+                "suppressed Codex initialize stderr from result"
+            );
         }
         let message = format!("codex initialize failed: {error}");
         let _ = result_tx.send(ExecutionResult {
@@ -2504,6 +2586,7 @@ async fn run_codex(
             )
             .await;
             let message = format!("codex turn/start failed: {error}");
+            observer.flush_held_running_status().await;
             let _ = result_tx.send(ExecutionResult {
                 status: "failed".to_string(),
                 error: message,
@@ -2516,14 +2599,18 @@ async fn run_codex(
     }
 
     let mut semantic_deadline = tokio::time::Instant::now() + semantic_timeout;
-    let first_timeout = if options.first_turn_no_progress_timeout > Duration::ZERO {
-        options.first_turn_no_progress_timeout
-    } else {
-        DEFAULT_FIRST_TURN_TIMEOUT.min(semantic_timeout)
-    };
+    let first_timeout = codex_first_turn_no_progress_timeout(
+        semantic_timeout,
+        options.first_turn_no_progress_timeout,
+    );
     let mut first_deadline = None;
     let mut first_started = false;
+    let mut first_started_at = None;
+    let mut first_finished_at = None;
+    let mut first_item_outcome = None;
+    let mut first_item_classification = CodexStderrClassification::default();
     let mut first_progress = false;
+    let mut last_activity = "turn/start".to_string();
     let mut status = "completed".to_string();
     let mut error = String::new();
 
@@ -2544,8 +2631,10 @@ async fn run_codex(
         tokio::select! {
             Some(activity) = activity_rx.recv() => {
                 semantic_deadline = tokio::time::Instant::now() + semantic_timeout;
+                last_activity = activity.clone();
                 if activity == "status:running" && !first_started {
                     first_started = true;
+                    first_started_at = Some(Instant::now());
                     first_deadline = Some(tokio::time::Instant::now() + first_timeout);
                 } else if first_started
                     && !first_progress
@@ -2554,18 +2643,54 @@ async fn run_codex(
                 {
                     first_progress = true;
                     first_deadline = None;
+                    let outcome = if activity == "error:terminal" {
+                        "turn_failed"
+                    } else {
+                        "progress"
+                    };
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        outcome,
+                    );
                 }
             }
             Some(aborted) = turn_done_rx.recv() => {
+                let turn_error = observer.snapshot().await.turn_error;
                 if aborted {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_aborted",
+                    );
                     status = "aborted".to_string();
                     error = "codex turn aborted".to_string();
+                } else if !turn_error.is_empty() {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_failed",
+                    );
+                    status = "failed".to_string();
+                    error = turn_error;
                 } else {
-                    let turn_error = observer.snapshot().await.turn_error;
-                    if !turn_error.is_empty() {
-                        status = "failed".to_string();
-                        error = turn_error;
-                    }
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_completed",
+                    );
                 }
                 break;
             }
@@ -2576,6 +2701,14 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "execution_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex timed out after {}s",
@@ -2590,6 +2723,14 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "no_progress_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex app-server no progress timeout after {}s",
@@ -2598,6 +2739,14 @@ async fn run_codex(
                 break;
             }
             _ = tokio::time::sleep_until(semantic_deadline) => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "semantic_inactivity_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex semantic inactivity timeout after {}s",
@@ -2607,12 +2756,28 @@ async fn run_codex(
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if let Some(process_error) = client.process_error().await {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "process_exit",
+                    );
                     status = "failed".to_string();
                     error = process_error;
                     break;
                 }
             }
             _ = options.cancellation.cancelled() => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "cancelled",
+                );
                 status = "aborted".to_string();
                 error = "execution cancelled".to_string();
                 break;
@@ -2638,13 +2803,93 @@ async fn run_codex(
     )
     .await;
     let stderr = cleanup.stderr;
+    let cleanup_confirmed = cleanup.confirmed;
+    if status == "timeout"
+        && (error.contains("no progress timeout") || error.contains("semantic inactivity timeout"))
+    {
+        let codex_version = diagnostic_codex_version(&config).await;
+        error = build_codex_timeout_error(
+            error.contains("no progress timeout"),
+            if error.contains("no progress timeout") {
+                first_timeout
+            } else {
+                semantic_timeout
+            },
+            &last_activity,
+            &snapshot.thread_id,
+            &snapshot.turn_id,
+            &options.model,
+            &codex_version,
+            &stderr,
+        );
+    } else if status != "completed" && !stderr.is_empty() {
+        error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
+    }
+
+    if let (Some(first_started_at), Some(outcome)) = (first_started_at, first_item_outcome) {
+        let classification = if outcome.ends_with("_timeout") {
+            // Timeout cleanup drains the stderr pump, so reclassify from the
+            // complete bounded tail. Non-timeout outcomes retain the snapshot
+            // taken at their first terminal/progress boundary.
+            classify_codex_startup_stderr(&stderr, true)
+        } else {
+            first_item_classification
+        };
+        let finished_at = first_finished_at.unwrap_or(first_started_at);
+        let latency_ms = finished_at
+            .checked_duration_since(first_started_at)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let thread_id = snapshot.thread_id.as_str();
+        let turn_id = snapshot.turn_id.as_str();
+        let log_fields = (
+            classification.model_refresh_failure,
+            classification.model_refresh_timeout,
+            classification.mcp_init_transport,
+            classification.bare_timeout,
+        );
+        if status == "completed" {
+            tracing::info!(
+                provider = "codex",
+                attempt,
+                thread_id,
+                turn_id,
+                outcome,
+                latency_ms,
+                cleanup_confirmed,
+                stderr_model_refresh_failure_count = log_fields.0,
+                stderr_model_refresh_timeout_count = log_fields.1,
+                stderr_mcp_init_transport_count = log_fields.2,
+                stderr_bare_timeout_count = log_fields.3,
+                "Codex first-item lifecycle"
+            );
+        } else {
+            tracing::warn!(
+                provider = "codex",
+                attempt,
+                thread_id,
+                turn_id,
+                outcome,
+                latency_ms,
+                cleanup_confirmed,
+                stderr_model_refresh_failure_count = log_fields.0,
+                stderr_model_refresh_timeout_count = log_fields.1,
+                stderr_mcp_init_transport_count = log_fields.2,
+                stderr_bare_timeout_count = log_fields.3,
+                "Codex first-item lifecycle"
+            );
+        }
+    }
+
     let startup_refresh_retry_safe = attempt == 1
-        && cleanup.confirmed
+        && cleanup_confirmed
         && first_started
         && !first_progress
         && status == "timeout"
         && error.contains("codex app-server no progress timeout")
-        && stderr.contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+        && stderr
+            .to_ascii_lowercase()
+            .contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
         && !options.cancellation.is_cancelled()
         && !execution_deadline.is_some_and(|deadline| deadline <= tokio::time::Instant::now());
     if startup_refresh_retry_safe {
@@ -2656,6 +2901,7 @@ async fn run_codex(
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(500)) => {}
             _ = options.cancellation.cancelled() => {
+                observer.flush_held_running_status().await;
                 let _ = result_tx.send(codex_aborted_result(started));
                 return;
             }
@@ -2666,6 +2912,7 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                observer.flush_held_running_status().await;
                 let _ = result_tx.send(codex_timeout_result(options.timeout, started));
                 return;
             }
@@ -2676,6 +2923,7 @@ async fn run_codex(
         let spawn_result = tokio::select! {
             result = spawn_codex_process(&config, &retry_options, retry_event_tx) => result,
             _ = options.cancellation.cancelled() => {
+                observer.flush_held_running_status().await;
                 let _ = result_tx.send(codex_aborted_result(started));
                 return;
             }
@@ -2684,6 +2932,7 @@ async fn run_codex(
             Ok(process) => {
                 if options.cancellation.is_cancelled() {
                     stop_spawned_codex_process(process).await;
+                    observer.flush_held_running_status().await;
                     let _ = result_tx.send(codex_aborted_result(started));
                     return;
                 }
@@ -2691,6 +2940,7 @@ async fn run_codex(
                     .is_some_and(|deadline| deadline <= tokio::time::Instant::now())
                 {
                     stop_spawned_codex_process(process).await;
+                    observer.flush_held_running_status().await;
                     let _ = result_tx.send(codex_timeout_result(options.timeout, started));
                     return;
                 }
@@ -2727,10 +2977,6 @@ async fn run_codex(
             }
         }
     }
-    if status != "completed" && !stderr.is_empty() {
-        error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
-    }
-
     let mut usage_tokens = snapshot.usage;
     let mut usage_model = options.model.clone();
     if usage_tokens.input_tokens == 0
@@ -2772,6 +3018,7 @@ async fn run_codex(
             usage_tokens,
         );
     }
+    observer.flush_held_running_status().await;
     let _ = result_tx.send(ExecutionResult {
         status,
         output,
@@ -2795,6 +3042,24 @@ fn nonzero_duration(value: Duration, fallback: Duration) -> Duration {
     }
 }
 
+fn codex_first_turn_no_progress_timeout(
+    semantic_timeout: Duration,
+    configured: Duration,
+) -> Duration {
+    if !configured.is_zero() {
+        return configured;
+    }
+    if semantic_timeout.is_zero() || semantic_timeout > DEFAULT_FIRST_TURN_TIMEOUT {
+        return DEFAULT_FIRST_TURN_TIMEOUT;
+    }
+    let scaled = semantic_timeout.saturating_mul(4) / 5;
+    if scaled.is_zero() {
+        semantic_timeout
+    } else {
+        scaled
+    }
+}
+
 fn effective_request_timeout(
     deadline: Option<tokio::time::Instant>,
     handshake_timeout: Duration,
@@ -2811,6 +3076,78 @@ fn null_if_empty(value: &str) -> Value {
         Value::Null
     } else {
         Value::String(value.to_string())
+    }
+}
+
+async fn diagnostic_codex_version(config: &CodexConfig) -> String {
+    let output = capture_codex_command(
+        config,
+        &["--version"],
+        CancellationToken::new(),
+        Instant::now() + Duration::from_secs(2),
+    )
+    .await
+    .ok()
+    .flatten();
+    output
+        .map(|output| extract_version_line(&String::from_utf8_lossy(&output)))
+        .filter(|version| !version.trim().is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn build_codex_timeout_error(
+    no_progress: bool,
+    timeout: Duration,
+    last_activity: &str,
+    thread_id: &str,
+    turn_id: &str,
+    model: &str,
+    codex_version: &str,
+    stderr: &str,
+) -> String {
+    let fields = format!(
+        "codex_version={} thread_id={} turn_id={} model={}",
+        diagnostic_quote(codex_version, "unknown"),
+        diagnostic_quote(thread_id, "unknown"),
+        diagnostic_quote(turn_id, "unknown"),
+        diagnostic_quote(model, "default(empty)"),
+    );
+    let mut message = if no_progress {
+        format!(
+            "codex app-server no progress timeout after {}s: received turn start but no item, message, tool, turn/completed, or error event ({fields})",
+            timeout.as_secs_f64()
+        )
+    } else {
+        format!(
+            "codex semantic inactivity timeout after {}s without agent progress (last activity: {}; {fields})",
+            timeout.as_secs_f64(),
+            diagnostic_value(last_activity, "unknown")
+        )
+    };
+    let sanitized = sanitize_diagnostic(stderr);
+    if sanitized
+        .to_ascii_lowercase()
+        .contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+    {
+        message.push_str("; diagnosis: Codex could not load its model catalog, which blocks the first turn. This is usually a transient network failure reaching the Codex service. Check network/proxy connectivity and retry the task, or switch to another runtime while the Codex service is unreachable");
+    }
+    if !sanitized.is_empty() {
+        message = with_stderr(&message, "codex", &sanitized);
+    }
+    message
+}
+
+fn diagnostic_quote(value: &str, empty: &str) -> String {
+    serde_json::to_string(&diagnostic_value(value, empty))
+        .unwrap_or_else(|_| "\"unknown\"".to_string())
+}
+
+fn diagnostic_value(value: &str, empty: &str) -> String {
+    let sanitized = sanitize_diagnostic(value);
+    if sanitized.trim().is_empty() {
+        empty.to_string()
+    } else {
+        sanitized
     }
 }
 
@@ -2868,11 +3205,24 @@ fn is_resume_overflow(error: &AgentError) -> bool {
         && (text.contains("line exceeds") || text.contains("token too long"))
 }
 
-fn is_initialize_retryable(error: &AgentError) -> bool {
+fn is_initialize_timeout(error: &AgentError) -> bool {
     let text = error.to_string().to_ascii_lowercase();
-    text.contains("initialize")
-        && text.contains("handshake timeout")
-        && !text.contains("execution cancelled")
+    text.contains("initialize") && text.contains("handshake timeout")
+}
+
+fn is_execution_cancelled(error: &AgentError) -> bool {
+    error
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("execution cancelled")
+}
+
+fn should_suppress_initialize_stderr(error: &AgentError) -> bool {
+    is_initialize_timeout(error) || is_execution_cancelled(error)
+}
+
+fn is_initialize_retryable(error: &AgentError) -> bool {
+    is_initialize_timeout(error) && !is_execution_cancelled(error)
 }
 
 fn codex_aborted_result(started: Instant) -> ExecutionResult {
@@ -3725,6 +4075,21 @@ mod tests {
         assert!(!codex_supports_debug_models("development"));
     }
 
+    #[test]
+    fn startup_stderr_classification_matches_go_buckets() {
+        let classified = classify_codex_startup_stderr(
+            "failed to refresh available models\nfailed to refresh available models: timeout waiting for child process to exit\nMCP transport error: closed",
+            true,
+        );
+        assert_eq!(classified.model_refresh_failure, 2);
+        assert_eq!(classified.model_refresh_timeout, 1);
+        assert_eq!(classified.mcp_init_transport, 1);
+        assert_eq!(classified.bare_timeout, 0);
+
+        let bare = classify_codex_startup_stderr("provider timed out", true);
+        assert_eq!(bare.bare_timeout, 1);
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn codex_model_discovery_uses_one_total_deadline() {
@@ -3823,6 +4188,105 @@ esac
         assert_eq!(
             std::fs::read_to_string(marker).unwrap_or_else(|error| panic!("read calls: {error}")),
             "2"
+        );
+    }
+
+    #[test]
+    fn first_turn_timeout_matches_go_scaling_and_override_contract() {
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(30), Duration::ZERO),
+            Duration::from_secs(24)
+        );
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(60), Duration::ZERO),
+            Duration::from_secs(48)
+        );
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(90), Duration::ZERO),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(30), Duration::from_secs(75)),
+            Duration::from_secs(75)
+        );
+    }
+
+    #[test]
+    fn timeout_diagnostic_keeps_context_and_known_catalog_hint() {
+        let message = build_codex_timeout_error(
+            true,
+            Duration::from_secs(60),
+            "status:running",
+            "thread-1",
+            "turn-1",
+            "",
+            "codex-cli 0.144.1",
+            "failed to refresh available models: timeout waiting for child process to exit",
+        );
+        assert!(message.contains("codex app-server no progress timeout"));
+        assert!(message.contains("codex_version=\"codex-cli 0.144.1\""));
+        assert!(message.contains("thread_id=\"thread-1\""));
+        assert!(message.contains("turn_id=\"turn-1\""));
+        assert!(message.contains("model=\"default(empty)\""));
+        assert!(message.contains("could not load its model catalog"));
+        assert!(message.contains("stderr"));
+    }
+
+    #[test]
+    fn timeout_diagnostic_sanitizes_dynamic_context_and_matches_go_hint() {
+        let message = build_codex_timeout_error(
+            false,
+            Duration::from_millis(100),
+            "item/completed: token=activity-secret",
+            "thread token=thread-secret",
+            "turn password=turn-secret",
+            "model api_key=model-secret",
+            "codex-cli secret=version-secret",
+            "Authorization: Bearer bearer-secret\nfailed to refresh available models",
+        );
+        for secret in [
+            "activity-secret",
+            "thread-secret",
+            "turn-secret",
+            "model-secret",
+            "version-secret",
+            "bearer-secret",
+        ] {
+            assert!(
+                !message.contains(secret),
+                "diagnostic leaked {secret}: {message}"
+            );
+        }
+        assert!(message.contains("last activity: item/completed:"));
+        assert!(!message.contains("last activity: \""));
+        assert!(message.contains("This is usually a transient network failure"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovery_timeout_covers_descendant_pipe_holders() {
+        let config = CodexConfig {
+            command: RuntimeCommand::new(
+                "sh",
+                vec!["-c".to_string(), "sleep 60 & exit 0".to_string()],
+            ),
+            env: BTreeMap::new(),
+            ..CodexConfig::default()
+        };
+        let started = Instant::now();
+        let output = capture_codex_command(
+            &config,
+            &["--version"],
+            CancellationToken::new(),
+            Instant::now() + Duration::from_millis(100),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("capture failed: {error}"));
+        assert!(output.is_none());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "pipe drain escaped the discovery deadline: {:?}",
+            started.elapsed()
         );
     }
 
@@ -4026,6 +4490,7 @@ esac
         assert_eq!(done_rx.recv().await, Some(false));
         let snapshot = observer.snapshot().await;
         assert_eq!(snapshot.final_answer, "done");
+        assert_eq!(snapshot.turn_id, "turn-main");
         assert_eq!(snapshot.usage.input_tokens, 6);
         assert_eq!(snapshot.usage.cache_read_tokens, 4);
         assert_eq!(snapshot.usage.output_tokens, 6);
@@ -4316,6 +4781,130 @@ done
         assert!(marker.exists());
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backend_retries_model_refresh_once_without_leaking_resume_pin() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let attempt_path = directory.path().join("attempt");
+        let capture_path = directory.path().join("requests");
+        let script = r#"
+if [ "$0" = "--version" ]; then
+  printf '%s\n' 'codex-cli 0.144.1'
+  exit 0
+fi
+count=0
+if [ -f "$CODEX_REFRESH_ATTEMPT" ]; then count=$(cat "$CODEX_REFRESH_ATTEMPT"); fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$CODEX_REFRESH_ATTEMPT"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$CODEX_REFRESH_CAPTURE"
+  case "$count:$line" in
+    1:*'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'
+      ;;
+    1:*'"method":"thread/resume"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-old"}}}'
+      ;;
+    1:*'"method":"turn/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-old","turn":{"id":"turn-old"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      printf '%s\n' 'ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion' >&2
+      while IFS= read -r ignored; do :; done
+      ;;
+    2:*'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'
+      ;;
+    2:*'"method":"thread/resume"'*)
+      printf '%s\n' 'unexpected resume on refresh retry' >&2
+      exit 12
+      ;;
+    2:*'"method":"thread/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-new"}}}'
+      ;;
+    2:*'"method":"turn/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-new","turn":{"id":"turn-new"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-new","item":{"type":"agentMessage","phase":"final_answer","text":"retried"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-new","turn":{"id":"turn-new","status":"completed"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      ;;
+    3:*)
+      printf '%s\n' 'unexpected third Codex attempt' >&2
+      exit 13
+      ;;
+  esac
+done
+"#;
+        let backend = CodexBackend::new(CodexConfig {
+            command: RuntimeCommand::new("sh", vec!["-c".to_string(), script.to_string()]),
+            env: BTreeMap::from([
+                (
+                    "CODEX_REFRESH_ATTEMPT".to_string(),
+                    attempt_path.to_string_lossy().to_string(),
+                ),
+                (
+                    "CODEX_REFRESH_CAPTURE".to_string(),
+                    capture_path.to_string_lossy().to_string(),
+                ),
+            ]),
+            ..CodexConfig::default()
+        });
+        let options = ExecOptions {
+            handshake_timeout: Duration::from_secs(1),
+            timeout: Duration::from_secs(3),
+            semantic_inactivity_timeout: Duration::from_secs(2),
+            first_turn_no_progress_timeout: Duration::from_millis(100),
+            resume_session_id: "thread-old".to_string(),
+            resume_expected: true,
+            resume_continuity_notice: "CONTINUITY\n".to_string(),
+            ..ExecOptions::default()
+        };
+        let mut session = backend
+            .execute("hello", options)
+            .await
+            .unwrap_or_else(|error| panic!("start refresh retry fake Codex: {error}"));
+        let mut messages = Vec::new();
+        while let Some(message) = session.messages.recv().await {
+            messages.push(message);
+        }
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("refresh retry result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "retried");
+        assert_eq!(result.session_id, "thread-new");
+        assert_eq!(
+            std::fs::read_to_string(&attempt_path)
+                .unwrap_or_else(|error| panic!("read attempt count: {error}"))
+                .trim(),
+            "2"
+        );
+        let requests = std::fs::read_to_string(&capture_path)
+            .unwrap_or_else(|error| panic!("read fake requests: {error}"));
+        assert_eq!(requests.matches(r#""method":"thread/resume""#).count(), 1);
+        assert_eq!(requests.matches(r#""method":"thread/start""#).count(), 1);
+        assert!(requests.contains(r#""text":"CONTINUITY\nhello""#));
+        assert!(!messages.iter().any(|message| {
+            message.message_type == MessageType::Status
+                && message.status == "running"
+                && message.session_id == "thread-old"
+        }));
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| {
+                    message.message_type == MessageType::Status && message.status == "running"
+                })
+                .count(),
+            1
+        );
+        assert!(messages.iter().any(|message| {
+            message.message_type == MessageType::Status
+                && message.status == "running"
+                && message.session_id == "thread-new"
+        }));
+    }
+
     #[test]
     fn rollout_scanner_uses_thread_metadata_and_resume_delta() {
         let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
@@ -4442,5 +5031,21 @@ done
             nonzero_duration(Duration::ZERO, Duration::from_secs(2)),
             Duration::from_secs(2)
         );
+    }
+
+    #[test]
+    fn initialize_timeout_and_cancellation_suppress_provider_stderr() {
+        assert!(should_suppress_initialize_stderr(&AgentError::Protocol(
+            "codex app-server handshake timeout: initialize did not respond after 30s".to_string(),
+        )));
+        assert!(should_suppress_initialize_stderr(&AgentError::Protocol(
+            "execution cancelled".to_string(),
+        )));
+        assert!(!should_suppress_initialize_stderr(&AgentError::Protocol(
+            "codex initialize failed: malformed response".to_string(),
+        )));
+        assert!(!is_initialize_retryable(&AgentError::Protocol(
+            "execution cancelled".to_string(),
+        )));
     }
 }
