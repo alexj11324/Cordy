@@ -6,14 +6,17 @@
 //! one agent, while the API still returns one outcome for every named target.
 
 use crate::state::HandlerState;
-use cordy_db::models::{Agent, Issue};
-use cordy_db::queries::{agent, agent_invocation_target, member, squad};
-use cordy_service::agent_ready::agent_readiness;
+use cordy_db::dbid::new_v7;
+use cordy_db::models::{Agent, AgentTaskQueue, Issue};
+use cordy_db::queries::{
+    agent, agent_invocation_target, autopilot, comment, issue as issue_query, member, squad,
+};
+use cordy_service::agent_ready::{agent_readiness, runtime_unusable_notice, AgentVerdict};
 use cordy_service::dispatch_reason::ReasonCode;
 use cordy_service::task_service::{pending_slot_taken_err, TaskServiceError};
 use regex::Regex;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -70,6 +73,13 @@ struct Target {
     target_id: String,
     agent_id: Option<Uuid>,
     terminal: Option<(DispatchStatus, ReasonCode)>,
+    unusable: Option<RuntimeUnusableTarget>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeUnusableTarget {
+    agent: Agent,
+    verdict: AgentVerdict,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -136,12 +146,44 @@ pub(crate) async fn invocation_originator(
         .and_then(|task| task.originator_user_id)
 }
 
+/// Restores the autopilot creator's invoke authority for an unattributed
+/// autopilot dispatch that delegates from an agent comment. This is a
+/// gate-only fallback: it is deliberately not returned as an originator and
+/// therefore cannot change queue attribution or connected-app ownership.
+pub(crate) async fn autopilot_delegation_authority(
+    state: &HandlerState,
+    issue: &Issue,
+    actor_type: &str,
+    actor_id: Uuid,
+    task_id: Option<Uuid>,
+) -> Option<Uuid> {
+    if actor_type != "agent" || issue.origin_type.as_deref() != Some("autopilot") {
+        return None;
+    }
+    let task_id = task_id?;
+    let autopilot_id = issue.origin_id?;
+    let task = agent::get_agent_task(&state.pool, task_id)
+        .await
+        .ok()
+        .flatten()?;
+    if task.agent_id != actor_id || task.issue_id != Some(issue.id) {
+        return None;
+    }
+    let autopilot =
+        autopilot::get_autopilot_in_workspace(&state.pool, autopilot_id, issue.workspace_id)
+            .await
+            .ok()
+            .flatten()?;
+    (autopilot.created_by_type == "member").then_some(autopilot.created_by_id)
+}
+
 async fn can_invoke_agent(
     state: &HandlerState,
     target: &Agent,
     actor_type: &str,
     actor_id: Uuid,
     originator_user_id: Option<Uuid>,
+    autopilot_delegation_authority_user_id: Option<Uuid>,
     workspace_id: Uuid,
 ) -> bool {
     // Members invoke as themselves. Agent/system actors are judged by the
@@ -149,7 +191,7 @@ async fn can_invoke_agent(
     let effective_user = if actor_type == "member" {
         Some(actor_id)
     } else {
-        originator_user_id
+        originator_user_id.or(autopilot_delegation_authority_user_id)
     };
 
     if effective_user.is_some() && target.owner_id == effective_user {
@@ -195,6 +237,84 @@ fn blocked(target_type: &str, target_id: &str, reason: ReasonCode) -> Target {
         target_id: target_id.to_string(),
         agent_id: None,
         terminal: Some((DispatchStatus::Blocked, reason)),
+        unusable: None,
+    }
+}
+
+fn blocked_readiness(
+    target_type: &str,
+    target_id: &str,
+    agent: &Agent,
+    verdict: &AgentVerdict,
+) -> Target {
+    Target {
+        target_type: target_type.to_string(),
+        target_id: target_id.to_string(),
+        agent_id: None,
+        terminal: Some((DispatchStatus::Blocked, verdict.reason)),
+        unusable: (verdict.reason == ReasonCode::RuntimeUnusable).then(|| RuntimeUnusableTarget {
+            agent: agent.clone(),
+            verdict: verdict.clone(),
+        }),
+    }
+}
+
+/// Mirrors the Go self-trigger guard: only a same-squad worker task may wake
+/// its own squad leader. Query errors fail open here so an unavailable role
+/// lookup does not turn a valid explicit mention into a silent drop; the
+/// resulting enqueue path still applies its normal deduplication checks.
+async fn should_suppress_squad_leader_self_trigger(
+    state: &HandlerState,
+    issue_id: Uuid,
+    leader_id: Uuid,
+    squad_id: Uuid,
+) -> bool {
+    match agent::get_latest_task_role_for_issue_and_agent(&state.pool, issue_id, leader_id).await {
+        Ok(Some(latest)) => latest.is_leader_task || latest.squad_id != Some(squad_id),
+        Ok(None) => true,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                %issue_id,
+                %leader_id,
+                %squad_id,
+                "failed to inspect squad leader self-trigger role"
+            );
+            false
+        }
+    }
+}
+
+async fn suppressed_squad_leader_target(
+    state: &HandlerState,
+    issue_id: Uuid,
+    squad_id: Uuid,
+    leader_id: Uuid,
+    target_id: &str,
+) -> Target {
+    let terminal =
+        match agent::has_active_task_for_issue_and_agent(&state.pool, issue_id, leader_id).await {
+            Ok(Some(true)) => (DispatchStatus::Deferred, ReasonCode::AlreadyActive),
+            Ok(Some(false)) | Ok(None) => {
+                (DispatchStatus::Blocked, ReasonCode::SelfTriggerSuppressed)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    %issue_id,
+                    %leader_id,
+                    %squad_id,
+                    "failed to inspect active task for suppressed squad leader trigger"
+                );
+                (DispatchStatus::Blocked, ReasonCode::InternalError)
+            }
+        };
+    Target {
+        target_type: "squad".to_string(),
+        target_id: target_id.to_string(),
+        agent_id: None,
+        terminal: Some(terminal),
+        unusable: None,
     }
 }
 
@@ -218,6 +338,7 @@ async fn resolve_explicit(
     actor_type: &str,
     actor_id: Uuid,
     originator_user_id: Option<Uuid>,
+    autopilot_delegation_authority_user_id: Option<Uuid>,
     suppressed_agent_ids: &HashSet<Uuid>,
 ) -> (Vec<Trigger>, Vec<Target>) {
     if is_note_comment(content) {
@@ -271,6 +392,7 @@ async fn resolve_explicit(
                 actor_type,
                 actor_id,
                 originator_user_id,
+                autopilot_delegation_authority_user_id,
                 issue.workspace_id,
             )
             .await
@@ -288,7 +410,7 @@ async fn resolve_explicit(
             }
             if let Ok(verdict) = agent_readiness(&state.pool, &agent).await {
                 if verdict.blocked() {
-                    targets.push(blocked("agent", &mention.id, verdict.reason));
+                    targets.push(blocked_readiness("agent", &mention.id, &agent, &verdict));
                     continue;
                 }
             }
@@ -311,6 +433,7 @@ async fn resolve_explicit(
                 target_id: mention.id,
                 agent_id: Some(agent_id),
                 terminal: None,
+                unusable: None,
             });
             continue;
         }
@@ -331,6 +454,23 @@ async fn resolve_explicit(
             targets.push(blocked("squad", &mention.id, ReasonCode::TargetUnavailable));
             continue;
         }
+        if actor_type == "agent"
+            && actor_id == squad.leader_id
+            && should_suppress_squad_leader_self_trigger(state, issue.id, squad.leader_id, squad.id)
+                .await
+        {
+            targets.push(
+                suppressed_squad_leader_target(
+                    state,
+                    issue.id,
+                    squad.id,
+                    squad.leader_id,
+                    &mention.id,
+                )
+                .await,
+            );
+            continue;
+        }
         let leader =
             match agent::get_agent_in_workspace(&state.pool, squad.leader_id, issue.workspace_id)
                 .await
@@ -347,6 +487,7 @@ async fn resolve_explicit(
             actor_type,
             actor_id,
             originator_user_id,
+            autopilot_delegation_authority_user_id,
             issue.workspace_id,
         )
         .await
@@ -364,7 +505,7 @@ async fn resolve_explicit(
         }
         if let Ok(verdict) = agent_readiness(&state.pool, &leader).await {
             if verdict.blocked() {
-                targets.push(blocked("squad", &mention.id, verdict.reason));
+                targets.push(blocked_readiness("squad", &mention.id, &leader, &verdict));
                 continue;
             }
         }
@@ -385,6 +526,7 @@ async fn resolve_explicit(
             target_id: mention.id,
             agent_id: Some(squad.leader_id),
             terminal: None,
+            unusable: None,
         });
     }
 
@@ -447,25 +589,22 @@ async fn merge_into_pending(
         .source
         .as_ref()
         .map(|source| source.as_str().to_string());
-    let delegated_from = attr.delegated_from_task_id.unwrap_or_else(Uuid::nil);
-    let rule_version = attr.rule_version_id.unwrap_or_else(Uuid::nil);
     let evidence_kind = attr
         .evidence_kind
         .as_ref()
         .filter(|kind| !kind.as_str().is_empty())
         .map(|kind| kind.as_str().to_string());
-    let evidence_ref = attr.evidence_ref_id.unwrap_or_else(Uuid::nil);
     let merged = cordy_db::queries::agent::merge_comment_into_pending_task(
         &state.pool,
         comment_id,
         summary.as_deref(),
-        attr.user_id.unwrap_or_else(Uuid::nil),
-        attr.accountable_user_id.unwrap_or_else(Uuid::nil),
+        attr.user_id,
+        attr.accountable_user_id,
         attr_source.as_deref(),
-        delegated_from,
-        rule_version,
+        attr.delegated_from_task_id,
+        attr.rule_version_id,
         evidence_kind.as_deref(),
-        evidence_ref,
+        attr.evidence_ref_id,
         &overlay.unwrap_or(Value::Null),
         &connected_apps.unwrap_or(Value::Null),
         issue.id,
@@ -505,7 +644,6 @@ async fn enqueue_trigger(
     // A duplicate insert is resolved by an atomic same-head merge or a
     // claim-receipt planned id. Never report success for a merge that did not
     // complete; bounded retries make sustained concurrent churn visible.
-    let mut lost_race = false;
     for _ in 0..4 {
         match state
             .tasks
@@ -531,6 +669,9 @@ async fn enqueue_trigger(
                 };
             }
             Err(error) if pending_slot_taken_err(&error) => {
+                // The duplicate insert is the lost-race receipt. A merge miss
+                // must be registered on the active task immediately rather
+                // than reported as an untracked deferred outcome.
                 match merge_into_pending(state, issue, trigger, comment_id).await {
                     Ok(true) => {
                         return EnqueueResult {
@@ -546,52 +687,24 @@ async fn enqueue_trigger(
                             execution_squad_id: trigger.squad_id,
                         };
                     }
-                    Ok(false) if lost_race => {
-                        match register_planned(state, issue, trigger, comment_id).await {
-                            Ok(true) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Deferred,
-                                    reason: ReasonCode::Deferred,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                            Err(reason) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Blocked,
-                                    reason,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                            Ok(false) => {}
+                    Ok(false) => match register_planned(state, issue, trigger, comment_id).await {
+                        Ok(true) => {
+                            return EnqueueResult {
+                                status: DispatchStatus::Deferred,
+                                reason: ReasonCode::Deferred,
+                                execution_squad_id: trigger.squad_id,
+                            };
                         }
-                    }
-                    Ok(false) => {
-                        match agent::has_active_task_for_issue_and_agent(
-                            &state.pool,
-                            issue.id,
-                            trigger.agent.id,
-                        )
-                        .await
-                        {
-                            Ok(Some(true)) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Deferred,
-                                    reason: ReasonCode::Deferred,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                            Ok(Some(false)) | Ok(None) => {}
-                            Err(_) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Blocked,
-                                    reason: ReasonCode::InternalError,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
+                        Err(reason) => {
+                            return EnqueueResult {
+                                status: DispatchStatus::Blocked,
+                                reason,
+                                execution_squad_id: trigger.squad_id,
+                            };
                         }
-                    }
+                        Ok(false) => {}
+                    },
                 }
-                lost_race = true;
             }
             Err(error) => {
                 return EnqueueResult {
@@ -609,6 +722,66 @@ async fn enqueue_trigger(
     }
 }
 
+/// A refused mention must remain visible in the issue history when the
+/// daemon reports a runtime whose CLI cannot execute. Preview is deliberately
+/// side-effect free; this function is called only after a comment is stored.
+async fn note_runtime_unusable(
+    state: &HandlerState,
+    issue: &Issue,
+    target: &RuntimeUnusableTarget,
+) {
+    let content = runtime_unusable_notice(&target.agent.name, &target.verdict);
+    let created = match comment::create_comment(
+        &state.pool,
+        issue.id,
+        issue.workspace_id,
+        "system",
+        Uuid::nil(),
+        &content,
+        "system",
+        None,
+        None,
+        None,
+        None,
+        new_v7(),
+    )
+    .await
+    {
+        Ok(Some(created)) => created,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                issue_id = %issue.id,
+                agent_id = %target.agent.id,
+                "failed to create runtime unusable notice"
+            );
+            return;
+        }
+    };
+
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_COMMENT_CREATED.to_string(),
+        workspace_id: issue.workspace_id.to_string(),
+        actor_type: "system".to_string(),
+        actor_id: String::new(),
+        payload: json!({
+            "comment": {
+                "id": created.id,
+                "issue_id": created.issue_id,
+                "author_type": created.author_type,
+                "author_id": created.author_id,
+                "content": created.content,
+                "type": created.type_,
+                "revision": created.revision,
+            },
+            "issue_title": issue.title,
+            "issue_revision": created.issue_revision,
+        }),
+        ..Default::default()
+    });
+}
+
 pub(crate) async fn trigger_explicit_mentions(
     state: &HandlerState,
     issue: &Issue,
@@ -617,6 +790,7 @@ pub(crate) async fn trigger_explicit_mentions(
     actor_type: &str,
     actor_id: Uuid,
     originator_user_id: Option<Uuid>,
+    autopilot_delegation_authority_user_id: Option<Uuid>,
     suppressed_agent_ids: &[Uuid],
 ) -> Vec<CommentTriggerOutcome> {
     let suppressed = suppressed_agent_ids.iter().copied().collect();
@@ -627,9 +801,19 @@ pub(crate) async fn trigger_explicit_mentions(
         actor_type,
         actor_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
         &suppressed,
     )
     .await;
+    let mut noted_agents = HashSet::new();
+    for target in &targets {
+        let Some(unusable) = &target.unusable else {
+            continue;
+        };
+        if noted_agents.insert(unusable.agent.id) {
+            note_runtime_unusable(state, issue, unusable).await;
+        }
+    }
     let mut results = HashMap::new();
     for trigger in &triggers {
         results.insert(
@@ -679,6 +863,7 @@ pub(crate) async fn preview_explicit_mentions(
     actor_type: &str,
     actor_id: Uuid,
     originator_user_id: Option<Uuid>,
+    autopilot_delegation_authority_user_id: Option<Uuid>,
 ) -> PreviewResponse {
     let (triggers, targets) = resolve_explicit(
         state,
@@ -687,6 +872,7 @@ pub(crate) async fn preview_explicit_mentions(
         actor_type,
         actor_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
         &HashSet::new(),
     )
     .await;
@@ -725,6 +911,158 @@ pub(crate) async fn preview_explicit_mentions(
         })
         .collect();
     PreviewResponse { agents, blocked }
+}
+
+/// Replays explicit mentions that arrived while a task was running but were
+/// not delivered to it. The task's claim receipt is the durable boundary: a
+/// comment is skipped only when that task recorded it as delivered; otherwise
+/// the trigger is resolved again and routed only to the agent that just
+/// finished. This closes the completion window where a comment lands after
+/// the claimer's snapshot and before terminal reconciliation.
+pub(crate) async fn reconcile_comments_on_completion(
+    state: &HandlerState,
+    completed_task: &AgentTaskQueue,
+) {
+    let Some(issue_id) = completed_task.issue_id else {
+        return;
+    };
+    let mut planned_comment_ids = completed_task.coalesced_comment_ids.clone();
+    if let Some(trigger_comment_id) = completed_task.trigger_comment_id {
+        planned_comment_ids.push(trigger_comment_id);
+    }
+    planned_comment_ids.sort_unstable();
+    planned_comment_ids.dedup();
+
+    let comments = match comment::list_reconcilable_comments_for_issue_since(
+        &state.pool,
+        issue_id,
+        Some(completed_task.created_at),
+        planned_comment_ids,
+    )
+    .await
+    {
+        Ok(comments) => comments,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                %issue_id,
+                task_id = %completed_task.id,
+                "failed to list comments for task completion reconciliation"
+            );
+            return;
+        }
+    };
+    if comments.is_empty() {
+        return;
+    }
+    let issue = match issue_query::get_issue_in_workspace(
+        &state.pool,
+        issue_id,
+        comments
+            .first()
+            .map(|comment| comment.workspace_id)
+            .unwrap_or_else(Uuid::nil),
+    )
+    .await
+    {
+        Ok(Some(issue)) => issue,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                %issue_id,
+                task_id = %completed_task.id,
+                "failed to load issue for task completion reconciliation"
+            );
+            return;
+        }
+    };
+
+    for reconciled_comment in comments {
+        if completed_task
+            .delivered_comment_ids
+            .contains(&reconciled_comment.id)
+        {
+            continue;
+        }
+        if cordy_service::task_recovery::is_delegated_failure_recovery_comment(&reconciled_comment)
+        {
+            if let Err(error) = state
+                .tasks
+                .dispatch_delegated_failure_recovery_comment(
+                    &reconciled_comment,
+                    Some(completed_task.id),
+                )
+                .await
+            {
+                tracing::warn!(
+                    %error,
+                    comment_id = %reconciled_comment.id,
+                    task_id = %completed_task.id,
+                    "failed to reconcile delegated failure recovery comment"
+                );
+            }
+            continue;
+        }
+        if is_note_comment(&reconciled_comment.content) {
+            continue;
+        }
+
+        let originator_user_id = if reconciled_comment.author_type == "member" {
+            Some(reconciled_comment.author_id)
+        } else if reconciled_comment.author_type == "agent" {
+            state
+                .tasks
+                .resolve_originator_from_trigger_comment(
+                    reconciled_comment.workspace_id,
+                    Some(reconciled_comment.id),
+                )
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let authority = if originator_user_id.is_none() {
+            autopilot_delegation_authority(
+                state,
+                &issue,
+                &reconciled_comment.author_type,
+                reconciled_comment.author_id,
+                reconciled_comment.source_task_id,
+            )
+            .await
+        } else {
+            None
+        };
+        let (triggers, _) = resolve_explicit(
+            state,
+            &issue,
+            &reconciled_comment.content,
+            &reconciled_comment.author_type,
+            reconciled_comment.author_id,
+            originator_user_id,
+            authority,
+            &HashSet::new(),
+        )
+        .await;
+        let Some(trigger) = triggers
+            .into_iter()
+            .find(|trigger| trigger.agent.id == completed_task.agent_id)
+        else {
+            continue;
+        };
+        let result = enqueue_trigger(state, &issue, &trigger, reconciled_comment.id).await;
+        if result.status == DispatchStatus::Blocked {
+            tracing::warn!(
+                issue_id = %issue.id,
+                agent_id = %completed_task.agent_id,
+                comment_id = %reconciled_comment.id,
+                reason = %result.reason,
+                "completion reconciliation could not enqueue explicit mention"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

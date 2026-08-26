@@ -291,6 +291,18 @@ async fn preview_triggers(
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &actor_type, actor_id, task_id)
             .await;
+    let autopilot_delegation_authority_user_id = if originator_user_id.is_none() {
+        crate::comment_triggers::autopilot_delegation_authority(
+            &state,
+            &issue,
+            &actor_type,
+            actor_id,
+            task_id,
+        )
+        .await
+    } else {
+        None
+    };
     let preview = crate::comment_triggers::preview_explicit_mentions(
         &state,
         &issue,
@@ -298,6 +310,7 @@ async fn preview_triggers(
         &actor_type,
         actor_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
     )
     .await;
     Json(preview).into_response()
@@ -429,6 +442,18 @@ async fn create(
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &author_type, author_id, task_id)
             .await;
+    let autopilot_delegation_authority_user_id = if originator_user_id.is_none() {
+        crate::comment_triggers::autopilot_delegation_authority(
+            &state,
+            &issue,
+            &author_type,
+            author_id,
+            task_id,
+        )
+        .await
+    } else {
+        None
+    };
     let outcomes = crate::comment_triggers::trigger_explicit_mentions(
         &state,
         &issue,
@@ -437,6 +462,7 @@ async fn create(
         &author_type,
         author_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
         &suppressed,
     )
     .await;
@@ -609,6 +635,18 @@ async fn update(
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &actor_type, actor_id, task_id)
             .await;
+    let autopilot_delegation_authority_user_id = if originator_user_id.is_none() {
+        crate::comment_triggers::autopilot_delegation_authority(
+            &state,
+            &trigger_issue,
+            &actor_type,
+            actor_id,
+            task_id,
+        )
+        .await
+    } else {
+        None
+    };
     let outcomes = crate::comment_triggers::trigger_explicit_mentions(
         &state,
         &trigger_issue,
@@ -617,6 +655,7 @@ async fn update(
         &actor_type,
         actor_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
         &suppressed,
     )
     .await;
