@@ -182,6 +182,19 @@ impl From<&User> for UserResponse {
     }
 }
 
+impl UserResponse {
+    /// Resolves the durable object URL at read time, matching Go's
+    /// `resolveAvatarURLPtr` used by `userToResponse`. Persisted user rows
+    /// keep the raw object URL; private object storage receives the same
+    /// signed capability endpoint as other user-facing resources.
+    fn resolve_avatar_url(&mut self, state: &HandlerState) {
+        self.avatar_url = self
+            .avatar_url
+            .take()
+            .map(|raw| crate::avatar::resolve_url(state, &raw));
+    }
+}
+
 async fn send_code(State(state): State<HandlerState>, body: Bytes) -> Response {
     let request: SendCodeRequest = match decode_first_json(&body) {
         Ok(request) => request,
@@ -494,6 +507,8 @@ async fn complete_login(
             );
         }
     };
+    let mut user = UserResponse::from(&current);
+    user.resolve_avatar_url(state);
     let domain = cordy_auth::cookie::cookie_domain(Some(&state.auth_settings.cookie_domain));
     let secure = cordy_auth::cookie::is_secure_cookie(Some(&state.auth_settings.frontend_origin));
     let cookies =
@@ -501,18 +516,10 @@ async fn complete_login(
             Ok(cookies) => cookies,
             Err(error) => {
                 tracing::warn!(%error, "auth: failed to set auth cookies");
-                return Json(LoginResponse {
-                    token,
-                    user: UserResponse::from(&current),
-                })
-                .into_response();
+                return Json(LoginResponse { token, user }).into_response();
             }
         };
-    let mut response = Json(LoginResponse {
-        token,
-        user: UserResponse::from(&current),
-    })
-    .into_response();
+    let mut response = Json(LoginResponse { token, user }).into_response();
     for cookie in cookies {
         if let Ok(value) = HeaderValue::from_str(&cookie) {
             response.headers_mut().append(header::SET_COOKIE, value);
