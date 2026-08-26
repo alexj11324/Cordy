@@ -13,6 +13,7 @@ use crate::copilot::{CopilotBackend, CopilotConfig};
 use crate::cursor::{CursorBackend, CursorConfig};
 use crate::deveco::{DevecoBackend, DevecoConfig};
 use crate::dsh::{DshBackend, DshConfig};
+use crate::model::CatalogCache;
 use crate::openclaw::{OpenclawBackend, OpenclawConfig};
 use crate::opencode::{OpencodeBackend, OpencodeConfig};
 use crate::pi::{PiBackend, PiConfig};
@@ -32,6 +33,11 @@ pub struct BackendConfig {
     /// exceptions. A custom profile with the same protocol family must remain
     /// fail-closed until its own behavior is verified.
     pub builtin_runtime: bool,
+    /// Daemon-owned cache shared by model-list and task execution paths.
+    pub catalog_cache: Arc<CatalogCache>,
+    /// Runtime-scoped identity used to prevent custom profiles sharing a
+    /// catalog with another accepted launch.
+    pub runtime_scope: String,
 }
 
 impl std::fmt::Debug for BackendConfig {
@@ -41,6 +47,7 @@ impl std::fmt::Debug for BackendConfig {
             .field("command_path", &self.command.path)
             .field("environment_variable_count", &self.env.len())
             .field("builtin_runtime", &self.builtin_runtime)
+            .field("runtime_scope", &self.runtime_scope)
             .finish_non_exhaustive()
     }
 }
@@ -71,6 +78,8 @@ pub fn build_backend(
         "codex" => Ok(Arc::new(CodexBackend::new(CodexConfig {
             command: config.command,
             env: config.env,
+            catalog_cache: config.catalog_cache,
+            runtime_scope: config.runtime_scope,
         }))),
         "cursor" => Ok(Arc::new(CursorBackend::new(CursorConfig {
             command: config.command,
@@ -566,6 +575,9 @@ mod tests {
 
         let codebuddy = build_backend("codebuddy", BackendConfig::default());
         assert!(codebuddy.is_ok());
+
+        let codex = build_backend("codex", BackendConfig::default());
+        assert!(codex.is_ok());
 
         let antigravity = build_backend("antigravity", BackendConfig::default());
         assert!(antigravity.is_ok());

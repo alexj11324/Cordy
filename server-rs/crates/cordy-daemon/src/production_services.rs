@@ -98,6 +98,7 @@ pub struct ProviderRuntimeContext {
     activity: Arc<DaemonActivity>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
+    model_cache: Arc<CatalogCache>,
 }
 
 impl ProviderRuntimeContext {
@@ -108,12 +109,31 @@ impl ProviderRuntimeContext {
         repo_state: Arc<DaemonRepoState>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
     ) -> Self {
+        Self::with_model_cache(
+            client,
+            launch_registry,
+            activity,
+            repo_state,
+            checkout_registry,
+            Arc::new(CatalogCache::default()),
+        )
+    }
+
+    pub(crate) fn with_model_cache(
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
+        activity: Arc<DaemonActivity>,
+        repo_state: Arc<DaemonRepoState>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+        model_cache: Arc<CatalogCache>,
+    ) -> Self {
         Self {
             client,
             launch_registry,
             activity,
             repo_state,
             checkout_registry,
+            model_cache,
         }
     }
 
@@ -144,6 +164,8 @@ impl ProviderRuntimeContext {
             command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
             env,
             builtin_runtime: target.profile_id.is_empty(),
+            catalog_cache: Arc::clone(&self.model_cache),
+            runtime_scope: self.runtime_scope(workspace_id, target),
         })
     }
 
@@ -159,7 +181,16 @@ impl ProviderRuntimeContext {
             command: RuntimeCommand::new(launch.command_path, prefix),
             env,
             builtin_runtime: target.profile_id.is_empty(),
+            catalog_cache: Arc::clone(&self.model_cache),
+            runtime_scope: self.runtime_scope(workspace_id, target),
         })
+    }
+
+    fn runtime_scope(&self, workspace_id: &str, target: &RuntimeExecutionTarget) -> String {
+        format!(
+            "{}\0workspace={workspace_id}\0runtime={}\0profile={}",
+            target.provider, target.provider, target.profile_id
+        )
     }
 
     fn resolve_launch(
@@ -341,6 +372,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 "codex" => CodexBackend::new(CodexConfig {
                     command,
                     env: BTreeMap::new(),
+                    ..CodexConfig::default()
                 })
                 .discover_models_for_runtime(
                     &runtime_scope,
@@ -992,12 +1024,13 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
                 task,
                 target,
                 slot,
-                ProviderRuntimeContext::new(
+                ProviderRuntimeContext::with_model_cache(
                     Arc::clone(&self.client),
                     Arc::clone(&self.launch_registry),
                     activity,
                     Arc::clone(&self.repo_state),
                     Arc::clone(&self.checkout_registry),
+                    Arc::clone(&self.model_cache),
                 ),
             )
             .await
