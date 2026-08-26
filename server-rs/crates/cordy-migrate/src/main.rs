@@ -22,6 +22,10 @@ use crate::backfill::{codex_usage, issue_activity, task_usage};
 
 const DEFAULT_DATABASE_URL: &str = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
 
+const MIGRATION_HELP: &str = "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [flags] | cordy-migrate backfill issue-last-activity [flags] | cordy-migrate backfill codex-usage-cache [flags]";
+const TASK_USAGE_HELP: &str = "Usage: backfill_task_usage_hourly [flags]\n\nFlags:\n  -h, -help, --help  Show this help\n  -dry-run, --dry-run  Do not write changes\n  -force-partial, --force-partial  Allow partial backfill\n  -months-back N, --months-back=N  Limit the lookback window (0 = all history)\n  -sleep-between-slices DURATION, --sleep-between-slices=DURATION  Pause between monthly slices";
+const ISSUE_ACTIVITY_HELP: &str = "Usage: backfill_issue_last_activity [flags]\n\nFlags:\n  -h, -help, --help  Show this help\n  -batch-size N, --batch-size=N  Maximum issue rows per transaction\n  -sleep-between-batches DURATION, --sleep-between-batches=DURATION  Pause between batches\n  -max-batches N, --max-batches=N  Maximum batches (0 = finish all)\n  -max-stalled-passes N, --max-stalled-passes=N  Fail after N stalled passes (0 = disable)";
+const CODEX_USAGE_HELP: &str = "Usage: backfill_codex_usage_cache [flags]\n\nFlags:\n  -h, -help, --help  Show this help\n  -cutoff TIMESTAMP, --cutoff=TIMESTAMP  Required RFC3339 deployment time\n  -workspace-id UUID, --workspace-id=UUID  Limit the backfill to one workspace\n  -batch-size N, --batch-size=N  Rows per update batch\n  -sleep-between-batches DURATION, --sleep-between-batches=DURATION  Pause between update batches\n  -execute, --execute  Mutate task_usage rows (default: dry-run)\n  -rebuild-rollup[=BOOL], --rebuild-rollup[=BOOL]  Rebuild the hourly rollup after updates (default: true)";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -37,6 +41,11 @@ async fn main() -> anyhow::Result<()> {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let command = parse_invocation(program.as_deref(), &args)?;
+
+    if let Command::Help(text) = &command {
+        println!("{text}");
+        return Ok(());
+    }
 
     if let Command::BackfillTaskUsageHourly(options) = &command {
         return run_operator_command(BackfillCommand::TaskUsage(options.clone())).await;
@@ -72,10 +81,12 @@ async fn main() -> anyhow::Result<()> {
         Command::BackfillTaskUsageHourly(_) => unreachable!("handled above"),
         Command::BackfillIssueLastActivity(_) => unreachable!("handled above"),
         Command::BackfillCodexUsageCache(_) => unreachable!("handled above"),
+        Command::Help(_) => unreachable!("handled above"),
     }
 }
 
 enum Command {
+    Help(&'static str),
     Up,
     Down,
     Status,
@@ -86,6 +97,28 @@ enum Command {
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
     match args {
+        [command, backfill, rest @ ..]
+            if command == "backfill"
+                && backfill == "task-usage-hourly"
+                && rest.iter().any(|arg| is_help_arg(arg)) =>
+        {
+            Ok(Command::Help(TASK_USAGE_HELP))
+        }
+        [command, backfill, rest @ ..]
+            if command == "backfill"
+                && backfill == "issue-last-activity"
+                && rest.iter().any(|arg| is_help_arg(arg)) =>
+        {
+            Ok(Command::Help(ISSUE_ACTIVITY_HELP))
+        }
+        [command, backfill, rest @ ..]
+            if command == "backfill"
+                && backfill == "codex-usage-cache"
+                && rest.iter().any(|arg| is_help_arg(arg)) =>
+        {
+            Ok(Command::Help(CODEX_USAGE_HELP))
+        }
+        _ if args.iter().any(|arg| is_help_arg(arg)) => Ok(Command::Help(MIGRATION_HELP)),
         [] => Ok(Command::Up),
         [command] if command == "up" => Ok(Command::Up),
         [command] if command == "down" => Ok(Command::Down),
@@ -93,7 +126,9 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [command, backfill, rest @ ..]
             if command == "backfill" && backfill == "task-usage-hourly" =>
         {
-            Ok(Command::BackfillTaskUsageHourly(parse_operator_options(rest)?))
+            Ok(Command::BackfillTaskUsageHourly(parse_operator_options(
+                rest,
+            )?))
         }
         [command, backfill, rest @ ..]
             if command == "backfill" && backfill == "issue-last-activity" =>
@@ -109,9 +144,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
                 rest,
             )?))
         }
-        _ => anyhow::bail!(
-            "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [flags] | cordy-migrate backfill issue-last-activity [flags] | cordy-migrate backfill codex-usage-cache [flags]"
-        ),
+        _ => anyhow::bail!("{MIGRATION_HELP}"),
     }
 }
 
@@ -124,6 +157,18 @@ fn parse_invocation(program: Option<&OsStr>, args: &[String]) -> anyhow::Result<
         .and_then(|program| Path::new(program).file_stem())
         .and_then(OsStr::to_str)
         .unwrap_or("cordy-migrate");
+    let help = match program_name {
+        "backfill_task_usage_hourly" => Some(TASK_USAGE_HELP),
+        "backfill_issue_last_activity" => Some(ISSUE_ACTIVITY_HELP),
+        "backfill_codex_usage_cache" => Some(CODEX_USAGE_HELP),
+        _ => None,
+    };
+    if let Some(help) = help {
+        if args.iter().any(|arg| is_help_arg(arg)) {
+            return Ok(Command::Help(help));
+        }
+    }
+
     let Some([command, subcommand]) = (match program_name {
         "backfill_task_usage_hourly" => Some(["backfill", "task-usage-hourly"]),
         "backfill_issue_last_activity" => Some(["backfill", "issue-last-activity"]),
@@ -140,6 +185,10 @@ fn parse_invocation(program: Option<&OsStr>, args: &[String]) -> anyhow::Result<
     parse_command(&translated)
 }
 
+fn is_help_arg(arg: &str) -> bool {
+    matches!(arg, "-h" | "-help" | "--help")
+}
+
 fn parse_operator_options(args: &[String]) -> anyhow::Result<OperatorOptions> {
     let mut options = OperatorOptions::default();
     let mut index = 0;
@@ -151,8 +200,12 @@ fn parse_operator_options(args: &[String]) -> anyhow::Result<OperatorOptions> {
             .unwrap_or(arg.as_str());
         if option == "dry-run" {
             options.dry_run = true;
+        } else if let Some(value) = option.strip_prefix("dry-run=") {
+            options.dry_run = parse_bool(value, "--dry-run")?;
         } else if option == "force-partial" {
             options.force_partial = true;
+        } else if let Some(value) = option.strip_prefix("force-partial=") {
+            options.force_partial = parse_bool(value, "--force-partial")?;
         } else if let Some(value) = option.strip_prefix("months-back=") {
             options.months_back = parse_i64(value, "--months-back")?;
         } else if option == "months-back" {
@@ -609,13 +662,59 @@ mod tests {
         assert_eq!(options.max_batches, 1);
 
         let codex_args = vec!["--cutoff".to_string(), "2000-01-01T00:00:00Z".to_string()];
-        let Command::BackfillCodexUsage(_) = parse_invocation(
+        let Command::BackfillCodexUsageCache(_) = parse_invocation(
             Some(OsStr::new("backfill_codex_usage_cache.exe")),
             &codex_args,
         )
         .expect("Codex alias should parse") else {
             panic!("expected Codex usage backfill command");
         };
+    }
+
+    #[test]
+    fn legacy_backfill_flags_preserve_go_bool_and_help_forms() {
+        let args = vec![
+            "--dry-run=false".to_string(),
+            "-force-partial=true".to_string(),
+        ];
+        let Command::BackfillTaskUsageHourly(options) =
+            parse_invocation(Some(OsStr::new("backfill_task_usage_hourly")), &args)
+                .expect("explicit boolean forms should parse")
+        else {
+            panic!("expected task usage backfill command");
+        };
+        assert!(!options.dry_run);
+        assert!(options.force_partial);
+
+        let Command::Help(text) = parse_invocation(
+            Some(OsStr::new("backfill_issue_last_activity")),
+            &["--help".to_string()],
+        )
+        .expect("issue activity help should parse") else {
+            panic!("expected issue activity help");
+        };
+        assert!(text.contains("-max-stalled-passes"));
+    }
+
+    #[test]
+    fn codex_alias_help_lists_every_legacy_flag() {
+        let Command::Help(text) = parse_invocation(
+            Some(OsStr::new("backfill_codex_usage_cache")),
+            &["-h".to_string()],
+        )
+        .expect("Codex help should parse") else {
+            panic!("expected Codex help");
+        };
+        for flag in [
+            "--cutoff",
+            "--workspace-id",
+            "--batch-size",
+            "--sleep-between-batches",
+            "--execute",
+            "--rebuild-rollup",
+        ] {
+            assert!(text.contains(flag), "help is missing {flag}");
+        }
     }
 
     #[test]
