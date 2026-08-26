@@ -56,6 +56,10 @@ impl ClaudePluginManifest {
     pub fn skills_value(&self) -> &serde_json::Value {
         &self.skills
     }
+
+    pub fn mcp_servers_value(&self) -> &serde_json::Value {
+        &self.mcp_servers
+    }
 }
 
 /// `listEnabledClaudePlugins` resolves the current user-scope plugin installs
