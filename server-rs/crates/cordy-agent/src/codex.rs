@@ -937,9 +937,10 @@ async fn stop_codex_discovery(
 }
 
 async fn abort_discovery_output(task: &mut JoinHandle<io::Result<Vec<u8>>>) {
-    if !task.is_finished() {
-        task.abort();
+    if task.is_finished() {
+        return;
     }
+    task.abort();
     let _ = tokio::time::timeout(DISCOVERY_CLEANUP_TIMEOUT, &mut *task).await;
 }
 
@@ -2608,7 +2609,7 @@ async fn diagnostic_codex_version(config: &CodexConfig) -> String {
         config,
         &["--version"],
         CancellationToken::new(),
-        Duration::from_secs(2),
+        Instant::now() + Duration::from_secs(2),
     )
     .await
     .ok()
@@ -3703,7 +3704,7 @@ esac
             &config,
             &["--version"],
             CancellationToken::new(),
-            Duration::from_millis(100),
+            Instant::now() + Duration::from_millis(100),
         )
         .await
         .unwrap_or_else(|error| panic!("capture failed: {error}"));
