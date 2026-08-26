@@ -557,6 +557,13 @@ fn validate_identity<'a>(
     Ok(agent)
 }
 
+pub(crate) fn validate_task_identity(
+    task: &Task,
+    target: &RuntimeExecutionTarget,
+) -> anyhow::Result<()> {
+    validate_identity(task, target).map(|_| ())
+}
+
 fn invalid_task_identity(message: impl Into<String>) -> anyhow::Error {
     anyhow::Error::new(InvalidTaskIdentity).context(message.into())
 }
