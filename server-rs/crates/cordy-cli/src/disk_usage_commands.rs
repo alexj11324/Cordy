@@ -197,7 +197,7 @@ pub(super) async fn fill_disk_usage_parent_statuses(
         return false;
     }
     let config = environment.load_config(profile).unwrap_or_default();
-    let token = environment
+    let token: Option<String> = environment
         .trimmed("CORDY_TOKEN")
         .map(ToOwned::to_owned)
         .or_else(|| (!config.token.trim().is_empty()).then(|| config.token.clone()));

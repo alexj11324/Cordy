@@ -286,8 +286,9 @@ mod tests {
 
         let error = assembly
             .production_inputs(&context, "1.2.3")
-            .expect_err("foreground assembly must require profile credentials");
-        assert!(error.to_string().contains("cordy login"));
+            .err()
+            .expect("foreground assembly must require profile credentials");
+        assert!(format!("{error:#}").contains("cordy login"));
         assert!(!root.exists());
     }
 }
