@@ -27,6 +27,7 @@ use crate::prompt::{
     backend_resume_continuity_notice, comment_reply_threads, task_is_squad_leader,
 };
 use crate::thread_name::derive_task_thread_name_from_task;
+use crate::task_execution::InvalidTaskIdentity;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
@@ -524,31 +525,47 @@ fn validate_identity<'a>(
         ("agent id", task.agent_id.as_str()),
         ("provider", target.provider.as_str()),
     ] {
-        anyhow::ensure!(
-            !value.trim().is_empty(),
-            "invalid task identity: missing {name}"
-        );
+        if value.trim().is_empty() {
+            return Err(invalid_task_identity(format!(
+                "invalid task identity: missing {name}"
+            )));
+        }
     }
     let agent = task
         .agent
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("invalid task identity: missing agent payload"))?;
-    anyhow::ensure!(
-        agent.id == task.agent_id,
-        "invalid task identity: agent payload does not match authoritative agent_id"
-    );
-    anyhow::ensure!(
-        !agent.name.trim().is_empty(),
-        "invalid task identity: missing agent name"
-    );
-    anyhow::ensure!(
-        !task.issue_id.trim().is_empty()
-            || !task.chat_session_id.trim().is_empty()
-            || !task.autopilot_run_id.trim().is_empty()
-            || !task.quick_create_prompt.trim().is_empty(),
-        "invalid task identity: missing issue, chat, autopilot, or quick-create identity"
-    );
+        .ok_or_else(|| invalid_task_identity("invalid task identity: missing agent payload"))?;
+    if agent.id != task.agent_id {
+        return Err(invalid_task_identity(
+            "invalid task identity: agent payload does not match authoritative agent_id",
+        ));
+    }
+    if agent.name.trim().is_empty() {
+        return Err(invalid_task_identity(
+            "invalid task identity: missing agent name",
+        ));
+    }
+    if task.issue_id.trim().is_empty()
+        && task.chat_session_id.trim().is_empty()
+        && task.autopilot_run_id.trim().is_empty()
+        && task.quick_create_prompt.trim().is_empty()
+    {
+        return Err(invalid_task_identity(
+            "invalid task identity: missing issue, chat, autopilot, or quick-create identity",
+        ));
+    }
     Ok(agent)
+}
+
+pub(crate) fn validate_task_identity(
+    task: &Task,
+    target: &RuntimeExecutionTarget,
+) -> anyhow::Result<()> {
+    validate_identity(task, target).map(|_| ())
+}
+
+fn invalid_task_identity(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(InvalidTaskIdentity).context(message.into())
 }
 
 fn task_scoped_auth_token(task: &Task) -> anyhow::Result<String> {
@@ -1022,6 +1039,17 @@ mod tests {
                 "{name} unexpectedly built a plan"
             );
         }
+    }
+
+    #[test]
+    fn invalid_identity_keeps_a_structural_failure_sentinel() {
+        let mut claim = task();
+        claim.agent.as_mut().unwrap().id = "other".to_string();
+        let error = match ProviderExecutionPlan::build(&config(), &claim, &target(), inputs()) {
+            Ok(_) => panic!("mismatched identity unexpectedly built a plan"),
+            Err(error) => error,
+        };
+        assert!(error.is::<InvalidTaskIdentity>());
     }
 
     #[test]

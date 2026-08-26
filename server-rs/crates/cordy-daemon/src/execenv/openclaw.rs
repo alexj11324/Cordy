@@ -466,11 +466,13 @@ fn run_text(bin: &str, timeout: Duration, args: &[&str]) -> anyhow::Result<Strin
             let _ = child.wait();
             let _ = stdout_rx.recv_timeout(Duration::from_millis(100));
             let _ = stderr_rx.recv_timeout(Duration::from_millis(100));
-            bail!(
-                "openclaw {} timed out after {}s",
-                args.join(" "),
-                timeout.as_secs()
-            );
+            return Err(anyhow::Error::new(super::isolation::ErrOpenclawCliTimeout).context(
+                format!(
+                    "openclaw {} timed out after {}s",
+                    args.join(" "),
+                    timeout.as_secs()
+                ),
+            ));
         }
         thread::sleep(Duration::from_millis(10));
     }

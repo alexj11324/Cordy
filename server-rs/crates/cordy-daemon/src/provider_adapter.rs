@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -27,12 +27,14 @@ use crate::execenv::context::{
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
-    predict_root_dir, prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
+    predict_root_dir, read_managed_env_provenance, remove_tree, Environment,
     MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
+use crate::execenv::isolation::{prepare_isolated, reuse_isolated, PREPARATION_HELPER_ARG};
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execution_plan::{
-    PreparedEnvironmentInputs, ProviderExecutionInputs, ProviderExecutionPlan,
+    validate_task_identity, PreparedEnvironmentInputs, ProviderExecutionInputs,
+    ProviderExecutionPlan,
 };
 use crate::health::{ActiveRepoCheckoutTask, HealthResponse};
 use crate::local_directory::{
@@ -45,14 +47,17 @@ use crate::prompt::build_prompt;
 use crate::remote_mcp_broker::{
     start_task_remote_mcp_brokers, RemoteMCPBrokerSet, RemoteMCPCredentialResolver,
 };
-use crate::repocache::Ctx;
+use crate::repocache::{CancelCause, Ctx};
 use crate::runtime_mcp;
 use crate::runtime_registry::RuntimeRegistry;
 use crate::skill_cache::{
     skill_bundle_resolve_timeout, skill_ref_from_bundle, validate_skill_bundle, SkillBundleCache,
     SOURCE_PLUGIN,
 };
-use crate::task_execution::{TaskRunFailure, TaskRunOutcome};
+use crate::task_execution::{
+    task_run_failure_reason, SkillBundleUnavailable, TaskPrepareTimeout, TaskRunFailure,
+    TaskRunOutcome,
+};
 use crate::types::{
     RuntimeExecutionTarget, SkillData, SkillRefData, Task, TaskResult, TaskUsageEntry,
 };
@@ -67,6 +72,11 @@ const PREPARE_LEASE_REFRESH: Duration = Duration::from_secs(15);
 const PREPARE_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const TASK_PREPARE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const PREPARATION_PENDING: u8 = 0;
+const PREPARATION_COMPLETE: u8 = 1;
+const PREPARATION_TIMED_OUT: u8 = 2;
+const PREPARATION_STARTING: u8 = 3;
 
 /// Task-owned MCP listeners and the effective provider configuration. The
 /// listener sets deliberately live until this value is dropped, including on
@@ -194,13 +204,13 @@ fn skill_bundle_unavailable(
     started: Instant,
     error: anyhow::Error,
 ) -> anyhow::Error {
-    anyhow::anyhow!(
+    anyhow::Error::new(SkillBundleUnavailable).context(format!(
         "skill bundle unavailable: skill {:?} (id={}, {} bytes) after {:?}: {error}",
         r#ref.name,
         r#ref.id,
         r#ref.size_bytes,
         started.elapsed(),
-    )
+    ))
 }
 
 /// Assemble the complete task MCP contract from the claim payload. This is the
@@ -393,12 +403,53 @@ impl ProductionProviderAdapter {
     async fn run_task_inner(
         &self,
         ctx: Ctx,
-        mut task: Task,
+        task: Task,
         target: RuntimeExecutionTarget,
         slot: usize,
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
+        let prepare_ctx = ctx.child();
+        let preparation_state = Arc::new(AtomicU8::new(PREPARATION_PENDING));
+        let deadline_stop = CancellationToken::new();
+        let deadline = tokio::spawn(task_prepare_deadline(
+            prepare_ctx.clone(),
+            Arc::clone(&preparation_state),
+            deadline_stop.clone(),
+            TASK_PREPARE_TIMEOUT,
+        ));
+
+        let mut outcome = self
+            .run_task_pipeline(
+                prepare_ctx,
+                task,
+                target,
+                slot,
+                runtime,
+                Arc::clone(&preparation_state),
+            )
+            .await;
+        deadline_stop.cancel();
+        let _ = deadline.await;
+
+        if preparation_state.load(Ordering::Acquire) == PREPARATION_TIMED_OUT {
+            outcome = mark_task_prepare_timeout(outcome);
+        }
+        outcome
+    }
+
+    async fn run_task_pipeline(
+        &self,
+        ctx: Ctx,
+        mut task: Task,
+        target: RuntimeExecutionTarget,
+        slot: usize,
+        runtime: ProviderRuntimeContext,
+        preparation_state: Arc<AtomicU8>,
+    ) -> TaskRunOutcome {
         let _active = CounterGuard::new(&self.active_tasks);
+        if let Err(error) = validate_task_identity(&task, &target) {
+            return failed(error, None);
+        }
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
             Err(error) => return failed(error, None),
@@ -435,12 +486,12 @@ impl ProductionProviderAdapter {
             Err(error) => return failed(error, None),
         };
         let client = runtime.client();
-        let prepare_lease = PrepareLeaseExtender::start(
+        let mut prepare_lease = Some(PrepareLeaseExtender::start(
             ctx.clone(),
             Arc::clone(&client),
             task.runtime_id.clone(),
             task.id.clone(),
-        );
+        ));
         if let Err(error) =
             ensure_task_skill_bundles(&ctx, &mut task, &client, &self.skill_cache).await
         {
@@ -525,9 +576,8 @@ impl ProductionProviderAdapter {
         } else {
             path_guard
         };
-        prepare_lease.stop().await;
-
         if let Err(error) = std::fs::create_dir_all(&temp_dir) {
+            drop(prepare_lease.take());
             let outcome = failed(
                 anyhow::Error::new(error).context("create task temp directory"),
                 Some(&environment),
@@ -535,10 +585,39 @@ impl ProductionProviderAdapter {
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
-            client
-                .start_task(&ctx, &task.id)
-                .await
-                .map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            // Once the request is about to cross the server's dispatched →
+            // running boundary, the preparation deadline may record a
+            // timeout but must not cancel this request. A response can arrive
+            // after the deadline has won the local race, and cancelling the
+            // shared context in that window would turn a successfully
+            // running task into a locally cancelled task.
+            if preparation_state
+                .compare_exchange(
+                    PREPARATION_PENDING,
+                    PREPARATION_STARTING,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_err()
+            {
+                drop(prepare_lease.take());
+                return Err(TaskPrepareTimeout.into());
+            }
+            match client.start_task(&ctx, &task.id).await {
+                Ok(()) => {
+                    preparation_state.store(PREPARATION_COMPLETE, Ordering::Release);
+                    if let Some(lease) = prepare_lease.take() {
+                        lease.stop().await;
+                    }
+                }
+                Err(error) => {
+                    drop(prepare_lease.take());
+                    if preparation_state.load(Ordering::Acquire) == PREPARATION_TIMED_OUT {
+                        return Err(TaskPrepareTimeout.into());
+                    }
+                    return Err(anyhow::anyhow!("start task failed: {error}"));
+                }
+            }
             if let Err(error) = client
                 .report_progress(
                     &ctx,
@@ -750,19 +829,83 @@ impl ProductionProviderAdapter {
         if ctx.err().is_some() {
             anyhow::bail!(ctx.cause().to_string());
         }
+        let helper_command = preparation_helper_command()?;
         if assignment.is_none() && reusable_workdir(&self.config.workspaces_root, task) {
-            if let Some(environment) = reuse(plan.reuse_params(task.prior_work_dir.clone())) {
+            if let Some(environment) = reuse_isolated(
+                ctx,
+                &helper_command,
+                plan.reuse_params(task.prior_work_dir.clone()),
+            )
+            .await?
+            {
                 return Ok((environment, true));
             }
         }
         plan.drop_resume();
         tokio::select! {
-            result = prepare(plan.prepare_params()) => result
+            result = prepare_isolated(ctx, &helper_command, plan.prepare_params()) => result
                 .map(|environment| (environment, false))
                 .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}")),
             () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
         }
     }
+}
+
+async fn task_prepare_deadline(
+    ctx: Ctx,
+    preparation_state: Arc<AtomicU8>,
+    stop: CancellationToken,
+    timeout: Duration,
+) {
+    tokio::select! {
+        _ = tokio::time::sleep(timeout) => {
+            match preparation_state.compare_exchange(
+                PREPARATION_PENDING,
+                PREPARATION_TIMED_OUT,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => ctx.cancel_with(CancelCause::DeadlineExceeded),
+                Err(PREPARATION_STARTING) => {
+                    // StartTask is the commit boundary. Keep its bounded
+                    // control-plane request alive so a late success cannot
+                    // inherit a preparation cancellation.
+                    let _ = preparation_state.compare_exchange(
+                        PREPARATION_STARTING,
+                        PREPARATION_TIMED_OUT,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    );
+                }
+                Err(_) => {}
+            }
+        }
+        _ = stop.cancelled() => {}
+    }
+}
+
+fn preparation_helper_command() -> anyhow::Result<Vec<String>> {
+    let executable = std::env::current_exe()
+        .context("resolve daemon executable for preparation helper")?
+        .into_os_string()
+        .into_string()
+        .map_err(|_| anyhow::anyhow!("daemon executable path is not valid UTF-8"))?;
+    Ok(vec![executable, PREPARATION_HELPER_ARG.to_string()])
+}
+
+fn mark_task_prepare_timeout(mut outcome: TaskRunOutcome) -> TaskRunOutcome {
+    let message = outcome.failure.as_ref().map_or_else(
+        || "task preparation timed out after 5m0s".to_string(),
+        |failure| format!("task preparation timed out after 5m0s: {}", failure.message),
+    );
+    outcome.failure = Some(TaskRunFailure {
+        message,
+        failure_reason: cordy_task_failure::Reason::TIMEOUT.to_string(),
+        cancelled_delivery_failure: outcome
+            .failure
+            .and_then(|failure| failure.cancelled_delivery_failure),
+    });
+    outcome
 }
 
 #[async_trait::async_trait]
@@ -1379,11 +1522,12 @@ fn failed(error: anyhow::Error, environment: Option<&Environment>) -> TaskRunOut
         result.work_dir = environment.work_dir.clone();
         result.env_root = environment.root_dir.clone();
     }
+    let failure_reason = task_run_failure_reason(&error);
     TaskRunOutcome {
         result,
         failure: Some(TaskRunFailure {
             message: format!("{error:#}"),
-            failure_reason: String::new(),
+            failure_reason,
             cancelled_delivery_failure: None,
         }),
     }
@@ -1426,17 +1570,25 @@ async fn finalize_environment(
             }
             Err(error) => {
                 let finalize_message = format!("local_directory worktree finalize: {error:#}");
+                let failure_reason = outcome
+                    .failure
+                    .as_ref()
+                    .map(|failure| failure.failure_reason.clone())
+                    .unwrap_or_default();
                 let message = outcome.failure.as_ref().map_or_else(
                     || finalize_message.clone(),
                     |failure| format!("{}; {finalize_message}", failure.message),
                 );
+                if worktree.aborted.is_none() {
+                    outcome.result.branch_name.clone_from(&worktree.branch);
+                }
                 outcome.failure = Some(TaskRunFailure {
                     message: message.clone(),
-                    failure_reason: String::new(),
+                    failure_reason,
                     cancelled_delivery_failure: Some(
                         crate::task_execution::CancelledRunDeliveryFailure {
                             error_message: message,
-                            failure_reason: "agent_error".to_string(),
+                            failure_reason: "local_directory_error".to_string(),
                         },
                     ),
                 });
@@ -1637,6 +1789,69 @@ mod tests {
         assert_eq!(outcome.result.session_id, "session-1");
         assert_eq!(outcome.result.usage[0].provider, "qwen");
         assert_eq!(outcome.result.usage[0].input_tokens, 10);
+    }
+
+    #[tokio::test]
+    async fn preparation_deadline_cancels_only_before_running() {
+        let ctx = Ctx::new();
+        let state = Arc::new(AtomicU8::new(PREPARATION_PENDING));
+        let stop = CancellationToken::new();
+        task_prepare_deadline(
+            ctx.clone(),
+            Arc::clone(&state),
+            stop,
+            Duration::from_millis(1),
+        )
+        .await;
+
+        assert_eq!(state.load(Ordering::Acquire), PREPARATION_TIMED_OUT);
+        assert_eq!(ctx.cause(), CancelCause::DeadlineExceeded);
+
+        let running_ctx = Ctx::new();
+        let running_state = Arc::new(AtomicU8::new(PREPARATION_COMPLETE));
+        task_prepare_deadline(
+            running_ctx.clone(),
+            running_state,
+            CancellationToken::new(),
+            Duration::from_millis(1),
+        )
+        .await;
+        assert!(running_ctx.err().is_none());
+
+        let starting_ctx = Ctx::new();
+        let starting_state = Arc::new(AtomicU8::new(PREPARATION_STARTING));
+        task_prepare_deadline(
+            starting_ctx.clone(),
+            Arc::clone(&starting_state),
+            CancellationToken::new(),
+            Duration::from_millis(1),
+        )
+        .await;
+        assert_eq!(
+            starting_state.load(Ordering::Acquire),
+            PREPARATION_TIMED_OUT
+        );
+        assert!(starting_ctx.err().is_none());
+    }
+
+    #[test]
+    fn preparation_timeout_replaces_transport_reason_without_losing_worktree() {
+        let outcome = mark_task_prepare_timeout(TaskRunOutcome {
+            result: TaskResult {
+                work_dir: "/worktree".into(),
+                ..TaskResult::default()
+            },
+            failure: Some(TaskRunFailure {
+                message: "context canceled".into(),
+                failure_reason: cordy_task_failure::Reason::AGENT_PROVIDER_NETWORK.to_string(),
+                cancelled_delivery_failure: None,
+            }),
+        });
+
+        assert_eq!(outcome.result.work_dir, "/worktree");
+        let failure = outcome.failure.unwrap();
+        assert_eq!(failure.failure_reason, "timeout");
+        assert!(failure.message.contains("task preparation timed out"));
     }
 
     #[test]
