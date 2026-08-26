@@ -2627,6 +2627,7 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
+            crate::comment_triggers::reconcile_comments_on_completion(&state, &task).await;
             state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");

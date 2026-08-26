@@ -33,6 +33,7 @@ pub mod cloud_runtime;
 pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
+pub(crate) mod comment_triggers;
 pub mod composio;
 pub mod config;
 pub mod connectors;
