@@ -21,10 +21,9 @@
 //! - `PluginHookTool` → [`PluginHookTool`]
 //!
 //! S9-integration: Go imports `pkg/remotemcp` (`remotemcp.Connection`,
-//! `remotemcp.Tool`) and `internal/runtimeapps`. The cordy-daemon crate does
-//! not depend on cordy-remotemcp, so [`RemoteMcpConnection`] /
-//! [`RemoteMcpTool`] mirror those wire shapes byte-for-byte here; swap to
-//! `cordy_remotemcp::types::{Connection, Tool}` when the dependency lands.
+//! `remotemcp.Tool`) and `internal/runtimeapps`. The claim protocol keeps
+//! daemon-local mirrors for its wire types; conversion impls below hand the
+//! validated values to the canonical `cordy-remotemcp` broker types.
 //! `ConnectedAppData` aliases the execenv ConnectedApp stand-in, which already
 //! mirrors internal/runtimeapps.
 
@@ -88,6 +87,43 @@ pub struct RemoteMcpConnection {
     pub tool_schema_digest: String,
     #[serde(rename = "failure_policy")]
     pub failure_policy: String,
+}
+
+impl From<RemoteMcpTool> for cordy_remotemcp::Tool {
+    fn from(tool: RemoteMcpTool) -> Self {
+        Self {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.input_schema,
+            schema_digest: tool.schema_digest,
+            risk: tool.risk,
+        }
+    }
+}
+
+impl From<RemoteMcpConnection> for cordy_remotemcp::Connection {
+    fn from(connection: RemoteMcpConnection) -> Self {
+        Self {
+            installation_id: connection.installation_id,
+            contribution_id: connection.contribution_id,
+            contribution_key: connection.contribution_key,
+            config_id: connection.config_id,
+            config_revision: connection.config_revision,
+            endpoint: connection.endpoint,
+            public_config: connection.public_config,
+            transport: connection.transport,
+            protocol_versions: connection.protocol_versions,
+            endpoint_allowed_hosts: connection.endpoint_allowed_hosts,
+            credential_header: connection.credential_header,
+            approved_tools: connection
+                .approved_tools
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            tool_schema_digest: connection.tool_schema_digest,
+            failure_policy: connection.failure_policy,
+        }
+    }
 }
 
 /// AgentEntry describes a single available agent CLI (types.go:11–22).

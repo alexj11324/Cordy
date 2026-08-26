@@ -112,6 +112,12 @@ impl PluginHookMCPSet {
     }
 }
 
+impl Drop for PluginHookMCPSet {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 /// `startTaskPluginHookMCP` (go:74–130): starts the tool server for one task
 /// if it has tools; returns the MCP config fragment to merge into the agent's.
 pub(crate) async fn start_task_plugin_hook_mcp(
@@ -419,6 +425,20 @@ mod tests {
             ),
             token,
         )
+    }
+
+    #[test]
+    fn dropping_plugin_hook_set_cancels_server() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let observed = shutdown.clone();
+        let set = PluginHookMCPSet {
+            shutdown: Some(shutdown),
+            once: None,
+        };
+
+        drop(set);
+
+        assert!(observed.is_cancelled());
     }
 
     async fn post(state: &PluginHookMCPState, body: Value) -> HookResponse {
