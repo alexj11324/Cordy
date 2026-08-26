@@ -15,6 +15,7 @@ base64 = { workspace = true }
 rand = { workspace = true }
 aes-gcm = { workspace = true }
 regex = { workspace = true }
+ulid = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

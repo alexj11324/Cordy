@@ -89,7 +89,7 @@ async-trait = "0.1"
 tokio-util = "0.7"
 aws-config = { version = "1", default-features = false, features = ["legacy-client", "rt-tokio"] }
 aws-credential-types = "1"
-ulid = "1"
+ulid = { version = "1", features = ["serde"] }
 chrono-tz = "0.9"
 regex = "1"
 croner = "1"
