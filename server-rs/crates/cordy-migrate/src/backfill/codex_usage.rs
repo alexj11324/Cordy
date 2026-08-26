@@ -8,8 +8,9 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use futures_util::TryStreamExt;
-use sqlx::PgPool;
+use futures_util::future::BoxFuture;
+use sqlx::pool::PoolConnection;
+use sqlx::{Connection, PgConnection, PgPool, Postgres};
 use tokio_util::sync::CancellationToken;
 
 const ROLLUP_ADVISORY_LOCK_ID: i64 = 4246;
@@ -65,14 +66,7 @@ pub async fn run_operator(
         return Ok(());
     }
 
-    let mut lock_conn = cancellable(cancellation, pool.acquire()).await?;
-    cancellable(
-        cancellation,
-        sqlx::query("SELECT pg_advisory_lock($1)")
-            .bind(ROLLUP_ADVISORY_LOCK_ID)
-            .execute(&mut *lock_conn),
-    )
-    .await?;
+    let mut lock_conn = acquire_advisory_lock(pool, cancellation).await?;
 
     let result = execute_locked(pool, &options, cancellation).await;
     let unlock_result = sqlx::query("SELECT pg_advisory_unlock($1)")
@@ -100,18 +94,22 @@ async fn load_dry_run_summary(
     options: &OperatorOptions,
     cancellation: &CancellationToken,
 ) -> anyhow::Result<(Vec<SummaryRow>, Totals)> {
-    let mut rows = sqlx::query_as::<_, (
-        String,
-        String,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        DateTime<Utc>,
-        DateTime<Utc>,
-    )>(
-        r#"
+    let cutoff = options.cutoff;
+    let workspace_id = options.workspace_id.clone();
+    let rows = cancellable_pool_query(pool, cancellation, |conn| {
+        Box::pin(
+            sqlx::query_as::<_, (
+                String,
+                String,
+                i64,
+                i64,
+                i64,
+                i64,
+                i64,
+                DateTime<Utc>,
+                DateTime<Utc>,
+            )>(
+                r#"
 SELECT
     a.workspace_id::text AS workspace_id,
     (tu.created_at AT TIME ZONE 'UTC')::date::text AS date_utc,
@@ -130,20 +128,20 @@ WHERE tu.provider = 'codex'
   AND tu.input_tokens > 0
   AND COALESCE(tu.updated_at, tu.created_at) < $1
   AND (NULLIF($2, '')::uuid IS NULL OR a.workspace_id = NULLIF($2, '')::uuid)
-GROUP BY a.workspace_id, (tu.created_at AT TIME ZONE 'UTC')::date
+        GROUP BY a.workspace_id, (tu.created_at AT TIME ZONE 'UTC')::date
 ORDER BY a.workspace_id, date_utc
         "#,
-    )
-    .bind(options.cutoff)
-    .bind(&options.workspace_id)
-    .fetch(pool);
+            )
+            .bind(cutoff)
+            .bind(workspace_id)
+            .fetch_all(conn),
+        )
+    })
+    .await?;
 
     let mut summary = Vec::new();
     let mut totals = Totals::default();
-    while let Some(row) = tokio::select! {
-        _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
-        row = rows.try_next() => row?,
-    } {
+    for row in rows {
         let item = SummaryRow {
             workspace_id: row.0,
             date_utc: row.1,
@@ -198,7 +196,8 @@ async fn execute_locked(
     options: &OperatorOptions,
     cancellation: &CancellationToken,
 ) -> anyhow::Result<()> {
-    let update_started_at = cancellable(cancellation, database_clock(pool)).await?;
+    let update_started_at =
+        cancellable_pool_query(pool, cancellation, |conn| Box::pin(database_clock(conn))).await?;
     let (updated_rows, removed_tokens) = execute_backfill(pool, options, cancellation).await?;
     tracing::info!(
         rows = updated_rows,
@@ -209,17 +208,19 @@ async fn execute_locked(
         return Ok(());
     }
 
-    let update_finished_at = cancellable(cancellation, database_clock(pool)).await?;
+    let update_finished_at =
+        cancellable_pool_query(pool, cancellation, |conn| Box::pin(database_clock(conn))).await?;
     let (rollup_from, rollup_to) = rollup_window(update_started_at, update_finished_at);
-    let rollup_rows: i64 = cancellable(
-        cancellation,
-        sqlx::query_scalar(
-            "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+    let rollup_rows: i64 = cancellable_pool_query(pool, cancellation, |conn| {
+        Box::pin(
+            sqlx::query_scalar(
+                "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+            )
+            .bind(rollup_from)
+            .bind(rollup_to)
+            .fetch_one(conn),
         )
-        .bind(rollup_from)
-        .bind(rollup_to)
-        .fetch_one(pool),
-    )
+    })
     .await
     .map_err(|error| {
         anyhow::anyhow!(
@@ -271,14 +272,18 @@ SELECT COUNT(*)::bigint, COALESCE(SUM(removed_tokens), 0)::bigint FROM updated
     let mut total_rows = 0_i64;
     let mut total_removed = 0_i64;
     loop {
-        let (rows, removed): (i64, i64) = cancellable(
-            cancellation,
-            sqlx::query_as(query)
-                .bind(options.cutoff)
-                .bind(&options.workspace_id)
-                .bind(options.batch_size)
-                .fetch_one(pool),
-        )
+        let cutoff = options.cutoff;
+        let workspace_id = options.workspace_id.clone();
+        let batch_size = options.batch_size;
+        let (rows, removed): (i64, i64) = cancellable_pool_query(pool, cancellation, |conn| {
+            Box::pin(
+                sqlx::query_as(query)
+                    .bind(cutoff)
+                    .bind(workspace_id)
+                    .bind(batch_size)
+                    .fetch_one(conn),
+            )
+        })
         .await
         .map_err(|error| anyhow::anyhow!("update Codex task_usage batch: {error}"))?;
         if rows == 0 {
@@ -302,9 +307,9 @@ SELECT COUNT(*)::bigint, COALESCE(SUM(removed_tokens), 0)::bigint FROM updated
     Ok((total_rows, total_removed))
 }
 
-async fn database_clock(pool: &PgPool) -> Result<DateTime<Utc>, sqlx::Error> {
+async fn database_clock(conn: &mut PgConnection) -> Result<DateTime<Utc>, sqlx::Error> {
     sqlx::query_scalar("SELECT clock_timestamp()")
-        .fetch_one(pool)
+        .fetch_one(conn)
         .await
 }
 
@@ -326,4 +331,48 @@ where
         _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
         result = future => Ok(result?),
     }
+}
+
+/// Runs a long query on a disposable pool connection so cancellation can
+/// close the backend connection before the advisory-lock connection is
+/// released. SQLx does not expose PostgreSQL's cancel request publicly;
+/// hard-closing this dedicated connection is the fail-closed primitive.
+async fn cancellable_pool_query<T, F>(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+    query: F,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: for<'a> FnOnce(&'a mut PgConnection) -> BoxFuture<'a, Result<T, sqlx::Error>>,
+{
+    let mut connection = pool.acquire().await?;
+    tokio::select! {
+        _ = cancellation.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("execution cancelled");
+        }
+        result = query(&mut *connection) => Ok(result?),
+    }
+}
+
+async fn acquire_advisory_lock(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<PoolConnection<Postgres>> {
+    let mut connection = cancellable(cancellation, pool.acquire()).await?;
+    tokio::select! {
+        _ = cancellation.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("execution cancelled");
+        }
+        result = sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(ROLLUP_ADVISORY_LOCK_ID)
+            .execute(&mut *connection) => {
+            result?;
+        }
+    }
+    Ok(connection)
 }
