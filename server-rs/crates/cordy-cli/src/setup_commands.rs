@@ -15,9 +15,7 @@ use super::{
     Cli, RunOutput, SetupArgs, SetupError,
 };
 
-#[path = "setup_profile.rs"]
-mod setup_profile;
-pub(crate) use setup_profile::{
+pub(crate) use crate::setup_profile::{
     dispatch_daemon_after_setup, resolve_setup_profile_input, setup_callback_host,
     setup_daemon_action, setup_server_is_local, SetupDaemonAction,
 };

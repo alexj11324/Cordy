@@ -232,6 +232,8 @@ async fn squad_create_resolves_leader_and_posts_go_compatible_body() {
         "create",
         "--name",
         "Reviewers",
+        "--description",
+        "Review changes",
         "--leader",
         "agent-1",
         "--output",

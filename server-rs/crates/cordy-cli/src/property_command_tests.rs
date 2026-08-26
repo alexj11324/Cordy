@@ -145,7 +145,7 @@ fn property_mutation_parser_preserves_option_ids_and_clear_values() {
 #[tokio::test]
 async fn property_create_update_and_archive_use_go_patch_and_output_contracts() {
     let property_id = "11111111-1111-1111-1111-111111111111";
-    let definition = || {
+    let definition = move || {
         serde_json::json!({
             "id":property_id,"name":"Severity","type":"select","description":"",
             "icon":"shield","config":{"options":[{

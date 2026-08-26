@@ -35,9 +35,11 @@ pub(super) async fn resolve_autopilot_agent(
     let matches = agents
         .iter()
         .filter(|agent| {
-            value_string(agent, "name")
-                .to_ascii_lowercase()
-                .contains(&input_lower)
+            let id = value_string(agent, "id");
+            id.eq_ignore_ascii_case(input)
+                || value_string(agent, "name")
+                    .to_ascii_lowercase()
+                    .contains(&input_lower)
         })
         .collect::<Vec<_>>();
     match matches.as_slice() {

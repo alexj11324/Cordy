@@ -15,6 +15,7 @@ mod skill_read_commands;
 mod skill_mutation_commands;
 mod skill_catalog_commands;
 mod agent_helpers;
+mod api_error;
 mod api;
 mod api_attachments;
 mod api_attachment_download;
@@ -129,6 +130,7 @@ mod autopilot_output;
 mod chat_command_schema;
 mod attachment_download_commands;
 mod chat_read_commands;
+mod client_scope;
 mod client_factory;
 mod client_url;
 mod dispatch_agent;
@@ -153,6 +155,10 @@ mod dispatch_update;
 mod dispatch_version;
 mod command_dispatch;
 pub mod config;
+mod config_environment;
+mod config_persistence;
+mod config_profile_resolution;
+mod config_profile_schema;
 mod config_command_schema;
 mod config_mutation_commands;
 mod config_read_commands;
@@ -229,6 +235,7 @@ mod json_helpers;
 mod label_command_schema;
 mod label_commands;
 mod label_reference;
+mod login_browser;
 mod login;
 mod output_helpers;
 mod path_safety;
@@ -263,6 +270,7 @@ mod runtime_profile_read_commands;
 mod runtime_update;
 mod runtime_update_output;
 mod setup_command_schema;
+mod setup_profile;
 mod setup_commands;
 mod skill_command_schema;
 mod skill_files_commands;
@@ -285,7 +293,7 @@ mod workspace_mcp_commands;
 mod workspace_mutation_commands;
 
 use anyhow::{bail, Context, Result};
-use api::{http_timeout, ApiClient, HealthProbeError};
+use api::{http_timeout, ApiClient, HealthProbeError, HttpError};
 use chrono::{DateTime, FixedOffset};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
@@ -314,7 +322,8 @@ pub(crate) use agent_lifecycle_commands::{
 };
 pub(crate) use agent_command_schema::{
     AgentArgs, AgentCommand, AgentCopyArgs, AgentCreateArgs, AgentEnvArgs, AgentEnvCommand,
-    AgentEnvSetArgs, AgentMcpArgs, AgentMcpListArgs, AgentMcpMutationArgs, AgentSkillsArgs,
+    AgentEnvSetArgs, AgentMcpArgs, AgentMcpCommand, AgentMcpListArgs, AgentMcpMutationArgs,
+    AgentSkillsArgs,
     AgentSkillsCommand, AgentSkillsMutationArgs, AgentUpdateArgs,
 };
 pub(crate) use agent_helpers::{
@@ -402,8 +411,8 @@ pub(crate) use issue_activity_schema::{
 };
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
-    resolve_issue_assignee_id, resolve_issue_assignee_name, resolve_subscriber_id,
-    resolve_subscriber_name, ResolvedIssueAssignee,
+    normalize_assignee_input, resolve_issue_assignee_id, resolve_issue_assignee_name,
+    resolve_subscriber_id, resolve_subscriber_name, retry_actor_get, ResolvedIssueAssignee,
 };
 use project_reference_resolver::{resolve_issue_project_id, resolve_project_reference};
 use issue_assign_commands::run_issue_assign;
