@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# `make build` has to name its outputs the way the *target* platform expects.
+# The legacy `make go-build` target has to name its outputs the way the *target*
+# platform expects.
 # Windows refuses to execute an extensionless file, so a Windows source build
 # whose artifacts are named `cordy` produces a CLI that cannot re-exec itself
 # as a daemon (#7255) — the build succeeds and the failure surfaces later as a
@@ -10,8 +11,7 @@ set -euo pipefail
 # The suffix is derived from GOOS, which reaches a build two ways: as an
 # environment variable and as a Make variable on the command line. `go build`
 # honors both, so a suffix that honors only one silently rebuilds the original
-# bug. Nothing else covers this: the Go test suite never runs the Makefile, and
-# CI's own build steps call `go build` directly.
+# bug. Nothing else covers this: the Go test suite never runs the Makefile.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -81,8 +81,9 @@ for target in go-migrate-up go-migrate-down; do
     fail "$target: expected the explicit legacy Go migration runner, got:\n$legacy_migration_output"
 done
 
-# The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
-# what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
+# The legacy recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing
+# space keeps an expected `bin/server` from matching an emitted
+# `bin/server.exe`.
 require_outputs() {
   local label=$1 suffix=$2 output=$3 binary
 
@@ -112,14 +113,39 @@ probe_count() {
   wc -l <"$probe_dir/invocations" | tr -d ' '
 }
 
+# The default release build is the native Rust artifact path. It must not
+# probe or invoke the legacy Go toolchain; that remains explicit as go-build.
+for target in build rust-build; do
+  rust_build_output="$(make -n "$target")"
+  grep -Fq -- "cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate" <<<"$rust_build_output" ||
+    fail "$target: expected the Rust release build, got:\n$rust_build_output"
+  for artifact in cordy-server cordy-cli cordy-migrate; do
+    grep -Fq -- "cp server-rs/target/release/${artifact}" <<<"$rust_build_output" ||
+      fail "$target: expected Rust artifact ${artifact} to be copied, got:\n$rust_build_output"
+  done
+  if grep -Fq -- "go build" <<<"$rust_build_output"; then
+    fail "$target: unexpectedly resolved to the legacy Go build:\n$rust_build_output"
+  fi
+done
+
+PATH="$probe_dir:$PATH" make -n build >/dev/null
+[ "$(probe_count)" = 0 ] ||
+  fail "native Rust build invoked go $(probe_count) time(s): $(cat "$probe_dir/invocations")"
+
+legacy_build_output="$(make -n go-build)"
+for binary in server cordy migrate; do
+  grep -Fq -- "-o bin/${binary}" <<<"$legacy_build_output" ||
+    fail "go-build: expected legacy Go artifact $binary, got:\n$legacy_build_output"
+done
+
 require_outputs "GOOS=windows in the environment" .exe \
-  "$(GOOS=windows make -n build)"
+  "$(GOOS=windows make -n go-build)"
 require_outputs "GOOS=windows as a Make variable" .exe \
-  "$(make -n build GOOS=windows)"
+  "$(make -n go-build GOOS=windows)"
 require_outputs "GOOS=linux in the environment" "" \
-  "$(GOOS=linux make -n build)"
+  "$(GOOS=linux make -n go-build)"
 require_outputs "GOOS=darwin as a Make variable" "" \
-  "$(make -n build GOOS=darwin)"
+  "$(make -n go-build GOOS=darwin)"
 
 # Non-build targets must not reach for a Go toolchain: `make help` and
 # `make clean` are the first thing a frontend-only contributor runs, and a
@@ -135,11 +161,11 @@ if [ -n "$real_go" ]; then
   host_suffix=""
   [ "$("$real_go" env GOOS)" = windows ] && host_suffix=.exe
   require_outputs "no GOOS set" "$host_suffix" \
-    "$(PATH="$probe_dir:$PATH" make -n build)"
+    "$(PATH="$probe_dir:$PATH" make -n go-build)"
   [ "$(probe_count)" != 0 ] ||
-    fail "no GOOS set: expected the build target to resolve GOOS via go env"
+    fail "no GOOS set: expected go-build to resolve GOOS via go env"
 else
   echo "skipping the host-default case: no go toolchain on PATH"
 fi
 
-echo "✓ make build names its outputs for the target platform"
+echo "✓ make build uses Rust; go-build names legacy outputs for the target platform"
