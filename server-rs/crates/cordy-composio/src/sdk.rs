@@ -275,8 +275,44 @@ pub struct CreateSessionRequest {
     pub user_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub toolkits: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_configs: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "connected_accounts")]
     pub connected_accounts: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manage_connections: Option<ManageConnections>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workbench: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multi_account: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preload: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execute: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<serde_json::Value>,
+}
+
+/// Optional connection-management behavior for a tool-router session.
+/// `enable` is an option so callers can explicitly send `false`, matching
+/// Go's pointer-backed field and the upstream distinction between false and
+/// omitted.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ManageConnections {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable: Option<bool>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub callback_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_wait_for_connections: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_connection_removal: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -293,6 +329,25 @@ pub struct CreateSessionResponse {
     pub session_id: String,
     #[serde(default)]
     pub mcp: McpDescriptor,
+    #[serde(default, rename = "tool_router_tools")]
+    pub tool_router_tools: Vec<String>,
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
+    #[serde(default, rename = "config_version")]
+    pub config_version: i64,
+    #[serde(default)]
+    pub experimental: Option<serde_json::Value>,
+    #[serde(default)]
+    pub warnings: Vec<SessionWarning>,
+}
+
+/// Non-fatal warning returned while creating a tool-router session.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SessionWarning {
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub message: String,
 }
 
 // ── toolkits ─────────────────────────────────────────────────────────────
@@ -883,10 +938,66 @@ mod tests {
             user_id: "u".into(),
             toolkits: Some(serde_json::json!({"enable": ["github"]})),
             connected_accounts: None,
+            ..Default::default()
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["toolkits"]["enable"][0], "github");
         assert!(json.get("connected_accounts").is_none());
+    }
+
+    #[test]
+    fn session_request_serializes_full_go_contract() {
+        let req = CreateSessionRequest {
+            user_id: "u".into(),
+            auth_configs: Some(serde_json::json!({"enable": ["ac_1"]})),
+            manage_connections: Some(ManageConnections {
+                enable: Some(false),
+                callback_url: "https://example.test/callback".into(),
+                enable_wait_for_connections: Some(true),
+                enable_connection_removal: Some(false),
+            }),
+            tools: Some(serde_json::json!({"enable": ["GITHUB_CREATE_ISSUE"]})),
+            tags: Some(serde_json::json!(["production"])),
+            workbench: Some(serde_json::json!({"enable": true})),
+            multi_account: Some(serde_json::json!({"strategy": "latest"})),
+            preload: Some(serde_json::json!({"enable": true})),
+            search: Some(serde_json::json!({"enable": false})),
+            execute: Some(serde_json::json!({"enable": true})),
+            experimental: Some(serde_json::json!({"flag": true})),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(req).unwrap();
+        assert_eq!(json["auth_configs"]["enable"][0], "ac_1");
+        assert_eq!(json["manage_connections"]["enable"], false);
+        assert_eq!(
+            json["manage_connections"]["enable_wait_for_connections"],
+            true
+        );
+        assert_eq!(
+            json["manage_connections"]["enable_connection_removal"],
+            false
+        );
+        assert_eq!(json["tags"][0], "production");
+        assert!(json.get("toolkits").is_none());
+    }
+
+    #[test]
+    fn session_response_decodes_full_go_contract() {
+        let response: CreateSessionResponse = serde_json::from_value(serde_json::json!({
+            "session_id": "sess_1",
+            "mcp": {"type": "streamable_http", "url": "https://mcp.test/sess_1"},
+            "tool_router_tools": ["GITHUB_CREATE_ISSUE"],
+            "config": {"toolkits": ["github"]},
+            "config_version": 4,
+            "experimental": {"new_router": true},
+            "warnings": [{"code": "PARTIAL", "message": "one toolkit unavailable"}]
+        }))
+        .unwrap();
+        assert_eq!(response.session_id, "sess_1");
+        assert_eq!(response.tool_router_tools, vec!["GITHUB_CREATE_ISSUE"]);
+        assert_eq!(response.config_version, 4);
+        assert_eq!(response.warnings[0].code, "PARTIAL");
+        assert_eq!(response.mcp.url, "https://mcp.test/sess_1");
     }
 
     #[test]
