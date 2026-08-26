@@ -52,13 +52,6 @@ pub async fn validate_public_https_endpoint(
     resolver: Option<&dyn Resolver>,
 ) -> Result<Url, Error> {
     let endpoint = Url::parse(raw.trim()).map_err(|e| Error::ParseEndpoint(e.to_string()))?;
-    if is_dev_origin(&endpoint) {
-        let dev_host = normalize_host(endpoint.host_str().unwrap_or_default());
-        if !allowed_hosts.is_empty() && !host_allowed(&dev_host, allowed_hosts) {
-            return Err(Error::HostOutsidePolicy);
-        }
-        return Ok(endpoint);
-    }
     if endpoint.scheme() != "https"
         || endpoint.host_str().is_none_or(str::is_empty)
         || has_userinfo(&endpoint)
@@ -66,6 +59,13 @@ pub async fn validate_public_https_endpoint(
         || non_empty(endpoint.query())
     {
         return Err(Error::NotPublicHttps);
+    }
+    if is_dev_origin(&endpoint) {
+        let dev_host = normalize_host(endpoint.host_str().unwrap_or_default());
+        if !allowed_hosts.is_empty() && !host_allowed(&dev_host, allowed_hosts) {
+            return Err(Error::HostOutsidePolicy);
+        }
+        return Ok(endpoint);
     }
     let host = normalize_host(endpoint.host_str().unwrap_or_default());
     if host == "localhost" || host.ends_with(".localhost") {
@@ -278,6 +278,7 @@ mod tests {
             "https://sub.localhost/mcp",
             "https://localhost.:443/mcp",
             "https://token@mcp.example.com/mcp",
+            "https://@mcp.example.com/mcp",
             "https://private.example/mcp",
             "https://mcp.example.com/mcp?x=1",
             "https://mcp.example.com/mcp#frag",
