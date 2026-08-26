@@ -129,6 +129,48 @@ impl ProviderRuntimeContext {
         Arc::clone(&self.launch_registry)
     }
 
+    /// Resolves the accepted launch immediately before a provider process is
+    /// created. Built-in paths may be self-healed here; custom profile paths
+    /// remain exactly those accepted by profile registration.
+    pub(crate) async fn resolve_launch_for_task(
+        &self,
+        ctx: &Ctx,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+    ) -> anyhow::Result<crate::provider_registration::RuntimeLaunchSpec> {
+        self.launch_registry
+            .resolve_for_launch(ctx, workspace_id, target)
+            .await
+    }
+
+    /// Builds a backend configuration from the launch identity already
+    /// resolved for this task. Keeping this separate from registry lookup
+    /// prevents a concurrent registration from swapping the path/version pair
+    /// between task preparation and process creation.
+    pub(crate) fn backend_config_from_launch(
+        &self,
+        launch: &crate::provider_registration::RuntimeLaunchSpec,
+        target: &RuntimeExecutionTarget,
+        env: BTreeMap<String, String>,
+        prefix: Vec<String>,
+    ) -> anyhow::Result<BackendConfig> {
+        anyhow::ensure!(
+            launch.target == *target,
+            "launch target changed while preparing provider {}",
+            target.provider
+        );
+        anyhow::ensure!(
+            !launch.command_path.trim().is_empty(),
+            "accepted launch for provider {} has no executable path",
+            target.provider
+        );
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path.clone(), prefix),
+            env,
+            builtin_runtime: target.profile_id.is_empty(),
+        })
+    }
+
     /// Converts one accepted launch into the provider crate's command
     /// contract. The caller supplies only task-scoped environment values;
     /// command path and fixed arguments always come from the workspace
@@ -297,13 +339,8 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 .ok_or_else(|| anyhow::anyhow!("runtime {runtime_id} has no workspace"))?;
             let launch = self
                 .launch_registry
-                .resolve(&workspace_id, &target)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "no accepted launch registered for workspace {workspace_id:?} and provider {}",
-                        target.provider
-                    )
-                })?;
+                .resolve_for_launch(&ctx, &workspace_id, &target)
+                .await?;
             anyhow::ensure!(
                 !launch.command_path.trim().is_empty(),
                 "accepted {} launch has no executable path",
@@ -1182,6 +1219,8 @@ mod tests {
                 target: target.clone(),
                 display_name: "Codex".to_string(),
                 command_path: "/opt/codex".to_string(),
+                command: String::new(),
+                discovery_path: "/opt/codex".to_string(),
                 fixed_args: vec!["--profile".to_string(), "cordy".to_string()],
                 version: "1.0.0".to_string(),
             }],

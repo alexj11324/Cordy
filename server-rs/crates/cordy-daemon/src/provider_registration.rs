@@ -21,6 +21,7 @@ use crate::registration::{
 use crate::repocache::Ctx;
 use crate::types::{AgentEntry, RuntimeExecutionTarget};
 use cordy_agent::{build_backend, check_provider_minimum, extract_version_line};
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderProbeReason {
@@ -46,6 +47,12 @@ pub struct DetectedProviderRuntime {
     pub display_name: String,
     pub version: String,
     pub command_path: String,
+    /// Original `AgentEntry.Command`, retained so a vanished pinned path can
+    /// be resolved again without following a later unrelated PATH change.
+    pub command: String,
+    /// Original discovered entry point. On Windows this remains the stable
+    /// installer junction while `command_path` may hold its verified target.
+    pub discovery_path: String,
     pub fixed_args: Vec<String>,
 }
 
@@ -421,7 +428,9 @@ impl ProviderCatalog for LocalProviderCatalog {
                 provider,
                 display_name: display_name.to_string(),
                 version,
-                command_path: entry.path,
+                command_path: entry.path.clone(),
+                command: entry.command,
+                discovery_path: entry.path,
                 fixed_args,
             });
         }
@@ -449,9 +458,247 @@ impl ProviderCatalog for LocalProviderCatalog {
 pub struct RuntimeLaunchSpec {
     pub target: RuntimeExecutionTarget,
     pub display_name: String,
+    /// Effective executable path. A self-healed launch may replace this with
+    /// the newly resolved concrete binary while keeping `discovery_path`.
     pub command_path: String,
+    /// The command name or configured command path from `AgentEntry.Command`.
+    /// It is the only source allowed for a built-in self-heal re-resolution.
+    pub command: String,
+    /// The path pinned when the provider was discovered. Keeping this separate
+    /// from `command_path` lets Windows re-check a stable installer junction
+    /// after it retargets, just like Go's `AgentEntry.Path`.
+    pub discovery_path: String,
     pub fixed_args: Vec<String>,
     pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HealedAgent {
+    path: String,
+    version: String,
+}
+
+/// Launch-time self-healing for a built-in provider's pinned executable.
+///
+/// The cache stores a path and the version detected from that exact path as an
+/// atomic pair. A live healed pair wins over the original pinned path; only
+/// when neither is runnable do we re-resolve the original command. Custom
+/// profile launches never enter this resolver because their command is owned
+/// by the profile registration contract, not the built-in agent catalog.
+#[derive(Debug)]
+struct AgentPathResolver {
+    healed: Mutex<BTreeMap<String, HealedAgent>>,
+    groups: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    version_probe_timeout: Duration,
+}
+
+impl Default for AgentPathResolver {
+    fn default() -> Self {
+        Self {
+            healed: Mutex::new(BTreeMap::new()),
+            groups: Mutex::new(HashMap::new()),
+            version_probe_timeout: LocalProviderCatalog::DEFAULT_VERSION_PROBE_TIMEOUT,
+        }
+    }
+}
+
+impl AgentPathResolver {
+    async fn resolve(
+        &self,
+        ctx: &Ctx,
+        launch: &RuntimeLaunchSpec,
+    ) -> anyhow::Result<RuntimeLaunchSpec> {
+        if !launch.target.profile_id.is_empty() {
+            return Ok(launch.clone());
+        }
+
+        let entry_path = if launch.discovery_path.trim().is_empty() {
+            &launch.command_path
+        } else {
+            &launch.discovery_path
+        };
+
+        // Windows installer entry points are stable junctions whose final
+        // target may change while the old release remains installed. The
+        // canonical-path helper is a no-op on other platforms, so this branch
+        // naturally selects the pinned-path behavior there.
+        if let Some(launch_path) = crate::canonical_path::executable_path_for_launch(entry_path)? {
+            return self
+                .resolve_stable_entry(ctx, launch, entry_path, launch_path)
+                .await;
+        }
+
+        self.resolve_pinned_entry(ctx, launch, entry_path).await
+    }
+
+    async fn resolve_pinned_entry(
+        &self,
+        ctx: &Ctx,
+        launch: &RuntimeLaunchSpec,
+        entry_path: &str,
+    ) -> anyhow::Result<RuntimeLaunchSpec> {
+        let provider = &launch.target.provider;
+        if let Some(healed) = self.live_healed(provider) {
+            return Ok(with_healed_launch(launch, healed));
+        }
+        if crate::config::agent_executable_present(entry_path) {
+            return Ok(launch.clone());
+        }
+        if launch.command.trim().is_empty() {
+            return Ok(launch.clone());
+        }
+
+        let gate = self.group_for(provider);
+        let _guard = gate.lock().await;
+        if let Some(healed) = self.live_healed(provider) {
+            return Ok(with_healed_launch(launch, healed));
+        }
+        // Another registration or launch may have restored the pinned path
+        // while this caller waited for the per-provider gate.
+        if crate::config::agent_executable_present(entry_path) {
+            return Ok(launch.clone());
+        }
+
+        let Some(candidate) = crate::config::reresolve_agent_command(&launch.command) else {
+            return Ok(launch.clone());
+        };
+        let healed = self.adopt(ctx, launch, candidate).await?;
+        Ok(with_healed_launch(launch, healed))
+    }
+
+    async fn resolve_stable_entry(
+        &self,
+        ctx: &Ctx,
+        launch: &RuntimeLaunchSpec,
+        entry_path: &str,
+        mut launch_path: String,
+    ) -> anyhow::Result<RuntimeLaunchSpec> {
+        const MAX_RETARGET_ATTEMPTS: usize = 4;
+        let key_prefix = launch.target.provider.clone();
+        for _ in 0..MAX_RETARGET_ATTEMPTS {
+            if let Some(healed) = self.live_healed_at(&launch.target.provider, &launch_path) {
+                return Ok(with_healed_launch(launch, healed));
+            }
+
+            // Include the concrete target in the key: two callers that observe
+            // different installer releases must not share the first probe.
+            let key = format!("{key_prefix}\0{launch_path}");
+            let gate = self.group_for(&key);
+            let _guard = gate.lock().await;
+            if let Some(healed) = self.live_healed_at(&launch.target.provider, &launch_path) {
+                return Ok(with_healed_launch(launch, healed));
+            }
+            let healed = self.adopt(ctx, launch, launch_path.clone()).await?;
+
+            // The installer can retarget while --version is running. Resolve
+            // the stable entry again before publishing the result and retry
+            // against the target visible now.
+            let current_path = match crate::canonical_path::executable_path_for_launch(entry_path)?
+            {
+                Some(path) => path,
+                None => return Ok(with_healed_launch(launch, healed)),
+            };
+            if current_path != launch_path {
+                launch_path = current_path;
+                continue;
+            }
+            return Ok(with_healed_launch(launch, healed));
+        }
+
+        anyhow::bail!("installer entry point changed repeatedly while resolving it")
+    }
+
+    async fn adopt(
+        &self,
+        ctx: &Ctx,
+        launch: &RuntimeLaunchSpec,
+        path: String,
+    ) -> anyhow::Result<HealedAgent> {
+        let catalog = LocalProviderCatalog::with_version_probe_timeout(self.version_probe_timeout);
+        let version = match catalog
+            .probe_version_with_retry(&ctx.child(), &path, &launch.fixed_args)
+            .await
+        {
+            Ok(version) => version,
+            Err(VersionProbeFailure::Unavailable(error)) => {
+                anyhow::bail!(
+                    "provider version probe failed while self-healing {} at {path:?}: {error}",
+                    launch.target.provider,
+                )
+            }
+            Err(VersionProbeFailure::NotExecutable(error)) => {
+                anyhow::bail!(
+                    "agent CLI is not executable while self-healing {} at {path:?}: {error}",
+                    launch.target.provider,
+                )
+            }
+        };
+        check_provider_minimum(&launch.target.provider, &version).map_err(|error| {
+            anyhow::anyhow!(
+                "provider version {version:?} is not supported while self-healing {}: {error}",
+                launch.target.provider
+            )
+        })?;
+
+        let healed = HealedAgent { path, version };
+        self.healed
+            .lock()
+            .unwrap()
+            .insert(launch.target.provider.clone(), healed.clone());
+        tracing::info!(
+            provider = %launch.target.provider,
+            command = %launch.command,
+            path = %healed.path,
+            version = %healed.version,
+            "adopted self-healed provider executable"
+        );
+        Ok(healed)
+    }
+
+    fn live_healed(&self, provider: &str) -> Option<HealedAgent> {
+        let healed = self.healed.lock().unwrap().get(provider).cloned()?;
+        crate::config::agent_executable_present(&healed.path).then_some(healed)
+    }
+
+    fn live_healed_at(&self, provider: &str, path: &str) -> Option<HealedAgent> {
+        let healed = self.healed.lock().unwrap().get(provider).cloned()?;
+        (healed.path == path && crate::config::agent_executable_present(&healed.path))
+            .then_some(healed)
+    }
+
+    fn refresh_healed_version(&self, provider: &str, path: &str, version: &str) {
+        if version.is_empty() {
+            return;
+        }
+        let mut healed = self.healed.lock().unwrap();
+        let Some(current) = healed.get_mut(provider) else {
+            return;
+        };
+        let same_path = current.path == path
+            || crate::canonical_path::executable_path_for_launch(path)
+                .ok()
+                .flatten()
+                .is_some_and(|resolved| resolved == current.path);
+        if same_path && current.version != version {
+            current.version = version.to_string();
+        }
+    }
+
+    fn group_for(&self, key: &str) -> Arc<AsyncMutex<()>> {
+        self.groups
+            .lock()
+            .unwrap()
+            .entry(key.to_string())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
+    }
+}
+
+fn with_healed_launch(launch: &RuntimeLaunchSpec, healed: HealedAgent) -> RuntimeLaunchSpec {
+    let mut resolved = launch.clone();
+    resolved.command_path = healed.path;
+    resolved.version = healed.version;
+    resolved
 }
 
 #[derive(Default)]
@@ -467,6 +714,7 @@ struct LaunchState {
 #[derive(Default)]
 pub struct RuntimeLaunchRegistry {
     state: RwLock<LaunchState>,
+    path_resolver: AgentPathResolver,
 }
 
 impl RuntimeLaunchRegistry {
@@ -480,6 +728,52 @@ impl RuntimeLaunchRegistry {
             .unwrap()
             .builtins
             .insert(workspace_id.to_string(), builtins);
+    }
+
+    /// Resolves the accepted built-in launch at the actual process-launch
+    /// boundary. A successful heal is copied back only when the workspace has
+    /// not accepted a newer registration in the meantime.
+    pub(crate) async fn resolve_for_launch(
+        &self,
+        ctx: &Ctx,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+    ) -> anyhow::Result<RuntimeLaunchSpec> {
+        let launch = self.resolve(workspace_id, target).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no accepted launch registered for workspace {workspace_id:?} and provider {}",
+                target.provider
+            )
+        })?;
+        let resolved = self.path_resolver.resolve(ctx, &launch).await?;
+        if resolved != launch && target.profile_id.is_empty() {
+            self.replace_builtin_if_current(workspace_id, &target.provider, &launch, &resolved);
+        }
+        Ok(resolved)
+    }
+
+    /// Keeps the cached healed pair aligned with a successful version refresh
+    /// that observed the same concrete path. A probe for another path must not
+    /// mutate the pair owned by an earlier self-heal.
+    pub(crate) fn refresh_healed_version(&self, provider: &str, path: &str, version: &str) {
+        self.path_resolver
+            .refresh_healed_version(provider, path, version);
+    }
+
+    fn replace_builtin_if_current(
+        &self,
+        workspace_id: &str,
+        provider: &str,
+        expected: &RuntimeLaunchSpec,
+        replacement: &RuntimeLaunchSpec,
+    ) {
+        let mut state = self.state.write().unwrap();
+        let Some(builtins) = state.builtins.get_mut(workspace_id) else {
+            return;
+        };
+        if builtins.get(provider) == Some(expected) {
+            builtins.insert(provider.to_string(), replacement.clone());
+        }
     }
 
     pub(crate) fn replace_workspace_profiles(
@@ -615,6 +909,13 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             .iter()
             .map(|runtime| runtime.provider.clone())
             .collect::<Vec<_>>();
+        for runtime in &probe.detected {
+            self.launches.refresh_healed_version(
+                &runtime.provider,
+                &runtime.command_path,
+                &runtime.version,
+            );
+        }
         let now = Instant::now();
         {
             let mut pending = self.not_executable_since.lock().unwrap();
@@ -667,6 +968,8 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
                 },
                 display_name: name,
                 command_path: runtime.command_path,
+                command: runtime.command,
+                discovery_path: runtime.discovery_path,
                 fixed_args: runtime.fixed_args,
                 version: runtime.version,
             });
@@ -794,7 +1097,9 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                     launches.push(RuntimeLaunchSpec {
                         target,
                         display_name: name,
-                        command_path: command.command_path,
+                        command_path: command.command_path.clone(),
+                        command: String::new(),
+                        discovery_path: command.command_path,
                         fixed_args: command.fixed_args,
                         version: command.version,
                     });
@@ -1132,6 +1437,220 @@ mod tests {
         assert!(repair.command.contains("node install.cjs"));
     }
 
+    #[cfg(unix)]
+    mod path_self_heal_tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+        fn write_versioned_agent(root: &std::path::Path, version: &str) -> String {
+            let path = root.join(version).join("bin").join("codex");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                &path,
+                format!("#!/bin/sh\nprintf '%s\\n' '{version}'\n"),
+            )
+            .unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::canonicalize(path)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        }
+
+        fn builtin_launch(path: &str, command: &str, version: &str) -> RuntimeLaunchSpec {
+            RuntimeLaunchSpec {
+                target: RuntimeExecutionTarget {
+                    provider: "codex".to_string(),
+                    profile_id: String::new(),
+                },
+                display_name: "Codex".to_string(),
+                command_path: path.to_string(),
+                command: command.to_string(),
+                discovery_path: path.to_string(),
+                fixed_args: Vec::new(),
+                version: version.to_string(),
+            }
+        }
+
+        #[tokio::test]
+        async fn self_heals_deleted_pinned_path_and_keeps_path_version_paired() {
+            let _env = ENV_LOCK.lock().unwrap();
+            let temporary = tempfile::tempdir_in(".").unwrap();
+            let root = temporary.path();
+            let stable_bin = root.join("stable-bin");
+            std::fs::create_dir_all(&stable_bin).unwrap();
+            let v1 = write_versioned_agent(root, "0.144.1");
+            let v2 = write_versioned_agent(root, "0.144.3");
+            let stable = stable_bin.join("codex");
+            std::os::unix::fs::symlink(&v1, &stable).unwrap();
+            std::env::set_var("PATH", &stable_bin);
+
+            let pinned = std::fs::canonicalize(&stable)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let registry = RuntimeLaunchRegistry::default();
+            let target = RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            };
+            registry.replace_builtins(
+                "workspace-1",
+                vec![builtin_launch(&pinned, "codex", "0.144.1")],
+            );
+
+            let baseline = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &target)
+                .await
+                .unwrap();
+            assert_eq!(baseline.command_path, pinned);
+            assert_eq!(baseline.version, "0.144.1");
+
+            std::fs::remove_dir_all(root.join("0.144.1")).unwrap();
+            std::fs::remove_file(&stable).unwrap();
+            std::os::unix::fs::symlink(&v2, &stable).unwrap();
+
+            let healed = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &target)
+                .await
+                .unwrap();
+            assert_eq!(healed.command_path, v2);
+            assert_eq!(healed.version, "0.144.3");
+            assert_eq!(healed.discovery_path, pinned);
+
+            // The accepted launch state is updated as one pair, so a later
+            // synchronous consumer cannot observe the old path with v2's
+            // version.
+            let accepted = registry.resolve("workspace-1", &target).unwrap();
+            assert_eq!(accepted.command_path, v2);
+            assert_eq!(accepted.version, "0.144.3");
+
+            // A stale registration arriving from another workspace round still
+            // cannot make a live healed pair regress to the reappearing old
+            // path/version pairing.
+            registry.replace_builtins(
+                "workspace-1",
+                vec![builtin_launch(&pinned, "codex", "0.144.1")],
+            );
+            let cached = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &target)
+                .await
+                .unwrap();
+            assert_eq!(cached.command_path, v2);
+            assert_eq!(cached.version, "0.144.3");
+        }
+
+        #[tokio::test]
+        async fn self_heal_rejects_below_minimum_without_mutating_launch_state() {
+            let _env = ENV_LOCK.lock().unwrap();
+            let temporary = tempfile::tempdir_in(".").unwrap();
+            let root = temporary.path();
+            let stable_bin = root.join("stable-bin");
+            std::fs::create_dir_all(&stable_bin).unwrap();
+            let v1 = write_versioned_agent(root, "0.144.1");
+            let too_old = write_versioned_agent(root, "0.9.0");
+            let stable = stable_bin.join("codex");
+            std::os::unix::fs::symlink(&v1, &stable).unwrap();
+            std::env::set_var("PATH", &stable_bin);
+            let pinned = std::fs::canonicalize(&stable)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let registry = RuntimeLaunchRegistry::default();
+            let target = RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            };
+            registry.replace_builtins(
+                "workspace-1",
+                vec![builtin_launch(&pinned, "codex", "0.144.1")],
+            );
+            registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &target)
+                .await
+                .unwrap();
+
+            std::fs::remove_dir_all(root.join("0.144.1")).unwrap();
+            std::fs::remove_file(&stable).unwrap();
+            std::os::unix::fs::symlink(&too_old, &stable).unwrap();
+            let error = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &target)
+                .await
+                .expect_err("below-minimum replacement must not be launchable");
+            assert!(error.to_string().contains("not supported"), "{error:#}");
+            let unchanged = registry.resolve("workspace-1", &target).unwrap();
+            assert_eq!(unchanged.command_path, pinned);
+            assert_eq!(unchanged.version, "0.144.1");
+        }
+
+        #[tokio::test]
+        async fn refresh_updates_only_the_matching_healed_pair_and_profiles_skip_heal() {
+            let _env = ENV_LOCK.lock().unwrap();
+            let temporary = tempfile::tempdir_in(".").unwrap();
+            let root = temporary.path();
+            let stable_bin = root.join("stable-bin");
+            std::fs::create_dir_all(&stable_bin).unwrap();
+            let v1 = write_versioned_agent(root, "0.144.1");
+            let v2 = write_versioned_agent(root, "0.144.3");
+            let stable = stable_bin.join("codex");
+            std::os::unix::fs::symlink(&v1, &stable).unwrap();
+            std::env::set_var("PATH", &stable_bin);
+            let pinned = std::fs::canonicalize(&stable)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let registry = RuntimeLaunchRegistry::default();
+            let builtin = RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            };
+            registry.replace_builtins(
+                "workspace-1",
+                vec![builtin_launch(&pinned, "codex", "0.144.1")],
+            );
+            std::fs::remove_dir_all(root.join("0.144.1")).unwrap();
+            std::fs::remove_file(&stable).unwrap();
+            std::os::unix::fs::symlink(&v2, &stable).unwrap();
+            let healed = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &builtin)
+                .await
+                .unwrap();
+            registry.refresh_healed_version("codex", &healed.command_path, "0.144.4");
+            registry.refresh_healed_version("codex", "/another/codex", "9.9.9");
+            let refreshed = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &builtin)
+                .await
+                .unwrap();
+            assert_eq!(refreshed.command_path, v2);
+            assert_eq!(refreshed.version, "0.144.4");
+
+            let profile = RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: "profile-1".to_string(),
+            };
+            registry.replace_workspace_profiles(
+                "workspace-1",
+                vec![RuntimeLaunchSpec {
+                    target: profile.clone(),
+                    display_name: "Custom Codex".to_string(),
+                    command_path: "/gone/custom-codex".to_string(),
+                    command: "".to_string(),
+                    discovery_path: "/gone/custom-codex".to_string(),
+                    fixed_args: Vec::new(),
+                    version: "1.0.0".to_string(),
+                }],
+            );
+            let custom = registry
+                .resolve_for_launch(&Ctx::new(), "workspace-1", &profile)
+                .await
+                .unwrap();
+            assert_eq!(custom.command_path, "/gone/custom-codex");
+            assert_eq!(custom.version, "1.0.0");
+        }
+    }
+
     #[test]
     fn launch_registry_keeps_provider_and_profile_identity_atomic() {
         let registry = RuntimeLaunchRegistry::default();
@@ -1144,6 +1663,8 @@ mod tests {
                 },
                 display_name: "Codex".to_string(),
                 command_path: "/bin/codex".to_string(),
+                command: String::new(),
+                discovery_path: "/bin/codex".to_string(),
                 fixed_args: Vec::new(),
                 version: "1.0.0".to_string(),
             }],
@@ -1157,6 +1678,8 @@ mod tests {
                 },
                 display_name: "Wrapped Codex".to_string(),
                 command_path: "/opt/wrapper".to_string(),
+                command: String::new(),
+                discovery_path: "/opt/wrapper".to_string(),
                 fixed_args: vec!["start".to_string()],
                 version: "2.0.0".to_string(),
             }],
@@ -1223,6 +1746,8 @@ mod tests {
             },
             display_name: "Codex".to_string(),
             command_path: command_path.to_string(),
+            command: String::new(),
+            discovery_path: command_path.to_string(),
             fixed_args: Vec::new(),
             version: "1.0.0".to_string(),
         };
@@ -1257,6 +1782,8 @@ mod tests {
                 },
                 display_name: "Wrapped Codex".to_string(),
                 command_path: "/opt/wrapper".to_string(),
+                command: String::new(),
+                discovery_path: "/opt/wrapper".to_string(),
                 fixed_args: Vec::new(),
                 version: String::new(),
             }],
@@ -1285,6 +1812,8 @@ mod tests {
                 },
                 display_name: "Wrapped Codex".to_string(),
                 command_path: "/opt/wrapper".to_string(),
+                command: String::new(),
+                discovery_path: "/opt/wrapper".to_string(),
                 fixed_args: Vec::new(),
                 version: String::new(),
             }],

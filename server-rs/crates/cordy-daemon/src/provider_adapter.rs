@@ -118,18 +118,12 @@ impl ProductionProviderAdapter {
             .join("tmp")
             .to_string_lossy()
             .into_owned();
-        let launch = runtime
-            .launch_registry()
-            .resolve(&task.workspace_id, &target);
-        let Some(launch) = launch else {
-            return failed(
-                anyhow::anyhow!(
-                    "no accepted launch registered for workspace {:?} and provider {}",
-                    task.workspace_id,
-                    target.provider
-                ),
-                None,
-            );
+        let launch = match runtime
+            .resolve_launch_for_task(&ctx, &task.workspace_id, &target)
+            .await
+        {
+            Ok(launch) => launch,
+            Err(error) => return failed(error, None),
         };
         let default_model = self
             .config
@@ -248,8 +242,8 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
-            let backend_config = runtime.backend_config_with_prefix(
-                &task.workspace_id,
+            let backend_config = runtime.backend_config_from_launch(
+                &launch,
                 &target,
                 bound.child_env.into_inner(),
                 bound.launch_prefix,
