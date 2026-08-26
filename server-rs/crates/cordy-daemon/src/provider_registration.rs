@@ -16,7 +16,8 @@ use crate::client::{
 };
 use crate::config::Config;
 use crate::registration::{
-    BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound, RuntimeRegistrationSource,
+    BuiltinAvailability, BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound,
+    RuntimeRegistrationSource,
 };
 use crate::repocache::Ctx;
 use crate::types::{AgentEntry, RuntimeExecutionTarget};
@@ -610,6 +611,21 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         (agents, skipped)
     }
 
+    fn refresh_builtin_availability(&self) -> BuiltinAvailability {
+        let probed = crate::agents_probe::probe_agent_clis();
+        let mut current = self.available_agents.lock().unwrap();
+        let gained = crate::agents_refresh::gained_providers(&current, &probed);
+        for provider in &gained {
+            if let Some(entry) = probed.get(provider) {
+                current.insert(provider.clone(), entry.clone());
+            }
+        }
+        BuiltinAvailability {
+            providers: current.keys().cloned().collect(),
+            gained: !gained.is_empty(),
+        }
+    }
+
     async fn probe(
         &self,
         ctx: Ctx,
@@ -904,6 +920,10 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             include_profiles: false,
             pending_profiles: Mutex::new(HashMap::new()),
         })))
+    }
+
+    fn refresh_builtin_availability(&self) -> Option<BuiltinAvailability> {
+        Some(Self::refresh_builtin_availability(self))
     }
 
     fn workspace_removed(&self, workspace_id: &str) {
@@ -1272,7 +1292,7 @@ mod tests {
     }
 
     #[test]
-    fn skipped_builtin_replacement_preserves_previous_launch_spec() {
+    fn replacing_builtins_preserves_skipped_provider_launches() {
         let registry = RuntimeLaunchRegistry::default();
         let launch = |provider: &str, command_path: &str| RuntimeLaunchSpec {
             target: RuntimeExecutionTarget {

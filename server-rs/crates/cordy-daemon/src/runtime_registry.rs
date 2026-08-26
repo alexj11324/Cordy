@@ -379,6 +379,30 @@ impl RuntimeRegistry {
         false
     }
 
+    /// Returns whether a workspace is missing any currently available
+    /// built-in provider, without requiring a version probe. This is the
+    /// cheap discovery half; version lag is handled by the slower refresh.
+    pub fn workspace_missing_builtin_provider(
+        &self,
+        workspace_id: &str,
+        providers: &BTreeSet<String>,
+    ) -> bool {
+        if providers.is_empty() {
+            return false;
+        }
+        let state = self.state.read().unwrap();
+        let Some(workspace) = state.workspaces.get(workspace_id) else {
+            return false;
+        };
+        providers.iter().any(|provider| {
+            !workspace.runtime_ids.iter().any(|runtime_id| {
+                state.runtimes.get(runtime_id).is_some_and(|runtime| {
+                    runtime.profile_id.is_empty() && runtime.provider == *provider
+                })
+            })
+        })
+    }
+
     /// Records only the built-in entries carried by a successful register
     /// call. Providers absent from the payload are left untouched: a failed
     /// probe is not an acknowledgement that the server changed that row.
@@ -765,6 +789,21 @@ mod tests {
                 profile_id: String::new(),
             })
         );
+    }
+
+    #[test]
+    fn cheap_builtin_missing_scan_ignores_custom_profiles() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        let mut profile = runtime("profile-runtime", "claude");
+        profile.profile_id = "profile-1".to_string();
+        registry
+            .apply_registration("ws-1", "One", vec![profile])
+            .unwrap();
+
+        assert!(registry
+            .workspace_missing_builtin_provider("ws-1", &BTreeSet::from(["claude".to_string()])));
+        assert!(!registry.workspace_missing_builtin_provider("ws-1", &BTreeSet::new()));
     }
 
     #[test]

@@ -36,6 +36,14 @@ pub enum BuiltinRefreshReason {
     Version,
 }
 
+/// Cheap, version-independent discovery state used to decide whether a
+/// discovery tick has work before starting version probes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BuiltinAvailability {
+    pub providers: BTreeSet<String>,
+    pub gained: bool,
+}
+
 /// Result of one machine-level built-in refresh round. `attempted` counts
 /// workspaces whose live state said a registration was needed; `progressed`
 /// counts accepted responses. The distinction keeps a failed workspace in
@@ -141,6 +149,14 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
         ctx: Ctx,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
+
+    /// Performs only the cheap PATH/availability half of discovery. Returning
+    /// `None` keeps generic test sources on the old combined path; the
+    /// production provider source uses this to avoid version probes while the
+    /// convergence backoff is active or no workspace is missing a provider.
+    fn refresh_builtin_availability(&self) -> Option<BuiltinAvailability> {
+        None
+    }
 
     /// Releases provider-owned launch state when workspace membership is
     /// removed. A later re-add must not revive stale custom profile commands
@@ -423,6 +439,31 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<BuiltinRefreshOutcome> {
         let demotion_generation = registry.demotion_generation();
+        let now = Instant::now();
+        let availability = if reason == BuiltinRefreshReason::Discovery {
+            self.source.refresh_builtin_availability()
+        } else {
+            None
+        };
+        let discovery_workspaces = availability.as_ref().map(|state| {
+            registry
+                .workspace_ids()
+                .into_iter()
+                .filter(|workspace_id| {
+                    registry.workspace_missing_builtin_provider(workspace_id, &state.providers)
+                })
+                .collect::<BTreeSet<_>>()
+        });
+        if let Some(workspaces) = discovery_workspaces.as_ref() {
+            let mut retry = self.builtin_retry.lock().unwrap();
+            if workspaces.is_empty() {
+                retry.reset_backoff();
+                return Ok(BuiltinRefreshOutcome::default());
+            }
+            if !retry.should_attempt(availability.as_ref().is_some_and(|state| state.gained), now) {
+                return Ok(BuiltinRefreshOutcome::default());
+            }
+        }
         let Some(round) = self
             .source
             .begin_builtin_refresh(ctx.child(), reason)
@@ -438,18 +479,22 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                     .await;
             }
         }
-        let now = Instant::now();
         let discovery_allowed = reason != BuiltinRefreshReason::Discovery
-            || self
-                .builtin_retry
-                .lock()
-                .unwrap()
-                .should_attempt(round.gained_providers(), now);
+            || self.builtin_retry.lock().unwrap().should_attempt(
+                availability.as_ref().is_some_and(|state| state.gained) || round.gained_providers(),
+                now,
+            );
         if !discovery_allowed {
             return Ok(BuiltinRefreshOutcome::default());
         }
         let mut outcome = BuiltinRefreshOutcome::default();
         for workspace_id in registry.workspace_ids() {
+            let selected_by_cheap_discovery = discovery_workspaces
+                .as_ref()
+                .is_none_or(|workspaces| workspaces.contains(&workspace_id));
+            if !selected_by_cheap_discovery {
+                continue;
+            }
             let Some(workspace) = registry.workspace(&workspace_id) else {
                 continue;
             };
@@ -457,11 +502,26 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .register_builtin_workspace(ctx.child(), registry, &workspace, Arc::clone(&round))
                 .await
             {
-                Ok(true) => {
+                Ok(Some(true)) => {
                     outcome.attempted += 1;
                     outcome.progressed += 1;
                 }
-                Ok(false) => {}
+                Ok(Some(false)) => {
+                    // A workspace selected by the cheap missing-provider scan
+                    // still attempted convergence even when this probe round
+                    // returned no launchable provider.
+                    if discovery_workspaces.is_some() {
+                        outcome.attempted += 1;
+                    }
+                }
+                Ok(None) => {
+                    // A production workspace selected by the cheap scan can
+                    // still return only already-known providers. That is a
+                    // failed convergence attempt, not a no-op.
+                    if discovery_workspaces.is_some() {
+                        outcome.attempted += 1;
+                    }
+                }
                 Err(error) => {
                     // The workspace was selected from live state and the
                     // request was therefore needed, even when the payload
@@ -474,7 +534,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             }
         }
         if reason == BuiltinRefreshReason::Discovery {
-            let progressed = outcome.attempted == 0 || outcome.progressed > 0;
+            let progressed = discovery_workspaces
+                .as_ref()
+                .map(|workspaces| workspaces.is_empty() || outcome.progressed > 0)
+                .unwrap_or(outcome.attempted == 0 || outcome.progressed > 0);
             self.builtin_retry
                 .lock()
                 .unwrap()
@@ -657,7 +720,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         workspace: &crate::runtime_registry::WorkspaceRuntimeState,
         round: Arc<dyn RuntimeRegistrationRound>,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<bool>> {
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
         let payload = round
@@ -673,10 +736,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             // temporarily unreadable or because no provider is installed.
             // Go keeps existing runtime rows in this path; only an explicit
             // workspace/profile convergence owns authoritative empty state.
-            return Ok(false);
+            return Ok(Some(false));
         }
         if !registry.workspace_needs_builtin_refresh(&workspace.id, &payload.runtimes) {
-            return Ok(false);
+            return Ok(None);
         }
         let delta = {
             let _fence = self.deregistration_flush.lock().await;
@@ -727,7 +790,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         let reasons = delta.offline_reasons.clone();
         self.queue_and_flush_dropped_with_reasons(&ctx, &cleanup, reasons)
             .await;
-        Ok(true)
+        Ok(Some(true))
     }
 
     /// Final best-effort delivery for rows dropped before the daemon's current
