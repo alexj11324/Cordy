@@ -152,6 +152,48 @@ impl RuntimeRegistry {
         self.apply_registration(workspace_id, workspace_name, combined)
     }
 
+    /// Counts currently available built-in providers that are absent from a
+    /// workspace. This deliberately ignores version acknowledgements: the
+    /// discovery loop uses the count to decide whether its missing-runtime
+    /// set made progress after an additive registration.
+    pub fn missing_builtin_provider_count(
+        &self,
+        workspace_id: &str,
+        providers: &[String],
+    ) -> usize {
+        let state = self.state.read().unwrap();
+        let Some(workspace) = state.workspaces.get(workspace_id) else {
+            return 0;
+        };
+        let providers: BTreeSet<&str> = providers
+            .iter()
+            .map(String::as_str)
+            .filter(|provider| !provider.is_empty())
+            .collect();
+        providers
+            .into_iter()
+            .filter(|provider| {
+                !workspace.runtime_ids.iter().any(|runtime_id| {
+                    state.runtimes.get(runtime_id).is_some_and(|runtime| {
+                        runtime.profile_id.is_empty() && runtime.provider == *provider
+                    })
+                })
+            })
+            .count()
+    }
+
+    /// Returns whether a payload contains a launchable built-in provider that
+    /// is not yet present in this workspace. Version differences are excluded
+    /// so discovery does not accidentally become a version-refresh cadence.
+    pub fn workspace_needs_builtin_registration(
+        &self,
+        workspace_id: &str,
+        payload: &[BTreeMap<String, String>],
+    ) -> bool {
+        let providers: Vec<String> = builtin_versions_from_payload(payload).into_keys().collect();
+        self.missing_builtin_provider_count(workspace_id, &providers) > 0
+    }
+
     /// Returns whether a workspace is missing one of the built-in providers
     /// in `payload` or has acknowledged a different version. The payload is
     /// machine-level, but the acknowledgement is deliberately workspace
@@ -608,10 +650,16 @@ mod tests {
         registry.record_builtin_versions("ws-1", &old_payload);
         registry.record_builtin_versions("ws-2", &old_payload);
         assert!(!registry.workspace_needs_builtin_refresh("ws-1", &old_payload));
+        let available = vec!["claude".to_string(), "codex".to_string()];
+        assert_eq!(
+            registry.missing_builtin_provider_count("ws-1", &available),
+            1
+        );
 
         let upgraded_payload = vec![builtin_payload("codex", "2.0.0")];
         assert!(registry.workspace_needs_builtin_refresh("ws-1", &upgraded_payload));
         assert!(registry.workspace_needs_builtin_refresh("ws-2", &upgraded_payload));
+        assert!(!registry.workspace_needs_builtin_registration("ws-1", &upgraded_payload));
 
         // A response that only carries the newly detected provider must not
         // evict the already-running provider omitted by a transient probe.

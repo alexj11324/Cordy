@@ -12,11 +12,13 @@ use std::time::Duration;
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
 use crate::registration::{
-    BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound, RuntimeRegistrationSource,
+    BuiltinAvailability, BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound,
+    RuntimeRegistrationSource,
 };
 use crate::repocache::Ctx;
 use crate::types::{AgentEntry, RuntimeExecutionTarget};
 use cordy_agent::{build_backend, check_provider_minimum, extract_version_line};
+use futures_util::stream::{self, StreamExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderProbeReason {
@@ -57,6 +59,11 @@ pub struct BuiltinProbeResult {
     pub skipped: BTreeMap<String, String>,
 }
 
+enum LocalBuiltinProbeOutcome {
+    Detected(DetectedProviderRuntime),
+    Skipped { provider: String, reason: String },
+}
+
 /// Provider-owned resolution of a workspace profile after applying its safe
 /// fixed-argument policy and any validated per-machine path override.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,10 +80,20 @@ pub struct ProfileResolutionError {
 }
 
 /// Mandatory provider-core surface. Failures must be returned as errors;
-/// returning an empty successful probe is authoritative and removes vanished
-/// built-in runtimes during a refresh.
+/// an empty successful probe is an observation for the built-in refresh path,
+/// which preserves previously accepted runtime identities and launch specs.
 #[async_trait::async_trait]
 pub trait ProviderCatalog: Send + Sync + 'static {
+    /// Cheap availability-only probe used by discovery backoff. Catalogs that
+    /// cannot separate lookup from version probing may leave this at `None`;
+    /// their combined probe remains supported below.
+    async fn probe_available(
+        &self,
+        _ctx: Ctx,
+    ) -> anyhow::Result<Option<BTreeMap<String, AgentEntry>>> {
+        Ok(None)
+    }
+
     async fn probe_builtins(
         &self,
         ctx: Ctx,
@@ -112,6 +129,7 @@ impl Default for LocalProviderCatalog {
 
 impl LocalProviderCatalog {
     const DEFAULT_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+    const VERSION_PROBE_CONCURRENCY: usize = 8;
 
     pub const fn new() -> Self {
         Self {
@@ -205,6 +223,13 @@ impl LocalProviderCatalog {
 
 #[async_trait::async_trait]
 impl ProviderCatalog for LocalProviderCatalog {
+    async fn probe_available(
+        &self,
+        _ctx: Ctx,
+    ) -> anyhow::Result<Option<BTreeMap<String, AgentEntry>>> {
+        Ok(Some(crate::agents_probe::probe_agent_clis()))
+    }
+
     async fn probe_builtins(
         &self,
         ctx: Ctx,
@@ -212,48 +237,65 @@ impl ProviderCatalog for LocalProviderCatalog {
     ) -> anyhow::Result<BuiltinProbeResult> {
         let agents = crate::agents_probe::probe_agent_clis();
         let available = agents.clone();
+        let outcomes = stream::iter(agents.into_iter().map(|(provider, entry)| {
+            let catalog = *self;
+            let ctx = ctx.child();
+            async move {
+                if !Self::supports_backend(&provider) {
+                    let reason = "provider CLI discovered without a Rust backend";
+                    tracing::debug!(%provider, reason, "withholding provider registration");
+                    return LocalBuiltinProbeOutcome::Skipped {
+                        provider,
+                        reason: reason.to_string(),
+                    };
+                }
+                let Some(display_name) = Self::display_name(&provider) else {
+                    let reason = "provider CLI discovered without catalog metadata";
+                    tracing::warn!(%provider, reason, "withholding provider registration");
+                    return LocalBuiltinProbeOutcome::Skipped {
+                        provider,
+                        reason: reason.to_string(),
+                    };
+                };
+                let fixed_args = Self::fixed_args(&provider);
+                let version = match catalog
+                    .probe_version(&ctx, &entry.path, &fixed_args)
+                    .await
+                {
+                    Ok(version) => version,
+                    Err(error) => {
+                        let reason = format!("provider version probe failed: {error}");
+                        tracing::debug!(%provider, %error, "withholding provider registration");
+                        return LocalBuiltinProbeOutcome::Skipped { provider, reason };
+                    }
+                };
+                if let Err(error) = check_provider_minimum(&provider, &version) {
+                    let reason =
+                        format!("provider CLI version {version:?} is below its minimum: {error}");
+                    tracing::warn!(%provider, %version, %error, "withholding provider registration");
+                    return LocalBuiltinProbeOutcome::Skipped { provider, reason };
+                }
+                LocalBuiltinProbeOutcome::Detected(DetectedProviderRuntime {
+                    provider,
+                    display_name: display_name.to_string(),
+                    version,
+                    command_path: entry.path,
+                    fixed_args,
+                })
+            }
+        }))
+        .buffer_unordered(Self::VERSION_PROBE_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
         let mut detected = Vec::new();
         let mut skipped = BTreeMap::new();
-        for (provider, entry) in agents {
-            if !Self::supports_backend(&provider) {
-                let reason = "provider CLI discovered without a Rust backend";
-                tracing::debug!(%provider, reason, "withholding provider registration");
-                skipped.insert(provider, reason.to_string());
-                continue;
-            }
-            let Some(display_name) = Self::display_name(&provider) else {
-                let reason = "provider CLI discovered without catalog metadata";
-                tracing::warn!(%provider, reason, "withholding provider registration");
-                skipped.insert(provider, reason.to_string());
-                continue;
-            };
-            let fixed_args = Self::fixed_args(&provider);
-            let version = match self
-                .probe_version(&ctx.child(), &entry.path, &fixed_args)
-                .await
-            {
-                Ok(version) => version,
-                Err(error) => {
-                    let reason = format!("provider version probe failed: {error}");
-                    tracing::debug!(%provider, %error, "withholding provider registration");
+        for outcome in outcomes {
+            match outcome {
+                LocalBuiltinProbeOutcome::Detected(runtime) => detected.push(runtime),
+                LocalBuiltinProbeOutcome::Skipped { provider, reason } => {
                     skipped.insert(provider, reason);
-                    continue;
                 }
-            };
-            if let Err(error) = check_provider_minimum(&provider, &version) {
-                let reason =
-                    format!("provider CLI version {version:?} is below its minimum: {error}");
-                tracing::warn!(%provider, %version, %error, "withholding provider registration");
-                skipped.insert(provider, reason);
-                continue;
             }
-            detected.push(DetectedProviderRuntime {
-                provider,
-                display_name: display_name.to_string(),
-                version,
-                command_path: entry.path,
-                fixed_args,
-            });
         }
         Ok(BuiltinProbeResult {
             available,
@@ -308,6 +350,18 @@ impl RuntimeLaunchRegistry {
             .unwrap()
             .builtins
             .insert(workspace_id.to_string(), builtins);
+    }
+
+    /// Adds or refreshes only the launch specs present in a built-in refresh.
+    /// A probe omission is not an accepted removal: the matching runtime is
+    /// deliberately kept by `RuntimeRegistry::merge_builtin_registration`, so
+    /// its last accepted command must remain launchable too.
+    pub(crate) fn merge_builtins(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
+        let mut state = self.state.write().unwrap();
+        let builtins = state.builtins.entry(workspace_id.to_string()).or_default();
+        for spec in specs {
+            builtins.insert(spec.target.provider.clone(), spec);
+        }
     }
 
     pub(crate) fn replace_workspace_profiles(
@@ -413,24 +467,39 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         (agents, skipped)
     }
 
+    fn merge_available(&self, probed: BTreeMap<String, AgentEntry>) -> BuiltinAvailability {
+        let mut current = self.available_agents.lock().unwrap();
+        let gained = if let Some(merged) =
+            crate::agents_refresh::merge_discovered_agents(&current, &probed)
+        {
+            *current = merged;
+            true
+        } else {
+            false
+        };
+        BuiltinAvailability {
+            gained,
+            providers: current.keys().cloned().collect(),
+        }
+    }
+
     async fn probe(
         &self,
         ctx: Ctx,
         reason: ProviderProbeReason,
     ) -> anyhow::Result<BuiltinSnapshot> {
         let probe = self.catalog.probe_builtins(ctx, reason).await?;
-        let gained = {
-            let mut current = self.available_agents.lock().unwrap();
-            if let Some(merged) =
-                crate::agents_refresh::merge_discovered_agents(&current, &probe.available)
-            {
-                *current = merged;
-                true
-            } else {
-                false
+        let availability = self.merge_available(probe.available.clone());
+        let available_providers = availability.providers;
+        let mut skipped = probe.skipped;
+        for provider in &available_providers {
+            if !probe.available.contains_key(provider) {
+                skipped
+                    .entry(provider.clone())
+                    .or_insert_with(|| "provider CLI is no longer resolvable".to_string());
             }
-        };
-        *self.skipped_agents.lock().unwrap() = probe.skipped;
+        }
+        *self.skipped_agents.lock().unwrap() = skipped;
 
         let mut detected = probe.detected;
         detected.sort_by(|left, right| left.provider.cmp(&right.provider));
@@ -471,7 +540,8 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         Ok(BuiltinSnapshot {
             payload,
             launches,
-            gained,
+            gained: availability.gained,
+            available_providers,
         })
     }
 }
@@ -480,6 +550,7 @@ struct BuiltinSnapshot {
     payload: Vec<BTreeMap<String, String>>,
     launches: Vec<RuntimeLaunchSpec>,
     gained: bool,
+    available_providers: Vec<String>,
 }
 
 struct ProviderRegistrationRound<C: ProviderCatalog> {
@@ -490,6 +561,7 @@ struct ProviderRegistrationRound<C: ProviderCatalog> {
     builtins: Vec<BTreeMap<String, String>>,
     builtin_launches: Vec<RuntimeLaunchSpec>,
     gained: bool,
+    available_providers: Vec<String>,
     include_profiles: bool,
     pending_profiles: Mutex<HashMap<String, Vec<RuntimeLaunchSpec>>>,
 }
@@ -589,8 +661,13 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
     }
 
     fn registration_applied(&self, workspace_id: &str) {
-        self.launches
-            .replace_builtins(workspace_id, self.builtin_launches.clone());
+        if self.include_profiles {
+            self.launches
+                .replace_builtins(workspace_id, self.builtin_launches.clone());
+        } else {
+            self.launches
+                .merge_builtins(workspace_id, self.builtin_launches.clone());
+        }
         let Some(specs) = self.pending_profiles.lock().unwrap().remove(workspace_id) else {
             return;
         };
@@ -600,6 +677,10 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
 
     fn gained_providers(&self) -> bool {
         self.gained
+    }
+
+    fn available_providers(&self) -> Vec<String> {
+        self.available_providers.clone()
     }
 }
 
@@ -615,9 +696,20 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             builtins: snapshot.payload,
             builtin_launches: snapshot.launches,
             gained: snapshot.gained,
+            available_providers: snapshot.available_providers,
             include_profiles: true,
             pending_profiles: Mutex::new(HashMap::new()),
         }))
+    }
+
+    async fn refresh_builtin_availability(
+        &self,
+        ctx: Ctx,
+    ) -> anyhow::Result<Option<BuiltinAvailability>> {
+        let Some(probed) = self.catalog.probe_available(ctx).await? else {
+            return Ok(None);
+        };
+        Ok(Some(self.merge_available(probed)))
     }
 
     async fn begin_builtin_refresh(
@@ -634,6 +726,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             builtins: snapshot.payload,
             builtin_launches: snapshot.launches,
             gained: snapshot.gained,
+            available_providers: snapshot.available_providers,
             include_profiles: false,
             pending_profiles: Mutex::new(HashMap::new()),
         })))
@@ -749,6 +842,7 @@ mod tests {
                         "provider version probe failed".to_string(),
                     )]),
                 },
+                BuiltinProbeResult::default(),
             ]),
         });
         let source = ProviderRegistrationSource::new(
@@ -779,6 +873,19 @@ mod tests {
         assert_eq!(
             skipped.get("claude").map(String::as_str),
             Some("provider version probe failed")
+        );
+
+        let third = source
+            .begin_builtin_refresh(Ctx::new(), BuiltinRefreshReason::Discovery)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!third.gained_providers());
+        let (agents, skipped) = source.health_snapshot();
+        assert_eq!(agents, vec!["claude".to_string()]);
+        assert_eq!(
+            skipped.get("claude").map(String::as_str),
+            Some("provider CLI is no longer resolvable")
         );
     }
 
@@ -893,6 +1000,51 @@ mod tests {
             registry.resolve("ws-2", &target).unwrap().command_path,
             "/old/codex"
         );
+    }
+
+    #[test]
+    fn builtin_merge_keeps_omitted_provider_launches() {
+        let registry = RuntimeLaunchRegistry::default();
+        let launch = |provider: &str, command_path: &str| RuntimeLaunchSpec {
+            target: RuntimeExecutionTarget {
+                provider: provider.to_string(),
+                profile_id: String::new(),
+            },
+            display_name: provider.to_string(),
+            command_path: command_path.to_string(),
+            fixed_args: Vec::new(),
+            version: "1.0.0".to_string(),
+        };
+        registry.replace_builtins(
+            "ws-1",
+            vec![
+                launch("codex", "/old/codex"),
+                launch("claude", "/old/claude"),
+            ],
+        );
+
+        registry.merge_builtins("ws-1", vec![launch("claude", "/new/claude")]);
+
+        let codex = registry
+            .resolve(
+                "ws-1",
+                &RuntimeExecutionTarget {
+                    provider: "codex".to_string(),
+                    profile_id: String::new(),
+                },
+            )
+            .unwrap();
+        assert_eq!(codex.command_path, "/old/codex");
+        let claude = registry
+            .resolve(
+                "ws-1",
+                &RuntimeExecutionTarget {
+                    provider: "claude".to_string(),
+                    profile_id: String::new(),
+                },
+            )
+            .unwrap();
+        assert_eq!(claude.command_path, "/new/claude");
     }
 
     #[test]

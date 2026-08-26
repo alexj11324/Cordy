@@ -46,6 +46,22 @@ pub struct BuiltinRefreshOutcome {
     pub progressed: usize,
 }
 
+/// Cheap machine-level availability state used to gate the expensive
+/// version-probe half of discovery. A provider gain bypasses backoff, while a
+/// known-but-missing provider keeps the existing missing-runtime retry policy.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BuiltinAvailability {
+    pub gained: bool,
+    pub providers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuiltinWorkspaceRefresh {
+    NotNeeded,
+    Needed,
+    Applied,
+}
+
 /// Best-effort cache warmup request. Correctness does not depend on queue
 /// delivery: the authenticated checkout handler synchronizes a miss on demand.
 pub(crate) struct RepoWarmupRequest {
@@ -104,6 +120,14 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
     fn gained_providers(&self) -> bool {
         false
     }
+
+    /// The one-directional machine availability set captured by a built-in
+    /// probe. Discovery uses it to distinguish a skipped/unlaunchable CLI
+    /// from a converged workspace, so retry backoff still applies while the
+    /// provider remains absent from the launchable payload.
+    fn available_providers(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[async_trait::async_trait]
@@ -111,6 +135,18 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
     /// Starts one machine-level probe round. The returned object is reused for
     /// every workspace in this sync so N workspaces never cause N×M CLI probes.
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>>;
+
+    /// Performs only the cheap availability half of a discovery tick. A
+    /// production provider source implements this so discovery backoff can
+    /// avoid launching `--version` processes until a convergence attempt is
+    /// actually due. `None` keeps compatibility with sources that combine
+    /// availability and version probing in `begin_builtin_refresh`.
+    async fn refresh_builtin_availability(
+        &self,
+        _ctx: Ctx,
+    ) -> anyhow::Result<Option<BuiltinAvailability>> {
+        Ok(None)
+    }
 
     /// Probes built-in providers for the requested cadence. `Some` carries one
     /// shared built-in-only round for every tracked workspace; the round itself
@@ -346,15 +382,76 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<BuiltinRefreshOutcome> {
-        let Some(round) = self
-            .source
-            .begin_builtin_refresh(ctx.child(), reason)
-            .await?
-        else {
-            return Ok(BuiltinRefreshOutcome::default());
-        };
         let now = Instant::now();
+        let discovery_preflight = if reason == BuiltinRefreshReason::Discovery {
+            match self.source.refresh_builtin_availability(ctx.child()).await {
+                Ok(Some(availability)) => {
+                    let has_missing = registry.workspace_ids().into_iter().any(|workspace_id| {
+                        registry
+                            .missing_builtin_provider_count(&workspace_id, &availability.providers)
+                            > 0
+                    });
+                    if !has_missing {
+                        self.builtin_retry.lock().unwrap().reset_backoff();
+                        return Ok(BuiltinRefreshOutcome::default());
+                    }
+                    let allowed = self
+                        .builtin_retry
+                        .lock()
+                        .unwrap()
+                        .should_attempt(availability.gained, now);
+                    if !allowed {
+                        return Ok(BuiltinRefreshOutcome::default());
+                    }
+                    Some(availability)
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    self.builtin_retry
+                        .lock()
+                        .unwrap()
+                        .record_attempt(false, now);
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        let round = match self.source.begin_builtin_refresh(ctx.child(), reason).await {
+            Ok(Some(round)) => round,
+            Ok(None) => {
+                if reason == BuiltinRefreshReason::Discovery {
+                    self.builtin_retry.lock().unwrap().reset_backoff();
+                }
+                return Ok(BuiltinRefreshOutcome::default());
+            }
+            Err(error) => {
+                if reason == BuiltinRefreshReason::Discovery {
+                    self.builtin_retry
+                        .lock()
+                        .unwrap()
+                        .record_attempt(false, now);
+                }
+                return Err(error);
+            }
+        };
+        let round_providers = round.available_providers();
+        let availability_known = discovery_preflight.is_some() || !round_providers.is_empty();
+        let available_providers = match discovery_preflight.as_ref() {
+            Some(preflight) if round_providers.is_empty() => preflight.providers.clone(),
+            _ => round_providers,
+        };
+        if reason == BuiltinRefreshReason::Discovery
+            && availability_known
+            && registry.workspace_ids().into_iter().all(|workspace_id| {
+                registry.missing_builtin_provider_count(&workspace_id, &available_providers) == 0
+            })
+        {
+            self.builtin_retry.lock().unwrap().reset_backoff();
+            return Ok(BuiltinRefreshOutcome::default());
+        }
         let discovery_allowed = reason != BuiltinRefreshReason::Discovery
+            || discovery_preflight.is_some()
             || self
                 .builtin_retry
                 .lock()
@@ -368,15 +465,44 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             let Some(workspace) = registry.workspace(&workspace_id) else {
                 continue;
             };
+            let missing_before = (reason == BuiltinRefreshReason::Discovery && availability_known)
+                .then(|| {
+                    registry.missing_builtin_provider_count(&workspace.id, &available_providers)
+                });
             match self
-                .register_builtin_workspace(ctx.child(), registry, &workspace, Arc::clone(&round))
+                .register_builtin_workspace(
+                    ctx.child(),
+                    registry,
+                    &workspace,
+                    Arc::clone(&round),
+                    reason,
+                    availability_known,
+                    &available_providers,
+                )
                 .await
             {
-                Ok(true) => {
+                Ok(BuiltinWorkspaceRefresh::Applied) => {
                     outcome.attempted += 1;
-                    outcome.progressed += 1;
+                    let progressed = match missing_before {
+                        Some(before) => {
+                            registry
+                                .missing_builtin_provider_count(&workspace.id, &available_providers)
+                                < before
+                        }
+                        None => true,
+                    };
+                    if progressed {
+                        outcome.progressed += 1;
+                    }
                 }
-                Ok(false) => {}
+                Ok(BuiltinWorkspaceRefresh::Needed) => {
+                    // A workspace can still be missing an available provider
+                    // even when every detected provider was omitted from this
+                    // round's launchable payload. Count that as a failed
+                    // convergence attempt so discovery backoff applies.
+                    outcome.attempted += 1;
+                }
+                Ok(BuiltinWorkspaceRefresh::NotNeeded) => {}
                 Err(error) => {
                     // The workspace was selected from live state and the
                     // request was therefore needed, even when the payload
@@ -509,7 +635,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         workspace: &crate::runtime_registry::WorkspaceRuntimeState,
         round: Arc<dyn RuntimeRegistrationRound>,
-    ) -> anyhow::Result<bool> {
+        reason: BuiltinRefreshReason,
+        availability_known: bool,
+        available_providers: &[String],
+    ) -> anyhow::Result<BuiltinWorkspaceRefresh> {
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
         let payload = round
@@ -525,10 +654,38 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             // temporarily unreadable or because no provider is installed.
             // Go keeps existing runtime rows in this path; only an explicit
             // workspace/profile convergence owns authoritative empty state.
-            return Ok(false);
+            return if reason == BuiltinRefreshReason::Discovery
+                && availability_known
+                && registry.missing_builtin_provider_count(&workspace.id, available_providers) > 0
+            {
+                Ok(BuiltinWorkspaceRefresh::Needed)
+            } else {
+                Ok(BuiltinWorkspaceRefresh::NotNeeded)
+            };
         }
-        if !registry.workspace_needs_builtin_refresh(&workspace.id, &payload.runtimes) {
-            return Ok(false);
+        let needs = match reason {
+            BuiltinRefreshReason::Discovery => {
+                if availability_known {
+                    registry.missing_builtin_provider_count(&workspace.id, available_providers) > 0
+                        && registry
+                            .workspace_needs_builtin_registration(&workspace.id, &payload.runtimes)
+                } else {
+                    registry.workspace_needs_builtin_refresh(&workspace.id, &payload.runtimes)
+                }
+            }
+            BuiltinRefreshReason::Version => {
+                registry.workspace_needs_builtin_refresh(&workspace.id, &payload.runtimes)
+            }
+        };
+        if !needs {
+            return if reason == BuiltinRefreshReason::Discovery
+                && availability_known
+                && registry.missing_builtin_provider_count(&workspace.id, available_providers) > 0
+            {
+                Ok(BuiltinWorkspaceRefresh::Needed)
+            } else {
+                Ok(BuiltinWorkspaceRefresh::NotNeeded)
+            };
         }
         let delta = {
             let _fence = self.deregistration_flush.lock().await;
@@ -575,7 +732,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             delta
         };
         self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
-        Ok(true)
+        Ok(BuiltinWorkspaceRefresh::Applied)
     }
 
     /// Final best-effort delivery for rows dropped before the daemon's current
