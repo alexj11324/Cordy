@@ -164,6 +164,14 @@ impl ProviderRuntimeContext {
             "accepted launch for provider {} has no executable path",
             target.provider
         );
+        if target.profile_id.is_empty() {
+            anyhow::ensure!(
+                crate::config::agent_executable_present(&launch.command_path),
+                "accepted launch for provider {} is no longer executable at {:?}",
+                target.provider,
+                launch.command_path
+            );
+        }
         Ok(BackendConfig {
             command: RuntimeCommand::new(launch.command_path.clone(), prefix),
             env,
