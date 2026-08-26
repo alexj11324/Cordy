@@ -16,6 +16,9 @@ use tokio::task::JoinHandle;
 
 use crate::activity::DaemonActivity;
 use crate::client::{is_task_not_found_anyhow, is_transient_error, Client, TaskCancelAck};
+use crate::execenv::isolation::{
+    preparation_error_kind, PREPARATION_ERROR_KIND_OPENCLAW_CLI_TIMEOUT,
+};
 use crate::execenv::execenv::{predict_root_dir, write_gc_meta, GCMetaKind, GcMeta};
 use crate::local_directory::local_directory_assignment_for_task;
 use crate::manager::DaemonControl;
@@ -45,6 +48,45 @@ pub struct TaskRunFailure {
     pub message: String,
     pub failure_reason: String,
     pub cancelled_delivery_failure: Option<CancelledRunDeliveryFailure>,
+}
+
+/// Structural errors that must survive the provider boundary as platform-side
+/// task reasons. These are deliberately small sentinels: their wrapped
+/// context remains the user-facing message, while result delivery can classify
+/// the cause without guessing from prose.
+#[derive(Debug, thiserror::Error)]
+#[error("invalid task identity")]
+pub(crate) struct InvalidTaskIdentity;
+
+#[derive(Debug, thiserror::Error)]
+#[error("task preparation timed out")]
+pub(crate) struct TaskPrepareTimeout;
+
+#[derive(Debug, thiserror::Error)]
+#[error("skill bundle unavailable")]
+pub(crate) struct SkillBundleUnavailable;
+
+/// Ports Go's `taskRunFailureReason` at the point where the original typed
+/// error is still available. The string-only fallback remains for failures
+/// reconstructed after the provider has already returned.
+pub(crate) fn task_run_failure_reason(error: &anyhow::Error) -> String {
+    if error.is::<InvalidTaskIdentity>() {
+        return cordy_task_failure::Reason::INVALID_TASK_IDENTITY.to_string();
+    }
+    if error.is::<TaskPrepareTimeout>() {
+        return cordy_task_failure::Reason::TIMEOUT.to_string();
+    }
+    if error.is::<SkillBundleUnavailable>() {
+        return cordy_task_failure::Reason::SKILL_BUNDLE_UNAVAILABLE.to_string();
+    }
+    if preparation_error_kind(error) == PREPARATION_ERROR_KIND_OPENCLAW_CLI_TIMEOUT {
+        return cordy_task_failure::Reason::RUNTIME_CLI_TIMEOUT.to_string();
+    }
+    cordy_task_failure::classify(&format!("{error:#}")).to_string()
+}
+
+pub(crate) fn task_run_failure_reason_from_message(message: &str) -> String {
+    cordy_task_failure::classify(message).to_string()
 }
 
 /// Complete output of one real provider run.
@@ -407,7 +449,7 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
 
     if let Some(failure) = &outcome.failure {
         let failure_reason = if failure.failure_reason.is_empty() {
-            cordy_task_failure::classify(&failure.message).to_string()
+            task_run_failure_reason_from_message(&failure.message)
         } else {
             failure.failure_reason.clone()
         };
@@ -739,6 +781,43 @@ mod tests {
         assert_eq!(
             failure_reason_for_result(&explicit),
             "skill_bundle_unavailable"
+        );
+    }
+
+    #[test]
+    fn task_run_failure_reason_preserves_platform_sentinels() {
+        let invalid = anyhow::Error::new(InvalidTaskIdentity).context("missing agent payload");
+        assert_eq!(
+            task_run_failure_reason(&invalid),
+            cordy_task_failure::Reason::INVALID_TASK_IDENTITY.to_string()
+        );
+
+        let prepare_timeout = anyhow::Error::new(TaskPrepareTimeout).context("start task failed");
+        assert_eq!(
+            task_run_failure_reason(&prepare_timeout),
+            cordy_task_failure::Reason::TIMEOUT.to_string()
+        );
+
+        let skill = anyhow::Error::new(SkillBundleUnavailable).context("download failed");
+        assert_eq!(
+            task_run_failure_reason(&skill),
+            cordy_task_failure::Reason::SKILL_BUNDLE_UNAVAILABLE.to_string()
+        );
+
+        let openclaw = anyhow::Error::new(crate::execenv::isolation::ErrOpenclawCliTimeout)
+            .context("prepare openclaw config: context deadline exceeded");
+        assert_eq!(
+            task_run_failure_reason(&openclaw),
+            cordy_task_failure::Reason::RUNTIME_CLI_TIMEOUT.to_string()
+        );
+    }
+
+    #[test]
+    fn task_run_failure_reason_falls_back_to_agent_taxonomy() {
+        let provider = anyhow::anyhow!("provider returned 429: rate limit");
+        assert_eq!(
+            task_run_failure_reason(&provider),
+            cordy_task_failure::Reason::AGENT_PROVIDER_CAPACITY_OR_RATE_LIMIT.to_string()
         );
     }
 
