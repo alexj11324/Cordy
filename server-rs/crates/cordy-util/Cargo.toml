@@ -16,6 +16,8 @@ rand = { workspace = true }
 aes-gcm = { workspace = true }
 regex = { workspace = true }
 libc = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["chrono"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

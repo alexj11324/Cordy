@@ -19,7 +19,6 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
-use tracing_subscriber::EnvFilter;
 
 use crate::identity::profile_dir;
 use crate::update_executor::{
@@ -702,12 +701,11 @@ impl DaemonLogs {
             Some(writer) => BoxMakeWriter::new(writer.clone()),
             None => BoxMakeWriter::new(io::stderr),
         };
-        let filter = filter
-            .map(str::to_owned)
-            .or_else(|| std::env::var("RUST_LOG").ok())
-            .unwrap_or_else(|| "info".to_string());
+        let filter = cordy_util::logging::env_filter(filter.as_deref(), "info");
         tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::new(filter))
+            .with_env_filter(filter)
+            .with_timer(cordy_util::logging::local_timer())
+            .with_target(false)
             .with_writer(writer)
             .with_ansi(rotating.is_none())
             .try_init()
