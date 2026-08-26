@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context as _;
 use cordy_agent::{ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -190,7 +190,12 @@ async fn bootstrap_task_mcp(
         .agent
         .as_ref()
         .and_then(|agent| agent.mcp_config.clone());
-    if let Some(agent_config) = effective_mcp_config.clone() {
+    // A task-scoped broker or plugin-hook overlay must not disable the
+    // provider's native MCP configuration just because the agent has no
+    // explicit mcp_config. Use an empty managed document as the merge input
+    // in that case so runtime-owned servers are still loaded.
+    if effective_mcp_config.is_some() || remote_config.is_some() {
+        let agent_config = effective_mcp_config.clone().unwrap_or_else(|| json!({}));
         effective_mcp_config =
             match runtime_mcp::merge_runtime_and_agent_mcp_config(provider, &agent_config) {
                 Ok(merged) => merged,
@@ -200,7 +205,7 @@ async fn bootstrap_task_mcp(
                         %error,
                         "mcp_config: runtime merge failed; using agent configuration only"
                     );
-                    Some(agent_config)
+                    effective_mcp_config
                 }
             };
     }

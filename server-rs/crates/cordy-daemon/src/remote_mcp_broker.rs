@@ -639,11 +639,27 @@ async fn run_proxy_body(
             message: format!("Remote MCP request failed: {err}"),
         })?;
 
-    let response = match tokio::select! {
-        _ = proxy.ctx.cancelled() => Err(anyhow!(proxy.ctx.cause().to_string())),
+    let response = tokio::select! {
+        _ = proxy.ctx.cancelled() => {
+            return Err(ProxyFailure {
+                result_class: "cancelled",
+                id: rpc_id,
+                code: -32000,
+                message: "Remote MCP task was cancelled".to_string(),
+            });
+        }
         response = proxy.upstream.send(&proxy.ctx, upstream_request) => response,
-    } {
+    };
+    let response = match response {
         Ok(response) => response,
+        Err(_) if proxy.ctx.err().is_some() => {
+            return Err(ProxyFailure {
+                result_class: "cancelled",
+                id: rpc_id,
+                code: -32000,
+                message: "Remote MCP task was cancelled".to_string(),
+            })
+        }
         Err(_) => {
             return Err(ProxyFailure {
                 result_class: "remote_error",
@@ -859,12 +875,18 @@ pub(crate) fn merge_task_remote_mcp_config(base: &str, overlay: &str) -> anyhow:
     let mut base_document = json!({"mcpServers": {}});
     if !trimmed.is_empty() && trimmed != "null" {
         base_document = serde_json::from_str(trimmed).map_err(|err| anyhow!("{err}"))?;
-        if base_document.get("mcpServers").is_none() {
-            base_document["mcpServers"] = json!({});
-        }
     }
+    let base_document = base_document
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("base MCP config must be a JSON object"))?;
+    let servers = base_document
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| json!({}));
+    let servers = servers
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("base MCP config mcpServers must be a JSON object"))?;
     for (name, server) in overlay_servers {
-        base_document["mcpServers"][name] = server.clone();
+        servers.insert(name.clone(), server.clone());
     }
     Ok(serde_json::to_string(&base_document)?)
 }
@@ -872,6 +894,7 @@ pub(crate) fn merge_task_remote_mcp_config(base: &str, overlay: &str) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn provider_matrix() {
@@ -910,6 +933,15 @@ mod tests {
             merge_task_remote_mcp_config(r#"{"mcpServers":{}}"#, "").unwrap(),
             r#"{"mcpServers":{}}"#
         );
+
+        // Overlaying a malformed base must be a normal preparation error,
+        // not an indexing panic that takes down the daemon.
+        assert!(merge_task_remote_mcp_config("[]", r#"{"mcpServers":{}}"#).is_err());
+        assert!(merge_task_remote_mcp_config(
+            r#"{"mcpServers":[]}"#,
+            r#"{"mcpServers":{}}"#
+        )
+        .is_err());
     }
 
     #[test]

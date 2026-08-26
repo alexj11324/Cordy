@@ -94,6 +94,15 @@ async fn plugin_hook_fallback() -> Response {
     HookResponse::empty(StatusCode::NOT_FOUND).into_response()
 }
 
+fn advertised_input_schema(tool: &PluginHookTool) -> Value {
+    let fallback = || json!({"type": "object", "properties": {}});
+    match tool.input_schema.as_ref() {
+        Some(Value::String(encoded)) => serde_json::from_str(encoded).unwrap_or_else(|_| fallback()),
+        Some(schema) if !schema.is_null() => schema.clone(),
+        _ => fallback(),
+    }
+}
+
 /// Idempotent shutdown handle for one task's server (go:48–68).
 #[derive(Default)]
 pub(crate) struct PluginHookMCPSet {
@@ -305,14 +314,10 @@ pub(crate) async fn serve_plugin_hook_request(
                 .tools
                 .iter()
                 .map(|tool| {
-                    let schema = match &tool.input_schema {
-                        Some(schema) if !schema.is_null() => schema.clone(),
-                        _ => json!({"type": "object", "properties": {}}),
-                    };
                     json!({
                         "name": tool.name,
                         "description": tool.description,
-                        "inputSchema": schema,
+                        "inputSchema": advertised_input_schema(tool),
                     })
                 })
                 .collect();
@@ -538,6 +543,35 @@ mod tests {
             decoded["result"]["tools"][0]["inputSchema"]["type"],
             "object"
         );
+
+        // The server-side service still stores the schema as a JSON-encoded
+        // string in its claim DTO. The MCP wire contract must expose the
+        // decoded object, never that string.
+        let encoded = vec![PluginHookTool {
+            installation_id: "i".into(),
+            hook_key: "k".into(),
+            name: "encoded".into(),
+            description: String::new(),
+            input_schema: Some(Value::String(
+                r#"{"type":"object","required":["query"]}"#.into(),
+            )),
+        }];
+        let encoded_state = PluginHookMCPState::new(
+            crate::repocache::Ctx::new(),
+            "t".into(),
+            encoded,
+            ok_invoke(),
+            "/encoded".into(),
+        );
+        let response = serve_plugin_hook_request(
+            &encoded_state,
+            "POST",
+            "/encoded",
+            br#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#,
+        )
+        .await;
+        let decoded: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(decoded["result"]["tools"][0]["inputSchema"]["required"][0], "query");
     }
 
     #[tokio::test]
