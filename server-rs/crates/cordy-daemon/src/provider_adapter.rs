@@ -75,6 +75,8 @@ const CODEX_ROLLOUT_FLUSH_WAIT: Duration = Duration::from_secs(2);
 const REASONIX_STATE_HOME_ENV: &str = "REASONIX_STATE_HOME";
 const DSH_SESSION_ROOT_ENV: &str = "CORDY_DSH_SESSION_ROOT";
 const DSH_TELEMETRY_DISABLED_ENV: &str = "DSH_TELEMETRY_DISABLED";
+const HERMES_PROVIDER_UNCONFIGURED_HINT: &str =
+    " [cordy] hermes did not read the HERMES_HOME your shell uses: this task ran against a per-task overlay, seeded from the home the daemon process resolved. The daemon log line \"hermes home resolved\" for this task names that source home — if your hermes config lives somewhere else, set HERMES_HOME in the agent's custom_env to point at it.";
 const TASK_PREPARE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PREPARATION_PENDING: u8 = 0;
 const PREPARATION_COMPLETE: u8 = 1;
@@ -1415,6 +1417,10 @@ fn result_outcome(
         })
         .collect::<Vec<_>>();
     usage.sort_by(|left, right| left.model.cmp(&right.model));
+    let annotate_provider_error = !matches!(
+        result.status.as_str(),
+        "completed" | "cancelled" | "timeout" | "idle_watchdog"
+    );
     let (status, comment, mut failure_reason) = match result.status.as_str() {
         "completed" => ("completed", result.output, String::new()),
         "cancelled" => (
@@ -1449,6 +1455,11 @@ fn result_outcome(
     if resume_rejected {
         failure_reason = "resume_rejected".to_string();
     }
+    let comment = if annotate_provider_error {
+        annotate_hermes_provider_unconfigured(&comment, provider, !env.hermes_home.is_empty())
+    } else {
+        comment
+    };
     TaskRunOutcome {
         result: TaskResult {
             status: status.to_string(),
@@ -1466,6 +1477,23 @@ fn result_outcome(
         },
         failure: None,
     }
+}
+
+/// Adds the same fixed, human-facing hint as Go when Hermes reports that it
+/// resolved no LLM provider while running against a task overlay. The hint is
+/// deliberately constant: the resulting text is persisted and later scanned
+/// by resume guards, so user-controlled paths must never influence those
+/// machine decisions.
+fn annotate_hermes_provider_unconfigured(
+    error: &str,
+    provider: &str,
+    overlay_active: bool,
+) -> String {
+    if provider != "hermes" || !overlay_active || !cordy_task_failure::provider_unconfigured(error)
+    {
+        return error.to_string();
+    }
+    format!("{error}{HERMES_PROVIDER_UNCONFIGURED_HINT}")
 }
 
 /// Withholds a Codex session from terminal delivery until its rollout has
@@ -2165,6 +2193,64 @@ mod tests {
         assert_eq!(outcome.result.session_id, "session-1");
         assert_eq!(outcome.result.usage[0].provider, "qwen");
         assert_eq!(outcome.result.usage[0].input_tokens, 10);
+    }
+
+    #[test]
+    fn hermes_overlay_annotation_is_additive_and_machine_safe() {
+        let error = "hermes session/new failed: No LLM provider configured. Run hermes model.";
+        let annotated = annotate_hermes_provider_unconfigured(error, "hermes", true);
+
+        assert!(annotated.starts_with(error));
+        assert!(annotated.contains("HERMES_HOME"));
+        assert!(annotated.contains("hermes home resolved"));
+        assert!(annotated.contains("custom_env"));
+        assert_eq!(
+            cordy_task_failure::classify(&annotated),
+            cordy_task_failure::classify(error)
+        );
+        assert_eq!(
+            annotate_hermes_provider_unconfigured(error, "codex", true),
+            error
+        );
+        assert_eq!(
+            annotate_hermes_provider_unconfigured(error, "hermes", false),
+            error
+        );
+    }
+
+    #[test]
+    fn hermes_overlay_annotation_is_only_applied_to_provider_failures() {
+        let environment = Environment {
+            hermes_home: "/tmp/hermes-overlay".into(),
+            ..Environment::default()
+        };
+        let outcome = result_outcome(
+            "hermes",
+            ExecutionResult {
+                status: "failed".into(),
+                error: "No LLM provider configured".into(),
+                ..ExecutionResult::default()
+            },
+            &environment,
+            "",
+            "",
+            false,
+        );
+        assert!(outcome.result.comment.contains("HERMES_HOME"));
+
+        let completed = result_outcome(
+            "hermes",
+            ExecutionResult {
+                status: "completed".into(),
+                output: "No LLM provider configured".into(),
+                ..ExecutionResult::default()
+            },
+            &environment,
+            "",
+            "",
+            false,
+        );
+        assert_eq!(completed.result.comment, "No LLM provider configured");
     }
 
     #[tokio::test]
