@@ -72,6 +72,7 @@ pub fn build_codex_args(options: &ExecOptions) -> Vec<String> {
 
     let mut user = filter_custom_args(&options.extra_args, &BLOCKED_ARGS).args;
     user.extend(filter_custom_args(&options.custom_args, &BLOCKED_ARGS).args);
+    user = filter_shell_environment_overrides(user);
     if managed_mcp {
         user = filter_managed_mcp_overrides(user);
     }
@@ -85,22 +86,34 @@ pub fn build_codex_args(options: &ExecOptions) -> Vec<String> {
 
 fn filter_managed_mcp_overrides(args: Vec<String>) -> Vec<String> {
     filter_config_namespace(args, |value| {
-        let key = value
-            .trim()
-            .split_once('=')
-            .map_or(value.trim(), |(key, _)| key);
-        let key = key.trim();
+        let key = normalized_config_key(value);
         key == "mcp_servers" || key.starts_with("mcp_servers.")
     })
 }
 
+fn filter_shell_environment_overrides(args: Vec<String>) -> Vec<String> {
+    filter_config_namespace(args, |value| {
+        let key = normalized_config_key(value);
+        key == "shell_environment_policy"
+            || key.starts_with("shell_environment_policy.")
+            || (key.starts_with("profiles.") && key.contains(".shell_environment_policy"))
+    })
+}
+
+fn normalized_config_key(value: &str) -> String {
+    let key = value
+        .trim()
+        .split_once('=')
+        .map_or(value.trim(), |(key, _)| key)
+        .trim();
+    key.chars()
+        .filter(|character| !character.is_whitespace() && *character != '"' && *character != '\'')
+        .collect()
+}
+
 fn strip_fast_mode_conflicts(args: Vec<String>) -> Vec<String> {
     let args = filter_config_namespace(args, |value| {
-        let key = value
-            .trim()
-            .split_once('=')
-            .map_or(value.trim(), |(key, _)| key);
-        key.trim() == "features.fast_mode"
+        normalized_config_key(value) == "features.fast_mode"
     });
     let mut filtered = Vec::with_capacity(args.len() + 2);
     let mut index = 0;
@@ -245,9 +258,49 @@ async fn write_managed_codex_mcp(
             .await
             .map_err(AgentError::Process)?;
     }
-    tokio::fs::rename(&tmp, &path)
-        .await
-        .map_err(AgentError::Process)
+    replace_file(&tmp, &path).await.map_err(AgentError::Process)
+}
+
+async fn replace_file(tmp: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        replace_file_windows(tmp, destination)
+    }
+    #[cfg(not(windows))]
+    {
+        tokio::fs::rename(tmp, destination).await
+    }
+}
+
+#[cfg(windows)]
+fn replace_file_windows(tmp: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source: Vec<u16> = tmp
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let target: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 fn remove_managed_block(input: &str, begin: &str, end: &str) -> String {
@@ -269,7 +322,7 @@ fn strip_user_mcp_tables(input: &str) -> String {
     let mut skipping = false;
     for line in input.lines() {
         let trimmed = line.trim();
-        let is_mcp = trimmed.starts_with("[mcp_servers.") || trimmed.starts_with("[[mcp_servers.");
+        let is_mcp = is_mcp_table_header(trimmed);
         if is_mcp {
             skipping = true;
             continue;
@@ -283,6 +336,14 @@ fn strip_user_mcp_tables(input: &str) -> String {
         }
     }
     output
+}
+
+fn is_mcp_table_header(line: &str) -> bool {
+    let normalized: String = line
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    normalized.starts_with("[mcp_servers.") || normalized.starts_with("[[mcp_servers.")
 }
 
 fn render_codex_mcp_server(
@@ -322,7 +383,8 @@ fn render_codex_mcp_server(
         object.contains_key("http_headers") || object.contains_key("httpHeaders");
     for (key, field) in object {
         match key.as_str() {
-            "command" | "url" | "type" | "tools" | "prompts" | "resources" => {}
+            "command" | "url" | "tools" | "prompts" | "resources" => {}
+            "type" if remote => {}
             "args" => {
                 let Some(values) = field.as_array() else {
                     return Err(AgentError::InvalidConfig(format!(
@@ -371,12 +433,27 @@ fn render_codex_mcp_server(
                 output.push_str(" }\n");
             }
             "experimental_use_rmcp_client" => {
-                if let Some(value) = field.as_bool() {
+                if !remote {
+                    let Some(value) = field.as_bool() else {
+                        return Err(AgentError::InvalidConfig(format!(
+                            "codex mcp_servers.{name}.experimental_use_rmcp_client must be a boolean"
+                        )));
+                    };
                     output.push_str("experimental_use_rmcp_client = ");
                     output.push_str(if value { "true\n" } else { "false\n" });
                 }
             }
-            _ => {}
+            _ => {
+                let rendered = toml_value(field).map_err(|error| {
+                    AgentError::InvalidConfig(format!(
+                        "codex mcp_servers.{name}.{key} cannot be rendered as TOML: {error}"
+                    ))
+                })?;
+                output.push_str(&toml_key(key));
+                output.push_str(" = ");
+                output.push_str(&rendered);
+                output.push('\n');
+            }
         }
     }
     if remote {
@@ -418,11 +495,33 @@ fn toml_string(value: &str) -> String {
     output
 }
 
+fn toml_value(value: &Value) -> Result<String, String> {
+    match value {
+        Value::Null => Err("null is not representable in TOML".to_string()),
+        Value::Bool(value) => Ok(value.to_string()),
+        Value::Number(value) => Ok(value.to_string()),
+        Value::String(value) => Ok(toml_string(value)),
+        Value::Array(values) => values
+            .iter()
+            .map(toml_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|values| format!("[{}]", values.join(", "))),
+        Value::Object(values) => values
+            .iter()
+            .map(|(key, value)| {
+                toml_value(value).map(|value| format!("{} = {value}", toml_key(key)))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|values| format!("{{ {} }}", values.join(", "))),
+    }
+}
+
 #[async_trait]
 impl Backend for CodexBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
         let executable = command_path(&self.config.command);
         let mut prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS).args;
+        prefix = filter_shell_environment_overrides(prefix);
         if has_managed_config(options.mcp_config.as_ref()) {
             prefix = filter_managed_mcp_overrides(prefix);
         }
@@ -442,13 +541,11 @@ impl Backend for CodexBackend {
             command.current_dir(&options.cwd);
         }
 
-        if self.config.env.contains_key("CODEX_HOME") {
-            write_managed_codex_mcp(
-                self.config.env.get("CODEX_HOME").map(String::as_str),
-                options.mcp_config.as_ref(),
-            )
-            .await?;
-        }
+        write_managed_codex_mcp(
+            self.config.env.get("CODEX_HOME").map(String::as_str),
+            options.mcp_config.as_ref(),
+        )
+        .await?;
 
         let mut tree = OwnedProcessTree::spawn(&mut command)
             .await
@@ -573,7 +670,21 @@ impl CodexClient {
             "method": method,
             "params": params,
         });
-        if let Err(error) = self.write_frame(&frame).await {
+        let write_result = tokio::select! {
+            result = self.write_frame(&frame) => result,
+            _ = tokio::time::sleep(timeout_duration) => {
+                self.inner.pending.lock().await.remove(&id);
+                return Err(AgentError::Protocol(format!(
+                    "codex app-server handshake timeout: write {method} did not complete after {}s",
+                    timeout_duration.as_secs_f64()
+                )));
+            }
+            _ = cancellation.cancelled() => {
+                self.inner.pending.lock().await.remove(&id);
+                return Err(AgentError::Protocol("execution cancelled".to_string()));
+            }
+        };
+        if let Err(error) = write_result {
             self.inner.pending.lock().await.remove(&id);
             return Err(AgentError::Protocol(format!("write {method}: {error}")));
         }
@@ -663,7 +774,7 @@ impl CodexClient {
     }
 }
 
-async fn read_codex_stdout(stdout: ChildStdout, client: CodexClient) {
+async fn read_codex_stdout(stdout: ChildStdout, client: CodexClient, observer: CodexObserver) {
     let mut reader = AgentLineReader::new(BufReader::new(stdout));
     loop {
         let line = match reader.next_line().await {
@@ -694,7 +805,7 @@ async fn read_codex_stdout(stdout: ChildStdout, client: CodexClient) {
         if let Some(id) = object.get("id") {
             if let Some(method) = object.get("method").and_then(Value::as_str) {
                 let params = object.get("params").cloned().unwrap_or(Value::Null);
-                handle_server_request(&client, id.clone(), method, params).await;
+                handle_server_request(&client, &observer, id.clone(), method, params).await;
             } else {
                 let request_id = id.as_u64().unwrap_or(0);
                 let sender = client.inner.pending.lock().await.remove(&request_id);
@@ -728,7 +839,13 @@ async fn read_codex_stdout(stdout: ChildStdout, client: CodexClient) {
     }
 }
 
-async fn handle_server_request(client: &CodexClient, id: Value, method: &str, params: Value) {
+async fn handle_server_request(
+    client: &CodexClient,
+    observer: &CodexObserver,
+    id: Value,
+    method: &str,
+    params: Value,
+) {
     let result = match method {
         "item/commandExecution/requestApproval" | "execCommandApproval" => {
             Some(serde_json::json!({"decision": "accept"}))
@@ -748,9 +865,10 @@ async fn handle_server_request(client: &CodexClient, id: Value, method: &str, pa
         let _ = client
             .respond_error(id, -32601, &format!("method not found: {method}"))
             .await;
-        client
-            .mark_process_error(format!("unsupported Codex app-server request: {method}"))
-            .await;
+        let error = format!("unsupported Codex app-server request: {method}");
+        observer.set_turn_error(&error).await;
+        observer.finish_turn(false).await;
+        client.mark_process_error(error).await;
     }
 }
 
@@ -785,7 +903,17 @@ async fn cleanup_codex(
     stderr_tail: &SharedDiagnosticBuffer,
 ) -> String {
     client.close_stdin().await;
-    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+    match tokio::time::timeout(TERMINATION_GRACE, tree.wait()).await {
+        Ok(Ok(_)) => {
+            if !tree.wait_tree_gone(KILL_GRACE).await {
+                let _ = tree.kill();
+                let _ = tree.wait_tree_gone(KILL_GRACE).await;
+            }
+        }
+        _ => {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+        }
+    }
     reader_task.abort();
     event_task.abort();
     let _ = tokio::time::timeout(Duration::from_secs(2), stderr_task).await;
@@ -815,17 +943,12 @@ struct ObserverState {
     usage: TokenUsage,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum ProtocolKind {
+    #[default]
     Unknown,
     Legacy,
     Raw,
-}
-
-impl Default for ProtocolKind {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -834,6 +957,7 @@ struct ObserverSnapshot {
     last_agent_message: String,
     turn_error: String,
     thread_id: String,
+    turn_done: bool,
     usage: TokenUsage,
 }
 
@@ -855,6 +979,12 @@ impl CodexObserver {
         self.state.lock().await.thread_id = thread_id.to_string();
     }
 
+    async fn set_turn_id(&self, turn_id: &str) {
+        if !turn_id.is_empty() {
+            self.state.lock().await.turn_id = turn_id.to_string();
+        }
+    }
+
     async fn arm(&self) {
         self.state.lock().await.gate_armed = true;
     }
@@ -866,6 +996,7 @@ impl CodexObserver {
             last_agent_message: state.last_agent_message.clone(),
             turn_error: state.turn_error.clone(),
             thread_id: state.thread_id.clone(),
+            turn_done: state.turn_done,
             usage: state.usage,
         }
     }
@@ -898,17 +1029,18 @@ impl CodexObserver {
                 if !state.turn_id.is_empty() && event_turn_id != state.turn_id {
                     return;
                 }
-            }
-            if state.protocol != ProtocolKind::Legacy
-                && !state.turn_started
-                && (method.starts_with("item/")
-                    || method == "turn/completed"
-                    || method == "thread/status/changed")
-            {
-                // A resumed thread can replay the previous turn on the same
-                // JSON-RPC stream. Do not let replayed items/completion end
-                // the new turn before its own turn/started boundary.
-                return;
+                if !state.turn_started
+                    && state.turn_id.is_empty()
+                    && (method.starts_with("item/") || method == "turn/completed")
+                {
+                    // A resumed thread may replay a prior raw event before
+                    // this turn's start boundary. Older app-server versions
+                    // omit turn/started for live streams, so only events
+                    // carrying an unknown turn id are held back here; the
+                    // turn/start response supplies the live id when it has
+                    // one, and id-less legacy-style raw events remain valid.
+                    return;
+                }
             }
         }
 
@@ -1257,7 +1389,7 @@ impl CodexObserver {
                 if let Some(text) = item.get("text").and_then(Value::as_str) {
                     let final_answer = string_field(item, "phase") == "final_answer";
                     self.emit_text(text, final_answer).await;
-                    if final_answer && self.state.lock().await.turn_started {
+                    if final_answer {
                         self.finish_turn(false).await;
                     }
                 }
@@ -1370,7 +1502,8 @@ async fn run_codex(
     started: Instant,
 ) {
     let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
-    let reader_task: JoinHandle<()> = tokio::spawn(read_codex_stdout(stdout, client.clone()));
+    let reader_task: JoinHandle<()> =
+        tokio::spawn(read_codex_stdout(stdout, client.clone(), observer.clone()));
     let stderr_task = tokio::spawn(pump_stderr(stderr, stderr_tail.clone()));
     let event_observer = observer.clone();
     let event_task = tokio::spawn(async move {
@@ -1405,7 +1538,7 @@ async fn run_codex(
         )
         .await;
     if let Err(error) = initialization {
-        let stderr = cleanup_codex(
+        let _ = cleanup_codex(
             &mut tree,
             &client,
             reader_task,
@@ -1414,10 +1547,7 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
-        let mut message = format!("codex initialize failed: {error}");
-        if !stderr.is_empty() {
-            message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
-        }
+        let message = format!("codex initialize failed: {error}");
         let _ = result_tx.send(ExecutionResult {
             status: "failed".to_string(),
             error: message,
@@ -1473,7 +1603,7 @@ async fn run_codex(
                 return;
             }
             Err(error) if is_transport_error(&error) => {
-                let stderr = cleanup_codex(
+                let _ = cleanup_codex(
                     &mut tree,
                     &client,
                     reader_task,
@@ -1482,10 +1612,7 @@ async fn run_codex(
                     &stderr_tail,
                 )
                 .await;
-                let mut message = format!("codex thread/resume failed: {error}");
-                if !stderr.is_empty() {
-                    message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
-                }
+                let message = format!("codex thread/resume failed: {error}");
                 let _ = result_tx.send(ExecutionResult {
                     status: "failed".to_string(),
                     error: message,
@@ -1527,7 +1654,7 @@ async fn run_codex(
         {
             Ok(value) => thread_id = extract_thread_id(&value),
             Err(error) => {
-                let stderr = cleanup_codex(
+                let _ = cleanup_codex(
                     &mut tree,
                     &client,
                     reader_task,
@@ -1536,10 +1663,7 @@ async fn run_codex(
                     &stderr_tail,
                 )
                 .await;
-                let mut message = format!("codex thread/start failed: {error}");
-                if !stderr.is_empty() {
-                    message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
-                }
+                let message = format!("codex thread/start failed: {error}");
                 let _ = result_tx.send(ExecutionResult {
                     status: "failed".to_string(),
                     error: message,
@@ -1552,7 +1676,7 @@ async fn run_codex(
     }
 
     if thread_id.is_empty() {
-        let stderr = cleanup_codex(
+        let _ = cleanup_codex(
             &mut tree,
             &client,
             reader_task,
@@ -1561,10 +1685,7 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
-        let mut message = "codex thread/start returned no thread ID".to_string();
-        if !stderr.is_empty() {
-            message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
-        }
+        let message = "codex thread/start returned no thread ID".to_string();
         let _ = result_tx.send(ExecutionResult {
             status: "failed".to_string(),
             error: message,
@@ -1598,36 +1719,45 @@ async fn run_codex(
     });
     apply_reasoning(&mut turn_params, &options.thinking_level);
     apply_service_tier(&mut turn_params, &options.service_tier);
-    if let Err(error) = client
-        .request(
+    let mut terminal_before_response = None;
+    let turn_start = tokio::select! {
+        result = client.request(
             "turn/start",
             turn_params,
             effective_request_timeout(execution_deadline, handshake_timeout),
             &options.cancellation,
-        )
-        .await
-    {
-        let stderr = cleanup_codex(
-            &mut tree,
-            &client,
-            reader_task,
-            stderr_task,
-            event_task,
-            &stderr_tail,
-        )
-        .await;
-        let mut message = format!("codex turn/start failed: {error}");
-        if !stderr.is_empty() {
-            message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
+        ) => result,
+        Some(aborted) = turn_done_rx.recv() => {
+            terminal_before_response = Some(aborted);
+            Ok(Value::Null)
         }
-        let _ = result_tx.send(ExecutionResult {
-            status: "failed".to_string(),
-            error: message,
-            session_id: thread_id,
-            duration_ms: started.elapsed().as_millis() as i64,
-            ..ExecutionResult::default()
-        });
-        return;
+    };
+    if let Ok(value) = &turn_start {
+        observer
+            .set_turn_id(&nested_string(value, &["turn", "id"]))
+            .await;
+    }
+    if let Err(error) = turn_start {
+        if !observer.snapshot().await.turn_done {
+            let _ = cleanup_codex(
+                &mut tree,
+                &client,
+                reader_task,
+                stderr_task,
+                event_task,
+                &stderr_tail,
+            )
+            .await;
+            let message = format!("codex turn/start failed: {error}");
+            let _ = result_tx.send(ExecutionResult {
+                status: "failed".to_string(),
+                error: message,
+                session_id: thread_id,
+                duration_ms: started.elapsed().as_millis() as i64,
+                ..ExecutionResult::default()
+            });
+            return;
+        }
     }
 
     let mut semantic_deadline = tokio::time::Instant::now() + semantic_timeout;
@@ -1643,6 +1773,19 @@ async fn run_codex(
     let mut error = String::new();
 
     loop {
+        if let Some(aborted) = terminal_before_response.take() {
+            if aborted {
+                status = "aborted".to_string();
+                error = "codex turn aborted".to_string();
+            } else {
+                let turn_error = observer.snapshot().await.turn_error;
+                if !turn_error.is_empty() {
+                    status = "failed".to_string();
+                    error = turn_error;
+                }
+            }
+            break;
+        }
         tokio::select! {
             Some(activity) = activity_rx.recv() => {
                 semantic_deadline = tokio::time::Instant::now() + semantic_timeout;
@@ -2058,6 +2201,7 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> String {
 
 fn redact_value(value: &mut Value, depth: usize) {
     if depth > 16 {
+        *value = Value::String("[REDACTED]".to_string());
         return;
     }
     match value {
@@ -2230,6 +2374,25 @@ mod tests {
                 "--enable",
                 "fast_mode"
             ]
+        );
+    }
+
+    #[test]
+    fn launch_args_filter_managed_shell_policy_overrides() {
+        let options = ExecOptions {
+            extra_args: vec![
+                "-c".to_string(),
+                "shell_environment_policy.inherit=all".to_string(),
+                "--config=profiles.work . shell_environment_policy.include_only=[\"TOKEN\"]"
+                    .to_string(),
+                "-c".to_string(),
+                "model=o3".to_string(),
+            ],
+            ..ExecOptions::default()
+        };
+        assert_eq!(
+            build_codex_args(&options),
+            vec!["app-server", "--listen", "stdio://", "-c", "model=o3"]
         );
     }
 
@@ -2433,13 +2596,44 @@ mod tests {
             &serde_json::json!({
                 "type": "http",
                 "url": "https://example.test/mcp",
-                "headers": {"Authorization": "Bearer value"}
+                "headers": {"Authorization": "Bearer value"},
+                "timeout": 30,
+                "experimental_use_rmcp_client": false,
+                "tools": ["hidden"]
             }),
         )
         .unwrap_or_else(|error| panic!("render remote MCP: {error}"));
         assert!(rendered.contains("http_headers"));
+        assert!(rendered.contains("timeout = 30"));
         assert!(rendered.contains("experimental_use_rmcp_client = true"));
+        assert_eq!(
+            rendered.matches("experimental_use_rmcp_client = ").count(),
+            1
+        );
         assert!(!rendered.contains("type ="));
+        assert!(!rendered.contains("tools ="));
+    }
+
+    #[test]
+    fn managed_mcp_stripping_removes_nested_tables() {
+        let input = "[mcp_servers.fetch]\ncommand = \"old\"\n\n[[mcp_servers.fetch.env]]\nKEY = \"old\"\n\n[other]\nkeep = true\n";
+        let output = strip_user_mcp_tables(input);
+        assert!(!output.contains("mcp_servers.fetch"));
+        assert!(!output.contains("KEY = \"old\""));
+        assert!(output.contains("[other]"));
+        assert!(output.contains("keep = true"));
+    }
+
+    #[test]
+    fn redaction_replaces_values_beyond_depth_limit() {
+        let mut value = Value::String("opaque-secret".to_string());
+        for _ in 0..18 {
+            value = serde_json::json!({"nested": value});
+        }
+        redact_value(&mut value, 0);
+        let rendered = value.to_string();
+        assert!(rendered.contains("[REDACTED]"));
+        assert!(!rendered.contains("opaque-secret"));
     }
 
     #[cfg(unix)]
