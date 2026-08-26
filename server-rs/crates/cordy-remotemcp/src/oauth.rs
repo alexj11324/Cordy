@@ -180,12 +180,7 @@ pub async fn discover_oauth(
         let url = protected_resource_metadata_url(&endpoint);
         // Validate the exact fallback URL with the same boundary and host
         // policy as the original request before using it for discovery.
-        validate_public_https_endpoint(
-            url.as_str(),
-            allowed_hosts,
-            Some(&SystemResolver),
-        )
-        .await?
+        validate_public_https_endpoint(url.as_str(), allowed_hosts, Some(&SystemResolver)).await?
     };
 
     let resource: ProtectedResourceMetadata = get_oauth_json(&metadata_url)
