@@ -502,8 +502,8 @@ pub fn issue_to_map(issue: &Issue, issue_prefix: &str) -> serde_json::Value {
         "updated_at": rfc3339(issue.updated_at),
         "last_activity_at": issue.last_activity_at.map(rfc3339_nano),
         "revision": issue.revision,
-        "metadata": json_object_or_empty(&issue.metadata),
-        "properties": json_object_or_empty(&issue.properties),
+        "metadata": cordy_util::json::object_or_empty(&issue.metadata),
+        "properties": cordy_util::json::object_or_empty(&issue.properties),
     })
 }
 
@@ -868,14 +868,6 @@ pub(crate) fn rfc3339_nano(t: chrono::DateTime<chrono::Utc>) -> String {
 /// Go util.DateToPtr equivalent (DateOnly rendering, null when absent).
 fn date_ptr(d: Option<chrono::NaiveDate>) -> Option<String> {
     d.map(|d| d.format("%Y-%m-%d").to_string())
-}
-
-/// Go util.JSONObjectOrEmpty: object passthrough, everything else becomes {}.
-fn json_object_or_empty(v: &serde_json::Value) -> serde_json::Value {
-    match v {
-        serde_json::Value::Object(_) => v.clone(),
-        _ => serde_json::Value::Object(Default::default()),
-    }
 }
 
 #[cfg(test)]

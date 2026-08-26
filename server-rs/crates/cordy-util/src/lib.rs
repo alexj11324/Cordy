@@ -6,6 +6,7 @@
 pub mod channel_media;
 pub mod mentions;
 pub mod logging;
+pub mod json;
 pub mod secretbox;
 pub mod self_exec;
 
