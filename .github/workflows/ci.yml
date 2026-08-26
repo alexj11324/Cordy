@@ -482,7 +482,28 @@ jobs:
       - name: Run Go tests
         run: bash scripts/test-go.sh --race
 
-  go-vulnerability-scan:
+  rust-production-image:
+    name: rust-production-image
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build production backend image
+        env:
+          VERSION: ci
+          COMMIT: ${{ github.sha }}
+          DATE: ${{ github.run_started_at }}
+        run: |
+          docker build \
+            --file Dockerfile \
+            --tag cordy-backend:ci \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$COMMIT" \
+            --build-arg DATE="$DATE" \
+            .
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
@@ -599,7 +620,7 @@ jobs:
   # Preserve the required check name while Go compatibility and Rust
   # production implementations are validated.
   backend:
-    needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit]
+    needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit, rust-production-image]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -613,6 +634,7 @@ jobs:
           TEST_RESULT: ${{ needs.rust-tests.result }}
           PLATFORM_RESULT: ${{ needs.rust-platform.result }}
           AUDIT_RESULT: ${{ needs.rust-audit.result }}
+          PRODUCTION_IMAGE_RESULT: ${{ needs.rust-production-image.result }}
         run: |
           echo "changes:       $CHANGES_RESULT"
           echo "backend path:  $BACKEND_CHANGED"
@@ -622,6 +644,7 @@ jobs:
           echo "rust-tests:    $TEST_RESULT"
           echo "rust-platform: $PLATFORM_RESULT"
           echo "rust-audit:    $AUDIT_RESULT"
+          echo "production-image: $PRODUCTION_IMAGE_RESULT"
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::change classification failed"
             exit 1
@@ -630,7 +653,7 @@ jobs:
             echo "No backend paths changed."
             exit 0
           fi
-          if [ "$GO_TEST_RESULT" != "success" ] || [ "$GO_AUDIT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
+          if [ "$GO_TEST_RESULT" != "success" ] || [ "$GO_AUDIT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ] || [ "$PRODUCTION_IMAGE_RESULT" != "success" ]; then
             echo "::error::backend validation failed"
             exit 1
           fi
