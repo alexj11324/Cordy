@@ -76,17 +76,18 @@ struct SquadResponse {
     member_preview: Vec<SquadMemberPreviewResponse>,
 }
 
-impl From<Squad> for SquadResponse {
-    fn from(value: Squad) -> Self {
+impl SquadResponse {
+    fn from_squad(state: &HandlerState, value: Squad) -> Self {
+        let avatar_url = value
+            .avatar_url
+            .map(|raw| crate::avatar::resolve_url(state, &raw));
         Self {
             id: value.id.to_string(),
             workspace_id: value.workspace_id.to_string(),
             name: value.name,
             description: value.description,
             instructions: value.instructions,
-            // HandlerState does not yet carry the Go object-store signer. This
-            // is the same raw-URL branch Go uses when storage is disabled.
-            avatar_url: value.avatar_url,
+            avatar_url,
             leader_id: value.leader_id.to_string(),
             creator_id: value.creator_id.to_string(),
             created_at: crate::timefmt::rfc3339(value.created_at),
@@ -131,7 +132,7 @@ async fn response_with_preview(
     for row in rows {
         add_preview(&mut summary, row.member_type, row.member_id, row.role);
     }
-    let mut response = SquadResponse::from(value);
+    let mut response = SquadResponse::from_squad(state, value);
     apply_summary(&mut response, Some(summary));
     Ok(response)
 }
@@ -288,10 +289,18 @@ struct CreateSquadRequest {
     avatar_url: Option<String>,
 }
 
-fn accepted_avatar_url(value: Option<String>) -> Option<String> {
-    // HandlerState has no object-storage signer yet. This is exactly Go's
-    // Storage == nil branch: trim and persist without owned-object checks.
-    value.map(|value| value.trim().to_string())
+async fn accepted_avatar_url(
+    state: &HandlerState,
+    value: Option<String>,
+    current: Option<&str>,
+) -> Result<Option<String>, Response> {
+    match value {
+        Some(value) => crate::avatar::accept_url(state, &value, current)
+            .await
+            .map(Some)
+            .map_err(|message| error_response(StatusCode::FORBIDDEN, message)),
+        None => Ok(None),
+    }
 }
 
 async fn create(
@@ -333,7 +342,10 @@ async fn create(
             "you can only use an agent you have access to as leader",
         );
     }
-    let avatar_url = accepted_avatar_url(request.avatar_url);
+    let avatar_url = match accepted_avatar_url(&state, request.avatar_url, None).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let created = match squad::create_squad(
         &state.pool,
         context.member.workspace_id,
@@ -424,7 +436,7 @@ async fn list(
         .into_iter()
         .map(|value| {
             let id = value.id;
-            let mut response = SquadResponse::from(value);
+            let mut response = SquadResponse::from_squad(&state, value);
             apply_summary(&mut response, summaries.remove(&id));
             response
         })
@@ -576,7 +588,12 @@ async fn update(
         Ok(request) => request,
         Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
-    let avatar_url = accepted_avatar_url(request.avatar_url);
+    let avatar_url =
+        match accepted_avatar_url(&state, request.avatar_url, existing.avatar_url.as_deref()).await
+        {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(error) => {
@@ -1146,10 +1163,7 @@ mod tests {
         assert!(create.name.is_empty());
         assert!(create.description.is_empty());
         assert!(create.leader_id.is_empty());
-        assert_eq!(
-            accepted_avatar_url(create.avatar_url).as_deref(),
-            Some("emoji:robot")
-        );
+        assert_eq!(create.avatar_url.as_deref(), Some("emoji:robot"));
 
         let update = decode_first::<UpdateSquadRequest>(
             br#"{"name":null,"leader_id":null,"avatar_url":null} true"#,
