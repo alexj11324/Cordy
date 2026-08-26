@@ -4316,6 +4316,7 @@ async fn list_attachments(
 }
 
 fn hydrate_task_user_ref(
+    state: &HandlerState,
     attribution: &mut serde_json::Map<String, Value>,
     key: &str,
     users: &HashMap<Uuid, user::GetUsersByIDsRow>,
@@ -4338,7 +4339,10 @@ fn hydrate_task_user_ref(
         reference.insert("email".into(), Value::String(user.email.clone()));
     }
     if let Some(avatar_url) = user.avatar_url.as_deref().filter(|url| !url.is_empty()) {
-        reference.insert("avatar_url".into(), Value::String(avatar_url.into()));
+        reference.insert(
+            "avatar_url".into(),
+            Value::String(crate::avatar::resolve_url(state, avatar_url)),
+        );
     }
 }
 
@@ -4414,8 +4418,8 @@ pub(crate) async fn task_maps(
                 else {
                     continue;
                 };
-                hydrate_task_user_ref(attribution, "initiator", &users);
-                hydrate_task_user_ref(attribution, "originator", &users);
+                hydrate_task_user_ref(state, attribution, "initiator", &users);
+                hydrate_task_user_ref(state, attribution, "originator", &users);
             }
         }
     }
