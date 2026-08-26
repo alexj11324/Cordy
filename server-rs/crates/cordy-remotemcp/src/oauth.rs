@@ -91,6 +91,8 @@ pub fn build_authorization_url(
     set_query_parameter(&mut query, "resource", &metadata.resource_endpoint);
     if !scope.trim().is_empty() {
         set_query_parameter(&mut query, "scope", scope.trim());
+    } else {
+        query.retain(|(existing, _)| existing != "scope");
     }
 
     let encoded = form_urlencoded::Serializer::new(String::new())
@@ -409,11 +411,11 @@ fn parse_expires_in(value: &Value) -> i64 {
 }
 
 async fn validate_oauth_url(raw: &str) -> Result<Url, Error> {
-    let endpoint =
-        Url::parse(raw.trim()).map_err(|error| Error::ParseEndpoint(error.to_string()))?;
+    let raw = raw.trim();
+    let endpoint = Url::parse(raw).map_err(|error| Error::ParseEndpoint(error.to_string()))?;
     if endpoint.scheme() != "https"
         || endpoint.host_str().is_none_or(str::is_empty)
-        || has_userinfo(&endpoint)
+        || has_userinfo(raw)
         || endpoint.fragment().is_some()
     {
         return Err(Error::NotPublicHttps);
@@ -424,9 +426,8 @@ async fn validate_oauth_url(raw: &str) -> Result<Url, Error> {
     Ok(endpoint)
 }
 
-fn has_userinfo(endpoint: &Url) -> bool {
-    let serialized = endpoint.as_str();
-    let Some((_, rest)) = serialized.split_once("://") else {
+fn has_userinfo(raw: &str) -> bool {
+    let Some((_, rest)) = raw.split_once("://") else {
         return false;
     };
     let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
