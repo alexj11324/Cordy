@@ -226,12 +226,14 @@ impl Backend for OpenclawBackend {
                 tree,
                 stdout,
                 stderr,
-                message_tx,
-                result_tx,
-                cancellation,
-                deadline,
-                configured_model,
-                started,
+                OpenclawRunContext {
+                    messages: message_tx,
+                    result_tx,
+                    cancellation,
+                    deadline,
+                    configured_model,
+                    started,
+                },
             )
             .await;
         });
@@ -584,17 +586,29 @@ async fn join_stdout_task(
     }
 }
 
-async fn run_openclaw(
-    mut tree: OwnedProcessTree,
-    stdout: ChildStdout,
-    stderr: ChildStderr,
+struct OpenclawRunContext {
     messages: mpsc::Sender<Message>,
     result_tx: oneshot::Sender<ExecutionResult>,
     cancellation: CancellationToken,
     deadline: Option<Instant>,
     configured_model: String,
     started: Instant,
+}
+
+async fn run_openclaw(
+    mut tree: OwnedProcessTree,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+    context: OpenclawRunContext,
 ) {
+    let OpenclawRunContext {
+        messages,
+        result_tx,
+        cancellation,
+        deadline,
+        configured_model,
+        started,
+    } = context;
     let timeout = deadline
         .map(|deadline| deadline.saturating_duration_since(started))
         .unwrap_or(Duration::ZERO);
