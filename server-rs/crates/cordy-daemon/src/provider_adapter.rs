@@ -145,6 +145,7 @@ impl ProductionProviderAdapter {
             openclaw_bin: (target.provider == "openclaw")
                 .then(|| launch.command_path.clone())
                 .unwrap_or_default(),
+            launch_prefix: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
         };
@@ -170,7 +171,15 @@ impl ProductionProviderAdapter {
             Ok(plan) => plan,
             Err(error) => return failed(error, None),
         };
-        let requested_session_id = plan.resume_session_id().to_string();
+        let _hermes_store_use = {
+            let paths = plan.hermes_store_paths();
+            if paths.is_empty() {
+                None
+            } else {
+                Some(runtime.activity().mark_stores(paths).await)
+            }
+        };
+        let mut requested_session_id = plan.resume_session_id().to_string();
 
         let client = runtime.client();
         let prepare_lease = PrepareLeaseExtender::start(
@@ -239,6 +248,17 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
             }
+            if target.provider == "hermes"
+                && should_drop_hermes_resume_for_missing_history(
+                    &requested_session_id,
+                    environment.hermes_session_history_present,
+                )
+            {
+                requested_session_id.clear();
+                task.prior_session_id.clear();
+                task.prior_session_resume_unavailable = true;
+                plan.drop_resume();
+            }
             let bound = plan.bind_environment(
                 &environment,
                 PreparedEnvironmentInputs {
@@ -247,10 +267,10 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
-            let backend_config = runtime.backend_config(
-                &task.workspace_id,
-                &target,
+            let backend_config = runtime.backend_config_with_launch(
+                launch,
                 bound.child_env.into_inner(),
+                bound.launch_prefix,
             )?;
             let backend = cordy_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
@@ -271,28 +291,83 @@ impl ProductionProviderAdapter {
             );
             let prompt = build_prompt(task.clone(), &target.provider);
             let session = backend
-                .execute(&prompt, bound.options)
+                .execute(&prompt, bound.options.clone())
                 .await
                 .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
             let _running = CounterGuard::new(&self.running_tasks);
-            drain_session(
+            let mut transcript_seq = 0;
+            let (mut result, tools_seen) = drain_session(
                 &ctx,
                 &client,
                 &task.id,
                 &environment.work_dir,
                 &environment.codex_home,
                 session,
+                &mut transcript_seq,
             )
-            .await
+            .await?;
+            let mut retired_session_id = String::new();
+            if target.provider == "hermes"
+                && should_retry_with_fresh_session(&result, &requested_session_id, tools_seen)
+            {
+                retired_session_id.clone_from(&requested_session_id);
+                task.prior_session_id.clear();
+                task.prior_session_resume_unavailable = true;
+                plan.drop_resume();
+                let mut fresh_options = bound.options.clone();
+                fresh_options.resume_session_id.clear();
+                fresh_options.resume_expected = false;
+                fresh_options.resume_continuity_notice.clear();
+                let fresh_prompt = build_prompt(task.clone(), &target.provider);
+                match backend.execute(&fresh_prompt, fresh_options).await {
+                    Ok(fresh_session) => match drain_session(
+                        &ctx,
+                        &client,
+                        &task.id,
+                        &environment.work_dir,
+                        &environment.codex_home,
+                        fresh_session,
+                        &mut transcript_seq,
+                    )
+                    .await
+                    {
+                        Ok((fresh_result, _))
+                            if fresh_result.status == "completed"
+                                || !fresh_result.session_id.is_empty() =>
+                        {
+                            result = fresh_result;
+                        }
+                        Ok((fresh_result, _)) => {
+                            tracing::warn!(
+                                task = %task.id,
+                                error = %fresh_result.error,
+                                "fresh Hermes session retry did not establish a session; keeping the original result"
+                            );
+                        }
+                        Err(error) => tracing::warn!(
+                            task = %task.id,
+                            %error,
+                            "fresh Hermes session retry failed; keeping the original result"
+                        ),
+                    },
+                    Err(error) => tracing::warn!(
+                        task = %task.id,
+                        %error,
+                        "fresh Hermes session retry could not start; keeping the original result"
+                    ),
+                }
+            }
+            Ok((result, retired_session_id))
         }
         .await;
 
         let mut outcome = match run {
-            Ok(result) => result_outcome(
+            Ok((result, retired_session_id)) => result_outcome(
                 &target.provider,
                 result,
                 &environment,
                 &requested_session_id,
+                &retired_session_id,
             ),
             Err(error) => failed(error, Some(&environment)),
         };
@@ -510,15 +585,20 @@ async fn drain_session(
     work_dir: &str,
     codex_home: &str,
     session: Session,
-) -> anyhow::Result<ExecutionResult> {
+    next_seq: &mut i32,
+) -> anyhow::Result<(ExecutionResult, usize)> {
     let Session {
         mut messages,
         mut result,
     } = session;
     let mut ticker = tokio::time::interval(TRANSCRIPT_FLUSH_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut transcript = TranscriptBatch::default();
+    let mut transcript = TranscriptBatch {
+        next_seq: *next_seq,
+        ..TranscriptBatch::default()
+    };
     let mut terminal: Option<ExecutionResult> = None;
+    let mut tools_seen = 0usize;
     let mut cancelled = false;
     let mut messages_closed = false;
     let mut result_closed = false;
@@ -546,6 +626,9 @@ async fn drain_session(
             received = messages.recv(), if !messages_closed => {
                 match received {
                     Some(message) => {
+                        if message.message_type == MessageType::ToolUse {
+                            tools_seen = tools_seen.saturating_add(1);
+                        }
                         if let Some(session_id) = transcript.push(message) {
                             pending_session_id = Some(session_id);
                             pin_session_if_ready(client, task_id, work_dir, codex_home, &mut pending_session_id).await;
@@ -600,11 +683,15 @@ async fn drain_session(
     )
     .await;
     flush_transcript(client, task_id, &mut transcript).await;
-    Ok(terminal.unwrap_or_else(|| ExecutionResult {
-        status: "failed".to_string(),
-        error: "provider messages closed without a terminal result".to_string(),
-        ..ExecutionResult::default()
-    }))
+    *next_seq = transcript.next_seq;
+    Ok((
+        terminal.unwrap_or_else(|| ExecutionResult {
+            status: "failed".to_string(),
+            error: "provider messages closed without a terminal result".to_string(),
+            ..ExecutionResult::default()
+        }),
+        tools_seen,
+    ))
 }
 
 fn session_pin_ready(codex_home: &str, session_id: &str) -> bool {
@@ -759,11 +846,30 @@ fn bounded_text(value: &str, max_bytes: usize) -> String {
     value[..end].to_string()
 }
 
+fn should_retry_with_fresh_session(
+    result: &ExecutionResult,
+    requested_session_id: &str,
+    tools_seen: usize,
+) -> bool {
+    result.status == "failed"
+        && result.resume_rejected
+        && !requested_session_id.is_empty()
+        && tools_seen == 0
+}
+
+fn should_drop_hermes_resume_for_missing_history(
+    requested_session_id: &str,
+    history_present: bool,
+) -> bool {
+    !requested_session_id.is_empty() && !history_present
+}
+
 fn result_outcome(
     provider: &str,
     result: ExecutionResult,
     env: &Environment,
     requested_session_id: &str,
+    retired_session_id: &str,
 ) -> TaskRunOutcome {
     let resume_rejected = result.resume_rejected && !requested_session_id.is_empty();
     let mut usage = result
@@ -829,9 +935,11 @@ fn result_outcome(
             work_dir: env.work_dir.clone(),
             env_root: env.root_dir.clone(),
             failure_reason,
-            retired_session_id: resume_rejected
-                .then(|| requested_session_id.to_string())
-                .unwrap_or_default(),
+            retired_session_id: if resume_rejected {
+                requested_session_id.to_string()
+            } else {
+                retired_session_id.to_string()
+            },
             usage,
             ..TaskResult::default()
         },
@@ -1026,6 +1134,44 @@ mod tests {
     }
 
     #[test]
+    fn hermes_resume_retry_requires_a_toolless_rejected_attempt() {
+        let rejected = ExecutionResult {
+            status: "failed".to_string(),
+            resume_rejected: true,
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(&rejected, "old-session", 0));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "old-session",
+            1
+        ));
+        assert!(!should_retry_with_fresh_session(&rejected, "", 0));
+        assert!(!should_retry_with_fresh_session(
+            &ExecutionResult {
+                status: "completed".to_string(),
+                resume_rejected: true,
+                ..ExecutionResult::default()
+            },
+            "old-session",
+            0,
+        ));
+    }
+
+    #[test]
+    fn hermes_resume_requires_persisted_session_history() {
+        assert!(should_drop_hermes_resume_for_missing_history(
+            "old-session",
+            false
+        ));
+        assert!(!should_drop_hermes_resume_for_missing_history(
+            "old-session",
+            true
+        ));
+        assert!(!should_drop_hermes_resume_for_missing_history("", false));
+    }
+
+    #[test]
     fn provider_result_maps_usage_and_non_success_statuses() {
         let result = ExecutionResult {
             status: "timeout".to_string(),
@@ -1050,6 +1196,7 @@ mod tests {
                 ..Environment::default()
             },
             "session-old",
+            "",
         );
         assert_eq!(outcome.result.status, "blocked");
         assert_eq!(outcome.result.failure_reason, "timeout");
@@ -1067,6 +1214,7 @@ mod tests {
                 ..ExecutionResult::default()
             },
             &Environment::default(),
+            "",
             "",
         );
         assert!(outcome.failure.is_none());
@@ -1086,6 +1234,7 @@ mod tests {
             },
             &Environment::default(),
             "session-poisoned",
+            "",
         );
         assert_eq!(outcome.result.failure_reason, "resume_rejected");
         assert_eq!(outcome.result.retired_session_id, "session-poisoned");

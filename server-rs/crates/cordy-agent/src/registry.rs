@@ -8,9 +8,9 @@ use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::qoder::{
-    DimBackend, DimConfig, GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig, QwenpawBackend,
-    QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
+    DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
+    KimiConfig, KiroBackend, KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig,
+    QwenpawBackend, QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
 
@@ -19,6 +19,10 @@ use crate::qwen::{QwenBackend, QwenConfig};
 pub struct BackendConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    /// Built-in runtime identity is required for provider-specific capability
+    /// exceptions. A custom profile with the same protocol family must remain
+    /// fail-closed until its own behavior is verified.
+    pub builtin_runtime: bool,
 }
 
 impl std::fmt::Debug for BackendConfig {
@@ -27,6 +31,7 @@ impl std::fmt::Debug for BackendConfig {
             .debug_struct("BackendConfig")
             .field("command_path", &self.command.path)
             .field("environment_variable_count", &self.env.len())
+            .field("builtin_runtime", &self.builtin_runtime)
             .finish_non_exhaustive()
     }
 }
@@ -73,6 +78,11 @@ pub fn build_backend(
         "grok" => Ok(Arc::new(GrokBackend::new(GrokConfig {
             command: config.command,
             env: config.env,
+        }))),
+        "hermes" => Ok(Arc::new(HermesBackend::new(HermesConfig {
+            command: config.command,
+            env: config.env,
+            builtin_runtime: config.builtin_runtime,
         }))),
         "mcode" => Ok(Arc::new(McodeBackend::new(McodeConfig {
             command: config.command,

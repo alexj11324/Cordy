@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{anyhow, bail, Context};
 use serde_yaml::{Mapping, Value};
@@ -40,6 +41,106 @@ pub struct HermesProfileResolution {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HermesProfileSelection {
+    pub name: String,
+    pub found: bool,
+    pub inline: bool,
+    arg_from: usize,
+    arg_len: usize,
+}
+
+pub fn parse_hermes_profile_args(args: &[String]) -> HermesProfileSelection {
+    let none = HermesProfileSelection::default();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = unquote_arg(&args[index]);
+        if arg == "--" {
+            break;
+        }
+        if arg == "--args" && inside_mcp_add(args, index) {
+            break;
+        }
+        if arg == "-p" || arg == "--profile" {
+            let Some(value) = args.get(index + 1).map(|value| unquote_arg(value)) else {
+                return none;
+            };
+            if !valid_profile_arg(&value) {
+                return none;
+            }
+            return HermesProfileSelection {
+                name: value,
+                found: true,
+                inline: false,
+                arg_from: index,
+                arg_len: 2,
+            };
+        }
+        if let Some(value) = arg.strip_prefix("--profile=") {
+            let value = unquote_arg(value);
+            return HermesProfileSelection {
+                name: value,
+                found: true,
+                inline: true,
+                arg_from: index,
+                arg_len: 1,
+            };
+        }
+        if hermes_value_flag(&arg) {
+            index += 2;
+            continue;
+        }
+        if hermes_optional_value_flag(&arg)
+            && args
+                .get(index + 1)
+                .is_some_and(|value| !unquote_arg(value).starts_with("-"))
+        {
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    none
+}
+
+pub fn hermes_launch_argv(launch_prefix: &[String], custom_args: &[String]) -> Vec<String> {
+    let mut argv = launch_prefix.to_vec();
+    argv.push("acp".to_string());
+    argv.extend(
+        custom_args
+            .iter()
+            .filter(|arg| unquote_arg(arg) != "acp")
+            .cloned(),
+    );
+    argv
+}
+
+pub fn strip_hermes_profile_selectors(
+    launch_prefix: &[String],
+    custom_args: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let mut prefix = launch_prefix.to_vec();
+    let mut custom = custom_args
+        .iter()
+        .filter(|arg| unquote_arg(arg) != "acp")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    loop {
+        let argv = hermes_launch_argv(&prefix, &custom);
+        let selection = parse_hermes_profile_args(&argv);
+        if !selection.found || selection.arg_len == 0 {
+            return (prefix, custom);
+        }
+        for index in (selection.arg_from..selection.arg_from + selection.arg_len).rev() {
+            if index < prefix.len() {
+                prefix.remove(index);
+            } else if index > prefix.len() {
+                custom.remove(index - prefix.len() - 1);
+            }
+        }
+    }
+}
 /// Resolve the profile home using the same precedence as Hermes: an explicit
 /// custom `HERMES_HOME`, an already profile-scoped home, then active_profile,
 /// otherwise the platform default.  Invalid explicit names fail closed.
@@ -52,10 +153,7 @@ pub fn resolve_hermes_profile(custom_home: &str, profile: Option<&str>) -> Herme
     let explicit = profile.is_some();
     let name = match profile {
         Some(value) => value.to_string(),
-        None if base
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|p| p == "profiles") =>
+        None if has_profiles_parent(Path::new(&base)) =>
         {
             return HermesProfileResolution {
                 source_home: base,
@@ -119,6 +217,63 @@ fn invalid_profile(message: impl Into<String>) -> HermesProfileResolution {
     }
 }
 
+fn valid_profile_arg(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 64
+        && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == 95 || *byte == 45
+        })
+}
+
+fn hermes_value_flag(value: &str) -> bool {
+    matches!(
+        value,
+        "-z" | "--oneshot"
+            | "-m"
+            | "--model"
+            | "--provider"
+            | "-t"
+            | "--toolsets"
+            | "-r"
+            | "--resume"
+            | "-s"
+            | "--skills"
+            | "--usage-file"
+    )
+}
+
+fn hermes_optional_value_flag(value: &str) -> bool {
+    matches!(value, "-c" | "--continue")
+}
+
+fn inside_mcp_add(args: &[String], index: usize) -> bool {
+    let Some(mcp) = args
+        .iter()
+        .take(index)
+        .position(|arg| unquote_arg(arg) == "mcp")
+    else {
+        return false;
+    };
+    args.iter()
+        .skip(mcp + 1)
+        .take(index.saturating_sub(mcp + 1))
+        .any(|arg| unquote_arg(arg) == "add")
+}
+
+fn unquote_arg(value: &str) -> String {
+    let value = value.trim();
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        let last = value.len() - 1;
+        if (bytes[0] == 39 && bytes[last] == 39) || (bytes[0] == 34 && bytes[last] == 34) {
+            return value[1..last].to_string();
+        }
+    }
+    value.to_string()
+}
+
 fn nonempty(value: &str) -> Option<String> {
     (!value.trim().is_empty()).then(|| value.trim().to_string())
 }
@@ -161,26 +316,67 @@ fn absolute_clean(path: &str) -> String {
 }
 
 fn hermes_root(home: &str) -> String {
-    let path = Path::new(home);
-    if path
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|p| p == "profiles")
-    {
-        path.parent()
-            .and_then(Path::parent)
-            .unwrap_or(path)
-            .display()
-            .to_string()
-    } else {
-        home.to_string()
+    hermes_root_for(home, &platform_default_home())
+}
+
+fn hermes_root_for(home: &str, native_home: &str) -> String {
+    let path = PathBuf::from(absolute_clean(home));
+    let native = PathBuf::from(absolute_clean(native_home));
+    if path_is_under(
+        &resolve_path_best_effort(&native),
+        &resolve_path_best_effort(&path),
+    ) {
+        return native.display().to_string();
     }
+    if has_profiles_parent(&path) {
+        return path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+    }
+    path.display().to_string()
+}
+
+fn has_profiles_parent(path: &Path) -> bool {
+    path.parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("profiles"))
+}
+
+fn path_is_under(parent: &Path, child: &Path) -> bool {
+    child == parent || child.strip_prefix(parent).is_ok()
+}
+
+fn resolve_path_best_effort(path: &Path) -> PathBuf {
+    let absolute = PathBuf::from(absolute_clean(&path.display().to_string()));
+    if let Ok(resolved) = fs::canonicalize(&absolute) {
+        return resolved;
+    }
+
+    let mut cursor = absolute.clone();
+    let mut suffix = Vec::new();
+    while fs::metadata(&cursor).is_err() {
+        let Some(name) = cursor.file_name().map(|name| name.to_os_string()) else {
+            return absolute;
+        };
+        suffix.push(name);
+        if !cursor.pop() {
+            return absolute;
+        }
+    }
+    let mut resolved = fs::canonicalize(&cursor).unwrap_or(cursor);
+    for name in suffix.iter().rev() {
+        resolved.push(name);
+    }
+    resolved
 }
 
 fn read_active_profile(root: &str) -> Option<String> {
     let raw = fs::read_to_string(Path::new(root).join("active_profile")).ok()?;
     let value = raw.trim().to_ascii_lowercase();
-    (!value.is_empty()).then_some(value)
+    (!value.is_empty() && value != "default").then_some(value)
 }
 
 /// Persistent store path used by the daemon's profile-scoped execution plan.
@@ -230,26 +426,17 @@ pub fn hermes_session_store_path(
 }
 
 fn profile_dir(profile: &str) -> Option<PathBuf> {
-    if profile.contains(['/', '\\']) || matches!(profile, "." | "..") {
+    if profile.is_empty()
+        || profile == "."
+        || profile == ".."
+        || Path::new(profile).is_absolute()
+        || profile.split(['/', '\\']).any(|segment| {
+            segment.is_empty() || segment == "." || segment == ".."
+        })
+    {
         return None;
     }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT") {
-        let root = PathBuf::from(root);
-        if !root.is_absolute() {
-            return None;
-        }
-        return Some(if profile.is_empty() {
-            root
-        } else {
-            root.join("profiles").join(profile)
-        });
-    }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    Some(if profile.is_empty() {
-        home.join(".cordy")
-    } else {
-        home.join(".cordy").join("profiles").join(profile)
-    })
+    crate::identity::profile_dir(profile).ok()
 }
 
 fn safe_segment(value: &str) -> String {
@@ -267,11 +454,7 @@ fn hermes_profile_segment(source_home: &str) -> String {
         return "default".to_string();
     }
     let path = Path::new(&home);
-    if path
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|p| p == "profiles")
-    {
+    if has_profiles_parent(path) {
         let root = path
             .parent()
             .and_then(Path::parent)
@@ -361,13 +544,7 @@ fn prepare_task_local_state(home: &str) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-    for entry in fs::read_dir(home)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if is_state_entry(&name) {
-            remove_path(&entry.path())?;
-        }
-    }
+    remove_state_files_at(Path::new(home))?;
     atomic_write(&marker, b"task-local Hermes state\n", 0o600)
 }
 
@@ -460,6 +637,23 @@ fn create_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
         fs::copy(source, target)
             .map(|_| ())
             .map_err(anyhow::Error::new)
+    }
+}
+
+fn create_session_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, target)?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        // A copied SQLite database is not a mount: writes and WAL sidecars
+        // would stay in the task overlay while the next task opens the stale
+        // store copy. If Windows cannot create a real link, the caller keeps
+        // the session database task-local instead.
+        std::os::windows::fs::symlink_file(source, target)?;
+        Ok(())
     }
 }
 
@@ -633,7 +827,7 @@ fn mount_memories(overlay: &str, store: &str) -> anyhow::Result<()> {
             return Ok(());
         }
         if metadata.is_dir() && !metadata.file_type().is_symlink() && store_is_empty(store)? {
-            copy_tree(&target, store)?;
+            migrate_memories(&target, store)?;
         }
         remove_path(&target)?;
     }
@@ -676,7 +870,7 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     // Prove the link can be created before deleting a task-local database.
     let staged = Path::new(overlay).join(SESSION_LINK_STAGING);
     remove_path(&staged)?;
-    if create_file_link(&store_db, &staged).is_err() {
+    if create_session_file_link(&store_db, &staged).is_err() {
         return Ok(HermesSessions::default());
     }
     remove_state_files(overlay)?;
@@ -688,7 +882,7 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     })
 }
 
-fn touch_store(path: &str) {
+fn touch_store(path: &Path) {
     // Store GC uses directory mtime as the last-activity signal. Updating it
     // is best-effort: active-store reservations still protect a live mount,
     // while a read-only filesystem should not make task preparation fail.
@@ -704,29 +898,113 @@ fn has_session_db(store: &Path) -> bool {
 }
 
 fn migrate_session_files(overlay: &str, store: &Path) -> anyhow::Result<()> {
-    let files = fs::read_dir(overlay)?
-        .filter_map(Result::ok)
-        .filter(|entry| is_state_entry(&entry.file_name().to_string_lossy()))
-        .filter(|entry| entry.file_type().map(|f| f.is_file()).unwrap_or(false))
-        .collect::<Vec<_>>();
+    let mut files = Vec::new();
+    for entry in fs::read_dir(overlay)? {
+        let entry = entry?;
+        if !is_state_entry(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_file() || file_type.is_symlink() {
+            if file_type.is_file() {
+                files.push(entry);
+            }
+        } else {
+            bail!(
+                "refusing to migrate unexpected Hermes session entry {:?}",
+                entry.path()
+            );
+        }
+    }
     if files.is_empty() {
         return Ok(());
     }
-    let staging = tempfile::tempdir_in(store.parent().unwrap_or(store))?;
+    let staging = new_store_staging(store)?;
     for entry in files {
         fs::copy(entry.path(), staging.path().join(entry.file_name()))?;
     }
-    for entry in fs::read_dir(staging.path())? {
-        let entry = entry?;
-        fs::rename(entry.path(), store.join(entry.file_name()))?;
+    let _publish_lock = hermes_store_publish_lock();
+    if has_session_db(store) {
+        return Ok(());
+    }
+    // A session store may contain an empty database or orphaned WAL files
+    // from an interrupted first turn. Remove only that known family while
+    // holding the publish lock, then replace the directory in one rename.
+    remove_state_files_at(store)?;
+    publish_staged_store(staging.path(), store, has_session_db)?;
+    Ok(())
+}
+
+fn migrate_memories(source: &Path, store: &Path) -> anyhow::Result<()> {
+    if store_is_empty(store)? && fs::read_dir(source)?.next().is_some() {
+        let staging = new_store_staging(store)?;
+        copy_tree(source, staging.path())?;
+        let _publish_lock = hermes_store_publish_lock();
+        publish_staged_store(staging.path(), store, store_is_populated)?;
     }
     Ok(())
 }
 
+fn new_store_staging(store: &Path) -> anyhow::Result<tempfile::TempDir> {
+    let parent = store.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    tempfile::Builder::new()
+        .prefix(".cordy-hermes-migrating-")
+        .tempdir_in(parent)
+        .map_err(anyhow::Error::new)
+}
+
+fn publish_staged_store(
+    staging: &Path,
+    store: &Path,
+    populated: fn(&Path) -> bool,
+) -> anyhow::Result<bool> {
+    match fs::remove_dir(store) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            if populated(store) {
+                return Ok(false);
+            }
+            return Err(anyhow!(error).context("clear empty Hermes store before publish"));
+        }
+    }
+    match fs::rename(staging, store) {
+        Ok(()) => Ok(true),
+        Err(_error) if populated(store) => Ok(false),
+        Err(error) => Err(anyhow!(error).context("publish Hermes store migration")),
+    }
+}
+
+fn store_is_populated(dir: &Path) -> bool {
+    fs::read_dir(dir)
+        .ok()
+        .and_then(|mut entries| entries.next())
+        .is_some()
+}
+
+fn hermes_store_publish_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn remove_state_files(dir: &str) -> anyhow::Result<()> {
+    remove_state_files_at(Path::new(dir))
+}
+
+fn remove_state_files_at(dir: &Path) -> anyhow::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         if is_state_entry(&entry.file_name().to_string_lossy()) {
+            let file_type = entry.file_type()?;
+            if !file_type.is_file() && !file_type.is_symlink() {
+                bail!(
+                    "refusing to remove unexpected Hermes session entry {:?}",
+                    entry.path()
+                );
+            }
             remove_path(&entry.path())?;
         }
     }
@@ -734,7 +1012,12 @@ fn remove_state_files(dir: &str) -> anyhow::Result<()> {
 }
 
 fn store_is_empty(dir: &Path) -> anyhow::Result<bool> {
-    Ok(fs::read_dir(dir)?.next().is_none())
+    let mut entries = fs::read_dir(dir)?;
+    match entries.next() {
+        None => Ok(true),
+        Some(Ok(_)) => Ok(false),
+        Some(Err(error)) => Err(error.into()),
+    }
 }
 
 fn copy_tree(source: &Path, target: &Path) -> anyhow::Result<()> {
@@ -787,6 +1070,53 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn profile_parser_matches_hermes_argv_and_skips_value_flags() {
+        let argv = hermes_launch_argv(
+            &args(&["--model", "coder"]),
+            &args(&["-p", "research", "acp"]),
+        );
+        let selection = parse_hermes_profile_args(&argv);
+        assert_eq!(selection.name, "research");
+        assert!(selection.found);
+        assert!(!selection.inline);
+
+        let inline = parse_hermes_profile_args(&args(&["-m", "coder", "--profile=research"]));
+        assert_eq!(inline.name, "research");
+        assert!(inline.inline);
+        for quoted in ["--profile='research'", "--profile=\"research\""] {
+            let quoted = parse_hermes_profile_args(&args(&[quoted]));
+            assert_eq!(quoted.name, "research");
+            assert!(quoted.inline);
+        }
+        assert!(!parse_hermes_profile_args(&args(&["-p", "no:xdist"])).found);
+        assert!(
+            !parse_hermes_profile_args(&args(&[
+                "mcp",
+                "add",
+                "server",
+                "--args",
+                "--profile",
+                "child",
+            ]))
+            .found
+        );
+    }
+
+    #[test]
+    fn overlay_strips_all_profile_selectors_from_both_launch_regions() {
+        let (prefix, custom) = strip_hermes_profile_selectors(
+            &args(&["--model", "coder"]),
+            &args(&["-p", "research", "--profile=other", "flag", "acp"]),
+        );
+        assert_eq!(prefix, args(&["--model", "coder"]));
+        assert_eq!(custom, args(&["flag"]));
+    }
+
     #[test]
     fn profile_resolution_rejects_reserved_and_scopes_named_profiles() {
         let invalid = resolve_hermes_profile("/tmp/hermes", Some("root"));
@@ -800,6 +1130,47 @@ mod tests {
             hermes_profile_segment("/tmp/custom/profiles/research"),
             format!("research_{}", sha256_short("/tmp/custom"))
         );
+    }
+
+    #[test]
+    fn profile_resolution_ignores_sticky_default_for_custom_home() {
+        let root = tempdir().unwrap();
+        let custom = root.path().join("team-a");
+        fs::create_dir_all(&custom).unwrap();
+        fs::write(custom.join("active_profile"), "default\n").unwrap();
+        let resolution = resolve_hermes_profile(&custom.display().to_string(), None);
+        assert_eq!(resolution.source_home, custom.display().to_string());
+        assert!(!resolution.must_exist);
+    }
+
+    #[test]
+    fn nested_cordy_profiles_have_persistent_hermes_store_paths() {
+        let store = hermes_memory_store_path("team/dev", "agent-1", "/tmp/hermes");
+        assert!(store.contains("profiles/team/dev/hermes-state/agent-1/"));
+    }
+
+    #[test]
+    fn profile_root_reuses_native_root_for_nested_and_symlinked_homes() {
+        let root = tempdir().unwrap();
+        let native = root.path().join("native-hermes");
+        let nested = native.join("custom");
+        fs::create_dir_all(&nested).unwrap();
+        assert_eq!(
+            hermes_root_for(&nested.display().to_string(), &native.display().to_string()),
+            native.display().to_string()
+        );
+
+        let profile = native.join("profiles").join("coder");
+        fs::create_dir_all(&profile).unwrap();
+        let link = root.path().join("coder-home");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&profile, &link).unwrap();
+            assert_eq!(
+                hermes_root_for(&link.display().to_string(), &native.display().to_string()),
+                native.display().to_string()
+            );
+        }
     }
 
     #[test]
@@ -875,5 +1246,14 @@ mod tests {
             .file_type()
             .is_symlink());
         assert!(has_session_db(&session));
+    }
+
+    #[test]
+    fn session_cleanup_rejects_unexpected_directory_entries() {
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("state.db-wal")).unwrap();
+        let error = remove_state_files_at(root.path()).unwrap_err();
+        assert!(error.to_string().contains("unexpected Hermes session entry"));
+        assert!(root.path().join("state.db-wal").is_dir());
     }
 }

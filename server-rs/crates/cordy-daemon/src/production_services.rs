@@ -123,6 +123,56 @@ impl ProviderRuntimeContext {
         target: &RuntimeExecutionTarget,
         env: BTreeMap<String, String>,
     ) -> anyhow::Result<BackendConfig> {
+        let launch = self.resolve_launch(workspace_id, target)?;
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
+            env,
+            builtin_runtime: target.profile_id.is_empty(),
+        })
+    }
+
+    pub fn backend_config_with_prefix(
+        &self,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+        env: BTreeMap<String, String>,
+        prefix: Vec<String>,
+    ) -> anyhow::Result<BackendConfig> {
+        let launch = self.resolve_launch(workspace_id, target)?;
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, prefix),
+            env,
+            builtin_runtime: target.profile_id.is_empty(),
+        })
+    }
+
+    /// Builds a backend config from the launch snapshot accepted before task
+    /// preparation. Registration may refresh a custom profile while the
+    /// filesystem is being prepared; the executable and the argv prefix must
+    /// still describe the same launch that was used to build the plan.
+    pub fn backend_config_with_launch(
+        &self,
+        launch: crate::provider_registration::RuntimeLaunchSpec,
+        env: BTreeMap<String, String>,
+        prefix: Vec<String>,
+    ) -> anyhow::Result<BackendConfig> {
+        anyhow::ensure!(
+            !launch.command_path.trim().is_empty(),
+            "accepted launch for provider {} has no executable path",
+            launch.target.provider
+        );
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, prefix),
+            env,
+            builtin_runtime: launch.target.profile_id.is_empty(),
+        })
+    }
+
+    fn resolve_launch(
+        &self,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+    ) -> anyhow::Result<crate::provider_registration::RuntimeLaunchSpec> {
         let launch = self
             .launch_registry
             .resolve(workspace_id, target)
@@ -137,10 +187,7 @@ impl ProviderRuntimeContext {
             "accepted launch for provider {} has no executable path",
             target.provider
         );
-        Ok(BackendConfig {
-            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
-            env,
-        })
+        Ok(launch)
     }
 
     /// Process-wide activity state used to coordinate execution with update
@@ -761,6 +808,22 @@ mod tests {
             config.env.get("CORDY_TASK_ID").map(String::as_str),
             Some("task-1")
         );
+        assert!(config.builtin_runtime);
+
+        let snapshot_config = context
+            .backend_config_with_launch(
+                crate::provider_registration::RuntimeLaunchSpec {
+                    target: target.clone(),
+                    display_name: "Codex".to_string(),
+                    command_path: "/opt/codex".to_string(),
+                    fixed_args: Vec::new(),
+                    version: "1.0.0".to_string(),
+                },
+                BTreeMap::new(),
+                Vec::new(),
+            )
+            .expect("launch snapshot must build");
+        assert!(snapshot_config.builtin_runtime);
     }
 
     #[test]
