@@ -365,9 +365,9 @@ async fn working_agents(
                 allowed.contains(&id).then_some(WorkingAgent {
                     id: id.to_string(),
                     name: row.name,
-                    // HandlerState has no storage signer yet; this is the same
-                    // raw URL branch used by the Go handler when none is wired.
-                    avatar_url: row.avatar_url,
+                    avatar_url: row
+                        .avatar_url
+                        .map(|raw| crate::avatar::resolve_url(&state, &raw)),
                     running_task_count: row.running_task_count,
                     issue_ids: row
                         .issue_ids
