@@ -16,8 +16,9 @@ use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use chrono::DateTime;
+use serde::Deserialize;
 use serde_json::{Map, Value};
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
@@ -28,15 +29,22 @@ use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 use crate::mcp::has_managed_config;
+use crate::model::{
+    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelServiceTier, ModelThinking,
+    ThinkingLevel,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{sanitize_diagnostic, with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::AgentLineReader;
+use crate::version::{extract_version_line, parse_semver};
 
 const MESSAGE_BUFFER: usize = 256;
 const ACTIVITY_BUFFER: usize = 256;
 const DEFAULT_SEMANTIC_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_FIRST_TURN_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+const MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const MODEL_DISCOVERY_OUTPUT_MAX: usize = 4 * 1024 * 1024;
 const TERMINATION_GRACE: Duration = Duration::from_millis(500);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_PATCH_BYTES: usize = 64 * 1024;
@@ -58,6 +66,93 @@ pub struct CodexBackend {
 impl CodexBackend {
     pub fn new(config: CodexConfig) -> Self {
         Self { config }
+    }
+
+    /// Discovers the visible model catalog exposed by this Codex binary.
+    ///
+    /// Codex's bundled catalog is authoritative for per-model reasoning
+    /// levels and service tiers. Older binaries and transient discovery
+    /// failures use the same conservative fallback catalog as the Go agent;
+    /// fallback results are deliberately not cached.
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.discover_models_for_runtime("codex", cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a runtime-scoped cache key so custom Codex profiles
+    /// cannot share a catalog with another executable or fixed launch prefix.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let scope = if runtime_scope.trim().is_empty() {
+            "codex"
+        } else {
+            runtime_scope
+        };
+        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
+            return static_codex_catalog();
+        };
+        if let Some(catalog) = cache.get(&key) {
+            return catalog;
+        }
+        let timeout = if timeout.is_zero() {
+            MODEL_DISCOVERY_TIMEOUT
+        } else {
+            timeout
+        };
+        let version = match capture_codex_command(
+            &self.config,
+            &["--version"],
+            cancellation.clone(),
+            timeout,
+        )
+        .await
+        {
+            Ok(Some(output)) => extract_version_line(&String::from_utf8_lossy(&output)),
+            Ok(None) | Err(_) => return fallback_or_cancelled(&cancellation),
+        };
+        if cancellation.is_cancelled() {
+            return Catalog::default();
+        }
+        if !codex_supports_debug_models(&version) {
+            return static_codex_catalog();
+        }
+        let Some(output) = capture_codex_command(
+            &self.config,
+            &["debug", "models", "--bundled"],
+            cancellation.clone(),
+            timeout,
+        )
+        .await
+        .ok()
+        .flatten() else {
+            return fallback_or_cancelled(&cancellation);
+        };
+        if cancellation.is_cancelled() {
+            return Catalog::default();
+        }
+        let Some(catalog) = parse_codex_model_catalog(&output) else {
+            return static_codex_catalog();
+        };
+        let _ = cache.insert(key, catalog.clone());
+        catalog
+    }
+}
+
+fn fallback_or_cancelled(cancellation: &CancellationToken) -> Catalog {
+    if cancellation.is_cancelled() {
+        Catalog::default()
+    } else {
+        static_codex_catalog()
     }
 }
 
@@ -419,6 +514,370 @@ fn toml_string(value: &str) -> String {
     }
     output.push('"');
     output
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexDebugModelsResponse {
+    #[serde(default)]
+    models: Vec<CodexDebugModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexDebugModel {
+    #[serde(default)]
+    slug: String,
+    #[serde(default)]
+    display_name: String,
+    #[serde(default)]
+    visibility: String,
+    #[serde(default)]
+    default_reasoning_level: String,
+    #[serde(default)]
+    supported_reasoning_levels: Vec<CodexDebugReasoningLevel>,
+    #[serde(default)]
+    service_tiers: Vec<CodexDebugServiceTier>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexDebugReasoningLevel {
+    #[serde(default)]
+    effort: String,
+    #[serde(default)]
+    description: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexDebugServiceTier {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    description: String,
+}
+
+fn codex_supports_debug_models(version: &str) -> bool {
+    let Ok(version) = parse_semver(version) else {
+        return false;
+    };
+    let Ok(minimum) = parse_semver("0.122.0") else {
+        return false;
+    };
+    version >= minimum
+}
+
+fn parse_codex_model_catalog(raw: &[u8]) -> Option<Catalog> {
+    let response = serde_json::from_slice::<CodexDebugModelsResponse>(raw).ok()?;
+    let mut models = Vec::with_capacity(response.models.len());
+    for model in response.models {
+        if model.slug.is_empty() || model.visibility == "hide" {
+            continue;
+        }
+        let label = normalize_codex_model_label(
+            &model.slug,
+            if model.display_name.is_empty() {
+                &model.slug
+            } else {
+                &model.display_name
+            },
+        );
+        let thinking = codex_thinking_from_debug_model(&model);
+        let service_tiers = codex_service_tiers_from_debug_model(&model);
+        models.push(Model {
+            id: model.slug,
+            label,
+            provider: "openai".to_string(),
+            thinking,
+            service_tiers,
+            ..Model::default()
+        });
+    }
+    if models.is_empty() {
+        return None;
+    }
+    models[0].default = true;
+    Some(Catalog {
+        models,
+        fallback: false,
+    })
+}
+
+fn normalize_codex_model_label(id: &str, label: &str) -> String {
+    match id {
+        "gpt-5.6-sol" => "GPT-5.6 Sol".to_string(),
+        "gpt-5.6-terra" => "GPT-5.6 Terra".to_string(),
+        "gpt-5.6-luna" => "GPT-5.6 Luna".to_string(),
+        _ => label.to_string(),
+    }
+}
+
+fn codex_service_tiers_from_debug_model(model: &CodexDebugModel) -> Vec<ModelServiceTier> {
+    model
+        .service_tiers
+        .iter()
+        .filter(|tier| !tier.id.is_empty())
+        .map(|tier| ModelServiceTier {
+            id: tier.id.clone(),
+            name: if tier.name.is_empty() {
+                tier.id.clone()
+            } else {
+                tier.name.clone()
+            },
+            description: tier.description.clone(),
+        })
+        .collect()
+}
+
+fn codex_thinking_from_debug_model(model: &CodexDebugModel) -> Option<ModelThinking> {
+    let supported_levels = model
+        .supported_reasoning_levels
+        .iter()
+        .filter(|level| !level.effort.is_empty())
+        .map(|level| ThinkingLevel {
+            value: level.effort.clone(),
+            label: codex_effort_label(&level.effort),
+            description: level.description.clone(),
+        })
+        .collect::<Vec<_>>();
+    (!supported_levels.is_empty()).then_some(ModelThinking {
+        supported_levels,
+        default_level: model.default_reasoning_level.clone(),
+    })
+}
+
+fn codex_effort_label(value: &str) -> String {
+    match value {
+        "none" => "None".to_string(),
+        "minimal" => "Minimal".to_string(),
+        "low" => "Low".to_string(),
+        "medium" => "Medium".to_string(),
+        "high" => "High".to_string(),
+        "xhigh" => "Extra high".to_string(),
+        "max" => "Max".to_string(),
+        "ultra" => "Ultra".to_string(),
+        other => {
+            let mut chars = other.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().collect::<String>() + chars.as_str()
+            })
+        }
+    }
+}
+
+fn static_codex_catalog() -> Catalog {
+    fn standard_thinking(
+        default_level: &str,
+        include_max: bool,
+        include_ultra: bool,
+    ) -> ModelThinking {
+        let mut supported_levels = vec![
+            ThinkingLevel {
+                value: "low".to_string(),
+                label: "Low".to_string(),
+                description: "Fast responses with lighter reasoning".to_string(),
+            },
+            ThinkingLevel {
+                value: "medium".to_string(),
+                label: "Medium".to_string(),
+                description: "Balances speed and reasoning depth for everyday tasks".to_string(),
+            },
+            ThinkingLevel {
+                value: "high".to_string(),
+                label: "High".to_string(),
+                description: "Greater reasoning depth for complex problems".to_string(),
+            },
+            ThinkingLevel {
+                value: "xhigh".to_string(),
+                label: "Extra high".to_string(),
+                description: "Extra high reasoning depth for complex problems".to_string(),
+            },
+        ];
+        if include_max {
+            supported_levels.push(ThinkingLevel {
+                value: "max".to_string(),
+                label: "Max".to_string(),
+                description: "Maximum reasoning depth for the hardest problems".to_string(),
+            });
+        }
+        if include_ultra {
+            supported_levels.push(ThinkingLevel {
+                value: "ultra".to_string(),
+                label: "Ultra".to_string(),
+                description: "Maximum reasoning with automatic task delegation".to_string(),
+            });
+        }
+        ModelThinking {
+            supported_levels,
+            default_level: default_level.to_string(),
+        }
+    }
+
+    fn gpt52_thinking() -> ModelThinking {
+        ModelThinking {
+            default_level: "medium".to_string(),
+            supported_levels: [
+                ("low", "Balances speed with some reasoning; useful for straightforward queries and short explanations"),
+                ("medium", "Provides a solid balance of reasoning depth and latency for general-purpose tasks"),
+                ("high", "Maximizes reasoning depth for complex or ambiguous problems"),
+                ("xhigh", "Extra high reasoning for complex problems"),
+            ]
+            .into_iter()
+            .map(|(value, description)| ThinkingLevel {
+                value: value.to_string(),
+                label: codex_effort_label(value),
+                description: description.to_string(),
+            })
+            .collect(),
+        }
+    }
+
+    let model = |id: &str, label: &str, default: bool, thinking: ModelThinking| -> Model {
+        Model {
+            id: id.to_string(),
+            label: label.to_string(),
+            provider: "openai".to_string(),
+            default,
+            thinking: Some(thinking),
+            ..Model::default()
+        }
+    };
+
+    Catalog {
+        models: vec![
+            model(
+                "gpt-5.6-sol",
+                "GPT-5.6 Sol",
+                true,
+                standard_thinking("low", true, true),
+            ),
+            model(
+                "gpt-5.6-terra",
+                "GPT-5.6 Terra",
+                false,
+                standard_thinking("medium", true, true),
+            ),
+            model(
+                "gpt-5.6-luna",
+                "GPT-5.6 Luna",
+                false,
+                standard_thinking("medium", true, false),
+            ),
+            model(
+                "gpt-5.5",
+                "GPT-5.5",
+                false,
+                standard_thinking("medium", false, false),
+            ),
+            model(
+                "gpt-5.4",
+                "GPT-5.4",
+                false,
+                standard_thinking("medium", false, false),
+            ),
+            model(
+                "gpt-5.4-mini",
+                "GPT-5.4-Mini",
+                false,
+                standard_thinking("medium", false, false),
+            ),
+            model(
+                "gpt-5.3-codex",
+                "GPT-5.3-Codex",
+                false,
+                standard_thinking("medium", false, false),
+            ),
+            model("gpt-5.2", "GPT-5.2", false, gpt52_thinking()),
+        ],
+        fallback: true,
+    }
+}
+
+#[derive(Debug)]
+struct CapturedCodexOutput {
+    stdout: Vec<u8>,
+}
+
+async fn capture_codex_command(
+    config: &CodexConfig,
+    arguments: &[&str],
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> io::Result<Option<Vec<u8>>> {
+    let executable = command_path(&config.command);
+    let prefix = filter_launch_prefix(&config.command.prefix, &BLOCKED_ARGS).args;
+    let mut command = Command::new(&executable);
+    command
+        .args(prefix)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(false);
+    configure_child_environment(&mut command, &config.env);
+    let mut tree = OwnedProcessTree::spawn(&mut command).await?;
+    let stdout = tree
+        .child_mut()
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("Codex discovery stdout pipe unavailable"))?;
+    let stderr = tree
+        .child_mut()
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("Codex discovery stderr pipe unavailable"))?;
+    let mut stdout_task = tokio::spawn(read_discovery_output(stdout));
+    let mut stderr_task = tokio::spawn(read_discovery_output(stderr));
+    let status = tokio::select! {
+        result = tree.wait() => Some(result?),
+        () = cancellation.cancelled() => None,
+        () = tokio::time::sleep(timeout) => None,
+    };
+    let Some(status) = status else {
+        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+        stdout_task.abort();
+        stderr_task.abort();
+        return Ok(None);
+    };
+    let stdout = join_discovery_output(&mut stdout_task).await?;
+    let _ = join_discovery_output(&mut stderr_task).await?;
+    if !status.success() {
+        return Ok(None);
+    }
+    Ok(Some(CapturedCodexOutput { stdout }.stdout))
+}
+
+async fn read_discovery_output(mut reader: impl AsyncRead + Unpin) -> io::Result<Vec<u8>> {
+    let mut output = Vec::new();
+    let mut buffer = [0_u8; 32 * 1024];
+    loop {
+        let count = reader.read(&mut buffer).await?;
+        if count == 0 {
+            return Ok(output);
+        }
+        if output.len().saturating_add(count) > MODEL_DISCOVERY_OUTPUT_MAX {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Codex model discovery output exceeds the size limit",
+            ));
+        }
+        output.extend_from_slice(&buffer[..count]);
+    }
+}
+
+async fn join_discovery_output(task: &mut JoinHandle<io::Result<Vec<u8>>>) -> io::Result<Vec<u8>> {
+    match tokio::time::timeout(KILL_GRACE, &mut *task).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(error)) => Err(io::Error::other(format!(
+            "Codex discovery reader failed: {error}"
+        ))),
+        Err(_) => {
+            task.abort();
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Codex model discovery output did not terminate",
+            ))
+        }
+    }
 }
 
 #[async_trait]
@@ -2643,6 +3102,79 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn codex_model_catalog_filters_hidden_entries_and_preserves_metadata() {
+        let raw = serde_json::json!({
+            "models": [
+                {
+                    "slug": "hidden",
+                    "display_name": "Hidden",
+                    "visibility": "hide"
+                },
+                {
+                    "slug": "gpt-5.6-sol",
+                    "display_name": "stale label",
+                    "visibility": "show",
+                    "default_reasoning_level": "high",
+                    "supported_reasoning_levels": [
+                        {"effort": "high", "description": "deep"},
+                        {"effort": "future", "description": "new"}
+                    ],
+                    "service_tiers": [
+                        {"id": "priority", "name": "", "description": "fast"},
+                        {"id": "", "name": "ignored"}
+                    ]
+                }
+            ]
+        });
+        let catalog = parse_codex_model_catalog(&serde_json::to_vec(&raw).unwrap())
+            .expect("visible Codex catalog");
+        assert!(!catalog.fallback);
+        assert_eq!(catalog.models.len(), 1);
+        let model = &catalog.models[0];
+        assert_eq!(model.id, "gpt-5.6-sol");
+        assert_eq!(model.label, "GPT-5.6 Sol");
+        assert!(model.default);
+        assert_eq!(model.provider, "openai");
+        assert_eq!(model.service_tiers[0].name, "priority");
+        let thinking = model.thinking.as_ref().expect("thinking metadata");
+        assert_eq!(thinking.default_level, "high");
+        assert_eq!(thinking.supported_levels[1].label, "Future");
+    }
+
+    #[test]
+    fn codex_static_catalog_is_explicit_fallback_with_conservative_tiers() {
+        let catalog = static_codex_catalog();
+        assert!(catalog.fallback);
+        assert_eq!(catalog.models[0].id, "gpt-5.6-sol");
+        assert!(catalog.models[0]
+            .thinking
+            .as_ref()
+            .expect("fallback thinking")
+            .supported_levels
+            .iter()
+            .any(|level| level.value == "ultra"));
+        assert!(catalog
+            .models
+            .iter()
+            .all(|model| model.service_tiers.is_empty()));
+        assert!(!catalog.models[2]
+            .thinking
+            .as_ref()
+            .expect("luna thinking")
+            .supported_levels
+            .iter()
+            .any(|level| level.value == "ultra"));
+    }
+
+    #[test]
+    fn codex_debug_model_version_gate_matches_cli_contract() {
+        assert!(!codex_supports_debug_models("0.121.9"));
+        assert!(codex_supports_debug_models("codex-cli 0.122.0"));
+        assert!(codex_supports_debug_models("0.144.1"));
+        assert!(!codex_supports_debug_models("development"));
+    }
 
     #[test]
     fn launch_args_keep_owned_transport_and_filter_user_listen() {
