@@ -1421,9 +1421,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
     ) {
         let model_request = ack.pending_model_list.take();
         let local_skill_request = ack.pending_local_skills.take();
+        let singular_local_skill_import = ack.pending_local_skill_import.take();
         let local_skill_imports = if ack.pending_local_skill_imports.is_empty() {
-            ack.pending_local_skill_import.take().into_iter().collect()
+            singular_local_skill_import.into_iter().collect()
         } else {
+            // The plural field is authoritative when present. Still consume
+            // the compatibility singular field so it cannot be replayed on a
+            // later heartbeat.
+            drop(singular_local_skill_import);
             ack.pending_local_skill_imports.drain(..).collect()
         };
 

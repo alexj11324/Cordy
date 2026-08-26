@@ -355,7 +355,7 @@ pub(crate) fn collect_local_skill_files(
                 Ok(r) => r.to_string_lossy().into_owned(),
                 Err(_) => continue,
             };
-            let rel = crate::execenv::execenv::clean_path(&rel_raw);
+            let rel = crate::execenv::execenv::clean_path(&rel_raw.replace('\\', "/"));
             if rel == "." || rel.starts_with('/') || rel.starts_with("..") {
                 continue;
             }
@@ -630,7 +630,9 @@ fn walk_root_skills(
 /// Go's filepath.Rel restricted to the case this module needs: `target`
 /// beneath `base`. Returns the slash-normalised relative path.
 fn relative_rel(base: &str, target: &str) -> Option<String> {
-    let b = base.trim_end_matches('/');
+    let b = base.replace('\\', "/");
+    let b = b.trim_end_matches('/');
+    let target = target.replace('\\', "/");
     target
         .strip_prefix(b)
         .map(|rest| rest.trim_start_matches('/').to_string())
@@ -685,6 +687,7 @@ pub(crate) fn load_runtime_local_skill_bundle(
             name = key.clone();
         } else if name.is_empty() {
             name = skill_dir
+                .replace('\\', "/")
                 .rsplit('/')
                 .next()
                 .unwrap_or(&skill_dir)
@@ -737,10 +740,19 @@ mod tests {
     #[test]
     fn normalizes_keys() {
         assert_eq!(normalize_local_skill_key("a/b").unwrap(), "a/b");
+        assert_eq!(normalize_local_skill_key(r"a\b").unwrap(), "a/b");
         assert_eq!(normalize_local_skill_key("./a//b/../c").unwrap(), "a/c");
         assert!(normalize_local_skill_key("  ").is_err());
         assert!(normalize_local_skill_key("/abs").is_err());
         assert!(normalize_local_skill_key("../up").is_err());
+    }
+
+    #[test]
+    fn relative_paths_normalize_windows_separators() {
+        assert_eq!(
+            relative_rel(r"C:\Users\me\skills", r"C:\Users\me\skills\deploy"),
+            Some("deploy".to_string())
+        );
     }
 
     #[test]
