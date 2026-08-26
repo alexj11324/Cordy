@@ -535,8 +535,9 @@ impl ProviderExecutionPlan {
             "configure Codex shell environment: task CODEX_HOME is missing"
         );
 
-        let inherited = std::env::vars()
-            .map(|(key, value)| format!("{key}={value}"))
+        let inherited = std::env::vars_os()
+            .filter_map(|(key, _)| key.into_string().ok())
+            .map(|key| format!("{key}="))
             .collect::<Vec<_>>();
         let explicit = bound
             .child_env
@@ -763,7 +764,10 @@ fn blocked_custom_env_key(key: &str) -> bool {
 
 fn validate_env_pair(key: &str, value: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !key.is_empty() && !key.contains('=') && !key.contains('\0'),
+        !key.is_empty()
+            && !key.contains('=')
+            && !key.contains('\0')
+            && !key.chars().any(|ch| matches!(ch, '*' | '?' | '[' | ']')),
         "invalid child environment variable name"
     );
     validate_env_value("child environment variable", value)
@@ -881,6 +885,14 @@ mod tests {
         RuntimeExecutionTarget {
             provider: "codex".to_string(),
             profile_id: String::new(),
+        }
+    }
+
+    #[test]
+    fn rejects_glob_syntax_in_custom_environment_names() {
+        for name in ["C*", "C?", "C[0]", "C]"] {
+            let custom = std::collections::HashMap::from([(name.to_string(), "value".to_string())]);
+            assert!(sanitize_custom_env(Some(&custom)).is_err(), "{name}");
         }
     }
 
