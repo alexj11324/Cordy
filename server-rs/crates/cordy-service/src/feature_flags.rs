@@ -152,8 +152,10 @@ impl Provider for StaticProvider {
 #[derive(Clone)]
 pub struct EnvProvider {
     prefix: String,
-    lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
+    lookup: Arc<EnvLookup>,
 }
+
+type EnvLookup = dyn Fn(&str) -> Option<String> + Send + Sync;
 
 impl EnvProvider {
     pub fn new(prefix: impl Into<String>) -> Self {
