@@ -599,7 +599,8 @@ use squad_member_commands::{
     run_squad_member_remove, run_squad_member_set_role,
 };
 use task_reference::resolve_task_run_id;
-pub(crate) use text_input::{trim_one_trailing_newline, unescape_backslash_escapes};
+pub(super) use cordy_util::unescape_backslash_escapes;
+pub(super) use text_input::trim_one_trailing_newline;
 use update_commands::{
     render_update_outcome, resolve_update_download_timeout, run_update, validate_update_timeout,
 };
