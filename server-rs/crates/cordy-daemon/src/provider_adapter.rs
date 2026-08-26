@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
-use cordy_agent::{ExecutionResult, Message, MessageType, Session};
+use cordy_agent::{Backend, ExecOptions, ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
 use serde_json::{Map, Value};
 use tokio::task::JoinHandle;
@@ -499,8 +499,6 @@ impl ProductionProviderAdapter {
             Ok(plan) => plan,
             Err(error) => return failed(error, None),
         };
-        let requested_session_id = plan.resume_session_id().to_string();
-
         let path_guard = match self
             .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
             .await
@@ -592,30 +590,112 @@ impl ProductionProviderAdapter {
                     work_dir: environment.work_dir.clone(),
                 },
             );
+            let requested_session_id = bound.options.resume_session_id.clone();
             let prompt = build_prompt(task.clone(), &target.provider);
-            let session = backend
-                .execute(&prompt, bound.options)
-                .await
-                .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
             let _running = CounterGuard::new(&self.running_tasks);
-            drain_session(
+            let mut message_seq = 0;
+            let (first_result, first_tools) = execute_and_drain(
                 &ctx,
+                backend.as_ref(),
+                &prompt,
+                bound.options,
+                &target.provider,
                 &client,
                 &task.id,
                 &environment.work_dir,
                 &environment.codex_home,
-                session,
+                &mut message_seq,
             )
-            .await
+            .await?;
+            let mut result = first_result;
+            let mut tools = first_tools;
+            let mut retired_session_id = String::new();
+
+            if should_retry_with_fresh_session(
+                &result,
+                &requested_session_id,
+                tools,
+                &target.provider,
+            ) {
+                let first = result.clone();
+                let first_tools = tools;
+                retired_session_id.clone_from(&requested_session_id);
+                tracing::warn!(
+                    task = %task.id,
+                    provider = %target.provider,
+                    session_id = %requested_session_id,
+                    error = %first.error,
+                    "session resume failed; retrying with a fresh session"
+                );
+
+                // A retry must be a genuinely cold turn. The plan owns the
+                // provider options and the task context used by the runtime
+                // prompt; clear both before rebuilding the prompt so no
+                // backend receives the abandoned session id or stale resume
+                // disclosure. The original id is retained separately for
+                // server-side retirement even when the retry succeeds.
+                task.prior_session_id.clear();
+                task.prior_session_resume_unavailable = true;
+                plan.drop_resume();
+                let fresh_prompt = build_prompt(task.clone(), &target.provider);
+                let retry = match plan.bind_environment(
+                    &environment,
+                    PreparedEnvironmentInputs {
+                        cancellation: ctx.token().clone(),
+                        openclaw_include_roots: environment.openclaw_include_root.clone(),
+                        ..PreparedEnvironmentInputs::default()
+                    },
+                ) {
+                    Ok(bound) => execute_and_drain(
+                        &ctx,
+                        backend.as_ref(),
+                        &fresh_prompt,
+                        bound.options,
+                        &target.provider,
+                        &client,
+                        &task.id,
+                        &environment.work_dir,
+                        &environment.codex_home,
+                        &mut message_seq,
+                    )
+                    .await,
+                    Err(error) => Err(error.context("bind fresh-session retry")),
+                };
+                match &retry {
+                    Err(error) => tracing::error!(
+                        task = %task.id,
+                        provider = %target.provider,
+                        error = %error,
+                        "fresh session also failed to start; keeping original result"
+                    ),
+                    Ok((retry_result, _))
+                        if retry_result.status != "completed"
+                            && retry_result.session_id.is_empty() =>
+                    {
+                        tracing::warn!(
+                            task = %task.id,
+                            provider = %target.provider,
+                            status = %retry_result.status,
+                            error = %retry_result.error,
+                            "fresh session retry also failed without establishing a new session; keeping original result"
+                        );
+                    }
+                    _ => {}
+                }
+                (result, tools) = reconcile_fresh_retry_result(first, first_tools, retry);
+            }
+
+            Ok((result, tools, retired_session_id, requested_session_id))
         }
         .await;
 
         let mut outcome = match run {
-            Ok(result) => result_outcome(
+            Ok((result, _tools, retired_session_id, requested_session_id)) => result_outcome(
                 &target.provider,
                 result,
                 &environment,
                 &requested_session_id,
+                &retired_session_id,
             ),
             Err(error) => failed(error, Some(&environment)),
         };
@@ -832,15 +912,19 @@ async fn drain_session(
     task_id: &str,
     work_dir: &str,
     codex_home: &str,
+    message_seq: &mut i32,
     session: Session,
-) -> anyhow::Result<ExecutionResult> {
+) -> anyhow::Result<(ExecutionResult, i32)> {
     let Session {
         mut messages,
         mut result,
     } = session;
     let mut ticker = tokio::time::interval(TRANSCRIPT_FLUSH_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut transcript = TranscriptBatch::default();
+    let mut transcript = TranscriptBatch {
+        next_seq: *message_seq,
+        ..TranscriptBatch::default()
+    };
     let mut terminal: Option<ExecutionResult> = None;
     let mut cancelled = false;
     let mut messages_closed = false;
@@ -923,11 +1007,47 @@ async fn drain_session(
     )
     .await;
     flush_transcript(client, task_id, &mut transcript).await;
-    Ok(terminal.unwrap_or_else(|| ExecutionResult {
-        status: "failed".to_string(),
-        error: "provider messages closed without a terminal result".to_string(),
-        ..ExecutionResult::default()
-    }))
+    *message_seq = transcript.next_seq;
+    Ok((
+        terminal.unwrap_or_else(|| ExecutionResult {
+            status: "failed".to_string(),
+            error: "provider messages closed without a terminal result".to_string(),
+            ..ExecutionResult::default()
+        }),
+        transcript.tool_count,
+    ))
+}
+
+/// Executes one provider session and drains its transcript before returning.
+/// Keeping this boundary reusable is what lets the daemon make exactly one
+/// safe fresh-session retry without duplicating process ownership or transcript
+/// delivery logic.
+async fn execute_and_drain(
+    ctx: &Ctx,
+    backend: &dyn Backend,
+    prompt: &str,
+    options: ExecOptions,
+    provider: &str,
+    client: &Client,
+    task_id: &str,
+    work_dir: &str,
+    codex_home: &str,
+    message_seq: &mut i32,
+) -> anyhow::Result<(ExecutionResult, i32)> {
+    let session = backend
+        .execute(prompt, options)
+        .await
+        .map_err(|error| anyhow::anyhow!("execute {provider}: {error}"))?;
+    drain_session(
+        ctx,
+        client,
+        task_id,
+        work_dir,
+        codex_home,
+        message_seq,
+        session,
+    )
+    .await
 }
 
 fn session_pin_ready(codex_home: &str, session_id: &str) -> bool {
@@ -961,6 +1081,7 @@ async fn pin_session_if_ready(
 #[derive(Default)]
 struct TranscriptBatch {
     next_seq: i32,
+    tool_count: i32,
     messages: Vec<TaskMessageData>,
     tools: HashMap<String, String>,
     session_pinned: bool,
@@ -981,6 +1102,9 @@ impl TranscriptBatch {
         }
         if matches!(message.message_type, MessageType::Log) {
             return None;
+        }
+        if message.message_type == MessageType::ToolUse {
+            self.tool_count = self.tool_count.saturating_add(1);
         }
         self.next_seq = self.next_seq.saturating_add(1);
         let mut value = TaskMessageData {
@@ -1087,6 +1211,7 @@ fn result_outcome(
     result: ExecutionResult,
     env: &Environment,
     requested_session_id: &str,
+    retired_session_id: &str,
 ) -> TaskRunOutcome {
     let resume_rejected = result.resume_rejected && !requested_session_id.is_empty();
     let mut usage = result
@@ -1154,11 +1279,97 @@ fn result_outcome(
             failure_reason,
             retired_session_id: resume_rejected
                 .then(|| requested_session_id.to_string())
-                .unwrap_or_default(),
+                .unwrap_or_else(|| retired_session_id.to_string()),
             usage,
             ..TaskResult::default()
         },
         failure: None,
+    }
+}
+
+/// Mirrors Go `shouldRetryWithFreshSession`: a resume retry needs positive
+/// evidence that the session is the problem and must observe no tool calls so
+/// it cannot duplicate an external side effect.
+fn should_retry_with_fresh_session(
+    result: &ExecutionResult,
+    prior_session_id: &str,
+    tools: i32,
+    provider: &str,
+) -> bool {
+    if result.status != "failed" || prior_session_id.is_empty() || tools > 0 {
+        return false;
+    }
+    if result.resume_rejected
+        || cordy_task_failure::unresumable_history(&result.error)
+        || cordy_task_failure::auth_method_unresolved(&result.error)
+    {
+        return true;
+    }
+    cordy_agent::registry::resume_rejection_undetectable(provider)
+        && result.session_id.is_empty()
+        && fresh_session_may_help(&result.error)
+}
+
+/// Compatibility fallback for providers that cannot positively report a
+/// rejected resume. Non-session failures keep the existing session so the
+/// platform's normal retry can continue the conversation.
+fn fresh_session_may_help(error: &str) -> bool {
+    match cordy_task_failure::classify(error).as_str() {
+        "agent_error.provider_network"
+        | "agent_error.provider_capacity_or_rate_limit"
+        | "agent_error.provider_quota_limit"
+        | "agent_error.provider_server_error"
+        | "agent_error.provider_auth_or_access"
+        | "agent_error.missing_config"
+        | "agent_error.model_not_found_or_unavailable"
+        | "agent_error.runtime_missing_executable"
+        | "agent_error.runtime_version_unsupported"
+        | "agent_error.agent_timeout" => false,
+        _ => true,
+    }
+}
+
+/// Merges usage from the failed resume attempt and the fresh retry without
+/// losing either provider/model's billing records.
+fn merge_usage(
+    mut first: BTreeMap<String, cordy_agent::TokenUsage>,
+    retry: BTreeMap<String, cordy_agent::TokenUsage>,
+) -> BTreeMap<String, cordy_agent::TokenUsage> {
+    for (model, usage) in retry {
+        let existing = first.entry(model).or_default();
+        existing.input_tokens = existing.input_tokens.saturating_add(usage.input_tokens);
+        existing.output_tokens = existing.output_tokens.saturating_add(usage.output_tokens);
+        existing.cache_read_tokens = existing
+            .cache_read_tokens
+            .saturating_add(usage.cache_read_tokens);
+        existing.cache_write_tokens = existing
+            .cache_write_tokens
+            .saturating_add(usage.cache_write_tokens);
+        existing.cost_usd_ticks = existing.cost_usd_ticks.saturating_add(usage.cost_usd_ticks);
+    }
+    first
+}
+
+/// Applies Go's retry-result invariant: a retry with a new session (or a
+/// completed retry without one) wins; a failed retry without a new session
+/// leaves the original result so its retired session remains unresumable.
+fn reconcile_fresh_retry_result(
+    mut first: ExecutionResult,
+    first_tools: i32,
+    retry: anyhow::Result<(ExecutionResult, i32)>,
+) -> (ExecutionResult, i32) {
+    match retry {
+        Err(_) => (first, first_tools),
+        Ok((mut retry, retry_tools))
+            if !retry.session_id.is_empty() || retry.status == "completed" =>
+        {
+            retry.usage = merge_usage(first.usage, retry.usage);
+            (retry, retry_tools)
+        }
+        Ok((retry, _)) => {
+            first.usage = merge_usage(first.usage, retry.usage);
+            (first, first_tools)
+        }
     }
 }
 
@@ -1391,6 +1602,7 @@ mod tests {
         assert_eq!(batch.messages[0].seq, 1);
         assert_eq!(batch.messages[1].seq, 2);
         assert_eq!(batch.messages[1].tool, "read_file");
+        assert_eq!(batch.tool_count, 1);
     }
 
     #[test]
@@ -1418,12 +1630,159 @@ mod tests {
                 ..Environment::default()
             },
             "session-old",
+            "",
         );
         assert_eq!(outcome.result.status, "blocked");
         assert_eq!(outcome.result.failure_reason, "timeout");
         assert_eq!(outcome.result.session_id, "session-1");
         assert_eq!(outcome.result.usage[0].provider, "qwen");
         assert_eq!(outcome.result.usage[0].input_tokens, 10);
+    }
+
+    #[test]
+    fn fresh_retry_requires_resume_failure_and_no_tools() {
+        let rejected = ExecutionResult {
+            status: "failed".into(),
+            resume_rejected: true,
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &rejected,
+            "session-1",
+            0,
+            "codex"
+        ));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "session-1",
+            1,
+            "codex"
+        ));
+        assert!(!should_retry_with_fresh_session(&rejected, "", 0, "codex"));
+        assert!(!should_retry_with_fresh_session(
+            &ExecutionResult {
+                status: "completed".into(),
+                ..ExecutionResult::default()
+            },
+            "session-1",
+            0,
+            "codex"
+        ));
+    }
+
+    #[test]
+    fn fresh_retry_accepts_provider_agnostic_unresumable_history() {
+        let result = ExecutionResult {
+            status: "failed".into(),
+            error: "assistant message at position 3 must not be empty".into(),
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &result,
+            "session-1",
+            0,
+            "claude"
+        ));
+
+        let auth = ExecutionResult {
+            status: "failed".into(),
+            error: "Could not resolve authentication method".into(),
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &auth,
+            "session-1",
+            0,
+            "claude"
+        ));
+    }
+
+    #[test]
+    fn undetectable_provider_uses_empty_session_fallback_only_for_session_errors() {
+        let unknown = ExecutionResult {
+            status: "failed".into(),
+            error: "provider exited without a result".into(),
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &unknown,
+            "session-1",
+            0,
+            "opencode"
+        ));
+        assert!(!should_retry_with_fresh_session(
+            &unknown,
+            "session-1",
+            0,
+            "codex"
+        ));
+
+        let network = ExecutionResult {
+            status: "failed".into(),
+            error: "provider connection refused".into(),
+            ..ExecutionResult::default()
+        };
+        assert!(!should_retry_with_fresh_session(
+            &network,
+            "session-1",
+            0,
+            "opencode"
+        ));
+
+        let established = ExecutionResult {
+            status: "failed".into(),
+            error: "provider exited without a result".into(),
+            session_id: "new-session".into(),
+            ..ExecutionResult::default()
+        };
+        assert!(!should_retry_with_fresh_session(
+            &established,
+            "session-1",
+            0,
+            "opencode"
+        ));
+    }
+
+    #[test]
+    fn fresh_retry_reconciliation_never_resurrects_the_first_session() {
+        let first = ExecutionResult {
+            status: "failed".into(),
+            session_id: "poisoned".into(),
+            usage: BTreeMap::from([(
+                "model".into(),
+                TokenUsage {
+                    input_tokens: 4,
+                    ..TokenUsage::default()
+                },
+            )]),
+            ..ExecutionResult::default()
+        };
+        let retry = ExecutionResult {
+            status: "completed".into(),
+            session_id: "fresh".into(),
+            usage: BTreeMap::from([(
+                "model".into(),
+                TokenUsage {
+                    output_tokens: 3,
+                    ..TokenUsage::default()
+                },
+            )]),
+            ..ExecutionResult::default()
+        };
+        let (winner, tools) = reconcile_fresh_retry_result(first.clone(), 0, Ok((retry, 1)));
+        assert_eq!(winner.session_id, "fresh");
+        assert_eq!(winner.usage["model"].input_tokens, 4);
+        assert_eq!(winner.usage["model"].output_tokens, 3);
+        assert_eq!(tools, 1);
+
+        let failed_retry = ExecutionResult {
+            status: "failed".into(),
+            error: "fresh failed before opening a session".into(),
+            ..ExecutionResult::default()
+        };
+        let (winner, tools) = reconcile_fresh_retry_result(first, 2, Ok((failed_retry, 0)));
+        assert_eq!(winner.session_id, "poisoned");
+        assert_eq!(tools, 2);
     }
 
     #[test]
@@ -1662,6 +2021,7 @@ mod tests {
             },
             &Environment::default(),
             "",
+            "",
         );
         assert!(outcome.failure.is_none());
         assert_eq!(outcome.result.status, "cancelled");
@@ -1680,8 +2040,27 @@ mod tests {
             },
             &Environment::default(),
             "session-poisoned",
+            "",
         );
         assert_eq!(outcome.result.failure_reason, "resume_rejected");
+        assert_eq!(outcome.result.retired_session_id, "session-poisoned");
+    }
+
+    #[test]
+    fn fresh_retry_keeps_retired_session_separate_from_completed_result() {
+        let outcome = result_outcome(
+            "qwen",
+            ExecutionResult {
+                status: "completed".to_string(),
+                session_id: "fresh-session".to_string(),
+                ..ExecutionResult::default()
+            },
+            &Environment::default(),
+            "session-poisoned",
+            "session-poisoned",
+        );
+        assert_eq!(outcome.result.status, "completed");
+        assert_eq!(outcome.result.session_id, "fresh-session");
         assert_eq!(outcome.result.retired_session_id, "session-poisoned");
     }
 
