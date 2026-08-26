@@ -1382,6 +1382,23 @@ fn classify_codex_startup_stderr(stderr: &str, timed_out: bool) -> CodexStderrCl
     }
 }
 
+fn finish_first_item_observation(
+    started_at: Option<Instant>,
+    finished_at: &mut Option<Instant>,
+    outcome: &mut Option<&'static str>,
+    classification: &mut CodexStderrClassification,
+    stderr_tail: &SharedDiagnosticBuffer,
+    next_outcome: &'static str,
+) {
+    if started_at.is_none() || outcome.is_some() {
+        return;
+    }
+    *finished_at = Some(Instant::now());
+    *classification =
+        classify_codex_startup_stderr(&stderr_tail.tail(), next_outcome.ends_with("_timeout"));
+    *outcome = Some(next_outcome);
+}
+
 #[derive(Clone)]
 struct CodexObserver {
     state: Arc<Mutex<ObserverState>>,
@@ -2329,6 +2346,9 @@ async fn run_codex(
     let mut first_deadline = None;
     let mut first_started = false;
     let mut first_started_at = None;
+    let mut first_finished_at = None;
+    let mut first_item_outcome = None;
+    let mut first_item_classification = CodexStderrClassification::default();
     let mut first_progress = false;
     let mut last_activity = "turn/start".to_string();
     let mut status = "completed".to_string();
@@ -2350,18 +2370,54 @@ async fn run_codex(
                 {
                     first_progress = true;
                     first_deadline = None;
+                    let outcome = if activity == "error:terminal" {
+                        "turn_failed"
+                    } else {
+                        "progress"
+                    };
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        outcome,
+                    );
                 }
             }
             Some(aborted) = turn_done_rx.recv() => {
+                let turn_error = observer.snapshot().await.turn_error;
                 if aborted {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_aborted",
+                    );
                     status = "aborted".to_string();
                     error = "codex turn aborted".to_string();
+                } else if !turn_error.is_empty() {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_failed",
+                    );
+                    status = "failed".to_string();
+                    error = turn_error;
                 } else {
-                    let turn_error = observer.snapshot().await.turn_error;
-                    if !turn_error.is_empty() {
-                        status = "failed".to_string();
-                        error = turn_error;
-                    }
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_completed",
+                    );
                 }
                 break;
             }
@@ -2372,6 +2428,14 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "execution_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex timed out after {}s",
@@ -2386,6 +2450,14 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "no_progress_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex app-server no progress timeout after {}s",
@@ -2394,6 +2466,14 @@ async fn run_codex(
                 break;
             }
             _ = tokio::time::sleep_until(semantic_deadline) => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "semantic_inactivity_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex semantic inactivity timeout after {}s",
@@ -2403,12 +2483,28 @@ async fn run_codex(
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if let Some(process_error) = client.process_error().await {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "process_exit",
+                    );
                     status = "failed".to_string();
                     error = process_error;
                     break;
                 }
             }
             _ = options.cancellation.cancelled() => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "cancelled",
+                );
                 status = "aborted".to_string();
                 error = "execution cancelled".to_string();
                 break;
@@ -2457,17 +2553,20 @@ async fn run_codex(
         error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
     }
 
-    if let Some(first_started_at) = first_started_at {
-        let outcome = match status.as_str() {
-            "completed" => "turn_completed",
-            "aborted" => "turn_aborted",
-            "timeout" if error.contains("no progress timeout") => "no_progress_timeout",
-            "timeout" => "semantic_inactivity_timeout",
-            "failed" => "turn_failed",
-            _ => "process_exit",
+    if let (Some(first_started_at), Some(outcome)) = (first_started_at, first_item_outcome) {
+        let classification = if outcome.ends_with("_timeout") {
+            // Timeout cleanup drains the stderr pump, so reclassify from the
+            // complete bounded tail. Non-timeout outcomes retain the snapshot
+            // taken at their first terminal/progress boundary.
+            classify_codex_startup_stderr(&stderr, true)
+        } else {
+            first_item_classification
         };
-        let classification = classify_codex_startup_stderr(&stderr, status == "timeout");
-        let latency_ms = first_started_at.elapsed().as_millis() as i64;
+        let finished_at = first_finished_at.unwrap_or(first_started_at);
+        let latency_ms = finished_at
+            .checked_duration_since(first_started_at)
+            .unwrap_or_default()
+            .as_millis() as i64;
         let thread_id = snapshot.thread_id.as_str();
         let turn_id = snapshot.turn_id.as_str();
         let log_fields = (
