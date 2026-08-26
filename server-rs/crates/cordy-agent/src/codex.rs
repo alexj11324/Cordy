@@ -1558,6 +1558,60 @@ async fn cleanup_codex_with_status(
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct CodexStderrClassification {
+    model_refresh_failure: usize,
+    model_refresh_timeout: usize,
+    mcp_init_transport: usize,
+    bare_timeout: usize,
+}
+
+/// Classifies only bounded, sanitized startup stderr. These counters are
+/// telemetry evidence; retry decisions still require lifecycle state and
+/// confirmed process-tree cleanup.
+fn classify_codex_startup_stderr(stderr: &str, timed_out: bool) -> CodexStderrClassification {
+    let lower = sanitize_diagnostic(stderr).to_ascii_lowercase();
+    let model_refresh_failure = lower
+        .matches(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+        .count();
+    let model_refresh_timeout = lower
+        .matches("failed to refresh available models: timeout waiting for child process to exit")
+        .count();
+    let mcp_init_transport = lower
+        .lines()
+        .filter(|line| {
+            line.contains("mcp")
+                && line.contains("transport")
+                && (line.contains("error") || line.contains("failed") || line.contains("closed"))
+        })
+        .count();
+    let bare_timeout =
+        usize::from(timed_out && model_refresh_failure == 0 && mcp_init_transport == 0);
+    CodexStderrClassification {
+        model_refresh_failure,
+        model_refresh_timeout,
+        mcp_init_transport,
+        bare_timeout,
+    }
+}
+
+fn finish_first_item_observation(
+    started_at: Option<Instant>,
+    finished_at: &mut Option<Instant>,
+    outcome: &mut Option<&'static str>,
+    classification: &mut CodexStderrClassification,
+    stderr_tail: &SharedDiagnosticBuffer,
+    next_outcome: &'static str,
+) {
+    if started_at.is_none() || outcome.is_some() {
+        return;
+    }
+    *finished_at = Some(Instant::now());
+    *classification =
+        classify_codex_startup_stderr(&stderr_tail.tail(), next_outcome.ends_with("_timeout"));
+    *outcome = Some(next_outcome);
+}
+
 #[derive(Clone)]
 struct CodexObserver {
     state: Arc<Mutex<ObserverState>>,
@@ -2551,6 +2605,10 @@ async fn run_codex(
     );
     let mut first_deadline = None;
     let mut first_started = false;
+    let mut first_started_at = None;
+    let mut first_finished_at = None;
+    let mut first_item_outcome = None;
+    let mut first_item_classification = CodexStderrClassification::default();
     let mut first_progress = false;
     let mut last_activity = "turn/start".to_string();
     let mut status = "completed".to_string();
@@ -2576,6 +2634,7 @@ async fn run_codex(
                 last_activity = activity.clone();
                 if activity == "status:running" && !first_started {
                     first_started = true;
+                    first_started_at = Some(Instant::now());
                     first_deadline = Some(tokio::time::Instant::now() + first_timeout);
                 } else if first_started
                     && !first_progress
@@ -2584,18 +2643,54 @@ async fn run_codex(
                 {
                     first_progress = true;
                     first_deadline = None;
+                    let outcome = if activity == "error:terminal" {
+                        "turn_failed"
+                    } else {
+                        "progress"
+                    };
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        outcome,
+                    );
                 }
             }
             Some(aborted) = turn_done_rx.recv() => {
+                let turn_error = observer.snapshot().await.turn_error;
                 if aborted {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_aborted",
+                    );
                     status = "aborted".to_string();
                     error = "codex turn aborted".to_string();
+                } else if !turn_error.is_empty() {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_failed",
+                    );
+                    status = "failed".to_string();
+                    error = turn_error;
                 } else {
-                    let turn_error = observer.snapshot().await.turn_error;
-                    if !turn_error.is_empty() {
-                        status = "failed".to_string();
-                        error = turn_error;
-                    }
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "turn_completed",
+                    );
                 }
                 break;
             }
@@ -2606,6 +2701,14 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "execution_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex timed out after {}s",
@@ -2620,6 +2723,14 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "no_progress_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex app-server no progress timeout after {}s",
@@ -2628,6 +2739,14 @@ async fn run_codex(
                 break;
             }
             _ = tokio::time::sleep_until(semantic_deadline) => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "semantic_inactivity_timeout",
+                );
                 status = "timeout".to_string();
                 error = format!(
                     "codex semantic inactivity timeout after {}s",
@@ -2637,12 +2756,28 @@ async fn run_codex(
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 if let Some(process_error) = client.process_error().await {
+                    finish_first_item_observation(
+                        first_started_at,
+                        &mut first_finished_at,
+                        &mut first_item_outcome,
+                        &mut first_item_classification,
+                        &stderr_tail,
+                        "process_exit",
+                    );
                     status = "failed".to_string();
                     error = process_error;
                     break;
                 }
             }
             _ = options.cancellation.cancelled() => {
+                finish_first_item_observation(
+                    first_started_at,
+                    &mut first_finished_at,
+                    &mut first_item_outcome,
+                    &mut first_item_classification,
+                    &stderr_tail,
+                    "cancelled",
+                );
                 status = "aborted".to_string();
                 error = "execution cancelled".to_string();
                 break;
@@ -2689,6 +2824,61 @@ async fn run_codex(
         );
     } else if status != "completed" && !stderr.is_empty() {
         error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
+    }
+
+    if let (Some(first_started_at), Some(outcome)) = (first_started_at, first_item_outcome) {
+        let classification = if outcome.ends_with("_timeout") {
+            // Timeout cleanup drains the stderr pump, so reclassify from the
+            // complete bounded tail. Non-timeout outcomes retain the snapshot
+            // taken at their first terminal/progress boundary.
+            classify_codex_startup_stderr(&stderr, true)
+        } else {
+            first_item_classification
+        };
+        let finished_at = first_finished_at.unwrap_or(first_started_at);
+        let latency_ms = finished_at
+            .checked_duration_since(first_started_at)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let thread_id = snapshot.thread_id.as_str();
+        let turn_id = snapshot.turn_id.as_str();
+        let log_fields = (
+            classification.model_refresh_failure,
+            classification.model_refresh_timeout,
+            classification.mcp_init_transport,
+            classification.bare_timeout,
+        );
+        if status == "completed" {
+            tracing::info!(
+                provider = "codex",
+                attempt,
+                thread_id,
+                turn_id,
+                outcome,
+                latency_ms,
+                cleanup_confirmed,
+                stderr_model_refresh_failure_count = log_fields.0,
+                stderr_model_refresh_timeout_count = log_fields.1,
+                stderr_mcp_init_transport_count = log_fields.2,
+                stderr_bare_timeout_count = log_fields.3,
+                "Codex first-item lifecycle"
+            );
+        } else {
+            tracing::warn!(
+                provider = "codex",
+                attempt,
+                thread_id,
+                turn_id,
+                outcome,
+                latency_ms,
+                cleanup_confirmed,
+                stderr_model_refresh_failure_count = log_fields.0,
+                stderr_model_refresh_timeout_count = log_fields.1,
+                stderr_mcp_init_transport_count = log_fields.2,
+                stderr_bare_timeout_count = log_fields.3,
+                "Codex first-item lifecycle"
+            );
+        }
     }
 
     let startup_refresh_retry_safe = attempt == 1
@@ -3883,6 +4073,21 @@ mod tests {
         assert!(codex_supports_debug_models("codex-cli 0.122.0"));
         assert!(codex_supports_debug_models("0.144.1"));
         assert!(!codex_supports_debug_models("development"));
+    }
+
+    #[test]
+    fn startup_stderr_classification_matches_go_buckets() {
+        let classified = classify_codex_startup_stderr(
+            "failed to refresh available models\nfailed to refresh available models: timeout waiting for child process to exit\nMCP transport error: closed",
+            true,
+        );
+        assert_eq!(classified.model_refresh_failure, 2);
+        assert_eq!(classified.model_refresh_timeout, 1);
+        assert_eq!(classified.mcp_init_transport, 1);
+        assert_eq!(classified.bare_timeout, 0);
+
+        let bare = classify_codex_startup_stderr("provider timed out", true);
+        assert_eq!(bare.bare_timeout, 1);
     }
 
     #[cfg(unix)]
