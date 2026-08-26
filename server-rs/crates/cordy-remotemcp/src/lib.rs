@@ -16,6 +16,7 @@ mod connector;
 mod devorigin;
 mod discover;
 mod error;
+mod oauth;
 mod types;
 mod validate;
 
@@ -26,6 +27,10 @@ pub use discover::{
     contains_string, discover, supported_protocol_versions, tool_set_digest, ExtraHeaders,
 };
 pub use error::Error;
+pub use oauth::{
+    build_authorization_url, oauth_expiry, OAuthClientRegistration, OAuthMetadata,
+    OAuthRegistration, OAuthToken, OAuthTokenResponse, Registration, Token,
+};
 pub use types::{digest_bytes, Connection, Tool, PLUGIN_CONTRIBUTION_PREFIX};
 pub use validate::{
     host_allowed, is_public_address, validate_public_https_endpoint, Resolver, SystemResolver,
