@@ -324,12 +324,13 @@ This runs:
 
 1. TypeScript typecheck
 2. TypeScript unit tests
-3. Go tests
-4. Playwright E2E tests
+3. Rust workspace tests
+4. Go compatibility tests
+5. Playwright E2E tests
 
 Notes:
 
-- Go tests create their own fixture data
+- Rust and Go tests create their own fixture data
 - E2E tests create their own workspace and issue fixtures
 - the check flow starts backend/frontend only if they are not already running
 
