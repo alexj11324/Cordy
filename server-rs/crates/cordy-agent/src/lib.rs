@@ -17,6 +17,7 @@ pub mod dsh;
 mod kimi_usage;
 pub mod mcp;
 pub mod model;
+pub mod openclaw;
 pub mod opencode;
 pub mod opencode_mcp;
 pub mod pi;
@@ -45,6 +46,7 @@ pub use model::{
     parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
     ModelServiceTier, ModelThinking, ThinkingLevel,
 };
+pub use openclaw::{build_openclaw_args, OpenclawBackend, OpenclawConfig};
 pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
 pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
