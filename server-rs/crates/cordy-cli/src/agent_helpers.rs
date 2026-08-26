@@ -5,13 +5,15 @@ use std::io::Read;
 use std::path::Path;
 
 use super::{format_table, value_string, Environment};
+use cordy_config::agent_concurrency;
 
 pub(super) fn copied_agent_max_concurrent_tasks(value: Option<&Value>) -> Option<i32> {
     let value = value?.as_f64()?;
-    if value.fract() != 0.0 || !(1.0..=50.0).contains(&value) {
+    if value.fract() != 0.0 {
         return None;
     }
-    Some(value as i32)
+    let value = value as i32;
+    agent_concurrency::is_valid_max_concurrent_tasks(value).then_some(value)
 }
 
 pub(super) fn apply_agent_permission_args(
