@@ -68,6 +68,7 @@ impl UpdateFailureKind {
 pub struct UpdateExecutorError {
     pub kind: UpdateFailureKind,
     message: String,
+    source: Option<anyhow::Error>,
 }
 
 impl UpdateExecutorError {
@@ -75,6 +76,19 @@ impl UpdateExecutorError {
         Self {
             kind,
             message: message.into(),
+            source: None,
+        }
+    }
+
+    fn with_source(
+        kind: UpdateFailureKind,
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            source: Some(anyhow::Error::new(source)),
         }
     }
 }
@@ -85,7 +99,11 @@ impl fmt::Display for UpdateExecutorError {
     }
 }
 
-impl std::error::Error for UpdateExecutorError {}
+impl std::error::Error for UpdateExecutorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|source| source.as_ref())
+    }
+}
 
 type Result<T> = std::result::Result<T, UpdateExecutorError>;
 
@@ -908,7 +926,11 @@ fn replace_binary(temporary: &Path, executable: &Path) -> Result<()> {
 
 fn resolve_executable() -> Result<PathBuf> {
     cordy_util::self_exec::resolve().map_err(|error| {
-        UpdateExecutorError::new(UpdateFailureKind::ResolveExecutable, error.to_string())
+        UpdateExecutorError::with_source(
+            UpdateFailureKind::ResolveExecutable,
+            error.to_string(),
+            error,
+        )
     })
 }
 
