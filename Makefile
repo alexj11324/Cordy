@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down rust-migrate-up rust-migrate-down go-migrate-up go-migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -43,11 +43,8 @@ endef
 # The Rust HTTP server is the default source entrypoint. Keep the build commit
 # in the process environment so metrics retain the same release metadata as
 # the legacy Go command during the staged migration.
-<<<<<<< HEAD
 RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
-=======
-RUST_SERVER_CMD = cd server-rs && CORDY_GIT_COMMIT="$(COMMIT)" cargo run -p cordy-server
->>>>>>> 60475f76 (refactor(server): switch default source entrypoint to Rust)
+RUST_MIGRATE_CMD = cd server-rs && cargo run --locked -p cordy-migrate --
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -162,7 +159,7 @@ setup: ## Prepare the current checkout from its env file: install deps, ensure D
 	pnpm install
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	@echo "==> Running migrations..."
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	@echo ""
 	@echo "✓ Setup complete! Run 'make start' to launch the app."
 
@@ -173,7 +170,7 @@ start: ## Start backend and frontend for the current checkout and run migrations
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	@echo "Running migrations..."
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	@echo "Starting backend and frontend..."
 	@trap 'kill 0' EXIT; \
 		($(RUST_SERVER_CMD)) & \
@@ -224,7 +221,7 @@ db-reset: ## Drop and recreate the current env's database, then re-run all migra
 		-c "DROP DATABASE IF EXISTS \"$(POSTGRES_DB)\" WITH (FORCE);" \
 		-c "CREATE DATABASE \"$(POSTGRES_DB)\";"
 	@echo "==> Running migrations..."
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	@echo ""
 	@echo "✓ Database '$(POSTGRES_DB)' reset. Run 'make start' to launch the app."
 
@@ -324,18 +321,32 @@ build: ## Build the server, CLI, and migrate binaries into server/bin
 test: ## Run Go tests after ensuring the target DB exists and migrations are applied
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	bash scripts/test-go.sh --race
 
 # Database
 ##@ Database
 
-migrate-up: ## Create the target DB if needed, then apply database migrations
+migrate-up: rust-migrate-up ## Create the target DB if needed, then apply database migrations
+
+rust-migrate-up: ## Apply database migrations with the Rust runner
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_MIGRATE_CMD) up
+
+migrate-down: rust-migrate-down ## Create the target DB if needed, then roll back database migrations
+
+rust-migrate-down: ## Roll back database migrations with the Rust runner
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_MIGRATE_CMD) down
+
+go-migrate-up: ## Apply migrations with the legacy Go runner during the migration
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/migrate up
 
-migrate-down: ## Create the target DB if needed, then roll back database migrations
+go-migrate-down: ## Roll back migrations with the legacy Go runner during the migration
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/migrate down
