@@ -14,6 +14,7 @@ pub mod deveco;
 pub mod dsh;
 pub mod mcp;
 pub mod model;
+pub mod openclaw;
 pub mod opencode;
 pub mod opencode_mcp;
 pub mod pi;
@@ -36,6 +37,7 @@ pub use model::{
     Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelServiceTier, ModelThinking,
     ThinkingLevel,
 };
+pub use openclaw::{build_openclaw_args, OpenclawBackend, OpenclawConfig};
 pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
 pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
