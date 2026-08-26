@@ -36,6 +36,7 @@ async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 http-body-util = { workspace = true }
+hyper-util = { workspace = true, features = ["server-auto"] }
 pprof = { workspace = true }
 redis = { workspace = true }
 serde = { workspace = true }
