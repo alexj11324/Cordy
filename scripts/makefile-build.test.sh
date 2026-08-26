@@ -40,6 +40,22 @@ quoted_output="$(make -n cli 'CORDY_ARGS=issue create --title "hello world"')"
 grep -Fq -- './scripts/run-rust-cli.sh issue create --title "hello world"' <<<"$quoted_output" ||
   fail "cli: nested make stripped embedded argument quoting:\n$quoted_output"
 
+# The source-facing HTTP server entrypoints must follow the migrated Rust
+# binary as well. Keep an explicit Go target until the final Go source removal,
+# but never make it the default for local start/check workflows.
+for target in server rust-server; do
+  rust_server_output="$(make -n "$target")"
+  grep -Fq -- "./scripts/run-rust-server.sh run -p cordy-server" <<<"$rust_server_output" ||
+    fail "$target: expected the Rust server entrypoint, got:\n$rust_server_output"
+  if grep -Fq -- "cd server && go run ./cmd/server" <<<"$rust_server_output"; then
+    fail "$target: unexpectedly resolved to the legacy Go server:\n$rust_server_output"
+  fi
+done
+
+go_server_output="$(make -n go-server)"
+grep -Fq -- "cd server && go run ./cmd/server" <<<"$go_server_output" ||
+  fail "go-server: expected the explicit legacy Go server entrypoint, got:\n$go_server_output"
+
 # The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
 # what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
 require_outputs() {

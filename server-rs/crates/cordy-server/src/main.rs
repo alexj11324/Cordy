@@ -274,7 +274,7 @@ async fn build_production_router(
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed,
-        server_version: env!("CARGO_PKG_VERSION").to_string(),
+        server_version: env!("CORDY_BUILD_VERSION").to_string(),
     })
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
@@ -505,7 +505,7 @@ async fn main() -> anyhow::Result<()> {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: env!("CORDY_BUILD_VERSION").to_string(),
             commit: option_env!("CORDY_GIT_COMMIT")
                 .unwrap_or("unknown")
                 .to_string(),
@@ -773,7 +773,65 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn shutdown_signal() {
+fn parse_shutdown_hold_duration(raw: &str) -> Option<Duration> {
+    let mut remaining = raw.trim();
+    if remaining.is_empty() || remaining == "0" {
+        return Some(Duration::ZERO);
+    }
+    let mut total = Duration::ZERO;
+    while !remaining.is_empty() {
+        let split = remaining
+            .find(|ch: char| ch.is_ascii_alphabetic() || ch == 'µ')
+            .unwrap_or(remaining.len());
+        if split == 0 {
+            return None;
+        }
+        let value = remaining[..split].parse::<f64>().ok()?;
+        if !value.is_finite() || value < 0.0 {
+            return None;
+        }
+        remaining = &remaining[split..];
+        let unit_end = remaining
+            .find(|ch: char| ch.is_ascii_digit() || ch == '.' || ch == '+' || ch == '-')
+            .unwrap_or(remaining.len());
+        let unit = &remaining[..unit_end];
+        let multiplier = match unit {
+            "ns" => 1.0,
+            "us" | "µs" => 1_000.0,
+            "ms" => 1_000_000.0,
+            "s" => 1_000_000_000.0,
+            "m" => 60.0 * 1_000_000_000.0,
+            "h" => 60.0 * 60.0 * 1_000_000_000.0,
+            _ => return None,
+        };
+        let nanos = value * multiplier;
+        if !nanos.is_finite() || nanos > u64::MAX as f64 {
+            return None;
+        }
+        total = total.checked_add(Duration::from_nanos(nanos as u64))?;
+        remaining = &remaining[unit_end..];
+    }
+    Some(total)
+}
+
+fn shutdown_hold_duration() -> Duration {
+    let Some(raw) = std::env::var_os("CORDY_SHUTDOWN_HOLD_DURATION") else {
+        return Duration::ZERO;
+    };
+    let raw = raw.to_string_lossy();
+    match parse_shutdown_hold_duration(&raw) {
+        Some(duration) => duration,
+        None => {
+            tracing::warn!(
+                value = %raw,
+                "invalid CORDY_SHUTDOWN_HOLD_DURATION; ignoring"
+            );
+            Duration::ZERO
+        }
+    }
+}
+
+async fn wait_for_shutdown_signal() {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
@@ -795,6 +853,22 @@ async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
+    }
+}
+
+async fn shutdown_signal() {
+    wait_for_shutdown_signal().await;
+    let hold = shutdown_hold_duration();
+    if !hold.is_zero() {
+        tracing::info!(?hold, "holding before shutdown");
+        tokio::select! {
+            () = tokio::time::sleep(hold) => {
+                tracing::info!(?hold, "shutdown hold complete");
+            }
+            () = wait_for_shutdown_signal() => {
+                tracing::info!(?hold, "shutdown hold interrupted by a second signal");
+            }
+        }
     }
     tracing::info!("shutdown signal received; draining HTTP server");
 }
@@ -984,6 +1058,22 @@ mod tests {
 
         cfg.auth.jwt_secret = Some("a-long-random-production-secret".into());
         assert!(validate_auth_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn shutdown_hold_duration_matches_go_duration_syntax() {
+        assert_eq!(parse_shutdown_hold_duration(""), Some(Duration::ZERO));
+        assert_eq!(parse_shutdown_hold_duration("0"), Some(Duration::ZERO));
+        assert_eq!(
+            parse_shutdown_hold_duration("1m250ms"),
+            Some(Duration::from_millis(60_250))
+        );
+        assert_eq!(
+            parse_shutdown_hold_duration("500us"),
+            Some(Duration::from_micros(500))
+        );
+        assert_eq!(parse_shutdown_hold_duration("-1s"), None);
+        assert_eq!(parse_shutdown_hold_duration("1day"), None);
     }
 
     #[tokio::test]
