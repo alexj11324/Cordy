@@ -284,6 +284,10 @@ async fn build_production_router(
     let root_cancel = CancellationToken::new();
     let state =
         install_pending_stores(state, redis_url).with_channel_cancel(root_cancel.child_token());
+    tokio::spawn(cordy_db::run_pool_stats_logger(
+        state.pool.clone(),
+        root_cancel.child_token(),
+    ));
     // Go registers realtime fanout before subscriber/activity/notification
     // side effects. Preserve that callback order while retaining async relay
     // ownership outside the handler state.
