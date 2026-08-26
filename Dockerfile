@@ -36,8 +36,25 @@ COPY server-rs/Cargo.toml server-rs/Cargo.lock ./
 COPY server-rs/.sqlx/ ./.sqlx/
 COPY server-rs/crates/ ./crates/
 
+# The Rust crates embed these Go-owned assets through paths relative to the
+# repository root. Keep that root-level layout in the Rust build stage.
+RUN mkdir -p /src/server/internal/service/builtin_agents/mika \
+    /src/server/internal/service/builtin_skills \
+    /src/server/internal/handler
+COPY server/internal/service/builtin_agents/mika/INSTRUCTIONS.md /src/server/internal/service/builtin_agents/mika/INSTRUCTIONS.md
+COPY server/internal/service/builtin_skills/ /src/server/internal/service/builtin_skills/
+COPY server/internal/handler/reserved_slugs.json /src/server/internal/handler/reserved_slugs.json
+
+ARG VERSION=dev
 ARG COMMIT=unknown
-RUN CORDY_GIT_COMMIT="${COMMIT}" cargo build --release --locked -p cordy-server
+ARG DATE=unknown
+ARG GO_VERSION=unknown
+RUN CORDY_BUILD_VERSION="${VERSION}" \
+    CORDY_BUILD_COMMIT="${COMMIT}" \
+    CORDY_BUILD_DATE="${DATE}" \
+    CORDY_BUILD_GO_VERSION="${GO_VERSION}" \
+    CORDY_GIT_COMMIT="${COMMIT}" \
+    cargo build --release --locked -p cordy-server
 
 # --- Runtime stage ---
 FROM alpine:3.21
@@ -57,5 +74,10 @@ COPY docker/entrypoint.sh .
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 EXPOSE 8080
+
+# /readyz is migration-aware; unlike a raw database ping it keeps the
+# container unhealthy until the server's schema/readiness contract is true.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/readyz || exit 1
 
 ENTRYPOINT ["./entrypoint.sh"]
