@@ -40,6 +40,7 @@ const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const TERMINATION_GRACE: Duration = Duration::from_millis(500);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_PATCH_BYTES: usize = 64 * 1024;
+const MAX_ROLLOUT_LINE_BYTES: usize = 1024 * 1024;
 
 static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| BTreeMap::from([("--listen", BlockedArgMode::WithValue)]));
@@ -2353,16 +2354,19 @@ fn filter_codex_rollouts(paths: Vec<PathBuf>, thread_id: &str) -> Vec<PathBuf> {
 fn read_codex_rollout_thread_id(path: &Path) -> Option<String> {
     let file = File::open(path).ok()?;
     let mut reader = StdBufReader::new(file);
-    let mut line = String::new();
     for _ in 0..64 {
-        line.clear();
-        if reader.read_line(&mut line).ok()? == 0 {
-            break;
-        }
-        if line.len() > 1024 * 1024 || !line.contains("session_meta") {
+        let line = match read_bounded_rollout_line(&mut reader, MAX_ROLLOUT_LINE_BYTES).ok()? {
+            BoundedRolloutLine::End => break,
+            BoundedRolloutLine::Oversized => continue,
+            BoundedRolloutLine::Complete(line) => line,
+        };
+        if !line
+            .windows(b"session_meta".len())
+            .any(|window| window == b"session_meta")
+        {
             continue;
         }
-        let value = serde_json::from_str::<Value>(&line).ok()?;
+        let value = serde_json::from_slice::<Value>(&line).ok()?;
         if value.get("type").and_then(Value::as_str) != Some("session_meta") {
             continue;
         }
@@ -2384,7 +2388,6 @@ fn parse_codex_session_file_since(
 ) -> Option<CodexSessionUsage> {
     let file = File::open(path).ok()?;
     let mut reader = StdBufReader::new(file);
-    let mut line = String::new();
     let mut result = CodexSessionUsage::default();
     let mut previous_total = RawCodexUsage::default();
     let mut previous_total_found = false;
@@ -2394,18 +2397,21 @@ fn parse_codex_session_file_since(
     let mut after_start_boundary = false;
 
     loop {
-        line.clear();
-        let bytes = reader.read_line(&mut line).ok()?;
-        if bytes == 0 {
-            break;
-        }
-        if line.len() > 1024 * 1024 {
-            break;
-        }
-        if !line.contains("token_count") && !line.contains("turn_context") {
+        let line = match read_bounded_rollout_line(&mut reader, MAX_ROLLOUT_LINE_BYTES).ok()? {
+            BoundedRolloutLine::End => break,
+            BoundedRolloutLine::Oversized => continue,
+            BoundedRolloutLine::Complete(line) => line,
+        };
+        if !line
+            .windows(b"token_count".len())
+            .any(|window| window == b"token_count")
+            && !line
+                .windows(b"turn_context".len())
+                .any(|window| window == b"turn_context")
+        {
             continue;
         }
-        let Ok(event) = serde_json::from_str::<Value>(&line) else {
+        let Ok(event) = serde_json::from_slice::<Value>(&line) else {
             continue;
         };
         let timestamp = event.get("timestamp").and_then(parse_codex_timestamp);
@@ -2463,13 +2469,57 @@ fn parse_codex_session_file_since(
             .input_tokens
             .saturating_sub(final_usage.cached_input_tokens)
             .max(0),
-        output_tokens: final_usage
-            .output_tokens
-            .saturating_add(final_usage.reasoning_output_tokens),
+        output_tokens: final_usage.output_tokens,
         cache_read_tokens: final_usage.cached_input_tokens,
         ..TokenUsage::default()
     };
     Some(result)
+}
+
+enum BoundedRolloutLine {
+    End,
+    Complete(Vec<u8>),
+    Oversized,
+}
+
+fn read_bounded_rollout_line<R: BufRead>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> io::Result<BoundedRolloutLine> {
+    let mut line = Vec::with_capacity(max_bytes.min(4096));
+    let mut oversized = false;
+    loop {
+        let buffer = reader.fill_buf()?;
+        if buffer.is_empty() {
+            if line.is_empty() && !oversized {
+                return Ok(BoundedRolloutLine::End);
+            }
+            return Ok(if oversized {
+                BoundedRolloutLine::Oversized
+            } else {
+                BoundedRolloutLine::Complete(line)
+            });
+        }
+
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let chunk_len = newline.map_or(buffer.len(), |index| index + 1);
+        if !oversized {
+            let remaining = max_bytes.saturating_sub(line.len());
+            let copy_len = chunk_len.min(remaining);
+            line.extend_from_slice(&buffer[..copy_len]);
+            if copy_len < chunk_len {
+                oversized = true;
+            }
+        }
+        reader.consume(chunk_len);
+        if newline.is_some() {
+            return Ok(if oversized {
+                BoundedRolloutLine::Oversized
+            } else {
+                BoundedRolloutLine::Complete(line)
+            });
+        }
+    }
 }
 
 fn parse_codex_timestamp(value: &Value) -> Option<SystemTime> {
@@ -2907,7 +2957,7 @@ done
         assert_eq!(result.model, "gpt-5.5");
         assert_eq!(result.usage.input_tokens, 30);
         assert_eq!(result.usage.cache_read_tokens, 10);
-        assert_eq!(result.usage.output_tokens, 25);
+        assert_eq!(result.usage.output_tokens, 20);
     }
 
     #[test]
@@ -2955,7 +3005,43 @@ done
             .unwrap_or_else(|| panic!("parse rollout"));
         assert_eq!(result.usage.input_tokens, 8);
         assert_eq!(result.usage.cache_read_tokens, 5);
-        assert_eq!(result.usage.output_tokens, 11);
+        assert_eq!(result.usage.output_tokens, 10);
+    }
+
+    #[test]
+    fn rollout_parser_discards_oversized_records_before_json_allocation() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let path = directory.path().join("rollout.jsonl");
+        let oversized = format!(
+            "{{\"padding\":\"{}\"}}\n",
+            "x".repeat(MAX_ROLLOUT_LINE_BYTES)
+        );
+        let valid = "{\"timestamp\":\"2026-02-01T00:00:00Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":2,\"output_tokens\":3}}}}\n";
+        std::fs::write(&path, format!("{oversized}{valid}"))
+            .unwrap_or_else(|error| panic!("write rollout: {error}"));
+        let start = parse_codex_timestamp(&serde_json::json!("2025-12-01T00:00:00Z"))
+            .unwrap_or_else(|| panic!("parse start timestamp"));
+        let result = parse_codex_session_file_since(&path, start, false)
+            .unwrap_or_else(|| panic!("parse rollout"));
+        assert_eq!(result.usage.input_tokens, 2);
+        assert_eq!(result.usage.output_tokens, 3);
+    }
+
+    #[test]
+    fn rollout_metadata_reader_discards_oversized_records() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let path = directory.path().join("rollout.jsonl");
+        let oversized = format!(
+            "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"wrong\",\"padding\":\"{}\"}}}}\n",
+            "x".repeat(MAX_ROLLOUT_LINE_BYTES)
+        );
+        let valid = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-main\"}}\n";
+        std::fs::write(&path, format!("{oversized}{valid}"))
+            .unwrap_or_else(|error| panic!("write rollout: {error}"));
+        assert_eq!(
+            read_codex_rollout_thread_id(&path).as_deref(),
+            Some("thread-main")
+        );
     }
 
     #[test]
