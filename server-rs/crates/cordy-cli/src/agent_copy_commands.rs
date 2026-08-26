@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use cordy_config::agent_concurrency;
 use serde_json::Value;
 use std::io::Read;
 
@@ -15,8 +16,8 @@ pub(super) async fn run_agent_copy<R: Read>(
     input: &mut R,
 ) -> Result<RunOutput> {
     if let Some(value) = args.max_concurrent_tasks {
-        if !(1..=50).contains(&value) {
-            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        if let Err(error) = agent_concurrency::validate_max_concurrent_tasks(value) {
+            bail!("--max-concurrent-tasks {error} (got {value})");
         }
     }
     let client = new_api_client(cli, environment)?;
