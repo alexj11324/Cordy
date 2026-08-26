@@ -31,6 +31,7 @@ use crate::execenv::execenv::{
     MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
+use crate::execenv::runtime_config::{cleanup_runtime_config, inject_runtime_config};
 use crate::execution_plan::{
     PreparedEnvironmentInputs, ProviderExecutionInputs, ProviderExecutionPlan,
 };
@@ -78,6 +79,13 @@ const TASK_PREPARE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PREPARATION_PENDING: u8 = 0;
 const PREPARATION_COMPLETE: u8 = 1;
 const PREPARATION_TIMED_OUT: u8 = 2;
+
+/// Mirrors Go's providerNeedsInlineSystemPrompt. These runtimes do not
+/// reliably load the provider-native file written into the task workdir, so
+/// the same stable brief must also be carried in ExecOptions.
+fn provider_needs_inline_system_prompt(provider: &str) -> bool {
+    matches!(provider, "openclaw" | "kimi" | "traecli" | "qwenpaw")
+}
 
 /// Task-owned MCP listeners and the effective provider configuration. The
 /// listener sets deliberately live until this value is dropped, including on
@@ -583,7 +591,13 @@ impl ProductionProviderAdapter {
                 anyhow::Error::new(error).context("create task temp directory"),
                 Some(&environment),
             );
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(
+                outcome,
+                &mut environment,
+                assignment.as_ref(),
+                &target.provider,
+            )
+            .await;
         }
         let run = async {
             client
@@ -637,9 +651,35 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
             }
+            let mut runtime_brief = match inject_runtime_config(
+                &environment.work_dir,
+                &target.provider,
+                plan.task_context(),
+            ) {
+                Ok(brief) => brief,
+                Err(error) => {
+                    tracing::warn!(
+                        task = %task.id,
+                        provider = %target.provider,
+                        error = %format!("{error:#}"),
+                        "execenv: runtime config injection failed (non-fatal)"
+                    );
+                    // Go's InjectRuntimeConfig returns the rendered brief
+                    // alongside a write error, so inline-only providers can
+                    // still receive their workflow even when the file target
+                    // is unavailable.
+                    crate::runtime_config_sections::build_meta_skill_content(
+                        &target.provider,
+                        plan.task_context(),
+                    )
+                }
+            };
             let mut bound = plan.bind_environment(
                 &environment,
                 PreparedEnvironmentInputs {
+                    system_prompt: provider_needs_inline_system_prompt(&target.provider)
+                        .then(|| runtime_brief.clone())
+                        .unwrap_or_default(),
                     cancellation: ctx.token().clone(),
                     openclaw_include_roots: environment.openclaw_include_root.clone(),
                     ..PreparedEnvironmentInputs::default()
@@ -721,10 +761,32 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
                 plan.drop_resume();
+                runtime_brief = match inject_runtime_config(
+                    &environment.work_dir,
+                    &target.provider,
+                    plan.task_context(),
+                ) {
+                    Ok(brief) => brief,
+                    Err(error) => {
+                        tracing::warn!(
+                            task = %task.id,
+                            provider = %target.provider,
+                            error = %format!("{error:#}"),
+                            "execenv: cold runtime config injection failed (non-fatal)"
+                        );
+                        crate::runtime_config_sections::build_meta_skill_content(
+                            &target.provider,
+                            plan.task_context(),
+                        )
+                    }
+                };
                 let fresh_prompt = build_prompt(task.clone(), &target.provider);
                 let retry = match plan.bind_environment(
                     &environment,
                     PreparedEnvironmentInputs {
+                        system_prompt: provider_needs_inline_system_prompt(&target.provider)
+                            .then(|| runtime_brief.clone())
+                            .unwrap_or_default(),
                         cancellation: ctx.token().clone(),
                         openclaw_include_roots: environment.openclaw_include_root.clone(),
                         ..PreparedEnvironmentInputs::default()
@@ -796,7 +858,13 @@ impl ProductionProviderAdapter {
         if let Err(error) = remove_tree(&temp_dir) {
             tracing::warn!(task = %task.id, %error, "task temp directory cleanup failed");
         }
-        outcome = finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+        outcome = finalize_environment(
+            outcome,
+            &mut environment,
+            assignment.as_ref(),
+            &target.provider,
+        )
+        .await;
         drop(path_guard);
         outcome
     }
@@ -1595,8 +1663,17 @@ async fn finalize_environment(
     mut outcome: TaskRunOutcome,
     environment: &mut Environment,
     assignment: Option<&LocalDirectoryAssignment>,
+    provider: &str,
 ) -> TaskRunOutcome {
     if environment.local_directory || environment.local_worktree.is_some() {
+        if let Err(error) = cleanup_runtime_config(&environment.work_dir, provider) {
+            tracing::warn!(%error, "execenv: cleanup runtime config failed");
+            if let Some(worktree) = environment.local_worktree.as_mut() {
+                worktree.abort_with_reason(&anyhow::anyhow!(
+                    "could not remove daemon runtime config before worktree delivery: {error}"
+                ));
+            }
+        }
         if let Err(error) = cleanup_sidecars(&environment.root_dir) {
             tracing::warn!(%error, "execenv: cleanup sidecars failed");
             if let Some(worktree) = environment.local_worktree.as_mut() {
@@ -1884,6 +1961,22 @@ mod tests {
     use cordy_agent::TokenUsage;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn inline_runtime_brief_provider_matrix_matches_go() {
+        for (provider, expected) in [
+            ("openclaw", true),
+            ("kimi", true),
+            ("traecli", true),
+            ("qwenpaw", true),
+            ("claude", false),
+            ("codex", false),
+            ("omp", false),
+            ("pi", false),
+        ] {
+            assert_eq!(provider_needs_inline_system_prompt(provider), expected, "{provider}");
+        }
+    }
 
     fn resume_gate_fixture(provider: &str) -> (Task, ProviderExecutionPlan) {
         let task = Task {

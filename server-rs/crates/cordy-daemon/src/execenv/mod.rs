@@ -27,3 +27,4 @@ pub mod openclaw;
 pub mod reasonix;
 pub mod reclaimable;
 pub mod runtime_config_kind;
+pub mod runtime_config;

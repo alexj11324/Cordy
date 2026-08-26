@@ -30,8 +30,8 @@ use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
 use crate::prompt::{
     backend_resume_continuity_notice, comment_reply_threads, task_is_squad_leader,
 };
-use crate::thread_name::derive_task_thread_name_from_task;
 use crate::task_execution::InvalidTaskIdentity;
+use crate::thread_name::derive_task_thread_name_from_task;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
@@ -549,8 +549,7 @@ impl ProviderExecutionPlan {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect::<HashMap<_, _>>();
         let authorized_explicit: Vec<String> = self.child_env.custom_env.keys().cloned().collect();
-        let include_only =
-            codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
+        let include_only = codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
         ensure_codex_shell_env_policy_config(
             &Path::new(codex_home).join("config.toml").to_string_lossy(),
             &include_only,
