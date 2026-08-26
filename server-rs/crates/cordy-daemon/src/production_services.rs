@@ -20,6 +20,7 @@ use cordy_agent::{
     ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -1124,6 +1125,21 @@ fn local_skill_import_failed_payload(error: impl std::fmt::Display) -> Value {
     })
 }
 
+fn take_local_skill_imports(
+    singular: &mut Option<cordy_protocol::DaemonHeartbeatPendingLocalSkillImport>,
+    batch: &mut Vec<cordy_protocol::DaemonHeartbeatPendingLocalSkillImport>,
+) -> Vec<cordy_protocol::DaemonHeartbeatPendingLocalSkillImport> {
+    if !batch.is_empty() {
+        // The server includes the first batch item in the singular field for
+        // old daemons. Once the batch is selected, that compatibility copy is
+        // consumed and must not survive into provider handling.
+        *singular = None;
+        std::mem::take(batch)
+    } else {
+        singular.take().into_iter().collect()
+    }
+}
+
 struct TaskRepoRefGuard {
     state: Arc<DaemonRepoState>,
     workspace_id: String,
@@ -1199,49 +1215,81 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         runtime_id: String,
         mut ack: DaemonHeartbeatAckPayload,
     ) {
-        if let Some(request) = ack.pending_model_list.clone() {
-            if self
-                .handle_acp_model_list(ctx.child(), Arc::clone(&registry), &runtime_id, &request.id)
-                .await
-            {
-                ack.pending_model_list = None;
-            }
-        }
-        if let Some(request) = ack.pending_local_skills.clone() {
-            if self
-                .handle_local_skill_list(
+        // Go launches each heartbeat action independently. Keep the list and
+        // import work independent too: model discovery or a slow filesystem
+        // walk must not consume the server's running window for imports.
+        let model_request = ack.pending_model_list.clone();
+        let local_skill_request = ack.pending_local_skills.clone();
+
+        // New servers may return several imports at once. Keep the batch
+        // field authoritative and only use the singular field for older
+        // servers, matching the Go daemon's compatibility rule. The server
+        // deliberately sends both fields for a batch so old daemons can use
+        // the singular one; do not leak that compatibility duplicate to the
+        // provider adapter.
+        let imports = take_local_skill_imports(
+            &mut ack.pending_local_skill_import,
+            &mut ack.pending_local_skill_imports,
+        );
+        let (model_handled, local_skill_handled, failed_imports) = tokio::join!(
+            async {
+                let Some(request) = model_request.as_ref() else {
+                    return true;
+                };
+                self.handle_acp_model_list(
                     ctx.child(),
                     Arc::clone(&registry),
                     &runtime_id,
                     &request.id,
                 )
                 .await
-            {
-                ack.pending_local_skills = None;
-            }
-        }
-
-        // New servers may return several imports at once. Keep the batch
-        // field authoritative and only use the singular field for older
-        // servers, matching the Go daemon's compatibility rule.
-        let imports = if !ack.pending_local_skill_imports.is_empty() {
-            std::mem::take(&mut ack.pending_local_skill_imports)
-        } else {
-            ack.pending_local_skill_import.take().into_iter().collect()
-        };
-        for request in imports {
-            if !self
-                .handle_local_skill_import(
+            },
+            async {
+                let Some(request) = local_skill_request.as_ref() else {
+                    return true;
+                };
+                self.handle_local_skill_list(
                     ctx.child(),
                     Arc::clone(&registry),
                     &runtime_id,
-                    request.clone(),
+                    &request.id,
                 )
                 .await
-            {
-                ack.pending_local_skill_imports.push(request);
+            },
+            async {
+                let mut import_tasks = FuturesUnordered::new();
+                for request in imports {
+                    let child = ctx.child();
+                    let registry = Arc::clone(&registry);
+                    let runtime_id = runtime_id.clone();
+                    import_tasks.push(async move {
+                        let handled = self
+                            .handle_local_skill_import(
+                                child,
+                                registry,
+                                &runtime_id,
+                                request.clone(),
+                            )
+                            .await;
+                        (request, handled)
+                    });
+                }
+                let mut failed = Vec::new();
+                while let Some((request, handled)) = import_tasks.next().await {
+                    if !handled {
+                        failed.push(request);
+                    }
+                }
+                failed
             }
+        );
+        if model_request.is_some() && model_handled {
+            ack.pending_model_list = None;
         }
+        if local_skill_request.is_some() && local_skill_handled {
+            ack.pending_local_skills = None;
+        }
+        ack.pending_local_skill_imports.extend(failed_imports);
         self.provider
             .handle_non_update_heartbeat_actions(ctx, registry, runtime_id, ack)
             .await;
@@ -1532,5 +1580,51 @@ mod tests {
         assert_eq!(import["status"], "completed");
         assert_eq!(import["skill"]["provider"], "claude");
         assert_eq!(import["skill"]["files"][0]["path"], "README.md");
+    }
+
+    #[test]
+    fn batch_local_skill_imports_consume_singular_compatibility_copy() {
+        let mut singular = Some(
+            cordy_protocol::DaemonHeartbeatPendingLocalSkillImport {
+                id: "batch-1".into(),
+                skill_key: "first".into(),
+            },
+        );
+        let mut batch = vec![
+            cordy_protocol::DaemonHeartbeatPendingLocalSkillImport {
+                id: "batch-1".into(),
+                skill_key: "first".into(),
+            },
+            cordy_protocol::DaemonHeartbeatPendingLocalSkillImport {
+                id: "batch-2".into(),
+                skill_key: "second".into(),
+            },
+        ];
+
+        let imports = take_local_skill_imports(&mut singular, &mut batch);
+
+        assert_eq!(imports.len(), 2);
+        assert_eq!(imports[0].id, "batch-1");
+        assert_eq!(imports[1].id, "batch-2");
+        assert!(singular.is_none());
+        assert!(batch.is_empty());
+    }
+
+    #[test]
+    fn singular_local_skill_import_is_used_when_batch_is_absent() {
+        let mut singular = Some(
+            cordy_protocol::DaemonHeartbeatPendingLocalSkillImport {
+                id: "singular-1".into(),
+                skill_key: "only".into(),
+            },
+        );
+        let mut batch = Vec::new();
+
+        let imports = take_local_skill_imports(&mut singular, &mut batch);
+
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].id, "singular-1");
+        assert!(singular.is_none());
+        assert!(batch.is_empty());
     }
 }
