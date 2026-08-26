@@ -10,7 +10,9 @@
 use std::{future::Future, time::Duration};
 
 use chrono::{DateTime, Datelike, Months, TimeZone, Utc};
-use sqlx::{PgConnection, PgPool};
+use futures_util::future::BoxFuture;
+use sqlx::pool::PoolConnection;
+use sqlx::{Connection, PgConnection, PgPool, Postgres};
 use tokio_util::sync::CancellationToken;
 
 /// Shared with rollup_task_usage_hourly(), the standalone backfill command,
@@ -151,17 +153,10 @@ pub async fn run_operator(
     cancellation: &CancellationToken,
 ) -> anyhow::Result<()> {
     let dry_run = options.dry_run;
-    let mut lock_conn = cancellable(cancellation, pool.acquire()).await?;
-    cancellable(
-        cancellation,
-        sqlx::query("SELECT pg_advisory_lock($1)")
-            .bind(ADVISORY_LOCK_KEY)
-            .execute(&mut *lock_conn),
-    )
-    .await?;
+    let mut lock_conn = acquire_advisory_lock(pool, cancellation).await?;
 
     let result = async {
-        match operator_locked(pool, &mut *lock_conn, options, cancellation).await? {
+        match operator_locked(pool, options, cancellation).await? {
             OperatorOutcome::Empty => {
                 if dry_run {
                     tracing::info!(
@@ -210,15 +205,17 @@ pub async fn run_operator(
 
 async fn operator_locked(
     pool: &PgPool,
-    lock_conn: &mut PgConnection,
     options: OperatorOptions,
     cancellation: &CancellationToken,
 ) -> anyhow::Result<OperatorOutcome> {
-    let (min_ts, max_ts): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) = cancellable(
-        cancellation,
-        sqlx::query_as("SELECT MIN(created_at), MAX(created_at) FROM task_usage").fetch_one(pool),
-    )
-    .await?;
+    let (min_ts, max_ts): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) =
+        cancellable_pool_query(pool, cancellation, |conn| {
+            Box::pin(
+                sqlx::query_as("SELECT MIN(created_at), MAX(created_at) FROM task_usage")
+                    .fetch_one(conn),
+            )
+        })
+        .await?;
 
     let (Some(min_ts), Some(max_ts)) = (min_ts, max_ts) else {
         return Ok(OperatorOutcome::Empty);
@@ -273,15 +270,16 @@ async fn operator_locked(
             continue;
         }
 
-        let rows: i64 = cancellable(
-            cancellation,
-            sqlx::query_scalar(
-                "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+        let rows: i64 = cancellable_pool_query(pool, cancellation, |conn| {
+            Box::pin(
+                sqlx::query_scalar(
+                    "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+                )
+                .bind(cursor)
+                .bind(next)
+                .fetch_one(conn),
             )
-            .bind(cursor)
-            .bind(next)
-            .fetch_one(&mut *lock_conn),
-        )
+        })
         .await
         .map_err(|error| anyhow::anyhow!("rollup slice {cursor}..{next}: {error}"))?;
         total_rows += rows;
@@ -313,6 +311,50 @@ where
         _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
         result = future => Ok(result?),
     }
+}
+
+/// Runs a long query on a disposable pool connection so cancellation can
+/// close the backend connection before the advisory-lock connection is
+/// released. SQLx does not expose PostgreSQL's cancel request publicly;
+/// hard-closing this dedicated connection is the fail-closed primitive.
+async fn cancellable_pool_query<T, F>(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+    query: F,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: for<'a> FnOnce(&'a mut PgConnection) -> BoxFuture<'a, Result<T, sqlx::Error>>,
+{
+    let mut connection = pool.acquire().await?;
+    tokio::select! {
+        _ = cancellation.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("execution cancelled");
+        }
+        result = query(&mut *connection) => Ok(result?),
+    }
+}
+
+async fn acquire_advisory_lock(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<PoolConnection<Postgres>> {
+    let mut connection = cancellable(cancellation, pool.acquire()).await?;
+    tokio::select! {
+        _ = cancellation.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("execution cancelled");
+        }
+        result = sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(ADVISORY_LOCK_KEY)
+            .execute(&mut *connection) => {
+            result?;
+        }
+    }
+    Ok(connection)
 }
 
 async fn walk_slices(
@@ -352,7 +394,7 @@ async fn walk_slices(
 /// the cron entry's upper bound and preventing clock-drift stamps into the
 /// DB's future.
 async fn stamp_watermark(pool: &PgPool) -> anyhow::Result<()> {
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE task_usage_hourly_rollup_state
            SET watermark_at = now() - INTERVAL '5 minutes'
@@ -361,21 +403,32 @@ async fn stamp_watermark(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
-    Ok(())
+    ensure_watermark_updated(result.rows_affected())
 }
 
 async fn stamp_watermark_with_cancellation(
     pool: &PgPool,
     cancellation: &CancellationToken,
 ) -> anyhow::Result<()> {
-    tokio::select! {
-        _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
-        result = stamp_watermark(pool) => result,
-    }
+    let rows = cancellable_pool_query(pool, cancellation, |conn| {
+        Box::pin(
+            sqlx::query(
+                r#"
+                UPDATE task_usage_hourly_rollup_state
+                   SET watermark_at = now() - INTERVAL '5 minutes'
+                 WHERE id = 1
+                "#,
+            )
+            .execute(conn),
+        )
+    })
+    .await?
+    .rows_affected();
+    ensure_watermark_updated(rows)
 }
 
 async fn stamp_watermark_on_conn(conn: &mut PgConnection) -> anyhow::Result<()> {
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE task_usage_hourly_rollup_state
            SET watermark_at = now() - INTERVAL '5 minutes'
@@ -384,7 +437,28 @@ async fn stamp_watermark_on_conn(conn: &mut PgConnection) -> anyhow::Result<()> 
     )
     .execute(conn)
     .await?;
+    ensure_watermark_updated(result.rows_affected())
+}
+
+fn ensure_watermark_updated(rows_affected: u64) -> anyhow::Result<()> {
+    if rows_affected != 1 {
+        anyhow::bail!(
+            "task_usage_hourly_rollup_state watermark row id=1 is missing; expected 1 updated row, got {rows_affected}"
+        );
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_watermark_updated;
+
+    #[test]
+    fn watermark_update_requires_the_state_row() {
+        assert!(ensure_watermark_updated(1).is_ok());
+        assert!(ensure_watermark_updated(0).is_err());
+        assert!(ensure_watermark_updated(2).is_err());
+    }
 }
 
 fn month_floor(t: DateTime<Utc>) -> DateTime<Utc> {
