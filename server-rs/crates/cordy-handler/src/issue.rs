@@ -16,23 +16,24 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
-    AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
+    ActivityLog, AgentTaskQueue, Attachment, Comment, Issue, IssueLabel, IssueReaction,
+    IssueSubscriber,
 };
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
     activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
-    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, squad,
-    subscriber, task_usage, user, workspace,
+    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, reaction,
+    squad, subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -1902,7 +1903,7 @@ async fn issue_timeline(
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    let comments =
+    let mut comments =
         match comment_q::list_comments_for_issue(&state.pool, issue.id, issue.workspace_id, 2001)
             .await
         {
@@ -1914,24 +1915,47 @@ async fn issue_timeline(
                 );
             }
         };
-    let activities = match activity::list_activities_for_issue(&state.pool, issue.id, 2001).await {
-        Ok(rows) => rows,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to list activities",
-            );
-        }
-    };
+    let mut activities =
+        match activity::list_activities_for_issue(&state.pool, issue.id, 2001).await {
+            Ok(rows) => rows,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to list activities",
+                );
+            }
+        };
+
     let truncated_comments = comments.len() > 2000;
+    if truncated_comments {
+        // list_comments_for_issue returns the newest probe rows in ascending
+        // order. Drop the oldest probe row before restoring any cut threads.
+        comments.remove(0);
+        comments = match crate::comment_list::complete_comment_threads(
+            &state,
+            issue.id,
+            issue.workspace_id,
+            comments,
+        )
+        .await
+        {
+            Ok(rows) => rows,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to complete comment threads",
+                );
+            }
+        };
+    }
     let truncated_activities = activities.len() > 2000;
-    let mut entries = Vec::new();
-    for comment in comments.into_iter().rev().take(2000) {
-        entries.push(json!({ "type":"comment", "id":comment.id, "actor_type":comment.author_type, "actor_id":comment.author_id, "created_at":crate::timefmt::rfc3339(comment.created_at), "content":comment.content, "parent_id":comment.parent_id, "updated_at":crate::timefmt::rfc3339(comment.updated_at), "revision":comment.revision, "comment_type":comment.type_, "quick_action_id":comment.quick_action_id, "resolved_at":comment.resolved_at.map(crate::timefmt::rfc3339), "resolved_by_type":comment.resolved_by_type, "resolved_by_id":comment.resolved_by_id, "source_task_id":comment.source_task_id }));
+    if truncated_activities {
+        // Activity queries have the same ascending newest-window contract.
+        activities = activities.into_iter().rev().take(2000).collect();
     }
-    for row in activities.into_iter().rev().take(2000) {
-        entries.push(json!({ "type":"activity", "id":row.id, "actor_type":row.actor_type, "actor_id":row.actor_id, "created_at":crate::timefmt::rfc3339(row.created_at), "action":row.action, "details":row.details }));
-    }
+
+    let mut entries = timeline_comment_entries(&state, &comments).await;
+    entries.extend(activities.iter().map(timeline_activity_entry));
     entries.sort_by_key(|entry| {
         (
             entry["created_at"].as_str().unwrap_or_default().to_string(),
@@ -1940,7 +1964,7 @@ async fn issue_timeline(
     });
     let wrapped = ["limit", "before", "after", "around"]
         .iter()
-        .any(|key| params.contains_key(*key));
+        .any(|key| params.get(*key).is_some_and(|value| !value.is_empty()));
     if wrapped {
         entries.reverse();
     }
@@ -1950,7 +1974,19 @@ async fn issue_timeline(
                 .iter()
                 .position(|entry| entry["id"].as_str() == Some(anchor.as_str()))
         });
-        json!({ "entries":entries, "next_cursor":Value::Null, "prev_cursor":Value::Null, "has_more_before":truncated_comments || truncated_activities, "has_more_after":false, "target_index":target_index })
+        let mut body = serde_json::Map::new();
+        body.insert("entries".into(), json!(entries));
+        body.insert("next_cursor".into(), Value::Null);
+        body.insert("prev_cursor".into(), Value::Null);
+        body.insert(
+            "has_more_before".into(),
+            json!(truncated_comments || truncated_activities),
+        );
+        body.insert("has_more_after".into(), json!(false));
+        if let Some(target_index) = target_index {
+            body.insert("target_index".into(), json!(target_index));
+        }
+        Value::Object(body)
     } else {
         json!(entries)
     };
@@ -1968,6 +2004,130 @@ async fn issue_timeline(
         );
     }
     response
+}
+
+/// Build the timeline projection for comments, including the same related
+/// records as the Go handler's groupReactions/groupAttachments helpers.
+/// Related-query failures are deliberately fail-soft: the Go endpoint still
+/// returns the comment with empty related arrays when enrichment is unavailable.
+async fn timeline_comment_entries(state: &HandlerState, comments: &[Comment]) -> Vec<Value> {
+    if comments.is_empty() {
+        return Vec::new();
+    }
+
+    let ids = comments
+        .iter()
+        .map(|comment| comment.id)
+        .collect::<Vec<_>>();
+    let reactions = reaction::list_reactions_by_comment_i_ds(&state.pool, ids.clone())
+        .await
+        .unwrap_or_default();
+    let attachments =
+        attachment::list_attachments_by_comment_i_ds(&state.pool, ids, comments[0].workspace_id)
+            .await
+            .unwrap_or_default();
+
+    let mut reactions_by_id: HashMap<Uuid, Vec<Value>> = HashMap::new();
+    for item in reactions {
+        reactions_by_id
+            .entry(item.comment_id)
+            .or_default()
+            .push(crate::comment::reaction_json(&item));
+    }
+    let mut attachments_by_id: HashMap<Uuid, Vec<Value>> = HashMap::new();
+    for item in attachments {
+        if let Some(comment_id) = item.comment_id {
+            attachments_by_id
+                .entry(comment_id)
+                .or_default()
+                .push(crate::attachment::response_json(state, &item, true).await);
+        }
+    }
+
+    comments
+        .iter()
+        .map(|comment| {
+            timeline_comment_entry(
+                comment,
+                reactions_by_id.remove(&comment.id).unwrap_or_default(),
+                attachments_by_id.remove(&comment.id).unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+fn timeline_comment_entry(
+    comment: &Comment,
+    reactions: Vec<Value>,
+    attachments: Vec<Value>,
+) -> Value {
+    let mut entry = serde_json::Map::new();
+    entry.insert("type".into(), json!("comment"));
+    entry.insert("id".into(), json!(comment.id));
+    entry.insert("actor_type".into(), json!(comment.author_type));
+    entry.insert("actor_id".into(), json!(comment.author_id));
+    entry.insert(
+        "created_at".into(),
+        json!(crate::timefmt::rfc3339(comment.created_at)),
+    );
+    entry.insert("content".into(), json!(comment.content));
+    if let Some(parent_id) = comment.parent_id {
+        entry.insert("parent_id".into(), json!(parent_id));
+    }
+    entry.insert(
+        "updated_at".into(),
+        json!(crate::timefmt::rfc3339(comment.updated_at)),
+    );
+    if comment.revision != 0 {
+        entry.insert("revision".into(), json!(comment.revision));
+    }
+    entry.insert("comment_type".into(), json!(comment.type_));
+    if let Some(quick_action_id) = comment.quick_action_id {
+        entry.insert("quick_action_id".into(), json!(quick_action_id));
+    }
+    if let Some(resolved_at) = comment.resolved_at {
+        entry.insert(
+            "resolved_at".into(),
+            json!(crate::timefmt::rfc3339(resolved_at)),
+        );
+    }
+    if let Some(resolved_by_type) = comment.resolved_by_type.as_ref() {
+        entry.insert("resolved_by_type".into(), json!(resolved_by_type));
+    }
+    if let Some(resolved_by_id) = comment.resolved_by_id {
+        entry.insert("resolved_by_id".into(), json!(resolved_by_id));
+    }
+    if let Some(source_task_id) = comment.source_task_id {
+        entry.insert("source_task_id".into(), json!(source_task_id));
+    }
+    if !reactions.is_empty() {
+        entry.insert("reactions".into(), Value::Array(reactions));
+    }
+    if !attachments.is_empty() {
+        entry.insert("attachments".into(), Value::Array(attachments));
+    }
+    Value::Object(entry)
+}
+
+fn timeline_activity_entry(row: &ActivityLog) -> Value {
+    let mut entry = serde_json::Map::new();
+    entry.insert("type".into(), json!("activity"));
+    entry.insert("id".into(), json!(row.id));
+    entry.insert(
+        "actor_type".into(),
+        json!(row.actor_type.as_deref().unwrap_or_default()),
+    );
+    entry.insert(
+        "actor_id".into(),
+        json!(row.actor_id.map(|id| id.to_string()).unwrap_or_default()),
+    );
+    entry.insert(
+        "created_at".into(),
+        json!(crate::timefmt::rfc3339(row.created_at)),
+    );
+    entry.insert("action".into(), json!(row.action));
+    entry.insert("details".into(), row.details.clone());
+    Value::Object(entry)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -6596,7 +6756,11 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() { value } else { json!({}) }
+    if value.is_object() {
+        value
+    } else {
+        json!({})
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -7036,5 +7200,67 @@ mod tests {
         assert_eq!(table_cursor(&request, &fingerprint).unwrap(), (25, 25));
         request.group_key = Some("status:done".into());
         assert!(table_cursor(&request, &fingerprint).is_err());
+    }
+
+    #[test]
+    fn timeline_comment_projection_matches_go_omitempty_shape() {
+        let at = Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap();
+        let comment = Comment {
+            author_id: Uuid::nil(),
+            author_type: "member".into(),
+            content: "hello".into(),
+            created_at: at,
+            id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap(),
+            issue_id: Uuid::nil(),
+            parent_id: None,
+            quick_action_id: None,
+            resolved_at: None,
+            resolved_by_id: None,
+            resolved_by_type: None,
+            revision: 0,
+            source_task_id: None,
+            type_: "comment".into(),
+            updated_at: at,
+            via_plugin_id: None,
+            workspace_id: Uuid::nil(),
+        };
+        let value = timeline_comment_entry(&comment, Vec::new(), Vec::new());
+
+        assert_eq!(value["type"], "comment");
+        assert_eq!(value["comment_type"], "comment");
+        assert_eq!(value["updated_at"], "2026-08-23T03:30:00Z");
+        assert!(value.get("parent_id").is_none());
+        assert!(value.get("revision").is_none());
+        assert!(value.get("resolved_at").is_none());
+        assert!(value.get("reactions").is_none());
+        assert!(value.get("attachments").is_none());
+
+        let enriched = timeline_comment_entry(
+            &comment,
+            vec![json!({"emoji": "👍"})],
+            vec![json!({"filename": "note.txt"})],
+        );
+        assert_eq!(enriched["reactions"][0]["emoji"], "👍");
+        assert_eq!(enriched["attachments"][0]["filename"], "note.txt");
+    }
+
+    #[test]
+    fn timeline_activity_projection_defaults_nullable_actor_values() {
+        let at = Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap();
+        let value = timeline_activity_entry(&ActivityLog {
+            action: "status_changed".into(),
+            actor_id: None,
+            actor_type: None,
+            created_at: at,
+            details: json!({"to": "done"}),
+            id: Uuid::nil(),
+            issue_id: None,
+            workspace_id: Uuid::nil(),
+        });
+
+        assert_eq!(value["actor_type"], "");
+        assert_eq!(value["actor_id"], "");
+        assert_eq!(value["action"], "status_changed");
+        assert_eq!(value["details"], json!({"to": "done"}));
     }
 }
