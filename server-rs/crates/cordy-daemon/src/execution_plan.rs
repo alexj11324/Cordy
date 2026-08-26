@@ -544,7 +544,7 @@ impl ProviderExecutionPlan {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect::<HashMap<_, _>>();
-        let authorized_explicit = self.child_env.custom_env.keys().cloned().collect();
+        let authorized_explicit: Vec<String> = self.child_env.custom_env.keys().cloned().collect();
         let include_only =
             codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
         ensure_codex_shell_env_policy_config(
