@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -266,17 +266,18 @@ server: ## Run only the Go server for the current checkout
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/server
 
-daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) cordy CORDY_ARGS="daemon restart --profile local"
+daemon: CORDY_ARGS := daemon restart --profile local
+daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
 
-cli: ## Run the cordy CLI with ARGS or CORDY_ARGS from source
-	@$(MAKE) cordy CORDY_ARGS="$(CORDY_ARGS)"
+cli: rust-cli ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
 
-cordy: ## Run the cordy CLI entrypoint directly from the Go source tree
+cordy: rust-cli ## Run the Rust cordy CLI entrypoint
+
+go-cordy: ## Run the legacy Go CLI entrypoint during the migration
 	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/cordy $(CORDY_ARGS)
 
 rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo run -p cordy-cli -- $(CORDY_ARGS)
+	CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" ./scripts/run-rust-cli.sh $(CORDY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
 	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
@@ -285,6 +286,7 @@ VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 GO_VERSION ?= $(shell go env GOVERSION 2>/dev/null || echo unknown)
+RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
 # Windows will not execute an extensionless binary, so a source build there has
 # to name its outputs the way the target platform expects — otherwise the CLI
 # builds fine and then fails to re-exec itself as a daemon (#7255). GOOS reaches

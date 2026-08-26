@@ -44,6 +44,7 @@ This keeps Docker simple while still isolating schema and data.
 - Node.js `22`
 - `pnpm` `10.28.2`
 - Go `1.26.6`
+- Rust stable toolchain with `cargo`
 - Docker
 
 ## Important Rules
@@ -122,7 +123,7 @@ This single command:
 
 - auto-detects whether you're in a main checkout or a worktree
 - creates the appropriate env file (`.env` or `.env.worktree`) if it doesn't exist
-- checks that prerequisites (Node.js, pnpm, Go, Docker) are installed
+- checks that prerequisites (Node.js, pnpm, Rust/Cargo, Go, Docker) are installed
 - installs JavaScript dependencies
 - ensures the shared PostgreSQL container is running
 - creates the application database if it does not exist
@@ -467,9 +468,10 @@ EOF
 make cli ARGS="daemon start --profile $PROFILE"
 ```
 
-The daemon runs from the current worktree's Go source, connecting to the
+The daemon runs from the current worktree's Rust source, connecting to the
 local backend. Agent-executed `cordy` commands automatically use the same
-binary (the daemon prepends its own directory to `PATH`).
+binary (the daemon prepends its own directory to `PATH`). If you need to
+exercise the legacy implementation during the migration, use `make go-cordy`.
 
 ### Stop the Isolated Environment
 
@@ -505,8 +507,9 @@ pnpm dev:desktop
 
 This automatically:
 
-1. Compiles the `cordy` CLI from `server/cmd/cordy` into
-   `apps/desktop/resources/bin/cordy`
+1. Compiles the legacy Go `cordy` CLI from `server/cmd/cordy` into
+   `apps/desktop/resources/bin/cordy` (the desktop bundler remains Go-backed
+   until its Rust packaging path is migrated)
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance
 4. Connects to the local backend

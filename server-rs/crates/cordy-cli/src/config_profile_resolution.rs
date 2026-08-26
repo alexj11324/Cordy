@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use std::time::Duration;
 
-use super::{config_profile_schema::*, Environment};
+use crate::{config::Environment, config_profile_schema::*};
 
 /// Resolves the CLI-owned `flag > env > profile > daemon default` layer.
 ///

@@ -21,6 +21,25 @@ fail() {
   exit 1
 }
 
+# The source-facing CLI entrypoints are part of the migration contract. They
+# must resolve to the Rust binary so daemon and local CLI invocations stop
+# silently re-entering the legacy Go command. Keep an explicit go-cordy escape
+# hatch until the final Go source deletion, but never make it the default.
+for target in cli cordy; do
+  rust_output="$(make -n "$target" CORDY_ARGS=version)"
+  grep -Fq -- "./scripts/run-rust-cli.sh version" <<<"$rust_output" ||
+    fail "$target: expected the Rust CLI entrypoint, got:\n$rust_output"
+  if grep -Fq -- "cd server && go run" <<<"$rust_output"; then
+    fail "$target: unexpectedly resolved to the legacy Go CLI:\n$rust_output"
+  fi
+done
+
+# The aliases must not reparse CORDY_ARGS through a nested make command. Keep
+# embedded quoting intact so a multiword CLI value remains one argument.
+quoted_output="$(make -n cli 'CORDY_ARGS=issue create --title "hello world"')"
+grep -Fq -- './scripts/run-rust-cli.sh issue create --title "hello world"' <<<"$quoted_output" ||
+  fail "cli: nested make stripped embedded argument quoting:\n$quoted_output"
+
 # The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
 # what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
 require_outputs() {

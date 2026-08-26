@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 
-use super::config_persistence::{
+use crate::config_persistence::{
     ensure_config_directory, read_config_document, restrict_file_permissions, write_json_atomically,
 };
-use super::CliConfig;
+use crate::config::CliConfig;
 
 pub const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
 const TASK_CONTEXT_MARKER_REL_PATH: &str = ".cordy/daemon_task_context.json";

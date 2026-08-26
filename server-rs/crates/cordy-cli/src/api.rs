@@ -1,11 +1,9 @@
 //! HTTP client foundation ported from `server/internal/cli/client.go`.
 
-mod api_error;
-
-pub(crate) use api_error::{
+pub(crate) use crate::api_error::{
     classify_network_error, normalized_os, read_http_error, DEFAULT_HTTP_TIMEOUT,
 };
-pub use api_error::{http_timeout, ErrorKind, HealthProbeError, HttpError, NetworkError};
+pub use crate::api_error::{http_timeout, ErrorKind, HealthProbeError, HttpError, NetworkError};
 
 use anyhow::{Context, Result};
 use reqwest::Client;
