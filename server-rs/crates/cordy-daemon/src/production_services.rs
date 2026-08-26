@@ -14,8 +14,9 @@ use cordy_agent::{
     AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
     CodebuddyConfig, DevecoBackend, DevecoConfig, DimBackend, DimConfig, DshBackend, DshConfig,
     GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, OpencodeBackend, OpencodeConfig, PiBackend, PiConfig, QoderBackend, QoderConfig,
-    ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+    KiroConfig, OpenclawBackend, OpenclawConfig, OpencodeBackend, OpencodeConfig, PiBackend,
+    PiConfig, QoderBackend, QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand,
+    TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -52,6 +53,7 @@ const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
 const REPO_WARMUP_CONCURRENCY: usize = 2;
 const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const ACP_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const OPENCLAW_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(30);
 const RUNTIME_REPORT_BACKOFFS: &[Duration] = &[
     Duration::ZERO,
     Duration::from_millis(500),
@@ -273,6 +275,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 | "dsh"
                 | "deveco"
                 | "opencode"
+                | "openclaw"
                 | "pi"
                 | "omp"
                 | "qwen"
@@ -449,6 +452,17 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     &self.model_cache,
                     ctx.token().clone(),
                     ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "openclaw" => OpenclawBackend::new(OpenclawConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    OPENCLAW_MODEL_DISCOVERY_TIMEOUT,
                 )
                 .await,
                 "pi" | "omp" => PiBackend::new(PiConfig {
