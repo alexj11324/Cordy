@@ -1051,9 +1051,10 @@ async fn stop_codex_discovery(
 }
 
 async fn abort_discovery_output(task: &mut JoinHandle<io::Result<Vec<u8>>>) {
-    if !task.is_finished() {
-        task.abort();
+    if task.is_finished() {
+        return;
     }
+    task.abort();
     let _ = tokio::time::timeout(DISCOVERY_CLEANUP_TIMEOUT, &mut *task).await;
 }
 
@@ -1598,6 +1599,7 @@ struct ObserverSnapshot {
     last_agent_message: String,
     turn_error: String,
     thread_id: String,
+    turn_id: String,
     turn_done: bool,
     usage: TokenUsage,
 }
@@ -1661,6 +1663,7 @@ impl CodexObserver {
             last_agent_message: state.last_agent_message.clone(),
             turn_error: state.turn_error.clone(),
             thread_id: state.thread_id.clone(),
+            turn_id: state.turn_id.clone(),
             turn_done: state.turn_done,
             usage: state.usage,
         }
@@ -2227,8 +2230,8 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
-        if options.cancellation.is_cancelled() || error.to_string().contains("execution cancelled")
-        {
+        let stderr = sanitize_diagnostic(&cleanup.stderr);
+        if options.cancellation.is_cancelled() || is_execution_cancelled(&error) {
             let _ = result_tx.send(codex_aborted_result(started));
             return;
         }
@@ -2317,6 +2320,15 @@ async fn run_codex(
                     return;
                 }
             }
+        }
+        // Startup stderr can contain opaque auth/config values. Keep it out of
+        // the task-visible result even when the failure is not a timeout.
+        if !stderr.is_empty() {
+            tracing::debug!(
+                provider = "codex",
+                stderr_bytes = stderr.len(),
+                "suppressed Codex initialize stderr from result"
+            );
         }
         let message = format!("codex initialize failed: {error}");
         let _ = result_tx.send(ExecutionResult {
@@ -2533,14 +2545,14 @@ async fn run_codex(
     }
 
     let mut semantic_deadline = tokio::time::Instant::now() + semantic_timeout;
-    let first_timeout = if options.first_turn_no_progress_timeout > Duration::ZERO {
-        options.first_turn_no_progress_timeout
-    } else {
-        DEFAULT_FIRST_TURN_TIMEOUT.min(semantic_timeout)
-    };
+    let first_timeout = codex_first_turn_no_progress_timeout(
+        semantic_timeout,
+        options.first_turn_no_progress_timeout,
+    );
     let mut first_deadline = None;
     let mut first_started = false;
     let mut first_progress = false;
+    let mut last_activity = "turn/start".to_string();
     let mut status = "completed".to_string();
     let mut error = String::new();
 
@@ -2561,6 +2573,7 @@ async fn run_codex(
         tokio::select! {
             Some(activity) = activity_rx.recv() => {
                 semantic_deadline = tokio::time::Instant::now() + semantic_timeout;
+                last_activity = activity.clone();
                 if activity == "status:running" && !first_started {
                     first_started = true;
                     first_deadline = Some(tokio::time::Instant::now() + first_timeout);
@@ -2655,13 +2668,38 @@ async fn run_codex(
     )
     .await;
     let stderr = cleanup.stderr;
+    let cleanup_confirmed = cleanup.confirmed;
+    if status == "timeout"
+        && (error.contains("no progress timeout") || error.contains("semantic inactivity timeout"))
+    {
+        let codex_version = diagnostic_codex_version(&config).await;
+        error = build_codex_timeout_error(
+            error.contains("no progress timeout"),
+            if error.contains("no progress timeout") {
+                first_timeout
+            } else {
+                semantic_timeout
+            },
+            &last_activity,
+            &snapshot.thread_id,
+            &snapshot.turn_id,
+            &options.model,
+            &codex_version,
+            &stderr,
+        );
+    } else if status != "completed" && !stderr.is_empty() {
+        error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
+    }
+
     let startup_refresh_retry_safe = attempt == 1
-        && cleanup.confirmed
+        && cleanup_confirmed
         && first_started
         && !first_progress
         && status == "timeout"
         && error.contains("codex app-server no progress timeout")
-        && stderr.contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+        && stderr
+            .to_ascii_lowercase()
+            .contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
         && !options.cancellation.is_cancelled()
         && !execution_deadline.is_some_and(|deadline| deadline <= tokio::time::Instant::now());
     if startup_refresh_retry_safe {
@@ -2749,10 +2787,6 @@ async fn run_codex(
             }
         }
     }
-    if status != "completed" && !stderr.is_empty() {
-        error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
-    }
-
     let mut usage_tokens = snapshot.usage;
     let mut usage_model = options.model.clone();
     if usage_tokens.input_tokens == 0
@@ -2818,6 +2852,24 @@ fn nonzero_duration(value: Duration, fallback: Duration) -> Duration {
     }
 }
 
+fn codex_first_turn_no_progress_timeout(
+    semantic_timeout: Duration,
+    configured: Duration,
+) -> Duration {
+    if !configured.is_zero() {
+        return configured;
+    }
+    if semantic_timeout.is_zero() || semantic_timeout > DEFAULT_FIRST_TURN_TIMEOUT {
+        return DEFAULT_FIRST_TURN_TIMEOUT;
+    }
+    let scaled = semantic_timeout.saturating_mul(4) / 5;
+    if scaled.is_zero() {
+        semantic_timeout
+    } else {
+        scaled
+    }
+}
+
 fn effective_request_timeout(
     deadline: Option<tokio::time::Instant>,
     handshake_timeout: Duration,
@@ -2834,6 +2886,78 @@ fn null_if_empty(value: &str) -> Value {
         Value::Null
     } else {
         Value::String(value.to_string())
+    }
+}
+
+async fn diagnostic_codex_version(config: &CodexConfig) -> String {
+    let output = capture_codex_command(
+        config,
+        &["--version"],
+        CancellationToken::new(),
+        Instant::now() + Duration::from_secs(2),
+    )
+    .await
+    .ok()
+    .flatten();
+    output
+        .map(|output| extract_version_line(&String::from_utf8_lossy(&output)))
+        .filter(|version| !version.trim().is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn build_codex_timeout_error(
+    no_progress: bool,
+    timeout: Duration,
+    last_activity: &str,
+    thread_id: &str,
+    turn_id: &str,
+    model: &str,
+    codex_version: &str,
+    stderr: &str,
+) -> String {
+    let fields = format!(
+        "codex_version={} thread_id={} turn_id={} model={}",
+        diagnostic_quote(codex_version, "unknown"),
+        diagnostic_quote(thread_id, "unknown"),
+        diagnostic_quote(turn_id, "unknown"),
+        diagnostic_quote(model, "default(empty)"),
+    );
+    let mut message = if no_progress {
+        format!(
+            "codex app-server no progress timeout after {}s: received turn start but no item, message, tool, turn/completed, or error event ({fields})",
+            timeout.as_secs_f64()
+        )
+    } else {
+        format!(
+            "codex semantic inactivity timeout after {}s without agent progress (last activity: {}; {fields})",
+            timeout.as_secs_f64(),
+            diagnostic_value(last_activity, "unknown")
+        )
+    };
+    let sanitized = sanitize_diagnostic(stderr);
+    if sanitized
+        .to_ascii_lowercase()
+        .contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+    {
+        message.push_str("; diagnosis: Codex could not load its model catalog, which blocks the first turn. This is usually a transient network failure reaching the Codex service. Check network/proxy connectivity and retry the task, or switch to another runtime while the Codex service is unreachable");
+    }
+    if !sanitized.is_empty() {
+        message = with_stderr(&message, "codex", &sanitized);
+    }
+    message
+}
+
+fn diagnostic_quote(value: &str, empty: &str) -> String {
+    serde_json::to_string(&diagnostic_value(value, empty))
+        .unwrap_or_else(|_| "\"unknown\"".to_string())
+}
+
+fn diagnostic_value(value: &str, empty: &str) -> String {
+    let sanitized = sanitize_diagnostic(value);
+    if sanitized.trim().is_empty() {
+        empty.to_string()
+    } else {
+        sanitized
     }
 }
 
@@ -2891,11 +3015,24 @@ fn is_resume_overflow(error: &AgentError) -> bool {
         && (text.contains("line exceeds") || text.contains("token too long"))
 }
 
-fn is_initialize_retryable(error: &AgentError) -> bool {
+fn is_initialize_timeout(error: &AgentError) -> bool {
     let text = error.to_string().to_ascii_lowercase();
-    text.contains("initialize")
-        && text.contains("handshake timeout")
-        && !text.contains("execution cancelled")
+    text.contains("initialize") && text.contains("handshake timeout")
+}
+
+fn is_execution_cancelled(error: &AgentError) -> bool {
+    error
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("execution cancelled")
+}
+
+fn should_suppress_initialize_stderr(error: &AgentError) -> bool {
+    is_initialize_timeout(error) || is_execution_cancelled(error)
+}
+
+fn is_initialize_retryable(error: &AgentError) -> bool {
+    is_initialize_timeout(error) && !is_execution_cancelled(error)
 }
 
 fn codex_aborted_result(started: Instant) -> ExecutionResult {
@@ -3850,6 +3987,105 @@ esac
     }
 
     #[test]
+    fn first_turn_timeout_matches_go_scaling_and_override_contract() {
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(30), Duration::ZERO),
+            Duration::from_secs(24)
+        );
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(60), Duration::ZERO),
+            Duration::from_secs(48)
+        );
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(90), Duration::ZERO),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            codex_first_turn_no_progress_timeout(Duration::from_secs(30), Duration::from_secs(75)),
+            Duration::from_secs(75)
+        );
+    }
+
+    #[test]
+    fn timeout_diagnostic_keeps_context_and_known_catalog_hint() {
+        let message = build_codex_timeout_error(
+            true,
+            Duration::from_secs(60),
+            "status:running",
+            "thread-1",
+            "turn-1",
+            "",
+            "codex-cli 0.144.1",
+            "failed to refresh available models: timeout waiting for child process to exit",
+        );
+        assert!(message.contains("codex app-server no progress timeout"));
+        assert!(message.contains("codex_version=\"codex-cli 0.144.1\""));
+        assert!(message.contains("thread_id=\"thread-1\""));
+        assert!(message.contains("turn_id=\"turn-1\""));
+        assert!(message.contains("model=\"default(empty)\""));
+        assert!(message.contains("could not load its model catalog"));
+        assert!(message.contains("stderr"));
+    }
+
+    #[test]
+    fn timeout_diagnostic_sanitizes_dynamic_context_and_matches_go_hint() {
+        let message = build_codex_timeout_error(
+            false,
+            Duration::from_millis(100),
+            "item/completed: token=activity-secret",
+            "thread token=thread-secret",
+            "turn password=turn-secret",
+            "model api_key=model-secret",
+            "codex-cli secret=version-secret",
+            "Authorization: Bearer bearer-secret\nfailed to refresh available models",
+        );
+        for secret in [
+            "activity-secret",
+            "thread-secret",
+            "turn-secret",
+            "model-secret",
+            "version-secret",
+            "bearer-secret",
+        ] {
+            assert!(
+                !message.contains(secret),
+                "diagnostic leaked {secret}: {message}"
+            );
+        }
+        assert!(message.contains("last activity: item/completed:"));
+        assert!(!message.contains("last activity: \""));
+        assert!(message.contains("This is usually a transient network failure"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovery_timeout_covers_descendant_pipe_holders() {
+        let config = CodexConfig {
+            command: RuntimeCommand::new(
+                "sh",
+                vec!["-c".to_string(), "sleep 60 & exit 0".to_string()],
+            ),
+            env: BTreeMap::new(),
+            ..CodexConfig::default()
+        };
+        let started = Instant::now();
+        let output = capture_codex_command(
+            &config,
+            &["--version"],
+            CancellationToken::new(),
+            Instant::now() + Duration::from_millis(100),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("capture failed: {error}"));
+        assert!(output.is_none());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "pipe drain escaped the discovery deadline: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
     fn launch_args_keep_owned_transport_and_filter_user_listen() {
         let options = ExecOptions {
             extra_args: vec![
@@ -4049,6 +4285,7 @@ esac
         assert_eq!(done_rx.recv().await, Some(false));
         let snapshot = observer.snapshot().await;
         assert_eq!(snapshot.final_answer, "done");
+        assert_eq!(snapshot.turn_id, "turn-main");
         assert_eq!(snapshot.usage.input_tokens, 6);
         assert_eq!(snapshot.usage.cache_read_tokens, 4);
         assert_eq!(snapshot.usage.output_tokens, 6);
@@ -4346,6 +4583,10 @@ done
         let attempt_path = directory.path().join("attempt");
         let capture_path = directory.path().join("requests");
         let script = r#"
+if [ "$0" = "--version" ]; then
+  printf '%s\n' 'codex-cli 0.144.1'
+  exit 0
+fi
 count=0
 if [ -f "$CODEX_REFRESH_ATTEMPT" ]; then count=$(cat "$CODEX_REFRESH_ATTEMPT"); fi
 count=$((count + 1))
@@ -4585,5 +4826,21 @@ done
             nonzero_duration(Duration::ZERO, Duration::from_secs(2)),
             Duration::from_secs(2)
         );
+    }
+
+    #[test]
+    fn initialize_timeout_and_cancellation_suppress_provider_stderr() {
+        assert!(should_suppress_initialize_stderr(&AgentError::Protocol(
+            "codex app-server handshake timeout: initialize did not respond after 30s".to_string(),
+        )));
+        assert!(should_suppress_initialize_stderr(&AgentError::Protocol(
+            "execution cancelled".to_string(),
+        )));
+        assert!(!should_suppress_initialize_stderr(&AgentError::Protocol(
+            "codex initialize failed: malformed response".to_string(),
+        )));
+        assert!(!is_initialize_retryable(&AgentError::Protocol(
+            "execution cancelled".to_string(),
+        )));
     }
 }
