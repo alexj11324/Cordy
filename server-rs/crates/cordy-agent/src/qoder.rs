@@ -350,8 +350,7 @@ impl HermesBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("hermes", cache, cancellation, timeout)
             .await
     }
 
@@ -366,14 +365,16 @@ impl HermesBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_models_with_scope(
+        let mut catalog = discover_models_with_scope(
             &self.inner.config,
             runtime_scope,
             cache,
             cancellation,
             timeout,
         )
-        .await
+        .await;
+        normalize_hermes_providers(&mut catalog.models);
+        catalog
     }
 }
 
@@ -854,6 +855,18 @@ fn normalize_kimi_providers(models: &mut [Model]) {
     }
 }
 
+fn normalize_hermes_providers(models: &mut [Model]) {
+    for model in models {
+        model.provider = model
+            .id
+            .split_once(':')
+            .map(|(provider, _)| provider.trim())
+            .filter(|provider| !provider.is_empty())
+            .unwrap_or_default()
+            .to_string();
+    }
+}
+
 fn grok_fallback_catalog() -> Catalog {
     let mut models = vec![
         Model {
@@ -1168,7 +1181,7 @@ async fn discover_models_with_scope(
                 }
             }
             let mut models = parse_acp_session_models(&session, &config.provider);
-            if matches!(config.provider.as_str(), "reasonix" | "dim") {
+            if matches!(config.provider.as_str(), "hermes" | "reasonix" | "dim") {
                 annotate_acp_effort(&mut models, &session);
             }
             Catalog {
@@ -4487,6 +4500,42 @@ mod tests {
             builtin_runtime,
         });
         (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_discovery_preserves_colon_providers_and_effort() {
+        let (_directory, _requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+test "$HERMES_YOLO_MODE" = 1 || exit 21
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"nous:moonshotai/kimi-k2.6","availableModels":[{"modelId":"nous:moonshotai/kimi-k2.6","name":"Kimi K2.6"},{"modelId":"moonshotai/kimi-k2.5","name":"Kimi K2.5"}]},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"high","options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]}]}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 2);
+        assert_eq!(catalog.models[0].provider, "nous");
+        assert!(catalog.models[0].default);
+        let thinking = catalog.models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Hermes effort metadata missing"));
+        assert_eq!(thinking.default_level, "high");
+        assert_eq!(thinking.supported_levels.len(), 2);
+        assert!(catalog.models[1].provider.is_empty());
     }
 
     #[cfg(unix)]
