@@ -403,6 +403,24 @@ pub fn provider(id: &str) -> Option<&'static ProviderDescriptor> {
     PROVIDERS.iter().find(|provider| provider.id == id)
 }
 
+/// Returns the canonical custom-runtime protocol-family whitelist.
+///
+/// This is the Rust counterpart of Go's `agent.SupportedTypes`. Built-in
+/// runtime identities such as `omp` intentionally do not appear here: they
+/// are descriptors that reuse a protocol family, not valid custom profile
+/// families. The iterator follows `PROVIDERS` order so validation errors keep
+/// a stable, user-visible order without maintaining a second list.
+pub fn supported_types() -> impl Iterator<Item = &'static str> {
+    PROVIDERS.iter().map(|provider| provider.id)
+}
+
+/// Reports whether `id` is allowed as a custom runtime profile's protocol
+/// family. This mirrors Go's `agent.IsSupportedType` and deliberately does
+/// not accept built-in runtime identities.
+pub fn is_supported_type(id: &str) -> bool {
+    provider(id).is_some()
+}
+
 pub fn builtin_runtime(id: &str) -> Option<&'static BuiltinRuntimeDescriptor> {
     BUILTIN_RUNTIMES.iter().find(|runtime| runtime.id == id)
 }
@@ -485,6 +503,10 @@ mod tests {
         let actual: BTreeSet<&str> = PROVIDERS.iter().map(|provider| provider.id).collect();
         assert_eq!(actual, expected);
         assert_eq!(actual.len(), PROVIDERS.len(), "provider ids must be unique");
+        assert!(is_supported_type("codex"));
+        assert!(!is_supported_type("omp"));
+        assert!(!is_supported_type("gemini"));
+        assert_eq!(supported_types().count(), 23);
     }
 
     #[test]

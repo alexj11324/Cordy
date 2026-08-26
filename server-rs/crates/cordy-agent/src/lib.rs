@@ -64,6 +64,6 @@ pub use qoder::{
     QwenpawBackend, QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 pub use qwen::{QwenBackend, QwenConfig};
-pub use registry::{build_backend, BackendConfig};
+pub use registry::{build_backend, is_supported_type, supported_types, BackendConfig};
 pub use registry::{builtin_runtime, protocol_family, provider};
 pub use version::{check_provider_minimum, extract_version_line};
