@@ -326,6 +326,18 @@ async fn preview_triggers(
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &actor_type, actor_id, task_id)
             .await;
+    let autopilot_delegation_authority_user_id = if originator_user_id.is_none() {
+        crate::comment_triggers::autopilot_delegation_authority(
+            &state,
+            &issue,
+            &actor_type,
+            actor_id,
+            task_id,
+        )
+        .await
+    } else {
+        None
+    };
     let preview = crate::comment_triggers::preview_comment_triggers(
         &state,
         &issue,
@@ -334,6 +346,7 @@ async fn preview_triggers(
         &actor_type,
         actor_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
         editing_id,
     )
     .await;
@@ -468,6 +481,24 @@ async fn create(
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &author_type, author_id, task_id)
             .await;
+    let autopilot_delegation_authority_user_id = if originator_user_id.is_none() {
+        crate::comment_triggers::autopilot_delegation_authority(
+            &state,
+            &issue,
+            &author_type,
+            author_id,
+            task_id,
+        )
+        .await
+    } else {
+        None
+    };
+    if author_type == "agent" {
+        state
+            .tasks
+            .cancel_deferred_escalations_for_issue_agent(issue.id, author_id)
+            .await;
+    }
     let outcomes = crate::comment_triggers::trigger_comment(
         &state,
         &issue,
@@ -476,6 +507,7 @@ async fn create(
         &author_type,
         author_id,
         originator_user_id,
+        autopilot_delegation_authority_user_id,
         &suppressed,
     )
     .await;
@@ -569,6 +601,39 @@ async fn update(
         }
     };
     let content_changed = content != current.content;
+    let (parent_comment, parent_lookup_failed) = if content_changed {
+        match current.parent_id {
+            Some(parent_id) => match comment::get_comment_in_workspace(
+                &state.pool,
+                parent_id,
+                current.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(parent)) if parent.issue_id == trigger_issue.id => (Some(parent), false),
+                Ok(_) => {
+                    tracing::warn!(
+                        comment_id = %current.id,
+                        parent_id = %parent_id,
+                        "parent comment is unavailable; skipping routing for edited comment"
+                    );
+                    (None, true)
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        comment_id = %current.id,
+                        parent_id = %parent_id,
+                        "failed to load parent comment; skipping routing for edited comment"
+                    );
+                    (None, true)
+                }
+            },
+            None => (None, false),
+        }
+    } else {
+        (None, false)
+    };
     let cancelled = if content_changed {
         match state
             .tasks
@@ -648,21 +713,30 @@ async fn update(
         .ok()
         .flatten()
         .expect("updated comment");
-    let parent_comment = if let Some(parent_id) = comment.parent_id {
-        comment::get_comment_in_workspace(&state.pool, parent_id, comment.workspace_id)
-            .await
-            .ok()
-            .flatten()
-            .filter(|parent| parent.issue_id == trigger_issue.id)
-    } else {
-        None
-    };
     let mut value = comment_json(&state, &comment).await;
     retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, Some(current.id)).await;
+    if content_changed && actor_type == "agent" {
+        state
+            .tasks
+            .cancel_deferred_escalations_for_issue_agent(trigger_issue.id, actor_id)
+            .await;
+    }
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &actor_type, actor_id, task_id)
             .await;
-    let outcomes = if !content_changed {
+    let autopilot_delegation_authority_user_id = if originator_user_id.is_none() {
+        crate::comment_triggers::autopilot_delegation_authority(
+            &state,
+            &trigger_issue,
+            &actor_type,
+            actor_id,
+            task_id,
+        )
+        .await
+    } else {
+        None
+    };
+    let outcomes = if !content_changed || parent_lookup_failed {
         Vec::new()
     } else {
         crate::comment_triggers::trigger_comment(
@@ -673,6 +747,7 @@ async fn update(
             &actor_type,
             actor_id,
             originator_user_id,
+            autopilot_delegation_authority_user_id,
             &suppressed,
         )
         .await
