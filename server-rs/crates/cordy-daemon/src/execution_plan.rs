@@ -131,6 +131,10 @@ impl ChildProcessEnvironment {
         self.0.get(key).map(String::as_str)
     }
 
+    pub fn extend(&mut self, values: impl IntoIterator<Item = (String, String)>) {
+        self.0.extend(values);
+    }
+
     pub fn into_inner(self) -> BTreeMap<String, String> {
         self.0
     }
@@ -755,6 +759,7 @@ fn blocked_custom_env_key(key: &str) -> bool {
                 | "TEMP"
                 | "CODEX_HOME"
                 | "REASONIX_STATE_HOME"
+                | "DSH_TELEMETRY_DISABLED"
                 | "CURSOR_DATA_DIR"
                 | "CURSOR_MCP_AUTH_SOURCE"
                 | "OPENCLAW_CONFIG_PATH"
@@ -1054,6 +1059,18 @@ mod tests {
         assert!(config.contains("CORDY_TOKEN"));
         assert!(!config.contains("owner-secret"));
         assert!(!config.contains("/evil"));
+    }
+
+    #[test]
+    fn blocks_dsh_telemetry_override_case_insensitively() {
+        let custom = std::collections::HashMap::from([
+            ("dsh_telemetry_disabled".to_string(), "0".to_string()),
+            ("DSH_TELEMETRY_DISABLED".to_string(), "0".to_string()),
+            ("Dsh_Telemetry_Disabled".to_string(), "0".to_string()),
+        ]);
+
+        let sanitized = sanitize_custom_env(Some(&custom)).unwrap();
+        assert!(sanitized.is_empty());
     }
 
     #[test]
