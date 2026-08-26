@@ -43,7 +43,11 @@ endef
 # The Rust HTTP server is the default source entrypoint. Keep the build commit
 # in the process environment so metrics retain the same release metadata as
 # the legacy Go command during the staged migration.
+<<<<<<< HEAD
 RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
+=======
+RUST_SERVER_CMD = cd server-rs && CORDY_GIT_COMMIT="$(COMMIT)" cargo run -p cordy-server
+>>>>>>> 60475f76 (refactor(server): switch default source entrypoint to Rust)
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
