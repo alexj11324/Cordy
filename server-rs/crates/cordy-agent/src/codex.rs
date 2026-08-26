@@ -1347,6 +1347,41 @@ struct CleanupResult {
     confirmed: bool,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct CodexStderrClassification {
+    model_refresh_failure: usize,
+    model_refresh_timeout: usize,
+    mcp_init_transport: usize,
+    bare_timeout: usize,
+}
+
+/// Classifies only bounded, sanitized startup stderr. These counters are
+/// telemetry evidence; retry decisions still require lifecycle state and
+/// confirmed process-tree cleanup.
+fn classify_codex_startup_stderr(stderr: &str, timed_out: bool) -> CodexStderrClassification {
+    let lower = sanitize_diagnostic(stderr).to_ascii_lowercase();
+    let model_refresh_failure = lower.matches(MODEL_CATALOG_REFRESH_FAILURE).count();
+    let model_refresh_timeout = lower
+        .matches("failed to refresh available models: timeout waiting for child process to exit")
+        .count();
+    let mcp_init_transport = lower
+        .lines()
+        .filter(|line| {
+            line.contains("mcp")
+                && line.contains("transport")
+                && (line.contains("error") || line.contains("failed") || line.contains("closed"))
+        })
+        .count();
+    let bare_timeout =
+        usize::from(timed_out && model_refresh_failure == 0 && mcp_init_transport == 0);
+    CodexStderrClassification {
+        model_refresh_failure,
+        model_refresh_timeout,
+        mcp_init_transport,
+        bare_timeout,
+    }
+}
+
 #[derive(Clone)]
 struct CodexObserver {
     state: Arc<Mutex<ObserverState>>,
@@ -2293,6 +2328,7 @@ async fn run_codex(
     );
     let mut first_deadline = None;
     let mut first_started = false;
+    let mut first_started_at = None;
     let mut first_progress = false;
     let mut last_activity = "turn/start".to_string();
     let mut status = "completed".to_string();
@@ -2305,6 +2341,7 @@ async fn run_codex(
                 last_activity = activity.clone();
                 if activity == "status:running" && !first_started {
                     first_started = true;
+                    first_started_at = Some(Instant::now());
                     first_deadline = Some(tokio::time::Instant::now() + first_timeout);
                 } else if first_started
                     && !first_progress
@@ -2418,6 +2455,58 @@ async fn run_codex(
         );
     } else if status != "completed" && !stderr.is_empty() {
         error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
+    }
+
+    if let Some(first_started_at) = first_started_at {
+        let outcome = match status.as_str() {
+            "completed" => "turn_completed",
+            "aborted" => "turn_aborted",
+            "timeout" if error.contains("no progress timeout") => "no_progress_timeout",
+            "timeout" => "semantic_inactivity_timeout",
+            "failed" => "turn_failed",
+            _ => "process_exit",
+        };
+        let classification = classify_codex_startup_stderr(&stderr, status == "timeout");
+        let latency_ms = first_started_at.elapsed().as_millis() as i64;
+        let thread_id = snapshot.thread_id.as_str();
+        let turn_id = snapshot.turn_id.as_str();
+        let log_fields = (
+            classification.model_refresh_failure,
+            classification.model_refresh_timeout,
+            classification.mcp_init_transport,
+            classification.bare_timeout,
+        );
+        if status == "completed" {
+            tracing::info!(
+                provider = "codex",
+                attempt,
+                thread_id,
+                turn_id,
+                outcome,
+                latency_ms,
+                cleanup_confirmed,
+                stderr_model_refresh_failure_count = log_fields.0,
+                stderr_model_refresh_timeout_count = log_fields.1,
+                stderr_mcp_init_transport_count = log_fields.2,
+                stderr_bare_timeout_count = log_fields.3,
+                "Codex first-item lifecycle"
+            );
+        } else {
+            tracing::warn!(
+                provider = "codex",
+                attempt,
+                thread_id,
+                turn_id,
+                outcome,
+                latency_ms,
+                cleanup_confirmed,
+                stderr_model_refresh_failure_count = log_fields.0,
+                stderr_model_refresh_timeout_count = log_fields.1,
+                stderr_mcp_init_transport_count = log_fields.2,
+                stderr_bare_timeout_count = log_fields.3,
+                "Codex first-item lifecycle"
+            );
+        }
     }
 
     // Codex may reach turn/started and then stall while refreshing its model
@@ -3516,6 +3605,21 @@ mod tests {
         assert!(codex_supports_debug_models("codex-cli 0.122.0"));
         assert!(codex_supports_debug_models("0.144.1"));
         assert!(!codex_supports_debug_models("development"));
+    }
+
+    #[test]
+    fn startup_stderr_classification_matches_go_buckets() {
+        let classified = classify_codex_startup_stderr(
+            "failed to refresh available models\nfailed to refresh available models: timeout waiting for child process to exit\nMCP transport error: closed",
+            true,
+        );
+        assert_eq!(classified.model_refresh_failure, 2);
+        assert_eq!(classified.model_refresh_timeout, 1);
+        assert_eq!(classified.mcp_init_transport, 1);
+        assert_eq!(classified.bare_timeout, 0);
+
+        let bare = classify_codex_startup_stderr("provider timed out", true);
+        assert_eq!(bare.bare_timeout, 1);
     }
 
     #[cfg(unix)]
