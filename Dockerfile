@@ -41,7 +41,7 @@ COPY server-rs/crates/ ./crates/
 RUN mkdir -p /src/server/internal/service/builtin_agents/mika \
     /src/server/internal/service/builtin_skills \
     /src/server/internal/handler
-COPY server/internal/service/builtin_agents/mika/INSTRUCTIONS.md /src/server/internal/service/builtin_agents/mika/INSTRUCTIONS.md
+COPY server/internal/service/builtin_agents/ /src/server/internal/service/builtin_agents/
 COPY server/internal/service/builtin_skills/ /src/server/internal/service/builtin_skills/
 COPY server/internal/handler/reserved_slugs.json /src/server/internal/handler/reserved_slugs.json
 

@@ -1,6 +1,7 @@
 //! cordy-migrate — Rust replacement for `server/cmd/migrate`.
 //!
-//! Usage: `cordy-migrate up|down|status` (DATABASE_URL env required).
+//! Usage: `cordy-migrate up|down|status` (DATABASE_URL defaults to the local
+//! Cordy database when unset).
 //! The operator backfill is available as
 //! `cordy-migrate backfill task-usage-hourly [flags]`.
 
@@ -18,6 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::backfill::task_usage::OperatorOptions;
 use crate::backfill::{codex_usage, issue_activity, task_usage};
+
+const DEFAULT_DATABASE_URL: &str = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,8 +44,14 @@ async fn main() -> anyhow::Result<()> {
         return run_operator_command(BackfillCommand::CodexUsage(options.clone())).await;
     }
 
-    let db_url =
-        env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL is required"))?;
+    // Keep the Go runner's local-development fallback. The Make/script paths
+    // normally provide DATABASE_URL, but direct `cordy-migrate up` and the
+    // legacy `go run ./cmd/migrate up` both target the local Cordy database
+    // when it is unset or explicitly empty.
+    let db_url = env::var("DATABASE_URL")
+        .ok()
+        .filter(|url| !url.is_empty())
+        .unwrap_or_else(|| DEFAULT_DATABASE_URL.to_string());
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(&db_url)
@@ -528,8 +537,8 @@ mod tests {
             "4".to_string(),
             "--max-stalled-passes=3".to_string(),
         ];
-        let Command::BackfillIssueLastActivity(options) =
-            parse_command(&args).unwrap_or_else(|error| panic!("parse issue activity flags: {error}"))
+        let Command::BackfillIssueLastActivity(options) = parse_command(&args)
+            .unwrap_or_else(|error| panic!("parse issue activity flags: {error}"))
         else {
             panic!("expected issue activity backfill command");
         };

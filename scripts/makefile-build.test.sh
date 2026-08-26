@@ -62,11 +62,11 @@ for target in migrate-up rust-migrate-up migrate-down rust-migrate-down; do
   migration_output="$(make -n "$target")"
   case "$target" in
     migrate-up|rust-migrate-up)
-      grep -Fq -- "cargo run --locked -p cordy-migrate -- up" <<<"$migration_output" ||
+      grep -Fq -- "./scripts/run-rust-server.sh run --locked -p cordy-migrate -- up" <<<"$migration_output" ||
         fail "$target: expected the Rust up migration runner, got:\n$migration_output"
       ;;
     migrate-down|rust-migrate-down)
-      grep -Fq -- "cargo run --locked -p cordy-migrate -- down" <<<"$migration_output" ||
+      grep -Fq -- "./scripts/run-rust-server.sh run --locked -p cordy-migrate -- down" <<<"$migration_output" ||
         fail "$target: expected the Rust down migration runner, got:\n$migration_output"
       ;;
   esac

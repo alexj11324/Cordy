@@ -54,7 +54,7 @@ fi
 bash scripts/ensure-postgres.sh "$ENV_FILE"
 
 echo "==> Running migrations..."
-(cd server-rs && cargo run --locked -p cordy-migrate -- up)
+./scripts/run-rust-server.sh run --locked -p cordy-migrate -- up
 
 # ---------- Start services ----------
 echo ""
