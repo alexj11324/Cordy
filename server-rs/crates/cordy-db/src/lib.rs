@@ -100,8 +100,8 @@ pub async fn run_pool_stats_logger(pool: PgPool, cancellation: CancellationToken
             _ = cancellation.cancelled() => return,
             _ = interval.tick() => {}
         }
-        let total = u64::from(pool.size());
-        let idle = u64::try_from(pool.num_idle()).unwrap_or(u64::MAX);
+        let total = pool.size() as usize;
+        let idle = pool.num_idle();
         let acquired = total.saturating_sub(idle);
         if acquired >= total && total > 0 {
             tracing::warn!(
