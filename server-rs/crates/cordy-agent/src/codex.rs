@@ -2635,7 +2635,7 @@ fn build_codex_timeout_error(
         format!(
             "codex semantic inactivity timeout after {}s without agent progress (last activity: {}; {fields})",
             timeout.as_secs_f64(),
-            diagnostic_quote(last_activity, "unknown")
+            diagnostic_value(last_activity, "unknown")
         )
     };
     let sanitized = sanitize_diagnostic(stderr);
@@ -2643,7 +2643,7 @@ fn build_codex_timeout_error(
         .to_ascii_lowercase()
         .contains(MODEL_CATALOG_REFRESH_FAILURE)
     {
-        message.push_str("; diagnosis: Codex could not load its model catalog, which blocks the first turn. Check network/proxy connectivity and retry the task, or switch to another runtime while the Codex service is unreachable");
+        message.push_str("; diagnosis: Codex could not load its model catalog, which blocks the first turn. This is usually a transient network failure reaching the Codex service. Check network/proxy connectivity and retry the task, or switch to another runtime while the Codex service is unreachable");
     }
     if !sanitized.is_empty() {
         message = with_stderr(&message, "codex", &sanitized);
@@ -2652,12 +2652,17 @@ fn build_codex_timeout_error(
 }
 
 fn diagnostic_quote(value: &str, empty: &str) -> String {
-    let value = if value.trim().is_empty() {
-        empty
+    serde_json::to_string(&diagnostic_value(value, empty))
+        .unwrap_or_else(|_| "\"unknown\"".to_string())
+}
+
+fn diagnostic_value(value: &str, empty: &str) -> String {
+    let sanitized = sanitize_diagnostic(value);
+    if sanitized.trim().is_empty() {
+        empty.to_string()
     } else {
-        value
-    };
-    serde_json::to_string(value).unwrap_or_else(|_| "\"unknown\"".to_string())
+        sanitized
+    }
 }
 
 fn apply_reasoning(params: &mut Value, level: &str) {
@@ -3631,6 +3636,63 @@ esac
     }
 
     #[test]
+    fn timeout_diagnostic_sanitizes_dynamic_context_and_matches_go_hint() {
+        let message = build_codex_timeout_error(
+            false,
+            Duration::from_millis(100),
+            "item/completed: token=activity-secret",
+            "thread token=thread-secret",
+            "turn password=turn-secret",
+            "model api_key=model-secret",
+            "codex-cli secret=version-secret",
+            "Authorization: Bearer bearer-secret\nfailed to refresh available models",
+        );
+        for secret in [
+            "activity-secret",
+            "thread-secret",
+            "turn-secret",
+            "model-secret",
+            "version-secret",
+            "bearer-secret",
+        ] {
+            assert!(
+                !message.contains(secret),
+                "diagnostic leaked {secret}: {message}"
+            );
+        }
+        assert!(message.contains("last activity: item/completed:"));
+        assert!(!message.contains("last activity: \""));
+        assert!(message.contains("This is usually a transient network failure"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovery_timeout_covers_descendant_pipe_holders() {
+        let config = CodexConfig {
+            command: RuntimeCommand::new(
+                "sh",
+                vec!["-c".to_string(), "sleep 60 & exit 0".to_string()],
+            ),
+            env: BTreeMap::new(),
+        };
+        let started = Instant::now();
+        let output = capture_codex_command(
+            &config,
+            &["--version"],
+            CancellationToken::new(),
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("capture failed: {error}"));
+        assert!(output.is_none());
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "pipe drain escaped the discovery deadline: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
     fn launch_args_keep_owned_transport_and_filter_user_listen() {
         let options = ExecOptions {
             extra_args: vec![
@@ -3811,6 +3873,7 @@ esac
         assert_eq!(done_rx.recv().await, Some(false));
         let snapshot = observer.snapshot().await;
         assert_eq!(snapshot.final_answer, "done");
+        assert_eq!(snapshot.turn_id, "turn-main");
         assert_eq!(snapshot.usage.input_tokens, 6);
         assert_eq!(snapshot.usage.cache_read_tokens, 4);
         assert_eq!(snapshot.usage.output_tokens, 6);
