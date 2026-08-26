@@ -110,7 +110,7 @@ fn survivor_batches(
     cancelled: &[SurvivorPlan],
     excluded_comment_id: Option<Uuid>,
 ) -> Vec<SurvivorBatch> {
-    let mut batches = Vec::new();
+    let mut batches: Vec<SurvivorBatch> = Vec::new();
     for plan in cancelled {
         let mut comment_ids = plan.coalesced_comment_ids.clone();
         if let Some(trigger) = plan.trigger_comment_id {

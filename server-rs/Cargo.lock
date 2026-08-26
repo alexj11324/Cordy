@@ -1244,8 +1244,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "futures-util",
  "sqlx",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

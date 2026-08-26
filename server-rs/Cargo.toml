@@ -113,7 +113,7 @@ hostname = "0.4"
 # remotemcp secure HTTP stack (hyper legacy client with a custom pinned connector)
 http = "1"
 hyper = { version = "1", features = ["client", "http1"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "runtime", "service", "tokio"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "service", "tokio"] }
 http-body-util = "0.1"
 url = "2"
 dirs = "6"

@@ -7,8 +7,13 @@
 //! missing (migrations 101/102 not yet applied). It DOES fail when the rollup
 //! walk itself errors, aborting the migrate run.
 
+use std::{future::Future, time::Duration};
+
 use chrono::{DateTime, Datelike, Months, TimeZone, Utc};
-use sqlx::{PgConnection, PgPool};
+use futures_util::future::BoxFuture;
+use sqlx::pool::PoolConnection;
+use sqlx::{Connection, PgConnection, PgPool, Postgres};
+use tokio_util::sync::CancellationToken;
 
 /// Shared with rollup_task_usage_hourly(), the standalone backfill command,
 /// and the in-process scheduler so a mixed-version cluster cannot double-write.
@@ -17,6 +22,24 @@ const ADVISORY_LOCK_KEY: i64 = 4246;
 /// Mirrors migration 103's v_lag interval. Below this threshold the migration
 /// would have passed anyway, so we save the scan.
 const MAX_LAG_THRESHOLD_SECS: i64 = 3600;
+
+/// Options for the operator-facing historical hourly rollup backfill.
+///
+/// This is the Rust equivalent of the flags accepted by
+/// `server/cmd/backfill_task_usage_hourly`.
+#[derive(Debug, Clone, Default)]
+pub struct OperatorOptions {
+    pub dry_run: bool,
+    pub months_back: i64,
+    pub force_partial: bool,
+    pub sleep_between_slices: Duration,
+}
+
+enum OperatorOutcome {
+    Empty,
+    DryRun,
+    Complete { rows_touched: i64 },
+}
 
 struct UsageRange {
     min_event: Option<DateTime<Utc>>,
@@ -100,7 +123,11 @@ pub(crate) async fn hook(pool: &PgPool) -> anyhow::Result<()> {
         .execute(&mut *lock_conn)
         .await?;
 
-    let result = walk_slices(&mut lock_conn, usage_range.min_event.unwrap(), max_event).await;
+    let result = async {
+        walk_slices(&mut lock_conn, usage_range.min_event.unwrap(), max_event).await?;
+        stamp_watermark_on_conn(&mut lock_conn).await
+    }
+    .await;
 
     // Best-effort unlock; session-level locks release when the conn closes.
     let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
@@ -109,9 +136,225 @@ pub(crate) async fn hook(pool: &PgPool) -> anyhow::Result<()> {
         .await;
     drop(lock_conn);
 
-    stamp_watermark(pool).await?;
     result?;
     Ok(())
+}
+
+/// Runs the standalone operator backfill that seeds all historical
+/// `task_usage_hourly` buckets.
+///
+/// The advisory lock is held on a dedicated session for the complete run,
+/// including dry-run range inspection. A successful non-dry run stamps the
+/// watermark only after every monthly slice has completed, matching the Go
+/// command's resumable/idempotent contract.
+pub async fn run_operator(
+    pool: &PgPool,
+    options: OperatorOptions,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<()> {
+    let dry_run = options.dry_run;
+    let mut lock_conn = acquire_advisory_lock(pool, cancellation).await?;
+
+    let result = async {
+        match operator_locked(pool, options, cancellation).await? {
+            OperatorOutcome::Empty => {
+                if dry_run {
+                    tracing::info!(
+                        "task_usage is empty; dry-run complete; watermark left untouched"
+                    );
+                } else {
+                    stamp_watermark_with_cancellation(pool, cancellation).await?;
+                    println!("watermark stamped to now() - 5 minutes");
+                    tracing::info!("task_usage is empty; watermark stamped");
+                }
+            }
+            OperatorOutcome::DryRun => {
+                tracing::info!("dry-run complete; watermark left untouched");
+            }
+            OperatorOutcome::Complete { rows_touched } => {
+                // Keep this write independent of the cancellation token. If the
+                // final slice succeeded, the Go command deliberately stamps the
+                // watermark with a fresh background context.
+                stamp_watermark(pool).await?;
+                println!("watermark stamped to now() - 5 minutes");
+                tracing::info!(total_rows_touched = rows_touched, "backfill complete");
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+    let unlock_result = sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(ADVISORY_LOCK_KEY)
+        .execute(&mut *lock_conn)
+        .await;
+    drop(lock_conn);
+
+    match result {
+        Ok(()) => {
+            unlock_result?;
+            Ok(())
+        }
+        Err(error) => {
+            if let Err(unlock_error) = unlock_result {
+                tracing::warn!(error = %unlock_error, "task_usage hourly backfill: advisory unlock failed after run error");
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn operator_locked(
+    pool: &PgPool,
+    options: OperatorOptions,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<OperatorOutcome> {
+    let (min_ts, max_ts): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) =
+        cancellable_pool_query(pool, cancellation, |conn| {
+            Box::pin(
+                sqlx::query_as("SELECT MIN(created_at), MAX(created_at) FROM task_usage")
+                    .fetch_one(conn),
+            )
+        })
+        .await?;
+
+    let (Some(min_ts), Some(max_ts)) = (min_ts, max_ts) else {
+        return Ok(OperatorOutcome::Empty);
+    };
+
+    let mut from = month_floor(min_ts);
+    let end = add_month(month_floor(max_ts))?;
+
+    if options.months_back > 0 {
+        let months_back = u32::try_from(options.months_back)
+            .map_err(|_| anyhow::anyhow!("months-back value is too large"))?;
+        let cutoff = month_floor(Utc::now())
+            .checked_sub_months(Months::new(months_back))
+            .ok_or_else(|| anyhow::anyhow!("months-back value is too large"))?;
+        if cutoff > from {
+            if !options.force_partial {
+                anyhow::bail!(
+                    "--months-back={} would skip buckets before {} (oldest available {}) and the watermark would still advance past them; re-run with --force-partial to accept this, or omit --months-back for a full backfill",
+                    options.months_back,
+                    cutoff.to_rfc3339(),
+                    min_ts.to_rfc3339()
+                );
+            }
+            from = cutoff;
+            tracing::warn!(
+                months_back = options.months_back,
+                effective_from = %from,
+                oldest_available = %min_ts,
+                "partial backfill: older buckets will be left empty and the watermark will still advance past them"
+            );
+        }
+    }
+
+    tracing::info!(
+        from = %from,
+        to = %end,
+        dry_run = options.dry_run,
+        sleep_between_slices = ?options.sleep_between_slices,
+        "backfill range"
+    );
+
+    let mut cursor = from;
+    let mut total_rows = 0_i64;
+    while cursor < end {
+        if cancellation.is_cancelled() {
+            anyhow::bail!("execution cancelled");
+        }
+        let next = add_month(cursor)?;
+        if options.dry_run {
+            tracing::info!(from = %cursor, to = %next, "would roll up slice");
+            cursor = next;
+            continue;
+        }
+
+        let rows: i64 = cancellable_pool_query(pool, cancellation, |conn| {
+            Box::pin(
+                sqlx::query_scalar(
+                    "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+                )
+                .bind(cursor)
+                .bind(next)
+                .fetch_one(conn),
+            )
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("rollup slice {cursor}..{next}: {error}"))?;
+        total_rows += rows;
+        tracing::info!(from = %cursor, to = %next, rows_touched = rows, "rolled up slice");
+        cursor = next;
+
+        if options.sleep_between_slices > Duration::ZERO && cursor < end {
+            tokio::select! {
+                _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
+                _ = tokio::time::sleep(options.sleep_between_slices) => {},
+            }
+        }
+    }
+
+    if options.dry_run {
+        Ok(OperatorOutcome::DryRun)
+    } else {
+        Ok(OperatorOutcome::Complete {
+            rows_touched: total_rows,
+        })
+    }
+}
+
+async fn cancellable<T, F>(cancellation: &CancellationToken, future: F) -> anyhow::Result<T>
+where
+    F: Future<Output = Result<T, sqlx::Error>>,
+{
+    tokio::select! {
+        _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
+        result = future => Ok(result?),
+    }
+}
+
+/// Runs a long query on a disposable pool connection so cancellation can
+/// close the backend connection before the advisory-lock connection is
+/// released. SQLx does not expose PostgreSQL's cancel request publicly;
+/// hard-closing this dedicated connection is the fail-closed primitive.
+async fn cancellable_pool_query<T, F>(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+    query: F,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: for<'a> FnOnce(&'a mut PgConnection) -> BoxFuture<'a, Result<T, sqlx::Error>>,
+{
+    let mut connection = pool.acquire().await?;
+    tokio::select! {
+        _ = cancellation.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("execution cancelled");
+        }
+        result = query(&mut *connection) => Ok(result?),
+    }
+}
+
+async fn acquire_advisory_lock(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<PoolConnection<Postgres>> {
+    let mut connection = cancellable(cancellation, pool.acquire()).await?;
+    tokio::select! {
+        _ = cancellation.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("execution cancelled");
+        }
+        result = sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(ADVISORY_LOCK_KEY)
+            .execute(&mut *connection) => {
+            result?;
+        }
+    }
+    Ok(connection)
 }
 
 async fn walk_slices(
@@ -151,7 +394,7 @@ async fn walk_slices(
 /// the cron entry's upper bound and preventing clock-drift stamps into the
 /// DB's future.
 async fn stamp_watermark(pool: &PgPool) -> anyhow::Result<()> {
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE task_usage_hourly_rollup_state
            SET watermark_at = now() - INTERVAL '5 minutes'
@@ -160,7 +403,62 @@ async fn stamp_watermark(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
+    ensure_watermark_updated(result.rows_affected())
+}
+
+async fn stamp_watermark_with_cancellation(
+    pool: &PgPool,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<()> {
+    let rows = cancellable_pool_query(pool, cancellation, |conn| {
+        Box::pin(
+            sqlx::query(
+                r#"
+                UPDATE task_usage_hourly_rollup_state
+                   SET watermark_at = now() - INTERVAL '5 minutes'
+                 WHERE id = 1
+                "#,
+            )
+            .execute(conn),
+        )
+    })
+    .await?
+    .rows_affected();
+    ensure_watermark_updated(rows)
+}
+
+async fn stamp_watermark_on_conn(conn: &mut PgConnection) -> anyhow::Result<()> {
+    let result = sqlx::query(
+        r#"
+        UPDATE task_usage_hourly_rollup_state
+           SET watermark_at = now() - INTERVAL '5 minutes'
+         WHERE id = 1
+        "#,
+    )
+    .execute(conn)
+    .await?;
+    ensure_watermark_updated(result.rows_affected())
+}
+
+fn ensure_watermark_updated(rows_affected: u64) -> anyhow::Result<()> {
+    if rows_affected != 1 {
+        anyhow::bail!(
+            "task_usage_hourly_rollup_state watermark row id=1 is missing; expected 1 updated row, got {rows_affected}"
+        );
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_watermark_updated;
+
+    #[test]
+    fn watermark_update_requires_the_state_row() {
+        assert!(ensure_watermark_updated(1).is_ok());
+        assert!(ensure_watermark_updated(0).is_err());
+        assert!(ensure_watermark_updated(2).is_err());
+    }
 }
 
 fn month_floor(t: DateTime<Utc>) -> DateTime<Utc> {
