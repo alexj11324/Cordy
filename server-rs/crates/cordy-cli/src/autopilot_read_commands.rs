@@ -58,7 +58,16 @@ pub(super) async fn run_autopilot_get(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(|error| {
+            if error
+                .to_string()
+                .starts_with("ambiguous autopilot id prefix")
+            {
+                error
+            } else {
+                anyhow::anyhow!("resolve autopilot: {error:#}")
+            }
+        })?;
     let response: Value = client
         .get_json(&format!("/api/autopilots/{autopilot_id}"))
         .await

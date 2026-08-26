@@ -137,9 +137,9 @@ fn daemon_restart_reuses_start_flags_and_rejects_foreground() {
     let flags = args
         .launch
         .to_launch_flags(Some("https://staging.example".to_string()));
-    assert_eq!(flags.server_url, "https://staging.example");
-    assert_eq!(flags.daemon_id, "daemon-2");
-    assert_eq!(flags.workspaces_root, "/srv/workspaces");
+    assert_eq!(flags.server_url.as_deref(), Some("https://staging.example"));
+    assert_eq!(flags.daemon_id.as_deref(), Some("daemon-2"));
+    assert_eq!(flags.workspaces_root.as_deref(), Some("/srv/workspaces"));
     let error = ensure_restart_is_background(&args.launch)
         .expect_err("restart foreground must fail closed");
     assert!(
