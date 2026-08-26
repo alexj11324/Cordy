@@ -16,7 +16,31 @@ if [[ "$TARGET_DIR" != /* ]]; then
 	TARGET_DIR="$RUST_DIR/$TARGET_DIR"
 fi
 
-CARGO_TARGET_DIR="$TARGET_DIR" cargo build -p cordy-cli
+CARGO_COMMAND="${CARGO_BIN:-}"
+if [[ -z "$CARGO_COMMAND" ]]; then
+	if command -v cargo >/dev/null 2>&1; then
+		CARGO_COMMAND="$(command -v cargo)"
+	elif [[ -n "${CARGO_HOME:-}" && -x "${CARGO_HOME}/bin/cargo" ]]; then
+		CARGO_COMMAND="${CARGO_HOME}/bin/cargo"
+	elif [[ -n "${HOME:-}" && -x "${HOME}/.cargo/bin/cargo" ]]; then
+		CARGO_COMMAND="${HOME}/.cargo/bin/cargo"
+	else
+		echo "run-rust-cli.sh: cargo is not on PATH; set CARGO_BIN or CARGO_HOME" >&2
+		exit 127
+	fi
+fi
+
+if [[ "$CARGO_COMMAND" == */* ]]; then
+	if [[ ! -x "$CARGO_COMMAND" ]]; then
+		echo "run-rust-cli.sh: CARGO_BIN is not executable: $CARGO_COMMAND" >&2
+		exit 127
+	fi
+elif ! command -v "$CARGO_COMMAND" >/dev/null 2>&1; then
+	echo "run-rust-cli.sh: cargo command not found: $CARGO_COMMAND" >&2
+	exit 127
+fi
+
+CARGO_TARGET_DIR="$TARGET_DIR" "$CARGO_COMMAND" build -p cordy-cli
 
 if [[ "${OS:-}" == "Windows_NT" || "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
 	EXE_SUFFIX=".exe"
