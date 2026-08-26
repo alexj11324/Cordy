@@ -833,6 +833,27 @@ fn resolve_task_model_selection_from_catalog(
     thinking_level: &str,
     service_tier: &str,
 ) -> ResolvedTaskModelSelection {
+    // Discovery failures are represented by a fallback catalog. Go treats
+    // that case as fail-open: preserve values that may still be valid for the
+    // runtime and let the provider resolve them. The two deterministic guards
+    // remain fail-closed, matching Validate*With: non-Codex service tiers and
+    // unresolved Codex model capability overrides cannot be safely injected.
+    if catalog.fallback {
+        return ResolvedTaskModelSelection {
+            model: configured_model.to_string(),
+            model_rewritten: false,
+            thinking_level: if provider == "codex" && configured_model.is_empty() {
+                String::new()
+            } else {
+                thinking_level.to_string()
+            },
+            service_tier: if provider == "codex" && !configured_model.is_empty() {
+                service_tier.to_string()
+            } else {
+                String::new()
+            },
+        };
+    }
     let (qualified_model, model_rewritten) =
         cordy_agent::model::qualify_model_id(catalog, configured_model);
     let model = if model_rewritten {
@@ -1414,6 +1435,30 @@ mod tests {
 
         assert_eq!(selection.model, "gpt-5");
         assert!(!selection.model_rewritten);
+    }
+
+    #[test]
+    fn fallback_catalog_fails_open_for_capability_overrides() {
+        let catalog = cordy_agent::Catalog {
+            fallback: true,
+            ..cordy_agent::Catalog::default()
+        };
+
+        let selection = resolve_task_model_selection_from_catalog(
+            &catalog,
+            "codex",
+            "gpt-5",
+            "xhigh",
+            "priority",
+        );
+        assert_eq!(selection.thinking_level, "xhigh");
+        assert_eq!(selection.service_tier, "priority");
+
+        let unresolved = resolve_task_model_selection_from_catalog(
+            &catalog, "codex", "", "xhigh", "priority",
+        );
+        assert!(unresolved.thinking_level.is_empty());
+        assert!(unresolved.service_tier.is_empty());
     }
 
     #[test]
