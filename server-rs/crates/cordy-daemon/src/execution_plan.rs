@@ -6,8 +6,9 @@
 //! environment. Transcript draining, usage, terminal callbacks, and process
 //! ownership remain the responsibility of the future `ProviderRuntimeAdapter`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::path::Path;
 use std::time::Duration;
 
 use cordy_agent::ExecOptions;
@@ -15,6 +16,9 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{Config, TASK_WORKSPACES_ROOT_ENV};
+use crate::execenv::codex_shell_env::{
+    codex_shell_env_allowlist, ensure_codex_shell_env_policy_config,
+};
 use crate::execenv::context::RuntimeSkillRefForEnv;
 use crate::execenv::execenv::{
     ConnectedApp, Environment, OpenclawGatewayPin, PrepareParams, ProjectResourceForEnv,
@@ -512,6 +516,44 @@ impl ProviderExecutionPlan {
             launch_prefix: self.launch_prefix.clone(),
         })
     }
+
+    /// Writes Codex's task-local shell environment policy after the complete
+    /// child environment has been assembled. The policy must be derived from
+    /// this exact bound environment: omitting daemon-provided task variables
+    /// drops the task CLI credentials, while allowing inherited secret names
+    /// exposes daemon credentials to Codex shell tools.
+    pub fn configure_codex_shell_environment(
+        &self,
+        bound: &BoundProviderExecution,
+    ) -> anyhow::Result<()> {
+        if self.prepare.provider != "codex" {
+            return Ok(());
+        }
+        let codex_home = bound.child_env.get("CODEX_HOME").unwrap_or_default();
+        anyhow::ensure!(
+            !codex_home.trim().is_empty(),
+            "configure Codex shell environment: task CODEX_HOME is missing"
+        );
+
+        let inherited = std::env::vars_os()
+            .filter_map(|(key, _)| key.into_string().ok())
+            .map(|key| format!("{key}="))
+            .collect::<Vec<_>>();
+        let explicit = bound
+            .child_env
+            .0
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<HashMap<_, _>>();
+        let authorized_explicit: Vec<String> = self.child_env.custom_env.keys().cloned().collect();
+        let include_only =
+            codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
+        ensure_codex_shell_env_policy_config(
+            &Path::new(codex_home).join("config.toml").to_string_lossy(),
+            &include_only,
+        )
+        .map_err(|error| anyhow::anyhow!("configure Codex shell environment: {error:#}"))
+    }
 }
 
 fn validate_identity<'a>(
@@ -722,7 +764,10 @@ fn blocked_custom_env_key(key: &str) -> bool {
 
 fn validate_env_pair(key: &str, value: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !key.is_empty() && !key.contains('=') && !key.contains('\0'),
+        !key.is_empty()
+            && !key.contains('=')
+            && !key.contains('\0')
+            && !key.chars().any(|ch| matches!(ch, '*' | '?' | '[' | ']')),
         "invalid child environment variable name"
     );
     validate_env_value("child environment variable", value)
@@ -840,6 +885,14 @@ mod tests {
         RuntimeExecutionTarget {
             provider: "codex".to_string(),
             profile_id: String::new(),
+        }
+    }
+
+    #[test]
+    fn rejects_glob_syntax_in_custom_environment_names() {
+        for name in ["C*", "C?", "C[0]", "C]"] {
+            let custom = std::collections::HashMap::from([(name.to_string(), "value".to_string())]);
+            assert!(sanitize_custom_env(Some(&custom)).is_err(), "{name}");
         }
     }
 
@@ -973,6 +1026,34 @@ mod tests {
 
         let prepare_json = serde_json::to_value(plan.prepare_params()).unwrap();
         assert!(!prepare_json.to_string().contains("mat_task_secret"));
+    }
+
+    #[test]
+    fn configures_codex_shell_policy_from_the_bound_task_environment() {
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let codex_home = home.path().join("codex-home");
+        std::fs::create_dir_all(&codex_home).unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".to_string(),
+                    cordy_config_root: "/config".to_string(),
+                    codex_home: codex_home.to_string_lossy().into_owned(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+
+        plan.configure_codex_shell_environment(&bound).unwrap();
+
+        let config = std::fs::read_to_string(codex_home.join("config.toml")).unwrap();
+        assert!(config.contains("shell_environment_policy"));
+        assert!(config.contains("API_KEY"));
+        assert!(config.contains("CORDY_TOKEN"));
+        assert!(!config.contains("owner-secret"));
+        assert!(!config.contains("/evil"));
     }
 
     #[test]
