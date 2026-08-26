@@ -29,9 +29,9 @@
 //! - WaitDelay semantics: cancellation terminates the platform process-tree
 //!   boundary before awaiting the child and pipe readers.
 //!
-//! NOTE: the parent-side entry points (prepare_isolated / reuse_isolated) are
-//! wired into the task launcher in a later slice; until then this module is
-//! exercised by its unit tests only, hence `allow(dead_code)`.
+//! The parent-side entry points (prepare_isolated / reuse_isolated) are wired
+//! into the production task launcher. The private helper path remains in this
+//! module so the launcher and helper share one exact wire contract.
 #![allow(dead_code)]
 
 use std::process::Stdio;

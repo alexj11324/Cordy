@@ -27,9 +27,10 @@ use crate::execenv::context::{
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
-    ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, remove_tree,
-    reuse, Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
+    ensure_task_temp_dir, predict_root_dir, read_managed_env_provenance, remove_tree, Environment,
+    MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
+use crate::execenv::isolation::{prepare_isolated, reuse_isolated, PREPARATION_HELPER_ARG};
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execenv::runtime_config::{cleanup_runtime_config, inject_runtime_config};
 use crate::execution_plan::{
@@ -890,19 +891,39 @@ impl ProductionProviderAdapter {
         if ctx.err().is_some() {
             anyhow::bail!(ctx.cause().to_string());
         }
+        let helper_command = preparation_helper_command()?;
         if assignment.is_none() && reusable_workdir(&self.config.workspaces_root, task) {
-            if let Some(environment) = reuse(plan.reuse_params(task.prior_work_dir.clone())) {
+            if let Some(environment) = reuse_isolated(
+                ctx,
+                &helper_command,
+                plan.reuse_params(task.prior_work_dir.clone()),
+            )
+            .await?
+            {
                 return Ok((environment, true));
             }
         }
         plan.drop_resume();
         tokio::select! {
-            result = prepare(plan.prepare_params()) => result
+            result = prepare_isolated(ctx, &helper_command, plan.prepare_params()) => result
                 .map(|environment| (environment, false))
                 .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}")),
             () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
         }
     }
+}
+
+/// Returns the same private helper command the Go daemon uses for every
+/// production Prepare/Reuse call. The helper is the Rust `cordy` executable
+/// itself; its private argv is handled before normal CLI parsing, so the
+/// daemon never runs filesystem-heavy preparation in its task process.
+fn preparation_helper_command() -> anyhow::Result<Vec<String>> {
+    let executable = std::env::current_exe()
+        .context("resolve cordy executable for execution-environment helper")?;
+    Ok(vec![
+        executable.to_string_lossy().into_owned(),
+        PREPARATION_HELPER_ARG.to_string(),
+    ])
 }
 
 async fn task_prepare_deadline(
