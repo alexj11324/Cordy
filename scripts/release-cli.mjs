@@ -54,7 +54,13 @@ function archiveExtension(platform) {
 }
 
 export function rustTargetFor(platform, arch) {
-  const target = TARGETS[platform]?.[arch];
+  const platformTargets = Object.hasOwn(TARGETS, platform)
+    ? TARGETS[platform]
+    : undefined;
+  const target =
+    platformTargets && Object.hasOwn(platformTargets, arch)
+      ? platformTargets[arch]
+      : undefined;
   if (!target) {
     throw new Error(
       `unsupported release target ${platform}/${arch}; expected darwin, linux, or windows with amd64 or arm64`,
@@ -71,7 +77,7 @@ function git(...args) {
   }
 }
 
-function buildVersion(options) {
+function buildVersion(options = {}) {
   return (
     options.version ||
     process.env.GITHUB_REF_NAME?.replace(/^v/, "") ||
@@ -80,7 +86,7 @@ function buildVersion(options) {
   );
 }
 
-export function releaseVersion(options) {
+export function releaseVersion(options = {}) {
   const version = buildVersion(options);
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(`release version is not valid semver: ${version}`);
@@ -88,12 +94,16 @@ export function releaseVersion(options) {
   return version;
 }
 
-function releaseTag(options, version) {
+function releaseTag(options = {}, version) {
   return options.tag ?? process.env.GITHUB_REF_NAME ?? `v${version}`;
 }
 
 function defaultOutputDir(name) {
   return join(process.env.RUNNER_TEMP || tmpdir(), name);
+}
+
+function configuredOutputDir(name) {
+  return process.env.CORDY_RELEASE_OUTPUT_DIR || defaultOutputDir(name);
 }
 
 function parseOptionValue(argv, index, option) {
@@ -376,7 +386,7 @@ async function main() {
     await buildTarget({
       platform,
       arch,
-      outputDir: options.output_dir || defaultOutputDir("cordy-cli"),
+      outputDir: options.output_dir || configuredOutputDir("cordy-cli"),
       version: buildVersion(options),
     });
     return;
@@ -384,8 +394,11 @@ async function main() {
   if (command === "package") {
     const version = releaseVersion(options);
     await packageRelease({
-      inputDir: options.input_dir || defaultOutputDir("cordy-cli"),
-      outputDir: options.output_dir || defaultOutputDir("cordy-release"),
+      inputDir:
+        options.input_dir ||
+        process.env.CORDY_RELEASE_INPUT_DIR ||
+        defaultOutputDir("cordy-cli"),
+      outputDir: options.output_dir || configuredOutputDir("cordy-release"),
       version,
     });
     return;
@@ -393,7 +406,7 @@ async function main() {
   if (command === "publish-homebrew") {
     const version = releaseVersion(options);
     await publishHomebrew({
-      outputDir: options.output_dir || defaultOutputDir("cordy-release"),
+      outputDir: options.output_dir || configuredOutputDir("cordy-release"),
       version,
       tag: releaseTag(options, version),
     });

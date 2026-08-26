@@ -84,11 +84,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             platform: darwin
             arch: amd64
             rust_target: x86_64-apple-darwin
-          - runner: macos-14
+          - runner: macos-15
             platform: darwin
             arch: arm64
             rust_target: aarch64-apple-darwin
@@ -104,10 +104,12 @@ jobs:
             platform: windows
             arch: amd64
             rust_target: x86_64-pc-windows-msvc
+            msvc_arch: amd64
           - runner: windows-latest
             platform: windows
             arch: arm64
             rust_target: aarch64-pc-windows-msvc
+            msvc_arch: amd64_arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -121,6 +123,14 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add "${{ matrix.rust_target }}"
+
+      - name: Setup MSVC linker
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          # amd64_arm64 selects the x64-hosted ARM64 cross compiler for the
+          # aarch64-pc-windows-msvc target.
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Build Rust CLI
         env:
