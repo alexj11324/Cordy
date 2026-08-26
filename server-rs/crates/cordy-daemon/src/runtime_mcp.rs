@@ -30,7 +30,6 @@ use crate::claude_plugins::{
     claude_plugin_component_paths, list_enabled_claude_plugins, read_claude_plugin_manifest,
     ClaudePluginInstall,
 };
-use crate::execenv::execenv::join_path;
 
 /// The intentionally non-secret inventory shown in Agent capabilities
 /// (go:19–24). Never add command arguments, URLs, headers, or environment
@@ -547,7 +546,7 @@ fn runtime_mcp_summaries(
 
 fn list_claude_plugin_mcp_servers(home: &Path) -> Vec<RuntimeLocalMcpServerSummary> {
     let mut out = Vec::new();
-    for plugin in list_enabled_claude_plugins(&home.to_string_lossy()) {
+    for plugin in list_enabled_claude_plugins(home) {
         let paths = claude_plugin_mcp_paths(&plugin);
         for path in paths {
             let Ok(raw) = std::fs::read_to_string(&path) else {
@@ -583,7 +582,7 @@ pub(crate) fn nested_runtime_mcp_map<'a>(
 /// Transport classification for the summary inventory (go:530–547).
 fn load_claude_plugin_mcp_server_configs(home: &Path) -> Map<String, Value> {
     let mut out = Map::new();
-    for plugin in list_enabled_claude_plugins(&home.to_string_lossy()) {
+    for plugin in list_enabled_claude_plugins(home) {
         let paths = claude_plugin_mcp_paths(&plugin);
         for path in paths {
             let Ok(raw) = std::fs::read_to_string(&path) else {
@@ -602,11 +601,11 @@ fn load_claude_plugin_mcp_server_configs(home: &Path) -> Map<String, Value> {
     out
 }
 
-fn claude_plugin_mcp_paths(plugin: &ClaudePluginInstall) -> Vec<String> {
+fn claude_plugin_mcp_paths(plugin: &ClaudePluginInstall) -> Vec<std::path::PathBuf> {
     let raw = read_claude_plugin_manifest(&plugin.install_path)
         .map(|manifest| manifest.mcp_servers_value().clone())
         .unwrap_or(Value::Null);
-    let defaults = [join_path(&[&plugin.install_path, ".mcp.json"])];
+    let defaults = [plugin.install_path.join(".mcp.json")];
     claude_plugin_component_paths(&plugin.install_path, &raw, &defaults)
 }
 
