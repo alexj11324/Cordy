@@ -482,6 +482,29 @@ impl RuntimeLaunchRegistry {
             .insert(workspace_id.to_string(), builtins);
     }
 
+    pub(crate) fn replace_builtins_preserving(
+        &self,
+        workspace_id: &str,
+        specs: Vec<RuntimeLaunchSpec>,
+        providers: &BTreeSet<String>,
+    ) {
+        let mut state = self.state.write().unwrap();
+        let mut builtins = specs
+            .into_iter()
+            .map(|spec| (spec.target.provider.clone(), spec))
+            .collect::<BTreeMap<_, _>>();
+        if let Some(previous) = state.builtins.get(workspace_id) {
+            for provider in providers {
+                if let Some(spec) = previous.get(provider) {
+                    builtins
+                        .entry(provider.clone())
+                        .or_insert_with(|| spec.clone());
+                }
+            }
+        }
+        state.builtins.insert(workspace_id.to_string(), builtins);
+    }
+
     pub(crate) fn replace_workspace_profiles(
         &self,
         workspace_id: &str,
@@ -812,8 +835,11 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
     }
 
     fn registration_applied(&self, workspace_id: &str) {
-        self.launches
-            .replace_builtins(workspace_id, self.builtin_launches.clone());
+        self.launches.replace_builtins_preserving(
+            workspace_id,
+            self.builtin_launches.clone(),
+            &self.preserve_providers,
+        );
         let Some(specs) = self.pending_profiles.lock().unwrap().remove(workspace_id) else {
             return;
         };
@@ -1242,6 +1268,42 @@ mod tests {
         assert_eq!(
             registry.resolve("ws-2", &target).unwrap().command_path,
             "/old/codex"
+        );
+    }
+
+    #[test]
+    fn skipped_builtin_replacement_preserves_previous_launch_spec() {
+        let registry = RuntimeLaunchRegistry::default();
+        let launch = |provider: &str, command_path: &str| RuntimeLaunchSpec {
+            target: RuntimeExecutionTarget {
+                provider: provider.to_string(),
+                profile_id: String::new(),
+            },
+            display_name: provider.to_string(),
+            command_path: command_path.to_string(),
+            fixed_args: Vec::new(),
+            version: "1.0.0".to_string(),
+        };
+        registry.replace_builtins(
+            "ws-1",
+            vec![
+                launch("codex", "/bin/codex"),
+                launch("claude", "/bin/claude"),
+            ],
+        );
+        registry.replace_builtins_preserving(
+            "ws-1",
+            vec![launch("codex", "/new/codex")],
+            &BTreeSet::from(["claude".to_string()]),
+        );
+
+        let target = RuntimeExecutionTarget {
+            provider: "claude".to_string(),
+            profile_id: String::new(),
+        };
+        assert_eq!(
+            registry.resolve("ws-1", &target).unwrap().command_path,
+            "/bin/claude"
         );
     }
 

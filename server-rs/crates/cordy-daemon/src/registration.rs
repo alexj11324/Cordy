@@ -171,8 +171,13 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
 
 #[derive(Default)]
 struct PendingDeregistrations {
-    runtime_ids: Mutex<BTreeSet<String>>,
-    reasons: Mutex<HashMap<String, RuntimeOfflineReason>>,
+    state: Mutex<PendingDeregistrationState>,
+}
+
+#[derive(Default)]
+struct PendingDeregistrationState {
+    runtime_ids: BTreeSet<String>,
+    reasons: HashMap<String, RuntimeOfflineReason>,
 }
 
 impl PendingDeregistrations {
@@ -185,11 +190,11 @@ impl PendingDeregistrations {
         runtime_ids: &[String],
         reasons: HashMap<String, RuntimeOfflineReason>,
     ) {
-        self.runtime_ids
-            .lock()
-            .unwrap()
+        let mut pending = self.state.lock().unwrap();
+        pending
+            .runtime_ids
             .extend(runtime_ids.iter().filter(|id| !id.is_empty()).cloned());
-        self.reasons.lock().unwrap().extend(
+        pending.reasons.extend(
             reasons
                 .into_iter()
                 .filter(|(runtime_id, _)| !runtime_id.is_empty()),
@@ -197,31 +202,38 @@ impl PendingDeregistrations {
     }
 
     fn snapshot(&self) -> Vec<String> {
-        self.runtime_ids.lock().unwrap().iter().cloned().collect()
+        self.state
+            .lock()
+            .unwrap()
+            .runtime_ids
+            .iter()
+            .cloned()
+            .collect()
     }
 
-    fn acknowledge(&self, runtime_ids: &[String]) {
-        let mut pending = self.runtime_ids.lock().unwrap();
-        for runtime_id in runtime_ids {
-            pending.remove(runtime_id);
-        }
-        let mut reasons = self.reasons.lock().unwrap();
-        for runtime_id in runtime_ids {
-            reasons.remove(runtime_id);
-        }
-    }
-
-    fn reasons(&self, runtime_ids: &[String]) -> HashMap<String, RuntimeOfflineReason> {
-        let reasons = self.reasons.lock().unwrap();
-        runtime_ids
+    fn snapshot_with_reasons(&self) -> (Vec<String>, HashMap<String, RuntimeOfflineReason>) {
+        let pending = self.state.lock().unwrap();
+        let runtime_ids = pending.runtime_ids.iter().cloned().collect();
+        let reasons = pending
+            .runtime_ids
             .iter()
             .filter_map(|runtime_id| {
-                reasons
+                pending
+                    .reasons
                     .get(runtime_id)
                     .cloned()
                     .map(|reason| (runtime_id.clone(), reason))
             })
-            .collect()
+            .collect();
+        (runtime_ids, reasons)
+    }
+
+    fn acknowledge(&self, runtime_ids: &[String]) {
+        let mut pending = self.state.lock().unwrap();
+        for runtime_id in runtime_ids {
+            pending.runtime_ids.remove(runtime_id);
+            pending.reasons.remove(runtime_id);
+        }
     }
 }
 
@@ -357,7 +369,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         let workspace = registry
             .workspace(&workspace_id)
             .ok_or_else(|| anyhow::anyhow!("workspace {workspace_id} is no longer tracked"))?;
+        let demotion_generation = registry.demotion_generation();
         let round = self.source.begin_round(ctx.child()).await?;
+        registry.clear_provider_demotions(&round.recovered_providers(), demotion_generation);
         self.register_workspace(
             ctx,
             registry,
@@ -385,7 +399,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         let workspace = registry
             .workspace(workspace_id)
             .ok_or_else(|| anyhow::anyhow!("workspace {workspace_id} is not tracked"))?;
+        let demotion_generation = registry.demotion_generation();
         let round = self.source.begin_round(ctx.child()).await?;
+        registry.clear_provider_demotions(&round.recovered_providers(), demotion_generation);
         self.register_workspace(
             ctx,
             registry,
@@ -608,9 +624,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 }
             };
             self.pending_deregistrations.acknowledge(&runtime_ids);
+            let rejected_revived: BTreeSet<String> = delta.revived.iter().cloned().collect();
+            let accepted_runtime_ids: Vec<String> = runtime_ids
+                .into_iter()
+                .filter(|runtime_id| !rejected_revived.contains(runtime_id))
+                .collect();
             registry.record_builtin_versions(&workspace.id, &payload.runtimes);
             round.registration_applied(&workspace.id);
-            (runtime_ids, repos, settings, delta)
+            (accepted_runtime_ids, repos, settings, delta)
         };
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
@@ -740,11 +761,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 
     async fn flush_pending_deregistrations(&self, ctx: &Ctx) -> anyhow::Result<()> {
         let _flush = self.deregistration_flush.lock().await;
-        let runtime_ids = self.pending_deregistrations.snapshot();
+        let (runtime_ids, reasons) = self.pending_deregistrations.snapshot_with_reasons();
         if runtime_ids.is_empty() {
             return Ok(());
         }
-        let reasons = self.pending_deregistrations.reasons(&runtime_ids);
         self.client.deregister(ctx, &runtime_ids, reasons).await?;
         self.pending_deregistrations.acknowledge(&runtime_ids);
         Ok(())
@@ -797,6 +817,25 @@ mod tests {
         );
 
         pending.queue(&["runtime-3".to_string()]);
+        let reason = RuntimeOfflineReason {
+            code: "not_executable".to_string(),
+            detail: "exec format error".to_string(),
+            repair: None,
+        };
+        pending.queue_with_reasons(
+            &["runtime-3".to_string()],
+            HashMap::from([("runtime-3".to_string(), reason.clone())]),
+        );
+        let (snapshot, reasons) = pending.snapshot_with_reasons();
+        assert_eq!(
+            snapshot,
+            vec![
+                "runtime-1".to_string(),
+                "runtime-2".to_string(),
+                "runtime-3".to_string(),
+            ]
+        );
+        assert_eq!(reasons.get("runtime-3"), Some(&reason));
         pending.acknowledge(&first);
         assert_eq!(pending.snapshot(), vec!["runtime-3".to_string()]);
     }
