@@ -84,6 +84,9 @@ pub trait AttachmentStorage: Send + Sync {
     }
     fn key_from_url(&self, raw: &str) -> Option<String>;
     fn object_url(&self, key: &str) -> String;
+    fn has_public_base_url(&self) -> bool {
+        false
+    }
     fn is_local(&self) -> bool {
         false
     }
@@ -288,6 +291,9 @@ impl AttachmentStorage for LocalStorage {
     }
     fn object_url(&self, key: &str) -> String {
         format!("{}/uploads/{key}", self.base_url)
+    }
+    fn has_public_base_url(&self) -> bool {
+        !self.base_url.is_empty()
     }
     fn is_local(&self) -> bool {
         true
@@ -1208,6 +1214,11 @@ impl AttachmentStorage for S3Storage {
                 .map(|u| u.to_string())
                 .unwrap_or_default()
         }
+    }
+    fn has_public_base_url(&self) -> bool {
+        self.cdn_domain
+            .as_deref()
+            .is_some_and(|domain| !domain.trim().is_empty())
     }
 }
 

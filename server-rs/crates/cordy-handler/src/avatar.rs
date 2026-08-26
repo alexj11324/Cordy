@@ -44,13 +44,13 @@ fn key_from_served_url(raw: &str) -> Option<String> {
     (!key.is_empty() && signature_valid(key, signature)).then(|| key.to_string())
 }
 
-fn served_url(key: &str) -> String {
+fn served_url(state: &HandlerState, key: &str) -> String {
     let path = format!("/api/avatars/{}/{key}", sign_key(key));
-    let base = std::env::var("CORDY_PUBLIC_URL")
-        .unwrap_or_default()
+    let base = state
+        .attachment_download
+        .public_url
         .trim()
-        .trim_end_matches('/')
-        .to_string();
+        .trim_end_matches('/');
     if base.is_empty() {
         path
     } else {
@@ -66,7 +66,7 @@ pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
         return raw.to_string();
     };
     if let Some(key) = key_from_served_url(raw) {
-        return served_url(&key);
+        return served_url(state, &key);
     }
     let Some(key) = storage.key_from_url(raw) else {
         return raw.to_string();
@@ -74,7 +74,37 @@ pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
     if storage.object_url(&key) != raw || content_type(&key).is_none() || storage.is_local() {
         return raw.to_string();
     }
-    served_url(&key)
+    // Match Go's avatarObjectLoadsUnauthenticated: an owned object on a
+    // configured public CDN should keep its durable URL unless CloudFront
+    // signing makes that unsigned URL private again.
+    if storage.has_public_base_url()
+        && state.attachment_download.cloudfront_signer.is_none()
+        && durable_public_url(raw)
+    {
+        return raw.to_string();
+    }
+    served_url(state, &key)
+}
+
+fn durable_public_url(raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none_or(|host| host.is_empty())
+    {
+        return false;
+    }
+    let expiring_query_keys = [
+        "Signature",
+        "X-Amz-Signature",
+        "Key-Pair-Id",
+        "Expires",
+        "X-Amz-Expires",
+    ];
+    !url.query_pairs().any(|(key, value)| {
+        !value.is_empty() && expiring_query_keys.iter().any(|candidate| key == *candidate)
+    })
 }
 
 /// Normalizes and validates a client-supplied avatar URL before persistence.
@@ -242,5 +272,38 @@ mod tests {
     #[test]
     fn forged_served_urls_are_not_normalized() {
         assert!(key_from_served_url("/api/avatars/not-valid/users/u/avatar.png").is_none());
+    }
+
+    #[test]
+    fn durable_public_url_rejects_expiring_query_parameters() {
+        assert!(durable_public_url("https://cdn.example.com/avatar.png"));
+        assert!(durable_public_url("https://cdn.example.com/avatar.png?cache=1"));
+        assert!(durable_public_url("https://cdn.example.com/avatar.png?Signature="));
+        for query in [
+            "Signature=abc",
+            "X-Amz-Signature=abc",
+            "Key-Pair-Id=abc",
+            "Expires=123",
+            "X-Amz-Expires=123",
+        ] {
+            assert!(
+                !durable_public_url(&format!("https://cdn.example.com/avatar.png?{query}")),
+                "{query}"
+            );
+        }
+        assert!(!durable_public_url("/uploads/avatar.png"));
+        assert!(!durable_public_url("data:image/png;base64,abc"));
+    }
+
+    #[tokio::test]
+    async fn served_urls_use_loaded_public_url() {
+        let mut state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        state.attachment_download.public_url = "https://config.example/".into();
+        let url = served_url(&state, "users/u/avatar.png");
+        assert!(url.starts_with("https://config.example/api/avatars/"));
     }
 }
