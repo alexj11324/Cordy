@@ -37,6 +37,7 @@ use cordy_protocol::{
 use cordy_service::issue_status as issue_status_svc;
 use cordy_service::plugin::PluginService;
 use cordy_service::task_service::TaskService;
+use cordy_util::text::{sanitize_json_for_postgres, sanitize_text_for_postgres as sanitize};
 use http_body_util::BodyExt as _;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -2549,16 +2550,6 @@ struct TaskCompleteRequest {
     retired_session_id: String,
 }
 
-fn sanitize(s: &str) -> String {
-    {
-        let mut out = s.to_string();
-        if s.contains('\0') {
-            out = s.replace('\0', "");
-        }
-        out
-    }
-}
-
 /// POST /api/daemon/tasks/{taskId}/complete. A context-exhaustion notice in the
 /// output is re-routed to the failure path so a run that ran out of context is
 /// recorded as failed rather than published as a clean success (GH #6402).
@@ -4035,15 +4026,15 @@ async fn report_local_skill_import_result(
             let path = file.get("path").and_then(Value::as_str).unwrap_or("");
             validate_file_path(path).then(|| {
                 (
-                    sanitize_null_bytes(path),
-                    sanitize_null_bytes(file.get("content").and_then(Value::as_str).unwrap_or("")),
+                    sanitize(path),
+                    sanitize(file.get("content").and_then(Value::as_str).unwrap_or("")),
                 )
             })
         })
         .collect();
-    let sanitized_name = sanitize_null_bytes(&name);
-    let sanitized_description = sanitize_null_bytes(&description);
-    let sanitized_content = sanitize_null_bytes(&content);
+    let sanitized_name = sanitize(&name);
+    let sanitized_description = sanitize(&description);
+    let sanitized_content = sanitize(&content);
     let is_overwrite = existing.action == "overwrite";
 
     // Create path: detect a same-name conflict before writing.
@@ -4300,33 +4291,12 @@ async fn report_local_skill_import_result(
     Json(json!({ "status": "ok" })).into_response()
 }
 
-/// Go sanitizeNullBytes → util.SanitizeTextForPostgres.
-fn sanitize_null_bytes(s: &str) -> String {
-    s.replace('\0', "")
-}
-
 fn is_unique_violation(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<sqlx::Error>()
         .and_then(|error| error.as_database_error())
         .and_then(|error| error.code())
         .is_some_and(|code| code == "23505")
-}
-
-fn sanitize_json_for_postgres(value: Value) -> Value {
-    match value {
-        Value::String(value) => Value::String(sanitize_null_bytes(&value)),
-        Value::Array(values) => {
-            Value::Array(values.into_iter().map(sanitize_json_for_postgres).collect())
-        }
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (sanitize_null_bytes(&key), sanitize_json_for_postgres(value)))
-                .collect(),
-        ),
-        other => other,
-    }
 }
 
 /// Go validateFilePath: rejects absolute paths and `..` escapes so a daemon

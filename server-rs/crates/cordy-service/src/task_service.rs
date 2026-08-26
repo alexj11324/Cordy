@@ -2885,15 +2885,6 @@ pub(crate) fn overlay_value_or_null(v: &Option<serde_json::Value>) -> serde_json
     v.clone().unwrap_or(serde_json::Value::Null)
 }
 
-/// Port of util.SanitizeTextForPostgres: strips NULs and replaces invalid
-/// UTF-8 so a poisoned string cannot roll back the write that carries it.
-pub(crate) fn sanitize_text_for_postgres(s: &str) -> String {
-    if !s.contains('\0') {
-        return s.to_string();
-    }
-    s.replace('\0', "")
-}
-
 // --- Slice 3: cancellation + claim (Go lines ~2187–3694) ----------------------
 
 /// What the caller knows about the client that asked for the cancellation.
@@ -3198,8 +3189,8 @@ impl TaskService {
     ) -> Result<CancelTaskResult, TaskServiceError> {
         // A NUL in either field rolls the cancellation back and leaves the task
         // running — the same wedge as GH #7098 on the fail/complete paths.
-        opts.error_message = sanitize_text_for_postgres(&opts.error_message);
-        opts.failure_reason = sanitize_text_for_postgres(&opts.failure_reason);
+        opts.error_message = cordy_util::text::sanitize_text_for_postgres(&opts.error_message);
+        opts.failure_reason = cordy_util::text::sanitize_text_for_postgres(&opts.failure_reason);
 
         if opts.user_initiated
             && (!opts.error_message.is_empty() || !opts.failure_reason.is_empty())

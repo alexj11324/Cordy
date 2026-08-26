@@ -28,6 +28,7 @@ use cordy_db::queries::chat::{
 };
 use cordy_db::queries::comment::get_comment;
 use cordy_db::queries::issue::{get_issue, update_issue_status};
+use cordy_util::text::sanitize_text_for_postgres;
 
 use crate::chat_quick_actions::{split_chat_quick_actions, ChatQuickActionsOrigin};
 use crate::issue_status;
@@ -40,8 +41,8 @@ use crate::task_helpers::{
 };
 use crate::task_service::{
     chat_input_owner_id, create_assistant_chat_message_typed, downcast_sqlx, opt_str,
-    overlay_value_or_null, sanitize_text_for_postgres, RuntimeMcpOverlayData, TaskService,
-    TaskServiceError, ERR_RERUN_INVOKE_NOT_ALLOWED,
+    overlay_value_or_null, RuntimeMcpOverlayData, TaskService, TaskServiceError,
+    ERR_RERUN_INVOKE_NOT_ALLOWED,
 };
 
 /// The non-empty English body stored on a no_response assistant row. New
