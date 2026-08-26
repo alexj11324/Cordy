@@ -429,6 +429,26 @@ impl RuntimeRegistry {
         false
     }
 
+    /// Returns whether any tracked workspace lacks one of the currently
+    /// available built-in providers. Discovery uses this provider-only check
+    /// before starting a version probe; version lag is checked later against
+    /// the accepted per-workspace version records.
+    pub fn any_workspace_missing_builtin(&self, providers: &BTreeSet<String>) -> bool {
+        if providers.is_empty() {
+            return false;
+        }
+        let state = self.state.read().unwrap();
+        state.workspaces.values().any(|workspace| {
+            providers.iter().any(|provider| {
+                !workspace.runtime_ids.iter().any(|runtime_id| {
+                    state.runtimes.get(runtime_id).is_some_and(|runtime| {
+                        runtime.profile_id.is_empty() && runtime.provider == *provider
+                    })
+                })
+            })
+        })
+    }
+
     /// Records only the built-in entries carried by a successful register
     /// call. Providers absent from the payload are left untouched: a failed
     /// probe is not an acknowledgement that the server changed that row.
@@ -954,6 +974,39 @@ mod tests {
         registry.record_builtin_versions("ws-1", &upgraded_payload);
         assert!(!registry.workspace_needs_builtin_refresh("ws-1", &upgraded_payload));
         assert!(registry.workspace_needs_builtin_refresh("ws-2", &upgraded_payload));
+    }
+
+    #[test]
+    fn availability_scan_ignores_profiles_and_requires_each_workspace() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        let mut profile = runtime("profile-1", "claude");
+        profile.profile_id = "custom-1".to_string();
+        registry
+            .apply_registration("ws-1", "One", vec![runtime("codex-1", "codex"), profile])
+            .unwrap();
+        registry
+            .apply_registration("ws-2", "Two", vec![runtime("codex-2", "codex")])
+            .unwrap();
+
+        let available = BTreeSet::from(["claude".to_string(), "codex".to_string()]);
+        assert!(registry.any_workspace_missing_builtin(&available));
+
+        registry
+            .apply_registration(
+                "ws-1",
+                "One",
+                vec![runtime("codex-3", "codex"), runtime("claude-1", "claude")],
+            )
+            .unwrap();
+        registry
+            .apply_registration(
+                "ws-2",
+                "Two",
+                vec![runtime("codex-4", "codex"), runtime("claude-2", "claude")],
+            )
+            .unwrap();
+        assert!(!registry.any_workspace_missing_builtin(&available));
     }
 
     #[test]

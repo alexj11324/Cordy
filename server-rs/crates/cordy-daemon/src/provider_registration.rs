@@ -95,6 +95,30 @@ pub struct ProfileResolutionError {
 /// registration, while built-in refresh preserves the current runtime set.
 #[async_trait::async_trait]
 pub trait ProviderCatalog: Send + Sync + 'static {
+    /// Cheap machine-level availability discovery used by the periodic
+    /// discovery ticker. The default keeps custom catalogs source-compatible,
+    /// while the production catalog overrides it so a steady-state tick does
+    /// not execute every provider's `--version` command.
+    async fn probe_available(&self, ctx: Ctx) -> anyhow::Result<BTreeMap<String, AgentEntry>> {
+        Ok(self
+            .probe_builtins(ctx, ProviderProbeReason::Discovery)
+            .await?
+            .available)
+    }
+
+    /// Runs the version/capability half against an availability snapshot
+    /// already obtained by the caller. Production uses this after the cheap
+    /// discovery pass so a convergence round does not perform a second PATH
+    /// lookup and probes the same provider set that was observed by discovery.
+    async fn probe_builtins_from_available(
+        &self,
+        ctx: Ctx,
+        reason: ProviderProbeReason,
+        _available: BTreeMap<String, AgentEntry>,
+    ) -> anyhow::Result<BuiltinProbeResult> {
+        self.probe_builtins(ctx, reason).await
+    }
+
     async fn probe_builtins(
         &self,
         ctx: Ctx,
@@ -266,6 +290,94 @@ impl LocalProviderCatalog {
             version,
         })
     }
+
+    async fn probe_builtins_for_agents(
+        &self,
+        ctx: Ctx,
+        agents: BTreeMap<String, AgentEntry>,
+    ) -> anyhow::Result<BuiltinProbeResult> {
+        let available = agents.clone();
+        let mut detected = Vec::new();
+        let mut skipped = BTreeMap::new();
+        let mut demotable = BTreeMap::new();
+        let mut not_executable = BTreeMap::new();
+        for (provider, entry) in agents {
+            if !Self::supports_backend(&provider) {
+                let reason = "provider CLI discovered without a Rust backend";
+                tracing::debug!(%provider, reason, "withholding provider registration");
+                skipped.insert(provider, reason.to_string());
+                continue;
+            }
+            let Some(display_name) = Self::display_name(&provider) else {
+                let reason = "provider CLI discovered without catalog metadata";
+                tracing::warn!(%provider, reason, "withholding provider registration");
+                skipped.insert(provider, reason.to_string());
+                continue;
+            };
+            let fixed_args = Self::fixed_args(&provider);
+            let version = match self
+                .probe_version_with_retry(&ctx.child(), &entry.path, &fixed_args)
+                .await
+            {
+                Ok(version) => version,
+                Err(VersionProbeFailure::Unavailable(error)) => {
+                    let reason = format!("provider version probe failed: {error}");
+                    tracing::debug!(%provider, error, "withholding provider registration");
+                    skipped.insert(provider, reason);
+                    continue;
+                }
+                Err(VersionProbeFailure::NotExecutable(error)) => {
+                    let reason = format!("agent CLI is not executable: {error}");
+                    tracing::warn!(%provider, error, "withholding provider registration");
+                    skipped.insert(provider.clone(), reason.clone());
+                    not_executable.insert(
+                        provider,
+                        RuntimeVerdict {
+                            reason: reason.clone(),
+                            offline: Some(RuntimeOfflineReason {
+                                code: RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE.to_string(),
+                                detail: reason,
+                                repair: exec_format_repair_for(&entry.path),
+                            }),
+                        },
+                    );
+                    continue;
+                }
+            };
+            if let Err(error) = check_provider_minimum(&provider, &version) {
+                let reason =
+                    format!("provider CLI version {version:?} is below its minimum: {error}");
+                tracing::warn!(%provider, %version, %error, "withholding provider registration");
+                skipped.insert(provider.clone(), reason.clone());
+                if matches!(error, cordy_agent::version::VersionError::TooOld) {
+                    demotable.insert(
+                        provider,
+                        RuntimeVerdict {
+                            reason,
+                            offline: None,
+                        },
+                    );
+                }
+                continue;
+            }
+            detected.push(DetectedProviderRuntime {
+                provider,
+                display_name: display_name.to_string(),
+                version,
+                command_path: entry.path.clone(),
+                command: entry.command,
+                discovery_path: entry.path,
+                fixed_args,
+            });
+        }
+        Ok(BuiltinProbeResult {
+            available,
+            detected,
+            skipped,
+            demotable,
+            not_executable,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -354,93 +466,26 @@ fn powershell_quote(value: &str) -> String {
 
 #[async_trait::async_trait]
 impl ProviderCatalog for LocalProviderCatalog {
+    async fn probe_available(&self, _ctx: Ctx) -> anyhow::Result<BTreeMap<String, AgentEntry>> {
+        Ok(crate::agents_probe::probe_agent_clis())
+    }
+
     async fn probe_builtins(
         &self,
         ctx: Ctx,
         _reason: ProviderProbeReason,
     ) -> anyhow::Result<BuiltinProbeResult> {
-        let agents = crate::agents_probe::probe_agent_clis();
-        let available = agents.clone();
-        let mut detected = Vec::new();
-        let mut skipped = BTreeMap::new();
-        let mut demotable = BTreeMap::new();
-        let mut not_executable = BTreeMap::new();
-        for (provider, entry) in agents {
-            if !Self::supports_backend(&provider) {
-                let reason = "provider CLI discovered without a Rust backend";
-                tracing::debug!(%provider, reason, "withholding provider registration");
-                skipped.insert(provider, reason.to_string());
-                continue;
-            }
-            let Some(display_name) = Self::display_name(&provider) else {
-                let reason = "provider CLI discovered without catalog metadata";
-                tracing::warn!(%provider, reason, "withholding provider registration");
-                skipped.insert(provider, reason.to_string());
-                continue;
-            };
-            let fixed_args = Self::fixed_args(&provider);
-            let version = match self
-                .probe_version_with_retry(&ctx.child(), &entry.path, &fixed_args)
-                .await
-            {
-                Ok(version) => version,
-                Err(VersionProbeFailure::Unavailable(error)) => {
-                    let reason = format!("provider version probe failed: {error}");
-                    tracing::debug!(%provider, error, "withholding provider registration");
-                    skipped.insert(provider, reason);
-                    continue;
-                }
-                Err(VersionProbeFailure::NotExecutable(error)) => {
-                    let reason = format!("agent CLI is not executable: {error}");
-                    tracing::warn!(%provider, error, "withholding provider registration");
-                    skipped.insert(provider.clone(), reason.clone());
-                    not_executable.insert(
-                        provider,
-                        RuntimeVerdict {
-                            reason: reason.clone(),
-                            offline: Some(RuntimeOfflineReason {
-                                code: RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE.to_string(),
-                                detail: reason,
-                                repair: exec_format_repair_for(&entry.path),
-                            }),
-                        },
-                    );
-                    continue;
-                }
-            };
-            if let Err(error) = check_provider_minimum(&provider, &version) {
-                let reason =
-                    format!("provider CLI version {version:?} is below its minimum: {error}");
-                tracing::warn!(%provider, %version, %error, "withholding provider registration");
-                skipped.insert(provider.clone(), reason.clone());
-                if matches!(error, cordy_agent::version::VersionError::TooOld) {
-                    demotable.insert(
-                        provider,
-                        RuntimeVerdict {
-                            reason,
-                            offline: None,
-                        },
-                    );
-                }
-                continue;
-            }
-            detected.push(DetectedProviderRuntime {
-                provider,
-                display_name: display_name.to_string(),
-                version,
-                command_path: entry.path.clone(),
-                command: entry.command,
-                discovery_path: entry.path,
-                fixed_args,
-            });
-        }
-        Ok(BuiltinProbeResult {
-            available,
-            detected,
-            skipped,
-            demotable,
-            not_executable,
-        })
+        self.probe_builtins_for_agents(ctx, crate::agents_probe::probe_agent_clis())
+            .await
+    }
+
+    async fn probe_builtins_from_available(
+        &self,
+        ctx: Ctx,
+        _reason: ProviderProbeReason,
+        available: BTreeMap<String, AgentEntry>,
+    ) -> anyhow::Result<BuiltinProbeResult> {
+        self.probe_builtins_for_agents(ctx, available).await
     }
 
     async fn resolve_profile(
@@ -864,13 +909,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
     /// transient PATH/version-probe loss must not make a running provider
     /// disappear from the diagnostic set.
     pub fn health_snapshot(&self) -> (Vec<String>, HashMap<String, String>) {
-        let agents = self
-            .available_agents
-            .lock()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let agents = self.available_agents_snapshot().keys().cloned().collect();
         let skipped = self
             .skipped_agents
             .lock()
@@ -881,12 +920,40 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         (agents, skipped)
     }
 
+    fn available_agents_snapshot(&self) -> BTreeMap<String, AgentEntry> {
+        self.available_agents.lock().unwrap().clone()
+    }
+
+    /// Re-runs only the cheap installed-CLI discovery half of Go's
+    /// `refreshAgentAvailability`. Version probing and registration remain in
+    /// `begin_builtin_refresh` and are entered only when live registry state
+    /// says a workspace is missing a provider.
+    async fn refresh_availability(&self, ctx: Ctx) -> anyhow::Result<bool> {
+        let probed = self.catalog.probe_available(ctx).await?;
+        let mut current = self.available_agents.lock().unwrap();
+        let gained = crate::agents_refresh::gained_providers(&current, &probed);
+        let Some(merged) = crate::agents_refresh::merge_discovered_agents(&current, &probed) else {
+            return Ok(false);
+        };
+        *current = merged;
+        tracing::info!(providers = ?gained, "agent CLI discovered after startup");
+        Ok(true)
+    }
+
     async fn probe(
         &self,
         ctx: Ctx,
         reason: ProviderProbeReason,
+        available: Option<BTreeMap<String, AgentEntry>>,
     ) -> anyhow::Result<BuiltinSnapshot> {
-        let mut probe = self.catalog.probe_builtins(ctx, reason).await?;
+        let mut probe = match available {
+            Some(available) => {
+                self.catalog
+                    .probe_builtins_from_available(ctx, reason, available)
+                    .await?
+            }
+            None => self.catalog.probe_builtins(ctx, reason).await?,
+        };
         let gained = {
             let mut current = self.available_agents.lock().unwrap();
             if let Some(merged) =
@@ -1149,7 +1216,9 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
 #[async_trait::async_trait]
 impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSource<C> {
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>> {
-        let snapshot = self.probe(ctx, ProviderProbeReason::Registration).await?;
+        let snapshot = self
+            .probe(ctx, ProviderProbeReason::Registration, None)
+            .await?;
         Ok(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
@@ -1171,7 +1240,9 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
         ctx: Ctx,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>> {
-        let snapshot = self.probe(ctx, reason.into()).await?;
+        let snapshot = self
+            .probe(ctx, reason.into(), Some(self.available_agents_snapshot()))
+            .await?;
         Ok(Some(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
@@ -1186,6 +1257,10 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             include_profiles: false,
             pending_profiles: Mutex::new(HashMap::new()),
         })))
+    }
+
+    async fn refresh_builtin_availability(&self, ctx: Ctx) -> anyhow::Result<Option<bool>> {
+        Ok(Some(self.refresh_availability(ctx).await?))
     }
 
     fn workspace_removed(&self, workspace_id: &str) {
@@ -1277,6 +1352,8 @@ mod tests {
     #[derive(Default)]
     struct FakeCatalog {
         probes: Mutex<Vec<BuiltinProbeResult>>,
+        availability: Mutex<Vec<BTreeMap<String, AgentEntry>>>,
+        from_available_calls: Mutex<Vec<BTreeMap<String, AgentEntry>>>,
     }
 
     fn profile(
@@ -1315,11 +1392,35 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ProviderCatalog for FakeCatalog {
+        async fn probe_available(&self, _ctx: Ctx) -> anyhow::Result<BTreeMap<String, AgentEntry>> {
+            let mut probes = self.availability.lock().unwrap();
+            if probes.is_empty() {
+                Err(anyhow::anyhow!("no fake availability result"))
+            } else {
+                Ok(probes.remove(0))
+            }
+        }
+
         async fn probe_builtins(
             &self,
             _ctx: Ctx,
             _reason: ProviderProbeReason,
         ) -> anyhow::Result<BuiltinProbeResult> {
+            let mut probes = self.probes.lock().unwrap();
+            if probes.is_empty() {
+                Err(anyhow::anyhow!("no fake probe result"))
+            } else {
+                Ok(probes.remove(0))
+            }
+        }
+
+        async fn probe_builtins_from_available(
+            &self,
+            _ctx: Ctx,
+            _reason: ProviderProbeReason,
+            available: BTreeMap<String, AgentEntry>,
+        ) -> anyhow::Result<BuiltinProbeResult> {
+            self.from_available_calls.lock().unwrap().push(available);
             let mut probes = self.probes.lock().unwrap();
             if probes.is_empty() {
                 Err(anyhow::anyhow!("no fake probe result"))
@@ -1374,6 +1475,8 @@ mod tests {
                     ..BuiltinProbeResult::default()
                 },
             ]),
+            availability: Mutex::new(Vec::new()),
+            from_available_calls: Mutex::new(Vec::new()),
         });
         let source = ProviderRegistrationSource::new(
             Arc::new(Config::default()),
@@ -1404,6 +1507,44 @@ mod tests {
             skipped.get("claude").map(String::as_str),
             Some("provider version probe failed")
         );
+    }
+
+    #[tokio::test]
+    async fn builtin_probe_reuses_the_latest_availability_snapshot() {
+        let available = BTreeMap::from([(
+            "claude".to_string(),
+            AgentEntry {
+                path: "/bin/claude".to_string(),
+                ..AgentEntry::default()
+            },
+        )]);
+        let catalog = Arc::new(FakeCatalog {
+            probes: Mutex::new(vec![BuiltinProbeResult {
+                available: available.clone(),
+                ..BuiltinProbeResult::default()
+            }]),
+            availability: Mutex::new(vec![available.clone()]),
+            from_available_calls: Mutex::new(Vec::new()),
+        });
+        let source = ProviderRegistrationSource::new(
+            Arc::new(Config::default()),
+            Arc::new(Client::new("http://127.0.0.1:1")),
+            Arc::clone(&catalog),
+            Arc::new(RuntimeLaunchRegistry::default()),
+        );
+
+        assert!(source.refresh_availability(Ctx::new()).await.unwrap());
+        let _round = source
+            .begin_builtin_refresh(Ctx::new(), BuiltinRefreshReason::Discovery)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            *catalog.from_available_calls.lock().unwrap(),
+            vec![available]
+        );
+        assert_eq!(source.health_snapshot().0, vec!["claude".to_string()]);
     }
 
     #[tokio::test]
@@ -1461,6 +1602,8 @@ mod tests {
                     ..BuiltinProbeResult::default()
                 },
             ]),
+            availability: Mutex::new(Vec::new()),
+            from_available_calls: Mutex::new(Vec::new()),
         });
         let source = ProviderRegistrationSource::new(
             Arc::new(Config::default()),
