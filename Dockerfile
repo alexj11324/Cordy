@@ -13,16 +13,16 @@ RUN cd server && go mod download
 COPY server/ ./server/
 
 # Build binaries that still have Go-only consumers during the staged
-# migration. The HTTP server and migration runner are built by the Rust stage
-# below.
+# migration. Keep the old CLI under an explicit name while the default
+# `cordy` binary is supplied by the Rust stage below.
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -o bin/cordy ./cmd/cordy
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -o bin/go-cordy ./cmd/cordy
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_task_usage_hourly ./cmd/backfill_task_usage_hourly
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_codex_usage_cache ./cmd/backfill_codex_usage_cache
 
-# --- Rust HTTP server and migration runner ---
+# --- Rust HTTP server, migration runner, and CLI ---
 FROM rust:1-alpine AS rust-server-builder
 
 RUN apk add --no-cache build-base
@@ -54,7 +54,7 @@ RUN CORDY_BUILD_VERSION="${VERSION}" \
     CORDY_BUILD_DATE="${DATE}" \
     CORDY_BUILD_GO_VERSION="${GO_VERSION}" \
     CORDY_GIT_COMMIT="${COMMIT}" \
-    cargo build --release --locked -p cordy-server -p cordy-migrate
+    cargo build --release --locked -p cordy-server -p cordy-migrate -p cordy-cli
 
 # --- Runtime stage ---
 FROM alpine:3.21
@@ -65,7 +65,8 @@ WORKDIR /app
 
 COPY --from=rust-server-builder /src/server-rs/target/release/cordy-server server
 COPY --from=rust-server-builder /src/server-rs/target/release/cordy-migrate migrate
-COPY --from=builder /src/server/bin/cordy .
+COPY --from=rust-server-builder /src/server-rs/target/release/cordy-cli cordy
+COPY --from=builder /src/server/bin/go-cordy .
 COPY --from=builder /src/server/bin/backfill_task_usage_hourly .
 COPY --from=builder /src/server/bin/backfill_codex_usage_cache .
 COPY server/migrations/ ./migrations/
