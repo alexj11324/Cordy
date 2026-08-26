@@ -125,12 +125,22 @@ impl ProductionProviderAdapter {
             Ok(launch) => launch,
             Err(error) => return failed(error, None),
         };
+        let client = runtime.client();
+        let prepare_lease = PrepareLeaseExtender::start(
+            ctx.clone(),
+            Arc::clone(&client),
+            task.runtime_id.clone(),
+            task.id.clone(),
+        );
         let default_model = self
             .config
             .agents
             .get(&target.provider)
             .map(|entry| entry.model.clone())
             .unwrap_or_default();
+        runtime
+            .resolve_task_model_selection(&ctx, &mut task, &target, &launch, &default_model)
+            .await;
         let mut inputs = ProviderExecutionInputs {
             slot,
             temp_dir: temp_dir.clone(),
@@ -167,13 +177,6 @@ impl ProductionProviderAdapter {
         };
         let requested_session_id = plan.resume_session_id().to_string();
 
-        let client = runtime.client();
-        let prepare_lease = PrepareLeaseExtender::start(
-            ctx.clone(),
-            Arc::clone(&client),
-            task.runtime_id.clone(),
-            task.id.clone(),
-        );
         let path_guard = match self
             .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
             .await

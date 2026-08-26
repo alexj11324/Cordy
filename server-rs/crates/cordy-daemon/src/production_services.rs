@@ -23,6 +23,7 @@ use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
 use crate::activity::DaemonActivity;
 use crate::agents_refresh::{AGENT_DISCOVERY_INTERVAL, AGENT_VERSION_REFRESH_INTERVAL};
@@ -98,6 +99,7 @@ pub struct ProviderRuntimeContext {
     activity: Arc<DaemonActivity>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
+    model_cache: Arc<CatalogCache>,
 }
 
 impl ProviderRuntimeContext {
@@ -108,12 +110,31 @@ impl ProviderRuntimeContext {
         repo_state: Arc<DaemonRepoState>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
     ) -> Self {
+        Self::new_with_model_cache(
+            client,
+            launch_registry,
+            activity,
+            repo_state,
+            checkout_registry,
+            Arc::new(CatalogCache::default()),
+        )
+    }
+
+    pub(crate) fn new_with_model_cache(
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
+        activity: Arc<DaemonActivity>,
+        repo_state: Arc<DaemonRepoState>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+        model_cache: Arc<CatalogCache>,
+    ) -> Self {
         Self {
             client,
             launch_registry,
             activity,
             repo_state,
             checkout_registry,
+            model_cache,
         }
     }
 
@@ -141,6 +162,104 @@ impl ProviderRuntimeContext {
         self.launch_registry
             .resolve_for_launch(ctx, workspace_id, target)
             .await
+    }
+
+    /// Discovers the catalog for the exact accepted launch used by a task.
+    /// ACP model-list actions and task selection share this cache and provider
+    /// dispatch so a custom profile cannot validate against another runtime's
+    /// executable or fixed prefix.
+    pub(crate) async fn discover_model_catalog(
+        &self,
+        ctx: &Ctx,
+        workspace_id: &str,
+        runtime_id: &str,
+        target: &RuntimeExecutionTarget,
+        launch: &crate::provider_registration::RuntimeLaunchSpec,
+    ) -> cordy_agent::Catalog {
+        let command = RuntimeCommand::new(launch.command_path.clone(), launch.fixed_args.clone());
+        let runtime_scope = format!(
+            "{}\0workspace={workspace_id}\0runtime={runtime_id}\0profile={}",
+            target.provider, target.profile_id
+        );
+        discover_model_catalog_for_runtime(
+            target,
+            command,
+            &runtime_scope,
+            &self.model_cache,
+            ctx.token().clone(),
+        )
+        .await
+    }
+
+    /// Applies the Go daemon's task model-selection contract to the claimed
+    /// task before execution-plan construction. Discovery is at most once:
+    /// qualification and both capability checks consume this one catalog.
+    /// Catalog failures remain fail-open so a transient CLI/account problem
+    /// cannot prevent a task from reaching the provider's own resolver.
+    pub(crate) async fn resolve_task_model_selection(
+        &self,
+        ctx: &Ctx,
+        task: &mut Task,
+        target: &RuntimeExecutionTarget,
+        launch: &crate::provider_registration::RuntimeLaunchSpec,
+        default_model: &str,
+    ) {
+        let Some(agent) = task.agent.as_ref() else {
+            return;
+        };
+        let capability_checks_pending =
+            !agent.thinking_level.is_empty() || !agent.service_tier.is_empty();
+        let effective_model = if agent.model.is_empty() {
+            default_model.to_string()
+        } else {
+            agent.model.clone()
+        };
+        let model_requires_catalog = !effective_model.is_empty()
+            && cordy_agent::model::model_selector_must_be_provider_qualified(&target.provider);
+        if !capability_checks_pending && !model_requires_catalog {
+            return;
+        }
+
+        let catalog = self
+            .discover_model_catalog(ctx, &task.workspace_id, &task.runtime_id, target, launch)
+            .await;
+        let Some(agent) = task.agent.as_mut() else {
+            return;
+        };
+        let selection = resolve_task_model_selection_from_catalog(
+            &catalog,
+            &target.provider,
+            &effective_model,
+            &agent.thinking_level,
+            &agent.service_tier,
+        );
+        if selection.model_rewritten {
+            tracing::info!(
+                provider = %target.provider,
+                configured_model = %effective_model,
+                model = %selection.model,
+                "model: qualified against the runtime catalog"
+            );
+            agent.model = selection.model.clone();
+        }
+        if !agent.service_tier.is_empty() && selection.service_tier.is_empty() {
+            tracing::warn!(
+                provider = %target.provider,
+                model = %selection.model,
+                service_tier = %agent.service_tier,
+                "service_tier is not valid for this provider/model; skipping injection"
+            );
+        }
+        if !agent.thinking_level.is_empty() && selection.thinking_level.is_empty() {
+            tracing::warn!(
+                provider = %target.provider,
+                model = %selection.model,
+                thinking_level = %agent.thinking_level,
+                "thinking_level is not valid for this provider/model; skipping injection"
+            );
+        }
+        agent.service_tier = selection.service_tier;
+        agent.thinking_level = selection.thinking_level;
     }
 
     /// Builds a backend configuration from the launch identity already
@@ -269,6 +388,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
     ) -> Self {
         let repo_state = Arc::new(DaemonRepoState::new());
         let (repo_warmups, repo_warmup_rx) = mpsc::channel(REPO_WARMUP_QUEUE_CAPACITY);
+        let model_cache = Arc::new(CatalogCache::default());
         Self {
             registration: RuntimeRegistrationService::new(
                 Arc::clone(&config),
@@ -286,7 +406,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             launch_registry,
             repo_warmups,
             repo_warmup_rx: Mutex::new(Some(repo_warmup_rx)),
-            model_cache: Arc::new(CatalogCache::default()),
+            model_cache,
         }
     }
 
@@ -352,232 +472,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 target.provider,
                 target.profile_id
             );
-            let catalog = match target.provider.as_str() {
-                "claude" => ClaudeBackend::new(ClaudeConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "copilot" => CopilotBackend::new(CopilotConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "codex" => CodexBackend::new(CodexConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "cursor" => CursorBackend::new(CursorConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "hermes" => HermesBackend::new(HermesConfig {
-                    command,
-                    env: BTreeMap::new(),
-                    builtin_runtime: target.profile_id.is_empty(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "kimi" => KimiBackend::new(KimiConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "kiro" => KiroBackend::new(KiroConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "reasonix" => ReasonixBackend::new(ReasonixConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "grok" => GrokBackend::new(GrokConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "qoder" | "qoderclicn" => {
-                    let default_command = if target.provider == "qoderclicn" {
-                        "qoderclicn"
-                    } else {
-                        "qodercli"
-                    };
-                    QoderBackend::new(QoderConfig {
-                        command,
-                        env: BTreeMap::new(),
-                        default_command: default_command.to_string(),
-                        provider: target.provider.clone(),
-                        ..QoderConfig::default()
-                    })
-                    .discover_models_for_runtime(
-                        &runtime_scope,
-                        &self.model_cache,
-                        ctx.token().clone(),
-                        ACP_MODEL_DISCOVERY_TIMEOUT,
-                    )
-                    .await
-                }
-                "traecli" => TraecliBackend::new(TraecliConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "antigravity" => AntigravityBackend::new(AntigravityConfig {
-                    command,
-                    env: BTreeMap::new(),
-                    catalog_cache: Arc::clone(&self.model_cache),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "dsh" => DshBackend::new(DshConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "deveco" => DevecoBackend::new(DevecoConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "opencode" => OpencodeBackend::new(OpencodeConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "openclaw" => OpenclawBackend::new(OpenclawConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    OPENCLAW_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "pi" | "omp" => PiBackend::new(PiConfig {
-                    command,
-                    env: BTreeMap::new(),
-                    default_executable: target.provider.clone(),
-                    provider_label: target.provider.clone(),
-                })
-                .discover_models_for_runtime(
-                    &target.provider,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                "qwen" | "qwenpaw" | "mcode" => cordy_agent::Catalog::default(),
-                "dim" => DimBackend::new(DimConfig {
-                    command,
-                    env: BTreeMap::new(),
-                })
-                .discover_models_for_runtime(
-                    &runtime_scope,
-                    &self.model_cache,
-                    ctx.token().clone(),
-                    ACP_MODEL_DISCOVERY_TIMEOUT,
-                )
-                .await,
-                _ => unreachable!("provider filtered above"),
-            };
+            let catalog = discover_model_catalog_for_runtime(
+                &target,
+                command,
+                &runtime_scope,
+                &self.model_cache,
+                ctx.token().clone(),
+            )
+            .await;
             Ok::<_, anyhow::Error>(model_list_completed_payload(&target.provider, catalog))
         }
         .await;
@@ -916,6 +818,290 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedTaskModelSelection {
+    model: String,
+    model_rewritten: bool,
+    thinking_level: String,
+    service_tier: String,
+}
+
+fn resolve_task_model_selection_from_catalog(
+    catalog: &cordy_agent::Catalog,
+    provider: &str,
+    configured_model: &str,
+    thinking_level: &str,
+    service_tier: &str,
+) -> ResolvedTaskModelSelection {
+    let (qualified_model, model_rewritten) =
+        cordy_agent::model::qualify_model_id(catalog, configured_model);
+    let model = if model_rewritten {
+        qualified_model
+    } else {
+        configured_model.to_string()
+    };
+    let thinking_level = if cordy_agent::model::validate_thinking_level(
+        catalog,
+        provider,
+        &model,
+        thinking_level,
+    ) {
+        thinking_level.to_string()
+    } else {
+        String::new()
+    };
+    let service_tier = if cordy_agent::model::validate_service_tier(
+        catalog,
+        provider,
+        &model,
+        service_tier,
+    ) {
+        service_tier.to_string()
+    } else {
+        String::new()
+    };
+    ResolvedTaskModelSelection {
+        model,
+        model_rewritten,
+        thinking_level,
+        service_tier,
+    }
+}
+
+/// Runs the provider-family-specific model discovery against one accepted
+/// runtime command. Keeping this dispatch in one place makes ACP model-list
+/// responses and pre-task selection observe the same catalog semantics.
+async fn discover_model_catalog_for_runtime(
+    target: &RuntimeExecutionTarget,
+    command: RuntimeCommand,
+    runtime_scope: &str,
+    cache: &Arc<CatalogCache>,
+    cancellation: CancellationToken,
+) -> cordy_agent::Catalog {
+    match target.provider.as_str() {
+        "claude" => ClaudeBackend::new(ClaudeConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "copilot" => CopilotBackend::new(CopilotConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "codex" => CodexBackend::new(CodexConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "cursor" => CursorBackend::new(CursorConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "hermes" => HermesBackend::new(HermesConfig {
+            command,
+            env: BTreeMap::new(),
+            builtin_runtime: target.profile_id.is_empty(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "kimi" => KimiBackend::new(KimiConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "kiro" => KiroBackend::new(KiroConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "reasonix" => ReasonixBackend::new(ReasonixConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "grok" => GrokBackend::new(GrokConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "qoder" | "qoderclicn" => {
+            let default_command = if target.provider == "qoderclicn" {
+                "qoderclicn"
+            } else {
+                "qodercli"
+            };
+            QoderBackend::new(QoderConfig {
+                command,
+                env: BTreeMap::new(),
+                default_command: default_command.to_string(),
+                provider: target.provider.clone(),
+                ..QoderConfig::default()
+            })
+            .discover_models_for_runtime(
+                runtime_scope,
+                cache,
+                cancellation,
+                ACP_MODEL_DISCOVERY_TIMEOUT,
+            )
+            .await
+        }
+        "traecli" => TraecliBackend::new(TraecliConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "antigravity" => AntigravityBackend::new(AntigravityConfig {
+            command,
+            env: BTreeMap::new(),
+            catalog_cache: Arc::clone(cache),
+        })
+        .discover_models_for_runtime(runtime_scope, cancellation, ACP_MODEL_DISCOVERY_TIMEOUT)
+        .await,
+        "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "dsh" => DshBackend::new(DshConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "deveco" => DevecoBackend::new(DevecoConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "opencode" => OpencodeBackend::new(OpencodeConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "openclaw" => OpenclawBackend::new(OpenclawConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            OPENCLAW_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "pi" | "omp" => PiBackend::new(PiConfig {
+            command,
+            env: BTreeMap::new(),
+            default_executable: target.provider.clone(),
+            provider_label: target.provider.clone(),
+        })
+        .discover_models_for_runtime(
+            &target.provider,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        "qwen" | "qwenpaw" | "mcode" => cordy_agent::Catalog::default(),
+        "dim" => DimBackend::new(DimConfig {
+            command,
+            env: BTreeMap::new(),
+        })
+        .discover_models_for_runtime(
+            runtime_scope,
+            cache,
+            cancellation,
+            ACP_MODEL_DISCOVERY_TIMEOUT,
+        )
+        .await,
+        _ => cordy_agent::Catalog::default(),
+    }
+}
+
 fn model_list_completed_payload(provider: &str, catalog: cordy_agent::Catalog) -> Value {
     json!({
         "status": "completed",
@@ -1038,12 +1224,13 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
                 task,
                 target,
                 slot,
-                ProviderRuntimeContext::new(
+                ProviderRuntimeContext::new_with_model_cache(
                     Arc::clone(&self.client),
                     Arc::clone(&self.launch_registry),
                     activity,
                     Arc::clone(&self.repo_state),
                     Arc::clone(&self.checkout_registry),
+                    Arc::clone(&self.model_cache),
                 ),
             )
             .await
@@ -1138,6 +1325,96 @@ fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn task_model_selection_qualifies_before_capability_checks() {
+        let catalog = cordy_agent::Catalog {
+            models: vec![cordy_agent::Model {
+                id: "openai/gpt-5".to_string(),
+                provider: "openai".to_string(),
+                thinking: Some(cordy_agent::ModelThinking {
+                    supported_levels: vec![cordy_agent::ThinkingLevel {
+                        value: "high".to_string(),
+                        ..cordy_agent::ThinkingLevel::default()
+                    }],
+                    ..cordy_agent::ModelThinking::default()
+                }),
+                service_tiers: vec![cordy_agent::ModelServiceTier {
+                    id: "priority".to_string(),
+                    ..cordy_agent::ModelServiceTier::default()
+                }],
+                ..cordy_agent::Model::default()
+            }],
+            fallback: false,
+        };
+
+        let selection = resolve_task_model_selection_from_catalog(
+            &catalog,
+            "codex",
+            "gpt-5",
+            "high",
+            "priority",
+        );
+
+        assert_eq!(selection.model, "openai/gpt-5");
+        assert!(selection.model_rewritten);
+        assert_eq!(selection.thinking_level, "high");
+        assert_eq!(selection.service_tier, "priority");
+    }
+
+    #[test]
+    fn task_model_selection_drops_stale_capabilities_without_blocking_task() {
+        let catalog = cordy_agent::Catalog {
+            models: vec![cordy_agent::Model {
+                id: "gpt-5".to_string(),
+                thinking: Some(cordy_agent::ModelThinking {
+                    supported_levels: vec![cordy_agent::ThinkingLevel {
+                        value: "high".to_string(),
+                        ..cordy_agent::ThinkingLevel::default()
+                    }],
+                    ..cordy_agent::ModelThinking::default()
+                }),
+                ..cordy_agent::Model::default()
+            }],
+            fallback: false,
+        };
+
+        let selection = resolve_task_model_selection_from_catalog(
+            &catalog,
+            "codex",
+            "gpt-5",
+            "xhigh",
+            "priority",
+        );
+
+        assert_eq!(selection.model, "gpt-5");
+        assert!(!selection.model_rewritten);
+        assert!(selection.thinking_level.is_empty());
+        assert!(selection.service_tier.is_empty());
+    }
+
+    #[test]
+    fn fallback_catalog_never_rewrites_the_task_selector() {
+        let catalog = cordy_agent::Catalog {
+            models: vec![cordy_agent::Model {
+                id: "openai/gpt-5".to_string(),
+                provider: "openai".to_string(),
+                ..cordy_agent::Model::default()
+            }],
+            fallback: true,
+        };
+
+        let selection = resolve_task_model_selection_from_catalog(
+            &catalog,
+            "opencode",
+            "gpt-5",
+            "",
+            "",
+        );
+
+        assert_eq!(selection.model, "gpt-5");
+        assert!(!selection.model_rewritten);
+    }
 
     #[test]
     fn workspace_backoff_matches_bootstrap_and_steady_caps() {

@@ -200,6 +200,107 @@ pub fn qualify_model_id(catalog: &Catalog, model: &str) -> (String, bool) {
     )
 }
 
+/// Reports whether a runtime requires the canonical `<provider>/<model>`
+/// selector before it can launch a pinned model.
+///
+/// This is deliberately an execution contract, not a guess based on whether
+/// a catalog happens to contain slashes. Built-in runtime identities inherit
+/// the protocol family's rule; custom profiles keep the provider family they
+/// registered under.
+pub fn model_selector_must_be_provider_qualified(provider: &str) -> bool {
+    matches!(
+        crate::registry::protocol_family(provider).unwrap_or(""),
+        "opencode" | "deveco"
+    )
+}
+
+/// Validates one thinking override against the catalog that the runtime just
+/// advertised. An empty model means the runtime's own default, except for
+/// Codex where the effective model comes from config and therefore cannot be
+/// inferred safely from the catalog.
+pub fn validate_thinking_level(
+    catalog: &Catalog,
+    provider: &str,
+    model: &str,
+    value: &str,
+) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if model.is_empty() && provider == "codex" {
+        return false;
+    }
+
+    let mut target = model_id_for_capability_lookup(provider, model);
+    if target.is_empty() {
+        target = catalog
+            .models
+            .iter()
+            .find(|entry| entry.default)
+            .map(|entry| entry.id.as_str())
+            .unwrap_or_default();
+        if target.is_empty() {
+            return provider == "opencode"
+                && catalog.models.iter().any(|entry| {
+                    entry.thinking.as_ref().is_some_and(|thinking| {
+                        thinking
+                            .supported_levels
+                            .iter()
+                            .any(|level| level.value == value)
+                    })
+                });
+        }
+    }
+
+    catalog.models.iter().any(|entry| {
+        entry.id == target
+            && entry.thinking.as_ref().is_some_and(|thinking| {
+                thinking
+                    .supported_levels
+                    .iter()
+                    .any(|level| level.value == value)
+            })
+    })
+}
+
+/// Validates the Codex service tier advertised for one explicit model.
+/// Other runtimes do not expose a service-tier execution control.
+pub fn validate_service_tier(catalog: &Catalog, provider: &str, model: &str, value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if provider != "codex" || model.is_empty() {
+        return false;
+    }
+    catalog
+        .models
+        .iter()
+        .any(|entry| entry.id == model && entry.service_tiers.iter().any(|tier| tier.id == value))
+}
+
+fn model_id_for_capability_lookup<'a>(provider: &str, model: &'a str) -> &'a str {
+    if provider != "claude" {
+        return model;
+    }
+    let Some(open) = model.rfind('[') else {
+        return model;
+    };
+    let Some(body) = model.get(open + 1..model.len().saturating_sub(1)) else {
+        return model;
+    };
+    if !model.ends_with(']')
+        || body.len() < 2
+        || !matches!(body.as_bytes().last(), Some(b'k' | b'm'))
+        || body.starts_with('0')
+        || !body[..body.len() - 1]
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return model;
+    }
+    &model[..open]
+}
+
 #[derive(Debug, Clone)]
 struct CacheEntry {
     catalog: Catalog,
@@ -318,6 +419,83 @@ mod tests {
             ..catalog
         };
         assert_eq!(qualify_model_id(&fallback, "o3"), ("o3".to_string(), false));
+    }
+
+    #[test]
+    fn selector_contract_follows_builtin_protocol_family() {
+        assert!(model_selector_must_be_provider_qualified("opencode"));
+        assert!(model_selector_must_be_provider_qualified("deveco"));
+        assert!(!model_selector_must_be_provider_qualified("pi"));
+        assert!(!model_selector_must_be_provider_qualified("omp"));
+        assert!(!model_selector_must_be_provider_qualified("unknown"));
+    }
+
+    #[test]
+    fn capability_validation_uses_the_canonical_model_and_default() {
+        let catalog = Catalog {
+            models: vec![
+                Model {
+                    id: "claude-opus-5".to_string(),
+                    default: true,
+                    thinking: Some(ModelThinking {
+                        supported_levels: vec![ThinkingLevel {
+                            value: "high".to_string(),
+                            ..ThinkingLevel::default()
+                        }],
+                        ..ModelThinking::default()
+                    }),
+                    ..Model::default()
+                },
+                Model {
+                    id: "openai/gpt-5".to_string(),
+                    service_tiers: vec![ModelServiceTier {
+                        id: "priority".to_string(),
+                        ..ModelServiceTier::default()
+                    }],
+                    ..Model::default()
+                },
+            ],
+            fallback: false,
+        };
+        assert!(validate_thinking_level(
+            &catalog,
+            "claude",
+            "claude-opus-5[1m]",
+            "high"
+        ));
+        assert!(validate_thinking_level(&catalog, "claude", "", "high"));
+        assert!(!validate_thinking_level(
+            &catalog,
+            "claude",
+            "claude-opus-5",
+            "low"
+        ));
+        assert!(validate_service_tier(
+            &catalog,
+            "codex",
+            "openai/gpt-5",
+            "priority"
+        ));
+        assert!(!validate_service_tier(&catalog, "codex", "", "priority"));
+    }
+
+    #[test]
+    fn opencode_empty_model_checks_any_advertised_thinking_level() {
+        let catalog = Catalog {
+            models: vec![Model {
+                thinking: Some(ModelThinking {
+                    supported_levels: vec![ThinkingLevel {
+                        value: "xhigh".to_string(),
+                        ..ThinkingLevel::default()
+                    }],
+                    ..ModelThinking::default()
+                }),
+                ..Model::default()
+            }],
+            fallback: false,
+        };
+        assert!(validate_thinking_level(&catalog, "opencode", "", "xhigh"));
+        assert!(!validate_thinking_level(&catalog, "opencode", "", "low"));
     }
 
     #[test]
