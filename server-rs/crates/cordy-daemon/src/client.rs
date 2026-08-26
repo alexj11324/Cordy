@@ -335,10 +335,9 @@ impl Client {
     }
 
     /// `ResolveRemoteMCPCredential` (client.go:221): fetch the credential for a
-    /// remote-MCP or plugin-contributed MCP connection. A Plugin-contributed
-    /// connection keeps its credential in the Plugin's own secret storage,
-    /// which a different route serves; the marker travels on the contribution
-    /// id because that is all the broker hands back at dial time.
+    /// plugin-contributed MCP connection. The Rust claim path currently
+    /// advertises only plugin contributions because that is the only
+    /// credential route implemented by the server.
     pub(crate) async fn resolve_remote_mcp_credential(
         &self,
         ctx: &crate::repocache::Ctx,
@@ -353,15 +352,15 @@ impl Client {
             #[serde(default)]
             credential: String,
         }
-        let route = if contribution_id.starts_with("plugin:") {
-            "plugin-mcp"
-        } else {
-            "remote-mcp"
-        };
+        if !contribution_id.starts_with("plugin:") {
+            return Err(anyhow::anyhow!(
+                "unsupported MCP contribution without a credential endpoint: {contribution_id}"
+            ));
+        }
         let path = format!(
             "/api/daemon/tasks/{}/{}/{}/credential",
             url_escape(task_id),
-            route,
+            "plugin-mcp",
             url_escape(contribution_id)
         );
         let response: Response = self.get_json_with_token(ctx, &path, daemon_token).await?;

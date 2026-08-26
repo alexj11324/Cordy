@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context as _;
 use cordy_agent::{ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -39,9 +39,14 @@ use crate::local_directory::{
     is_git_work_tree, local_directory_assignment_for_task, validate_local_path,
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
 };
+use crate::plugin_hook_mcp::{start_task_plugin_hook_mcp, PluginHookInvoker, PluginHookMCPSet};
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
+use crate::remote_mcp_broker::{
+    start_task_remote_mcp_brokers, RemoteMCPBrokerSet, RemoteMCPCredentialResolver,
+};
 use crate::repocache::Ctx;
+use crate::runtime_mcp;
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::{TaskRunFailure, TaskRunOutcome};
 use crate::types::{RuntimeExecutionTarget, Task, TaskResult, TaskUsageEntry};
@@ -56,6 +61,178 @@ const PREPARE_LEASE_REFRESH: Duration = Duration::from_secs(15);
 const PREPARE_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Task-owned MCP listeners and the effective provider configuration. The
+/// listener sets deliberately live until this value is dropped, including on
+/// every early-return path before provider execution starts.
+struct TaskMcpBootstrap {
+    effective_mcp_config: Option<Value>,
+    _remote_brokers: Option<RemoteMCPBrokerSet>,
+    _plugin_hook_server: Option<PluginHookMCPSet>,
+}
+
+/// Assemble the complete task MCP contract from the claim payload. This is the
+/// Rust production entry for Go's runTask MCP setup: runtime-managed servers
+/// are merged with the agent layer, then task-scoped Remote MCP and plugin-hook
+/// servers overlay that result. Optional broker failures remain diagnostics;
+/// fatal Remote MCP failures prevent a task from launching with an incomplete
+/// approved-tool boundary.
+async fn bootstrap_task_mcp(
+    ctx: &Ctx,
+    task: &Task,
+    provider: &str,
+    client: Arc<Client>,
+) -> anyhow::Result<TaskMcpBootstrap> {
+    let connections: Vec<cordy_remotemcp::Connection> = task
+        .remote_mcp_connections
+        .iter()
+        .cloned()
+        .map(Into::into)
+        .collect();
+    let daemon_token = task.remote_mcp_daemon_token.clone();
+    let task_id = task.id.clone();
+    let credential_client = Arc::clone(&client);
+    let resolve_credential: RemoteMCPCredentialResolver =
+        Arc::new(move |resolve_ctx: &Ctx, contribution_id: &str| {
+            let client = Arc::clone(&credential_client);
+            let daemon_token = daemon_token.clone();
+            let task_id = task_id.clone();
+            Box::pin(async move {
+                client
+                    .resolve_remote_mcp_credential(
+                        resolve_ctx,
+                        &daemon_token,
+                        &task_id,
+                        contribution_id,
+                    )
+                    .await
+            })
+        });
+
+    let remote_startup = start_task_remote_mcp_brokers(
+        ctx,
+        ctx,
+        &task.id,
+        provider,
+        &connections,
+        Some(resolve_credential),
+    )
+    .await?;
+    for diagnostic in &remote_startup.diagnostics {
+        tracing::warn!(
+            task = %task.id,
+            reason = %diagnostic,
+            "Remote MCP degraded"
+        );
+    }
+    if let Some(error) = remote_startup.error {
+        return Err(anyhow::anyhow!("prepare Remote MCP broker: {error}"));
+    }
+    let mut remote_config = remote_startup.config;
+    let remote_brokers = remote_startup.set;
+
+    let hook_task_id = task.id.clone();
+    let hook_daemon_token = task.remote_mcp_daemon_token.clone();
+    let hook_invoker: PluginHookInvoker = Arc::new(
+        move |call_ctx: &Ctx,
+              called_task_id: &str,
+              installation_id: &str,
+              hook_key: &str,
+              input: &Value| {
+            let client = Arc::clone(&client);
+            let daemon_token = hook_daemon_token.clone();
+            let fallback_task_id = hook_task_id.clone();
+            let called_task_id = called_task_id.to_string();
+            let installation_id = installation_id.to_string();
+            let hook_key = hook_key.to_string();
+            let input = input.clone();
+            Box::pin(async move {
+                let task_id = if called_task_id.is_empty() {
+                    fallback_task_id
+                } else {
+                    called_task_id
+                };
+                client
+                    .invoke_agent_plugin_hook(
+                        call_ctx,
+                        &daemon_token,
+                        &task_id,
+                        &installation_id,
+                        &hook_key,
+                        Some(input),
+                    )
+                    .await
+                    .map(|output| output.unwrap_or(Value::Null))
+            })
+        },
+    );
+    let (plugin_config, plugin_hook_server) = match start_task_plugin_hook_mcp(
+        ctx,
+        &task.id,
+        &task.plugin_hook_tools,
+        hook_invoker,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(
+                task = %task.id,
+                %error,
+                "plugin hook tools unavailable"
+            );
+            (None, None)
+        }
+    };
+    remote_config = merge_optional_mcp_config(remote_config, plugin_config)?;
+
+    let mut effective_mcp_config = task
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.mcp_config.clone());
+    // A task-scoped broker or plugin-hook overlay must not disable the
+    // provider's native MCP configuration just because the agent has no
+    // explicit mcp_config. Use an empty managed document as the merge input
+    // in that case so runtime-owned servers are still loaded.
+    if effective_mcp_config.is_some() || remote_config.is_some() {
+        let agent_config = effective_mcp_config.clone().unwrap_or_else(|| json!({}));
+        effective_mcp_config =
+            match runtime_mcp::merge_runtime_and_agent_mcp_config(provider, &agent_config) {
+                Ok(merged) => merged,
+                Err(error) => {
+                    tracing::warn!(
+                        task = %task.id,
+                        %error,
+                        "mcp_config: runtime merge failed; using agent configuration only"
+                    );
+                    effective_mcp_config
+                }
+            };
+    }
+    effective_mcp_config = merge_optional_mcp_config(effective_mcp_config, remote_config)?;
+
+    Ok(TaskMcpBootstrap {
+        effective_mcp_config,
+        _remote_brokers: remote_brokers,
+        _plugin_hook_server: plugin_hook_server,
+    })
+}
+
+fn merge_optional_mcp_config(
+    base: Option<Value>,
+    overlay: Option<Value>,
+) -> anyhow::Result<Option<Value>> {
+    let Some(overlay) = overlay else {
+        return Ok(base);
+    };
+    let base = base.map_or_else(String::new, |value| value.to_string());
+    let merged =
+        crate::remote_mcp_broker::merge_task_remote_mcp_config(&base, &overlay.to_string())
+            .context("decode merged MCP configuration")?;
+    serde_json::from_str(&merged)
+        .map(Some)
+        .context("parse merged MCP configuration")
+}
 
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
 /// Metadata-only runtimes fail at `build_backend`; no provider can turn into a
@@ -89,6 +266,9 @@ impl ProductionProviderAdapter {
         slot: usize,
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
+        if let Err(error) = crate::execution_plan::validate_identity(&task, &target) {
+            return failed(error, None);
+        }
         let _active = CounterGuard::new(&self.active_tasks);
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
@@ -144,6 +324,11 @@ impl ProductionProviderAdapter {
         runtime
             .resolve_task_model_selection(&ctx, &mut task, &target, &launch, &default_model)
             .await;
+        let mcp_bootstrap =
+            match bootstrap_task_mcp(&ctx, &task, &target.provider, Arc::clone(&client)).await {
+                Ok(bootstrap) => bootstrap,
+                Err(error) => return failed(error, None),
+            };
         let mut inputs = ProviderExecutionInputs {
             slot,
             temp_dir: temp_dir.clone(),
@@ -152,6 +337,7 @@ impl ProductionProviderAdapter {
             openclaw_bin: (target.provider == "openclaw")
                 .then(|| launch.command_path.clone())
                 .unwrap_or_default(),
+            effective_mcp_config: mcp_bootstrap.effective_mcp_config.clone(),
             launch_prefix: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
@@ -1058,6 +1244,37 @@ mod tests {
         assert_eq!(outcome.result.session_id, "session-1");
         assert_eq!(outcome.result.usage[0].provider, "qwen");
         assert_eq!(outcome.result.usage[0].input_tokens, 10);
+    }
+
+    #[test]
+    fn task_mcp_config_layers_preserve_agent_and_overlay_task_servers() {
+        let merged = merge_optional_mcp_config(
+            Some(serde_json::json!({
+                "mcpServers": {
+                    "agent": {"command": "agent"},
+                    "shared": {"command": "agent-version"}
+                }
+            })),
+            Some(serde_json::json!({
+                "mcpServers": {
+                    "remote": {"type": "http"},
+                    "shared": {"type": "http", "url": "http://127.0.0.1"}
+                }
+            })),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(merged["mcpServers"]["agent"]["command"], "agent");
+        assert_eq!(merged["mcpServers"]["remote"]["type"], "http");
+        assert_eq!(merged["mcpServers"]["shared"]["url"], "http://127.0.0.1");
+    }
+
+    #[test]
+    fn task_mcp_config_without_overlay_keeps_native_inheritance() {
+        let base = Some(serde_json::json!({"native": true}));
+        assert_eq!(merge_optional_mcp_config(base.clone(), None).unwrap(), base);
+        assert_eq!(merge_optional_mcp_config(None, None).unwrap(), None);
     }
 
     #[test]

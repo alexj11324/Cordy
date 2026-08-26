@@ -353,6 +353,23 @@ pub(crate) async fn build_claimed_task_response(
         )
         .await
         {
+            // Rust currently has a credential endpoint only for plugin MCP
+            // contributions. Keep the claim contract honest if a malformed
+            // or future service result ever contains another connection
+            // kind: unsupported entries must not be advertised to daemons.
+            let connections: Vec<_> = connections
+                .into_iter()
+                .filter(|connection| {
+                    let supported = connection.contribution_id.starts_with("plugin:");
+                    if !supported {
+                        tracing::warn!(
+                            contribution_id = %connection.contribution_id,
+                            "daemon claim: dropping MCP connection without a supported credential endpoint"
+                        );
+                    }
+                    supported
+                })
+                .collect();
             if !connections.is_empty() {
                 if let Ok(conns) = serde_json::to_value(&connections) {
                     let existing = obj

@@ -20,8 +20,8 @@
 //! shutdown driven by a CancellationToken (2s grace like Go). Go injects a
 //! plain `*http.Client` in tests; the equivalent seam is [`McpUpstream`],
 //! whose production impl wraps cordy-remotemcp's pinned [`SecureHttpClient`].
-//! Go ties the upstream call to `request.Context()`; under hyper a dropped
-//! handler future cancels in-flight work, giving equivalent semantics.
+//! The handler explicitly selects every credential, body, and upstream future
+//! against the task context so cancellation does not leave a detached call.
 //!
 //! S9-integration: entry points are wired by the daemon-runner lane.
 
@@ -48,7 +48,12 @@ pub(crate) const REMOTE_MCP_MAX_CONCURRENCY: usize = 8;
 /// `remoteMCPCredentialResolver`: resolves fresh credentials just-in-time;
 /// returns ordered header pairs.
 pub(crate) type RemoteMCPCredentialResolver = Arc<
-    dyn Fn(&crate::repocache::Ctx, &str) -> anyhow::Result<Vec<(String, String)>> + Send + Sync,
+    dyn for<'a> Fn(
+            &'a crate::repocache::Ctx,
+            &'a str,
+        ) -> BoxFuture<'a, anyhow::Result<Vec<(String, String)>>>
+        + Send
+        + Sync,
 >;
 
 /// Transport seam standing in for the pinned HTTPS client (tests inject a
@@ -70,8 +75,10 @@ impl McpUpstream for SecureUpstream {
         request: http::Request<cordy_remotemcp::RequestBody>,
     ) -> BoxFuture<'a, anyhow::Result<http::Response<Vec<u8>>>> {
         Box::pin(async move {
-            let _ = ctx;
-            let response = self.0.send(request).await.map_err(|e| anyhow!("{e}"))?;
+            let response = tokio::select! {
+                _ = ctx.cancelled() => Err(anyhow!(ctx.cause().to_string())),
+                response = self.0.send(request) => response.map_err(|e| anyhow!("{e}")),
+            }?;
             Ok(response)
         })
     }
@@ -147,6 +154,9 @@ pub(crate) async fn start_task_remote_mcp_brokers(
     let mut diagnostics: Vec<String> = Vec::new();
 
     for connection in connections {
+        if let Some(cause) = setup_ctx.err() {
+            return finish_err(set, diagnostics, anyhow!(cause.to_string()));
+        }
         let degrade = |message: String, diagnostics: &mut Vec<String>| -> Option<anyhow::Error> {
             if connection.failure_policy == "optional" {
                 diagnostics.push(message);
@@ -169,25 +179,37 @@ pub(crate) async fn start_task_remote_mcp_brokers(
         let mut headers = empty_headers;
         if !connection.credential_header.is_empty() {
             match &resolve_credential {
-                Some(resolver) => match resolver(setup_ctx, &connection.contribution_id) {
-                    Ok(resolved) => headers = resolved,
-                    Err(resolve_err) => {
-                        let message = format!(
-                            "Remote MCP {} credential is unavailable",
-                            connection.contribution_key
-                        );
-                        match degrade(message.clone(), &mut diagnostics) {
-                            None => continue,
-                            Some(_) => {
-                                return finish_err(
-                                    set,
-                                    diagnostics,
-                                    anyhow!("{message}: {resolve_err}"),
-                                )
+                Some(resolver) => {
+                    let resolved = tokio::select! {
+                        _ = setup_ctx.cancelled() => {
+                            return finish_err(
+                                set,
+                                diagnostics,
+                                anyhow!(setup_ctx.cause().to_string()),
+                            );
+                        }
+                        resolved = resolver(setup_ctx, &connection.contribution_id) => resolved,
+                    };
+                    match resolved {
+                        Ok(resolved) => headers = resolved,
+                        Err(resolve_err) => {
+                            let message = format!(
+                                "Remote MCP {} credential is unavailable",
+                                connection.contribution_key
+                            );
+                            match degrade(message.clone(), &mut diagnostics) {
+                                None => continue,
+                                Some(_) => {
+                                    return finish_err(
+                                        set,
+                                        diagnostics,
+                                        anyhow!("{message}: {resolve_err}"),
+                                    )
+                                }
                             }
                         }
                     }
-                },
+                }
                 None => {
                     let message = format!(
                         "Remote MCP {} credential resolver is unavailable",
@@ -205,17 +227,25 @@ pub(crate) async fn start_task_remote_mcp_brokers(
             .iter()
             .map(String::as_str)
             .collect();
-        let discovered = cordy_remotemcp::discover(
-            &connection.endpoint,
-            &connection.endpoint_allowed_hosts,
-            protocol_versions,
-            &headers,
-        )
-        .await;
+        let discovered = tokio::select! {
+            _ = setup_ctx.cancelled() => {
+                return finish_err(
+                    set,
+                    diagnostics,
+                    anyhow!(setup_ctx.cause().to_string()),
+                );
+            }
+            discovered = cordy_remotemcp::discover(
+                &connection.endpoint,
+                &connection.endpoint_allowed_hosts,
+                protocol_versions,
+                &headers,
+            ) => discovered.map_err(|error| anyhow!("{error}")),
+        };
         let validated: anyhow::Result<()> = match discovered {
             Ok((tools, _)) => validate_pinned_remote_mcp_tools(&connection.approved_tools, &tools)
                 .map_err(|s| anyhow!(s)),
-            Err(err) => Err(anyhow!("{err}")),
+            Err(err) => Err(err),
         };
         if let Err(err) = validated {
             let message = format!(
@@ -227,13 +257,21 @@ pub(crate) async fn start_task_remote_mcp_brokers(
                 Some(_) => return finish_err(set, diagnostics, anyhow!("{message}: {err}")),
             }
         }
-        let endpoint = cordy_remotemcp::validate_public_https_endpoint(
-            &connection.endpoint,
-            &connection.endpoint_allowed_hosts,
-            None,
-        )
-        .await
-        .map_err(|e| anyhow!("{e}"))?;
+        let endpoint: anyhow::Result<url::Url> = tokio::select! {
+            _ = setup_ctx.cancelled() => {
+                return finish_err(
+                    set,
+                    diagnostics,
+                    anyhow!(setup_ctx.cause().to_string()),
+                );
+            }
+            endpoint = cordy_remotemcp::validate_public_https_endpoint(
+                &connection.endpoint,
+                &connection.endpoint_allowed_hosts,
+                None,
+            ) => endpoint.map_err(|error| anyhow!("{error}")),
+        };
+        let endpoint = endpoint?;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .context("listen for Remote MCP broker")?;
@@ -487,7 +525,17 @@ async fn run_proxy_body(
     };
 
     let max = REMOTE_MCP_MAX_REQUEST_BYTES + 1;
-    let raw = match axum::body::to_bytes(request.into_body(), max).await {
+    let raw = match tokio::select! {
+        _ = proxy.ctx.cancelled() => {
+            return Err(ProxyFailure {
+                result_class: "cancelled",
+                id: None,
+                code: -32000,
+                message: "Remote MCP task was cancelled".to_string(),
+            });
+        }
+        raw = axum::body::to_bytes(request.into_body(), max) => raw,
+    } {
         Ok(raw) if raw.len() <= REMOTE_MCP_MAX_REQUEST_BYTES => raw,
         _ => {
             return Err(ProxyFailure {
@@ -545,7 +593,11 @@ async fn run_proxy_body(
     let mut credential_headers = proxy.credential_headers.clone();
     if !proxy.connection.credential_header.is_empty() {
         if let Some(resolver) = &proxy.resolve_credential {
-            match resolver(&proxy.ctx, &proxy.connection.contribution_id) {
+            let resolved = resolver(&proxy.ctx, &proxy.connection.contribution_id);
+            match tokio::select! {
+                _ = proxy.ctx.cancelled() => Err(anyhow!(proxy.ctx.cause().to_string())),
+                resolved = resolved => resolved,
+            } {
                 Ok(resolved) => credential_headers = resolved,
                 Err(_) => {
                     return Err(ProxyFailure {
@@ -587,8 +639,27 @@ async fn run_proxy_body(
             message: format!("Remote MCP request failed: {err}"),
         })?;
 
-    let response = match proxy.upstream.send(&proxy.ctx, upstream_request).await {
+    let response = tokio::select! {
+        _ = proxy.ctx.cancelled() => {
+            return Err(ProxyFailure {
+                result_class: "cancelled",
+                id: rpc_id,
+                code: -32000,
+                message: "Remote MCP task was cancelled".to_string(),
+            });
+        }
+        response = proxy.upstream.send(&proxy.ctx, upstream_request) => response,
+    };
+    let response = match response {
         Ok(response) => response,
+        Err(_) if proxy.ctx.err().is_some() => {
+            return Err(ProxyFailure {
+                result_class: "cancelled",
+                id: rpc_id,
+                code: -32000,
+                message: "Remote MCP task was cancelled".to_string(),
+            })
+        }
         Err(_) => {
             return Err(ProxyFailure {
                 result_class: "remote_error",
@@ -804,12 +875,18 @@ pub(crate) fn merge_task_remote_mcp_config(base: &str, overlay: &str) -> anyhow:
     let mut base_document = json!({"mcpServers": {}});
     if !trimmed.is_empty() && trimmed != "null" {
         base_document = serde_json::from_str(trimmed).map_err(|err| anyhow!("{err}"))?;
-        if base_document.get("mcpServers").is_none() {
-            base_document["mcpServers"] = json!({});
-        }
     }
+    let base_document = base_document
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("base MCP config must be a JSON object"))?;
+    let servers = base_document
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| json!({}));
+    let servers = servers
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("base MCP config mcpServers must be a JSON object"))?;
     for (name, server) in overlay_servers {
-        base_document["mcpServers"][name] = server.clone();
+        servers.insert(name.clone(), server.clone());
     }
     Ok(serde_json::to_string(&base_document)?)
 }
@@ -817,6 +894,7 @@ pub(crate) fn merge_task_remote_mcp_config(base: &str, overlay: &str) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn provider_matrix() {
@@ -855,6 +933,15 @@ mod tests {
             merge_task_remote_mcp_config(r#"{"mcpServers":{}}"#, "").unwrap(),
             r#"{"mcpServers":{}}"#
         );
+
+        // Overlaying a malformed base must be a normal preparation error,
+        // not an indexing panic that takes down the daemon.
+        assert!(merge_task_remote_mcp_config("[]", r#"{"mcpServers":{}}"#).is_err());
+        assert!(merge_task_remote_mcp_config(
+            r#"{"mcpServers":[]}"#,
+            r#"{"mcpServers":{}}"#
+        )
+        .is_err());
     }
 
     #[test]
@@ -975,6 +1062,24 @@ mod tests {
                     builder = builder.header(name, value);
                 }
                 builder.body(body).map_err(|e| anyhow!("{e}"))
+            })
+        }
+    }
+
+    struct BlockingUpstream {
+        started: Arc<tokio::sync::Notify>,
+    }
+
+    impl McpUpstream for BlockingUpstream {
+        fn send<'a>(
+            &'a self,
+            _ctx: &'a crate::repocache::Ctx,
+            _request: http::Request<cordy_remotemcp::RequestBody>,
+        ) -> BoxFuture<'a, anyhow::Result<http::Response<Vec<u8>>>> {
+            let started = Arc::clone(&self.started);
+            Box::pin(async move {
+                started.notify_one();
+                std::future::pending::<anyhow::Result<http::Response<Vec<u8>>>>().await
             })
         }
     }
@@ -1282,7 +1387,7 @@ mod tests {
         let mut state = proxy_state(endpoint, approved, Vec::new());
         state.connection.credential_header = "Authorization".into();
         state.resolve_credential = Some(Arc::new(|_ctx: &crate::repocache::Ctx, _id: &str| {
-            Err(anyhow!("revoked"))
+            Box::pin(async { Err(anyhow!("revoked")) })
         }));
         let response = serve_proxy_request(&state, post_request("/capability", json!({
             "jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"allowed","arguments":{}}
@@ -1293,5 +1398,50 @@ mod tests {
         let text = String::from_utf8_lossy(&body);
         assert!(text.contains("revoked or unavailable"), "{text}");
         shutdown.cancel();
+    }
+
+    #[tokio::test]
+    async fn proxy_cancellation_stops_an_inflight_upstream_call() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let approved = vec![cordy_remotemcp::Tool {
+            name: "allowed".into(),
+            description: String::new(),
+            input_schema: Value::Null,
+            schema_digest: String::new(),
+            risk: String::new(),
+        }];
+        let mut state = proxy_state(
+            url::Url::parse("https://example.com/").unwrap(),
+            approved,
+            Vec::new(),
+        );
+        state.upstream = Arc::new(BlockingUpstream {
+            started: Arc::clone(&started),
+        });
+        let ctx = state.ctx.clone();
+        let response = serve_proxy_request(
+            &state,
+            post_request(
+                "/capability",
+                json!({
+                    "jsonrpc":"2.0","id":1,"method":"tools/call",
+                    "params":{"name":"allowed","arguments":{}}
+                }),
+            ),
+        );
+        tokio::pin!(response);
+        tokio::select! {
+            _ = started.notified() => ctx.cancel_with(crate::repocache::CancelCause::Cancelled),
+            _ = &mut response => panic!("proxy call completed before cancellation"),
+        }
+        let response = tokio::time::timeout(Duration::from_secs(1), &mut response)
+            .await
+            .expect("cancellation should finish the proxy call");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains("Remote MCP task was cancelled"), "{text}");
     }
 }
