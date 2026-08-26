@@ -12,11 +12,12 @@ mod runner;
 
 use std::{env, time::Duration};
 
+use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 
 use crate::backfill::task_usage::OperatorOptions;
-use crate::backfill::{issue_activity, task_usage};
+use crate::backfill::{codex_usage, issue_activity, task_usage};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -36,6 +37,9 @@ async fn main() -> anyhow::Result<()> {
     if let Command::BackfillIssueLastActivity(options) = &command {
         return run_operator_command(BackfillCommand::IssueActivity(options.clone())).await;
     }
+    if let Command::BackfillCodexUsageCache(options) = &command {
+        return run_operator_command(BackfillCommand::CodexUsage(options.clone())).await;
+    }
 
     let db_url =
         env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL is required"))?;
@@ -54,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Down => runner::run_migrations(&pool, "down").await,
         Command::BackfillTaskUsageHourly(_) => unreachable!("handled above"),
         Command::BackfillIssueLastActivity(_) => unreachable!("handled above"),
+        Command::BackfillCodexUsageCache(_) => unreachable!("handled above"),
     }
 }
 
@@ -63,6 +68,7 @@ enum Command {
     Status,
     BackfillTaskUsageHourly(OperatorOptions),
     BackfillIssueLastActivity(issue_activity::OperatorOptions),
+    BackfillCodexUsageCache(codex_usage::OperatorOptions),
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -83,8 +89,15 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
                 parse_issue_activity_options(rest)?,
             ))
         }
+        [command, backfill, rest @ ..]
+            if command == "backfill" && backfill == "codex-usage-cache" =>
+        {
+            Ok(Command::BackfillCodexUsageCache(parse_codex_usage_options(
+                rest,
+            )?))
+        }
         _ => anyhow::bail!(
-            "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [flags] | cordy-migrate backfill issue-last-activity [flags]"
+            "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [flags] | cordy-migrate backfill issue-last-activity [flags] | cordy-migrate backfill codex-usage-cache [flags]"
         ),
     }
 }
@@ -192,10 +205,108 @@ fn parse_issue_activity_options(
     Ok(options)
 }
 
+fn parse_codex_usage_options(args: &[String]) -> anyhow::Result<codex_usage::OperatorOptions> {
+    let mut cutoff_raw: Option<String> = None;
+    let mut workspace_id = String::new();
+    let mut batch_size = 1000_i64;
+    let mut sleep_between_batches = Duration::ZERO;
+    let mut execute = false;
+    let mut rebuild_rollup = true;
+    let mut index = 0;
+
+    while index < args.len() {
+        let arg = &args[index];
+        let option = arg
+            .strip_prefix("--")
+            .or_else(|| arg.strip_prefix('-'))
+            .unwrap_or(arg.as_str());
+        if let Some(value) = option.strip_prefix("cutoff=") {
+            cutoff_raw = Some(value.to_string());
+        } else if option == "cutoff" {
+            index += 1;
+            cutoff_raw = Some(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--cutoff requires a value"))?
+                    .clone(),
+            );
+        } else if let Some(value) = option.strip_prefix("workspace-id=") {
+            workspace_id = value.to_string();
+        } else if option == "workspace-id" {
+            index += 1;
+            workspace_id = args
+                .get(index)
+                .ok_or_else(|| anyhow::anyhow!("--workspace-id requires a value"))?
+                .clone();
+        } else if let Some(value) = option.strip_prefix("batch-size=") {
+            batch_size = parse_i64(value, "--batch-size")?;
+        } else if option == "batch-size" {
+            index += 1;
+            batch_size = parse_i64(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--batch-size requires a value"))?,
+                "--batch-size",
+            )?;
+        } else if let Some(value) = option.strip_prefix("sleep-between-batches=") {
+            sleep_between_batches = parse_duration(value)?;
+        } else if option == "sleep-between-batches" {
+            index += 1;
+            sleep_between_batches = parse_duration(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--sleep-between-batches requires a value"))?,
+            )?;
+        } else if let Some(value) = option.strip_prefix("execute=") {
+            execute = parse_bool(value, "--execute")?;
+        } else if option == "execute" {
+            execute = true;
+        } else if let Some(value) = option.strip_prefix("rebuild-rollup=") {
+            rebuild_rollup = parse_bool(value, "--rebuild-rollup")?;
+        } else if option == "rebuild-rollup" {
+            rebuild_rollup = true;
+        } else {
+            anyhow::bail!("unknown Codex usage backfill option {arg:?}");
+        }
+        index += 1;
+    }
+
+    let cutoff_raw = cutoff_raw.ok_or_else(|| {
+        anyhow::anyhow!(
+            "--cutoff is required; use the hosted deployment time of the Codex usage normalization fix"
+        )
+    })?;
+    let cutoff = DateTime::parse_from_rfc3339(&cutoff_raw)
+        .map_err(|error| anyhow::anyhow!("parse --cutoff as RFC3339: {error}"))?
+        .with_timezone(&Utc);
+    if cutoff >= Utc::now() {
+        anyhow::bail!(
+            "--cutoff must be before now; refusing a future cutoff because it could double-subtract already-normalized rows"
+        );
+    }
+    if batch_size <= 0 {
+        anyhow::bail!("--batch-size must be positive");
+    }
+
+    Ok(codex_usage::OperatorOptions {
+        cutoff,
+        workspace_id,
+        batch_size,
+        sleep_between_batches,
+        execute,
+        rebuild_rollup,
+    })
+}
+
 fn parse_i64(value: &str, flag: &str) -> anyhow::Result<i64> {
     value
         .parse::<i64>()
         .map_err(|error| anyhow::anyhow!("invalid {flag} value {value:?}: {error}"))
+}
+
+fn parse_bool(value: &str, flag: &str) -> anyhow::Result<bool> {
+    match value {
+        "1" | "t" | "T" | "true" | "TRUE" | "True" => Ok(true),
+        "0" | "f" | "F" | "false" | "FALSE" | "False" => Ok(false),
+        _ => anyhow::bail!("invalid {flag} value {value:?}; want true or false"),
+    }
 }
 
 /// Parses the duration forms used by Go's `time.ParseDuration` for the
@@ -318,6 +429,7 @@ fn parse_non_negative_duration(value: &str, flag: &str) -> anyhow::Result<Durati
 enum BackfillCommand {
     TaskUsage(OperatorOptions),
     IssueActivity(issue_activity::OperatorOptions),
+    CodexUsage(codex_usage::OperatorOptions),
 }
 
 async fn run_operator_command(command: BackfillCommand) -> anyhow::Result<()> {
@@ -341,6 +453,9 @@ async fn run_operator_command(command: BackfillCommand) -> anyhow::Result<()> {
             }
             BackfillCommand::IssueActivity(options) => {
                 issue_activity::run_operator(&pool, options, &cancellation).await
+            }
+            BackfillCommand::CodexUsage(options) => {
+                codex_usage::run_operator(&pool, options, &cancellation).await
             }
         };
         pool.close().await;
