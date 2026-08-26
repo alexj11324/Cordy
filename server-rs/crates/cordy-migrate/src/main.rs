@@ -21,12 +21,8 @@ use crate::backfill::{codex_usage, issue_activity, task_usage};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cordy_migrate=info".into()),
-        )
-        .init();
+    cordy_util::logging::init("cordy_migrate=info")
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
     let args: Vec<String> = env::args().skip(1).collect();
     let command = parse_command(&args)?;
@@ -528,8 +524,8 @@ mod tests {
             "4".to_string(),
             "--max-stalled-passes=3".to_string(),
         ];
-        let Command::BackfillIssueLastActivity(options) =
-            parse_command(&args).unwrap_or_else(|error| panic!("parse issue activity flags: {error}"))
+        let Command::BackfillIssueLastActivity(options) = parse_command(&args)
+            .unwrap_or_else(|error| panic!("parse issue activity flags: {error}"))
         else {
             panic!("expected issue activity backfill command");
         };
