@@ -109,9 +109,10 @@ pub struct Session {
 }
 
 /// Normalized event kinds consumed by the daemon transcript drain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MessageType {
+    #[default]
     Text,
     Thinking,
     ToolUse,
@@ -122,7 +123,7 @@ pub enum MessageType {
 }
 
 /// One normalized provider event.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     #[serde(rename = "type")]
     pub message_type: MessageType,

@@ -11,6 +11,7 @@ pub mod antigravity;
 pub mod claude;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
+pub mod codex;
 pub mod command;
 pub mod contract;
 pub mod copilot;
@@ -40,6 +41,7 @@ pub use acp_mcp::{
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
 pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
+pub use codex::{build_codex_args, CodexBackend, CodexConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
