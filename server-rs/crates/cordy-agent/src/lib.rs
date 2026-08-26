@@ -11,6 +11,8 @@ pub mod deveco;
 pub mod dsh;
 pub mod mcp;
 pub mod model;
+pub mod opencode;
+pub mod opencode_mcp;
 pub mod pi;
 pub mod process;
 pub mod qwen;
