@@ -21,16 +21,20 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, TaskMessageData};
 use crate::config::Config;
-use crate::execenv::codex_home::codex_resume_rollout_present;
+use crate::execenv::codex_home::{
+    codex_resume_rollout_present, codex_session_store_key, prepare_codex_home_with_opts,
+    CodexHomeOptions,
+};
 use crate::execenv::context::{
     cleanup_sidecars, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
     predict_root_dir, prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
-    MANAGED_ENV_PROVENANCE_MANAGED_BY,
+    OpenclawConfigPrep, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
+use crate::execenv::openclaw::prepare_openclaw_config;
 use crate::execution_plan::{
     PreparedEnvironmentInputs, ProviderExecutionInputs, ProviderExecutionPlan,
 };
@@ -118,7 +122,7 @@ impl ProductionProviderAdapter {
             .join("tmp")
             .to_string_lossy()
             .into_owned();
-        let launch = match runtime
+        let mut launch = match runtime
             .resolve_launch_for_task(&ctx, &task.workspace_id, &target)
             .await
         {
@@ -210,6 +214,24 @@ impl ProductionProviderAdapter {
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
+            // Environment preparation can take long enough for an in-place
+            // provider upgrade to remove the executable we resolved above.
+            // Resolve once more at the process boundary so self-healing runs
+            // immediately before backend construction, and carry any new
+            // version/path inputs through the already-built execution plan.
+            let boundary_launch = runtime
+                .resolve_launch_for_task(&ctx, &task.workspace_id, &target)
+                .await?;
+            if boundary_launch != launch {
+                plan.update_launch(
+                    &target,
+                    &boundary_launch.command_path,
+                    &boundary_launch.version,
+                    &boundary_launch.fixed_args,
+                )?;
+                refresh_launch_dependent_environment(&mut environment, &plan)?;
+                launch = boundary_launch;
+            }
             client
                 .start_task(&ctx, &task.id)
                 .await
@@ -849,6 +871,48 @@ fn failed(error: anyhow::Error, environment: Option<&Environment>) -> TaskRunOut
             cancelled_delivery_failure: None,
         }),
     }
+}
+
+/// Re-applies the provider-specific files whose contents depend on the
+/// executable selected by the final launch resolution. This matters most for
+/// Codex, where the detected version controls the task sandbox policy, and
+/// OpenClaw, whose task wrapper performs discovery through the selected CLI.
+fn refresh_launch_dependent_environment(
+    environment: &mut Environment,
+    plan: &ProviderExecutionPlan,
+) -> anyhow::Result<()> {
+    let params = plan.prepare_params();
+    if params.provider == "codex" && !environment.codex_home.trim().is_empty() {
+        prepare_codex_home_with_opts(
+            &environment.codex_home,
+            CodexHomeOptions {
+                codex_version: params.codex_version,
+                is_local_directory: !params.local_work_dir.is_empty()
+                    || params.local_worktree.is_some(),
+                session_store_key: codex_session_store_key(&params.profile, &params.task),
+                codex_custom_args: params.codex_custom_args,
+                ..Default::default()
+            },
+        )
+        .context("refresh Codex home after final launch resolution")?;
+    }
+    if params.provider == "openclaw" {
+        let result = prepare_openclaw_config(
+            &environment.root_dir,
+            &environment.work_dir,
+            &OpenclawConfigPrep {
+                openclaw_bin: params.openclaw_bin,
+                mcp_config: params.mcp_config,
+                gateway: params.openclaw_gateway,
+                profile: params.profile,
+                timeout: Duration::ZERO,
+            },
+        )
+        .context("refresh OpenClaw config after final launch resolution")?;
+        environment.openclaw_config_path = result.config_path;
+        environment.openclaw_include_root = result.include_root;
+    }
+    Ok(())
 }
 
 async fn finalize_environment(

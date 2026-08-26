@@ -478,6 +478,12 @@ struct HealedAgent {
     version: String,
 }
 
+#[derive(Debug, Default)]
+struct AgentPathState {
+    healed: BTreeMap<String, HealedAgent>,
+    generations: BTreeMap<String, u64>,
+}
+
 /// Launch-time self-healing for a built-in provider's pinned executable.
 ///
 /// The cache stores a path and the version detected from that exact path as an
@@ -487,7 +493,7 @@ struct HealedAgent {
 /// by the profile registration contract, not the built-in agent catalog.
 #[derive(Debug)]
 struct AgentPathResolver {
-    healed: Mutex<BTreeMap<String, HealedAgent>>,
+    state: Mutex<AgentPathState>,
     groups: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     version_probe_timeout: Duration,
 }
@@ -495,7 +501,7 @@ struct AgentPathResolver {
 impl Default for AgentPathResolver {
     fn default() -> Self {
         Self {
-            healed: Mutex::new(BTreeMap::new()),
+            state: Mutex::new(AgentPathState::default()),
             groups: Mutex::new(HashMap::new()),
             version_probe_timeout: LocalProviderCatalog::DEFAULT_VERSION_PROBE_TIMEOUT,
         }
@@ -517,18 +523,28 @@ impl AgentPathResolver {
         } else {
             &launch.discovery_path
         };
+        let generation = self.generation(&launch.target.provider);
 
         // Windows installer entry points are stable junctions whose final
         // target may change while the old release remains installed. The
         // canonical-path helper is a no-op on other platforms, so this branch
         // naturally selects the pinned-path behavior there.
-        if let Some(launch_path) = crate::canonical_path::executable_path_for_launch(entry_path)? {
-            return self
-                .resolve_stable_entry(ctx, launch, entry_path, launch_path)
-                .await;
+        match crate::canonical_path::executable_path_for_launch(entry_path) {
+            Ok(Some(launch_path)) => {
+                return self
+                    .resolve_stable_entry(ctx, launch, entry_path, launch_path, generation)
+                    .await;
+            }
+            // On Windows this helper canonicalizes every launch path. A
+            // vanished installer entry therefore reports an I/O error before
+            // the normal command re-resolution path gets a chance to run.
+            // Treat that as a miss and let the pinned resolver try the
+            // original command (including PATHEXT/login-shell lookup).
+            Ok(None) | Err(_) => {}
         }
 
-        self.resolve_pinned_entry(ctx, launch, entry_path).await
+        self.resolve_pinned_entry(ctx, launch, entry_path, generation)
+            .await
     }
 
     async fn resolve_pinned_entry(
@@ -536,6 +552,7 @@ impl AgentPathResolver {
         ctx: &Ctx,
         launch: &RuntimeLaunchSpec,
         entry_path: &str,
+        generation: u64,
     ) -> anyhow::Result<RuntimeLaunchSpec> {
         let provider = &launch.target.provider;
         if let Some(healed) = self.live_healed(provider) {
@@ -562,7 +579,7 @@ impl AgentPathResolver {
         let Some(candidate) = crate::config::reresolve_agent_command(&launch.command) else {
             return Ok(launch.clone());
         };
-        let healed = self.adopt(ctx, launch, candidate).await?;
+        let healed = self.adopt(ctx, launch, candidate, generation).await?;
         Ok(with_healed_launch(launch, healed))
     }
 
@@ -572,6 +589,7 @@ impl AgentPathResolver {
         launch: &RuntimeLaunchSpec,
         entry_path: &str,
         mut launch_path: String,
+        generation: u64,
     ) -> anyhow::Result<RuntimeLaunchSpec> {
         const MAX_RETARGET_ATTEMPTS: usize = 4;
         let key_prefix = launch.target.provider.clone();
@@ -588,7 +606,9 @@ impl AgentPathResolver {
             if let Some(healed) = self.live_healed_at(&launch.target.provider, &launch_path) {
                 return Ok(with_healed_launch(launch, healed));
             }
-            let healed = self.adopt(ctx, launch, launch_path.clone()).await?;
+            let healed = self
+                .adopt(ctx, launch, launch_path.clone(), generation)
+                .await?;
 
             // The installer can retarget while --version is running. Resolve
             // the stable entry again before publishing the result and retry
@@ -613,6 +633,7 @@ impl AgentPathResolver {
         ctx: &Ctx,
         launch: &RuntimeLaunchSpec,
         path: String,
+        generation: u64,
     ) -> anyhow::Result<HealedAgent> {
         let catalog = LocalProviderCatalog::with_version_probe_timeout(self.version_probe_timeout);
         let version = match catalog
@@ -641,10 +662,24 @@ impl AgentPathResolver {
         })?;
 
         let healed = HealedAgent { path, version };
-        self.healed
-            .lock()
-            .unwrap()
-            .insert(launch.target.provider.clone(), healed.clone());
+        let mut state = self.state.lock().unwrap();
+        if state
+            .generations
+            .get(&launch.target.provider)
+            .copied()
+            .unwrap_or_default()
+            == generation
+        {
+            state
+                .healed
+                .insert(launch.target.provider.clone(), healed.clone());
+        } else {
+            tracing::debug!(
+                provider = %launch.target.provider,
+                "discarded self-healed executable from an obsolete registration generation"
+            );
+        }
+        drop(state);
         tracing::info!(
             provider = %launch.target.provider,
             command = %launch.command,
@@ -656,12 +691,12 @@ impl AgentPathResolver {
     }
 
     fn live_healed(&self, provider: &str) -> Option<HealedAgent> {
-        let healed = self.healed.lock().unwrap().get(provider).cloned()?;
+        let healed = self.state.lock().unwrap().healed.get(provider).cloned()?;
         crate::config::agent_executable_present(&healed.path).then_some(healed)
     }
 
     fn live_healed_at(&self, provider: &str, path: &str) -> Option<HealedAgent> {
-        let healed = self.healed.lock().unwrap().get(provider).cloned()?;
+        let healed = self.state.lock().unwrap().healed.get(provider).cloned()?;
         (healed.path == path && crate::config::agent_executable_present(&healed.path))
             .then_some(healed)
     }
@@ -670,8 +705,8 @@ impl AgentPathResolver {
         if version.is_empty() {
             return;
         }
-        let mut healed = self.healed.lock().unwrap();
-        let Some(current) = healed.get_mut(provider) else {
+        let mut state = self.state.lock().unwrap();
+        let Some(current) = state.healed.get_mut(provider) else {
             return;
         };
         let same_path = current.path == path
@@ -682,6 +717,32 @@ impl AgentPathResolver {
         if same_path && current.version != version {
             current.version = version.to_string();
         }
+    }
+
+    /// Advances the provider generation whenever a registration response is
+    /// accepted. A new accepted launch must not inherit a previous
+    /// self-heal, and an in-flight probe from the old generation must not be
+    /// allowed to republish its result after this call returns.
+    fn accept_builtins(&self, specs: &[RuntimeLaunchSpec]) {
+        let mut state = self.state.lock().unwrap();
+        for spec in specs {
+            let generation = state
+                .generations
+                .entry(spec.target.provider.clone())
+                .or_default();
+            *generation = generation.saturating_add(1);
+            state.healed.remove(&spec.target.provider);
+        }
+    }
+
+    fn generation(&self, provider: &str) -> u64 {
+        self.state
+            .lock()
+            .unwrap()
+            .generations
+            .get(provider)
+            .copied()
+            .unwrap_or_default()
     }
 
     fn group_for(&self, key: &str) -> Arc<AsyncMutex<()>> {
@@ -719,6 +780,7 @@ pub struct RuntimeLaunchRegistry {
 
 impl RuntimeLaunchRegistry {
     pub(crate) fn replace_builtins(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
+        self.path_resolver.accept_builtins(&specs);
         let builtins = specs
             .into_iter()
             .map(|spec| (spec.target.provider.clone(), spec))
@@ -1444,6 +1506,25 @@ mod tests {
 
         static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+        struct PathGuard(Option<std::ffi::OsString>);
+
+        impl PathGuard {
+            fn set(path: &std::path::Path) -> Self {
+                let previous = std::env::var_os("PATH");
+                std::env::set_var("PATH", path);
+                Self(previous)
+            }
+        }
+
+        impl Drop for PathGuard {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(path) => std::env::set_var("PATH", path),
+                    None => std::env::remove_var("PATH"),
+                }
+            }
+        }
+
         fn write_versioned_agent(root: &std::path::Path, version: &str) -> String {
             let path = root.join(version).join("bin").join("codex");
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -1485,7 +1566,7 @@ mod tests {
             let v2 = write_versioned_agent(root, "0.144.3");
             let stable = stable_bin.join("codex");
             std::os::unix::fs::symlink(&v1, &stable).unwrap();
-            std::env::set_var("PATH", &stable_bin);
+            let _path = PathGuard::set(&stable_bin);
 
             let pinned = std::fs::canonicalize(&stable)
                 .unwrap()
@@ -1527,19 +1608,16 @@ mod tests {
             assert_eq!(accepted.command_path, v2);
             assert_eq!(accepted.version, "0.144.3");
 
-            // A stale registration arriving from another workspace round still
-            // cannot make a live healed pair regress to the reappearing old
-            // path/version pairing.
-            registry.replace_builtins(
-                "workspace-1",
-                vec![builtin_launch(&pinned, "codex", "0.144.1")],
-            );
-            let cached = registry
+            // A newer accepted registration must supersede the provider-wide
+            // healed cache, even while the older binary remains installed.
+            let v3 = write_versioned_agent(root, "0.144.5");
+            registry.replace_builtins("workspace-1", vec![builtin_launch(&v3, "codex", "0.144.5")]);
+            let current = registry
                 .resolve_for_launch(&Ctx::new(), "workspace-1", &target)
                 .await
                 .unwrap();
-            assert_eq!(cached.command_path, v2);
-            assert_eq!(cached.version, "0.144.3");
+            assert_eq!(current.command_path, v3);
+            assert_eq!(current.version, "0.144.5");
         }
 
         #[tokio::test]
@@ -1553,7 +1631,7 @@ mod tests {
             let too_old = write_versioned_agent(root, "0.9.0");
             let stable = stable_bin.join("codex");
             std::os::unix::fs::symlink(&v1, &stable).unwrap();
-            std::env::set_var("PATH", &stable_bin);
+            let _path = PathGuard::set(&stable_bin);
             let pinned = std::fs::canonicalize(&stable)
                 .unwrap()
                 .to_string_lossy()
@@ -1596,7 +1674,7 @@ mod tests {
             let v2 = write_versioned_agent(root, "0.144.3");
             let stable = stable_bin.join("codex");
             std::os::unix::fs::symlink(&v1, &stable).unwrap();
-            std::env::set_var("PATH", &stable_bin);
+            let _path = PathGuard::set(&stable_bin);
             let pinned = std::fs::canonicalize(&stable)
                 .unwrap()
                 .to_string_lossy()
