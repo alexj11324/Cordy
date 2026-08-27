@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills heartbeat 与 wakeup/WS RPC/control lifecycle 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#549，可执行 | PR #542..#549；§5.2、§6.2、§29..§36 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills heartbeat 与 wakeup/control lifecycle 已交付；当前选择 auto-update/restart 完整契约 | 直接证明 heartbeat update 与 periodic update 共享 barrier/executor/report/restart owner | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#549，可执行 | PR #542..#549/当前切片；§5.2、§6.2、§29..§37 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1061,3 +1061,23 @@ consumer、task wakeup、reconcile、heartbeat lifecycle 与 root cancellation�
 - 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 仅运行并通过
   `git diff --check`，未把编译、测试、rustfmt 或 socket 行为记为通过。PR 堆叠在 Ready
   PR #548；#544 fix 尚待传播。
+
+## 37. AUDIT-005 执行缺口：auto-update / server update / restart handoff contract
+
+当前切片选择 `AUDIT-005` 的 auto update 作为一条完整 machine-level 生命周期：
+
+- Go 的 periodic release check、on-disk reload 与 heartbeat pending update 共享同一个 updating
+  CAS、claim/task barrier、真实 brew/download executor、result report 和 restart target；Desktop
+  必须拒绝自更新，busy/失败必须恢复 claims，成功 handoff 必须保持 barrier 并取消 root。
+- Rust 已迁移 `auto_update_loop`、`DaemonCoreHost::handle_server_update`、`UpdateExecutor` 和
+  production stack owner，但证据分散在 FakeHost algorithm tests、executor unit tests 与 source
+  wiring；没有直接检查从 production heartbeat owner 进入真实 host，确认 Desktop/busy/非法
+  target 的 report 与 barrier restore。删除 heartbeat update 分流仍不会破坏现有 auto-update tests。
+- `auto_update.rs` 仍全模块 `allow(dead_code)` 并把 CLI helper 标为“直到 CLI crate lands”，而
+  Rust CLI、真实 UpdateExecutor 和 production owner 已存在，源码自述落后于默认路径。
+
+本切片必须把 heartbeat pending update 与 periodic owner 视作同一契约：复用真实
+`DaemonCoreHost`、activity、Client result endpoint、UpdateExecutor validation 和既有 FakeHost
+success/restart checks，补直接 production owner 的 Desktop拒绝、busy/claim barrier 与 executor
+failure restore 证据；不新增第二个 updater、installer、HTTP client、barrier 或 restart state machine。
+实现、Ready PR、verification/review/fix 尚未产生。
