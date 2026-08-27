@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status Ready #565 与 issue create admission/ordering Ready #566 已交付 | 异步收口 #565/#566 V/R/F，同时继续其他 API/WS/background worker smoke | 依赖现有 Rust IssueService/issueguard/issueposition production chain；#566 堆叠在 Ready #565 | PR #565/#566；§5、§6.2、§18、§52、§53 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565 与 issue create #566 已交付；当前切片迁移 user WebSocket session 完整生产契约 | 一次收口 loopback upgrade、cookie/first-frame auth、membership、ack/error、scope control、ping/pong 和 cleanup；随后继续 background worker smoke | 依赖现有 Rust ws handler/hub/auth/membership production chain；堆叠在 Ready #566 | PR #565/#566；§5、§6.2、§18、§52..§54 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -1948,3 +1948,35 @@ allocator 或生产 seam：
 并在正常路径显式清理。主 agent 只执行 `git diff --check`（PASS），没有运行 cargo/rustfmt/test。非 Draft Ready
 PR #566 已创建，base 是 #565 branch；独立 verifier/reviewer 已异步派发，fixer 尚无 finding。不能据此声称已验证
 或删除 Go。
+
+## 54. AUDIT-002 执行缺口：user WebSocket authenticated session contract
+
+当前切片选择 `AUDIT-002` 的 user-facing WebSocket/realtime session，不与 daemon wakeup WS 或已核对等价的 Redis
+event envelope 重叠：
+
+- Go `cmd/server/router.go` 的 `/ws` mount 与 `internal/realtime/hub.go`/`hub_test.go` 定义完整会话：按
+  `workspace_id` 或 slug 解析；同源/可信代理/allowlist origin gate；有效 `cordy_auth` cookie 在 upgrade 前完成 JWT/PAT
+  与 membership；无 cookie 时第一条有界 JSON frame 必须是 auth token，成功回 `auth_ack`，失败回 `auth_error` 并
+  close；超限 frame fail-closed。
+- 已认证连接自动加入 workspace/user scope；task/chat subscribe 必须经过 DB ownership authorizer，返回
+  `subscribe_ack` 或 `subscribe_error`，workspace/user/global 等禁止手工越权；unsubscribe 返回 ack，ping 返回 pong；
+  断线后 client/scope rooms 和 subscriber lifecycle 必须清理，广播不能泄漏到 foreign user/workspace。
+- Rust `cordy-handler::ws::ws_handler`、`post_upgrade`、read/write pumps、`DbPatResolver`、`DbScopeAuthorizer` 与
+  `cordy-realtime::Hub` 已在唯一 `cordy-server` router 接线；但当前 `ws.rs` 只有 origin-policy unit tests，无法直接
+  证明真实 HTTP upgrade、两种 auth branch、membership、wire frames、DB scope ownership和 disconnect cleanup。
+
+本切片必须复用现有 handler/state/hub/auth/membership/task service，不新增 WebSocket server、auth service、hub、mock
+router 或 test-only production seam；在既有 Rust module 内启动真实 loopback Axum production route，以真实
+PostgreSQL fixture 和真实 WebSocket client执行完整会话矩阵。需要 DB 的 contract 缺失/坏 `DATABASE_URL` 必须失败，
+不得成功 self-return；fixture 用唯一 user/workspace/member/task/chat rows并显式清理。网络/sandbox 若限制 loopback，
+由 verifier 如实记录，不能用 helper unit test替代 production claim。
+
+- 默认生产路径：`cordy-server` 只挂载这一 `/ws` handler 和同一 production Hub/authorizer；有效 cookie/PAT/JWT 与
+  workspace membership 走真实 DB/cache，不存在 Stub/Noop/Fake/alternate hub。
+- 退出证据：真实 loopback client 覆盖 upgrade 前拒绝、first-frame auth、ack/error、自动 scope、authorized/denied
+  subscribe、ping/pong、广播隔离和 disconnect cleanup；删除 production auth/membership/authorizer/register/unregister
+  任一环节会使 contract 失败。
+- Go 是否可下线：本契约与异步 finding 收口后，Go user WS session 回归不再是 Rust production 依赖；Redis relay、
+  background worker、AUDIT-001..010 的剩余退出门仍未完成。
+- owner：主 agent 只迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
+  `codex/cord-231-user-websocket-session-rust`，依赖 Ready #566 branch at `1bf44476`；编码尚未开始。
