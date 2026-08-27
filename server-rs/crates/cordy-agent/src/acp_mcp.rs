@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -38,14 +39,22 @@ struct ManagedEntry {
     transport: String,
     #[serde(default)]
     command: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     args: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     env: BTreeMap<String, String>,
     #[serde(default)]
     url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     headers: BTreeMap<String, String>,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 /// Converts Cordy's canonical `{ "mcpServers": { ... } }` object into the
@@ -208,15 +217,30 @@ pub fn filter_acp_mcp_servers(
     {
         return servers;
     }
-    servers
-        .into_iter()
-        .filter(|server| match server {
+    let mut filtered = Vec::with_capacity(servers.len());
+    for server in servers {
+        let supported = match &server {
             AcpMcpServer::Stdio { .. } => true,
             AcpMcpServer::Remote { transport, .. } if transport == "http" => capabilities.http,
             AcpMcpServer::Remote { transport, .. } if transport == "sse" => capabilities.sse,
             AcpMcpServer::Remote { .. } => false,
-        })
-        .collect()
+        };
+        if supported {
+            filtered.push(server);
+            continue;
+        }
+        if let AcpMcpServer::Remote {
+            name, transport, ..
+        } = &server
+        {
+            tracing::warn!(
+                server = %name,
+                transport = %transport,
+                "dropping remote MCP server: runtime did not advertise this transport"
+            );
+        }
+    }
+    filtered
 }
 
 #[cfg(test)]
@@ -248,6 +272,26 @@ mod tests {
             serde_json::json!([
                 {"name":"local","command":"node","args":["server.js"],"env":[{"name":"A","value":"first"},{"name":"Z","value":"last"}]},
                 {"type":"http","name":"remote","url":"https://mcp.example.test","headers":[{"name":"Authorization","value":"Bearer private"},{"name":"X-Z","value":"last"}]}
+            ])
+        );
+    }
+
+    #[test]
+    fn conversion_accepts_null_optional_fields_as_empty() {
+        let config = serde_json::json!({
+            "mcpServers": {
+                "local": {"command": "node", "args": null, "env": null},
+                "remote": {"url": "https://mcp.example.test", "headers": null}
+            }
+        });
+        let servers = build_acp_mcp_servers(Some(&config))
+            .unwrap_or_else(|error| panic!("convert MCP: {error}"));
+        assert_eq!(servers.len(), 2);
+        assert_eq!(
+            serde_json::to_value(&servers).unwrap_or_else(|error| panic!("encode MCP: {error}")),
+            serde_json::json!([
+                {"name":"local","command":"node","args":[],"env":[]},
+                {"type":"http","name":"remote","url":"https://mcp.example.test","headers":[]}
             ])
         );
     }
