@@ -737,6 +737,9 @@ pub struct TaskCancelAck {
     /// Set when the cancelled run additionally FAILED to persist its work.
     pub error_message: String,
     pub failure_reason: String,
+    /// The adapter withheld a Codex session whose rollout never became
+    /// durable. The cancelled terminal path must clear the pinned pointer too.
+    pub session_rollout_missing: bool,
 }
 
 /// `TaskMessageData` (client.go:426): a single agent execution message for
@@ -780,6 +783,9 @@ impl Client {
         }
         if !ack.failure_reason.is_empty() {
             body.insert("failure_reason".into(), json!(ack.failure_reason));
+        }
+        if ack.session_rollout_missing {
+            body.insert("session_rollout_missing".into(), json!(true));
         }
         self.post_json_unit_with_retry(
             ctx,

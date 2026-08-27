@@ -3034,6 +3034,8 @@ struct CancelAckBody {
     error_message: String,
     #[serde(default, rename = "failure_reason")]
     failure_reason: String,
+    #[serde(default, rename = "session_rollout_missing")]
+    session_rollout_missing: bool,
 }
 
 /// POST /api/daemon/tasks/{taskId}/cancel-ack. Both writes carry a
@@ -3058,6 +3060,22 @@ async fn ack_task_cancelled(
     let failure_reason = sanitize(req.failure_reason.trim());
 
     let mut delivered = false;
+    if req.session_rollout_missing {
+        match state
+            .tasks
+            .acknowledge_cancelled_session_rollout_missing(task.id)
+            .await
+        {
+            Ok(recorded) => delivered |= recorded,
+            Err(e) => {
+                tracing::error!(error = %e, task_id = %task_id, "cancel ack: record missing session rollout failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to record missing session rollout",
+                );
+            }
+        }
+    }
     if !durable.is_empty() {
         if let Err(e) =
             agent::set_agent_task_durable_work_dir(&state.pool, Some(durable.as_str()), task.id)

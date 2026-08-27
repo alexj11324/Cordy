@@ -17,7 +17,7 @@ use cordy_agent::{
 };
 use cordy_protocol::DaemonHeartbeatAckPayload;
 use serde_json::{json, Map, Value};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, TaskMessageData};
@@ -26,6 +26,7 @@ use crate::execenv::context::{
     cleanup_sidecars, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
     TASK_CONTEXT_MARKER_REL_PATH,
 };
+use crate::execenv::codex_home::codex_resume_rollout_present;
 use crate::execenv::execenv::{
     predict_root_dir, prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
     MANAGED_ENV_PROVENANCE_MANAGED_BY,
@@ -66,6 +67,8 @@ use crate::types::{
 const TRANSCRIPT_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 const TRANSCRIPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const TRANSCRIPT_DRAIN_GRACE: Duration = Duration::from_secs(10);
+const CODEX_ROLLOUT_FLUSH_WAIT: Duration = Duration::from_secs(2);
+const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const TRANSCRIPT_BATCH_LIMIT: usize = 32;
 const TOOL_OUTPUT_BYTES: usize = 8 * 1024;
 const TOOL_INPUT_BYTES: usize = 64 * 1024;
@@ -658,6 +661,7 @@ impl ProductionProviderAdapter {
                 &client,
                 &task.id,
                 &environment.work_dir,
+                &environment.codex_home,
                 &prompt,
                 bound.options,
                 &mut transcript,
@@ -665,60 +669,75 @@ impl ProductionProviderAdapter {
             .await
             .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
 
-            if !should_retry_with_fresh_session(
+            let (mut result, retired_session_id) = if !should_retry_with_fresh_session(
                 &first,
                 &requested_session_id,
                 first_tools,
                 &target.provider,
             ) {
-                return Ok((first, requested_session_id, String::new()));
-            }
-
-            tracing::warn!(
-                task = %task.id,
-                provider = %target.provider,
-                "session resume failed; retrying once with a fresh session"
-            );
-            task.prior_session_id.clear();
-            task.prior_session_resume_unavailable = true;
-            plan.drop_resume();
-            let fresh = plan.bind_environment(
-                &environment,
-                PreparedEnvironmentInputs {
-                    cancellation: ctx.token().clone(),
-                    openclaw_include_roots: environment.openclaw_include_root.clone(),
-                    ..PreparedEnvironmentInputs::default()
-                },
-            )?;
-            transcript.begin_attempt();
-            let retry = execute_and_drain(
-                backend.as_ref(),
-                &ctx,
-                &client,
-                &task.id,
-                &environment.work_dir,
-                &build_prompt(task.clone(), &target.provider),
-                fresh.options,
-                &mut transcript,
+                (first, String::new())
+            } else {
+                tracing::warn!(
+                    task = %task.id,
+                    provider = %target.provider,
+                    "session resume failed; retrying once with a fresh session"
+                );
+                task.prior_session_id.clear();
+                task.prior_session_resume_unavailable = true;
+                plan.drop_resume();
+                let fresh = plan.bind_environment(
+                    &environment,
+                    PreparedEnvironmentInputs {
+                        cancellation: ctx.token().clone(),
+                        openclaw_include_roots: environment.openclaw_include_root.clone(),
+                        ..PreparedEnvironmentInputs::default()
+                    },
+                )?;
+                transcript.begin_attempt();
+                let retry = execute_and_drain(
+                    backend.as_ref(),
+                    &ctx,
+                    &client,
+                    &task.id,
+                    &environment.work_dir,
+                    &environment.codex_home,
+                    &build_prompt(task.clone(), &target.provider),
+                    fresh.options,
+                    &mut transcript,
+                )
+                .await;
+                (
+                    reconcile_fresh_retry_result(first, retry),
+                    requested_session_id.clone(),
+                )
+            };
+            let session_rollout_missing = withhold_missing_codex_rollout(
+                &mut result,
+                &environment.codex_home,
+                CODEX_ROLLOUT_FLUSH_WAIT,
             )
             .await;
-            let result = reconcile_fresh_retry_result(first, retry);
             Ok((
                 result,
-                requested_session_id.clone(),
                 requested_session_id,
+                retired_session_id,
+                session_rollout_missing,
             ))
         }
         .await;
 
         let mut outcome = match run {
-            Ok((result, requested_session_id, retired_session_id)) => result_outcome(
-                &target.provider,
-                result,
-                &environment,
-                &requested_session_id,
-                &retired_session_id,
-            ),
+            Ok((result, requested_session_id, retired_session_id, session_rollout_missing)) => {
+                let mut outcome = result_outcome(
+                    &target.provider,
+                    result,
+                    &environment,
+                    &requested_session_id,
+                    &retired_session_id,
+                );
+                outcome.result.session_rollout_missing = session_rollout_missing;
+                outcome
+            }
             Err(error) => failed(error, Some(&environment)),
         };
         if let Err(error) = remove_tree(&temp_dir) {
@@ -1260,11 +1279,80 @@ impl Drop for PrepareLeaseExtender {
     }
 }
 
+async fn codex_session_resumable(codex_home: &str, session_id: &str, wait: Duration) -> bool {
+    if codex_home.is_empty() || session_id.is_empty() {
+        return true;
+    }
+    if codex_resume_rollout_present(codex_home, session_id) {
+        return true;
+    }
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return codex_resume_rollout_present(codex_home, session_id);
+        }
+        tokio::time::sleep(CODEX_ROLLOUT_POLL_INTERVAL.min(deadline - now)).await;
+        if codex_resume_rollout_present(codex_home, session_id) {
+            return true;
+        }
+    }
+}
+
+async fn wait_codex_rollout_present(
+    owner: &CancellationToken,
+    codex_home: &str,
+    session_id: &str,
+) -> bool {
+    if codex_home.is_empty() || session_id.is_empty() {
+        return true;
+    }
+    if codex_resume_rollout_present(codex_home, session_id) {
+        return true;
+    }
+    let mut ticker = tokio::time::interval_at(
+        tokio::time::Instant::now() + CODEX_ROLLOUT_POLL_INTERVAL,
+        CODEX_ROLLOUT_POLL_INTERVAL,
+    );
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            () = owner.cancelled() => {
+                return codex_resume_rollout_present(codex_home, session_id);
+            }
+            _ = ticker.tick() => {
+                if codex_resume_rollout_present(codex_home, session_id) {
+                    return true;
+                }
+            }
+        }
+    }
+}
+
+async fn withhold_missing_codex_rollout(
+    result: &mut ExecutionResult,
+    codex_home: &str,
+    wait: Duration,
+) -> bool {
+    if codex_session_resumable(codex_home, &result.session_id, wait).await {
+        return false;
+    }
+    tracing::warn!(
+        session_id = %result.session_id,
+        %codex_home,
+        status = %result.status,
+        "Codex session rollout is missing; withholding the resume pointer"
+    );
+    result.session_id.clear();
+    true
+}
+
 async fn drain_session(
     ctx: &Ctx,
-    client: &Client,
+    client: &Arc<Client>,
     task_id: &str,
     work_dir: &str,
+    codex_home: &str,
     session: Session,
     transcript: &mut TranscriptBatch,
 ) -> anyhow::Result<ExecutionResult> {
@@ -1280,6 +1368,8 @@ async fn drain_session(
     let mut result_closed = false;
     let mut drain_deadline = Box::pin(tokio::time::sleep(Duration::from_secs(365 * 24 * 3600)));
     let mut drain_armed = false;
+    let pin_owner = CancellationToken::new();
+    let mut pin_waiters = JoinSet::new();
 
     loop {
         if messages_closed && terminal.is_some() {
@@ -1300,13 +1390,39 @@ async fn drain_session(
                 match received {
                     Some(message) => {
                         if let Some(session_id) = transcript.push(message) {
-                            let pin_ctx = Ctx::new();
-                            let pin = client.pin_task_session(&pin_ctx, task_id, &session_id, work_dir);
-                            match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
-                                Ok(Ok(())) => {}
-                                Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "pin task session failed"),
-                                Err(_) => tracing::debug!(task = %task_id, "pin task session timed out"),
-                            }
+                            let client = Arc::clone(client);
+                            let task_id = task_id.to_string();
+                            let work_dir = work_dir.to_string();
+                            let codex_home = codex_home.to_string();
+                            let pin_owner = pin_owner.clone();
+                            pin_waiters.spawn(async move {
+                                if !wait_codex_rollout_present(
+                                    &pin_owner,
+                                    &codex_home,
+                                    &session_id,
+                                )
+                                .await
+                                {
+                                    tracing::debug!(
+                                        task = %task_id,
+                                        %session_id,
+                                        "skip pinning Codex session without a rollout"
+                                    );
+                                    return;
+                                }
+                                let pin_ctx = Ctx::new();
+                                let pin = client.pin_task_session(
+                                    &pin_ctx,
+                                    &task_id,
+                                    &session_id,
+                                    &work_dir,
+                                );
+                                match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "pin task session failed"),
+                                    Err(_) => tracing::debug!(task = %task_id, "pin task session timed out"),
+                                }
+                            });
                         }
                         if transcript.ready() {
                             flush_transcript(client, task_id, transcript).await;
@@ -1340,6 +1456,9 @@ async fn drain_session(
         }
     }
     flush_transcript(client, task_id, transcript).await;
+    pin_owner.cancel();
+    while pin_waiters.join_next().await.is_some() {
+    }
     Ok(terminal.unwrap_or_else(|| ExecutionResult {
         status: "failed".to_string(),
         error: "provider messages closed without a terminal result".to_string(),
@@ -1411,16 +1530,26 @@ impl TranscriptBatch {
 async fn execute_and_drain(
     backend: &dyn Backend,
     ctx: &Ctx,
-    client: &Client,
+    client: &Arc<Client>,
     task_id: &str,
     work_dir: &str,
+    codex_home: &str,
     prompt: &str,
     options: ExecOptions,
     transcript: &mut TranscriptBatch,
 ) -> anyhow::Result<(ExecutionResult, usize)> {
     let tools_before = transcript.tool_use_count;
     let session = backend.execute(prompt, options).await?;
-    let result = drain_session(ctx, client, task_id, work_dir, session, transcript).await?;
+    let result = drain_session(
+        ctx,
+        client,
+        task_id,
+        work_dir,
+        codex_home,
+        session,
+        transcript,
+    )
+    .await?;
     Ok((
         result,
         transcript.tool_use_count.saturating_sub(tools_before),
@@ -2245,6 +2374,162 @@ mod tests {
             session_id: String::new(),
         });
         assert_eq!(batch.messages[2].seq, 3);
+    }
+
+    #[tokio::test]
+    async fn codex_rollout_gates_midflight_pin_and_terminal_session_delivery() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().join("codex-home");
+        let sessions = codex_home.join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let rollout = sessions.join("rollout-test-session-delayed.jsonl");
+        let codex_home = codex_home.to_string_lossy().into_owned();
+        let (requests_tx, mut requests_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = axum::Router::new().fallback(axum::routing::any({
+            let rollout = rollout.clone();
+            move |request: axum::extract::Request| {
+                let requests_tx = requests_tx.clone();
+                let rollout = rollout.clone();
+                async move {
+                    requests_tx
+                        .send((request.uri().path().to_string(), rollout.exists()))
+                        .unwrap();
+                    axum::http::StatusCode::NO_CONTENT
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let client = Arc::new(Client::new(format!("http://{address}")));
+
+        let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(2);
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let producer = tokio::spawn({
+            let rollout = rollout.clone();
+            async move {
+                messages_tx
+                    .send(Message {
+                        message_type: MessageType::Status,
+                        content: String::new(),
+                        tool: String::new(),
+                        call_id: String::new(),
+                        input: BTreeMap::new(),
+                        output: String::new(),
+                        status: "running".to_string(),
+                        level: String::new(),
+                        session_id: "session-delayed".to_string(),
+                    })
+                    .await
+                    .unwrap();
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                std::fs::write(rollout, "{}\n").unwrap();
+                tokio::time::sleep(Duration::from_millis(80)).await;
+                result_tx
+                    .send(ExecutionResult {
+                        status: "completed".to_string(),
+                        session_id: "session-delayed".to_string(),
+                        ..ExecutionResult::default()
+                    })
+                    .unwrap();
+            }
+        });
+        let mut transcript = TranscriptBatch::default();
+        let result = drain_session(
+            &Ctx::new(),
+            &client,
+            "task-delayed",
+            "/work",
+            &codex_home,
+            Session {
+                messages: messages_rx,
+                result: result_rx,
+            },
+            &mut transcript,
+        )
+        .await
+        .unwrap();
+        producer.await.unwrap();
+        assert_eq!(result.session_id, "session-delayed");
+        let (path, rollout_existed_at_pin) = requests_rx.recv().await.unwrap();
+        assert_eq!(path, "/api/daemon/tasks/task-delayed/session");
+        assert!(rollout_existed_at_pin);
+
+        let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(2);
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        messages_tx
+            .send(Message {
+                message_type: MessageType::Status,
+                content: String::new(),
+                tool: String::new(),
+                call_id: String::new(),
+                input: BTreeMap::new(),
+                output: String::new(),
+                status: "running".to_string(),
+                level: String::new(),
+                session_id: "session-missing".to_string(),
+            })
+            .await
+            .unwrap();
+        drop(messages_tx);
+        result_tx
+            .send(ExecutionResult {
+                status: "failed".to_string(),
+                session_id: "session-missing".to_string(),
+                ..ExecutionResult::default()
+            })
+            .unwrap();
+        let mut transcript = TranscriptBatch::default();
+        let mut missing = drain_session(
+            &Ctx::new(),
+            &client,
+            "task-missing",
+            "/work",
+            &codex_home,
+            Session {
+                messages: messages_rx,
+                result: result_rx,
+            },
+            &mut transcript,
+        )
+        .await
+        .unwrap();
+        assert!(requests_rx.try_recv().is_err());
+        assert!(
+            withhold_missing_codex_rollout(
+                &mut missing,
+                &codex_home,
+                Duration::from_millis(5),
+            )
+            .await
+        );
+        assert!(missing.session_id.is_empty());
+
+        let mut present = ExecutionResult {
+            status: "completed".to_string(),
+            session_id: "session-delayed".to_string(),
+            ..ExecutionResult::default()
+        };
+        assert!(
+            !withhold_missing_codex_rollout(&mut present, &codex_home, Duration::from_secs(1))
+                .await
+        );
+        assert_eq!(present.session_id, "session-delayed");
+
+        let mut non_codex = ExecutionResult {
+            status: "completed".to_string(),
+            session_id: "provider-session".to_string(),
+            ..ExecutionResult::default()
+        };
+        assert!(
+            !withhold_missing_codex_rollout(&mut non_codex, "", Duration::ZERO).await
+        );
+        assert_eq!(non_codex.session_id, "provider-session");
+        server.abort();
     }
 
     #[test]

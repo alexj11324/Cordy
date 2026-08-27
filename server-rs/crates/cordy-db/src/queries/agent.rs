@@ -6586,6 +6586,22 @@ WHERE id = $3 AND (error IS NULL OR error = '') AND status = 'cancelled'"#,
     Ok(r.rows_affected())
 }
 
+pub async fn mark_cancelled_task_session_rollout_missing(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE agent_task_queue
+SET session_id = NULL,
+    session_rollout_missing = TRUE
+WHERE id = $1 AND status = 'cancelled'"#,
+    )
+    .bind(id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn set_deferred_channel_issue_task_runtime_overlay(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     runtime_mcp_overlay: &serde_json::Value,

@@ -16,7 +16,7 @@ use cordy_db::dbid::new_v7;
 use cordy_db::models::{Agent, AgentTaskQueue, ChatMessage};
 use cordy_db::queries::agent::{
     cancel_pending_tasks_by_issue_and_agent, complete_agent_task, create_retry_task,
-    fail_agent_task, get_agent_task,
+    fail_agent_task, get_agent_task, mark_cancelled_task_session_rollout_missing,
 };
 use cordy_db::queries::attachment::{
     bind_chat_attachments_to_message, count_unbound_chat_attachments_for_task,
@@ -69,6 +69,56 @@ fn retryable_reason(reason: &str) -> bool {
 }
 
 impl TaskService {
+    /// Records a missing Codex rollout after server-side cancellation and
+    /// clears only the chat pointer that still names the cancelled task's
+    /// session. The chat lock preserves the repository-wide lock order.
+    pub async fn acknowledge_cancelled_session_rollout_missing(
+        &self,
+        task_id: Uuid,
+    ) -> Result<bool, TaskServiceError> {
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        lock_chat_session_for_task_write(&mut tx, task_id).await?;
+        let Some(task) = get_agent_task(&mut *tx, task_id)
+            .await
+            .map_err(downcast_sqlx)?
+        else {
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
+            return Ok(false);
+        };
+        if task.status != "cancelled" {
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
+            return Ok(false);
+        }
+        if mark_cancelled_task_session_rollout_missing(&mut *tx, task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            == 0
+        {
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
+            return Ok(false);
+        }
+        if let (Some(chat_session_id), Some(session_id)) =
+            (task.chat_session_id, task.session_id.as_deref())
+        {
+            if !session_id.is_empty() {
+                clear_chat_session_session_if_matches(
+                    &mut *tx,
+                    chat_session_id,
+                    Some(session_id),
+                    task.runtime_id,
+                )
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "clear missing-rollout chat session resume pointer: {error}"
+                    ))
+                })?;
+            }
+        }
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+        Ok(true)
+    }
+
     /// Marks a task completed inside one transaction: status CAS, chat
     /// resume-pointer advance, assistant outcome row. Idempotent under
     /// parallel-terminal races (ErrNoRows → return the existing row).
