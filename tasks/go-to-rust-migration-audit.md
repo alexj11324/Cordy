@@ -192,7 +192,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入；PR #556 增加 Linux process telemetry，但 reviewer 否定其足以替代 allocation-stack heap profile/runtime scheduler trace | fixer 收口 Cargo.lock/Linux/listener 证据；主线仍需 Rust-native heap/async诊断或明确获批的能力退役与 incident 证据 | Rust server/metrics 入口可执行；完整替代证据未成立 | PR #524/#556；详见 §12、§43 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003B | 进行中 | logger 配置、TTY、component、request attrs 已接入 Rust；当前切片收口 operator 时间布局 | 让 server、migrate/backfill 和 daemon production subscriber 统一输出 Go-compatible 本地 `HH:MM:SS.mmm`，不扩大为新日志框架 | Rust server/daemon/migrate 入口已由 AUDIT-001/006 交付，可执行 | PR #525/当前切片；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
@@ -1367,3 +1367,14 @@ implementation commit `f6f8ef32`）已把 process collector、legacy endpoint re
 - 退出证据：server、migrate/backfill、foreground daemon 和 rotating daemon sink 都输出本地
   毫秒时间；level/filter/ANSI/writer 行为保持不变。格式、compile、直接输出与各生产入口验证由
   independent verifier 执行，finding 交 independent fixer。
+
+Ready PR #557（`codex/cord-221-rust-log-time-contract`，gap commit `f349b70a`，
+implementation commit `0c596cbb`）已用同一个 format constant 和现有 ChronoLocal timer 覆盖
+server、migrate/三个 backfill、foreground daemon 与 rotating daemon sink。
+
+- 默认生产路径：全部真实 production subscriber construction sites 已接线；没有新 config，
+  LOG_LEVEL/RUST_LOG、ANSI、component/request fields 和 writer/rotation 选择保持原样。
+- Stub/Noop/Fake：不存在；subscriber install 继续走既有真实 success/error path。
+- Go 是否可下线：logger leaf 可在 #525/#557 异步证据收口后退休；全仓其他 AUDIT 门仍未完成。
+- 异步状态：independent verifier/reviewer 待派发，finding 交 fixer；主 agent 仅运行
+  `git diff --check`，未把 Cargo、format、compile、output 或 daemon sink 记为通过。
