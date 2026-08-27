@@ -1732,8 +1732,19 @@ error 并继续既有 bounded retry/fallback，不能 silently direct 绕过 ope
   verifier 执行或记为通过。
 - Ready PR #563：branch `codex/cord-227-daemon-wakeup-env-proxy-rust`，gap commit `2c0d0577`，
   implementation `544a603a`，initial delivery ledger `9cafc275`；base 是 Ready #562 branch
-  `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。PR 为非 Draft Ready；verification/reviewer 待异步
-  派发，fixer 尚无本 PR finding。
+  `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。PR 为非 Draft Ready。
+- independent verifier 在 exact HEAD `2180ded88a00f48fe31e60e09d963c6d1c936a6a` 确认 worktree clean、
+  range/diff check 通过且 Cargo.lock SHA 未变；fixed stable rustfmt 在 `manager.rs` 失败。daemon 对
+  workspace `hyper-util` 启用 `client-proxy` 时同时继承无效 `runtime` feature，故 metadata、daemon
+  no-run、三个新增 exact tests、既有 real websocket exact test 和 Windows check 全部在编译/测试发现前
+  exit 101、各执行 0 tests；继承自 #560 的 lock blocker 尚未到达。production CONNECT/TLS/control smoke
+  因此没有运行，不能记录为通过。
+- independent reviewer 在同一 exact HEAD 无 P0，报告 3 个 P1：environment lower/uppercase precedence 与
+  CGI 拒绝不等价；`hyper-util` host-only matcher 缺失 Go `NO_PROXY` 的 port/IPv6/leading-dot/`*.` grammar
+  且测试锁定错误 apex 语义；IPv6 proxy host 的方括号会破坏 dial。另有 P2：handshake 阶段 root cancel
+  不生效、CONNECT status parser 过宽、proxy userinfo auth parity 缺口及证据/退休声明过宽；P3 指出现有
+  Lark 已有近似 CONNECT 实现而 daemon 重复协议逻辑。全部 verifier/reviewer findings 已排入 existing
+  independent fixer；主 agent 不修复、不等待，PR 保持 Ready。
 
 ## 51. AUDIT-005 执行缺口：heartbeat stale HTTP pool recovery lifecycle
 
@@ -1765,4 +1776,21 @@ cache、legacy endpoint state 或 runtime registry。
   Noop、Fake 或 test-only production selector。Go 是否可下线：本 stale-pool recovery 经异步证据收口后
   不再需要 Go daemon；AUDIT-005 其余生命周期和最终 AUDIT-001..010 门仍未完成。
 - owner：主 agent 迁移、接线与 Ready PR；独立 verifier/reviewer/fixer 异步收口。依赖 Ready #563 branch
-  `codex/cord-227-daemon-wakeup-env-proxy-rust` at `2180ded8`；尚无 implementation commit 或 PR。
+  `codex/cord-227-daemon-wakeup-env-proxy-rust` at `2180ded8`。
+- implementation commit `762be14d` 将现有 `Client` 的唯一 reqwest handle 改为原子可替换 pool handle，
+  construction 仍收敛在同一个 builder；所有 centralized workspace GET、authenticated/explicit-token GET、
+  POST builder 都在建 request 时克隆当前 handle。换池前先构造 replacement，锁只覆盖 handle swap；已经建成
+  的 request 继续持有旧 pool，token/version/workspace ETag/cache/legacy endpoint 和 runtime state 均不变。
+- 直接 client contract check 在第一个 TCP connection 上证明 keepalive 复用，并在第二个请求 in-flight 时
+  换池：该请求成功完成，而下一 request 必须由第二个 TCP connection 接收。直接 production heartbeat
+  check 让唯一 `DaemonControl::run_runtime_heartbeat` 经历 `500,500 / 200 / 500,500 / 200`，服务器必须依次
+  接受三个 pool connection，因而同时固定第二次连续失败才换池以及成功后 streak reset；原有 404/runtime-
+  gone 和 WS-freshness reset 分支未改动。
+- 实现只修改现有 `client.rs` 与 `manager.rs`，共 199 insertions/14 deletions（大部分为上述两项真实 socket
+  contract checks）；没有新增文件、crate、dependency、client type、transport trait、supervisor、generation
+  registry、Stub、Noop 或 Fake。唯一 Rust production assembly 仍构造这一 `Client` 并注入同一
+  `DaemonControl`，现有第二次 failure 调用点现在执行真实 pool retirement。
+- 主 agent 只运行并通过 `git diff --check`；rustfmt、Cargo resolution/lock、compile、exact tests、完整 daemon
+  tests、production runtime smoke 与平台检查尚未由 independent verifier 执行，不能记录为通过。Ready PR
+  尚未创建；Go 本 stale-pool recovery 只有在异步证据收口后可退休，AUDIT-005 其他缺口和最终
+  AUDIT-001..010 仍未完成。
