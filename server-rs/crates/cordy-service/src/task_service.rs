@@ -3483,6 +3483,7 @@ impl TaskService {
                     .map_err(|e| {
                         TaskServiceError::Internal(format!("mark chat finalize deferred: {e}"))
                     })?;
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             if restorable {
@@ -3508,8 +3509,9 @@ impl TaskService {
                         TaskServiceError::Internal(format!(
                             "delete empty cancelled chat user message: {e}"
                         ))
-                    });
-                let Some(deleted) = deleted.ok().flatten() else {
+                    })?;
+                let Some(deleted) = deleted else {
+                    tx.commit().await.map_err(TaskServiceError::Sql)?;
                     return Ok(());
                 };
                 // Always restorable now: the delete cannot return a kickoff row,
@@ -3521,6 +3523,7 @@ impl TaskService {
                     restore_to_input: true,
                     attachments: detached,
                 });
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             create_assistant_chat_message_typed(
@@ -3533,6 +3536,7 @@ impl TaskService {
                 None,
             )
             .await?;
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
             Ok(())
         }
         .await;
@@ -3612,9 +3616,11 @@ impl TaskService {
                     TaskServiceError::Internal(format!("claim deferred chat finalize: {e}"))
                 })?;
             let Some(claimed) = claimed else {
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             };
             if session_gone || claimed.chat_session_id.is_none() {
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             let chat_session_id = claimed.chat_session_id.expect("checked above");
@@ -3668,9 +3674,10 @@ impl TaskService {
                         TaskServiceError::Internal(format!(
                             "delete empty cancelled chat user message: {e}"
                         ))
-                    });
-                let Some(deleted) = deleted.ok().flatten() else {
+                    })?;
+                let Some(deleted) = deleted else {
                     payload.outcome = String::new();
+                    tx.commit().await.map_err(TaskServiceError::Sql)?;
                     return Ok(());
                 };
                 let attachment_ids: Vec<Uuid> = detached.iter().map(|a| a.id).collect();
@@ -3688,6 +3695,7 @@ impl TaskService {
                 })?;
                 payload.outcome = cordy_protocol::CHAT_CANCEL_OUTCOME_RESTORED.to_string();
                 payload.message_id = deleted.id.to_string();
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             let row = create_assistant_chat_message_typed(
@@ -3709,6 +3717,7 @@ impl TaskService {
                 .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
             payload.elapsed_ms = compute_chat_elapsed_ms(claimed.completed_at, claimed.created_at)
                 .unwrap_or_default();
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
             Ok(())
         }
         .await;
