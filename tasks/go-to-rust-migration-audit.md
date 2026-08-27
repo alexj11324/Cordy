@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567 与 scheduler worker #568 Ready；heartbeat worker 实施中 | 异步收口 #565..#568 V/R/F，同时收口 heartbeat coalescing/fallback/shutdown lifecycle | 复用唯一 Rust production heartbeat scheduler；当前切片基于 #568 | PR #565..#568；§5、§6.2、§18、§52..§56 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568与heartbeat worker #569 Ready | 异步收口 #565..#569 V/R/F，同时继续下一项完整 background-worker 契约 | 复用唯一 Rust production assemblies；#569 堆叠在 Ready #568 | PR #565..#569；§5、§6.2、§18、§52..§56 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2109,3 +2109,6 @@ production scheduler、SQL、依赖、文件边界或新增 runtime seam：
 主 agent 只执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试或 DB 命令。production server复用同一
 `BatchedHeartbeatScheduler` 注入 handler并启动 runtime的入口已静态定位；exact compile、matched/executed counts、真实 DB
 竞争、server/Windows build和清理行为由独立 verifier执行。当前不能声称 heartbeat worker 已验证或删除 Go。
+
+非 Draft Ready PR #569 已创建，base 是 #568 branch，Ready SHA `be2bc21d`；独立 verifier/reviewer 已异步派发，
+fixer 尚无本 PR finding。PR可在异步结果期间保持Ready，主线不等待。
