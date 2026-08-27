@@ -26,7 +26,7 @@ use crate::contract::{
     COST_USD_TICKS_PER_USD,
 };
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
+use crate::model::{parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -147,6 +147,10 @@ static OUTPUT_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)API call failed after \d+ retr(?:y|ies)")
         .unwrap_or_else(|error| panic!("invalid Qoder output-error regex: {error}"))
 });
+static HERMES_SESSION_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?im)^\s*(?:RuntimeError:\s*)?No LLM provider configured[^\r\n]*")
+        .unwrap_or_else(|error| panic!("invalid Hermes provider-error regex: {error}"))
+});
 
 #[derive(Debug, Clone)]
 pub struct QoderConfig {
@@ -237,6 +241,65 @@ impl QoderBackend {
         timeout: Duration,
     ) -> Catalog {
         discover_models_with_scope(&self.config, runtime_scope, cache, cancellation, timeout).await
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HermesConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HermesBackend {
+    inner: QoderBackend,
+}
+
+impl HermesBackend {
+    pub fn new(config: HermesConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "hermes".to_string(),
+                provider: "hermes".to_string(),
+                launch_args: vec!["acp".to_string()],
+                discovery_args: vec!["acp".to_string()],
+                resume_method: "session/resume".to_string(),
+                use_system_prompt: false,
+                ..QoderConfig::default()
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models_for_runtime(runtime_scope, cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for HermesBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
     }
 }
 
@@ -835,6 +898,9 @@ async fn discover_models_with_scope(
         .stderr(Stdio::null())
         .envs(&config.env)
         .kill_on_drop(false);
+    if config.provider == "hermes" {
+        command.env("HERMES_YOLO_MODE", "1");
+    }
     if let Some(directory) = isolated_state.as_ref() {
         command.env("REASONIX_STATE_HOME", directory.path());
     }
@@ -915,7 +981,11 @@ async fn discover_models_with_scope(
                 return Catalog::default();
             }
         }
-        let mut models = parse_acp_session_models(&session, &config.provider);
+        let mut models = if config.provider == "hermes" {
+            parse_hermes_session_models(&session)
+        } else {
+            parse_acp_session_models(&session, &config.provider)
+        };
         if matches!(config.provider.as_str(), "dim" | "reasonix") {
             annotate_acp_effort(&mut models, &session);
         }
@@ -926,6 +996,57 @@ async fn discover_models_with_scope(
     });
     let _ = cache.insert(key, catalog.clone());
     catalog
+}
+
+fn parse_hermes_session_models(result: &Value) -> Vec<Model> {
+    let Some(models) = result.get("models") else {
+        return Vec::new();
+    };
+    let current = models
+        .get("currentModelId")
+        .or_else(|| models.get("current_model_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let Some(available) = models
+        .get("availableModels")
+        .or_else(|| models.get("available_models"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    available
+        .iter()
+        .filter_map(|entry| {
+            let id = entry
+                .get("modelId")
+                .or_else(|| entry.get("model_id"))
+                .and_then(Value::as_str)?
+                .trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                return None;
+            }
+            let label = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty() && !label.eq_ignore_ascii_case("unknown"))
+                .unwrap_or(id);
+            let provider = id
+                .split_once(':')
+                .map(|(provider, _)| provider)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or("hermes");
+            Some(Model {
+                id: id.to_string(),
+                label: label.to_string(),
+                provider: provider.to_string(),
+                default: id == current,
+                ..Model::default()
+            })
+        })
+        .collect()
 }
 
 #[async_trait]
@@ -955,6 +1076,9 @@ impl Backend for QoderBackend {
             .stderr(Stdio::piped())
             .envs(&self.config.env)
             .kill_on_drop(false);
+        if self.config.provider == "hermes" {
+            command.env("HERMES_YOLO_MODE", "1");
+        }
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -2608,6 +2732,11 @@ fn select_grok_auth_method(initialize: &Value, have_api_key: bool) -> Result<&'s
 }
 
 fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> {
+    if provider == "hermes" {
+        if let Some(found) = HERMES_SESSION_PROVIDER_ERROR.find(stderr) {
+            return Some(format!("{provider} provider error: {}", found.as_str()));
+        }
+    }
     if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
         return Some(format!("{provider} provider error: {}", found.as_str()));
     }
@@ -2687,6 +2816,51 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--safe"));
         assert!(args.iter().any(|arg| arg == "--debug"));
         assert!(!args.iter().any(|arg| arg == "acp"));
+    }
+
+    #[test]
+    fn hermes_arguments_keep_acp_owned() {
+        let backend = HermesBackend::new(HermesConfig::default());
+        let args = build_session_args(
+            &backend.inner.config,
+            &ExecOptions {
+                extra_args: ["--acp", "--verbose"].map(str::to_string).to_vec(),
+                custom_args: ["--acp", "--debug"].map(str::to_string).to_vec(),
+                ..ExecOptions::default()
+            },
+        );
+        assert_eq!(args[0], "acp");
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert!(args.iter().any(|arg| arg == "--verbose"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
+    }
+
+    #[test]
+    fn hermes_session_models_preserve_provider_qualified_ids() {
+        let models = parse_hermes_session_models(&serde_json::json!({
+            "models": {
+                "currentModelId": "nous:anthropic/claude-opus-4.7",
+                "availableModels": [
+                    {
+                        "modelId": "nous:moonshotai/kimi-k2.5",
+                        "name": "moonshotai/kimi-k2.5"
+                    },
+                    {
+                        "modelId": "nous:anthropic/claude-opus-4.7",
+                        "name": "Unknown"
+                    },
+                    {
+                        "modelId": "nous:anthropic/claude-opus-4.7",
+                        "name": "duplicate"
+                    }
+                ]
+            }
+        }));
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "nous:moonshotai/kimi-k2.5");
+        assert_eq!(models[0].provider, "nous");
+        assert_eq!(models[1].label, "nous:anthropic/claude-opus-4.7");
+        assert!(models[1].default);
     }
 
     #[test]

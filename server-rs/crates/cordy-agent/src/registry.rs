@@ -19,9 +19,9 @@ use crate::openclaw::{OpenclawBackend, OpenclawConfig};
 use crate::opencode::{OpencodeBackend, OpencodeConfig};
 use crate::pi::{PiBackend, PiConfig};
 use crate::qoder::{
-    DimBackend, DimConfig, GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig, QwenpawBackend,
-    QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
+    DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
+    KimiConfig, KiroBackend, KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig,
+    QwenpawBackend, QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
 use tokio_util::sync::CancellationToken;
@@ -383,6 +383,9 @@ pub async fn discover_models(
         "grok" => Ok(GrokBackend::new(GrokConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),
+        "hermes" => Ok(HermesBackend::new(HermesConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
         "dim" => Ok(DimBackend::new(DimConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),
@@ -479,6 +482,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "grok" => Ok(Arc::new(GrokBackend::new(GrokConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "hermes" => Ok(Arc::new(HermesBackend::new(HermesConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -620,6 +627,7 @@ mod tests {
             "kimi",
             "reasonix",
             "grok",
+            "hermes",
             "mcode",
             "dim",
             "qoder",
@@ -635,7 +643,7 @@ mod tests {
 
     #[test]
     fn factory_fails_closed_for_unknown_or_unimplemented_runtime() {
-        for runtime in ["unknown", "hermes"] {
+        for runtime in ["unknown"] {
             assert!(matches!(
                 build_backend(runtime, backend_config()),
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
