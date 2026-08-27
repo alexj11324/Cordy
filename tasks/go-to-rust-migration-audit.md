@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 review/fix；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | PR #531；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk 与 Slack 均要求有效 secret，使用真实 production transport，错误配置 fail-closed；shutdown 纳入 channel runtime deadline | Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532..#535；§5.3、§6.2、§20..§23 | 主 agent；review/fix subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack 与 Telegram 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532..#536；§5.3、§6.2、§20..§24 | 主 agent；review/fix subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
@@ -644,3 +644,27 @@ typing、media、outbound 和 shutdown wiring，不增加新的生产抽象：
   production configuration gate 实际运行 4/4 通过。沙箱内同一 Slack 测试为
   61 通过、2 个本地 listener 因 `EPERM` 失败，沙箱外原样重跑后两项均通过；固定
   stable rustfmt 与 `git diff --check` 通过。
+
+## 24. AUDIT-004 执行更新：Telegram production configuration contract
+
+Ready PR #536（`codex/cord-201-telegram-production-contract-rust`）直接执行 Telegram
+production configure/Registry 路径，复用现有 HandlerState、router、BotApi、media、
+outbound 和 shutdown wiring，不增加生产抽象：
+
+- Go 能力：缺失或非法 `CORDY_TELEGRAM_SECRET_KEY` 不注册 Telegram；有效 key
+  注入安装 bot token decrypter、真实 Bot API/long-poll transport、typing、reply、
+  media、outbound 与 resolver wiring。
+- Rust 入口：测试实际调用 `cordy-server::channel_runtime::configure_telegram`，
+  断言缺失/非法 key 时 Registry 为空；有效 key 时注册 production factory，并由
+  同一 factory 解密 secretbox 安装 token、成功构造 Telegram channel。空
+  `api_base` 继续选择 `cordy_telegram::DEFAULT_API_BASE`（官方
+  `https://api.telegram.org`）。
+- 生产路径状态：Rust server 的 `ChannelRuntime::start` 调用该 wiring；long poll、
+  outbound runtime tasks、media resolver 和 supervisor shutdown 复用现有
+  cancellation/deadline 边界。
+- Go 是否可下线：否。Telegram production selection 已有直接 Rust Registry 证据，
+  但真实外部凭证 smoke、其余 AUDIT-004 provider 与最终 AUDIT-001..010 门未完成。
+- 验证状态：`cordy-telegram --lib` 43 通过、1 个明确依赖外网的测试 ignored；固定
+  stable rustfmt 与 `git diff --check` 通过。新增 server production configure
+  测试已启动完整依赖编译/链接，当前尚未返回结果，因此不记录为通过；长编译不阻塞
+  Ready PR 或后续主线迁移。
