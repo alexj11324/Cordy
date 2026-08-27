@@ -50,8 +50,22 @@ Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared package
 make dev              # Auto-setup + start everything
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
-make test             # Go tests
-make check            # Full verification pipeline
+make test             # Go tests (legacy backend; not a Rust migration gate)
+make check            # Full product pipeline; includes legacy Go/TS/E2E checks
 ```
 
 See CLAUDE.md for the authoritative rules and common commands.
+
+### Rust migration verification scope
+
+For Rust refactor/migration PRs, local CI is Rust-only by default. Run the
+applicable `cargo fmt`, `cargo check`, `cargo clippy`, `cargo test`, and build
+commands with the repository's locked/offline settings; do not run `make test`
+or the Go test suite, and do not make Go test results a merge condition. Go
+files may be inspected or covered by a narrow compatibility/contract check only
+when the Rust change crosses an existing Go protocol boundary. The full
+`make check` target is a product-wide legacy pipeline and is not the default
+gate for Rust migration work.
+The migration owner only performs the refactor, production wiring, and
+`git diff --check`; an independent verification subagent runs these Rust
+format/check/test/build gates and reports the exact results.
