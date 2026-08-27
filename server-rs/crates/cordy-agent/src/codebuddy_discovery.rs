@@ -1,6 +1,6 @@
 //! CodeBuddy model and effort discovery through its ACP handshake.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io;
 use std::process::Stdio;
 use std::time::Duration;
@@ -12,9 +12,8 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio_util::sync::CancellationToken;
 
 use crate::codebuddy::CodebuddyBackend;
-use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
-};
+use crate::command::RuntimeCommand;
+use crate::model::{Catalog, CatalogCache, Model, ModelThinking, ThinkingLevel};
 use crate::process::OwnedProcessTree;
 use crate::stderr::sanitize_diagnostic;
 use crate::stream::AgentLineReader;
@@ -34,9 +33,7 @@ impl CodebuddyBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        let Some(key) = ModelDiscoveryCacheKey::new("codebuddy", &self.config().command) else {
-            return fallback_catalog();
-        };
+        let key = discovery_cache_key("codebuddy", &self.config().command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -97,21 +94,19 @@ async fn discover_once(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    crate::codebuddy::apply_sanitized_environment(&mut command, &config.env);
     let mut tree = OwnedProcessTree::spawn(&mut command)
         .await
         .map_err(|error| DiscoveryFailure::new("process start", error.to_string()))?;
-    let mut stdin = tree
-        .child_mut()
-        .stdin
-        .take()
-        .ok_or_else(|| DiscoveryFailure::new("stdin setup", "pipe unavailable"))?;
-    let stdout = tree
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| DiscoveryFailure::new("stdout setup", "pipe unavailable"))?;
+    let Some(mut stdin) = tree.child_mut().stdin.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(DiscoveryFailure::new("stdin setup", "pipe unavailable"));
+    };
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(DiscoveryFailure::new("stdout setup", "pipe unavailable"));
+    };
     let mut reader = AgentLineReader::new(BufReader::new(stdout));
 
     let result = {
@@ -124,8 +119,30 @@ async fn discover_once(
         }
     };
     drop(stdin);
-    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+    stop_process_tree(&mut tree).await;
     result
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
 }
 
 async fn run_handshake(
@@ -548,10 +565,12 @@ mod tests {
             .unwrap_or_else(|| panic!("effort catalog"));
         assert_eq!(thinking.supported_levels.len(), 6);
         assert!(thinking.default_level.is_empty());
-        assert!(!thinking
-            .supported_levels
-            .iter()
-            .any(|level| level.value == "enabled"));
+        assert!(
+            !thinking
+                .supported_levels
+                .iter()
+                .any(|level| level.value == "enabled")
+        );
     }
 
     #[test]
@@ -560,8 +579,7 @@ mod tests {
         assert!(fallback.fallback);
         assert!(fallback.models.iter().all(|model| model.thinking.is_some()));
         let cache = CatalogCache::default();
-        let key = ModelDiscoveryCacheKey::new("codebuddy", &RuntimeCommand::default())
-            .unwrap_or_else(|| panic!("cache key"));
+        let key = discovery_cache_key("codebuddy", &RuntimeCommand::default());
         assert!(!cache.insert(key, fallback));
     }
 

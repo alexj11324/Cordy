@@ -1,6 +1,7 @@
 //! CodeBuddy's headless bidirectional stream-JSON adapter.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io;
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
@@ -8,22 +9,22 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, Command};
-use tokio::sync::{mpsc, oneshot, Mutex};
-use tokio::task::JoinError;
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::task::{JoinError, JoinHandle};
 
-use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
+use crate::command::{BlockedArgMode, RuntimeCommand, filter_custom_args, filter_launch_prefix};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 use crate::mcp::{managed_object, write_managed_temp};
 use crate::process::OwnedProcessTree;
-use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
+use crate::stderr::{DEFAULT_TAIL_BYTES, SharedDiagnosticBuffer, with_stderr};
 use crate::stream::{
-    finalize_stream, resume_was_rejected, AgentLineReader, AssistantTurn, RunEnd, TerminalState,
+    AgentLineReader, AssistantTurn, RunEnd, TerminalState, finalize_stream, resume_was_rejected,
 };
 
 const MESSAGE_BUFFER: usize = 256;
@@ -39,6 +40,7 @@ static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock
         ("--input-format", BlockedArgMode::WithValue),
         ("--permission-mode", BlockedArgMode::WithValue),
         ("--mcp-config", BlockedArgMode::WithValue),
+        ("--strict-mcp-config", BlockedArgMode::Standalone),
         ("--effort", BlockedArgMode::WithValue),
     ])
 });
@@ -108,6 +110,7 @@ pub fn build_codebuddy_args(options: &ExecOptions) -> Vec<String> {
 impl Backend for CodebuddyBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
         managed_object(options.mcp_config.as_ref()).map_err(AgentError::InvalidConfig)?;
+        let prompt_bytes = prompt_input(prompt)?;
         let command_path = if self.config.command.path.is_empty() {
             "codebuddy"
         } else {
@@ -116,17 +119,21 @@ impl Backend for CodebuddyBackend {
         let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS);
         log_blocked("launch prefix", &prefix.blocked_flags);
         log_blocked_args(&options);
-        let mut argv = prefix.args;
-        argv.extend(build_codebuddy_args(&options));
+        let mut argv: Vec<OsString> = prefix.args.into_iter().map(OsString::from).collect();
+        argv.extend(
+            build_codebuddy_args(&options)
+                .into_iter()
+                .map(OsString::from),
+        );
 
         let mut mcp_file = write_managed_temp(options.mcp_config.as_ref(), "cordy-codebuddy-mcp-")?;
         if let Some(file) = mcp_file.as_ref() {
-            let path = file.path().to_str().ok_or_else(|| {
-                AgentError::InvalidConfig("CodeBuddy MCP path is not valid UTF-8".to_string())
-            })?;
             // Never add --strict-mcp-config: managed entries augment the CLI's
             // own user/project/local scopes and win same-name collisions.
-            argv.extend(["--mcp-config".to_string(), path.to_string()]);
+            argv.extend([
+                OsString::from("--mcp-config"),
+                file.path().as_os_str().to_owned(),
+            ]);
         }
 
         let mut command = Command::new(command_path);
@@ -135,8 +142,8 @@ impl Backend for CodebuddyBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        apply_sanitized_environment(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -150,15 +157,24 @@ impl Backend for CodebuddyBackend {
                     AgentError::Process(error)
                 }
             })?;
-        let stdin = tree.child_mut().stdin.take().ok_or_else(|| {
-            AgentError::Protocol("CodeBuddy stdin pipe unavailable after spawn".to_string())
-        })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("CodeBuddy stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("CodeBuddy stderr pipe unavailable after spawn".to_string())
-        })?;
+        let Some(stdin) = tree.child_mut().stdin.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "CodeBuddy stdin pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "CodeBuddy stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "CodeBuddy stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
 
         let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
@@ -168,7 +184,6 @@ impl Backend for CodebuddyBackend {
         let requested_resume = options.resume_session_id.clone();
         let fallback_model = options.model.clone();
         let stdin = Arc::new(Mutex::new(Some(stdin)));
-        let prompt_bytes = prompt_input(prompt)?;
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
 
         tokio::spawn(async move {
@@ -187,7 +202,11 @@ impl Backend for CodebuddyBackend {
             let end = {
                 let completion = async {
                     let exit = tree.wait().await;
-                    let stream = (&mut stdout_task).await;
+                    // The direct process can exit while a descendant still
+                    // owns stdout. Stop the owned tree before joining the
+                    // reader so normal completion cannot outlive the run.
+                    stop_process_tree(&mut tree).await;
+                    let stream = join_stream(&mut stdout_task).await;
                     let write = (&mut prompt_task).await;
                     (exit, stream, write)
                 };
@@ -198,10 +217,15 @@ impl Backend for CodebuddyBackend {
                         () = cancellation.cancelled() => RunOutcome::Cancelled,
                     }
                 } else {
-                    tokio::select! {
-                        completed = &mut completion => RunOutcome::Completed(completed),
-                        () = cancellation.cancelled() => RunOutcome::Cancelled,
-                        () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        RunOutcome::TimedOut
+                    } else {
+                        tokio::select! {
+                            completed = &mut completion => RunOutcome::Completed(completed),
+                            () = cancellation.cancelled() => RunOutcome::Cancelled,
+                            () = tokio::time::sleep(remaining) => RunOutcome::TimedOut,
+                        }
                     }
                 }
             };
@@ -211,22 +235,24 @@ impl Backend for CodebuddyBackend {
                     (RunEnd::Completed, Some(exit), stream, write)
                 }
                 RunOutcome::Cancelled => {
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                    prompt_task.abort();
                     close_stdin(&stdin).await;
+                    stop_process_tree(&mut tree).await;
                     (
                         RunEnd::Cancelled,
                         None,
-                        (&mut stdout_task).await,
+                        join_stream(&mut stdout_task).await,
                         (&mut prompt_task).await,
                     )
                 }
                 RunOutcome::TimedOut => {
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                    prompt_task.abort();
                     close_stdin(&stdin).await;
+                    stop_process_tree(&mut tree).await;
                     (
                         RunEnd::DeadlineExceeded,
                         None,
-                        (&mut stdout_task).await,
+                        join_stream(&mut stdout_task).await,
                         (&mut prompt_task).await,
                     )
                 }
@@ -244,7 +270,7 @@ impl Backend for CodebuddyBackend {
                 tracing::debug!(provider = "codebuddy", stderr = %stderr, "agent stderr captured");
             }
 
-            let mut state = stream.unwrap_or_else(join_failure_state);
+            let mut state = stream;
             let write_error = write_error(write);
             let exit_error = exit
                 .as_ref()
@@ -380,7 +406,7 @@ enum RunOutcome {
     Completed(
         (
             io::Result<ExitStatus>,
-            Result<CodebuddyStreamState, JoinError>,
+            CodebuddyStreamState,
             Result<io::Result<()>, JoinError>,
         ),
     ),
@@ -414,6 +440,23 @@ fn join_failure_state(error: JoinError) -> CodebuddyStreamState {
     }
 }
 
+async fn join_stream(task: &mut JoinHandle<CodebuddyStreamState>) -> CodebuddyStreamState {
+    match tokio::time::timeout(KILL_GRACE, &mut *task).await {
+        Ok(Ok(state)) => state,
+        Ok(Err(error)) => join_failure_state(error),
+        Err(_) => {
+            task.abort();
+            CodebuddyStreamState {
+                terminal: TerminalState {
+                    scan_error: "CodeBuddy stdout reader did not terminate".to_string(),
+                    ..TerminalState::default()
+                },
+                ..CodebuddyStreamState::default()
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct CodebuddyEvent {
     #[serde(rename = "type")]
@@ -430,12 +473,31 @@ struct CodebuddyEvent {
     is_error: bool,
     usage: Option<CodebuddyUsage>,
     #[serde(default, rename = "modelUsage")]
-    model_usage: BTreeMap<String, CodebuddyResultUsage>,
+    model_usage: Option<BTreeMap<String, CodebuddyResultUsage>>,
     log: Option<CodebuddyLog>,
     #[serde(default)]
     request_id: String,
     #[serde(default)]
-    request: Value,
+    #[serde(deserialize_with = "deserialize_request")]
+    request: CodebuddyRequest,
+}
+
+#[derive(Debug, Default)]
+enum CodebuddyRequest {
+    #[default]
+    Missing,
+    Null,
+    Value(Value),
+}
+
+fn deserialize_request<'de, D>(deserializer: D) -> Result<CodebuddyRequest, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(value) => CodebuddyRequest::Value(value),
+        None => CodebuddyRequest::Null,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -443,7 +505,7 @@ struct CodebuddyPayload {
     #[serde(default)]
     model: String,
     #[serde(default)]
-    content: Vec<CodebuddyBlock>,
+    content: Option<Vec<CodebuddyBlock>>,
     usage: Option<CodebuddyUsage>,
 }
 
@@ -578,7 +640,7 @@ fn handle_assistant(
         understood: true,
         ..AssistantTurn::default()
     };
-    for block in payload.content {
+    for block in payload.content.unwrap_or_default() {
         match block.block_type.as_str() {
             "text" if !block.text.is_empty() => {
                 turn.text.push_str(&block.text);
@@ -630,7 +692,7 @@ fn handle_user(raw: Value, messages: &mpsc::Sender<Message>) {
     let Ok(payload) = serde_json::from_value::<CodebuddyPayload>(raw) else {
         return;
     };
-    for block in payload.content {
+    for block in payload.content.unwrap_or_default() {
         if block.block_type == "tool_result" {
             send_message(
                 messages,
@@ -649,12 +711,16 @@ fn handle_user(raw: Value, messages: &mpsc::Sender<Message>) {
 }
 
 fn control_response(event: &CodebuddyEvent) -> Option<Vec<u8>> {
-    let input = event
-        .request
-        .get("input")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
+    let input = match &event.request {
+        CodebuddyRequest::Missing => return None,
+        CodebuddyRequest::Null | CodebuddyRequest::Value(Value::Null) => serde_json::Map::new(),
+        CodebuddyRequest::Value(Value::Object(request)) => request
+            .get("input")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default(),
+        CodebuddyRequest::Value(_) => return None,
+    };
     let mut response = serde_json::to_vec(&serde_json::json!({
         "type": "control_response",
         "response": {
@@ -693,7 +759,9 @@ fn result_usage(
 ) -> Option<BTreeMap<String, TokenUsage>> {
     let models: BTreeMap<String, TokenUsage> = event
         .model_usage
-        .iter()
+        .as_ref()
+        .into_iter()
+        .flat_map(|model_usage| model_usage.iter())
         .filter(|(model, usage)| !model.is_empty() && usage.has_tokens())
         .map(|(model, usage)| (model.clone(), usage.normalized()))
         .collect();
@@ -765,6 +833,53 @@ fn send_message(messages: &mpsc::Sender<Message>, message: Message) {
     let _ = messages.try_send(message);
 }
 
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
+pub(crate) fn apply_sanitized_environment(
+    command: &mut Command,
+    configured: &BTreeMap<String, String>,
+) {
+    command.env_clear();
+    for (key, value) in std::env::vars_os() {
+        let Some(key_text) = key.to_str() else {
+            command.env(key, value);
+            continue;
+        };
+        if should_filter_inherited_env(key_text) {
+            continue;
+        }
+        command.env(key, value);
+    }
+    command.envs(configured);
+}
+
+fn should_filter_inherited_env(key: &str) -> bool {
+    if key.to_ascii_uppercase().starts_with("CORDY_") {
+        return true;
+    }
+    matches!(
+        key,
+        "CLAUDECODE"
+            | "CLAUDE_CODE_ENTRYPOINT"
+            | "CLAUDE_CODE_EXECPATH"
+            | "CLAUDE_CODE_SESSION_ID"
+            | "CLAUDE_CODE_SSE_PORT"
+    ) || key.starts_with("CLAUDECODE_")
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
@@ -783,6 +898,7 @@ mod tests {
             extra_args: vec!["--output-format".to_string(), "text".to_string()],
             custom_args: vec![
                 "--effort=max".to_string(),
+                "--strict-mcp-config".to_string(),
                 "--max-budget-usd".to_string(),
                 "2".to_string(),
             ],
@@ -808,9 +924,11 @@ mod tests {
         );
         assert!(args.windows(2).any(|pair| pair == ["--effort", "high"]));
         assert!(args.windows(2).any(|pair| pair == ["--max-turns", "25"]));
-        assert!(!args
-            .iter()
-            .any(|arg| arg == "text" || arg == "--effort=max"));
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg == "text" || arg == "--effort=max")
+        );
         assert!(!args.iter().any(|arg| arg == "--strict-mcp-config"));
     }
 
@@ -837,6 +955,36 @@ mod tests {
             response["response"]["response"]["updatedInput"]["command"],
             "ls"
         );
+
+        let missing_request: CodebuddyEvent = serde_json::from_value(serde_json::json!({
+            "type": "control_request",
+            "request_id": "permission-2"
+        }))
+        .unwrap_or_else(|error| panic!("missing request event: {error}"));
+        assert!(control_response(&missing_request).is_none());
+
+        let malformed_request: CodebuddyEvent = serde_json::from_value(serde_json::json!({
+            "type": "control_request",
+            "request_id": "permission-3",
+            "request": "not-an-object"
+        }))
+        .unwrap_or_else(|error| panic!("malformed request event: {error}"));
+        assert!(control_response(&malformed_request).is_none());
+
+        let null_request: CodebuddyEvent = serde_json::from_value(serde_json::json!({
+            "type": "control_request",
+            "request_id": "permission-4",
+            "request": null
+        }))
+        .unwrap_or_else(|error| panic!("null request event: {error}"));
+        let null_response = control_response(&null_request)
+            .unwrap_or_else(|| panic!("null request should match Go decoder semantics"));
+        let null_response: Value = serde_json::from_slice(&null_response)
+            .unwrap_or_else(|error| panic!("decode null response: {error}"));
+        assert_eq!(
+            null_response["response"]["response"]["updatedInput"],
+            serde_json::json!({})
+        );
     }
 
     #[test]
@@ -856,6 +1004,25 @@ mod tests {
         assert_eq!(usage.len(), 1);
         assert_eq!(usage["sonnet"].input_tokens, 100);
         assert_eq!(usage["sonnet"].cache_write_tokens, 5);
+    }
+
+    #[test]
+    fn nullable_wire_collections_match_go_decoder() {
+        let event: CodebuddyEvent = serde_json::from_value(serde_json::json!({
+            "type": "result",
+            "modelUsage": null
+        }))
+        .unwrap_or_else(|error| panic!("nullable modelUsage: {error}"));
+        assert!(result_usage(&event, "fallback").is_none());
+
+        let raw = serde_json::json!({
+            "model": "sonnet",
+            "content": null
+        });
+        let (tx, _rx) = mpsc::channel(1);
+        let mut state = CodebuddyStreamState::default();
+        handle_assistant(raw, &tx, &mut state);
+        assert!(state.usage.is_empty());
     }
 
     #[cfg(unix)]
@@ -898,6 +1065,48 @@ printf '%s\n' '{"type":"result","session_id":"session-cb","result":"PONG","is_er
         assert_eq!(result.status, "completed");
         assert_eq!(result.output, "PONG");
         assert_eq!(result.session_id, "session-cb");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn direct_exit_cleans_descendants_before_draining_stream() {
+        let directory = tempfile::tempdir()
+            .unwrap_or_else(|error| panic!("create descendant CodeBuddy fixture: {error}"));
+        let executable = directory.path().join("codebuddy");
+        std::fs::write(
+            &executable,
+            r#"#!/bin/sh
+printf '%s\n' '{"type":"system","session_id":"session-descendant"}'
+printf '%s\n' '{"type":"assistant","message":{"model":"sonnet","content":[{"type":"text","text":"done"}]}}'
+printf '%s\n' '{"type":"result","session_id":"session-descendant","result":"done","is_error":false}'
+sleep 60 &
+exit 0
+"#,
+        )
+        .unwrap_or_else(|error| panic!("write descendant CodeBuddy fixture: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod descendant CodeBuddy fixture: {error}"));
+        let backend = CodebuddyBackend::new(CodebuddyConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            ..CodebuddyConfig::default()
+        });
+        let session = backend
+            .execute(
+                "finish with a child",
+                ExecOptions {
+                    timeout: Duration::from_secs(5),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute CodeBuddy with descendant: {error}"));
+        let Session { result, .. } = session;
+        let result = tokio::time::timeout(Duration::from_secs(2), result)
+            .await
+            .unwrap_or_else(|_| panic!("CodeBuddy result waited for an unowned descendant"))
+            .unwrap_or_else(|error| panic!("receive CodeBuddy result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "session-descendant");
     }
 
     #[cfg(unix)]
