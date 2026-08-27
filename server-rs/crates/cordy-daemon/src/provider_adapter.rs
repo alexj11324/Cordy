@@ -107,6 +107,13 @@ impl ProductionProviderAdapter {
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
         let _active = CounterGuard::new(&self.active_tasks);
+        // Skill resolution is a network operation. Keep the same fail-closed
+        // task identity gate as the Go runTask before it can send a claimed
+        // task's identifiers to the server; ProviderExecutionPlan remains
+        // below bundle resolution so it sees the completed skill set.
+        if let Err(error) = crate::execution_plan::validate_identity(&task, &target) {
+            return failed(error, None);
+        }
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
             Err(error) => return failed(error, None),

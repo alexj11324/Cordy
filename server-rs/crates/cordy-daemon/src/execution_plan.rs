@@ -454,7 +454,7 @@ impl ProviderExecutionPlan {
     }
 }
 
-fn validate_identity<'a>(
+pub(crate) fn validate_identity<'a>(
     task: &'a Task,
     target: &RuntimeExecutionTarget,
 ) -> anyhow::Result<&'a AgentData> {
