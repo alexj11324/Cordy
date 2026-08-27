@@ -109,6 +109,18 @@ impl VcsWebhookConfig {
     }
 }
 
+fn github_snapshot_client(
+    result: anyhow::Result<Option<cordy_ghsnapshot::Client>>,
+) -> Option<cordy_ghsnapshot::Client> {
+    match result {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "GitHub PR snapshot pipeline disabled by invalid configuration");
+            None
+        }
+    }
+}
+
 fn parse_go_bool(raw: Option<&str>, default: bool) -> bool {
     match raw.map(str::trim).filter(|value| !value.is_empty()) {
         None => default,
@@ -575,7 +587,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None, None, None, None, None, None)
     };
-    let github_client = cordy_ghsnapshot::Client::new_from_env()?;
+    let github_client = github_snapshot_client(cordy_ghsnapshot::Client::new_from_env());
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
         cfg.storage.local_upload_base_url.as_deref(),
@@ -897,6 +909,12 @@ mod tests {
             Some(value) => std::env::set_var(KEY_ENV, value),
             None => std::env::remove_var(KEY_ENV),
         }
+    }
+
+    #[test]
+    fn invalid_github_snapshot_credentials_disable_only_the_pipeline() {
+        let client = github_snapshot_client(Err(anyhow::anyhow!("invalid private key")));
+        assert!(client.is_none());
     }
 
     #[tokio::test]
