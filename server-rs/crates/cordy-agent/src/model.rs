@@ -146,7 +146,7 @@ pub struct ModelDiscoveryCacheKey(String);
 
 impl ModelDiscoveryCacheKey {
     pub fn new(provider_or_runtime: &str, command: &RuntimeCommand) -> Option<Self> {
-        let scope = provider_or_runtime.trim();
+        let scope = provider_or_runtime;
         if scope.is_empty() {
             return None;
         }
@@ -279,7 +279,15 @@ mod tests {
 
     #[test]
     fn discovery_cache_key_rejects_empty_scope() {
-        assert!(ModelDiscoveryCacheKey::new("  ", &RuntimeCommand::default()).is_none());
+        assert!(ModelDiscoveryCacheKey::new("", &RuntimeCommand::default()).is_none());
+    }
+
+    #[test]
+    fn discovery_cache_key_preserves_scope_identity() {
+        let canonical = cache_key("omp");
+        let spaced = ModelDiscoveryCacheKey::new(" omp ", &RuntimeCommand::default())
+            .unwrap_or_else(|| panic!("cache key"));
+        assert_ne!(canonical, spaced);
     }
 
     #[test]
