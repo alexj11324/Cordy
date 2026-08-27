@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；当前切片收口 deferred cancelled chat finalization | 收口 #558/#559/#561/#562/#563 异步 V/R/F，并完成 §62 的 cancel-ack/sweeper finalization contract；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -276,7 +276,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 49. `[~]` `T-49 / §49` AUDIT-005 private task temp lifecycle
 50. `[~]` `T-50 / §50` AUDIT-005 wakeup proxy/CONNECT lifecycle
 51. `[~]` `T-51 / §51` AUDIT-005 heartbeat HTTP pool recovery
-52. `[~]` `T-52 / §62` AUDIT-005 deferred cancelled chat finalization（cancel-ack 与 sweeper fallback；已登记，待实现）
+52. `[~]` `T-52 / §62` AUDIT-005 deferred cancelled chat finalization（cancel-ack 与 sweeper fallback；PR #575 Ready，待异步退出证据）
 
 #### 阶段五：最终兼容与退休门
 
@@ -2630,3 +2630,19 @@ lock order、transaction boundary、idempotence、cleanup 或 production wiring 
   总退出门仍未完成。
 - owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
   `codex/cord-238-delegated-failure-recovery-contract-rust`，独立 worktree；实现、PR 与验证事实将在本节回写。
+
+实现 commit `8782170f` 只在既有 `cordy-handler::runtime_sweeper` 的 `cfg(test)` 内增加真实 PostgreSQL contract；production
+`TaskService`、marker/lock/restore queries、Bus、daemon cancel-ack 与 `RuntimeTaskSweeper::run_once` wiring 未改动：
+
+- `ChatFinalizeRows` 用单一 setup transaction 创建唯一 user/workspace/member/runtime/agent/session/task/user message/attachment；
+  setup 出错自动 rollback，测试结果和 cleanup 路径显式删除无 FK 的 `chat_draft_restore` 后再删除 workspace/user。
+- contract 覆盖未启动 queued chat 的同步 restore、started non-empty 的同步 `Stopped.`、started empty 的 deferred marker；验证
+  60 秒 grace 内外查询、正数 `max_per_tick=1` 上限、真实 `run_once` 的 `chats_finalized` report、restore attachment detach、
+  broadcast payload 不带 prompt、重复 sweep/claim 幂等、late transcript、channel-ingested guard 和 session 已消失时清 marker。
+- session `FOR UPDATE` 由独立事务持有，finalizer 在锁释放前保持 marker，释放后再完成 restore，证明与 deleter 的锁顺序不会绕过
+  session fence；第二个 expired marker 用生产查询证明批次 cap，而不是只断言单行结果。
+
+主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令。非 Draft Ready PR #575 已创建，
+base 为 `codex/cord-238-delegated-failure-recovery-contract-rust` 的 `e7b268b9`，当前 tip 为 `8782170f`；独立
+verifier/reviewer/fixer 已异步派发。exact compile、matched/executed counts、required PostgreSQL、server/Windows、取消/ack、
+session deletion race、failure cleanup 和完整 sweeper evidence 返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
