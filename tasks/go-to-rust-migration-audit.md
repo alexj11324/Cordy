@@ -191,7 +191,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入；PR #556 增加 Linux process telemetry，但 reviewer 否定其足以替代 allocation-stack heap profile/runtime scheduler trace | fixer 收口 Cargo.lock/Linux/listener 证据；主线仍需 Rust-native heap/async诊断或明确获批的能力退役与 incident 证据 | Rust server/metrics 入口可执行；完整替代证据未成立 | PR #524/#556；详见 §12、§43 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003A | 进行中 | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；当前切片迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | Linux Rust server 使用可采样 allocator 并从既有 loopback route 导出真实 pprof；Tokio task/resource/operation telemetry 固定 loopback 接线；非 Linux fail-closed；异步收口构建、运行和开销证据 | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556；当前切片详见 §47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
@@ -1491,3 +1491,32 @@ provider-specific runner。
   exact-match 清 current/retired pointer，并补 complete/fail/cancel、newer-pointer 与 fresh-retry cancel
   present/missing 证据。主 agent 未运行或伪报 compile/tests/rustfmt/production smoke；PR 继续继承 #558
   findings 及更早 #556/#557 lock/format 基线记录并保持 Ready。
+
+## 47. AUDIT-003A 执行缺口：Rust allocation heap profile and async runtime diagnostics
+
+当前切片回到尚未退出的 `AUDIT-003A`，迁移 Go profiling 的剩余真实运维能力，而不是继续把进程
+总量指标或 410 retirement response 当成 heap/runtime diagnosis：
+
+- Go `net/http/pprof` 在默认 loopback listener 上按需导出 allocator allocation-stack heap pprof，
+  并按 caller duration 采集 goroutine/scheduler/runtime events；Rust 当前 `/debug/pprof/heap` 与
+  `/debug/pprof/trace` 均只返回 410，PR #556 的 RSS/virtual-memory/thread/fd metrics 不能回答
+  “哪条分配栈持有内存”或“哪个 async task/resource/operation 阻塞调度”。
+- Linux Rust server 必须使用一个真实 profiling allocator，并让现有
+  `127.0.0.1:6060/debug/pprof/heap` 导出可由 pprof 读取的 gzipped protobuf allocation profile；
+  capture 失败、profiler 未激活或临时目录不可写必须返回非 2xx，不能返回空或伪造 profile。
+- Rust 没有 Go runtime trace wire contract。本切片以 Tokio 官方 task/resource/operation telemetry
+  作为语义替代，并固定绑定第二个 loopback-only management address；它必须合并到现有 production
+  tracing subscriber，保留 LOG_LEVEL、时间、ANSI 和 request/component logs，不能用普通结构化日志
+  或 CPU profile 冒充 scheduler diagnostics。
+- 非 Linux release 继续编译运行，但 heap endpoint 明确 fail-closed 并说明 Linux-only contract；
+  async diagnostics 不得因环境变量覆盖而绑定公网。Docker/release build 必须携带 Tokio runtime
+  instrumentation 所需 workspace Cargo config，不能只在开发机偶然生效。
+- 复用现有 profiling router、server startup 和 tracing subscriber；只引入 jemalloc pprof converter、
+  allocator 与 Tokio console layer，不新增 profiler service abstraction、factory、registry、config parser、
+  fake trace encoder 或第三套日志初始化。
+
+退出证据必须直接覆盖 production binary，而不是几个 helper：Linux locked release build 使用 profiling
+allocator；启动后 heap route 返回非空 gzip pprof 且 public API 不暴露该 route；Tokio console client 能从
+固定 loopback endpoint 观察 server 实际 task/resource/operation；非法 capture 环境和非 Linux heap
+fail-closed；SIGTERM/shutdown 与既有日志输出不回归。compile、format、tests、真实 capture、console client、
+Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer；主 agent 不代跑或代修。
