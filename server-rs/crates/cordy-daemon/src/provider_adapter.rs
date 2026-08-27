@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cordy_agent::{CatalogCache, ExecutionResult, Message, MessageType, Session};
+use cordy_agent::{
+    Backend, CatalogCache, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
+};
 use cordy_protocol::DaemonHeartbeatAckPayload;
 use serde_json::{json, Map, Value};
 use tokio::task::JoinHandle;
@@ -38,6 +40,10 @@ use crate::local_directory::{
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
 };
 use crate::plugin_hook_mcp::{start_task_plugin_hook_mcp, PluginHookInvoker};
+use crate::poisoned::{
+    classify_poisoned_error, classify_poisoned_output, classify_resume_unsafe_timeout,
+    classify_resume_unsafe_transport,
+};
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
@@ -552,8 +558,6 @@ impl ProductionProviderAdapter {
             Ok(plan) => plan,
             Err(error) => return failed(error, None),
         };
-        let requested_session_id = plan.resume_session_id().to_string();
-
         let path_guard = match self
             .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
             .await
@@ -614,6 +618,7 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
             }
+            let requested_session_id = plan.resume_session_id().to_string();
             let bound = plan.bind_environment(
                 &environment,
                 PreparedEnvironmentInputs {
@@ -645,21 +650,74 @@ impl ProductionProviderAdapter {
                 },
             );
             let prompt = build_prompt(task.clone(), &target.provider);
-            let session = backend
-                .execute(&prompt, bound.options)
-                .await
-                .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
             let _running = CounterGuard::new(&self.running_tasks);
-            drain_session(&ctx, &client, &task.id, &environment.work_dir, session).await
+            let mut transcript = TranscriptBatch::default();
+            let (first, first_tools) = execute_and_drain(
+                backend.as_ref(),
+                &ctx,
+                &client,
+                &task.id,
+                &environment.work_dir,
+                &prompt,
+                bound.options,
+                &mut transcript,
+            )
+            .await
+            .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
+
+            if !should_retry_with_fresh_session(
+                &first,
+                &requested_session_id,
+                first_tools,
+                &target.provider,
+            ) {
+                return Ok((first, requested_session_id, String::new()));
+            }
+
+            tracing::warn!(
+                task = %task.id,
+                provider = %target.provider,
+                "session resume failed; retrying once with a fresh session"
+            );
+            task.prior_session_id.clear();
+            task.prior_session_resume_unavailable = true;
+            plan.drop_resume();
+            let fresh = plan.bind_environment(
+                &environment,
+                PreparedEnvironmentInputs {
+                    cancellation: ctx.token().clone(),
+                    openclaw_include_roots: environment.openclaw_include_root.clone(),
+                    ..PreparedEnvironmentInputs::default()
+                },
+            )?;
+            transcript.begin_attempt();
+            let retry = execute_and_drain(
+                backend.as_ref(),
+                &ctx,
+                &client,
+                &task.id,
+                &environment.work_dir,
+                &build_prompt(task.clone(), &target.provider),
+                fresh.options,
+                &mut transcript,
+            )
+            .await;
+            let result = reconcile_fresh_retry_result(first, retry);
+            Ok((
+                result,
+                requested_session_id.clone(),
+                requested_session_id,
+            ))
         }
         .await;
 
         let mut outcome = match run {
-            Ok(result) => result_outcome(
+            Ok((result, requested_session_id, retired_session_id)) => result_outcome(
                 &target.provider,
                 result,
                 &environment,
                 &requested_session_id,
+                &retired_session_id,
             ),
             Err(error) => failed(error, Some(&environment)),
         };
@@ -1208,6 +1266,7 @@ async fn drain_session(
     task_id: &str,
     work_dir: &str,
     session: Session,
+    transcript: &mut TranscriptBatch,
 ) -> anyhow::Result<ExecutionResult> {
     let Session {
         mut messages,
@@ -1215,7 +1274,6 @@ async fn drain_session(
     } = session;
     let mut ticker = tokio::time::interval(TRANSCRIPT_FLUSH_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut transcript = TranscriptBatch::default();
     let mut terminal: Option<ExecutionResult> = None;
     let mut cancelled = false;
     let mut messages_closed = false;
@@ -1251,7 +1309,7 @@ async fn drain_session(
                             }
                         }
                         if transcript.ready() {
-                            flush_transcript(client, task_id, &mut transcript).await;
+                            flush_transcript(client, task_id, transcript).await;
                         }
                     }
                     None => messages_closed = true,
@@ -1274,14 +1332,14 @@ async fn drain_session(
                 drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
                 drain_armed = true;
             }
-            _ = ticker.tick() => flush_transcript(client, task_id, &mut transcript).await,
+            _ = ticker.tick() => flush_transcript(client, task_id, transcript).await,
             () = &mut drain_deadline, if drain_armed => {
                 tracing::warn!(task = %task_id, "provider transcript did not close within drain grace");
                 break;
             }
         }
     }
-    flush_transcript(client, task_id, &mut transcript).await;
+    flush_transcript(client, task_id, transcript).await;
     Ok(terminal.unwrap_or_else(|| ExecutionResult {
         status: "failed".to_string(),
         error: "provider messages closed without a terminal result".to_string(),
@@ -1294,10 +1352,16 @@ struct TranscriptBatch {
     next_seq: i32,
     messages: Vec<TaskMessageData>,
     tools: HashMap<String, String>,
+    tool_use_count: usize,
     session_pinned: bool,
 }
 
 impl TranscriptBatch {
+    fn begin_attempt(&mut self) {
+        self.tools.clear();
+        self.session_pinned = false;
+    }
+
     fn ready(&self) -> bool {
         self.messages.len() >= TRANSCRIPT_BATCH_LIMIT
     }
@@ -1323,6 +1387,7 @@ impl TranscriptBatch {
             ..TaskMessageData::default()
         };
         if message.message_type == MessageType::ToolUse {
+            self.tool_use_count = self.tool_use_count.saturating_add(1);
             if !message.call_id.is_empty() {
                 self.tools
                     .insert(message.call_id.clone(), message.tool.clone());
@@ -1341,6 +1406,25 @@ impl TranscriptBatch {
         self.messages.push(value);
         None
     }
+}
+
+async fn execute_and_drain(
+    backend: &dyn Backend,
+    ctx: &Ctx,
+    client: &Client,
+    task_id: &str,
+    work_dir: &str,
+    prompt: &str,
+    options: ExecOptions,
+    transcript: &mut TranscriptBatch,
+) -> anyhow::Result<(ExecutionResult, usize)> {
+    let tools_before = transcript.tool_use_count;
+    let session = backend.execute(prompt, options).await?;
+    let result = drain_session(ctx, client, task_id, work_dir, session, transcript).await?;
+    Ok((
+        result,
+        transcript.tool_use_count.saturating_sub(tools_before),
+    ))
 }
 
 async fn flush_transcript(client: &Client, task_id: &str, batch: &mut TranscriptBatch) {
@@ -1413,13 +1497,87 @@ fn bounded_text(value: &str, max_bytes: usize) -> String {
     value[..end].to_string()
 }
 
+fn should_retry_with_fresh_session(
+    result: &ExecutionResult,
+    requested_session_id: &str,
+    tool_uses: usize,
+    provider: &str,
+) -> bool {
+    if result.status != "failed" || requested_session_id.is_empty() || tool_uses != 0 {
+        return false;
+    }
+    if result.resume_rejected
+        || cordy_task_failure::unresumable_history(&result.error)
+        || cordy_task_failure::auth_method_unresolved(&result.error)
+    {
+        return true;
+    }
+    cordy_agent::registry::resume_rejection_undetectable(provider)
+        && result.session_id.is_empty()
+        && fresh_session_may_help(&result.error)
+}
+
+fn fresh_session_may_help(error: &str) -> bool {
+    let reason = cordy_task_failure::classify(error);
+    ![
+        cordy_task_failure::Reason::AGENT_PROVIDER_NETWORK,
+        cordy_task_failure::Reason::AGENT_PROVIDER_CAPACITY_OR_RATE_LIMIT,
+        cordy_task_failure::Reason::AGENT_PROVIDER_QUOTA_LIMIT,
+        cordy_task_failure::Reason::AGENT_PROVIDER_SERVER_ERROR,
+        cordy_task_failure::Reason::AGENT_PROVIDER_AUTH_OR_ACCESS,
+        cordy_task_failure::Reason::AGENT_MISSING_CONFIG,
+        cordy_task_failure::Reason::AGENT_MODEL_NOT_FOUND_OR_UNAVAILABLE,
+        cordy_task_failure::Reason::AGENT_RUNTIME_MISSING_EXECUTABLE,
+        cordy_task_failure::Reason::AGENT_RUNTIME_VERSION_UNSUPPORTED,
+        cordy_task_failure::Reason::AGENT_TIMEOUT,
+    ]
+    .contains(&reason)
+}
+
+fn merge_usage(
+    mut first: BTreeMap<String, TokenUsage>,
+    retry: BTreeMap<String, TokenUsage>,
+) -> BTreeMap<String, TokenUsage> {
+    for (model, next) in retry {
+        let current = first.entry(model).or_default();
+        current.input_tokens = current.input_tokens.saturating_add(next.input_tokens);
+        current.output_tokens = current.output_tokens.saturating_add(next.output_tokens);
+        current.cache_read_tokens = current
+            .cache_read_tokens
+            .saturating_add(next.cache_read_tokens);
+        current.cache_write_tokens = current
+            .cache_write_tokens
+            .saturating_add(next.cache_write_tokens);
+        current.cost_usd_ticks = current.cost_usd_ticks.saturating_add(next.cost_usd_ticks);
+    }
+    first
+}
+
+fn reconcile_fresh_retry_result(
+    mut first: ExecutionResult,
+    retry: anyhow::Result<(ExecutionResult, usize)>,
+) -> ExecutionResult {
+    let Ok((mut retry, _retry_tools)) = retry else {
+        return first;
+    };
+    let usage = merge_usage(std::mem::take(&mut first.usage), std::mem::take(&mut retry.usage));
+    if !retry.session_id.is_empty() || retry.status == "completed" {
+        retry.usage = usage;
+        retry
+    } else {
+        first.usage = usage;
+        first
+    }
+}
+
 fn result_outcome(
     provider: &str,
     result: ExecutionResult,
     env: &Environment,
     requested_session_id: &str,
+    retired_session_id: &str,
 ) -> TaskRunOutcome {
-    let resume_rejected = result.resume_rejected && !requested_session_id.is_empty();
+    let mut retired_session_id = retired_session_id.to_string();
     let mut usage = result
         .usage
         .into_iter()
@@ -1441,8 +1599,11 @@ fn result_outcome(
         })
         .collect::<Vec<_>>();
     usage.sort_by(|left, right| left.model.cmp(&right.model));
-    let (status, comment, mut failure_reason) = match result.status.as_str() {
-        "completed" => ("completed", result.output, String::new()),
+    let (status, comment, failure_reason) = match result.status.as_str() {
+        "completed" => match classify_poisoned_output(&result.output) {
+            Some(reason) => ("blocked", result.output, reason.to_string()),
+            None => ("completed", result.output, String::new()),
+        },
         "cancelled" => (
             "cancelled",
             if result.error.is_empty() {
@@ -1452,29 +1613,40 @@ fn result_outcome(
             },
             "cancelled".to_string(),
         ),
-        "timeout" => (
-            "blocked",
-            if result.error.is_empty() {
+        "timeout" => {
+            let comment = if result.error.is_empty() {
                 format!("{provider} timed out")
             } else {
                 result.error
-            },
-            "timeout".to_string(),
-        ),
+            };
+            let reason = classify_resume_unsafe_timeout(provider, &comment).unwrap_or("timeout");
+            ("blocked", comment, reason.to_string())
+        }
         "idle_watchdog" => ("blocked", result.error, "idle_watchdog".to_string()),
-        _ => (
-            "blocked",
-            if result.error.is_empty() {
+        _ => {
+            let comment = if result.error.is_empty() {
                 format!("{provider} execution {}", result.status)
             } else {
                 result.error
-            },
-            String::new(),
-        ),
+            };
+            let failure_reason = if let Some(reason) = classify_poisoned_error(&comment) {
+                reason.to_string()
+            } else if let Some(reason) = classify_resume_unsafe_transport(provider, &comment) {
+                if retired_session_id.is_empty() {
+                    retired_session_id = requested_session_id.to_string();
+                }
+                reason.to_string()
+            } else if result.resume_rejected && !requested_session_id.is_empty() {
+                if retired_session_id.is_empty() {
+                    retired_session_id = requested_session_id.to_string();
+                }
+                "resume_rejected".to_string()
+            } else {
+                cordy_task_failure::classify(&comment).to_string()
+            };
+            ("blocked", comment, failure_reason)
+        }
     };
-    if resume_rejected {
-        failure_reason = "resume_rejected".to_string();
-    }
     TaskRunOutcome {
         result: TaskResult {
             status: status.to_string(),
@@ -1483,9 +1655,7 @@ fn result_outcome(
             work_dir: env.work_dir.clone(),
             env_root: env.root_dir.clone(),
             failure_reason,
-            retired_session_id: resume_rejected
-                .then(|| requested_session_id.to_string())
-                .unwrap_or_default(),
+            retired_session_id,
             usage,
             ..TaskResult::default()
         },
@@ -2061,6 +2231,148 @@ mod tests {
         assert_eq!(batch.messages[0].seq, 1);
         assert_eq!(batch.messages[1].seq, 2);
         assert_eq!(batch.messages[1].tool, "read_file");
+        assert_eq!(batch.tool_use_count, 1);
+        batch.begin_attempt();
+        batch.push(Message {
+            message_type: MessageType::Text,
+            content: "fresh".to_string(),
+            tool: String::new(),
+            call_id: String::new(),
+            input: BTreeMap::new(),
+            output: String::new(),
+            status: String::new(),
+            level: String::new(),
+            session_id: String::new(),
+        });
+        assert_eq!(batch.messages[2].seq, 3);
+    }
+
+    #[test]
+    fn fresh_retry_requires_resume_failure_without_tool_side_effects() {
+        let rejected = ExecutionResult {
+            status: "failed".to_string(),
+            error: "resume unavailable".to_string(),
+            resume_rejected: true,
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &rejected,
+            "old-session",
+            0,
+            "qwen"
+        ));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "old-session",
+            1,
+            "qwen"
+        ));
+        assert!(!should_retry_with_fresh_session(
+            &rejected, "", 0, "qwen"
+        ));
+
+        let broken_history = ExecutionResult {
+            status: "failed".to_string(),
+            error: "messages[3] assistant message must not be empty".to_string(),
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &broken_history,
+            "old-session",
+            0,
+            "claude"
+        ));
+        let stale_provider_identity = ExecutionResult {
+            status: "failed".to_string(),
+            error: "Could not resolve authentication method".to_string(),
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &stale_provider_identity,
+            "old-session",
+            0,
+            "qwen"
+        ));
+
+        let undetectable_process_failure = ExecutionResult {
+            status: "failed".to_string(),
+            error: "process exited before producing a result".to_string(),
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(
+            &undetectable_process_failure,
+            "old-session",
+            0,
+            "cursor"
+        ));
+        let network = ExecutionResult {
+            status: "failed".to_string(),
+            error: "connection reset by peer".to_string(),
+            ..ExecutionResult::default()
+        };
+        assert!(!should_retry_with_fresh_session(
+            &network,
+            "old-session",
+            0,
+            "cursor"
+        ));
+    }
+
+    #[test]
+    fn fresh_retry_never_resurrects_the_abandoned_session_and_merges_usage() {
+        let first = ExecutionResult {
+            status: "failed".to_string(),
+            error: "poisoned history".to_string(),
+            session_id: "old-session".to_string(),
+            usage: BTreeMap::from([(
+                "model".to_string(),
+                TokenUsage {
+                    input_tokens: 10,
+                    ..TokenUsage::default()
+                },
+            )]),
+            ..ExecutionResult::default()
+        };
+        let retry_without_session = ExecutionResult {
+            status: "failed".to_string(),
+            error: "fresh launch failed".to_string(),
+            usage: BTreeMap::from([(
+                "model".to_string(),
+                TokenUsage {
+                    output_tokens: 3,
+                    ..TokenUsage::default()
+                },
+            )]),
+            ..ExecutionResult::default()
+        };
+        let kept = reconcile_fresh_retry_result(
+            first.clone(),
+            Ok((retry_without_session, 0)),
+        );
+        assert_eq!(kept.session_id, "old-session");
+        assert_eq!(kept.usage["model"].input_tokens, 10);
+        assert_eq!(kept.usage["model"].output_tokens, 3);
+
+        let completed_without_session = ExecutionResult {
+            status: "completed".to_string(),
+            output: "done".to_string(),
+            usage: BTreeMap::from([(
+                "model".to_string(),
+                TokenUsage {
+                    output_tokens: 4,
+                    ..TokenUsage::default()
+                },
+            )]),
+            ..ExecutionResult::default()
+        };
+        let completed = reconcile_fresh_retry_result(
+            first,
+            Ok((completed_without_session, 0)),
+        );
+        assert_eq!(completed.status, "completed");
+        assert!(completed.session_id.is_empty());
+        assert_eq!(completed.usage["model"].input_tokens, 10);
+        assert_eq!(completed.usage["model"].output_tokens, 4);
     }
 
     #[test]
@@ -2088,6 +2400,7 @@ mod tests {
                 ..Environment::default()
             },
             "session-old",
+            "",
         );
         assert_eq!(outcome.result.status, "blocked");
         assert_eq!(outcome.result.failure_reason, "timeout");
@@ -2105,6 +2418,7 @@ mod tests {
                 ..ExecutionResult::default()
             },
             &Environment::default(),
+            "",
             "",
         );
         assert!(outcome.failure.is_none());
@@ -2124,8 +2438,75 @@ mod tests {
             },
             &Environment::default(),
             "session-poisoned",
+            "",
         );
         assert_eq!(outcome.result.failure_reason, "resume_rejected");
         assert_eq!(outcome.result.retired_session_id, "session-poisoned");
+    }
+
+    #[test]
+    fn poisoned_terminal_shapes_are_classified_and_retired() {
+        let env = Environment::default();
+        let fallback = result_outcome(
+            "claude",
+            ExecutionResult {
+                status: "completed".to_string(),
+                output: "I reached the iteration limit".to_string(),
+                session_id: "session-1".to_string(),
+                ..ExecutionResult::default()
+            },
+            &env,
+            "",
+            "",
+        );
+        assert_eq!(fallback.result.status, "blocked");
+        assert_eq!(fallback.result.failure_reason, "iteration_limit");
+
+        let invalid_history = result_outcome(
+            "claude",
+            ExecutionResult {
+                status: "failed".to_string(),
+                error: "API 400 invalid_request_error".to_string(),
+                session_id: "session-2".to_string(),
+                ..ExecutionResult::default()
+            },
+            &env,
+            "",
+            "",
+        );
+        assert_eq!(invalid_history.result.failure_reason, "api_invalid_request");
+
+        let timeout = result_outcome(
+            "codex",
+            ExecutionResult {
+                status: "timeout".to_string(),
+                error: "codex semantic inactivity timeout".to_string(),
+                ..ExecutionResult::default()
+            },
+            &env,
+            "session-stuck",
+            "",
+        );
+        assert_eq!(
+            timeout.result.failure_reason,
+            "codex_semantic_inactivity"
+        );
+
+        let overflow = result_outcome(
+            "codex",
+            ExecutionResult {
+                status: "failed".to_string(),
+                error: "thread/resume failed: token too long".to_string(),
+                ..ExecutionResult::default()
+            },
+            &env,
+            "session-oversized",
+            "",
+        );
+        assert_eq!(overflow.result.failure_reason, "codex_resume_oversized");
+        assert_eq!(
+            overflow.result.retired_session_id,
+            "session-oversized"
+        );
     }
 }
