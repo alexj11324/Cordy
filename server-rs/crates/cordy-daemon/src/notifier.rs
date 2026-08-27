@@ -7,9 +7,7 @@
 //!   [`RelayNotifier::new`]
 //! - `NotifyTaskAvailable` / `NotifyRuntimeProfilesChanged` /
 //!   `NotifyWorkspacesChanged` / `NotifyPendingWork` → same-named async methods
-//! - `ulid.Make().String()` → [`new_event_id`] (Crockford-base32 ULID; the
-//!   `ulid` crate is not a cordy-daemon dependency, so the 26-char encoding is
-//!   reproduced inline over a 48-bit millisecond timestamp + 80 random bits)
+//! - `ulid.Make().String()` → [`new_event_id`] (`ulid::Ulid::new().to_string()`)
 //! - `taskAvailableFrame` / `runtimeProfilesChangedFrame` /
 //!   `workspacesChangedFrame` / `pendingWorkFrame` → re-exported from
 //!   `hub.rs` (package-private in Go, pub(crate) here)
@@ -24,7 +22,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use cordy_realtime::{RelayPublisher, SCOPE_DAEMON_RUNTIME};
 
@@ -233,20 +231,7 @@ impl RelayNotifier {
 /// (they key the per-client dedup LRU), but matching the Go wire/log format
 /// keeps dashboards comparable across the cutover.
 fn new_event_id() -> String {
-    const ENC: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let rand_hi = rand::random::<u16>() as u128;
-    let rand_lo = rand::random::<u64>() as u128;
-    let mut value = ((millis as u128) << 80) | (rand_hi << 64) | rand_lo;
-    let mut out = [b'0'; 26];
-    for slot in out.iter_mut().rev() {
-        *slot = ENC[(value & 0x1f) as usize];
-        value >>= 5;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    ulid::Ulid::new().to_string()
 }
 
 #[cfg(test)]

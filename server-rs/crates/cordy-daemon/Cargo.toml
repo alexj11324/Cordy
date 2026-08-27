@@ -17,6 +17,7 @@ tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
+ulid = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
