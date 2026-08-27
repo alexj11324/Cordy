@@ -293,3 +293,14 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 异步 subagent：Volta 继续处理既有 PR #518/#519/#520 的 review/fix；其结果不阻断本审计文档或后续迁移。
 
 结束条件仍是：全项目完成 Go→Rust、默认生产路径和发布链路切换、生产验证通过，并删除全部 Go 源文件；在此之前不得结束 goal。
+
+## 11. AUDIT-001 执行更新
+
+后续切片 `codex/cord-188-rust-production-cutover` 已开始收口 AUDIT-001 的后端生产边界：
+
+- Rust 入口：`Makefile` 的 `server`、`cli`/`cordy`、`build`、`test`、`migrate-up/down`，以及 `scripts/dev.sh`、`scripts/check.sh`；统一通过 `server-rs` 的 `cordy-server`、`cordy`、`cordy-migrate`。
+- 容器入口：`Dockerfile` 不再构建 Go runtime binary，改为构建 Rust server、CLI、migration runner 和三个 Rust backfill，并继续提供 `server`/`cordy`/`migrate` 兼容产物名；`docker/entrypoint.sh` 无需改名即可继续执行迁移后启动。
+- CI/Helm：部署构建与迁移验证改用 Rust，并新增生产镜像构建门；Helm 的 backend 注释改为 Rust 入口事实。
+- 生产路径状态：本切片覆盖本地默认入口、自托管镜像和 CI 部署验证；`.goreleaser.yml`、release workflow、安装器仍是 Go CLI 发布链路，故 AUDIT-001 尚未整体完成。
+- Go 是否可下线：否。Go compatibility build/test、CLI release/install、回滚目标和剩余 leaf contract 仍在清单中。
+- 验证状态：shell 语法、`git diff --check`、Makefile entrypoint/build contract 已通过；Helm 未执行（审计环境无 `helm`），Docker 构建和 Rust workspace 编译继续按本切片记录，不以环境缺失冒充通过。

@@ -75,10 +75,10 @@ postgres:
   tolerations: []
 
 # -----------------------------------------------------------------------------
-# Backend (Go API + WS server)
+# Backend (Rust API + WS server)
 # -----------------------------------------------------------------------------
 backend:
-  # Concurrent backend pods are now safe to start: cmd/migrate uses a
+  # Concurrent backend pods are now safe to start: cordy-migrate uses a
   # Postgres session-level advisory lock to serialize the startup
   # `migrate up` run, so late-arriving pods queue and then no-op (see
   # GitHub cordy-ai/cordy#3647). 1 is still the recommended default
@@ -91,7 +91,8 @@ backend:
       # When true (default) the chart provisions a PersistentVolumeClaim for
       # /app/data/uploads and mounts it into the backend pod. The backend only
       # uses this directory when S3 is NOT configured (`backend.config.s3Bucket`
-      # empty) — see server/cmd/server/router.go for the storage selection.
+      # empty) — see server-rs/crates/cordy-server/src/main.rs for the storage
+      # selection.
       #
       # Set to false when you have configured S3/CloudFront and don't want the
       # chart to declare the uploads PVC at all. The default access mode is

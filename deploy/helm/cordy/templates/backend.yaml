@@ -27,7 +27,7 @@ metadata:
     app.kubernetes.io/component: backend
 spec:
   # The backend entrypoint runs migrations before starting. Concurrent
-  # runs are protected by a Postgres advisory lock in cmd/migrate (see
+  # runs are protected by a Postgres advisory lock in cordy-migrate (see
   # GitHub cordy-ai/cordy#3647), so multiple replicas no longer race;
   # 1 is still the chart default (strategy: Recreate, no leader split).
   replicas: {{ .Values.backend.replicas }}
