@@ -83,14 +83,17 @@ fn filter_args(
             index += 1;
             continue;
         }
-        let mode = flag.and_then(|name| blocked.get(name).copied());
-        let Some(mode) = mode else {
+        let blocked_name = flag.or_else(|| {
+            (!prefix_mode && blocked.contains_key(arg.as_str())).then_some(arg.as_str())
+        });
+        let Some((blocked_name, mode)) =
+            blocked_name.and_then(|name| blocked.get(name).copied().map(|mode| (name, mode)))
+        else {
             filtered.push(arg);
             index += 1;
             continue;
         };
-        let flag = flag.unwrap_or_default();
-        blocked_flags.push(flag.to_string());
+        blocked_flags.push(blocked_name.to_string());
         let inline = arg.contains('=');
         index += 1;
         match mode {
@@ -245,6 +248,20 @@ mod tests {
             &blocked,
         );
         assert_eq!(result.args, strings(&["--safe", "--model=o3"]));
+    }
+
+    #[test]
+    fn custom_args_strip_blocked_positional_subcommands() {
+        let blocked = BTreeMap::from([
+            ("acp", BlockedArgMode::Standalone),
+            ("serve", BlockedArgMode::Standalone),
+        ]);
+        let result = filter_custom_args(
+            &strings(&["acp", "tenant", "serve", "--model=o3"]),
+            &blocked,
+        );
+        assert_eq!(result.args, strings(&["tenant", "--model=o3"]));
+        assert_eq!(result.blocked_flags, strings(&["acp", "serve"]));
     }
 
     #[test]
