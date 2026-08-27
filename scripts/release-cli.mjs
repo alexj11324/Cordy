@@ -30,14 +30,27 @@ const TARGETS = Object.freeze({
     arm64: "aarch64-apple-darwin",
   }),
   linux: Object.freeze({
-    amd64: "x86_64-unknown-linux-gnu",
-    arm64: "aarch64-unknown-linux-gnu",
+    amd64: "x86_64-unknown-linux-musl",
+    arm64: "aarch64-unknown-linux-musl",
   }),
   windows: Object.freeze({
     amd64: "x86_64-pc-windows-msvc",
     arm64: "aarch64-pc-windows-msvc",
   }),
 });
+
+// SemVer 2.0.0: numeric identifiers cannot have leading zeroes, every
+// dot-separated prerelease identifier must be non-empty, and build metadata
+// is allowed. Keep this parser dependency-free because release metadata is
+// validated before pnpm install.
+const NUMERIC_IDENTIFIER = "(?:0|[1-9]\\d*)";
+const NON_NUMERIC_IDENTIFIER = "(?:[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)";
+const PRERELEASE_IDENTIFIER = `(?:${NUMERIC_IDENTIFIER}|${NON_NUMERIC_IDENTIFIER})`;
+const STRICT_SEMVER = new RegExp(
+  `^${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}` +
+    `(?:-${PRERELEASE_IDENTIFIER}(?:\\.${PRERELEASE_IDENTIFIER})*)?` +
+    `(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$`,
+);
 
 const RELEASE_TARGETS = Object.freeze(
   Object.entries(TARGETS).flatMap(([platform, arches]) =>
@@ -69,6 +82,10 @@ export function rustTargetFor(platform, arch) {
   return target;
 }
 
+export function isValidSemver(value) {
+  return typeof value === "string" && STRICT_SEMVER.test(value);
+}
+
 function git(...args) {
   try {
     return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
@@ -88,8 +105,8 @@ function buildVersion(options = {}) {
 
 export function releaseVersion(options = {}) {
   const version = buildVersion(options);
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error(`release version is not valid semver: ${version}`);
+  if (!isValidSemver(version)) {
+    throw new Error(`release version is not strict SemVer: ${version}`);
   }
   return version;
 }

@@ -30,8 +30,8 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           echo "Triggered by tag: $tag"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$tag'."
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::Release tags must be strict SemVer (vX.Y.Z with optional prerelease/build metadata); got '$tag'."
             exit 1
           fi
           if [[ "$tag" == *-dirty* ]]; then
@@ -40,6 +40,15 @@ jobs:
           fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
+            prerelease="${tag#*-}"
+            prerelease="${prerelease%%+*}"
+            IFS='.' read -ra prerelease_identifiers <<< "$prerelease"
+            for identifier in "${prerelease_identifiers[@]}"; do
+              if [[ "$identifier" =~ ^0[0-9]+$ ]]; then
+                echo "::error::Numeric prerelease identifiers cannot have leading zeroes: '$tag'."
+                exit 1
+              fi
+            done
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
@@ -95,11 +104,11 @@ jobs:
           - runner: ubuntu-latest
             platform: linux
             arch: amd64
-            rust_target: x86_64-unknown-linux-gnu
+            rust_target: x86_64-unknown-linux-musl
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
-            rust_target: aarch64-unknown-linux-gnu
+            rust_target: aarch64-unknown-linux-musl
           - runner: windows-latest
             platform: windows
             arch: amd64
@@ -123,6 +132,17 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add "${{ matrix.rust_target }}"
+          if [[ "${{ matrix.platform }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.platform }}" == "linux" ]]; then
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install musl toolchain (Linux)
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Setup MSVC linker
         if: matrix.platform == 'windows'
@@ -178,12 +198,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          release_args=(--title "$GITHUB_REF_NAME" --generate-notes)
+          if [[ "${{ needs.verify.outputs.is_stable }}" == "true" ]]; then
+            release_args+=(--latest=true)
+          else
+            release_args+=(--prerelease --latest=false)
           fi
-          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/cordy-release/* --clobber
+          # Pass every archive and checksums.txt to `create` so GitHub only
+          # publishes the release after the complete asset set is uploaded.
+          # A new tag is expected to have no existing release; reruns update
+          # an already-created release below without creating an empty one.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/cordy-release/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/cordy-release/* "${release_args[@]}"
+          fi
 
       - name: Publish Homebrew formula
+        if: needs.verify.outputs.is_stable == 'true'
         env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           CORDY_RELEASE_OUTPUT_DIR: ${{ runner.temp }}/cordy-release
