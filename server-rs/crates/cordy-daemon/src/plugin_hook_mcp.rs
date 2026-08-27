@@ -69,12 +69,17 @@ impl PluginHookMCPState {
             // The server namespaces these, but a duplicate arriving anyway
             // must resolve to exactly one hook rather than whichever came
             // last (go:80–88).
-            if by_name.insert(tool.name.clone(), tool.clone()).is_some() {
-                tracing::warn!(
-                    task_id = %task_id,
-                    tool = %tool.name,
-                    "plugin hook tool name collided; ignoring the duplicate"
-                );
+            match by_name.entry(tool.name.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(tool.clone());
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    tracing::warn!(
+                        task_id = %task_id,
+                        tool = %tool.name,
+                        "plugin hook tool name collided; ignoring the duplicate"
+                    );
+                }
             }
         }
         Self {
@@ -397,14 +402,10 @@ mod tests {
     #[tokio::test]
     async fn started_server_exposes_claim_tool_through_its_overlay_url() {
         let ctx = crate::repocache::Ctx::new();
-        let (config, server) = start_task_plugin_hook_mcp(
-            &ctx,
-            "task-1",
-            &fixture_tools(),
-            ok_invoke(),
-        )
-        .await
-        .unwrap();
+        let (config, server) =
+            start_task_plugin_hook_mcp(&ctx, "task-1", &fixture_tools(), ok_invoke())
+                .await
+                .unwrap();
         let url = config.unwrap()["mcpServers"]["cordy-plugins"]["url"]
             .as_str()
             .unwrap()
@@ -496,6 +497,56 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("connection refused"));
+    }
+
+    #[tokio::test]
+    async fn duplicate_tool_name_routes_to_the_first_installation_and_hook() {
+        let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let invoke: PluginHookInvoker = {
+            let calls = Arc::clone(&calls);
+            Arc::new(move |_ctx, _task, installation, hook, _input| {
+                calls
+                    .lock()
+                    .unwrap()
+                    .push((installation.to_string(), hook.to_string()));
+                Box::pin(async { Ok(json!({"selected": true})) })
+            })
+        };
+        let tools = vec![
+            PluginHookTool {
+                installation_id: "first-installation".into(),
+                hook_key: "first-hook".into(),
+                name: "duplicate".into(),
+                ..PluginHookTool::default()
+            },
+            PluginHookTool {
+                installation_id: "second-installation".into(),
+                hook_key: "second-hook".into(),
+                name: "duplicate".into(),
+                ..PluginHookTool::default()
+            },
+        ];
+        let state = PluginHookMCPState::new(
+            crate::repocache::Ctx::new(),
+            "task-1".into(),
+            tools,
+            invoke,
+            "/token".into(),
+        );
+
+        let response = post(
+            &state,
+            json!({
+                "jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{"name":"duplicate","arguments":{}}
+            }),
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::OK);
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![("first-installation".into(), "first-hook".into())]
+        );
     }
 
     #[tokio::test]

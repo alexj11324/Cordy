@@ -38,7 +38,7 @@ use crate::local_directory::{
     is_git_work_tree, local_directory_assignment_for_task, validate_local_path,
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
 };
-use crate::plugin_hook_mcp::{start_task_plugin_hook_mcp, PluginHookInvoker};
+use crate::plugin_hook_mcp::{start_task_plugin_hook_mcp, PluginHookInvoker, PluginHookMCPSet};
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
@@ -129,6 +129,61 @@ fn apply_remote_mcp_startup(
         );
     }
     Ok(startup.set)
+}
+
+fn plugin_hook_invoker(client: Arc<Client>, daemon_token: String) -> PluginHookInvoker {
+    Arc::new(move |call_ctx, task_id, installation_id, hook_key, input| {
+        let client = Arc::clone(&client);
+        let daemon_token = daemon_token.clone();
+        let task_id = task_id.to_string();
+        let installation_id = installation_id.to_string();
+        let hook_key = hook_key.to_string();
+        let input = input.clone();
+        Box::pin(async move {
+            client
+                .invoke_agent_plugin_hook(
+                    call_ctx,
+                    &daemon_token,
+                    &task_id,
+                    &installation_id,
+                    &hook_key,
+                    Some(input),
+                )
+                .await
+                .map(|output| output.unwrap_or(Value::Null))
+        })
+    })
+}
+
+fn apply_plugin_hook_startup(
+    task: &Task,
+    inputs: &mut ProviderExecutionInputs,
+    overlay: Option<Value>,
+    set: Option<PluginHookMCPSet>,
+) -> Option<PluginHookMCPSet> {
+    if let Some(overlay) = overlay {
+        let base = inputs
+            .effective_mcp_config
+            .as_ref()
+            .or_else(|| {
+                task.agent
+                    .as_ref()
+                    .and_then(|agent| agent.mcp_config.as_ref())
+            })
+            .map(Value::to_string)
+            .unwrap_or_default();
+        match merge_task_remote_mcp_config(&base, &overlay.to_string())
+            .and_then(|raw| serde_json::from_str(&raw).map_err(anyhow::Error::new))
+        {
+            Ok(merged) => inputs.effective_mcp_config = Some(merged),
+            Err(error) => tracing::warn!(
+                task = %task.id,
+                %error,
+                "could not merge plugin hook MCP config"
+            ),
+        }
+    }
+    set
 }
 
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
@@ -431,65 +486,28 @@ impl ProductionProviderAdapter {
         // Own every loopback broker until provider execution and environment
         // finalization finish. Drop closes all listeners on every return path.
         let _remote_mcp_brokers = remote_mcp_brokers;
-        let plugin_invoke: PluginHookInvoker = {
-            let client = Arc::clone(&client);
-            let daemon_token = task.remote_mcp_daemon_token.clone();
-            Arc::new(
-                move |call_ctx, task_id, installation_id, hook_key, input| {
-                    let client = Arc::clone(&client);
-                    let daemon_token = daemon_token.clone();
-                    let task_id = task_id.to_string();
-                    let installation_id = installation_id.to_string();
-                    let hook_key = hook_key.to_string();
-                    let input = input.clone();
-                    Box::pin(async move {
-                        client
-                            .invoke_agent_plugin_hook(
-                                call_ctx,
-                                &daemon_token,
-                                &task_id,
-                                &installation_id,
-                                &hook_key,
-                                Some(input),
-                            )
-                            .await
-                            .map(|output| output.unwrap_or(Value::Null))
-                    })
-                },
-            )
-        };
-        let (plugin_overlay, plugin_hook_mcp) =
-            match start_task_plugin_hook_mcp(&ctx, &task.id, &task.plugin_hook_tools, plugin_invoke)
-                .await
-            {
-                Ok(started) => started,
-                Err(error) => {
-                    tracing::warn!(
-                        task = %task.id,
-                        %error,
-                        "plugin hook tools unavailable"
-                    );
-                    (None, None)
-                }
-            };
-        if let Some(overlay) = plugin_overlay {
-            let base = inputs
-                .effective_mcp_config
-                .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
-                .map(Value::to_string)
-                .unwrap_or_default();
-            match merge_task_remote_mcp_config(&base, &overlay.to_string())
-                .and_then(|raw| serde_json::from_str(&raw).map_err(anyhow::Error::new))
-            {
-                Ok(merged) => inputs.effective_mcp_config = Some(merged),
-                Err(error) => tracing::warn!(
+        let plugin_invoke =
+            plugin_hook_invoker(Arc::clone(&client), task.remote_mcp_daemon_token.clone());
+        let (plugin_overlay, plugin_hook_mcp) = match start_task_plugin_hook_mcp(
+            &ctx,
+            &task.id,
+            &task.plugin_hook_tools,
+            plugin_invoke,
+        )
+        .await
+        {
+            Ok(started) => started,
+            Err(error) => {
+                tracing::warn!(
                     task = %task.id,
                     %error,
-                    "could not merge plugin hook MCP config"
-                ),
+                    "plugin hook tools unavailable"
+                );
+                (None, None)
             }
-        }
+        };
+        let plugin_hook_mcp =
+            apply_plugin_hook_startup(&task, &mut inputs, plugin_overlay, plugin_hook_mcp);
         // Keep the local tool server alive through provider finalization;
         // Drop closes it on every early return as well.
         let _plugin_hook_mcp = plugin_hook_mcp;
@@ -1878,6 +1896,149 @@ mod tests {
         assert!(!observed_shutdown.is_cancelled());
         drop(retained);
         assert!(observed_shutdown.is_cancelled());
+        server_shutdown.cancel();
+    }
+
+    #[tokio::test]
+    async fn production_plugin_hook_bridge_invokes_client_merges_plan_and_cleans_up() {
+        let calls = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let app = axum::Router::new().route(
+            "/api/daemon/tasks/task-1/plugin-hooks",
+            axum::routing::post({
+                let calls = Arc::clone(&calls);
+                move |headers: axum::http::HeaderMap, axum::Json(body): axum::Json<Value>| {
+                    let calls = Arc::clone(&calls);
+                    async move {
+                        assert_eq!(
+                            headers
+                                .get("Authorization")
+                                .and_then(|value| value.to_str().ok()),
+                            Some("Bearer daemon-token")
+                        );
+                        calls.lock().unwrap().push(body);
+                        axum::Json(json!({"status":"ok","output":{"value":42}}))
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server_shutdown = CancellationToken::new();
+        let shutdown = server_shutdown.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                .await;
+        });
+
+        let task = Task {
+            id: "task-1".into(),
+            agent_id: "agent-1".into(),
+            runtime_id: "runtime-1".into(),
+            workspace_id: "workspace-1".into(),
+            issue_id: "issue-1".into(),
+            auth_token: "mat_task-token".into(),
+            remote_mcp_daemon_token: "daemon-token".into(),
+            agent: Some(crate::types::AgentData {
+                id: "agent-1".into(),
+                name: "Agent One".into(),
+                mcp_config: Some(json!({
+                    "mcpServers": {"agent": {"command": "agent-command"}}
+                })),
+                ..crate::types::AgentData::default()
+            }),
+            plugin_hook_tools: vec![crate::types::PluginHookTool {
+                installation_id: "installation-1".into(),
+                hook_key: "issue_assigned".into(),
+                name: "fixture.read".into(),
+                description: "Read fixture".into(),
+                input_schema: Some(json!({"type":"object"})),
+            }],
+            ..Task::default()
+        };
+        let client = Arc::new(Client::new(format!("http://{address}")));
+        let started = start_task_plugin_hook_mcp(
+            &Ctx::new(),
+            &task.id,
+            &task.plugin_hook_tools,
+            plugin_hook_invoker(client, task.remote_mcp_daemon_token.clone()),
+        )
+        .await
+        .unwrap();
+        let mut inputs = ProviderExecutionInputs {
+            temp_dir: "/tmp/cordy-plugin-hook-test".into(),
+            ..ProviderExecutionInputs::default()
+        };
+        let retained = apply_plugin_hook_startup(&task, &mut inputs, started.0, started.1)
+            .expect("production adapter retains the plugin server");
+        let temp = tempfile::tempdir().unwrap();
+        let plan = ProviderExecutionPlan::build(
+            &Config {
+                server_base_url: "http://server.invalid".into(),
+                workspaces_root: temp.path().to_string_lossy().into_owned(),
+                ..Config::default()
+            },
+            &task,
+            &RuntimeExecutionTarget {
+                provider: "codex".into(),
+                profile_id: String::new(),
+            },
+            inputs,
+        )
+        .unwrap();
+        let effective = plan.reuse_params("").mcp_config.unwrap();
+        assert_eq!(effective["mcpServers"]["agent"]["command"], "agent-command");
+        let tool_url = effective["mcpServers"]["cordy-plugins"]["url"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let http = reqwest::Client::new();
+        let response: Value = http
+            .post(&tool_url)
+            .json(&json!({
+                "jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{"name":"fixture.read","arguments":{"key":"value"}}
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(response["result"]["content"][0]["text"], "{\"value\":42}");
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[json!({
+                "installation_id":"installation-1",
+                "hook_key":"issue_assigned",
+                "input":{"key":"value"}
+            })]
+        );
+
+        drop(retained);
+        let mut closed = false;
+        for _ in 0..50 {
+            if http.post(&tool_url).body("{}").send().await.is_err() {
+                closed = true;
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(closed, "plugin server remained reachable after owner drop");
+
+        let mut malformed = ProviderExecutionInputs {
+            effective_mcp_config: Some(json!(42)),
+            ..ProviderExecutionInputs::default()
+        };
+        assert!(apply_plugin_hook_startup(
+            &task,
+            &mut malformed,
+            Some(json!({"mcpServers":{"ignored":{}}})),
+            None,
+        )
+        .is_none());
+        assert_eq!(malformed.effective_mcp_config, Some(json!(42)));
         server_shutdown.cancel();
     }
 

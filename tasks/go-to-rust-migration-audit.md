@@ -1004,3 +1004,13 @@ provider execution 与 environment finalization 结束；`Drop` 覆盖所有早�
   直接协议检查注入 test invoker 且未经过 production adapter/真实 Client/effective config，
   不能证明完整 production wiring。三项均已交独立 fixer；其余 client secret 边界、overlay
   precedence、owner/Drop 生命周期、既有协议限制和 Ponytail 核对无 finding。
+- verifier 在 head `fa1f8c05` 的 diff/clean 检查通过，但 fixed-stable rustfmt 在新增 async
+  test 与继承的 provider adapter reflow 失败；两个 exact tests 和 daemon no-run 均被未传播
+  的 #544 7 处 E0433 阻断，实际 0 tests。fixer 传播 #544/#546 根因修复后，以
+  `BTreeMap::Entry::Vacant` 保证 duplicate first-wins，并用 capture 直接断言首个
+  installation/hook；production bridge 通过真实 `Client::invoke_agent_plugin_hook` HTTP
+  边界、实际 loopback server、effective overlay、`ProviderExecutionPlan` 和 owner drop
+  cleanup，另直接证明 malformed scalar base 只告警并保留原 config。验证结果：first-wins
+  exact 1/1、production bridge exact 1/1、原协议 exact 1/1、daemon locked/offline no-run、
+  fixed-stable rustfmt 和 `git diff --check` 全部通过；仅保留既有 agent/openclaw unused-import
+  warnings，未把真实外部 plugin endpoint smoke 记为已执行。
