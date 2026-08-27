@@ -614,10 +614,36 @@ go tool pprof ./cpu.pprof
 
 ## Upgrading
 
+Re-run the installer to move the Compose assets and both Rust production images
+to the same latest release tag:
+
 ```bash
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | \
+  bash -s -- --with-server
 ```
 
-Pin `CORDY_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
+The installer records the selected release in `.env` as `CORDY_IMAGE_TAG`, so
+the checked-out Compose files, backend image, and web image cannot drift across
+versions. To install or roll back to an exact release, select it explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | \
+  CORDY_SELFHOST_REF=v0.2.4 bash -s -- --with-server
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:CORDY_SELFHOST_REF = "v0.2.4"
+$env:CORDY_MODE = "with-server"
+irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
+```
+
+Each run fetches the requested Git ref, writes the matching image tag, pulls
+both images, and recreates the services. An invalid or unavailable ref now
+fails before Compose changes the running deployment. Migrations still run
+automatically on backend startup and are not rolled back when an older image is
+selected. Before rolling back across a schema change, confirm the older backend
+supports the current schema or restore the matching database backup.
+
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.

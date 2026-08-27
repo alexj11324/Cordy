@@ -109,23 +109,39 @@ function Get-SelfHostRef {
 function Checkout-ServerRef {
     param([string]$Ref)
 
-    if ($Ref -eq "main") {
-        git fetch origin main --depth 1 2>$null
-        git checkout --force main 2>$null
-        git reset --hard origin/main 2>$null
-        return
+    git fetch origin $Ref --depth 1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not fetch self-host ref '$Ref'."
+    }
+    git checkout --force --detach FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not check out self-host ref '$Ref'."
+    }
+}
+
+function Set-SelfHostImageTag {
+    param([string]$Ref)
+
+    $imageTag = if ($Ref -eq "main") { "latest" } else { $Ref }
+    if ($imageTag -notmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') {
+        Write-Fail "Self-host ref '$Ref' is not a valid container image tag. Use a release tag such as v0.4.10 or main."
     }
 
-    git fetch origin --tags --force 2>$null
-    $tagRef = "refs/tags/$Ref"
-    git show-ref --verify --quiet $tagRef 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        git checkout --force $Ref 2>$null
-        return
+    $envPath = Join-Path $InstallDir ".env"
+    $content = @(Get-Content $envPath)
+    if ($content -match '^CORDY_IMAGE_TAG=') {
+        $content = $content | ForEach-Object {
+            if ($_ -match '^CORDY_IMAGE_TAG=') { "CORDY_IMAGE_TAG=$imageTag" } else { $_ }
+        }
+        $content | Set-Content $envPath
+    } else {
+        Add-Content -Path $envPath -Value "`nCORDY_IMAGE_TAG=$imageTag"
     }
 
-    git fetch origin $Ref --depth 1 2>$null
-    git checkout --force $Ref 2>$null
+    # Compose gives the process environment precedence over .env. Pin both so
+    # an ambient value cannot silently defeat an explicit rollback ref.
+    $env:CORDY_IMAGE_TAG = $imageTag
+    Write-Ok "Pinned backend and web images to $imageTag"
 }
 
 function Pull-OfficialSelfHostImages {
@@ -438,6 +454,8 @@ function Install-Server {
     } else {
         Write-Ok "Using existing .env"
     }
+
+    Set-SelfHostImageTag -Ref $serverRef
 
     Write-Info "Pulling official Cordy images..."
     Pull-OfficialSelfHostImages

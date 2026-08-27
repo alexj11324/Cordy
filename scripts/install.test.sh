@@ -349,8 +349,8 @@ exit 0
 STUB
   chmod +x "$stub_bin/docker"
 
-  # git: the installer takes the "existing installation" path, so only the
-  # fetch/checkout calls run and they are all tolerant of failure.
+  # git: the installer takes the existing-installation path and now requires
+  # both fetch and detached checkout to succeed before changing image tags.
   printf '#!/usr/bin/env bash\nexit 0\n' >"$stub_bin/git"
   chmod +x "$stub_bin/git"
 
@@ -509,10 +509,33 @@ STUB
   fi
 }
 
+test_with_server_pins_selected_release_images() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 CORDY_IMAGE_TAG=ambient || return 1
+
+  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.3.2" ]; then
+    echo "installer did not pin Compose images to the selected release ref" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -q "Pinned backend and web images to v0.3.2" "$tmp/install.out"; then
+    echo "installer did not report the selected production image tag" >&2
+    cat "$tmp/install.out" >&2 || true
+    return 1
+  fi
+}
+
 test_brew_install_failure_falls_back_to_release_binary
 test_brew_tap_failure_falls_back_to_release_binary
 test_remote_ssh_install_prints_token_login_hint
 test_local_install_does_not_print_token_login_hint
 test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
+test_with_server_pins_selected_release_images
 echo "install.sh tests passed"

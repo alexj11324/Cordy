@@ -223,22 +223,41 @@ get_selfhost_ref() {
 
 checkout_server_ref() {
   local ref="$1"
+  git fetch origin "$ref" --depth 1 || fail "Could not fetch self-host ref '$ref'."
+  git checkout --force --detach FETCH_HEAD || fail "Could not check out self-host ref '$ref'."
+}
 
+pin_selfhost_image_tag() {
+  local ref="$1" image_tag
   if [ "$ref" = "main" ]; then
-    git fetch origin main --depth 1 2>/dev/null || true
-    git checkout --force main 2>/dev/null || true
-    git reset --hard origin/main 2>/dev/null || true
-    return
+    image_tag="latest"
+  else
+    image_tag="$ref"
   fi
 
-  git fetch origin --tags --force 2>/dev/null || true
-  if git rev-parse --verify --quiet "refs/tags/$ref" >/dev/null; then
-    git checkout --force "$ref" 2>/dev/null || git checkout --force "tags/$ref" 2>/dev/null || true
-    return
+  case "$image_tag" in
+    "" | [.-]* | *[!A-Za-z0-9_.-]*)
+      fail "Self-host ref '$ref' is not a valid container image tag. Use a release tag such as v0.4.10 or main."
+      ;;
+  esac
+  if [ "${#image_tag}" -gt 128 ]; then
+    fail "Self-host ref '$ref' is too long for a container image tag."
   fi
 
-  git fetch origin "$ref" --depth 1 2>/dev/null || true
-  git checkout --force "$ref" 2>/dev/null || true
+  if grep -q '^CORDY_IMAGE_TAG=' .env; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
+    else
+      sed -i "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
+    fi
+  else
+    printf '\nCORDY_IMAGE_TAG=%s\n' "$image_tag" >>.env
+  fi
+
+  # Compose gives the calling environment precedence over .env. Export the
+  # selected ref so an ambient CORDY_IMAGE_TAG cannot silently defeat rollback.
+  export CORDY_IMAGE_TAG="$image_tag"
+  ok "Pinned backend and web images to $image_tag"
 }
 
 pull_official_selfhost_images() {
@@ -381,6 +400,8 @@ setup_server() {
   else
     ok "Using existing .env"
   fi
+
+  pin_selfhost_image_tag "$server_ref"
 
   # Start Docker Compose
   info "Pulling official Cordy images..."
