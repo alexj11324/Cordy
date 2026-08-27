@@ -2910,8 +2910,9 @@ heartbeat 使用 `chrono::SecondsFormat::AutoSi`。`AutoSi` 只输出 0/3/6/9 �
 位 fractional vectors；`Envelope::new`、`RedisRelay::heartbeat_once` 与 `ShardedStreamRelay::heartbeat_once` 三个 realtime
 生产调用已切换到该 helper。Redis keys、payload、TTL、relay assembly 和错误语义未改变。主 agent 仅执行 `git diff --check`
 （PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；Ready PR #582 以 `codex/cord-246-realtime-envelope-contract`
-（base SHA `e4f92ada`）为 base，当前 tip 为 `1cfc8ab9`。独立 fixer 的格式提交为 `1cfc8ab9`，fixed-stable rustfmt 与
-`git diff --check` PASS；verifier 的 locked/offline metadata/check/clippy/test/build 均在继承 #563 `hyper-util` runtime
-resolver 错误前置阻断（exit 101，matched/executed 为 0），真实 Redis/daemon/release/cross-platform smoke 未执行。reviewer
-无 P0/P1/P2/P3 finding。在 exact compile、matched/executed、跨语言 timestamp 和真实生产 smoke 证据返回前，本项不能声称
-AUDIT-008 已完成或删除 Go。
+（base SHA `e4f92ada`）为 base，产品/fixer tip 为 `1cfc8ab9`，最终台账证据 commit 为 `41ada05a`。独立 fixer 的格式提交为
+`1cfc8ab9`，fixed-stable rustfmt 与 `git diff --check` PASS；verifier 在最终 exact HEAD `41ada05a` 复核 base ancestry、clean
+worktree、直接 touched-file rustfmt 和 base-range diff-check 均 PASS。locked/offline metadata/check/test/no-run 仍在继承 #563
+`hyper-util` runtime resolver 错误前置阻断（exit 101，matched/executed 为 0），真实 Redis/daemon/release/cross-platform smoke
+未执行。reviewer 无 P0/P1/P2/P3 finding。在 exact compile、matched/executed、跨语言 timestamp 和真实生产 smoke 证据返回前，
+本项不能声称 AUDIT-008 已完成或删除 Go。
