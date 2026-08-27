@@ -29,7 +29,7 @@ use crate::health::{
     REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
-use crate::provider_registration::RuntimeLaunchRegistry;
+use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     enqueue_repo_warmup, BuiltinRefreshReason, RepoWarmupRequest, RuntimeRegistrationService,
@@ -128,13 +128,24 @@ impl ProviderRuntimeContext {
                     target.provider
                 )
             })?;
+        self.backend_config_for_launch(&launch, env)
+    }
+
+    /// Builds a provider config from an already accepted launch snapshot.
+    /// Registration may refresh concurrently, but a task must keep the exact
+    /// command identity that passed its initial launch gate.
+    pub fn backend_config_for_launch(
+        &self,
+        launch: &RuntimeLaunchSpec,
+        env: BTreeMap<String, String>,
+    ) -> anyhow::Result<BackendConfig> {
         anyhow::ensure!(
             !launch.command_path.trim().is_empty(),
             "accepted launch for provider {} has no executable path",
-            target.provider
+            launch.target.provider
         );
         Ok(BackendConfig {
-            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
+            command: RuntimeCommand::new(launch.command_path.clone(), launch.fixed_args.clone()),
             env,
         })
     }

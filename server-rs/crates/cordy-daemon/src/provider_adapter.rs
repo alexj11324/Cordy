@@ -8,6 +8,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+#[cfg(not(windows))]
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,7 +27,7 @@ use crate::execenv::context::{
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
-    predict_root_dir, prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
+    prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
     MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
@@ -109,12 +111,23 @@ impl ProductionProviderAdapter {
             }
         }
 
-        let predicted_root =
-            predict_root_dir(&self.config.workspaces_root, &task.workspace_id, &task.id);
-        let temp_dir = Path::new(&predicted_root)
-            .join("tmp")
-            .to_string_lossy()
-            .into_owned();
+        // Go allocates a fresh 0700 task temp directory from the platform
+        // temp base. Keep it independent from the long-lived env root: a
+        // predictable env-root child is reusable across attempts and lets a
+        // second task guess or retain another task's scratch files.
+        let task_temp_dir = match create_task_temp_dir() {
+            Ok(directory) => directory,
+            Err(error) => return failed(error, None),
+        };
+        let temp_dir = match task_temp_dir.path().to_str() {
+            Some(path) => path.to_owned(),
+            None => {
+                return failed(
+                    anyhow::anyhow!("task temp directory is not valid UTF-8"),
+                    None,
+                )
+            }
+        };
         let launch = runtime
             .launch_registry()
             .resolve(&task.workspace_id, &target);
@@ -142,6 +155,7 @@ impl ProductionProviderAdapter {
             openclaw_bin: (target.provider == "openclaw")
                 .then(|| launch.command_path.clone())
                 .unwrap_or_default(),
+            launch_prefix_args: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
         };
@@ -170,12 +184,12 @@ impl ProductionProviderAdapter {
         let requested_session_id = plan.resume_session_id().to_string();
 
         let client = runtime.client();
-        let prepare_lease = PrepareLeaseExtender::start(
+        let mut prepare_lease = Some(PrepareLeaseExtender::start(
             ctx.clone(),
             Arc::clone(&client),
             task.runtime_id.clone(),
             task.id.clone(),
-        );
+        ));
         let path_guard = match self
             .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
             .await
@@ -202,20 +216,15 @@ impl ProductionProviderAdapter {
         } else {
             path_guard
         };
-        prepare_lease.stop().await;
-
-        if let Err(error) = std::fs::create_dir_all(&temp_dir) {
-            let outcome = failed(
-                anyhow::Error::new(error).context("create task temp directory"),
-                Some(&environment),
-            );
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
-        }
         let run = async {
-            client
-                .start_task(&ctx, &task.id)
-                .await
-                .map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            let start_result = client.start_task(&ctx, &task.id).await;
+            // The lease covers the dispatched -> running gap as well as
+            // preparation. Stop it only after StartTask has returned, so a
+            // slow start request cannot let the server reclaim this task.
+            if let Some(lease) = prepare_lease.take() {
+                lease.stop().await;
+            }
+            start_result.map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
             if let Err(error) = client
                 .report_progress(
                     &ctx,
@@ -244,11 +253,12 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
-            let backend_config = runtime.backend_config(
-                &task.workspace_id,
-                &target,
-                bound.child_env.into_inner(),
-            )?;
+            // The registry entry was accepted before preparation. Use that
+            // exact snapshot for the child; resolving again here would allow
+            // a concurrent profile refresh/removal to change the executable
+            // after the task had already passed its launch gate.
+            let backend_config = runtime
+                .backend_config_for_launch(&launch, bound.child_env.into_inner())?;
             let backend = cordy_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
             let token = task.auth_token.trim().to_string();
@@ -272,7 +282,14 @@ impl ProductionProviderAdapter {
                 .await
                 .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
             let _running = CounterGuard::new(&self.running_tasks);
-            drain_session(&ctx, &client, &task.id, &environment.work_dir, session).await
+            drain_session(
+                &ctx,
+                Arc::clone(&client),
+                &task.id,
+                &environment.work_dir,
+                session,
+            )
+            .await
         }
         .await;
 
@@ -342,12 +359,15 @@ impl ProductionProviderAdapter {
             }
         }
         plan.drop_resume();
-        tokio::select! {
-            result = prepare(plan.prepare_params()) => result
-                .map(|environment| (environment, false))
-                .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}")),
-            () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
-        }
+        // `prepare` owns rollback for a failed local-worktree setup, but a
+        // `select!` cancellation would drop that future at an arbitrary await
+        // point before its rollback path runs. Finish the helper so its
+        // worktree/env-root cleanup remains authoritative; StartTask below
+        // still observes the cancelled context and prevents provider launch.
+        prepare(plan.prepare_params())
+            .await
+            .map(|environment| (environment, false))
+            .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}"))
     }
 }
 
@@ -494,7 +514,7 @@ impl Drop for PrepareLeaseExtender {
 
 async fn drain_session(
     ctx: &Ctx,
-    client: &Client,
+    client: Arc<Client>,
     task_id: &str,
     work_dir: &str,
     session: Session,
@@ -532,16 +552,39 @@ async fn drain_session(
                 match received {
                     Some(message) => {
                         if let Some(session_id) = transcript.push(message) {
-                            let pin_ctx = Ctx::new();
-                            let pin = client.pin_task_session(&pin_ctx, task_id, &session_id, work_dir);
-                            match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
-                                Ok(Ok(())) => {}
-                                Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "pin task session failed"),
-                                Err(_) => tracing::debug!(task = %task_id, "pin task session timed out"),
-                            }
+                            // Session pinning is best-effort and must not
+                            // stall the provider stream. The Go drain starts
+                            // this request independently; awaiting it here
+                            // can back-pressure a bounded provider channel for
+                            // five seconds and turn a healthy run into a
+                            // timeout.
+                            let pin_client = Arc::clone(&client);
+                            let pin_task_id = task_id.to_owned();
+                            let pin_work_dir = work_dir.to_owned();
+                            tokio::spawn(async move {
+                                let pin_ctx = Ctx::new();
+                                let pin = pin_client.pin_task_session(
+                                    &pin_ctx,
+                                    &pin_task_id,
+                                    &session_id,
+                                    &pin_work_dir,
+                                );
+                                match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
+                                    Ok(Ok(())) => {}
+                                    Ok(Err(error)) => tracing::debug!(
+                                        task = %pin_task_id,
+                                        %error,
+                                        "pin task session failed"
+                                    ),
+                                    Err(_) => tracing::debug!(
+                                        task = %pin_task_id,
+                                        "pin task session timed out"
+                                    ),
+                                }
+                            });
                         }
                         if transcript.ready() {
-                            flush_transcript(client, task_id, &mut transcript).await;
+                            flush_transcript(&client, task_id, &mut transcript).await;
                         }
                     }
                     None => messages_closed = true,
@@ -564,14 +607,14 @@ async fn drain_session(
                 drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
                 drain_armed = true;
             }
-            _ = ticker.tick() => flush_transcript(client, task_id, &mut transcript).await,
+            _ = ticker.tick() => flush_transcript(&client, task_id, &mut transcript).await,
             () = &mut drain_deadline, if drain_armed => {
                 tracing::warn!(task = %task_id, "provider transcript did not close within drain grace");
                 break;
             }
         }
     }
-    flush_transcript(client, task_id, &mut transcript).await;
+    flush_transcript(&client, task_id, &mut transcript).await;
     Ok(terminal.unwrap_or_else(|| ExecutionResult {
         status: "failed".to_string(),
         error: "provider messages closed without a terminal result".to_string(),
@@ -894,7 +937,44 @@ fn reusable_workdir(workspaces_root: &str, task: &Task) -> bool {
         } else {
             provenance.chat_session_id == task.chat_session_id
                 && marker.chat_session_id == task.chat_session_id
-        }
+    }
+}
+
+fn create_task_temp_dir() -> anyhow::Result<tempfile::TempDir> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("cordy-task-");
+
+    #[cfg(windows)]
+    {
+        // Go deliberately ignores CORDY_AGENT_TEMP_BASE on Windows.
+        builder
+            .tempdir()
+            .map_err(|error| anyhow::anyhow!("create task temp directory: {error}"))
+    }
+
+    #[cfg(not(windows))]
+    {
+        let configured = std::env::var("CORDY_AGENT_TEMP_BASE").unwrap_or_default();
+        let configured = configured.trim();
+        let base = if configured.is_empty() {
+            let socket_safe = Path::new("/tmp");
+            if socket_safe.is_dir() {
+                socket_safe.to_path_buf()
+            } else {
+                std::env::temp_dir()
+            }
+        } else {
+            let base = PathBuf::from(configured);
+            anyhow::ensure!(
+                base.is_absolute(),
+                "CORDY_AGENT_TEMP_BASE must be an absolute path, got {configured:?}"
+            );
+            base
+        };
+        builder
+            .tempdir_in(base)
+            .map_err(|error| anyhow::anyhow!("create task temp directory: {error}"))
+    }
 }
 
 fn provider_path() -> String {
@@ -937,6 +1017,43 @@ mod tests {
         let redacted = redact_tool_input(input);
         assert_ne!(redacted["authorization"], "Bearer secret-token");
         assert_ne!(redacted["nested"]["token"], "sk-abcdefghijklmnopqrstuvwxyz");
+    }
+
+    #[test]
+    fn bound_execution_debug_does_not_render_provider_arguments_or_mcp() {
+        let debug = format!(
+            "{:?}",
+            crate::execution_plan::BoundProviderExecution {
+                options: cordy_agent::ExecOptions {
+                    custom_args: vec!["--api-key".to_string(), "secret-arg".to_string()],
+                    mcp_config: Some(serde_json::json!({"token": "mcp-secret"})),
+                    ..cordy_agent::ExecOptions::default()
+                },
+                child_env: crate::execution_plan::ChildProcessEnvironment::default(),
+            }
+        );
+        assert!(!debug.contains("secret-arg"));
+        assert!(!debug.contains("mcp-secret"));
+        assert!(debug.contains("custom_arg_count: 2"));
+        assert!(debug.contains("has_mcp_config: true"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn task_temp_dir_is_private_and_randomized() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let first = create_task_temp_dir().unwrap();
+        let second = create_task_temp_dir().unwrap();
+        assert_ne!(first.path(), second.path());
+        assert_eq!(first.path().metadata().unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(second.path().metadata().unwrap().permissions().mode() & 0o777, 0o700);
+        assert!(first
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("cordy-task-"));
     }
 
     #[test]

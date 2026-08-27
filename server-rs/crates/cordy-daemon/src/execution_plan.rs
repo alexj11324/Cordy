@@ -41,6 +41,10 @@ pub struct ProviderExecutionInputs {
     pub default_model: String,
     pub codex_version: String,
     pub openclaw_bin: String,
+    /// Fixed arguments from the accepted launch prefix. They are not task
+    /// input, but Codex's sandbox decision must see them because they are
+    /// present on the actual child argv.
+    pub launch_prefix_args: Vec<String>,
     pub effective_mcp_config: Option<Value>,
     pub cursor_mcp_auth_source: String,
     pub local_work_dir: String,
@@ -103,7 +107,19 @@ impl fmt::Debug for BoundProviderExecution {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("BoundProviderExecution")
-            .field("options", &self.options)
+            // ExecOptions contains provider arguments and MCP configuration;
+            // keep this diagnostic summary structural so a task log cannot
+            // expose either of them.
+            .field("has_cwd", &!self.options.cwd.is_empty())
+            .field("has_model", &!self.options.model.is_empty())
+            .field("has_system_prompt", &!self.options.system_prompt.is_empty())
+            .field(
+                "has_resume_session",
+                &!self.options.resume_session_id.is_empty(),
+            )
+            .field("extra_arg_count", &self.options.extra_args.len())
+            .field("custom_arg_count", &self.options.custom_args.len())
+            .field("has_mcp_config", &self.options.mcp_config.is_some())
             .field("child_env", &self.child_env)
             .finish()
     }
@@ -217,6 +233,13 @@ impl ProviderExecutionPlan {
             effective
         } else {
             inputs.codex_custom_args.clone()
+        };
+        let codex_custom_args = if provider == "codex" && !inputs.launch_prefix_args.is_empty() {
+            let mut effective = inputs.launch_prefix_args.clone();
+            effective.extend(codex_custom_args);
+            effective
+        } else {
+            codex_custom_args
         };
         // ExecOptions owns its own vectors. Keeping this explicit avoids a
         // later adapter accidentally splicing profile fixed args into the
@@ -805,6 +828,30 @@ mod tests {
         assert_eq!(
             prepare.codex_custom_args,
             vec!["--sandbox", "workspace-write", "--agent-flag", "secret-arg"]
+        );
+    }
+
+    #[test]
+    fn codex_sandbox_inputs_include_the_accepted_launch_prefix() {
+        let mut inputs = inputs();
+        inputs.launch_prefix_args = vec![
+            "--wrapper".to_string(),
+            "-c".to_string(),
+            "windows.sandbox=enabled".to_string(),
+        ];
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs).unwrap();
+
+        assert_eq!(
+            plan.prepare_params().codex_custom_args,
+            vec![
+                "--wrapper",
+                "-c",
+                "windows.sandbox=enabled",
+                "--sandbox",
+                "workspace-write",
+                "--agent-flag",
+                "secret-arg"
+            ]
         );
     }
 
