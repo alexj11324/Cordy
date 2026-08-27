@@ -2644,7 +2644,8 @@ lock order、transaction boundary、idempotence、cleanup 或 production wiring 
 
 主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令。非 Draft Ready PR #575 已创建，
 base 为 `codex/cord-238-delegated-failure-recovery-contract-rust` 的 `e7b268b9`；原始实现 commit 为 `8782170f`，随后 fixer 提交
-`840261fe` 修正事务提交与删除错误传播，当前 PR tip 为 `840261fe`；独立
+`840261fe` 修正事务提交与删除错误传播，后续 fixer commit `a9fdd2e1` 收口 report、并发、HTTP 和 channel contract，当前 PR
+tip 为 `a9fdd2e1`；独立
 verifier/reviewer/fixer 已异步派发。exact compile、matched/executed counts、required PostgreSQL、server/Windows、取消/ack、
 session deletion race、failure cleanup 和完整 sweeper evidence 返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
 
