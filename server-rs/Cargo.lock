@@ -1401,6 +1401,7 @@ dependencies = [
  "async-trait",
  "axum",
  "backtrace",
+ "base64",
  "chrono",
  "cordy-analytics",
  "cordy-auth",

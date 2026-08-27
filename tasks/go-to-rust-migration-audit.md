@@ -643,4 +643,7 @@ typing、media、outbound 和 shutdown wiring，不增加新的生产抽象：
   `cordy-slack --lib` 在具备 loopback bind 权限时 63/63 通过，组合 server
   production configuration gate 实际运行 4/4 通过。沙箱内同一 Slack 测试为
   61 通过、2 个本地 listener 因 `EPERM` 失败，沙箱外原样重跑后两项均通过；固定
-  stable rustfmt 与 `git diff --check` 通过。
+  stable rustfmt 与 `git diff --check` 通过。review fix 将 Slack server gate 接到
+  实际 `register_slack_from_env` production seam：缺失/非法生产 key 不注册，有效
+  key 注册真实 factory，并用真实 secretbox 密文经 `Registry::build` 构造 Slack
+  channel；该定向测试 1/1 通过。

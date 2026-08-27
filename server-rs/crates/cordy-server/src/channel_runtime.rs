@@ -291,19 +291,25 @@ fn configure_slack(
     registry: &Arc<cordy_channel::Registry>,
     outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
 ) {
-    let secret_box = match channel_secret_box("CORDY_SLACK_SECRET_KEY") {
-        Ok(Some(secret_box)) => secret_box,
-        Ok(None) => {
-            tracing::info!("slack channel runtime disabled: CORDY_SLACK_SECRET_KEY not set");
-            return;
-        }
-        Err(error) => {
-            tracing::error!(%error, "slack channel runtime disabled: invalid secret key");
-            return;
-        }
+    let slash = || {
+        Some(Arc::new(
+            cordy_slack::slash_command::SlashCommandProcessor::new(
+                cordy_slack::slash_command::SlashCommandConfig {
+                    pool: state.pool.clone(),
+                    tasks: services.clone(),
+                    binding: Some(cordy_slack::binding::BindingTokenService::new(
+                        state.pool.clone(),
+                    )),
+                    app_url: app_url(cfg),
+                    binding_path: String::new(),
+                    respond: None,
+                },
+            ),
+        ))
     };
-    let decrypt: Arc<cordy_slack::config::Decrypter> =
-        Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+    let Some(decrypt) = register_slack_from_env(registry, slash) else {
+        return;
+    };
 
     let typing = Arc::new(cordy_slack::typing_indicator::TypingIndicatorManager::new(
         state.pool.clone(),
@@ -342,28 +348,36 @@ fn configure_slack(
 
     Arc::new(cordy_slack::outbound::Outbound::new(
         state.pool.clone(),
-        Some(decrypt.clone()),
+        Some(decrypt),
     ))
     .register(&state.bus, outbound_tasks.clone());
+}
 
-    let binding = cordy_slack::binding::BindingTokenService::new(state.pool.clone());
-    let slash = Arc::new(cordy_slack::slash_command::SlashCommandProcessor::new(
-        cordy_slack::slash_command::SlashCommandConfig {
-            pool: state.pool.clone(),
-            tasks: services.clone(),
-            binding: Some(binding),
-            app_url: app_url(cfg),
-            binding_path: String::new(),
-            respond: None,
-        },
-    ));
+fn register_slack_from_env(
+    registry: &cordy_channel::Registry,
+    slash: impl FnOnce() -> Option<Arc<cordy_slack::slash_command::SlashCommandProcessor>>,
+) -> Option<Arc<cordy_slack::config::Decrypter>> {
+    let secret_box = match channel_secret_box("CORDY_SLACK_SECRET_KEY") {
+        Ok(Some(secret_box)) => secret_box,
+        Ok(None) => {
+            tracing::info!("slack channel runtime disabled: CORDY_SLACK_SECRET_KEY not set");
+            return None;
+        }
+        Err(error) => {
+            tracing::error!(%error, "slack channel runtime disabled: invalid secret key");
+            return None;
+        }
+    };
+    let decrypt: Arc<cordy_slack::config::Decrypter> =
+        Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
     cordy_slack::channel::register_slack(
         registry,
         cordy_slack::channel::ChannelDeps {
-            decrypt: Some(decrypt),
-            slash: Some(slash),
+            decrypt: Some(decrypt.clone()),
+            slash: slash(),
         },
     );
+    Some(decrypt)
 }
 
 fn configure_dingtalk(
@@ -1359,7 +1373,7 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 mod tests {
     use super::{
         app_url, channel_secret_box, configure_wecom_security, lease_backend_settings,
-        LeaseBackendSettings,
+        register_slack_from_env, LeaseBackendSettings,
     };
     use cordy_lark::client::ApiClient as _;
 
@@ -1423,22 +1437,64 @@ mod tests {
         );
     }
 
-    #[test]
-    fn slack_runtime_requires_a_valid_secret_and_constructs_the_real_client() {
-        const KEY_ENV: &str = "CORDY_TEST_SLACK_SECRET_KEY";
+    #[tokio::test(flavor = "current_thread")]
+    async fn slack_runtime_registers_the_real_factory_only_for_a_valid_production_secret() {
+        use base64::Engine as _;
+
+        const KEY_ENV: &str = "CORDY_SLACK_SECRET_KEY";
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        struct RestoreEnv(Option<std::ffi::OsString>);
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var(KEY_ENV, value),
+                    None => std::env::remove_var(KEY_ENV),
+                }
+            }
+        }
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _restore = RestoreEnv(std::env::var_os(KEY_ENV));
+        let registry = cordy_channel::Registry::new();
+        let slack_type = cordy_channel::Type(cordy_slack::TYPE_SLACK.to_string());
 
         std::env::remove_var(KEY_ENV);
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
+        assert!(register_slack_from_env(&registry, || None).is_none());
+        assert!(registry.lookup(&slack_type).is_none());
 
         std::env::set_var(KEY_ENV, "not-base64");
-        assert!(channel_secret_box(KEY_ENV).is_err());
+        assert!(register_slack_from_env(&registry, || None).is_none());
+        assert!(registry.lookup(&slack_type).is_none());
 
-        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
-        std::env::remove_var(KEY_ENV);
+        let key = [0_u8; cordy_util::secretbox::KEY_SIZE];
+        std::env::set_var(
+            KEY_ENV,
+            base64::engine::general_purpose::STANDARD.encode(key),
+        );
+        assert!(register_slack_from_env(&registry, || None).is_some());
+        assert!(registry.lookup(&slack_type).is_some());
 
-        let client = cordy_slack::client::SlackClient::new("xoxb-test");
-        assert_eq!(client.api_url(), cordy_slack::client::DEFAULT_API_URL);
+        let secret_box = cordy_util::secretbox::SecretBox::new(&key).unwrap();
+        let seal = |token: &[u8]| {
+            base64::engine::general_purpose::STANDARD.encode(secret_box.seal(token).unwrap())
+        };
+        let built = registry
+            .build(cordy_channel::Config {
+                r#type: slack_type,
+                raw: serde_json::json!({
+                    "app_id": "A1",
+                    "bot_user_id": "U_BOT",
+                    "bot_token_encrypted": seal(b"xoxb-production"),
+                    "app_token_encrypted": seal(b"xapp-production"),
+                }),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(built.r#type().0, cordy_slack::TYPE_SLACK);
+        assert_eq!(
+            cordy_slack::client::DEFAULT_API_URL,
+            "https://slack.com/api/"
+        );
     }
 
     #[test]

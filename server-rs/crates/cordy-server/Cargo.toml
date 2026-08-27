@@ -52,4 +52,5 @@ flate2 = { workspace = true }
 pprof = { version = "0.15", default-features = false, features = ["protobuf-codec"] }
 
 [dev-dependencies]
+base64 = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
