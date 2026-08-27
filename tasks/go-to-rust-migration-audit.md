@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门和 self-host exact-image rollback 已切到 Rust | 异步收口 #551/#552 V/R/F；主线继续 systemd 与真实启动/回滚演练 | release/installer gate 已交付，最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551/#552；详见 §11、§15、§16、§38、§39 | 主 agent；独立 V/R/F subagent |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门和 self-host exact-image rollback 已切到 Rust；当前切片接通 systemd 生命周期 | 用既有 installer/Compose 建立 opt-in Linux user-systemd start/stop/boot ownership，不新增第二部署器；随后完成真实启动/回滚演练 | release/installer gate 已交付，systemd 可独立接线；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551/#552/当前切片；详见 §11、§15、§16、§38..§40 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
@@ -1174,3 +1174,20 @@ implementation commit `593cbc0d`）已把 Unix/Windows installer、Git ref check
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 Bash/PowerShell、Docker、registry 或 rollback 行为记为通过。
   PR 明确堆叠在 Ready PR #551。
+
+## 40. AUDIT-001 执行缺口：self-host Rust Compose systemd lifecycle
+
+当前切片选择 `AUDIT-001` 已明确列出的 systemd/启动/停止生产生命周期：
+
+- self-host installer 已 clone/pin Rust image 并直接 `docker compose up -d`，container 本身有
+  restart policy；但仓库没有受支持的 systemd ownership。operator 无法用安装器声明开机启动、
+  统一 stop/disable 或让 unit 在启动前验证 Compose 配置，台账 §17 因此只能写“没有 unit”。
+- 发布形态是 Rust backend/web container，不应再新增裸 server tarball、第二套 environment
+  parser 或固定 `/opt` 布局。最小完整边界是在现有 Bash installer 增加显式 `--systemd`，生成
+  exact `INSTALL_DIR`/Docker path 的 user unit，用同一 `docker-compose.selfhost.yml` 和 `.env`；
+  `loginctl linger` 保持注销后/开机 user manager，`systemctl --user enable --now` 获得真实 owner。
+- `--stop` 必须优先 disable/stop 已安装 unit，再以现有 Compose down 作为无 unit fallback；
+  macOS/Windows 或缺少 systemd user manager 时显式 flag 必须 fail-closed。升级/回滚仍由 §39 的
+  installer exact-ref 路径完成，unit 不复制 image-selection 逻辑。
+- 本切片只改 Unix installer、现有 installer check 与 self-host runbook；unit 在安装时生成，
+  不新增含占位符的模板、systemd crate、root daemon 或第二个 deployment script。
