@@ -102,6 +102,12 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
         workspace_id: &str,
     ) -> anyhow::Result<RegistrationPayload>;
 
+    /// Whether this built-in-only round differs from the last registration
+    /// successfully applied for this workspace.
+    fn builtin_registration_needed(&self, _workspace_id: &str) -> bool {
+        true
+    }
+
     /// Publishes provider-owned launch state only after the corresponding
     /// server response has been accepted into the authoritative registry.
     /// Failed register calls never invoke this hook.
@@ -305,6 +311,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             return Ok(());
         };
         for workspace_id in registry.workspace_ids() {
+            if !round.builtin_registration_needed(&workspace_id) {
+                continue;
+            }
             let Some(workspace) = registry.workspace(&workspace_id) else {
                 continue;
             };

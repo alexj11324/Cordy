@@ -315,6 +315,21 @@ impl RuntimeLaunchRegistry {
         state.profiles.remove(workspace_id);
     }
 
+    fn builtin_refresh_needed(
+        &self,
+        workspace_id: &str,
+        incoming: &[RuntimeLaunchSpec],
+    ) -> bool {
+        let state = self.state.read().unwrap();
+        let Some(current) = state.builtins.get(workspace_id) else {
+            return true;
+        };
+        current.len() != incoming.len()
+            || incoming.iter().any(|spec| {
+                current.get(&spec.target.provider).is_none_or(|saved| saved != spec)
+            })
+    }
+
     pub fn resolve(
         &self,
         workspace_id: &str,
@@ -342,7 +357,6 @@ pub struct ProviderRegistrationSource<C: ProviderCatalog> {
     client: Arc<Client>,
     catalog: Arc<C>,
     launches: Arc<RuntimeLaunchRegistry>,
-    last_builtin_payload: Mutex<Option<Vec<BTreeMap<String, String>>>>,
 }
 
 impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
@@ -357,7 +371,6 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             client,
             catalog,
             launches,
-            last_builtin_payload: Mutex::new(None),
         }
     }
 
@@ -516,6 +529,11 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
         Ok(payload)
     }
 
+    fn builtin_registration_needed(&self, workspace_id: &str) -> bool {
+        self.launches
+            .builtin_refresh_needed(workspace_id, &self.builtin_launches)
+    }
+
     fn registration_applied(&self, workspace_id: &str) {
         self.launches
             .replace_builtins(workspace_id, self.builtin_launches.clone());
@@ -531,7 +549,6 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
 impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSource<C> {
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>> {
         let snapshot = self.probe(ctx, ProviderProbeReason::Registration).await?;
-        *self.last_builtin_payload.lock().unwrap() = Some(snapshot.payload.clone());
         Ok(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
@@ -550,18 +567,6 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>> {
         let snapshot = self.probe(ctx, reason.into()).await?;
-        let changed = {
-            let mut previous = self.last_builtin_payload.lock().unwrap();
-            if previous.as_ref() == Some(&snapshot.payload) {
-                false
-            } else {
-                *previous = Some(snapshot.payload.clone());
-                true
-            }
-        };
-        if !changed {
-            return Ok(None);
-        }
         Ok(Some(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
@@ -728,6 +733,30 @@ mod tests {
             registry.resolve("ws-2", &target).unwrap().command_path,
             "/old/codex"
         );
+    }
+
+    #[test]
+    fn builtin_refresh_retry_is_scoped_to_the_workspace_that_applied() {
+        let registry = RuntimeLaunchRegistry::default();
+        let launch = |version: &str| RuntimeLaunchSpec {
+            target: RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            },
+            display_name: "Codex".to_string(),
+            command_path: "/bin/codex".to_string(),
+            fixed_args: Vec::new(),
+            version: version.to_string(),
+        };
+        registry.replace_builtins("ws-1", vec![launch("1.0.0")]);
+        registry.replace_builtins("ws-2", vec![launch("1.0.0")]);
+        let refreshed = vec![launch("2.0.0")];
+
+        assert!(registry.builtin_refresh_needed("ws-1", &refreshed));
+        assert!(registry.builtin_refresh_needed("ws-2", &refreshed));
+        registry.replace_builtins("ws-1", refreshed.clone());
+        assert!(!registry.builtin_refresh_needed("ws-1", &refreshed));
+        assert!(registry.builtin_refresh_needed("ws-2", &refreshed));
     }
 
     #[test]
