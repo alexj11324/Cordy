@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；当前切片迁移 heartbeat HTTP pool recovery | 接通连续 transient heartbeat failure 后的真实 idle-pool eviction 与新连接恢复；异步收口 #558/#559/#561/#562/#563 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#563，可执行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§51 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；当前切片收口 deferred cancelled chat finalization | 收口 #558/#559/#561/#562/#563 异步 V/R/F，并完成 §62 的 cancel-ack/sweeper finalization contract；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -276,7 +276,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 49. `[~]` `T-49 / §49` AUDIT-005 private task temp lifecycle
 50. `[~]` `T-50 / §50` AUDIT-005 wakeup proxy/CONNECT lifecycle
 51. `[~]` `T-51 / §51` AUDIT-005 heartbeat HTTP pool recovery
-52. `[ ]` `T-52` AUDIT-005 下一个未闭合 background-worker 能力（先登记新 §，再实现）
+52. `[~]` `T-52 / §62` AUDIT-005 deferred cancelled chat finalization（cancel-ack 与 sweeper fallback；已登记，待实现）
 
 #### 阶段五：最终兼容与退休门
 
@@ -2591,3 +2591,42 @@ production wiring 应使测试失败。
 base 是 `codex/cord-237-runtime-gc-contract-rust` 的 `5d4532af`，当前 Ready tip `82b51570`；独立 verifier/reviewer/fixer
 已异步派发。exact compile、matched/executed counts、required DB、server/Windows、取消/rerun、failure cleanup 和完整 sweeper
 运行证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
+
+## 62. [~] AUDIT-005 deferred cancelled chat finalization contract
+
+本项在开始编码前登记，选择 daemon cancel-ack 与 runtime sweeper fallback 共同完成的完整延迟聊天取消最终化能力；它不是在
+已有 `TaskService` 方法外再加一个定时器，而是要证明“取消时延迟判定 → transcript flush/超时边界 → 原子 claim → restore 或
+Stopped outcome → durable draft restore/event → session 删除竞态”的端到端契约：
+
+- Go `CancelTask` 对已启动且 transcript 为空的 direct chat 只设置 `chat_finalize_deferred_at`，不提前删除用户输入；daemon
+  cancel-ack 或 sweeper 在 60 秒 grace 后通过 `FinalizeDeferredCancelledChat` 决定仍为空时删除输入并在同一事务写入
+  `chat_draft_restore`，有 transcript 时保留输入并写一条 `Stopped.` assistant message；channel-ingested 输入即使 session
+  已归档/解绑也必须 fail closed，不能伪造可恢复草稿。
+- finalizer 必须先锁 `chat_session` 再 claim task marker，与 workspace/agent/session deleter 的锁顺序一致；并发 ack/sweeper
+  只能有一个 winner，事务失败必须回滚 marker 让下一个 tick 可重试，session 已消失时清 marker 但不得插入孤儿 restore；事件
+  `chat:cancel_finalized` 只携带 outcome/metadata，不泄露 prompt，广播丢失仍可由 draft-restore endpoint 恢复，restore consume
+  幂等。
+- sweeper 查询必须只返回超过 grace 的 marker，使用 bounded batch；fresh marker 不得提前 finalize，重复 sweep/重复 ack 不得创建
+  第二条 assistant message、第二个 restore 或第二个事件；生产 `RuntimeTaskSweeper::run_once` 必须报告实际处理的 rows，并
+  继续执行同一 tick 的其他 stages。
+
+Rust production implementation 已存在于 `TaskService::finalize_deferred_cancelled_chat`、`agent::list_chat_finalize_deferred_expired`
+与 `RuntimeTaskSweeper::run_once`，daemon cancel-ack 已接入同一 TaskService；但当前 Rust 没有与 Go
+`task_cancel_finalize_test.go`/`chat_draft_restore_race_test.go` 等价的真实 PostgreSQL contract，不能据此退休 Go。
+
+本切片必须复用既有 `TaskService`、`cordy-db` production SQL、`RuntimeTaskSweeper::run_once`、shared `Bus` 与 chat draft-restore
+endpoint，不新增 finalizer service、alternate timer、fake DB 或测试框架。required `DATABASE_URL` 缺失/坏连接必须失败而不能
+self-skip；fixture 使用唯一 workspace/user/member/runtime/agent/session/task/message/attachment，并在 setup 成功和失败路径
+确定性清理。contract 至少覆盖：cancel 未启动/已启动非空/已启动空 transcript 三分支、grace 内外 bounded query、仍为空
+restore（含附件分离、broadcast 丢失恢复与幂等 consume）、late transcript 的 Stopped outcome、atomic marker claim 与重复调用、
+channel-ingested archived/unbound guard、session-delete/lock-order race、事务失败回滚可重试、事件 payload redaction、真实
+`RuntimeTaskSweeper::run_once` 的 `chats_finalized` report 和同 tick stage isolation；删除 grace/status/provenance predicate、
+lock order、transaction boundary、idempotence、cleanup 或 production wiring 任一环节应使测试失败。
+
+- 默认生产路径：Rust `RuntimeTaskSweeper::run_full_once` 是唯一 server sweeper，`run_once` 使用真实 `PgPool`、production
+  `TaskService`、shared `Bus` 和 daemon cancel-ack；有效配置不选择 Stub/Noop/Fake。
+- Go 是否可下线：本 deferred chat-finalization contract 与异步 finding 收口后，Go `FinalizeDeferredCancelledChat`、marker
+  sweeper stage 与对应 cancel-ack wiring 可退休；其他 background workers、delegated recovery、runtime GC 与 AUDIT-001..010
+  总退出门仍未完成。
+- owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
+  `codex/cord-238-delegated-failure-recovery-contract-rust`，独立 worktree；实现、PR 与验证事实将在本节回写。
