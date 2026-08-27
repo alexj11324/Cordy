@@ -19,23 +19,27 @@
 - Go→Rust 业务能力或完整契约迁移；
 - Rust 生产入口接线；
 - worktree、分支、提交、推送和 Ready PR；
-- 机械性编译、测试、契约检查和结果记录。
+- 接收异步结果后回写台账和 PR。
 
-review agent（当前为 Linnaeus）异步负责：
+独立 verification agent 异步负责：
 
-- review；
+- 编译、测试、格式/静态检查、契约检查和生产入口验证；
+- 只报告精确命令与结果，不 review、不修改或修复代码。
+
+独立 reviewer agent 异步负责：
+
+- review 迁移完整性、生产 wiring、证据和 Ponytail；
 - 只输出 findings，不修改或提交代码。
 
-独立的 fix agent 负责：
+独立 fixer agent 异步负责：
 
 - 根据 review findings 修复缺陷、安全问题和回归；
 - 修复机械验证发现的编译或测试失败；
 - 必要时直接提交修复。
 
-review 与 fix 必须由两个不同的 subagent 承担。受平台单 subagent 并发限制时，
-先让 review agent 完成并关闭，再创建新的 fix agent；主 agent 继续迁移，不等待、
-不轮询，也不把任何异步结果作为下一块迁移或 Ready PR 的前置条件。主 agent
-不在主线自行处理 review 意见或修复任务。
+verification、reviewer 与 fixer 必须由三个不同的 subagent 承担。主 agent 派发后
+继续迁移，不等待、不轮询，也不把任何异步结果作为下一块迁移、提交、推送或
+Ready PR 的前置条件；长时间编译和测试不得占用主 agent 的迁移主线。
 
 ## 2. Ponytail 约束
 
@@ -180,27 +184,28 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 ### 6.1 唯一执行台账
 
-状态只描述主线交付，不把异步 review/fix 当作阻塞状态：
+状态只描述主线交付，不把异步 verification/review/fix 当作阻塞状态。ID 是稳定的
+能力轨道标识，不是必须按数字完成的流水阶段；选择顺序由“依赖/可执行门”决定：
 
-| ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 证据/PR | owner |
-| --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust | 收口 install/systemd、兼容产物、启动与回滚演练 | PR #523/#527/当前切片；详见 §11、§15、§16 | 主 agent；review/fix subagent |
-| AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | §5、§6.2、§18 | 主 agent；Linnaeus review；独立 fix agent |
-| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；review/fix subagent |
-| AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
-| AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
-| AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 review/fix；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | PR #531；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack 与 Telegram 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532..#536；§5.3、§6.2、§20..§24 | 主 agent；review/fix subagent |
-| AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
-| AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
-| AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
-| AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | §6.2 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | PR #523/#524/#525；§6.2 | 主 agent；review/fix subagent |
-| AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | §6.2、§10 | 主 agent；review/fix subagent |
+| ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
+| --- | --- | --- | --- | --- | --- | --- |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust | 收口 install/systemd、兼容产物、启动与回滚演练 | 入口切换已可交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/当前切片；详见 §11、§15、§16 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack 与 Telegram 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | 当前切片 Composio；随后 VCS/GHSnapshot | 依赖 AUDIT-001 已交付的 Rust server 入口；各 provider 互不重叠，可执行 | PR #532..#536；§5.3、§6.2、§20..§24 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | §5.2、§6.2 | 主 agent；独立 V/R/F subagent |
+| AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
+| AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
+| AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
+| AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
+| AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
 执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
-立即提交、推送并创建 Ready PR，同时回写本表。review/fix 和长时间验证可以
-并行运行，但不改变下一动作的选择，也不需要主 agent 等待。
+立即提交、推送并创建 Ready PR，同时回写本表。verification/review/fix 可以
+并行运行；主 agent 只从依赖已满足的项继续选择，不需要等待异步结果。
 
 ### 6.2 任务范围与退出证据
 
