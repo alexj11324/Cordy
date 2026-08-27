@@ -2,8 +2,8 @@
 //!
 //! Assembles every collector into one Prometheus registry. The Go version
 //! also mounts the Go runtime and process collectors; the Rust port exposes
-//! build info plus the domain collectors, and the DB/realtime collectors are
-//! optional exactly like their Go counterparts.
+//! the native Linux process collector plus build and domain collectors, and
+//! the DB/realtime collectors are optional exactly like their Go counterparts.
 
 use std::sync::Arc;
 
@@ -68,6 +68,11 @@ impl Registry {
             .set(1.0);
         let _ = reg.register(Box::new(build_info));
 
+        #[cfg(target_os = "linux")]
+        let _ = reg.register(Box::new(
+            prometheus::process_collector::ProcessCollector::for_self(),
+        ));
+
         let http = Arc::new(HttpMetrics::new());
         for c in http.collectors() {
             let _ = reg.register(c);
@@ -119,6 +124,38 @@ impl Registry {
             channel_lease,
             wecom,
             lark_backfill,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn production_registry_exposes_native_process_diagnostics() {
+        let registry = Registry::new(RegistryOptions {
+            pool: None,
+            realtime: None,
+            version: "test".to_string(),
+            commit: "test".to_string(),
+            sampler: None,
+        });
+        let names: Vec<_> = registry
+            .gatherer
+            .gather()
+            .into_iter()
+            .map(|family| family.name().to_string())
+            .collect();
+
+        for expected in [
+            "process_resident_memory_bytes",
+            "process_virtual_memory_bytes",
+            "process_threads",
+            "process_open_fds",
+        ] {
+            assert!(names.iter().any(|name| name == expected), "{expected}");
         }
     }
 }

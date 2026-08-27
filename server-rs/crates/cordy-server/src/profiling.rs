@@ -22,7 +22,8 @@ const INDEX: &str = "<!doctype html><html><head><title>pprof</title></head><body
 <li><a href=\"/debug/pprof/profile\">profile</a></li>\
 <li><a href=\"/debug/pprof/cmdline\">cmdline</a></li>\
 <li><a href=\"/debug/pprof/symbol\">symbol</a></li>\
-</ul></body></html>\n";
+</ul><p>Rust process memory and thread diagnostics are exported by the private metrics listener.</p>\
+</body></html>\n";
 
 #[derive(Debug, Deserialize)]
 struct ProfileQuery {
@@ -46,7 +47,8 @@ fn router() -> Router {
         .route("/debug/pprof/cmdline", get(cmdline))
         .route("/debug/pprof/profile", get(profile))
         .route("/debug/pprof/symbol", get(symbol_get).post(symbol_post))
-        .route("/debug/pprof/trace", get(trace))
+        .route("/debug/pprof/heap", get(retired_heap_profile))
+        .route("/debug/pprof/trace", get(retired_runtime_trace))
 }
 
 async fn redirect_to_index() -> Response {
@@ -112,10 +114,17 @@ async fn symbol_post(body: axum::body::Bytes) -> Response {
     }
 }
 
-async fn trace() -> Response {
+async fn retired_heap_profile() -> Response {
     text_response(
-        StatusCode::NOT_IMPLEMENTED,
-        "runtime trace is not available in the Rust server\n",
+        StatusCode::GONE,
+        "Go heap pprof is retired; use process_resident_memory_bytes and process_virtual_memory_bytes on the private metrics listener\n",
+    )
+}
+
+async fn retired_runtime_trace() -> Response {
+    text_response(
+        StatusCode::GONE,
+        "Go runtime trace is retired; use Rust CPU pprof and structured component/request logs\n",
     )
 }
 
@@ -266,17 +275,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn heap_is_not_accidentally_exposed_by_the_cpu_slice() {
-        let response = router()
-            .oneshot(
-                axum::http::Request::builder()
-                    .uri("/debug/pprof/heap")
-                    .body(Body::empty())
-                    .unwrap_or_else(|_| unreachable!()),
-            )
-            .await
-            .unwrap_or_else(|_| unreachable!());
+    async fn go_only_profiles_fail_closed_with_rust_replacements() {
+        for (path, replacement) in [
+            ("/debug/pprof/heap", "process_resident_memory_bytes"),
+            ("/debug/pprof/trace", "Rust CPU pprof"),
+        ] {
+            let response = router()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri(path)
+                        .body(Body::empty())
+                        .unwrap_or_else(|_| unreachable!()),
+                )
+                .await
+                .unwrap_or_else(|_| unreachable!());
 
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            assert_eq!(response.status(), StatusCode::GONE);
+            let body = response
+                .into_body()
+                .collect()
+                .await
+                .unwrap_or_else(|_| unreachable!())
+                .to_bytes();
+            assert!(String::from_utf8_lossy(&body).contains(replacement));
+        }
     }
 }

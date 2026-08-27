@@ -581,7 +581,7 @@ networking, allowlists, NetworkPolicy, or proxy authentication. If you bind
 trusted network, for example a host-local mapping such as
 `127.0.0.1:9090:9090`.
 
-## Runtime CPU Profiling
+## Runtime Profiling
 
 The Rust backend exposes CPU pprof on the fixed loopback-only management
 listener `127.0.0.1:6060`:
@@ -597,9 +597,20 @@ bound to a container or host network interface. Profiles can reveal process
 internals and captures add CPU pressure, so access should remain limited to
 operators on the same host or in the same container network namespace.
 
-Heap and runtime-trace profiles are not available from the Rust production
-entry yet; do not treat `/debug/pprof/heap` or `/debug/pprof/trace` as supported
-operations until the migration audit closes those contracts.
+Go heap pprof and Go runtime scheduler traces are not meaningful wire contracts
+for the Rust runtime and are intentionally retired. Both legacy URLs return
+`410 Gone` instead of a plausible but incomplete profile. For memory diagnosis,
+enable the private metrics listener and graph these native process metrics:
+
+- `process_resident_memory_bytes`
+- `process_virtual_memory_bytes`
+- `process_threads`
+- `process_open_fds`
+
+Use the CPU pprof above to locate hot stacks, then correlate its capture window
+with structured logs by `component`, `request_id`, and `user_id`. This preserves
+the operator use cases without replacing the production allocator or exposing
+profiling on the public API port.
 
 A loopback listener inside a container belongs to that container's network
 namespace and is not reachable directly from the host. With the Compose stack,
