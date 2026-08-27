@@ -20,7 +20,7 @@ use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 use crate::mcp::managed_object;
-use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking};
+use crate::model::{Catalog, CatalogCache, Model, ModelThinking};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::AgentLineReader;
@@ -76,9 +76,7 @@ impl DshBackend {
         } else {
             runtime_scope
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return Catalog::default();
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -163,15 +161,24 @@ impl Backend for DshBackend {
                     AgentError::Process(error)
                 }
             })?;
-        let mut stdin = tree.child_mut().stdin.take().ok_or_else(|| {
-            AgentError::Protocol("DSH stdin pipe unavailable after spawn".to_string())
-        })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("DSH stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("DSH stderr pipe unavailable after spawn".to_string())
-        })?;
+        let Some(mut stdin) = tree.child_mut().stdin.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "DSH stdin pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "DSH stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "DSH stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
 
         let request_id = next_request_id();
         let execute = DshExecuteCommand {
@@ -185,9 +192,10 @@ impl Backend for DshBackend {
             reasoning_effort: options.thinking_level.clone(),
             mcp_servers,
         };
-        write_json_line(&mut stdin, &execute)
-            .await
-            .map_err(AgentError::Process)?;
+        if let Err(error) = write_json_line(&mut stdin, &execute).await {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Process(error));
+        }
 
         let (message_tx, message_rx) = tokio::sync::mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
@@ -244,14 +252,14 @@ impl Backend for DshBackend {
                     match graceful {
                         Ok(completed) => (RunEnd::Cancelled, completed.0, completed.1),
                         Err(_) => {
-                            let _ = tree.shutdown(DSH_TERMINATE_GRACE, DSH_KILL_GRACE).await;
+                            stop_process_tree(&mut tree).await;
                             let stream = (&mut reader_task).await;
                             (RunEnd::Cancelled, Ok(success_exit_status()), stream)
                         }
                     }
                 }
                 DshCompletionOutcome::DeadlineExceeded => {
-                    let _ = tree.shutdown(DSH_TERMINATE_GRACE, DSH_KILL_GRACE).await;
+                    stop_process_tree(&mut tree).await;
                     let stream = (&mut reader_task).await;
                     (RunEnd::DeadlineExceeded, Ok(success_exit_status()), stream)
                 }
@@ -356,6 +364,9 @@ fn build_dsh_mcp_servers(config: Option<&Value>) -> Result<Vec<DshMcpServer>, Ag
     let Some(raw_servers) = config.get("mcpServers") else {
         return Ok(Vec::new());
     };
+    if raw_servers.is_null() {
+        return Ok(Vec::new());
+    }
     let servers = raw_servers.as_object().ok_or_else(|| {
         AgentError::InvalidConfig("managed MCP `mcpServers` must be a JSON object".to_string())
     })?;
@@ -770,11 +781,10 @@ async fn discover_once(
         .envs(&config.env)
         .kill_on_drop(false);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-    let stdout = tree
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("DSH model stdout pipe unavailable"))?;
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(io::Error::other("DSH model stdout pipe unavailable"));
+    };
     let outcome = {
         let read = async {
             let mut reader = AgentLineReader::new(BufReader::new(stdout));
@@ -809,14 +819,14 @@ async fn discover_once(
     match outcome {
         DiscoveryOutcome::Completed(result) => result,
         DiscoveryOutcome::Cancelled => {
-            let _ = tree.shutdown(DSH_TERMINATE_GRACE, DSH_KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "DSH model discovery cancelled",
             ))
         }
         DiscoveryOutcome::TimedOut => {
-            let _ = tree.shutdown(DSH_TERMINATE_GRACE, DSH_KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "DSH model discovery timed out",
@@ -858,6 +868,23 @@ enum DshCompletionOutcome {
     Completed((io::Result<ExitStatus>, Result<DshStreamState, JoinError>)),
     Cancelled,
     DeadlineExceeded,
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tree.wait_tree_gone(DSH_TERMINATE_GRACE).await {
+        return;
+    }
+    let _ = tree.kill();
+    let _ = tree.wait_tree_gone(DSH_KILL_GRACE).await;
+    let _ = tree.wait().await;
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
 }
 
 fn finalize_result(
