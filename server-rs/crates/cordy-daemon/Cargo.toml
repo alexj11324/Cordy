@@ -46,6 +46,7 @@ cordy-util = { path = "../cordy-util" }
 axum = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+hyper-util = { workspace = true, features = ["client-proxy"] }
 cordy-remotemcp = { path = "../cordy-remotemcp" }
 
 [target.'cfg(windows)'.dependencies]
