@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 review/fix；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | PR #531；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom 与 DingTalk 均要求有效 secret，使用真实 production transport，错误配置 fail-closed；shutdown 纳入 channel runtime deadline | Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532/#533/#534；§5.3、§6.2、§20..§22 | 主 agent；review/fix subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk 与 Slack 均要求有效 secret，使用真实 production transport，错误配置 fail-closed；shutdown 纳入 channel runtime deadline | Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532..#535；§5.3、§6.2、§20..§23 | 主 agent；review/fix subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
@@ -566,7 +566,8 @@ assembly 的配置选择，不复制 provider 实现或增加第二套 client fa
 - 验证状态：触及文件的 fixed stable rustfmt、`git diff --check`、offline locked
   metadata 通过；Lark stub fail-closed 定向测试 1/1 通过。新增 server production
   gate 测试已开始构建，但在运行测试前因共享磁盘空间耗尽而中止；未把环境失败
-  伪报为通过。对应 daemon 基线修复现已从 PR #530 传播到本分支。
+  伪报为通过。后续 PR #535 在清理生成缓存并传播独立基线修复后实际运行四个
+  provider production gate，Lark/WeCom/DingTalk/Slack 4/4 通过。
 
 ## 21. AUDIT-004 执行更新：WeCom production configuration contract
 
@@ -591,8 +592,8 @@ shutdown wiring，不增加新的 factory 或生产抽象：
   stable rustfmt 和 `git diff --check` 通过。首次 server 定向测试于 AWS/Lark
   依赖归档阶段因共享 target 磁盘耗尽中止；清理 9.4 GiB 可再生 Cargo 缓存后的
   低调试信息 fresh rerun 继续到 `cordy-slack`，但被既有
-  `EnvelopeKind::Disconnect` 非穷尽匹配阻断。该修复传播已异步交给独立 fix agent，
-  当前不把两次未执行到测试体的 server 命令记录为通过。
+  `EnvelopeKind::Disconnect` 非穷尽匹配阻断。独立 fix agent 随后以 `8fcf8272`
+  传播既有修复；PR #535 的组合 server production gate 实际运行 4/4 通过。
 
 ## 22. AUDIT-004 执行更新：DingTalk production configuration contract
 
@@ -615,5 +616,31 @@ Stream connector、inbound/outbound、media 和 shutdown wiring，不增加新�
 - 验证状态：`cordy-dingtalk --lib` 48/48 通过，覆盖配置解密、安装校验、inbound、
   media guard、Stream frame、dispatch 顺序与 shutdown deadline；固定 stable rustfmt
   和 `git diff --check` 通过。新增 server 定向测试已实际运行构建，但在执行测试前
-  被现有 `cordy-slack` `EnvelopeKind::Disconnect` 非穷尽匹配阻断；既有修复传播已
-  异步交给独立 fix agent，本切片不夹带该修复，也不把 server 测试伪报为通过。
+  被现有 `cordy-slack` `EnvelopeKind::Disconnect` 非穷尽匹配阻断；本切片没有夹带
+  修复。独立 fix agent 传播 `8fcf8272` 后，PR #535 的组合 server production gate
+  实际运行 4/4 通过。
+
+## 23. AUDIT-004 执行更新：Slack production configuration contract
+
+Ready PR #535（`codex/cord-200-slack-production-contract-rust`）验证 Slack production
+assembly 的配置与 transport 选择，复用现有 token decrypter、Socket Mode、slash、
+typing、media、outbound 和 shutdown wiring，不增加新的生产抽象：
+
+- Go 能力：只有配置有效的 `CORDY_SLACK_SECRET_KEY` 才注册安装 app/bot token
+  解密、真实 Web API/Socket Mode transport、slash command、typing、media、reply 与
+  resolver wiring；缺失或非法 key 必须禁用而不是回退到 fake。
+- Rust 入口：`cordy-server::channel_runtime::configure_slack` 注入真实 decrypter，
+  `cordy_slack::channel::new_slack_factory` 解密安装 token 并构造
+  `SlackClient::new`，默认使用官方 `https://slack.com/api/`；factory 拒绝空
+  app-level token。
+- 生产路径状态：Rust server 的 `ChannelRuntime::start` 调用该 wiring；Socket Mode
+  connection、outbound runtime tasks、typing clear 与 supervisor shutdown 复用现有
+  cancellation/deadline 边界。
+- Go 是否可下线：否。Slack 配置选择和 crate 内部契约已有 Rust 证据，但真实外部
+  凭证 smoke、其他 AUDIT-004 provider 与最终 AUDIT-001..010 门仍未完成。
+- 验证状态：独立 fix agent 只传播既有 `EnvelopeKind::Disconnect` 修复为
+  `8fcf8272`，fresh `cordy-server --no-run` 通过；修复进入堆叠后，
+  `cordy-slack --lib` 在具备 loopback bind 权限时 63/63 通过，组合 server
+  production configuration gate 实际运行 4/4 通过。沙箱内同一 Slack 测试为
+  61 通过、2 个本地 listener 因 `EPERM` 失败，沙箱外原样重跑后两项均通过；固定
+  stable rustfmt 与 `git diff --check` 通过。
