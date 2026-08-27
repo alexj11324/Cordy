@@ -30,8 +30,8 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           echo "Triggered by tag: $tag"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$tag'."
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::Release tags must be strict SemVer (vX.Y.Z with optional prerelease/build metadata); got '$tag'."
             exit 1
           fi
           if [[ "$tag" == *-dirty* ]]; then
@@ -40,6 +40,15 @@ jobs:
           fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
+            prerelease="${tag#*-}"
+            prerelease="${prerelease%%+*}"
+            IFS='.' read -ra prerelease_identifiers <<< "$prerelease"
+            for identifier in "${prerelease_identifiers[@]}"; do
+              if [[ "$identifier" =~ ^0[0-9]+$ ]]; then
+                echo "::error::Numeric prerelease identifiers cannot have leading zeroes: '$tag'."
+                exit 1
+              fi
+            done
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
@@ -74,8 +83,89 @@ jobs:
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
         run: echo "::warning::govulncheck was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
-  release:
+  cli-build:
     needs: verify
+    # Build each Rust target on a native runner. Unlike Go's CGO-disabled
+    # cross-build, Rust's CLI dependency graph needs the platform linker and
+    # SDK, so native runners keep the release artifact trustworthy.
+    if: github.repository_owner == 'cordy-ai'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            platform: darwin
+            arch: amd64
+            rust_target: x86_64-apple-darwin
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+          - runner: ubuntu-latest
+            platform: linux
+            arch: amd64
+            rust_target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            rust_target: aarch64-unknown-linux-musl
+          - runner: windows-latest
+            platform: windows
+            arch: amd64
+            rust_target: x86_64-pc-windows-msvc
+            msvc_arch: amd64
+          - runner: windows-latest
+            platform: windows
+            arch: arm64
+            rust_target: aarch64-pc-windows-msvc
+            msvc_arch: amd64_arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "${{ matrix.rust_target }}"
+          if [[ "${{ matrix.platform }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.platform }}" == "linux" ]]; then
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install musl toolchain (Linux)
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Setup MSVC linker
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          # amd64_arm64 selects the x64-hosted ARM64 cross compiler for the
+          # aarch64-pc-windows-msvc target.
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Build Rust CLI
+        env:
+          CORDY_RELEASE_OUTPUT_DIR: ${{ runner.temp }}/cordy-cli
+        run: node scripts/release-cli.mjs build --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}"
+
+      - name: Upload Rust CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cordy-cli-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/cordy-cli/cordy-${{ matrix.platform }}-${{ matrix.arch }}*
+          if-no-files-found: error
+
+  release:
+    needs: [verify, cli-build]
     # Only run on the canonical upstream repo. Forks don't have the
     # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
     # `cordy-ai/homebrew-tap` anyway. Without this guard, every fork's
@@ -89,26 +179,47 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          # Deliberately independent from the minimum patch in server/go.mod:
-          # releases follow the newest 1.26 patch available to setup-go.
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
+      - name: Install archive tools
+        run: sudo apt-get update && sudo apt-get install -y zip
 
-      - name: Record Go toolchain
-        run: go version
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Download Rust CLI binaries
+        uses: actions/download-artifact@v4
         with:
-          version: "~> v2"
-          args: release --clean
+          pattern: cordy-cli-*
+          path: ${{ runner.temp }}/cordy-cli
+
+      - name: Package Rust CLI release archives
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORDY_RELEASE_INPUT_DIR: ${{ runner.temp }}/cordy-cli
+          CORDY_RELEASE_OUTPUT_DIR: ${{ runner.temp }}/cordy-release
+        run: node scripts/release-cli.mjs package
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_args=(--title "$GITHUB_REF_NAME" --generate-notes)
+          if [[ "${{ needs.verify.outputs.is_stable }}" == "true" ]]; then
+            release_args+=(--latest=true)
+          else
+            release_args+=(--prerelease --latest=false)
+          fi
+          # Pass every archive and checksums.txt to `create` so GitHub only
+          # publishes the release after the complete asset set is uploaded.
+          # A new tag is expected to have no existing release; reruns update
+          # an already-created release below without creating an empty one.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/cordy-release/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/cordy-release/* "${release_args[@]}"
+          fi
+
+      - name: Publish Homebrew formula
+        if: needs.verify.outputs.is_stable == 'true'
+        env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          CORDY_RELEASE_OUTPUT_DIR: ${{ runner.temp }}/cordy-release
+        run: node scripts/release-cli.mjs publish-homebrew
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a

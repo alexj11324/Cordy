@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Wrapper around `electron-builder` that keeps the Desktop version in
 // lockstep with the CLI. Both are derived from `git describe --tags
-// --match 'v[0-9]*' --always --dirty` — the same source the Rust CLI build
-// uses for its build environment — so a single `vX.Y.Z` tag push
+// --match 'v[0-9]*' --always --dirty` — the same tag metadata the release
+// workflow and Rust CLI build use — so a single `vX.Y.Z` tag push
 // produces matching CLI and Desktop versions.
 //
 // Builds the Electron bundles once, then for each requested target

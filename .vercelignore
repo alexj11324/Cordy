@@ -16,7 +16,6 @@ _features
 .vscode
 
 /.dockerignore
-/.goreleaser.yml
 /Dockerfile
 /Dockerfile.web
 /Makefile
