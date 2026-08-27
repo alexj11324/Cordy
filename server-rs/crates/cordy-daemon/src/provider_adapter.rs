@@ -37,6 +37,7 @@ use crate::local_directory::{
     is_git_work_tree, local_directory_assignment_for_task, validate_local_path,
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
 };
+use crate::plugin_hook_mcp::{start_task_plugin_hook_mcp, PluginHookInvoker};
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
@@ -418,6 +419,68 @@ impl ProductionProviderAdapter {
         // Own every loopback broker until provider execution and environment
         // finalization finish. Drop closes all listeners on every return path.
         let _remote_mcp_brokers = remote_mcp.set;
+        let plugin_invoke: PluginHookInvoker = {
+            let client = Arc::clone(&client);
+            let daemon_token = task.remote_mcp_daemon_token.clone();
+            Arc::new(
+                move |call_ctx, task_id, installation_id, hook_key, input| {
+                    let client = Arc::clone(&client);
+                    let daemon_token = daemon_token.clone();
+                    let task_id = task_id.to_string();
+                    let installation_id = installation_id.to_string();
+                    let hook_key = hook_key.to_string();
+                    let input = input.clone();
+                    Box::pin(async move {
+                        client
+                            .invoke_agent_plugin_hook(
+                                call_ctx,
+                                &daemon_token,
+                                &task_id,
+                                &installation_id,
+                                &hook_key,
+                                Some(input),
+                            )
+                            .await
+                            .map(|output| output.unwrap_or(Value::Null))
+                    })
+                },
+            )
+        };
+        let (plugin_overlay, plugin_hook_mcp) =
+            match start_task_plugin_hook_mcp(&ctx, &task.id, &task.plugin_hook_tools, plugin_invoke)
+                .await
+            {
+                Ok(started) => started,
+                Err(error) => {
+                    tracing::warn!(
+                        task = %task.id,
+                        %error,
+                        "plugin hook tools unavailable"
+                    );
+                    (None, None)
+                }
+            };
+        if let Some(overlay) = plugin_overlay {
+            let base = inputs
+                .effective_mcp_config
+                .as_ref()
+                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .map(Value::to_string)
+                .unwrap_or_default();
+            match merge_task_remote_mcp_config(&base, &overlay.to_string())
+                .and_then(|raw| serde_json::from_str(&raw).map_err(anyhow::Error::new))
+            {
+                Ok(merged) => inputs.effective_mcp_config = Some(merged),
+                Err(error) => tracing::warn!(
+                    task = %task.id,
+                    %error,
+                    "could not merge plugin hook MCP config"
+                ),
+            }
+        }
+        // Keep the local tool server alive through provider finalization;
+        // Drop closes it on every early return as well.
+        let _plugin_hook_mcp = plugin_hook_mcp;
         if let Some(assignment) = &assignment {
             if assignment.uses_worktree() {
                 inputs.local_worktree = Some(LocalWorktreeParams {

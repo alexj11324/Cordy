@@ -14,9 +14,7 @@
 //! to proxy to — the protocol is synthesised from the manifest. A tool call
 //! does NOT go to the plugin from here; it goes back to Cordy via `invoke`
 //! (the signing secret never reaches the daemon). The HTTP layer is axum;
-//! tests drive [`serve_plugin_hook_request`] directly.
-
-#![allow(dead_code)]
+//! the production provider adapter owns one server for the task lifetime.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -109,6 +107,12 @@ impl PluginHookMCPSet {
                 token.cancel();
             }
         });
+    }
+}
+
+impl Drop for PluginHookMCPSet {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -377,6 +381,51 @@ mod tests {
             description: "Read a deterministic fixture value".into(),
             input_schema: Some(json!({"type": "object", "properties": {}})),
         }]
+    }
+
+    #[test]
+    fn dropping_server_set_closes_its_listener_token() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let observed = shutdown.clone();
+        drop(PluginHookMCPSet {
+            shutdown: Some(shutdown),
+            once: None,
+        });
+        assert!(observed.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn started_server_exposes_claim_tool_through_its_overlay_url() {
+        let ctx = crate::repocache::Ctx::new();
+        let (config, server) = start_task_plugin_hook_mcp(
+            &ctx,
+            "task-1",
+            &fixture_tools(),
+            ok_invoke(),
+        )
+        .await
+        .unwrap();
+        let url = config.unwrap()["mcpServers"]["cordy-plugins"]["url"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let response: Value = reqwest::Client::new()
+            .post(url)
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "fixture.read", "arguments": {}}
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+
+        assert_eq!(response["result"]["content"][0]["text"], "{\"value\":42}");
+        drop(server);
     }
 
     fn ok_invoke() -> PluginHookInvoker {
