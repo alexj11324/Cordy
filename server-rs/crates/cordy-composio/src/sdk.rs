@@ -56,6 +56,10 @@ fn is_zero(v: &i64) -> bool {
     *v == 0
 }
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 impl ApiError {
     pub fn is_not_found(&self) -> bool {
         self.http_status == 404
@@ -348,6 +352,42 @@ pub struct SessionWarning {
     pub code: String,
     #[serde(default)]
     pub message: String,
+}
+
+// ── tool execution ──────────────────────────────────────────────────────
+
+/// Request body for `POST /tools/execute/{tool_slug}`.
+///
+/// The argument and session fields remain free-form JSON because their shape
+/// is defined by the selected Composio tool rather than by the SDK.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ExecuteToolRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub connected_account_id: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub user_id: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub version: String,
+    /// Deprecated by Composio; retained for wire compatibility.
+    #[serde(skip_serializing_if = "is_false")]
+    pub allow_tracing: bool,
+}
+
+/// Response from `POST /tools/execute/{tool_slug}`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ExecuteToolResponse {
+    #[serde(default)]
+    pub successful: bool,
+    #[serde(default)]
+    pub data: Option<serde_json::Value>,
+    #[serde(default)]
+    pub error: String,
+    #[serde(default, rename = "log_id")]
+    pub log_id: String,
+    #[serde(default, rename = "session_info")]
+    pub session_info: Option<serde_json::Value>,
 }
 
 // ── toolkits ─────────────────────────────────────────────────────────────
@@ -645,6 +685,28 @@ impl Client {
             q.push(("sort_by", req.sort_by.clone()));
         }
         self.decode(self.get("/toolkits", &q).await?).await
+    }
+
+    /// POST /tools/execute/{tool_slug}. The upstream accepts either a user
+    /// identifier or an explicit connected account identifier for credential
+    /// resolution; require one before making a network request.
+    pub async fn execute_tool(
+        &self,
+        tool_slug: &str,
+        req: ExecuteToolRequest,
+    ) -> Result<ExecuteToolResponse, Error> {
+        if tool_slug.is_empty() {
+            return Err(Error::Other(
+                "composio: ExecuteTool: toolSlug is required".into(),
+            ));
+        }
+        if req.connected_account_id.is_empty() && req.user_id.is_empty() {
+            return Err(Error::Other(
+                "composio: ExecuteTool: either ConnectedAccountID or UserID must be set".into(),
+            ));
+        }
+        let path = format!("/tools/execute/{}", urlencode_component(tool_slug));
+        self.decode(self.post_json(&path, &req).await?).await
     }
 
     /// POST /tool_router/session
@@ -998,6 +1060,59 @@ mod tests {
         assert_eq!(response.config_version, 4);
         assert_eq!(response.warnings[0].code, "PARTIAL");
         assert_eq!(response.mcp.url, "https://mcp.test/sess_1");
+    }
+
+    #[test]
+    fn execute_tool_request_serializes_v3_wire_fields() {
+        let req = ExecuteToolRequest {
+            arguments: Some(serde_json::json!({"title": "hi"})),
+            user_id: "u_1".into(),
+            version: "latest".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(req).unwrap();
+        assert_eq!(json["arguments"]["title"], "hi");
+        assert_eq!(json["user_id"], "u_1");
+        assert_eq!(json["version"], "latest");
+        assert!(json.get("toolkit_versions").is_none());
+        assert!(json.get("allow_tracing").is_none());
+    }
+
+    #[test]
+    fn execute_tool_response_decodes_free_form_payloads() {
+        let response: ExecuteToolResponse = serde_json::from_value(serde_json::json!({
+            "successful": true,
+            "data": {"issue_number": 42},
+            "log_id": "log_1",
+            "session_info": {"session_id": "sess_1"}
+        }))
+        .unwrap();
+        assert!(response.successful);
+        assert_eq!(response.data.unwrap()["issue_number"], 42);
+        assert_eq!(response.log_id, "log_1");
+        assert_eq!(response.session_info.unwrap()["session_id"], "sess_1");
+    }
+
+    #[tokio::test]
+    async fn execute_tool_validates_inputs_before_network_request() {
+        let client = ClientBuilder::new("key").build().unwrap();
+        let empty_slug = client
+            .execute_tool(
+                "",
+                ExecuteToolRequest {
+                    user_id: "u".into(),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(matches!(empty_slug, Err(Error::Other(message)) if message.contains("toolSlug")));
+
+        let missing_identity = client
+            .execute_tool("GITHUB_CREATE_ISSUE", ExecuteToolRequest::default())
+            .await;
+        assert!(
+            matches!(missing_identity, Err(Error::Other(message)) if message.contains("ConnectedAccountID"))
+        );
     }
 
     #[test]

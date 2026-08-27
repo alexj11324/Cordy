@@ -16,10 +16,10 @@ pub use dispatch::{
 pub use sdk::{
     parse_api_error, verify_webhook, ApiError, AuthConfig, AuthConfigRef, Client, ClientBuilder,
     ConnectedAccount, CreateLinkRequest, CreateLinkResponse, CreateSessionRequest,
-    CreateSessionResponse, Error as SdkError, ListAuthConfigsRequest, ListAuthConfigsResponse,
-    ListConnectedAccountsRequest, ListConnectedAccountsResponse, ListToolkitsRequest,
-    ListToolkitsResponse, ManageConnections, McpDescriptor, SessionWarning, Toolkit,
-    DEFAULT_BASE_URL, DEFAULT_WEBHOOK_TOLERANCE,
+    CreateSessionResponse, Error as SdkError, ExecuteToolRequest, ExecuteToolResponse,
+    ListAuthConfigsRequest, ListAuthConfigsResponse, ListConnectedAccountsRequest,
+    ListConnectedAccountsResponse, ListToolkitsRequest, ListToolkitsResponse, ManageConnections,
+    McpDescriptor, SessionWarning, Toolkit, DEFAULT_BASE_URL, DEFAULT_WEBHOOK_TOLERANCE,
 };
 pub use service::{
     better_auth_config, Sdk, Service, ServiceConfig, ServiceError, Store, ToolkitView,
