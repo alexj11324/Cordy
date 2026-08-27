@@ -444,9 +444,9 @@ impl TaskService {
                     "content": updated.content,
                     "type": updated.type_,
                     "parent_id": updated.parent_id.map(|p| p.to_string()),
-                    "created_at": cordy_util::rfc3339_nano(updated.created_at),
-                    "updated_at": cordy_util::rfc3339_nano(updated.updated_at),
-                    "resolved_at": updated.resolved_at.map(cordy_util::rfc3339_nano),
+                    "created_at": rfc3339(updated.created_at),
+                    "updated_at": rfc3339(updated.updated_at),
+                    "resolved_at": updated.resolved_at.map(rfc3339),
                     "resolved_by_type": updated.resolved_by_type.clone(),
                     "resolved_by_id": updated.resolved_by_id.map(|u| u.to_string()),
                     "revision": updated.revision,
@@ -837,7 +837,7 @@ pub fn agent_to_map(a: &cordy_db::models::Agent) -> serde_json::Value {
         "skills": [],
         "created_at": rfc3339(a.created_at),
         "updated_at": rfc3339(a.updated_at),
-        "archived_at": a.archived_at.map(cordy_util::rfc3339_nano),
+        "archived_at": a.archived_at.map(rfc3339),
         "archived_by": a.archived_by.map(|u| u.to_string()),
     })
 }
@@ -859,5 +859,32 @@ fn json_object_or_empty(v: &serde_json::Value) -> serde_json::Value {
     match v {
         serde_json::Value::Object(_) => v.clone(),
         _ => serde_json::Value::Object(Default::default()),
+    }
+}
+
+#[cfg(test)]
+mod timestamp_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_comment_and_agent_fields_omit_fractional_seconds() {
+        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123400Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let comment = json!({
+            "created_at": rfc3339(timestamp),
+            "updated_at": rfc3339(timestamp),
+            "resolved_at": Some(timestamp).map(rfc3339),
+        });
+        let agent = json!({"archived_at": Some(timestamp).map(rfc3339)});
+
+        for value in [
+            &comment["created_at"],
+            &comment["updated_at"],
+            &comment["resolved_at"],
+            &agent["archived_at"],
+        ] {
+            assert_eq!(value, "2026-08-27T23:00:00Z");
+        }
     }
 }
