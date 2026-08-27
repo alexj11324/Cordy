@@ -13,6 +13,7 @@
 //! task-local source before a replacement link has been proven possible.
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
@@ -49,6 +50,9 @@ pub fn resolve_hermes_profile(custom_home: &str, profile: Option<&str>) -> Herme
         .or_else(|| std::env::var("HERMES_HOME").ok().and_then(|v| nonempty(&v)))
         .unwrap_or_else(platform_default_home);
     base = absolute_clean(&base);
+    base = resolve_existing_path_prefix(Path::new(&base))
+        .to_string_lossy()
+        .into_owned();
     let root = hermes_root(&base);
     let explicit = profile.is_some();
     let name = match profile {
@@ -161,6 +165,38 @@ fn absolute_clean(path: &str) -> String {
     }
 }
 
+/// Resolves every existing component of a path while preserving a final
+/// non-existent tail. Hermes accepts a custom home that points through a
+/// symlink, and profile re-rooting must inspect the resolved target rather
+/// than the lexical link path. This is the equivalent of Python's
+/// Path.resolve(strict=False).
+fn resolve_existing_path_prefix(path: &Path) -> PathBuf {
+    let original = path.to_path_buf();
+    let mut current = original.clone();
+    let mut tail: Vec<OsString> = Vec::new();
+
+    loop {
+        match fs::canonicalize(&current) {
+            Ok(mut resolved) => {
+                for component in tail.iter().rev() {
+                    resolved.push(component);
+                }
+                return resolved;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if let Some(name) = current.file_name() {
+                    tail.push(name.to_os_string());
+                    if current.pop() {
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+        return original;
+    }
+}
+
 fn hermes_root(home: &str) -> String {
     let path = Path::new(home);
     if path
@@ -234,8 +270,12 @@ fn profile_dir(profile: &str) -> Option<PathBuf> {
     if profile.contains(['/', '\\']) || matches!(profile, "." | "..") {
         return None;
     }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT") {
-        let root = PathBuf::from(root);
+    let task_config_root = std::env::var_os("CORDY_TASK_CONFIG_ROOT")
+        .map(PathBuf::from)
+        .filter(|root| {
+            !root.as_os_str().is_empty() && !root.to_string_lossy().trim().is_empty()
+        });
+    if let Some(root) = task_config_root {
         if !root.is_absolute() {
             return None;
         }
@@ -245,12 +285,25 @@ fn profile_dir(profile: &str) -> Option<PathBuf> {
             root.join("profiles").join(profile)
         });
     }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let home = platform_user_home()?;
     Some(if profile.is_empty() {
         home.join(".cordy")
     } else {
         home.join(".cordy").join("profiles").join(profile)
     })
+}
+
+fn platform_user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
 }
 
 fn safe_segment(value: &str) -> String {
@@ -262,7 +315,8 @@ fn safe_segment(value: &str) -> String {
 }
 
 fn hermes_profile_segment(source_home: &str) -> String {
-    let home = absolute_clean(source_home);
+    let source_home = nonempty(source_home).unwrap_or_else(platform_default_home);
+    let home = absolute_clean(&source_home);
     let native = absolute_clean(&platform_default_home());
     if home == native {
         return "default".to_string();
@@ -312,6 +366,7 @@ pub(crate) fn prepare_hermes_home(
     memory_store: &str,
     session_store: &str,
 ) -> anyhow::Result<HermesSessions> {
+    ensure_hermes_overlay_root(hermes_home)?;
     let shared_home = nonempty(source_home).unwrap_or_else(platform_default_home);
     if source_must_exist {
         let metadata = fs::metadata(&shared_home)
@@ -320,7 +375,6 @@ pub(crate) fn prepare_hermes_home(
             bail!("hermes profile home {shared_home:?} is not a directory");
         }
     }
-    fs::create_dir_all(hermes_home).context("create Hermes overlay")?;
     restrict_permissions(hermes_home).context("restrict Hermes overlay")?;
     prepare_task_local_state(hermes_home)?;
 
@@ -339,6 +393,40 @@ pub(crate) fn prepare_hermes_home(
     write_derived_env(&shared_home, hermes_home)?;
     write_bound_skills(hermes_home, skills)?;
     Ok(sessions)
+}
+
+fn ensure_hermes_overlay_root(path: &str) -> anyhow::Result<()> {
+    if path.is_empty() {
+        bail!("Hermes overlay path is required");
+    }
+    let root = Path::new(path);
+    match fs::symlink_metadata(root) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("Hermes overlay root must not be a symlink: {path}");
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            bail!("Hermes overlay root must be a directory: {path}");
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir_all(root)
+                .with_context(|| format!("create Hermes overlay {path}"))?;
+        }
+        Err(error) => {
+            return Err(anyhow::Error::new(error)
+                .context(format!("inspect Hermes overlay root {path}")));
+        }
+    }
+
+    let metadata = fs::symlink_metadata(root)
+        .with_context(|| format!("inspect Hermes overlay root {path}"))?;
+    if metadata.file_type().is_symlink() {
+        bail!("Hermes overlay root must not be a symlink: {path}");
+    }
+    if !metadata.is_dir() {
+        bail!("Hermes overlay root must be a directory: {path}");
+    }
+    Ok(())
 }
 
 fn restrict_permissions(path: &str) -> io::Result<()> {
@@ -382,7 +470,10 @@ fn is_state_entry(name: &str) -> bool {
     name == SESSION_DB || name.starts_with("state.db-")
 }
 
-fn overlay_owned(name: &str) -> bool {
+fn overlay_owned(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
     matches!(
         name,
         "skills"
@@ -396,12 +487,12 @@ fn overlay_owned(name: &str) -> bool {
 }
 
 fn mirror_shared_home(shared: &str, overlay: &str) -> anyhow::Result<()> {
-    let mut mirrored = HashSet::new();
+    let mut mirrored: HashSet<OsString> = HashSet::new();
     match fs::read_dir(shared) {
         Ok(entries) => {
             for entry in entries {
                 let entry = entry?;
-                let name = entry.file_name().to_string_lossy().into_owned();
+                let name = entry.file_name();
                 if overlay_owned(&name) {
                     continue;
                 }
@@ -416,7 +507,7 @@ fn mirror_shared_home(shared: &str, overlay: &str) -> anyhow::Result<()> {
     }
     for entry in fs::read_dir(overlay)? {
         let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let name = entry.file_name();
         if !overlay_owned(&name) && !mirrored.contains(&name) {
             remove_path(&entry.path())?;
         }
@@ -673,8 +764,24 @@ fn write_derived_env(shared: &str, overlay: &str) -> anyhow::Result<()> {
     if !body.is_empty() && !body.ends_with('\n') {
         body.push('\n');
     }
-    body.push_str(&format!("HERMES_HOME='{}'\n", Path::new(overlay).display()));
+    body.push_str("HERMES_HOME='");
+    body.push_str(&quote_dotenv_single(&Path::new(overlay).to_string_lossy()));
+    body.push_str("'\n");
     atomic_write(&Path::new(overlay).join(".env"), body.as_bytes(), 0o600)
+}
+
+fn quote_dotenv_single(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => quoted.push_str("\\\\"),
+            '\'' => quoted.push_str("\\'"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            _ => quoted.push(character),
+        }
+    }
+    quoted
 }
 
 fn dotenv_key(line: &str) -> Option<&str> {
@@ -707,12 +814,22 @@ fn mount_memories(overlay: &str, store: &str) -> anyhow::Result<()> {
             return Ok(());
         }
         if metadata.is_dir() && !metadata.file_type().is_symlink() && store_is_empty(store)? {
-            copy_tree(&target, store)?;
+            migrate_memory_tree(&target, store)?;
         }
         remove_path(&target)?;
     }
     create_dir_link(store, &target)?;
     touch_store(store);
+    Ok(())
+}
+
+fn migrate_memory_tree(source: &Path, store: &Path) -> anyhow::Result<()> {
+    if !store_is_empty(store)? {
+        return Ok(());
+    }
+    let staging = new_store_staging(store)?;
+    copy_tree(source, staging.path())?;
+    let _published = promote_store_staging(staging.path(), store, store_is_populated)?;
     Ok(())
 }
 
@@ -747,17 +864,24 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
             });
         }
     }
-    if !has_session_db(store) {
-        migrate_session_files(overlay, store)?;
-    }
     // Prove the link can be created before deleting a task-local database.
     let staged = Path::new(overlay).join(SESSION_LINK_STAGING);
     remove_path(&staged)?;
     if create_session_file_link(&store_db, &staged).is_err() {
         return Ok(HermesSessions::default());
     }
-    remove_session_state_files(Path::new(overlay))?;
-    fs::rename(&staged, &target).context("publish Hermes session link")?;
+    if let Err(error) = migrate_session_files(overlay, store) {
+        let _ = remove_path(&staged);
+        return Err(error);
+    }
+    if let Err(error) = remove_session_state_files(Path::new(overlay)) {
+        let _ = remove_path(&staged);
+        return Err(error);
+    }
+    if let Err(error) = fs::rename(&staged, &target) {
+        let _ = remove_path(&staged);
+        return Err(error).context("publish Hermes session link");
+    }
     touch_store(store);
     Ok(HermesSessions {
         mounted: true,
@@ -786,19 +910,74 @@ fn has_session_db(store: &Path) -> bool {
 }
 
 fn migrate_session_files(overlay: &str, store: &Path) -> anyhow::Result<()> {
-    let files = fs::read_dir(overlay)?
-        .filter_map(Result::ok)
-        .filter(|entry| is_state_entry(&entry.file_name().to_string_lossy()))
-        .filter(|entry| entry.file_type().map(|f| f.is_file()).unwrap_or(false))
-        .collect::<Vec<_>>();
+    let mut files = Vec::new();
+    for entry in fs::read_dir(overlay)? {
+        let entry = entry?;
+        if !is_state_entry(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if !file_type.is_file() {
+            bail!(
+                "refusing to migrate Hermes session state {}: expected a regular file",
+                entry.path().display()
+            );
+        }
+        files.push(entry);
+    }
     if files.is_empty() {
         return Ok(());
     }
-    let staging = tempfile::tempdir_in(store.parent().unwrap_or(store))?;
+    let staging = new_store_staging(store)?;
     for entry in files {
         fs::copy(entry.path(), staging.path().join(entry.file_name()))?;
     }
     publish_session_staging(staging.path(), store)
+}
+
+fn new_store_staging(store: &Path) -> anyhow::Result<tempfile::TempDir> {
+    let parent = store
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    tempfile::Builder::new()
+        .prefix(".cordy-hermes-store-")
+        .tempdir_in(parent)
+        .with_context(|| format!("create Hermes store staging directory in {}", parent.display()))
+}
+
+fn store_is_populated(store: &Path) -> bool {
+    fs::read_dir(store)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+}
+
+fn promote_store_staging(
+    staging: &Path,
+    store: &Path,
+    published: impl Fn(&Path) -> bool,
+) -> anyhow::Result<bool> {
+    if let Err(error) = fs::remove_dir(store) {
+        if error.kind() != io::ErrorKind::NotFound {
+            if published(store) {
+                return Ok(false);
+            }
+            return Err(anyhow::Error::new(error).context(format!(
+                "clear empty Hermes store before publishing {}",
+                store.display()
+            )));
+        }
+    }
+    if let Err(error) = fs::rename(staging, store) {
+        if published(store) {
+            return Ok(false);
+        }
+        return Err(anyhow::Error::new(error).context(format!(
+            "publish Hermes store {}",
+            store.display()
+        )));
+    }
+    Ok(true)
 }
 
 fn publish_session_staging(staging: &Path, store: &Path) -> anyhow::Result<()> {
@@ -897,6 +1076,31 @@ mod tests {
             hermes_profile_segment("/tmp/custom/profiles/research"),
             format!("research_{}", sha256_short("/tmp/custom"))
         );
+        assert_eq!(hermes_profile_segment(""), "default");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_resolution_resolves_symlinked_home_before_re_rooting() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempdir().unwrap();
+        let native = root.path().join("native");
+        let current = native.join("profiles/current");
+        fs::create_dir_all(&current).unwrap();
+        let link = root.path().join("hermes-link");
+        symlink(&current, &link).unwrap();
+
+        let default = resolve_hermes_profile(link.to_str().unwrap(), Some("default"));
+        assert_eq!(
+            default.source_home,
+            fs::canonicalize(&native).unwrap().to_string_lossy()
+        );
+        let sibling = resolve_hermes_profile(link.to_str().unwrap(), Some("other"));
+        assert_eq!(
+            sibling.source_home,
+            native.join("profiles/other").to_string_lossy()
+        );
     }
 
     #[test]
@@ -940,6 +1144,31 @@ mod tests {
             fs::read_to_string(shared.join(".env")).unwrap(),
             "API_KEY=secret\nHERMES_HOME=/wrong\n"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_overlay_root_is_rejected_before_descendants_are_touched() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempdir().unwrap();
+        let target = root.path().join("target");
+        fs::create_dir_all(&target).unwrap();
+        let overlay = root.path().join("overlay");
+        symlink(&target, &overlay).unwrap();
+
+        let error = prepare_hermes_home(
+            overlay.to_str().unwrap(),
+            "",
+            false,
+            &[],
+            &HashMap::new(),
+            "",
+            "",
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("must not be a symlink"));
+        assert!(!target.join(TASK_LOCAL_STATE_MARKER).exists());
     }
 
     #[test]
@@ -988,6 +1217,51 @@ mod tests {
             &overlay.display().to_string(),
         )
         .is_err());
+    }
+
+    #[test]
+    fn derived_env_escapes_apostrophes_in_overlay_path() {
+        let root = tempdir().unwrap();
+        let shared = root.path().join("shared");
+        let overlay = root.path().join("owner's-hermes");
+        fs::create_dir_all(&shared).unwrap();
+
+        write_derived_env(
+            &shared.display().to_string(),
+            &overlay.display().to_string(),
+        )
+        .unwrap();
+        let body = fs::read_to_string(overlay.join(".env")).unwrap();
+        assert!(body.contains(&format!(
+            "HERMES_HOME='{}'",
+            quote_dotenv_single(&overlay.to_string_lossy())
+        )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_home_mirroring_preserves_non_utf8_entry_names() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let root = tempdir().unwrap();
+        let shared = root.path().join("shared");
+        let overlay = root.path().join("overlay");
+        fs::create_dir_all(&shared).unwrap();
+        fs::create_dir_all(&overlay).unwrap();
+        let name = OsString::from_vec(vec![b'c', 0x80]);
+        fs::write(shared.join(&name), b"shared").unwrap();
+
+        mirror_shared_home(
+            &shared.display().to_string(),
+            &overlay.display().to_string(),
+        )
+        .unwrap();
+        let target = overlay.join(&name);
+        assert!(fs::symlink_metadata(&target)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_link(target).unwrap(), shared.join(&name));
     }
 
     #[cfg(unix)]
