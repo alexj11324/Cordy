@@ -29,11 +29,12 @@
 //! - WaitDelay semantics: cancellation terminates the platform process-tree
 //!   boundary before awaiting the child and pipe readers.
 //!
-//! NOTE: the parent-side entry points (prepare_isolated / reuse_isolated) are
-//! wired into the task launcher in a later slice; until then this module is
-//! exercised by its unit tests only, hence `allow(dead_code)`.
+//! The parent-side entry points (prepare_isolated / reuse_isolated) are wired
+//! into the production task launcher. The private helper path remains in this
+//! module so the launcher and helper share one exact wire contract.
 #![allow(dead_code)]
 
+use std::ffi::OsString;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -42,6 +43,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
 use super::execenv::{Environment, PrepareParams, ReuseParams};
+use super::local_worktree::acquire_repository_lock_for_path;
 
 /// Selection flag for the private execution-environment helper mode in the
 /// cordy binary. The daemon runs Prepare/Reuse in that subprocess so a blocked
@@ -75,6 +77,11 @@ pub(crate) struct PreparationRequest {
 pub(crate) struct PreparationWireParams {
     #[serde(flatten)]
     pub params: PrepareParams,
+    /// The parent owns this lock until the returned worktree is finalized or
+    /// discarded. The helper keeps the process-local mutex but must not block
+    /// on a second kernel lock held by its parent.
+    #[serde(default)]
+    pub local_worktree_lock_held: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,26 +142,43 @@ pub(crate) fn rehydrate_preparation_error(message: &str, kind: &str) -> anyhow::
 #[allow(unused_imports)]
 pub(crate) async fn prepare_isolated(
     ctx: &crate::repocache::Ctx,
-    command: &[String],
+    command: &[OsString],
     params: PrepareParams,
 ) -> anyhow::Result<Environment> {
-    run_preparation_process(
+    let repository_lock = match params.local_worktree.as_ref() {
+        Some(local_worktree) => Some(
+            acquire_repository_lock_for_path(ctx, &local_worktree.local_path).await?,
+        ),
+        None => None,
+    };
+    let mut environment = run_preparation_process(
         ctx,
         command,
         PreparationRequest {
             action: PREPARATION_ACTION_PREPARE.to_string(),
-            prepare: Some(PreparationWireParams { params }),
+            prepare: Some(PreparationWireParams {
+                params,
+                local_worktree_lock_held: repository_lock.is_some(),
+            }),
             reuse: None,
         },
     )
     .await?
-    .ok_or_else(|| anyhow!("execenv: preparation helper returned no environment"))
+    .ok_or_else(|| anyhow!("execenv: preparation helper returned no environment"))?;
+    if let Some(lock) = repository_lock {
+        let worktree = environment
+            .local_worktree
+            .as_mut()
+            .ok_or_else(|| anyhow!("execenv: worktree preparation returned no worktree"))?;
+        worktree.attach_repository_lock(lock);
+    }
+    Ok(environment)
 }
 
 /// reuse_isolated executes Reuse under the same killable-helper contract.
 pub(crate) async fn reuse_isolated(
     ctx: &crate::repocache::Ctx,
-    command: &[String],
+    command: &[OsString],
     params: ReuseParams,
 ) -> anyhow::Result<Option<Environment>> {
     run_preparation_process(
@@ -171,10 +195,10 @@ pub(crate) async fn reuse_isolated(
 
 async fn run_preparation_process(
     ctx: &crate::repocache::Ctx,
-    command: &[String],
+    command: &[OsString],
     request: PreparationRequest,
 ) -> anyhow::Result<Option<Environment>> {
-    if command.is_empty() || command[0].trim().is_empty() {
+    if command.is_empty() || command[0].as_os_str().is_empty() {
         bail!("execenv: preparation helper command is empty");
     }
     if let Some(cause) = ctx.err() {
@@ -215,7 +239,7 @@ async fn run_preparation_process(
 
     // Attach-to-kill ordering from Go: the group is set at spawn time, so the
     // payload can be released immediately afterwards.
-    let write_task = tokio::spawn(async move {
+    let mut write_task = tokio::spawn(async move {
         // Write then shutdown so the helper's decoder sees EOF. Both failures
         // ride back joined, mirroring Go's errors.Join at this boundary.
         let write_res = stdin.write_all(&payload).await.map(|_| ());
@@ -230,7 +254,7 @@ async fn run_preparation_process(
 
     let stderr_buf = Vec::new();
     let mut stderr_pipe = stderr_pipe;
-    let stderr_task = tokio::spawn(async move {
+    let mut stderr_task = tokio::spawn(async move {
         let mut buf = stderr_buf;
         if let Some(s) = stderr_pipe.as_mut() {
             use tokio::io::AsyncReadExt as _;
@@ -238,7 +262,7 @@ async fn run_preparation_process(
         }
         buf
     });
-    let stdout_task = tokio::spawn(async move {
+    let mut stdout_task = tokio::spawn(async move {
         let mut buf = Vec::new();
         if let Some(s) = stdout.as_mut() {
             use tokio::io::AsyncReadExt as _;
@@ -251,36 +275,132 @@ async fn run_preparation_process(
     let wait_task = tokio::spawn(async move { child.wait().await });
     tokio::pin!(wait_task);
 
+    // Keep going through all joins after cancellation so the writer/readers do
+    // not outlive this call with pipes owned by a killed helper.
+    let mut cancelled = false;
+    let mut lifecycle_error: Option<anyhow::Error> = None;
     let status_result = tokio::select! {
         r = &mut wait_task => r.ok(),
         _ = ctx.cancelled() => {
+            cancelled = true;
             #[cfg(unix)]
-            stop_process_group(pid as i32);
+            if let Err(error) = stop_process_group(pid as i32) {
+                lifecycle_error = Some(error);
+            }
             #[cfg(windows)]
-            process_job.terminate().context("execenv: stop preparation process tree")?;
-            let _ = wait_task.await;
-            return Err(anyhow!(ctx.cause().to_string()));
+            if let Err(error) = process_job.terminate() {
+                lifecycle_error = Some(error.context("execenv: stop preparation process tree"));
+            }
+            wait_task.await.ok()
         }
     };
 
-    let status = match status_result {
-        Some(Ok(status)) => status,
-        Some(Err(e)) => return Err(anyhow!("execenv: preparation helper failed: {e}")),
-        None => return Err(anyhow!("execenv: preparation helper wait task failed")),
+    let (status, status_error) = match status_result {
+        Some(Ok(status)) => (Some(status), None),
+        Some(Err(error)) => (
+            None,
+            Some(anyhow!("execenv: preparation helper failed: {error}")),
+        ),
+        None => (
+            None,
+            Some(anyhow!("execenv: preparation helper wait task failed")),
+        ),
     };
     #[cfg(windows)]
-    process_job
-        .finish()
-        .await
-        .context("execenv: finish preparation process tree")?;
-    let _ = PREPARATION_WAIT_DELAY; // documented grace; EOF reads bound below
+    if let Err(error) = process_job.finish().await {
+        if lifecycle_error.is_none() {
+            lifecycle_error = Some(error.context("execenv: finish preparation process tree"));
+        }
+    }
 
-    let write_err = write_task.await.ok();
-    let detail = stderr_task.await.unwrap_or_default();
-    let stdout_bytes = stdout_task
-        .await
-        .map_err(|e| anyhow!("execenv: join stdout reader: {e}"))?;
+    let write_result = match tokio::time::timeout(PREPARATION_WAIT_DELAY, &mut write_task).await {
+        Ok(Ok(result)) => {
+            result.map_err(|error| anyhow!("execenv: write preparation request: {error}"))
+        }
+        Ok(Err(error)) => Err(anyhow!("execenv: join preparation writer: {error}")),
+        Err(_) => {
+            // A blocked stdin write means the helper (or one of its
+            // descendants) is not consuming the request. Kill the whole
+            // process boundary before dropping the writer, otherwise a
+            // descendant can keep the pipe alive after this function returns.
+            #[cfg(unix)]
+            if lifecycle_error.is_none() {
+                if let Err(error) = stop_process_group(pid as i32) {
+                    lifecycle_error = Some(error);
+                }
+            }
+            #[cfg(windows)]
+            if lifecycle_error.is_none() {
+                if let Err(error) = process_job.terminate() {
+                    lifecycle_error = Some(error.context("execenv: stop preparation process tree"));
+                }
+            }
+            write_task.abort();
+            let _ = write_task.await;
+            Err(anyhow!(
+                "execenv: preparation request did not close within {:?}",
+                PREPARATION_WAIT_DELAY
+            ))
+        }
+    };
 
+    // Match Go's cmd.WaitDelay: a descendant that inherited stdout/stderr
+    // must not keep the daemon blocked forever after the helper exits.
+    let output_result = tokio::time::timeout(PREPARATION_WAIT_DELAY, async {
+        let (detail, stdout_bytes) = tokio::join!(&mut stderr_task, &mut stdout_task);
+        let detail = detail.map_err(|error| anyhow!("execenv: join stderr reader: {error}"))?;
+        let stdout_bytes =
+            stdout_bytes.map_err(|error| anyhow!("execenv: join stdout reader: {error}"))?;
+        Ok::<_, anyhow::Error>((detail, stdout_bytes))
+    })
+    .await;
+    let (detail, stdout_bytes, output_error) = match output_result {
+        Ok(Ok((detail, stdout_bytes))) => (detail, stdout_bytes, None),
+        Ok(Err(error)) => (Vec::new(), Vec::new(), Some(error)),
+        Err(_) => {
+            // The helper may have exited while a grandchild inherited one of
+            // the stdio handles. Enforce the wait deadline by terminating the
+            // complete process tree before aborting the readers.
+            #[cfg(unix)]
+            if lifecycle_error.is_none() {
+                if let Err(error) = stop_process_group(pid as i32) {
+                    lifecycle_error = Some(error);
+                }
+            }
+            #[cfg(windows)]
+            if lifecycle_error.is_none() {
+                if let Err(error) = process_job.terminate() {
+                    lifecycle_error = Some(error.context("execenv: stop preparation process tree"));
+                }
+            }
+            stderr_task.abort();
+            stdout_task.abort();
+            let _ = stderr_task.await;
+            let _ = stdout_task.await;
+            (
+                Vec::new(),
+                Vec::new(),
+                Some(anyhow!(
+                    "execenv: preparation helper output did not close within {:?}",
+                    PREPARATION_WAIT_DELAY
+                )),
+            )
+        }
+    };
+
+    if let Some(error) = lifecycle_error {
+        return Err(error);
+    }
+    if cancelled || ctx.err().is_some() {
+        return Err(anyhow!(ctx.cause().to_string()));
+    }
+    if let Some(error) = status_error {
+        return Err(error);
+    }
+    if let Some(error) = output_error {
+        return Err(error);
+    }
+    let status = status.expect("status is present when status_error is absent");
     if !status.success() {
         let detail = String::from_utf8_lossy(&detail).trim().to_string();
         if !detail.is_empty() {
@@ -295,10 +415,11 @@ async fn run_preparation_process(
             status
         ));
     }
-    if let Some(Ok(())) = write_err {
-        // fall through
-    } else if let Some(Err(e)) = write_err {
-        return Err(anyhow!("execenv: write preparation request: {e}"));
+    if let Err(error) = write_result {
+        return Err(error);
+    }
+    if ctx.err().is_some() {
+        return Err(anyhow!(ctx.cause().to_string()));
     }
 
     let response: PreparationResponse =
@@ -316,17 +437,19 @@ async fn run_preparation_process(
 /// is pending, a helper blocked in a kernel filesystem call cannot return and
 /// perform another write when that call eventually unblocks. ESRCH tolerated.
 #[cfg(unix)]
-fn stop_process_group(pid: i32) {
+fn stop_process_group(pid: i32) -> anyhow::Result<()> {
     if pid <= 0 {
-        return;
+        return Ok(());
     }
     let rc = unsafe { libc::kill(-pid, libc::SIGKILL) };
     if rc != 0 {
         let err = std::io::Error::last_os_error();
-        if err.raw_os_error() != Some(libc::ESRCH) {
-            tracing::warn!(error = %err, "execenv: kill preparation process group failed");
+        if err.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(());
         }
+        return Err(anyhow!(err)).context("execenv: kill preparation process group");
     }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -457,6 +580,14 @@ where
     I: std::io::Read,
     O: std::io::Write,
 {
+    // The private helper runs before the daemon's normal log subscriber is
+    // installed. Keep its diagnostics on stderr (the parent already drains
+    // that pipe) so filesystem/git failures are not silently lost.
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(false)
+        .try_init();
+
     let request = decode_preparation_request(input)?;
 
     let mut response = PreparationResponse::default();
@@ -468,7 +599,12 @@ where
             if request.reuse.is_some() {
                 bail!("invalid prepare request");
             }
-            match super::execenv::prepare(wire.params).await {
+            match super::execenv::prepare_with_local_worktree_lock(
+                wire.params,
+                wire.local_worktree_lock_held,
+            )
+            .await
+            {
                 Ok(env) => response.environment = Some(env),
                 Err(err) => {
                     response.error = format!("{err:#}");
@@ -551,6 +687,7 @@ mod tests {
                     },
                     ..sample_prepare_params()
                 },
+                local_worktree_lock_held: false,
             }),
             reuse: None,
         };
@@ -653,5 +790,88 @@ mod tests {
 
         let degraded = rehydrate_preparation_error("mystery", "future-kind");
         assert_eq!(format!("{degraded}"), "mystery");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[tokio::test]
+    async fn repository_lock_is_exclusive_until_the_owner_drops() {
+        let root = tempfile::tempdir().unwrap();
+        let git_root = root.path().to_string_lossy().into_owned();
+        let first = super::super::local_worktree::RepositoryLock::acquire(&git_root, None)
+            .await
+            .unwrap();
+        let path = super::super::local_worktree::repository_lock_path(&git_root);
+        let second = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+
+        assert!(!super::super::local_worktree::try_lock_file(&second).unwrap());
+        drop(first);
+        assert!(super::super::local_worktree::try_lock_file(&second).unwrap());
+        super::super::local_worktree::unlock_file(&second);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn preparation_accepts_a_non_utf8_executable_path() {
+        use std::os::unix::ffi::OsStringExt;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory
+            .path()
+            .join(OsString::from_vec(b"helper-\xff".to_vec()));
+        std::fs::write(
+            &executable,
+            b"#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"environment\":null}'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            &executable,
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+
+        let result = run_preparation_process(
+            &crate::repocache::Ctx::new(),
+            &[executable.into_os_string()],
+            PreparationRequest {
+                action: PREPARATION_ACTION_REUSE.to_string(),
+                prepare: None,
+                reuse: Some(ReuseWireParams {
+                    params: sample_reuse_params("/missing"),
+                }),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_wait_deadline_terminates_descendants_holding_helper_pipes() {
+        let result = run_preparation_process(
+            &crate::repocache::Ctx::new(),
+            &[
+                OsString::from("sh"),
+                OsString::from("-c"),
+                OsString::from("cat >/dev/null; sleep 30 & kill -TERM $$"),
+            ],
+            PreparationRequest {
+                action: PREPARATION_ACTION_REUSE.to_string(),
+                prepare: None,
+                reuse: Some(ReuseWireParams {
+                    params: sample_reuse_params("/missing"),
+                }),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(result
+            .to_string()
+            .contains("preparation helper output did not close"));
     }
 }

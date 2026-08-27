@@ -58,7 +58,10 @@ use super::context::{
 };
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
-use super::local_worktree::{prepare_local_worktree, LocalWorktree, LocalWorktreeParams};
+use super::local_worktree::{
+    prepare_local_worktree, prepare_local_worktree_without_cross_process_lock, LocalWorktree,
+    LocalWorktreeParams,
+};
 use super::reclaimable::CODEX_HOME_DIR_NAME;
 use super::{hermes, openclaw, reasonix};
 
@@ -619,6 +622,18 @@ fn socket_safe_temp_base_dir() -> std::path::PathBuf {
 /// The workdir starts empty (no repo checkouts). The agent checks out repos
 /// on demand via `cordy repo checkout <url>`.
 pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
+    prepare_with_local_worktree_lock(params, false).await
+}
+
+/// Prepare entry point used by the private helper. The daemon parent holds a
+/// repository lock for worktree tasks while this child runs and keeps it until
+/// finalize/discard, so the helper must skip taking a second cross-process
+/// lock. Direct callers use `prepare`, which takes and stores its own lock in
+/// the returned `LocalWorktree`.
+pub(crate) async fn prepare_with_local_worktree_lock(
+    params: PrepareParams,
+    local_worktree_lock_held: bool,
+) -> anyhow::Result<Environment> {
     if params.workspaces_root.is_empty() {
         bail!("execenv: workspaces root is required");
     }
@@ -693,6 +708,7 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
         &mut work_dir,
         &mut local_worktree,
         &mut manifest,
+        local_worktree_lock_held,
     )
     .await;
 
@@ -738,6 +754,7 @@ async fn prepare_body(
     work_dir: &mut String,
     local_worktree: &mut Option<LocalWorktree>,
     manifest: &mut SidecarManifest,
+    local_worktree_lock_held: bool,
 ) -> anyhow::Result<Environment> {
     let mut env = Environment {
         root_dir: env_root.to_string(),
@@ -756,7 +773,11 @@ async fn prepare_body(
         wt_params.env_root = env_root.to_string();
         wt_params.agent_name = params.agent_name.clone();
         wt_params.task_id = params.task_id.clone();
-        let wt = prepare_local_worktree(wt_params).await?;
+        let wt = if local_worktree_lock_held {
+            prepare_local_worktree_without_cross_process_lock(wt_params).await?
+        } else {
+            prepare_local_worktree(wt_params).await?
+        };
         *work_dir = wt.work_dir.clone();
         // The resource may point at a subdirectory that holds only ignored
         // files, in which case git doesn't materialise it in the worktree.
