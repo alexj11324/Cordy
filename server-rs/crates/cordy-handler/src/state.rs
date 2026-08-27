@@ -650,18 +650,22 @@ impl HandlerState {
                 parsed <= MAX_RETRIES,
                 "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
             );
-            Some(parsed)
+            Some(cordy_llm::retries(i64::from(parsed))?)
         };
         let client = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
             api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
             base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
             default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
             max_retries,
+            http_client: None,
         }));
         self.llm.replace(client.clone());
+        let retry_budget = client.retry_budget();
         tracing::info!(
             enabled = client.enabled(),
-            max_retries = client.max_retries(),
+            max_retries = retry_budget.max_retries,
+            retry_source = retry_budget.source.as_str(),
+            request_timeout = ?retry_budget.request_timeout,
             default_model = client.default_model(),
             "llm assist policy"
         );
