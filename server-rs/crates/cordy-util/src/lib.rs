@@ -187,35 +187,20 @@ mod tests {
 
     #[test]
     fn rfc3339_nano_matches_go_fractional_precision() {
-        let four_digits = chrono::DateTime::parse_from_rfc3339(
-            "2026-08-27T23:00:00.123400Z",
-        )
-        .unwrap()
-        .to_utc();
-        assert_eq!(
-            rfc3339_nano(four_digits),
-            "2026-08-27T23:00:00.1234Z"
-        );
+        let four_digits = chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123400Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(rfc3339_nano(four_digits), "2026-08-27T23:00:00.1234Z");
 
-        let nine_digits = chrono::DateTime::parse_from_rfc3339(
-            "2026-08-27T23:00:00.123456789Z",
-        )
-        .unwrap()
-        .to_utc();
-        assert_eq!(
-            rfc3339_nano(nine_digits),
-            "2026-08-27T23:00:00.123456789Z"
-        );
+        let nine_digits = chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123456789Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(rfc3339_nano(nine_digits), "2026-08-27T23:00:00.123456789Z");
 
-        let whole_second = chrono::DateTime::parse_from_rfc3339(
-            "2026-08-27T23:00:00Z",
-        )
-        .unwrap()
-        .to_utc();
-        assert_eq!(
-            rfc3339_nano(whole_second),
-            "2026-08-27T23:00:00Z"
-        );
+        let whole_second = chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(rfc3339_nano(whole_second), "2026-08-27T23:00:00Z");
     }
 
     #[test]
