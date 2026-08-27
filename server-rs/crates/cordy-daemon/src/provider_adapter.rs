@@ -12,9 +12,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cordy_agent::{ExecutionResult, Message, MessageType, Session};
+use cordy_agent::{CatalogCache, ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -39,6 +39,7 @@ use crate::local_directory::{
 };
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
+use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::{TaskRunFailure, TaskRunOutcome};
@@ -59,6 +60,7 @@ const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 /// pretend success path.
 pub struct ProductionProviderAdapter {
     config: Arc<Config>,
+    model_cache: Arc<CatalogCache>,
     local_paths: Arc<LocalPathLocker>,
     started_at: Instant,
     active_tasks: AtomicI64,
@@ -70,6 +72,7 @@ impl ProductionProviderAdapter {
     pub fn new(config: Arc<Config>) -> Self {
         Self {
             config,
+            model_cache: Arc::new(CatalogCache::default()),
             local_paths: Arc::new(LocalPathLocker::new()),
             started_at: Instant::now(),
             active_tasks: AtomicI64::new(0),
@@ -355,20 +358,68 @@ impl ProductionProviderAdapter {
 impl ProviderRuntimeAdapter for ProductionProviderAdapter {
     async fn handle_non_update_heartbeat_actions(
         &self,
-        _ctx: Ctx,
-        _registry: Arc<RuntimeRegistry>,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
         runtime_id: String,
         ack: DaemonHeartbeatAckPayload,
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
     ) {
-        if ack.pending_model_list.is_some()
-            || ack.pending_local_skills.is_some()
-            || ack.pending_local_skill_import.is_some()
-            || !ack.pending_local_skill_imports.is_empty()
-        {
-            tracing::error!(
-                %runtime_id,
-                "heartbeat action unsupported by production provider adapter; request left unacknowledged"
-            );
+        let Some(workspace_id) = registry.workspace_for_runtime(&runtime_id) else {
+            tracing::debug!(%runtime_id, "dropping heartbeat actions for unknown runtime");
+            return;
+        };
+        let Some(target) = registry.execution_target_for_runtime(&runtime_id) else {
+            tracing::debug!(%runtime_id, "dropping heartbeat actions without runtime identity");
+            return;
+        };
+
+        if let Some(pending) = ack.pending_model_list {
+            tokio::spawn(handle_model_list(
+                ctx.child(),
+                Arc::clone(&client),
+                Arc::clone(&launch_registry),
+                Arc::clone(&self.model_cache),
+                workspace_id.clone(),
+                runtime_id.clone(),
+                target.clone(),
+                pending.id,
+            ));
+        }
+        if let Some(pending) = ack.pending_local_skills {
+            tokio::spawn(handle_local_skill_list(
+                ctx.child(),
+                Arc::clone(&client),
+                runtime_id.clone(),
+                target.provider.clone(),
+                pending.id,
+            ));
+        }
+
+        // Prefer the batch field, falling back to the singular field for old
+        // servers, matching daemon.go's heartbeat compatibility contract.
+        if ack.pending_local_skill_imports.is_empty() {
+            if let Some(pending) = ack.pending_local_skill_import {
+                tokio::spawn(handle_local_skill_import(
+                    ctx.child(),
+                    Arc::clone(&client),
+                    runtime_id,
+                    target.provider,
+                    pending.id,
+                    pending.skill_key,
+                ));
+            }
+        } else {
+            for pending in ack.pending_local_skill_imports {
+                tokio::spawn(handle_local_skill_import(
+                    ctx.child(),
+                    Arc::clone(&client),
+                    runtime_id.clone(),
+                    target.provider.clone(),
+                    pending.id,
+                    pending.skill_key,
+                ));
+            }
         }
     }
 
@@ -400,6 +451,159 @@ impl ProviderRuntimeAdapter for ProductionProviderAdapter {
             agents: self.config.agents.keys().cloned().collect(),
             ..HealthResponse::default()
         }
+    }
+}
+
+async fn handle_model_list(
+    ctx: Ctx,
+    client: Arc<Client>,
+    launch_registry: Arc<RuntimeLaunchRegistry>,
+    cache: Arc<CatalogCache>,
+    workspace_id: String,
+    runtime_id: String,
+    target: RuntimeExecutionTarget,
+    request_id: String,
+) {
+    tracing::info!(
+        %runtime_id,
+        %request_id,
+        provider = %target.provider,
+        "runtime model list requested"
+    );
+
+    let payload = match launch_registry.resolve(&workspace_id, &target) {
+        None => json!({
+            "status": "failed",
+            "error": format!("no accepted launch registered for runtime {runtime_id}"),
+        }),
+        Some(launch) if launch.command_path.trim().is_empty() => json!({
+            "status": "failed",
+            "error": format!("accepted launch for provider {} has no executable path", target.provider),
+        }),
+        Some(launch) => {
+            let config = cordy_agent::BackendConfig {
+                command: cordy_agent::RuntimeCommand::new(launch.command_path, launch.fixed_args),
+                env: BTreeMap::new(),
+            };
+            match cordy_agent::registry::discover_models(
+                &target.provider,
+                config,
+                &cache,
+                ctx.token().clone(),
+                Duration::ZERO,
+            )
+            .await
+            {
+                Ok(catalog) => json!({
+                    "status": "completed",
+                    "models": catalog.models,
+                    "supported": cordy_agent::registry::model_selection_supported(&target.provider),
+                    "fallback": catalog.fallback,
+                }),
+                Err(error) => json!({
+                    "status": "failed",
+                    "error": error.to_string(),
+                }),
+            }
+        }
+    };
+
+    if let Err(error) = client
+        .report_model_list_result(&ctx, &runtime_id, &request_id, payload)
+        .await
+    {
+        tracing::warn!(%runtime_id, %request_id, %error, "report runtime model list failed");
+    }
+}
+
+async fn handle_local_skill_list(
+    ctx: Ctx,
+    client: Arc<Client>,
+    runtime_id: String,
+    provider: String,
+    request_id: String,
+) {
+    tracing::info!(
+        %runtime_id,
+        %request_id,
+        %provider,
+        "runtime local skills requested"
+    );
+
+    let payload = match crate::local_skills::list_runtime_local_skills(&provider) {
+        Err(error) => json!({
+            "status": "failed",
+            "error": error.to_string(),
+        }),
+        Ok((skills, supported)) => {
+            let (mcp_servers, mcp_supported) =
+                match crate::runtime_mcp::list_runtime_local_mcp_servers(&provider) {
+                    Ok((servers, supported)) => (servers, supported),
+                    Err(error) => {
+                        tracing::warn!(
+                            %runtime_id,
+                            %provider,
+                            %error,
+                            "runtime local MCP discovery failed"
+                        );
+                        (Vec::new(), false)
+                    }
+                };
+            json!({
+                "status": "completed",
+                "skills": skills,
+                "supported": supported,
+                "mcp_servers": mcp_servers,
+                "mcp_supported": mcp_supported,
+            })
+        }
+    };
+
+    if let Err(error) = client
+        .report_local_skill_list_result(&ctx, &runtime_id, &request_id, payload)
+        .await
+    {
+        tracing::warn!(%runtime_id, %request_id, %error, "report runtime local skills failed");
+    }
+}
+
+async fn handle_local_skill_import(
+    ctx: Ctx,
+    client: Arc<Client>,
+    runtime_id: String,
+    provider: String,
+    request_id: String,
+    skill_key: String,
+) {
+    tracing::info!(
+        %runtime_id,
+        %request_id,
+        %provider,
+        %skill_key,
+        "runtime local skill import requested"
+    );
+
+    let payload = match crate::local_skills::load_runtime_local_skill_bundle(&provider, &skill_key)
+    {
+        Err(error) => json!({
+            "status": "failed",
+            "error": error.to_string(),
+        }),
+        Ok((_, false)) => json!({
+            "status": "failed",
+            "error": format!("provider {provider:?} does not expose runtime local skills"),
+        }),
+        Ok((skill, true)) => json!({
+            "status": "completed",
+            "skill": skill,
+        }),
+    };
+
+    if let Err(error) = client
+        .report_local_skill_import_result(&ctx, &runtime_id, &request_id, payload)
+        .await
+    {
+        tracing::warn!(%runtime_id, %request_id, %error, "report runtime local skill import failed");
     }
 }
 

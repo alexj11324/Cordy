@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
@@ -11,6 +12,7 @@ use crate::contract::{AgentError, Backend};
 use crate::cursor::{CursorBackend, CursorConfig};
 use crate::deveco::{DevecoBackend, DevecoConfig};
 use crate::dsh::{DshBackend, DshConfig};
+use crate::model::{Catalog, CatalogCache};
 use crate::openclaw::{OpenclawBackend, OpenclawConfig};
 use crate::opencode::{OpencodeBackend, OpencodeConfig};
 use crate::pi::{PiBackend, PiConfig};
@@ -20,6 +22,7 @@ use crate::qoder::{
     QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderDescriptor {
@@ -276,6 +279,106 @@ pub fn model_selection_supported(id: &str) -> bool {
         .is_none_or(|provider| provider.model_selection_supported)
 }
 
+/// Discovers the model catalog for an accepted runtime command.
+///
+/// The daemon must use the command selected by registration, including a
+/// custom profile's fixed prefix, so discovery cannot be implemented by
+/// rebuilding a provider's default command at the call site. Providers that
+/// deliberately have no account-independent catalog return an empty catalog;
+/// unsupported provider families fail closed instead of pretending discovery
+/// succeeded.
+pub async fn discover_models(
+    runtime_id: &str,
+    config: BackendConfig,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Result<Catalog, AgentError> {
+    let family = protocol_family(runtime_id)
+        .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
+    let BackendConfig { command, env } = config;
+    match family {
+        "antigravity" => Ok(AntigravityBackend::new(AntigravityConfig {
+            command,
+            env,
+            ..AntigravityConfig::default()
+        })
+        .discover_models(cancellation, timeout)
+        .await),
+        "codebuddy" => Ok(CodebuddyBackend::new(CodebuddyConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "cursor" => Ok(CursorBackend::new(CursorConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "deveco" => Ok(DevecoBackend::new(DevecoConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "dsh" => Ok(DshBackend::new(DshConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "openclaw" => Ok(OpenclawBackend::new(OpenclawConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "opencode" => Ok(OpencodeBackend::new(OpencodeConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "pi" => Ok(PiBackend::new(PiConfig {
+            command,
+            env,
+            default_executable: if runtime_id == "omp" {
+                "omp".to_string()
+            } else {
+                "pi".to_string()
+            },
+            provider_label: if runtime_id == "omp" {
+                "omp".to_string()
+            } else {
+                "pi".to_string()
+            },
+        })
+        .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+        .await),
+        "qoder" | "qoderclicn" => {
+            let backend = QoderBackend::new(QoderConfig {
+                command,
+                env,
+                default_command: if runtime_id == "qoderclicn" {
+                    "qoderclicn".to_string()
+                } else {
+                    "qodercli".to_string()
+                },
+                provider: runtime_id.to_string(),
+                ..QoderConfig::default()
+            });
+            Ok(backend.discover_models(cache, cancellation, timeout).await)
+        }
+        "traecli" => Ok(TraecliBackend::new(TraecliConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "kiro" => Ok(KiroBackend::new(KiroConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "kimi" => Ok(KimiBackend::new(KimiConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "reasonix" => Ok(ReasonixBackend::new(ReasonixConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "grok" => Ok(GrokBackend::new(GrokConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "dim" => Ok(DimBackend::new(DimConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "qwen" | "qwenpaw" | "mcode" => Ok(Catalog::default()),
+        "codex" => Err(AgentError::UnsupportedRuntime(
+            "codex model discovery is not yet wired".to_string(),
+        )),
+        _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
+    }
+}
+
 /// Constructs a real backend for the provider families already implemented in
 /// this crate. Registry metadata alone is not enough: unsupported families
 /// fail before a task can pretend to execute.
@@ -504,5 +607,35 @@ mod tests {
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn discovery_keeps_catalogless_runtimes_empty() {
+        let catalog = discover_models(
+            "qwen",
+            BackendConfig::default(),
+            &CatalogCache::default(),
+            tokio_util::sync::CancellationToken::new(),
+            Duration::ZERO,
+        )
+        .await
+        .expect("catalogless runtime discovery is supported");
+        assert_eq!(catalog, Catalog::default());
+    }
+
+    #[tokio::test]
+    async fn discovery_fails_closed_for_unwired_runtime() {
+        let error = discover_models(
+            "codex",
+            BackendConfig::default(),
+            &CatalogCache::default(),
+            tokio_util::sync::CancellationToken::new(),
+            Duration::ZERO,
+        )
+        .await
+        .expect_err("codex discovery is intentionally not wired yet");
+        assert!(
+            matches!(error, AgentError::UnsupportedRuntime(message) if message.contains("codex"))
+        );
     }
 }

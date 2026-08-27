@@ -54,6 +54,8 @@ pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
         registry: Arc<RuntimeRegistry>,
         runtime_id: String,
         ack: DaemonHeartbeatAckPayload,
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
     );
 
     async fn run_task(
@@ -524,7 +526,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         ack: DaemonHeartbeatAckPayload,
     ) {
         self.provider
-            .handle_non_update_heartbeat_actions(ctx, registry, runtime_id, ack)
+            .handle_non_update_heartbeat_actions(
+                ctx,
+                registry,
+                runtime_id,
+                ack,
+                Arc::clone(&self.client),
+                Arc::clone(&self.launch_registry),
+            )
             .await;
     }
 

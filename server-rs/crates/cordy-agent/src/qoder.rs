@@ -427,6 +427,17 @@ impl KimiBackend {
             }),
         }
     }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
 }
 
 #[async_trait]

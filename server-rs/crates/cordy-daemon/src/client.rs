@@ -1016,10 +1016,11 @@ impl Client {
         request_id: &str,
         result: Value,
     ) -> anyhow::Result<()> {
-        self.post_json_unit(
+        self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/runtimes/{runtime_id}/models/{request_id}/result"),
             result,
+            RUNTIME_RESULT_RETRY_SCHEDULE,
         )
         .await
     }
@@ -1032,10 +1033,11 @@ impl Client {
         request_id: &str,
         result: Value,
     ) -> anyhow::Result<()> {
-        self.post_json_unit(
+        self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/runtimes/{runtime_id}/local-skills/{request_id}/result"),
             result,
+            RUNTIME_RESULT_RETRY_SCHEDULE,
         )
         .await
     }
@@ -1048,10 +1050,11 @@ impl Client {
         request_id: &str,
         result: Value,
     ) -> anyhow::Result<()> {
-        self.post_json_unit(
+        self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/runtimes/{runtime_id}/local-skills/import/{request_id}/result"),
             result,
+            RUNTIME_RESULT_RETRY_SCHEDULE,
         )
         .await
     }
@@ -1435,6 +1438,14 @@ pub(crate) const DEFAULT_TERMINAL_RETRY_SCHEDULE: &[Duration] = &[
     Duration::from_secs(16),
     Duration::from_secs(32),
     Duration::from_secs(64),
+];
+
+/// `runtimeReportBackoffs` (daemon.go:4240): one immediate attempt followed
+/// by three bounded retries for model/local-skill heartbeat results.
+pub(crate) const RUNTIME_RESULT_RETRY_SCHEDULE: &[Duration] = &[
+    Duration::from_millis(500),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
 ];
 
 /// `isTransientError` (client.go:977): likely-to-resolve hiccups — 5xx,
