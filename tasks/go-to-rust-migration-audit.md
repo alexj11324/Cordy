@@ -975,3 +975,8 @@ provider execution 与 environment finalization 结束；`Drop` 覆盖所有早�
 - 异步状态：verification 与 reviewer 已分别派发、尚未返回，fixer 尚无本 PR finding。
   主 agent 只实际运行并通过 `git diff --check 263ace6b..c267c22f`；未把编译、测试、rustfmt、
   静态检查或生产验证记录为通过。PR 明确堆叠在 Ready PR #546。
+- reviewer 在 head `5e9f049d` 返回三个 P1：duplicate tool 当前被第二项覆盖，违反 Go
+  first-wins 路由；继承 #546 的 malformed overlay panic 使 plugin merge fail-soft 不成立；
+  直接协议检查注入 test invoker 且未经过 production adapter/真实 Client/effective config，
+  不能证明完整 production wiring。三项均已交独立 fixer；其余 client secret 边界、overlay
+  precedence、owner/Drop 生命周期、既有协议限制和 Ponytail 核对无 finding。
