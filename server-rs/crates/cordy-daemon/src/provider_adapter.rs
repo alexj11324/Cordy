@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use anyhow::Context as _;
 use cordy_agent::{CatalogCache, ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
 use serde_json::{json, Map, Value};
@@ -42,7 +43,7 @@ use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext}
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::remote_mcp_broker::{
-    merge_task_remote_mcp_config, start_task_remote_mcp_brokers,
+    merge_task_remote_mcp_config, start_task_remote_mcp_brokers, BrokerStartup, RemoteMCPBrokerSet,
     RemoteMCPCredentialResolver,
 };
 use crate::repocache::Ctx;
@@ -75,6 +76,59 @@ struct TaskModelSelection {
     model: String,
     thinking_level: String,
     service_tier: String,
+}
+
+fn remote_mcp_credential_resolver(
+    client: Arc<Client>,
+    daemon_token: String,
+    task_id: String,
+) -> RemoteMCPCredentialResolver {
+    Arc::new(move |resolve_ctx, contribution_id| {
+        let client = Arc::clone(&client);
+        let daemon_token = daemon_token.clone();
+        let task_id = task_id.clone();
+        Box::pin(async move {
+            client
+                .resolve_remote_mcp_credential(
+                    &resolve_ctx,
+                    &daemon_token,
+                    &task_id,
+                    &contribution_id,
+                )
+                .await
+        })
+    })
+}
+
+fn apply_remote_mcp_startup(
+    task: &Task,
+    inputs: &mut ProviderExecutionInputs,
+    startup: BrokerStartup,
+) -> anyhow::Result<Option<RemoteMCPBrokerSet>> {
+    for diagnostic in &startup.diagnostics {
+        tracing::warn!(task = %task.id, reason = %diagnostic, "Remote MCP degraded");
+    }
+    if let Some(error) = startup.error {
+        return Err(error.context("prepare Remote MCP broker"));
+    }
+    if let Some(overlay) = startup.config {
+        let base = inputs
+            .effective_mcp_config
+            .as_ref()
+            .or_else(|| {
+                task.agent
+                    .as_ref()
+                    .and_then(|agent| agent.mcp_config.as_ref())
+            })
+            .map(Value::to_string)
+            .unwrap_or_default();
+        inputs.effective_mcp_config = Some(
+            merge_task_remote_mcp_config(&base, &overlay.to_string())
+                .and_then(|raw| serde_json::from_str(&raw).map_err(anyhow::Error::new))
+                .context("merge Remote MCP broker configuration")?,
+        );
+    }
+    Ok(startup.set)
 }
 
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
@@ -352,26 +406,11 @@ impl ProductionProviderAdapter {
                 }
             }
         }
-        let credential_resolver: RemoteMCPCredentialResolver = {
-            let client = Arc::clone(&client);
-            let daemon_token = task.remote_mcp_daemon_token.clone();
-            let task_id = task.id.clone();
-            Arc::new(move |resolve_ctx, contribution_id| {
-                let client = Arc::clone(&client);
-                let daemon_token = daemon_token.clone();
-                let task_id = task_id.clone();
-                Box::pin(async move {
-                    client
-                        .resolve_remote_mcp_credential(
-                            &resolve_ctx,
-                            &daemon_token,
-                            &task_id,
-                            &contribution_id,
-                        )
-                        .await
-                })
-            })
-        };
+        let credential_resolver = remote_mcp_credential_resolver(
+            Arc::clone(&client),
+            task.remote_mcp_daemon_token.clone(),
+            task.id.clone(),
+        );
         let remote_mcp = match start_task_remote_mcp_brokers(
             &ctx,
             &ctx,
@@ -383,42 +422,15 @@ impl ProductionProviderAdapter {
         .await
         {
             Ok(startup) => startup,
-            Err(error) => {
-                return failed(
-                    error.context("prepare Remote MCP broker"),
-                    None,
-                )
-            }
+            Err(error) => return failed(error.context("prepare Remote MCP broker"), None),
         };
-        for diagnostic in &remote_mcp.diagnostics {
-            tracing::warn!(task = %task.id, reason = %diagnostic, "Remote MCP degraded");
-        }
-        if let Some(error) = remote_mcp.error {
-            return failed(error.context("prepare Remote MCP broker"), None);
-        }
-        if let Some(overlay) = remote_mcp.config {
-            let base = inputs
-                .effective_mcp_config
-                .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
-                .map(Value::to_string)
-                .unwrap_or_default();
-            let merged = match merge_task_remote_mcp_config(&base, &overlay.to_string())
-                .and_then(|raw| serde_json::from_str(&raw).map_err(anyhow::Error::new))
-            {
-                Ok(merged) => merged,
-                Err(error) => {
-                    return failed(
-                        error.context("merge Remote MCP broker configuration"),
-                        None,
-                    )
-                }
-            };
-            inputs.effective_mcp_config = Some(merged);
-        }
+        let remote_mcp_brokers = match apply_remote_mcp_startup(&task, &mut inputs, remote_mcp) {
+            Ok(set) => set,
+            Err(error) => return failed(error, None),
+        };
         // Own every loopback broker until provider execution and environment
         // finalization finish. Drop closes all listeners on every return path.
-        let _remote_mcp_brokers = remote_mcp.set;
+        let _remote_mcp_brokers = remote_mcp_brokers;
         let plugin_invoke: PluginHookInvoker = {
             let client = Arc::clone(&client);
             let daemon_token = task.remote_mcp_daemon_token.clone();
@@ -1748,12 +1760,125 @@ mod tests {
             .await;
         let failure = outcome.failure.expect("required broker failure");
         assert!(
-            failure.message.contains(
-                "Remote MCP required-tools is incompatible with provider deveco"
-            ),
+            failure
+                .message
+                .contains("Remote MCP required-tools is incompatible with provider deveco"),
             "{}",
             failure.message
         );
+    }
+
+    #[tokio::test]
+    async fn production_remote_mcp_bridge_resolves_credentials_and_retains_valid_startup() {
+        let route = "/api/daemon/tasks/task-1/remote-mcp/connection-1/credential";
+        let app = axum::Router::new().route(
+            route,
+            axum::routing::get(|headers: axum::http::HeaderMap| async move {
+                assert_eq!(
+                    headers
+                        .get("Authorization")
+                        .and_then(|value| value.to_str().ok()),
+                    Some("Bearer daemon-token")
+                );
+                axum::Json(json!({
+                    "credential_header": "Authorization",
+                    "credential": "Bearer resolved-token"
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server_shutdown = CancellationToken::new();
+        let shutdown = server_shutdown.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move { shutdown.cancelled().await })
+                .await;
+        });
+
+        let client = Arc::new(Client::new(format!("http://{address}")));
+        let resolver = remote_mcp_credential_resolver(
+            client,
+            "daemon-token".to_string(),
+            "task-1".to_string(),
+        );
+        assert_eq!(
+            resolver(Ctx::new(), "connection-1".to_string())
+                .await
+                .unwrap(),
+            vec![(
+                "Authorization".to_string(),
+                "Bearer resolved-token".to_string()
+            )]
+        );
+
+        let task = Task {
+            id: "task-1".into(),
+            agent_id: "agent-1".into(),
+            runtime_id: "runtime-1".into(),
+            workspace_id: "workspace-1".into(),
+            issue_id: "issue-1".into(),
+            auth_token: "mat_task-token".into(),
+            agent: Some(crate::types::AgentData {
+                id: "agent-1".into(),
+                name: "Agent One".into(),
+                mcp_config: Some(json!({
+                    "mcpServers": {"agent": {"command": "agent-command"}}
+                })),
+                ..crate::types::AgentData::default()
+            }),
+            ..Task::default()
+        };
+        let mut inputs = ProviderExecutionInputs {
+            temp_dir: "/tmp/cordy-remote-mcp-test".into(),
+            ..ProviderExecutionInputs::default()
+        };
+        let broker_shutdown = CancellationToken::new();
+        let observed_shutdown = broker_shutdown.clone();
+        let mut set = RemoteMCPBrokerSet::default();
+        set.push(broker_shutdown);
+        let retained = apply_remote_mcp_startup(
+            &task,
+            &mut inputs,
+            BrokerStartup {
+                config: Some(json!({
+                    "mcpServers": {
+                        "remote": {"type": "http", "url": "http://127.0.0.1/capability"}
+                    }
+                })),
+                diagnostics: Vec::new(),
+                set: Some(set),
+                error: None,
+            },
+        )
+        .unwrap()
+        .expect("live broker set retained by provider adapter");
+        let temp = tempfile::tempdir().unwrap();
+        let config = Config {
+            server_base_url: "http://server.invalid".into(),
+            workspaces_root: temp.path().to_string_lossy().into_owned(),
+            ..Config::default()
+        };
+        let plan = ProviderExecutionPlan::build(
+            &config,
+            &task,
+            &RuntimeExecutionTarget {
+                provider: "codex".into(),
+                profile_id: String::new(),
+            },
+            inputs,
+        )
+        .unwrap();
+        let effective = plan.reuse_params("").mcp_config.unwrap();
+        assert_eq!(effective["mcpServers"]["agent"]["command"], "agent-command");
+        assert_eq!(
+            effective["mcpServers"]["remote"]["url"],
+            "http://127.0.0.1/capability"
+        );
+        assert!(!observed_shutdown.is_cancelled());
+        drop(retained);
+        assert!(observed_shutdown.is_cancelled());
+        server_shutdown.cancel();
     }
 
     #[test]

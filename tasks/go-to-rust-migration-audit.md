@@ -954,6 +954,18 @@ daemon claim wire 删除重复 stand-in，直接复用 `cordy-remotemcp::{Connec
   connection 的 credential/discovery、overlay 进入 plan 和 cleanup。两项均已交独立 fixer；
   reviewer 其余核对（wire alias、required/optional、安全 gate、生命周期与 Ponytail）无 finding。
 
+独立 review/verification 后续 finding 已由 fixer 收口：reviewed head `263ace6b` 的
+daemon exact tests/`--no-run` 最初均被堆叠分支遗留的 7 处 `GcMetaKind` E0433 阻断，
+实际 0 tests；`cordy-remotemcp` 独立 check 通过，fixed-stable rustfmt 在
+`provider_adapter.rs`/`remote_mcp_broker.rs` 失败，且没有直接 limits 检查。fixer 先传播
+#544 的 `1dcc92db`，随后让 merge helper 对 scalar root/scalar `mcpServers` 返回错误而非
+panic；直接覆盖 task call/concurrency/body 三个限额；并让 production adapter 的真实
+`Client` credential resolver 与 startup→effective overlay→`ProviderExecutionPlan`→set
+lifetime bridge 可由同一窄生产 helper 验证。验证结果：merge exact 1/1、limits exact
+1/1；production bridge 在受限 sandbox 首次因 loopback bind EPERM 0/1，允许本地 bind 后
+重跑 1/1；fixed-stable rustfmt 与 `git diff --check` 通过。没有外部 Remote MCP 凭证，
+故仍不把真实 public-HTTPS external smoke 记为已执行。
+
 ## 34. AUDIT-005 执行缺口：plugin-hook MCP production wiring
 
 当前切片继续 `AUDIT-005` 的任务启动/MCP production 调用链。编码前确认的真实差异：
