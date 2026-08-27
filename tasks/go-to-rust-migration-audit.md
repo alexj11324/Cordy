@@ -2091,3 +2091,21 @@ module 内直接执行真实 `agent_runtime` PostgreSQL rows、`PassthroughHeart
   AUDIT-001..010 总退出门仍未完成。
 - owner：主 agent 迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
   `codex/cord-233-heartbeat-worker-contract-rust`，基于 #568 branch at `3d448d16`。
+
+实现 commit `35fbba80` 只在既有 `heartbeat_scheduler.rs` 的 `cfg(test)` 内增加 212 行真实 DB contract，没有修改
+production scheduler、SQL、依赖、文件边界或新增 runtime seam：
+
+- 两个 online runtime 记录一日前 timestamp，同一 ID schedule 两次、另一 ID 一次，直接断言 pending set 是 2 且 DB
+  未提前写；`flush_once` 后 pending 清空且两 row timestamp 前进，证明 coalesce 与 multi-ID batch。
+- offline/never-seen snapshot 直接经 production fallback 同步恢复 online；另把 online snapshot 的真实 row 先改 offline，
+  证明 passthrough touch miss 会继续 mark online。batch race 则先 schedule online snapshot、再把 DB row 改 offline，flush 不得
+  错误翻回；下一次用 fresh offline row schedule 必须同步自愈。
+- shutdown case 在真实 runtime row 上持有 `FOR UPDATE` lock，让 root cancellation 的第一次 flush 已 drain pending但阻塞
+  于 DB；此时再 schedule 第二个 late ID，释放锁后断言 `HeartbeatSchedulerRuntime::shutdown` 有界返回 Stopped、second flush
+  清空 pending且两个 timestamp 都前进。该 gate 不靠 sleep，删 final flush或 shutdown 后 second flush会直接失败。
+- required `DATABASE_URL` 缺失/坏 PostgreSQL 直接失败；fixture 用唯一 workspace/runtime rows，正常路径显式等待删除，Drop
+  仅作为 best-effort panic cleanup，不把它扩大声明为 failure-safe。
+
+主 agent 只执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试或 DB 命令。production server复用同一
+`BatchedHeartbeatScheduler` 注入 handler并启动 runtime的入口已静态定位；exact compile、matched/executed counts、真实 DB
+竞争、server/Windows build和清理行为由独立 verifier执行。当前不能声称 heartbeat worker 已验证或删除 Go。
