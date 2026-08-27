@@ -200,7 +200,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577 | 收口 #577 异步 V/R/F；为实际 production wire field 接入 codec 与 golden/round-trip 后，再继续 JSON/时间/Redis/DB/event/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | PR #577；§6.2、§64 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578 | 收口 #578 异步 V/R/F；继续对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
 ### 6.1.1 时间顺序执行计划
@@ -282,7 +282,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 53. `[~]` `T-53 / §63` AUDIT-007 Go 测试契约映射（PR #576 Ready，待异步退出证据）
 54. `[~]` `T-54 / §64` AUDIT-008 UUID/ULID wire serialization（已登记，PR 待创建）
-55. `[~]` `T-55` AUDIT-009 运维与文档切换
+55. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
 56. `[ ]` `T-56` AUDIT-010 Go 源码退休
 
 每一步都按同一个交付门执行：登记缺口 → 实现完整业务契约 → 接入唯一 Rust 生产入口 →
@@ -2726,6 +2726,30 @@ contract tests 覆盖固定 Go 向量 `01ARZ3NDEKTSV4RRFFQ69G5FAV`、round-trip�
 base 为 `codex/cord-240-test-contract-matrix-rust` 的 `1486e6e3`，当前实现提交为 `874d7493`。异步 verifier/reviewer/fixer
 结果待回写；在 exact compile、matched/executed、跨语言 event/Redis/旧数据读取和生产路径证据返回前，本项不能声称
 AUDIT-008 已完成或删除 Go。
+
+## 65. [~] AUDIT-009 backfill runbook Rust 入口对齐（T-55）
+
+本项在开始编辑文档前登记。`server/cmd/backfill_issue_last_activity/README.md` 仍把运维命令写成从 `server/` 执行的
+`go run ./cmd/backfill_issue_last_activity`，但对应能力已由 `server-rs/crates/cordy-migrate/src/bin/backfill_issue_last_activity.rs`
+作为 Rust production binary 提供。旧说明会让 operator 在 Go 退休后走错误入口，也没有记录 Rust binary 与 `cargo run`
+两种受支持调用方式。
+
+范围只更新这份既有 backfill runbook：保留 migration 前置条件、批次/中断/重试和完成判据，改为仓库根目录下的 Rust
+binary/`cargo run --locked` 入口，并明确 `DATABASE_URL` 与参数保持不变。无需新增脚本、发布资产、服务或第二套 backfill
+实现；Docker/Makefile/release 的产物接线由 AUDIT-001/006 保持唯一来源。
+
+- 默认生产路径：operator 优先执行已构建的 `server-rs/target/release/backfill_issue_last_activity`；源码路径只作为
+  `cargo run --locked -p cordy-migrate --bin backfill_issue_last_activity` 的开发/恢复入口。
+- Go 是否可下线：该 README 不再要求 Go toolchain，但 Go backfill source、其余 install/systemd/release/rollback 文档、
+  新鲜产物验证和 AUDIT-001..010 总退出仍未完成。
+- owner：主 agent 负责最小文档切换和 Ready PR；独立 verifier/reviewer/fixer 异步核对命令、参数、发布路径和回归，
+  结果在本节追加；在此之前不得声称全部运维文档已切换。
+
+实现 commit `72bbf9a2` 仅更新 `server/cmd/backfill_issue_last_activity/README.md`：从仓库根目录提供 Rust binary 和
+Cargo 源码入口，保留既有 `DATABASE_URL`、参数、批次、中断/重试和 completion 判据。主 agent 仅执行 `git diff --check`
+（PASS），未运行 cargo、backfill、PostgreSQL、Docker 或 release 命令；非 Draft Ready PR #578 已创建，base 为
+`codex/cord-241-ulid-wire-contract-rust` 的 `979205c8`。异步 verifier/reviewer/fixer 结果待回写；文档切换不能替代
+真实产物/运维验证，也不能据此删除 Go。
 
 独立 reviewer 在 exact `d3a37ed0` 发现 upstream `ulid::Ulid::from_string` 会接受首字符 `8..Z` 并截断 130-bit
 Crockford overflow，同时 repo-wide 只有 wrapper 定义/单元测试、没有 production caller。fixer follow-up 在 serde 入口先
