@@ -2,10 +2,15 @@
 
 > 审计快照：2026-08-27 UTC
 > 审计基线：0f92fb042ffc742b8dcf8af91cea3d97716c05a4
-> 审计分支：codex/cord-187-go-rust-migration-audit-v2
+> 首次审计交付：Ready PR #521
 > 范围：server/、server-rs/、默认运行/构建/发布/部署链路
 
 这是一份独立的全局基线，不是按“完成一块再查一块”生成的局部记录。后续迁移只能从本清单选择切片；完成切片后更新对应证据和状态，再选择下一块。它取代 tasks/go-to-rust-migration.md 中互相矛盾的当前状态判断；旧文件保留为历史执行记录。
+
+本文件同时是迁移的唯一执行台账：所有未迁移、未接线、未验证或不能删除 Go
+的工作都必须在这里有唯一 ID。下方“执行台账”负责当前状态和下一动作，P0/P1
+条目负责范围与退出证据；两者冲突时以执行台账为准。新的缺口先补进台账，再
+开始代码变更；不允许在台账之外临时开工。
 
 ## 1. 执行边界
 
@@ -95,7 +100,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | integrations（130 个非测试 Go 文件） | channel/channel-engine、Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot | cordy-server::channel_runtime、handler::connectors | 否 | Rust 真实 wiring 已存在；真实配置、缺失配置 fail-closed、各 provider smoke 未形成矩阵 |
 | agent providers（pkg/agent 53 文件） | cordy-agent，registry + consolidated backends | cordy-daemon provider adapter、cordy-cli daemon | 否，release 仍 Go CLI | provider registry 已覆盖主要 Go provider id；完整命令/环境/退出码矩阵待验证 |
 | daemon、daemonws | cordy-daemon | cordy-daemon::run_production_daemon、cordy-cli daemon | Rust CLI 内部已接线，默认发布仍 Go | 生产 stack 存在，但有 43 条 S9-integration 标记、28 个文件受 dead_code allow 影响；需按能力验证，不做机械清标 |
-| local/S3/CloudFront storage | handler::attachment_storage、cloudfront、attachment | cordy-server main 注入 attachment storage | 否 | 主存储能力已落地/接线；Squad avatar 返回仍有 signer 缺口，归 AUDIT-003 |
+| local/S3/CloudFront storage | handler::attachment_storage、cloudfront、attachment、avatar | cordy-server main 注入 attachment storage；squad CRUD 复用 cordy-handler::avatar | 否 | 主存储能力已落地/接线；Squad avatar 的读写 URL 契约已接线，剩余发布/全量 Go 退休仍未闭环 |
 | CLI bins（cordy、migrate、3 backfill） | cordy-cli、cordy-migrate 及 3 个 Rust backfill bin | Rust bin 可独立运行 | 否，Makefile/Docker/release 仍产出 Go | Rust bin 已存在；构建产物、命令行为、安装/发布和 Docker packaging 未闭环 |
 | pprof、logger | Go internal/profiling、internal/logger | cordy-server::profiling 已接入 loopback CPU pprof；cordy-util logging、cordy-server、cordy-migrate、cordy-daemon 和 request middleware 已接线 | Rust 默认后端/daemon 已使用 | CPU/cmdline/symbol 已有 Rust listener；heap/trace 和 logger 的人类可读时间布局、剩余发布路径仍未闭合 |
 | Go tests（807 文件） | Rust inline tests + 5 个外部 integration test 文件 | CI 同时运行两套 | CI 验证不等于生产切换 | 不能机械改写 807 个文件；需按业务契约建立覆盖矩阵，见 AUDIT-007 |
@@ -165,9 +170,37 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 优先级含义：P0 是删除 Go 前必须完成的生产闭环；P1 是 cutover 前必须完成的兼容性/运维证据。每个 ID 之后应由一个可合并业务切片或一个明确的验证/发布切片收口，不按文件数拆 PR。
 
-### P0
+### 6.1 唯一执行台账
 
-#### AUDIT-001：Rust 默认生产入口切换
+状态只描述主线交付，不把异步 review/fix 当作阻塞状态：
+
+| ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 证据/PR | owner |
+| --- | --- | --- | --- | --- | --- |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm 入口已切到 Rust | 收口 release/install/systemd、兼容产物、启动与回滚演练 | PR #523；详见 §11 | 主 agent；Volta 异步 review/fix |
+| AUDIT-002 | 待办 | 仅有 route parity 和局部包测试 | 建立并执行 API/WS/事务/错误/CLI/daemon 的成功与失败 smoke 矩阵 | §5、§6.2 | 主 agent；缺陷交 Volta |
+| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；Volta 异步 review/fix |
+| AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；Volta 异步 review/fix |
+| AUDIT-003C | 进行中 | squad avatar 读写正在接入既有 avatar capability | 提交/验证 squad list/get/create/update 的私有对象 URL 契约 | 当前 worktree；详见 §14 | 主 agent；Volta 异步 review/fix |
+| AUDIT-003D | 待办 | handler 与 daemon 存在并发任务配置 | 对齐默认值、范围、调用边界并保留单一契约证据 | §6.2 | 主 agent；缺陷交 Volta |
+| AUDIT-004 | 待办 | provider Rust wiring 已存在 | 完成各 integration 的真实配置、正/负路径、重试、media、shutdown 矩阵 | §5.3、§6.2 | 主 agent；Volta 异步 review/fix |
+| AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；Volta 异步 review/fix |
+| AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；Volta 异步 review/fix |
+| AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 Volta |
+| AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | §6.2 | 主 agent；缺陷交 Volta |
+| AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | PR #523/#524/#525；§6.2 | 主 agent；Volta 异步 review/fix |
+| AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | §6.2、§10 | 主 agent；Volta 异步 review/fix |
+
+执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
+立即提交、推送并创建 Ready PR，同时回写本表。review/fix 和长时间验证可以
+并行运行，但不改变下一动作的选择，也不需要主 agent 等待。
+
+### 6.2 任务范围与退出证据
+
+以下条目是执行台账的详细定义；它们规定每个任务何时真正完成。
+
+#### P0
+
+##### AUDIT-001：Rust 默认生产入口切换
 
 - 范围：Makefile 的 server/cordy/build/migrate/test/dev/check、scripts/check.sh、scripts/dev.sh、Dockerfile、docker/entrypoint.sh、Helm backend、systemd/install/release 入口。
 - 现状证据：Makefile、Dockerfile、scripts 和 Helm 当前仍直接调用 server/cmd/server、server/cmd/cordy、server/cmd/migrate 的 Go 命令；Rust 只有独立 rust-cli/build-rust-cli 入口。
@@ -175,23 +208,23 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：新鲜 worktree 的 build/check、镜像启动 health/ready、migrate up/down/status、CLI --help/version、回滚演练均以 Rust 产物为准。
 - owner：主 agent 迁移/接线；Volta 异步 review/fix。
 
-#### AUDIT-002：生产行为与完整契约 smoke
+##### AUDIT-002：生产行为与完整契约 smoke
 
 - 范围：route parity 之外的认证、权限、事务、错误码/JSON、WS、realtime、background worker、CLI 退出码、daemon control/health。
 - 交付：按业务能力建立可执行矩阵；每项标记 Go contract、Rust entry、生产是否切换、Go 是否可删。
 - 退出证据：关键 API/WS/CLI/daemon smoke 在 Rust 默认产物上通过，并有失败路径和回滚记录。
 - owner：主 agent 负责迁移与机械验证；缺陷交给 Volta。
 
-#### AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
+##### AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
 
 - pprof：Rust `cordy-server::profiling` 已在 127.0.0.1:6060 启动独立 listener，迁移 CPU profile、index、cmdline 和 symbol；heap/trace 尚未等价，必须继续迁移或明确替代并保持运维文档诚实。
 - logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 已在 Rust 入口对账；Rust 保留 RUST_LOG 作为未设置 LOG_LEVEL 时的兼容回退，默认级别与 Go 一样是 debug。
-- Squad avatar：Rust squad.rs 的 SquadResponse 直接返回 raw avatar_url，并注明 HandlerState 尚未携带 Go object-store signer；Go squadToResponse 会调用 resolveAvatarURLPtr。必须补完整的私有对象 URL/签名契约或证明当前存储策略等价。
+- Squad avatar：Rust `cordy-handler::squad` 已把响应接到现有 `avatar::resolve_url`，创建/更新接到 `avatar::accept_url`；这复用了已有 HMAC、存储归属和 standalone-image 发布校验，不重复实现 signer。私有对象的 squad 读写契约已迁移并接线；avatar endpoint 的下载策略与剩余 Go 退休仍需整体生产验证。
 - agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust handler 有 inline 1..50，但 daemon config 有独立默认值。必须确认这是两个不同边界还是迁移遗漏，形成单一 contract 证据。
 - 退出证据：每个 leaf 明确为“Rust 迁移并接线”“已由现有模块吸收”或“仍需迁移”，并有对应测试/生产路径。
 - owner：主 agent 负责真正迁移；Volta 负责 review/fix。
 
-#### AUDIT-004：integrations 生产配置矩阵
+##### AUDIT-004：integrations 生产配置矩阵
 
 - provider：Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GitHub snapshot，以及 channel-engine/lease/media。
 - 正向场景：有效凭证、真实 outbound、inbound/session 路由、media、重试和 shutdown。
@@ -199,7 +232,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：每个 provider 有 Rust entry、配置开关、最小 smoke 或明确的不可测原因和回滚策略。
 - owner：主 agent 负责迁移/生产接线；Volta 异步处理安全和回归修复。
 
-#### AUDIT-005：daemon 完整能力验收
+##### AUDIT-005：daemon 完整能力验收
 
 - 范围：control/health、registration、reconcile、runtime registry、provider refresh、task execution、wakeup/WS RPC、GC、repo cache、local skills、auto update、MCP broker。
 - 现状：Rust production stack 已存在，但有 43 条 S9-integration 标记、28 个相关文件，且 crate 顶层仍写着“awaiting daemon wiring”。
@@ -207,7 +240,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：daemon 生产进程可启动、控制面可用、task/provider/GC/reconcile 生命周期通过；不再依赖 Go daemon。
 - owner：主 agent 迁移/接线；Volta review/fix。
 
-#### AUDIT-006：migration 与 backfill 发布闭环
+##### AUDIT-006：migration 与 backfill 发布闭环
 
 - Rust 已有 cordy-migrate 和 backfill_task_usage_hourly、backfill_issue_last_activity、backfill_codex_usage_cache 三个 bin；对应业务切片已在 PR #518、#519、#520。
 - 当前 Dockerfile 只构建/复制两个旧 backfill，Makefile build 没有三个 Rust backfill 的默认产物，CI 仍以 Go migrate 为主验证之一。
@@ -215,28 +248,28 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：新镜像只需 Rust migration/backfill 产物即可完成升级和运维恢复。
 - owner：主 agent；Volta 异步 review/fix。
 
-### P1
+#### P1
 
-#### AUDIT-007：Go 测试契约映射
+##### AUDIT-007：Go 测试契约映射
 
 - 不按 807 个 Go test 文件机械复制。
 - 先按 API、DB transaction、provider、daemon lifecycle、security boundary、backfill、CLI contract 建索引。
 - 每个高风险 Go 回归用例标记 Rust 已有测试、需新增测试、或不适用及理由。
 - 退出证据：关键 contract 有 Rust 可执行测试；测试失败由 Volta 处理，主 agent 不代做修复。
 
-#### AUDIT-008：wire/schema/ID 兼容性
+##### AUDIT-008：wire/schema/ID 兼容性
 
 - 对齐 JSON null/empty、时间格式、UUID/ULID、Redis key/channel、DB nullable/enum、错误码和事件 envelope。
 - cordy-util 当前明确留下 ULID TODO：wrapper 的 serde 仍输出 UUID hyphenated string，而 Go wire contract 使用 26 字符 Crockford ULID；必须在删除 Go 前完成或证明所有当前路径不使用该 wrapper。
 - 退出证据：golden vectors/round-trip/旧数据读取和跨语言事件 fixture 通过。
 
-#### AUDIT-009：运维与文档切换
+##### AUDIT-009：运维与文档切换
 
 - 更新 SELF_HOSTING_ADVANCED.md、Helm 注释、README/install/systemd、release 说明、pprof/metrics/rollback 文档。
 - 文档中的 go run ./cmd/...、go tool pprof 和 binary 名称必须与实际 Rust 产物一致。
 - 只在 AUDIT-001 的默认入口确定后落地，避免先写一套与产物不一致的文档。
 
-#### AUDIT-010：Go 源码退休门槛
+##### AUDIT-010：Go 源码退休门槛
 
 - 建立最终删除清单：server/cmd、internal、pkg、Go generated/query、Go tests/testutil、go.mod/go.sum、Docker/CI/release 引用。
 - 删除前必须通过全仓 import/call/reference 搜索、Rust production build、部署 smoke、回滚演练和完整测试。
@@ -346,3 +379,26 @@ profile 能力和管理端口边界：
 - 验证状态：`cordy-util` 22 个测试通过，其中新增 logger precedence/default
   矩阵 3 个通过；受影响包的 workspace 检查继续记录既有 Slack exhaustiveness
   与 daemon 编译基线错误，不因环境/基线问题伪报全绿。
+
+## 14. AUDIT-003 执行更新：Rust squad avatar contract
+
+后续切片 `codex/cord-191-squad-avatar-rust` 收口 Go squad CRUD 对 avatar
+对象 URL 的读写契约：
+
+- Go 能力：`server/internal/handler/squad.go` 的 `squadToResponse`、
+  `CreateSquad` 和 `UpdateSquad` 会分别解析、规范化并校验 `avatar_url`；Rust
+  现在复用同一套已迁移的 avatar capability。
+- Rust 入口：`cordy-handler::squad::SquadResponse::from_state` 调用
+  `cordy-handler::avatar::resolve_url`；创建和更新调用异步
+  `cordy-handler::avatar::accept_url`，保留私有对象签名、存储归属、图片扩展名
+  和 standalone upload 校验。
+- 生产路径状态：Rust squad list/get/create/update 的 avatar 路径已接线；默认
+  Rust server 已由前序 AUDIT-001 切片作为后端生产入口。真实对象存储 provider
+  的完整 smoke 矩阵仍在 AUDIT-004。
+- Go 是否可下线：否。Go handler、发布/安装链路、其余 leaf contract 和最终全仓
+  Go 退休门槛仍未完成。
+- 验证状态：触及文件的 `rustfmt --check` 和 `git diff --check` 已通过；仓库级
+  `cargo fmt --all -- --check` 仍被既有 `cordy-agent` 格式差异阻断。
+  `cargo test --offline -p cordy-handler --lib` 未通过，但只暴露了依赖图中既有的
+  `cordy-daemon` 7 个编译错误和 `cordy-slack` 1 个 exhaustiveness 错误，未出现
+  squad/avatar 本切片错误。Volta 的 review/fix 继续异步，不作为提交或 PR 前置条件。
