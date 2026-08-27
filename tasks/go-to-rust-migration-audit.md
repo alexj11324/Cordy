@@ -1145,3 +1145,9 @@ Homebrew 和 multi-arch backend image 都依赖同一 verify job。
   异常阻断发布；runbook 把全部 container assets 说成 Rust binary 过宽，web image 仍是
   Next.js/Node。两项已交独立 fixer；其余 Go toolchain 退出、migration/tests/全部 production
   binary gate、downstream dependency、tag-scoped fail-closed bypass 与 Ponytail 核对无 finding。
+- verifier 对未变 workflow 通过 diff、Psych YAML、tag/stable 逻辑、Go command absence 与
+  downstream `needs.verify` 静态检查；发现 release-blocking 缺口：`cargo run --locked
+  -p cordy-migrate -- up` 因 package 有四个 bin 无法选择 executable，必须显式 `--bin
+  cordy-migrate`。workspace tests 与 production release build 仍被继承 #544 的 7 处
+  `GcMetaKind` E0433 阻断、实际 0 tests；DB migration、RustSec action 均未在本地完成。
+  新缺口和 reviewer finding 已合并交独立 fixer。
