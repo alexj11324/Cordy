@@ -1873,3 +1873,12 @@ framework、repository、service 或 test-only production seam：
 `codex/cord-229-issue-status-production-contract-rust` 创建并明确以 #564 branch 为 base；独立 verifier/reviewer
 已异步派发，fixer 尚未接收 finding。因此当前只能标记为 implementation delivered/pending async evidence，不能
 声称已验证，也不能删除 Go。
+
+独立 verifier 在精确 HEAD `3e8fff848d9cb9929502fb8309a1058205b28e47` 完成首轮机械验证：worktree/range
+`git diff --check`、base ancestry 和 Cargo.lock 未变化均 PASS；fixed stable rustfmt 对本 PR 新增 test code 返回
+exit 1。`cargo metadata --locked --offline`、handler no-run、Rust server/Windows check 和三个 exact test 都被继承
+#563 的 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断并返回 exit 101，三个 filter 均 matched/executed/ignored
+`0/0/0`，不能记为通过。环境没有 `DATABASE_URL`、`psql` 或 `pg_isready`，两个真实 DB case 未执行；其 optional
+fixture 即使 harness 可启动也会明确 self-return，不能凭进程 exit 0 误报 contract PASS。production router、事务
+commit 后 publish 只有静态确认。direct rustfmt failure 与继承 resolver blocker 已交独立 fixer；review 仍异步，
+PR 保持 Ready，原始失败记录不得删除。
