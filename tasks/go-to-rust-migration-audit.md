@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP production task chain 已交付；当前选择 local-skills 完整 heartbeat 契约 | 接通并直接证明 list/import、batch compatibility、filesystem discovery 与 retrying result report 的生产链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#547，可执行 | PR #542..#547/当前切片；§5.2、§6.2、§29..§35 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP 与 local-skills heartbeat production chain 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#548，可执行 | PR #542..#548；§5.2、§6.2、§29..§35 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -861,6 +861,11 @@ reader。缺失、坏 metadata 仍走既有 mtime fallback；unknown kind 保留
   `gc.rs` import ordering 失败；两个 exact filter 均在编译期失败，因为共享类型已改名为
   `GCMetaKind`，测试仍有 7 处 `GcMetaKind`（E0433）。因此没有测试体执行，daemon
   locked/offline no-run 与 disk-usage 验证也被阻断；这些编译/格式问题已交独立 fixer。
+- fixer commit `1dcc92db` 已推送到 PR #544：修正全部 7 处 type name 与格式问题，并把
+  安全检查改为写真实 unknown/local `.gc_meta.json`、旧 mtime、非零 TTL，再调用 production
+  `should_clean_task_dir` 断言只清 managed artifacts。两个 exact 分别 1/1（441 filtered），
+  daemon locked/offline no-run、targeted rustfmt 与 diff check 通过；早期 0-test/compile failure
+  历史保留。
 
 ## 32. AUDIT-005 执行缺口：runtime MCP production merge
 
@@ -980,6 +985,10 @@ provider execution 与 environment finalization 结束；`Drop` 覆盖所有早�
   直接协议检查注入 test invoker 且未经过 production adapter/真实 Client/effective config，
   不能证明完整 production wiring。三项均已交独立 fixer；其余 client secret 边界、overlay
   precedence、owner/Drop 生命周期、既有协议限制和 Ponytail 核对无 finding。
+- verifier 在 branch head `fa1f8c05` 通过 diff check 并确认 assembly→production adapter
+  调用链；fixed-stable rustfmt 在两个改动文件失败。两个新增 exact 与 daemon no-run 因该
+  堆叠分支尚未传播 #544 的 7 处 E0433 修复而均为 0-test/compile blocked，不能记录通过；
+  已交独立 fixer随 #547 findings 一并处理。
 
 ## 35. AUDIT-005 执行缺口：local-skills heartbeat list/import/report contract
 
@@ -996,6 +1005,18 @@ provider execution 与 environment finalization 结束；`Drop` 覆盖所有早�
   不一致。不能只删注释；本切片必须把 list、singular/batch import 兼容、真实 filesystem
   payload、report path/retry/cancel 和 unknown-runtime drop 作为一个契约收口。
 
-编码前约束：复用现有 handler、Client retry、runtime registry 和 filesystem 实现；只允许为
-真实 production HTTP/heartbeat 边界补最小可控检查，不新增第二套 dispatcher、client、store、
-parser、registry 或 filesystem abstraction。实现、Ready PR、verification/review/fix 尚未产生。
+Ready PR #548（`codex/cord-212-local-skills-heartbeat-contract-rust`，gap commit
+`ba6fedac`，implementation commit `121a2066`）不重复实现已经存在的生产代码，而是用一条
+直接检查穿过 authoritative registry、真实 production adapter、Grok filesystem root、list、
+batch 与 singular import、完整 bundle、真实 Client result path 和 HTTP 500 retry；另确认 batch
+存在时忽略旧 singular 字段、unknown runtime 不产生请求。过期的 module-level S9 wiring allow
+已删除。
+
+- 默认生产路径：Rust heartbeat owner 已调用该 adapter；检查直接调用同一 trait method，删除
+  production spawn/report 调用会失败，不再以孤立 helper 测试代替生产证据。
+- Stub/Noop/Fake：生产路径无 Stub/Noop/Fake；loopback HTTP 与 temp filesystem 仅属检查。
+- Go 是否可下线：此 local-skills 能力已迁移并接线，但 AUDIT-005 其余 daemon 能力和最终
+  AUDIT-001..010 门未完成。
+- 异步状态：verification 与 reviewer 已派发前状态为 pending，fixer 尚无本 PR finding。主
+  agent 仅运行并通过 `git diff --check`，未把编译、测试、rustfmt 或 HTTP 行为记录为通过。
+  PR 明确堆叠在 Ready PR #547；#544 fix 尚需传播到这条堆叠分支。
