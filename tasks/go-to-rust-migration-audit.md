@@ -2063,3 +2063,10 @@ counts、真实 migrated DB、server/Windows build 与 failure-safe cleanup 行�
 
 非 Draft Ready PR #568 已创建，base 是 #567 branch；Ready SHA `e058e8b4`。独立 verifier/reviewer 已异步派发，
 fixer 尚无本 PR finding。PR 可在异步验证、review、fix 期间保持 Ready，主迁移线不等待。
+
+独立 verifier 在 exact HEAD `3d448d163b8a6fb433a911fc007b9255210a8970` 上确认 clean worktree、base ancestry、
+range/worktree diff check和 Cargo.lock 未变化通过；本切片 direct scheduler rustfmt 失败。继承自 #563 的非法
+`hyper-util/runtime` feature 令 locked/offline metadata、scheduler no-run、server/Windows build和三个 exact tests 全部
+exit 101，三个 exact 均 matched/executed/passed/failed 0/0/0/0，不能记为通过。环境无 `DATABASE_URL`、psql或
+pg_isready；required DB fixture静态确认缺配置会失败而非 skip，但真实 rows、并发 claim、retry、lease fencing、shutdown与
+cleanup均未执行。#567 stale lock/rustfmt 仍是继承问题。direct rustfmt finding 已异步交 fixer；review 仍在进行，PR保持Ready。
