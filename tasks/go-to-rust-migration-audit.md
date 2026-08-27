@@ -676,8 +676,9 @@ outbound 和 shutdown wiring，不增加生产抽象：
 
 ## 25. AUDIT-004 执行更新：Composio production configuration contract
 
-Ready PR #538（`codex/cord-202-composio-production-contract-rust`，commit
-`711940c4`）直接执行 Composio 的 production HandlerState 选择路径，复用现有
+Ready PR #538（`codex/cord-202-composio-production-contract-rust`，implementation
+commit `711940c4`，fixer commit `68c903a0`）直接执行 Composio 的 production
+HandlerState 选择路径，复用现有
 feature flag、ClientBuilder、Service、HTTP state 和 TaskService overlay，不新增
 生产 factory 或配置抽象：
 
@@ -693,9 +694,13 @@ feature flag、ClientBuilder、Service、HTTP state 和 TaskService overlay，�
   `https://backend.composio.dev/api/v3.1`，有效配置不会选择 Stub、Noop 或 Fake。
 - Go 是否可下线：否。Composio 选择路径已形成直接 Rust 证据，但 VCS、GitHub
   snapshot、真实外部凭证 smoke 和 AUDIT-001..010 最终门仍未完成。
-- 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查
-  记录为通过；fixer 尚未派发。该 PR 堆叠在 Telegram PR #536，base 中已知的
-  Telegram server-test `base64` 编译错误正由独立 fixer 处理。
+- 异步状态：独立 verification 在 `c6c6f27e` 上确认 fixed stable rustfmt 和
+  `git diff --check` 通过，但精确测试实际运行 1 个并因缺 Tokio context 以 0/1
+  失败。reviewer 报告初始化错误被吞、缺 `JWT_SECRET` fallback 覆盖、进程环境未
+  串行隔离。独立 fixer commit `68c903a0` 做最小修复；fixer 自测 exact offline/
+  locked 为 1 passed、0 failed、382 filtered，targeted rustfmt 与 diff check 通过。
+  独立 verification/reviewer 对该 commit 的复验仍在队列，不能用 fixer 自测替代。
+  上游 Telegram compile 问题已由 PR #536 fixer commit `62e7f3d5` 修复。
 
 ## 26. AUDIT-004 执行更新：VCS production configuration contract
 
