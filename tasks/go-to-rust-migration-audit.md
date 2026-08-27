@@ -717,5 +717,14 @@ HandlerState、handler 和 `cordy_vcs` provider，不增加新 registry 或兼�
 - Go 是否可下线：否。VCS boot gate 已有直接 Rust 证据，但 provider 外部 HTTP/
   webhook smoke、GitHub snapshot、其余 AUDIT-004 退出证据和 AUDIT-001..010 最终门
   仍未完成。
-- 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
-  通过；fixer 尚未派发。PR 堆叠在 Composio PR #538。
+- Reviewer/fixer：reviewer 发现通用 `env_str` 会 trim VCS flag，使 raw ` true `
+  错误启用；key/SecretBox 的 `.ok()` 还会静默丢弃错误，原测试也只断言配置字段且
+  手工构造 Config。fixer 仅为该 flag 保留 raw env 值，启用时对 key 初始化错误记录
+  warning 并保持 `None` fail-closed；测试使用真实 `Config::load`、crate 共享 env mutex
+  与 RAII restore，执行 HandlerState/router 的 disabled 404、enabled/no-box 503，并以
+  有效 key 做 SecretBox 加密 roundtrip。
+- 验证：初始 server exact test/no-run 被堆叠 base 的 Telegram `base64` E0432/E0433
+  阻断，0 tests；原样传播已验证 fix `62e7f3d5` 后首次重跑又因 ENOSPC 在依赖编译
+  阶段退出，仍为 0 tests。仅清理已完成 #538 worktree 的 1.5 GiB 可重建 target
+  缓存后，精确 offline/locked VCS 测试通过（1 passed、0 failed、25 filtered）；
+  targeted stable rustfmt 与 `git diff --check` 通过。

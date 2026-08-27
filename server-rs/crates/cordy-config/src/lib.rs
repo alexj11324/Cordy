@@ -205,6 +205,12 @@ fn env_str(slot: &mut Option<String>, key: &str) {
     }
 }
 
+fn env_raw(slot: &mut Option<String>, key: &str) {
+    if let Ok(value) = std::env::var(key) {
+        *slot = Some(value);
+    }
+}
+
 fn env_u32(slot: &mut Option<u32>, key: &str) -> anyhow::Result<()> {
     if let Ok(v) = std::env::var(key) {
         let v = v.trim().to_string();
@@ -373,7 +379,7 @@ impl Config {
             "CORDY_WECOM_MEDIA_ALLOW_CIDRS",
         );
         env_str(&mut self.integrations.wecom_trace, "CORDY_WECOM_TRACE");
-        env_str(
+        env_raw(
             &mut self.integrations.vcs_integration_enabled,
             "CORDY_VCS_INTEGRATION_ENABLED",
         );

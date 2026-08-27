@@ -14,6 +14,9 @@ mod channel_runtime;
 mod profiling;
 mod realtime_runtime;
 
+#[cfg(test)]
+static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
@@ -91,9 +94,23 @@ impl ProfilingRuntime {
 impl VcsWebhookConfig {
     fn from_config(cfg: &cordy_config::Config) -> Self {
         let enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
-        let secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
-            .ok()
-            .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
+        let secret_box = if enabled {
+            match cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY") {
+                Ok(key) => match cordy_util::secretbox::SecretBox::new(&key) {
+                    Ok(secret_box) => Some(secret_box),
+                    Err(error) => {
+                        tracing::warn!(%error, "CORDY_VCS_SECRET_KEY cannot initialize SecretBox");
+                        None
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(%error, "CORDY_VCS_SECRET_KEY is not usable");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         Self {
             enabled,
             secret_box,
@@ -843,6 +860,34 @@ mod tests {
     use tokio::sync::Notify;
     use tower::ServiceExt;
 
+    const VCS_ENV: [&str; 2] = ["CORDY_VCS_INTEGRATION_ENABLED", "CORDY_VCS_SECRET_KEY"];
+
+    struct RestoreVcsEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl RestoreVcsEnv {
+        fn clear() -> Self {
+            let original = VCS_ENV
+                .into_iter()
+                .map(|name| (name, std::env::var_os(name)))
+                .collect();
+            for name in VCS_ENV {
+                std::env::remove_var(name);
+            }
+            Self(original)
+        }
+    }
+
+    impl Drop for RestoreVcsEnv {
+        fn drop(&mut self) {
+            for (name, value) in self.0.drain(..) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+    }
+
     struct DropSignal(Arc<AtomicBool>);
 
     impl Drop for DropSignal {
@@ -861,42 +906,71 @@ mod tests {
         )
     }
 
-    #[test]
-    fn vcs_production_configuration_matches_go_exact_true_and_fails_closed() {
-        const KEY_ENV: &str = "CORDY_VCS_SECRET_KEY";
-        let original = std::env::var_os(KEY_ENV);
-        let mut cfg = cordy_config::Config::default();
+    #[tokio::test]
+    async fn vcs_production_configuration_matches_go_exact_true_and_fails_closed() {
+        let _lock = ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _env = RestoreVcsEnv::clear();
+        let request = || {
+            Request::post("/api/webhooks/vcs/00000000-0000-0000-0000-000000000000")
+                .body(Body::empty())
+                .unwrap()
+        };
+        let router = |vcs: VcsWebhookConfig| {
+            let state = cordy_handler::HandlerState::new(
+                sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+                cordy_auth::pat_cache::PatCache::disabled(),
+                None,
+            )
+            .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
+            cordy_handler::build_router_from_state(state)
+        };
 
-        std::env::remove_var(KEY_ENV);
-        cfg.integrations.vcs_integration_enabled = Some("1".into());
-        let noncanonical_flag = VcsWebhookConfig::from_config(&cfg);
-        assert!(!noncanonical_flag.enabled);
-        assert!(noncanonical_flag.secret_box.is_none());
+        std::env::set_var("CORDY_VCS_INTEGRATION_ENABLED", " true ");
+        std::env::set_var(
+            "CORDY_VCS_SECRET_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        );
+        let whitespace_flag =
+            VcsWebhookConfig::from_config(&cordy_config::Config::load(None).unwrap());
+        assert!(!whitespace_flag.enabled);
+        assert_eq!(
+            router(whitespace_flag)
+                .oneshot(request())
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::NOT_FOUND
+        );
 
-        cfg.integrations.vcs_integration_enabled = Some("true".into());
-        let missing_key = VcsWebhookConfig::from_config(&cfg);
+        std::env::set_var("CORDY_VCS_INTEGRATION_ENABLED", "true");
+        std::env::remove_var("CORDY_VCS_SECRET_KEY");
+        let missing_key = VcsWebhookConfig::from_config(&cordy_config::Config::load(None).unwrap());
         assert!(missing_key.enabled);
-        assert!(missing_key.secret_box.is_none());
+        assert_eq!(
+            router(missing_key)
+                .oneshot(request())
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
 
-        std::env::set_var(KEY_ENV, "not-base64");
-        let invalid_key = VcsWebhookConfig::from_config(&cfg);
+        std::env::set_var("CORDY_VCS_SECRET_KEY", "not-base64");
+        let invalid_key = VcsWebhookConfig::from_config(&cordy_config::Config::load(None).unwrap());
         assert!(invalid_key.enabled);
         assert!(invalid_key.secret_box.is_none());
 
-        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        let configured = VcsWebhookConfig::from_config(&cfg);
+        std::env::set_var(
+            "CORDY_VCS_SECRET_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        );
+        let configured = VcsWebhookConfig::from_config(&cordy_config::Config::load(None).unwrap());
         assert!(configured.enabled);
-        assert!(configured.secret_box.is_some());
-
-        cfg.integrations.vcs_integration_enabled = Some("false".into());
-        let disabled = VcsWebhookConfig::from_config(&cfg);
-        assert!(!disabled.enabled);
-        assert!(disabled.secret_box.is_some());
-
-        match original {
-            Some(value) => std::env::set_var(KEY_ENV, value),
-            None => std::env::remove_var(KEY_ENV),
-        }
+        let secret_box = configured.secret_box.expect("valid VCS SecretBox");
+        let ciphertext = secret_box.seal(b"vcs-token").unwrap();
+        assert_eq!(secret_box.open(&ciphertext).unwrap(), b"vcs-token");
     }
 
     #[tokio::test]
