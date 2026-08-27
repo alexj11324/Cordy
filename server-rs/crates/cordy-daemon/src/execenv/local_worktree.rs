@@ -36,12 +36,16 @@
 //!   since anyhow::Error is not Clone and the value is only ever displayed.
 
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail};
+use sha2::{Digest, Sha256};
 use tokio::process::Command;
+
+use crate::repocache::Ctx;
 
 use super::execenv::join_path;
 use super::git::{sanitize_name, task_key};
@@ -88,6 +92,164 @@ fn git_root_locks() -> &'static std::sync::Mutex<HashMap<String, Arc<tokio::sync
 
 type GitRootGuard = tokio::sync::OwnedMutexGuard<()>;
 
+/// A lock that is visible to every Cordy process on this machine. The
+/// in-process mutex above protects one daemon's async tasks, but preparation
+/// now runs in a child process while finalize/discard run in the daemon. A
+/// kernel-held file lock keeps those phases serialized across that boundary
+/// and is released automatically if either process dies.
+#[derive(Debug)]
+pub(crate) struct RepositoryLock {
+    file: File,
+    process_guard: Option<GitRootGuard>,
+}
+
+impl RepositoryLock {
+    pub(crate) async fn acquire(git_root: &str, ctx: Option<&Ctx>) -> anyhow::Result<Arc<Self>> {
+        let path = repository_lock_path(git_root);
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("execenv: repository lock path has no parent"))?;
+        std::fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // The directory is shared by daemon processes of the same user;
+            // do not leave lock names readable or replaceable by other users.
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| anyhow!(error).context("execenv: open repository lock"))?;
+        // Take the local mutex before waiting on the kernel lock. The guard is
+        // kept with the returned lock so same-daemon direct callers and the
+        // isolated parent use one consistent lock ordering.
+        let (_lock, process_guard) = lock_git_root(git_root).await;
+
+        loop {
+            match try_lock_file(&file) {
+                Ok(true) => {
+                    return Ok(Arc::new(Self {
+                        file,
+                        process_guard: Some(process_guard),
+                    }));
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    return Err(anyhow!(error).context("execenv: lock repository"));
+                }
+            }
+
+            let delay = tokio::time::sleep(Duration::from_millis(50));
+            tokio::pin!(delay);
+            if let Some(ctx) = ctx {
+                tokio::select! {
+                    _ = &mut delay => {}
+                    _ = ctx.cancelled() => return Err(anyhow!(ctx.cause().to_string())),
+                }
+            } else {
+                delay.await;
+            }
+        }
+    }
+}
+
+impl Drop for RepositoryLock {
+    fn drop(&mut self) {
+        unlock_file(&self.file);
+    }
+}
+
+/// Acquires the same cross-process repository lock the isolated preparation
+/// parent keeps until its returned worktree is finalized or discarded.
+pub(crate) async fn acquire_repository_lock_for_path(
+    ctx: &Ctx,
+    local_path: &str,
+) -> anyhow::Result<Arc<RepositoryLock>> {
+    let git_root = resolve_git_root(local_path).await?;
+    RepositoryLock::acquire(&git_root, Some(ctx)).await
+}
+
+pub(crate) fn repository_lock_path(git_root: &str) -> PathBuf {
+    let digest = Sha256::digest(git_root.as_bytes());
+    std::env::temp_dir()
+        .join("cordy-git-worktree-locks")
+        .join(format!("{}.lock", hex::encode(digest)))
+}
+
+#[cfg(unix)]
+pub(crate) fn try_lock_file(file: &File) -> std::io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if result == 0 {
+        return Ok(true);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::EAGAIN)
+        || error.raw_os_error() == Some(libc::EACCES)
+    {
+        Ok(false)
+    } else {
+        Err(error)
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn unlock_file(file: &File) {
+    use std::os::fd::AsRawFd;
+    let _ = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+}
+
+#[cfg(windows)]
+pub(crate) fn try_lock_file(file: &File) -> std::io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+
+    let mut overlapped = OVERLAPPED::default();
+    let result = unsafe {
+        LockFileEx(
+            file.as_raw_handle(),
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            1,
+            0,
+            &mut overlapped,
+        )
+    };
+    if result != 0 {
+        return Ok(true);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(33) {
+        Ok(false)
+    } else {
+        Err(error)
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn unlock_file(file: &File) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+
+    let mut overlapped = OVERLAPPED::default();
+    let _ = unsafe { UnlockFileEx(file.as_raw_handle(), 0, 1, 0, &mut overlapped) };
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn try_lock_file(_file: &File) -> std::io::Result<bool> {
+    Ok(true)
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn unlock_file(_file: &File) {}
+
 /// Locks the per-repo mutex and returns the guard; callers hold it for the
 /// duration of their git admin operations (Go's `defer unlock()`).
 async fn lock_git_root(git_root: &str) -> (Arc<tokio::sync::Mutex<()>>, GitRootGuard) {
@@ -124,7 +286,7 @@ pub struct LocalWorktreeParams {
 
 /// LocalWorktree is a prepared worktree plus everything the daemon needs to
 /// finalize it after the agent exits.
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct LocalWorktree {
     /// GitRoot is the user's repository root — the repo that owns the branch.
@@ -154,6 +316,16 @@ pub struct LocalWorktree {
     /// the committed branch wrong (see AbortWithReason).
     #[serde(skip)]
     pub(crate) aborted: Option<String>,
+    /// Cross-process repository lock held from preparation through finalize or
+    /// discard. It is intentionally absent from the wire representation: the
+    /// isolated parent attaches its own lock after decoding the helper result.
+    #[serde(skip)]
+    pub(crate) repository_lock: Option<Arc<RepositoryLock>>,
+    /// True when the lock is owned by the isolated daemon parent. This marker
+    /// lets helper-side rollback use the parent's lock without attempting to
+    /// reacquire it after a preparation error.
+    #[serde(skip)]
+    pub(crate) cross_process_lock_held: bool,
     /// UntrackedCopied / UntrackedSkipped report the untracked-file replay.
     /// A non-zero skip count means the bounds below were hit and the agent is
     /// looking at less than the user has on disk; it is logged at warn level so
@@ -163,6 +335,22 @@ pub struct LocalWorktree {
     #[serde(rename = "UntrackedSkipped")]
     pub untracked_skipped: i32,
 }
+
+impl PartialEq for LocalWorktree {
+    fn eq(&self, other: &Self) -> bool {
+        self.git_root == other.git_root
+            && self.path == other.path
+            && self.work_dir == other.work_dir
+            && self.branch == other.branch
+            && self.base_commit == other.base_commit
+            && self.dirty_base_captured == other.dirty_base_captured
+            && self.aborted == other.aborted
+            && self.untracked_copied == other.untracked_copied
+            && self.untracked_skipped == other.untracked_skipped
+    }
+}
+
+impl Eq for LocalWorktree {}
 
 /// LocalWorktreeOutcome is what a finished worktree task delivered.
 #[derive(Debug, Clone, Default)]
@@ -189,6 +377,23 @@ pub struct LocalWorktreeOutcome {
 /// dirty state is read through `git stash create`, which builds a commit object
 /// without touching the index or the files on disk.
 pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Result<LocalWorktree> {
+    prepare_local_worktree_inner(params, false).await
+}
+
+/// Variant used by the isolated helper when the daemon parent already owns
+/// the repository lock. The helper still uses its process-local mutex for its
+/// own git operations, but must not attempt to acquire a second kernel lock
+/// that the parent intentionally holds across the helper boundary.
+pub(crate) async fn prepare_local_worktree_without_cross_process_lock(
+    params: LocalWorktreeParams,
+) -> anyhow::Result<LocalWorktree> {
+    prepare_local_worktree_inner(params, true).await
+}
+
+async fn prepare_local_worktree_inner(
+    params: LocalWorktreeParams,
+    cross_process_lock_already_held: bool,
+) -> anyhow::Result<LocalWorktree> {
     if params.local_path.is_empty() {
         bail!("execenv: local worktree requires a local path");
     }
@@ -231,10 +436,24 @@ pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Resu
 
     let worktree_path = join_path(&[&params.env_root, LOCAL_WORKTREE_DIR_NAME]);
 
-    // Everything below mutates the repo's worktree admin state, so take the
-    // per-repo lock first — including the stale-path cleanup, which runs `git
-    // worktree remove` and would otherwise race a sibling task's `worktree add`.
-    let (_lock, _guard) = lock_git_root(&git_root).await;
+    // Everything below mutates the repo's worktree admin state, so take both
+    // per-process and cross-process locks first — including stale-path
+    // cleanup, which runs `git worktree remove` and would otherwise race a
+    // sibling task's `worktree add`.
+    // The parent owns the kernel lock in the isolated-helper case. Keep this
+    // helper's process-local guard for the duration of its own git admin
+    // operations; direct callers use the combined lock below instead.
+    let _local_process_guard = if cross_process_lock_already_held {
+        let (_lock, guard) = lock_git_root(&git_root).await;
+        Some(guard)
+    } else {
+        None
+    };
+    let repository_lock = if cross_process_lock_already_held {
+        None
+    } else {
+        Some(RepositoryLock::acquire(&git_root, None).await?)
+    };
 
     if Path::new(&worktree_path).symlink_metadata().is_ok() {
         // Prepare wipes and recreates envRoot, so an existing worktree path
@@ -301,6 +520,8 @@ pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Resu
         work_dir: join_path(&[&worktree_path, &rel]),
         branch: actual_branch.clone(),
         base_commit: head_sha,
+        repository_lock,
+        cross_process_lock_held: cross_process_lock_already_held,
         ..Default::default()
     };
 
@@ -412,6 +633,14 @@ pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Resu
 // ---------------------------------------------------------------------------
 
 impl LocalWorktree {
+    /// Attaches the daemon-owned lock after an isolated helper's wire result
+    /// has been decoded. The lock then stays alive with this worktree until
+    /// finalize/discard returns.
+    pub(crate) fn attach_repository_lock(&mut self, lock: Arc<RepositoryLock>) {
+        self.repository_lock = Some(lock);
+        self.cross_process_lock_held = true;
+    }
+
     /// Finalize commits whatever the agent left behind, removes the worktree,
     /// and reports the branch. Called after the agent exits, before the env
     /// root is handed to the GC.
@@ -431,7 +660,16 @@ impl LocalWorktree {
     /// registered in the user's repo, so `git worktree list` points straight
     /// at it.
     pub async fn finalize(&self) -> anyhow::Result<LocalWorktreeOutcome> {
-        let (_lock, _guard) = lock_git_root(&self.git_root).await;
+        // Normal production worktrees carry the parent/helper-spanning lock.
+        // Reacquire it only for a deserialized or legacy value that has no
+        // attached handle, so finalize remains safe for direct callers too.
+        let _fallback_repository_lock = if self.repository_lock.is_none()
+            && !self.cross_process_lock_held
+        {
+            Some(RepositoryLock::acquire(&self.git_root, None).await?)
+        } else {
+            None
+        };
 
         let mut outcome = LocalWorktreeOutcome {
             branch: self.branch.clone(),
@@ -540,7 +778,23 @@ impl LocalWorktree {
     /// that preserves work; this one assumes there is none to preserve, so
     /// callers must be sure nothing has run in the worktree yet.
     pub async fn discard(&self) {
-        let (_lock, _guard) = lock_git_root(&self.git_root).await;
+        let _fallback_repository_lock = if self.repository_lock.is_none()
+            && !self.cross_process_lock_held
+        {
+            match RepositoryLock::acquire(&self.git_root, None).await {
+                Ok(lock) => Some(lock),
+                Err(error) => {
+                    tracing::warn!(
+                        git_root = %self.git_root,
+                        error = %format!("{error:#}"),
+                        "execenv: could not acquire repository lock while discarding worktree"
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let _ = remove_local_worktree_dir(&self.git_root, &self.path).await;
         let _ = delete_branch(&self.git_root, &self.branch).await;
         tracing::info!(

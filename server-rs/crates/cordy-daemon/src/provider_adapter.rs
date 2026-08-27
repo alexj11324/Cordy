@@ -7,6 +7,7 @@
 //! worktree before returning the normalized result.
 
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -904,17 +905,13 @@ impl ProductionProviderAdapter {
             }
         }
         plan.drop_resume();
-        tokio::select! {
-            result = prepare_isolated(ctx, &helper_command, plan.prepare_params()) => {
-                if let Some(cause) = ctx.err() {
-                    Err(anyhow::anyhow!(cause.to_string()))
-                } else {
-                    result
-                        .map(|environment| (environment, false))
-                        .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}"))
-                }
-            },
-            () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
+        let result = prepare_isolated(ctx, &helper_command, plan.prepare_params()).await;
+        if let Some(cause) = ctx.err() {
+            Err(anyhow::anyhow!(cause.to_string()))
+        } else {
+            result
+                .map(|environment| (environment, false))
+                .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}"))
         }
     }
 }
@@ -923,12 +920,12 @@ impl ProductionProviderAdapter {
 /// production Prepare/Reuse call. The helper is the Rust `cordy` executable
 /// itself; its private argv is handled before normal CLI parsing, so the
 /// daemon never runs filesystem-heavy preparation in its task process.
-fn preparation_helper_command() -> anyhow::Result<Vec<String>> {
+fn preparation_helper_command() -> anyhow::Result<Vec<OsString>> {
     let executable = std::env::current_exe()
         .context("resolve cordy executable for execution-environment helper")?;
     Ok(vec![
-        executable.to_string_lossy().into_owned(),
-        PREPARATION_HELPER_ARG.to_string(),
+        executable.into_os_string(),
+        OsString::from(PREPARATION_HELPER_ARG),
     ])
 }
 
