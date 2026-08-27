@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==========================================================================
-# Full verification pipeline: typecheck → unit tests → Go tests → Rust build → E2E
+# Full verification pipeline: typecheck → unit tests → Rust tests → Go compatibility → Rust build → E2E
 # Usage: bash scripts/check.sh
 # ==========================================================================
 
@@ -91,14 +91,16 @@ echo "==> [2/5] TypeScript unit tests..."
 pnpm test || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
-# Step 3: Go tests
+# Step 3: Rust tests and Go compatibility tests
 # --------------------------------------------------------------------------
 echo ""
-echo "==> [3/5] Go tests..."
+echo "==> [3/6] Applying Rust migrations..."
+./scripts/run-rust-server.sh run --locked -p cordy-migrate -- up || { EXIT_CODE=1; exit 1; }
+echo "==> Rust workspace tests..."
+(cd server-rs && cargo test --workspace --all-targets --locked) || { EXIT_CODE=1; exit 1; }
+echo "==> Go compatibility tests..."
 echo "==> Verifying Go test wrapper..."
 bash scripts/test-go.test.sh || { EXIT_CODE=1; exit 1; }
-echo "==> Running database migrations..."
-./scripts/run-rust-server.sh run --locked -p cordy-migrate -- up || { EXIT_CODE=1; exit 1; }
 bash scripts/test-go.sh || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------

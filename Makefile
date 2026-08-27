@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build rust-build go-build test migrate-up migrate-down rust-migrate-up rust-migrate-down go-migrate-up go-migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build rust-build go-build test rust-test go-test migrate-up migrate-down rust-migrate-up rust-migrate-down go-migrate-up go-migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -192,7 +192,7 @@ stop: ## Stop backend and frontend processes for the current checkout
 			echo "✓ App processes stopped. Remote PostgreSQL was not affected." ;; \
 	esac
 
-check: ## Run typecheck, TS tests, Go tests, and Playwright E2E for the current checkout
+check: ## Run typecheck, TS tests, Rust tests, Go compatibility tests, and Playwright E2E
 	$(REQUIRE_ENV)
 	@ENV_FILE="$(ENV_FILE)" bash scripts/check.sh
 
@@ -332,7 +332,15 @@ go-build: ## Build the legacy Go server, CLI, and migrate binaries into server/b
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/cordy$(EXE) ./cmd/cordy
 	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
 
-test: ## Run Go tests after ensuring the target DB exists and migrations are applied
+test: rust-test go-test ## Run Rust workspace and Go compatibility tests after ensuring the target DB exists and migrations are applied
+
+rust-test: ## Run Rust workspace tests after ensuring the target DB exists and migrations are applied
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_MIGRATE_CMD) up
+	cd server-rs && cargo test --workspace --all-targets --locked
+
+go-test: ## Run legacy Go compatibility tests after ensuring the target DB exists and migrations are applied
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	$(RUST_MIGRATE_CMD) up

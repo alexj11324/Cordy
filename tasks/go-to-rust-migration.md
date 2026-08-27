@@ -44,7 +44,7 @@ auth/            1,343   JWT + PAT + CloudFront signer
 ## 二、测试评估与验证策略
 
 ### 现状
-- 测试为**集成测试风格**：`make test` = ensure-postgres.sh → migrate up → `go test --race`
+- 测试为**集成测试风格**：`make test` = Rust migrate up → `cargo test --workspace --all-targets --locked` → Go 兼容性回归；Rust-only 迭代使用 `make rust-test`，`make check` 也运行两套测试
 - `testutil/` 提供 DB Fixture（Insert/Cleanup/Count）+ HTTP 测试工具
 - 无 mock 泛滥问题——直接打真库
 

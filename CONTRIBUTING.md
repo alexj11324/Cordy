@@ -284,6 +284,8 @@ make stop
 make check
 make dev
 make test
+make rust-test
+make go-test
 make migrate-up
 make migrate-down
 ```
@@ -300,6 +302,8 @@ The following commands all ensure the target database exists before they continu
 - `make start`
 - `make dev`
 - `make test`
+- `make rust-test`
+- `make go-test`
 - `make migrate-up`
 - `make migrate-down`
 - `make check`
@@ -307,6 +311,10 @@ The following commands all ensure the target database exists before they continu
 That logic lives in `scripts/ensure-postgres.sh`.
 
 ## Testing
+
+`make test` runs both the Rust workspace and Go compatibility suites. Use
+`make rust-test` for Rust-only iteration or `make go-test` for the explicit Go
+compatibility suite; `make check` also runs both as part of full verification.
 
 Run all local checks:
 
@@ -324,12 +332,13 @@ This runs:
 
 1. TypeScript typecheck
 2. TypeScript unit tests
-3. Go tests
-4. Playwright E2E tests
+3. Rust workspace tests
+4. Go compatibility tests
+5. Playwright E2E tests
 
 Notes:
 
-- Go tests create their own fixture data
+- Rust and Go tests create their own fixture data
 - E2E tests create their own workspace and issue fixtures
 - the check flow starts backend/frontend only if they are not already running
 
