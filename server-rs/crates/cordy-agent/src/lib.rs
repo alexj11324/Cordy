@@ -11,6 +11,7 @@ pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
+pub mod cursor;
 pub mod deveco;
 pub mod dsh;
 pub mod mcp;
@@ -33,6 +34,7 @@ pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+pub use cursor::{build_cursor_args, CursorBackend, CursorConfig};
 pub use deveco::{build_deveco_args, DevecoBackend, DevecoConfig};
 pub use dsh::{build_dsh_args, DshBackend, DshConfig};
 pub use model::{Catalog, CatalogCache, Model, ModelServiceTier, ModelThinking, ThinkingLevel};
