@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use base64::Engine;
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
-use hyper_util::client::proxy::matcher::{Intercept, Matcher};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -281,24 +281,16 @@ impl DaemonControl {
         let connect = async {
             if let Some(proxy) = environment_proxy_for_target(request.uri())? {
                 let tunnel = open_wakeup_proxy_tunnel(&proxy, request.uri()).await?;
-                tokio_tungstenite::client_async_tls_with_config(
-                    request,
-                    tunnel,
-                    Some(config),
-                    None,
-                )
-                .await
-                .map_err(anyhow::Error::from)
+                tokio_tungstenite::client_async_tls_with_config(request, tunnel, Some(config), None)
+                    .await
+                    .map_err(anyhow::Error::from)
             } else {
                 tokio_tungstenite::connect_async_with_config(request, Some(config), false)
                     .await
                     .map_err(anyhow::Error::from)
             }
         };
-        let (socket, _) = tokio::time::timeout(TASK_WAKEUP_HANDSHAKE_TIMEOUT, connect)
-            .await
-            .map_err(|_| ConnectionEnd::TimedOut("websocket handshake"))?
-            .map_err(|err| ConnectionEnd::Transport(err.into()))?;
+        let (socket, _) = await_wakeup_handshake(ctx, connect).await?;
         let (sink, mut stream) = socket.split();
         let connection_ctx = ctx.child();
         let capacity = 16usize.max(runtime_ids.len().saturating_mul(2));
@@ -653,10 +645,30 @@ impl DaemonControl {
 
 const WAKEUP_PROXY_RESPONSE_MAX_BYTES: usize = 16 * 1024;
 
-fn environment_proxy_for_target(target: &http::Uri) -> anyhow::Result<Option<Intercept>> {
+async fn await_wakeup_handshake<T, F>(ctx: &Ctx, connect: F) -> Result<T, ConnectionEnd>
+where
+    F: std::future::Future<Output = anyhow::Result<T>>,
+{
+    tokio::select! {
+        () = ctx.cancelled() => Err(ConnectionEnd::Cancelled),
+        result = tokio::time::timeout(TASK_WAKEUP_HANDSHAKE_TIMEOUT, connect) => {
+            result
+                .map_err(|_| ConnectionEnd::TimedOut("websocket handshake"))?
+                .map_err(ConnectionEnd::Transport)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct WakeupProxy {
+    url: url::Url,
+    basic_auth: Option<String>,
+}
+
+fn environment_proxy_for_target(target: &http::Uri) -> anyhow::Result<Option<WakeupProxy>> {
     let (proxy_names, matcher_scheme) = match target.scheme_str() {
-        Some("wss") => (&["HTTPS_PROXY", "https_proxy"][..], "https"),
-        Some("ws") => (&["HTTP_PROXY", "http_proxy"][..], "http"),
+        Some("wss") => (&["https_proxy", "HTTPS_PROXY"][..], "https"),
+        Some("ws") => (&["http_proxy", "HTTP_PROXY"][..], "http"),
         _ => anyhow::bail!("wakeup websocket target must use ws or wss"),
     };
     let Some((proxy_name, proxy_url)) = first_environment_value(proxy_names)? else {
@@ -665,14 +677,16 @@ fn environment_proxy_for_target(target: &http::Uri) -> anyhow::Result<Option<Int
     if proxy_name == "HTTP_PROXY" && std::env::var_os("REQUEST_METHOD").is_some() {
         anyhow::bail!("refusing HTTP_PROXY in a CGI environment");
     }
-    let no_proxy = first_environment_value(&["NO_PROXY", "no_proxy"])?
+    let no_proxy = first_environment_value(&["no_proxy", "NO_PROXY"])?
         .map(|(_, value)| value)
         .unwrap_or_default();
     configured_proxy_for_target(target, matcher_scheme, &proxy_url, &no_proxy)
         .map_err(|error| anyhow::anyhow!("{proxy_name} is invalid for wakeup websocket: {error}"))
 }
 
-fn first_environment_value(names: &[&'static str]) -> anyhow::Result<Option<(&'static str, String)>> {
+fn first_environment_value(
+    names: &[&'static str],
+) -> anyhow::Result<Option<(&'static str, String)>> {
     for &name in names {
         let Some(value) = std::env::var_os(name) else {
             continue;
@@ -693,8 +707,7 @@ fn configured_proxy_for_target(
     matcher_scheme: &'static str,
     proxy_url: &str,
     no_proxy: &str,
-) -> anyhow::Result<Option<Intercept>> {
-    let target = proxy_match_uri(target, matcher_scheme)?;
+) -> anyhow::Result<Option<WakeupProxy>> {
     let host = target
         .host()
         .ok_or_else(|| anyhow::anyhow!("wakeup websocket target has no host"))?;
@@ -706,50 +719,170 @@ fn configured_proxy_for_target(
     {
         return Ok(None);
     }
-
-    // Use the installed matcher for its curl-compatible NO_PROXY domain/IP/CIDR
-    // rules. A known-valid sentinel distinguishes an intentional bypass from an
-    // invalid configured proxy without duplicating that parser here.
-    let bypass = proxy_matcher(matcher_scheme, "http://127.0.0.1:1", no_proxy)
-        .intercept(&target)
-        .is_none();
-    if bypass {
+    let target_port = target.port_u16().or_else(|| match matcher_scheme {
+        "https" => Some(443),
+        "http" => Some(80),
+        _ => None,
+    });
+    if no_proxy_matches(host, target_port, no_proxy) {
         return Ok(None);
     }
 
-    let proxy = proxy_matcher(matcher_scheme, proxy_url, "")
-        .intercept(&target)
-        .ok_or_else(|| anyhow::anyhow!("unsupported or malformed proxy URL"))?;
-    if proxy.uri().scheme_str() != Some("http") {
+    let proxy = url::Url::parse(proxy_url)
+        .map_err(|error| anyhow::anyhow!("unsupported or malformed proxy URL: {error}"))?;
+    if proxy.scheme() != "http" {
         anyhow::bail!("only HTTP CONNECT proxies are supported");
     }
-    Ok(Some(proxy))
+    anyhow::ensure!(
+        proxy.host_str().is_some(),
+        "configured wakeup proxy has no host"
+    );
+    let basic_auth = if proxy.username().is_empty() && proxy.password().is_none() {
+        None
+    } else {
+        let username = percent_decode_userinfo(proxy.username())?;
+        let password = percent_decode_userinfo(proxy.password().unwrap_or_default())?;
+        Some(format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+        ))
+    };
+    Ok(Some(WakeupProxy {
+        url: proxy,
+        basic_auth,
+    }))
 }
 
-fn proxy_matcher(scheme: &'static str, proxy_url: &str, no_proxy: &str) -> Matcher {
-    let builder = Matcher::builder().no(no_proxy);
-    if scheme == "https" {
-        builder.https(proxy_url).build()
-    } else {
-        builder.http(proxy_url).build()
+fn percent_decode_userinfo(value: &str) -> anyhow::Result<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            anyhow::ensure!(
+                index + 2 < bytes.len(),
+                "configured wakeup proxy auth is invalid"
+            );
+            let high = hex_value(bytes[index + 1])
+                .ok_or_else(|| anyhow::anyhow!("configured wakeup proxy auth is invalid"))?;
+            let low = hex_value(bytes[index + 2])
+                .ok_or_else(|| anyhow::anyhow!("configured wakeup proxy auth is invalid"))?;
+            decoded.push(high * 16 + low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded)
+        .map_err(|_| anyhow::anyhow!("configured wakeup proxy auth is not valid UTF-8"))
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
     }
 }
 
-fn proxy_match_uri(target: &http::Uri, scheme: &'static str) -> anyhow::Result<http::Uri> {
-    let mut parts = target.clone().into_parts();
-    parts.scheme = Some(scheme.parse().expect("static HTTP scheme"));
-    http::Uri::from_parts(parts).map_err(Into::into)
+fn no_proxy_matches(host: &str, port: Option<u16>, configured: &str) -> bool {
+    let host = host
+        .trim_matches(|character| character == '[' || character == ']')
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let host_ip = host.parse::<std::net::IpAddr>().ok();
+    configured.split(',').map(str::trim).any(|entry| {
+        if entry.is_empty() {
+            return false;
+        }
+        if entry == "*" {
+            return true;
+        }
+        if let Some((network, prefix)) = entry.split_once('/') {
+            return host_ip.is_some_and(|ip| cidr_contains(ip, network, prefix));
+        }
+        let (rule_host, rule_port) = split_no_proxy_host_port(entry);
+        if rule_port.is_some() && rule_port != port {
+            return false;
+        }
+        let rule_host = rule_host
+            .trim_matches(|character| character == '[' || character == ']')
+            .trim_end_matches('.')
+            .to_ascii_lowercase();
+        if let (Some(host_ip), Ok(rule_ip)) = (host_ip, rule_host.parse::<std::net::IpAddr>()) {
+            return host_ip == rule_ip;
+        }
+        let subdomains_only = rule_host.starts_with('.') || rule_host.starts_with("*.");
+        let suffix = rule_host
+            .strip_prefix("*.")
+            .or_else(|| rule_host.strip_prefix('.'))
+            .unwrap_or(&rule_host);
+        host.ends_with(&format!(".{suffix}")) || (!subdomains_only && host == suffix)
+    })
+}
+
+fn split_no_proxy_host_port(entry: &str) -> (&str, Option<u16>) {
+    if let Some(rest) = entry.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let host = &rest[..end];
+            let port = rest[end + 1..]
+                .strip_prefix(':')
+                .and_then(|value| value.parse().ok());
+            return (host, port);
+        }
+    }
+    if entry.parse::<std::net::IpAddr>().is_ok() {
+        return (entry, None);
+    }
+    entry
+        .rsplit_once(':')
+        .filter(|(host, port)| !host.contains(':') && port.parse::<u16>().is_ok())
+        .map(|(host, port)| (host, port.parse().ok()))
+        .unwrap_or((entry, None))
+}
+
+fn cidr_contains(ip: std::net::IpAddr, network: &str, prefix: &str) -> bool {
+    let Ok(network) = network
+        .trim_matches(|character| character == '[' || character == ']')
+        .parse::<std::net::IpAddr>()
+    else {
+        return false;
+    };
+    let Ok(prefix) = prefix.parse::<u32>() else {
+        return false;
+    };
+    match (ip, network) {
+        (std::net::IpAddr::V4(ip), std::net::IpAddr::V4(network)) if prefix <= 32 => {
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u32::MAX << (32 - prefix)
+            };
+            u32::from(ip) & mask == u32::from(network) & mask
+        }
+        (std::net::IpAddr::V6(ip), std::net::IpAddr::V6(network)) if prefix <= 128 => {
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u128::MAX << (128 - prefix)
+            };
+            u128::from(ip) & mask == u128::from(network) & mask
+        }
+        _ => false,
+    }
 }
 
 async fn open_wakeup_proxy_tunnel(
-    proxy: &Intercept,
+    proxy: &WakeupProxy,
     target: &http::Uri,
 ) -> anyhow::Result<tokio::net::TcpStream> {
     let proxy_host = proxy
-        .uri()
-        .host()
+        .url
+        .host_str()
         .ok_or_else(|| anyhow::anyhow!("configured wakeup proxy has no host"))?;
-    let proxy_port = proxy.uri().port_u16().unwrap_or(80);
+    let proxy_port = proxy.url.port().unwrap_or(80);
     let target_host = target
         .host()
         .ok_or_else(|| anyhow::anyhow!("wakeup websocket target has no host"))?;
@@ -758,22 +891,20 @@ async fn open_wakeup_proxy_tunnel(
         Some("ws") => Some(80),
         _ => None,
     });
-    let target_port = target_port
-        .ok_or_else(|| anyhow::anyhow!("wakeup websocket target has no port"))?;
+    let target_port =
+        target_port.ok_or_else(|| anyhow::anyhow!("wakeup websocket target has no port"))?;
     let authority = format_host_port(target_host, target_port);
 
-    let mut stream = tokio::net::TcpStream::connect((proxy_host, proxy_port))
+    let proxy_addr = format_host_port(proxy_host, proxy_port);
+    let mut stream = tokio::net::TcpStream::connect(&proxy_addr)
         .await
         .map_err(|error| anyhow::anyhow!("connect to configured wakeup proxy: {error}"))?;
     let mut request = format!(
         "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: Keep-Alive\r\n"
     );
-    if let Some(auth) = proxy.basic_auth() {
+    if let Some(auth) = &proxy.basic_auth {
         request.push_str("Proxy-Authorization: ");
-        request.push_str(
-            auth.to_str()
-                .map_err(|_| anyhow::anyhow!("configured wakeup proxy auth is invalid"))?,
-        );
+        request.push_str(auth);
         request.push_str("\r\n");
     }
     request.push_str("\r\n");
@@ -789,8 +920,9 @@ async fn open_wakeup_proxy_tunnel(
         }
         let remaining = WAKEUP_PROXY_RESPONSE_MAX_BYTES - response.len();
         let mut chunk = [0_u8; 1024];
+        let read_limit = remaining.min(chunk.len());
         let read = stream
-            .read(&mut chunk[..remaining.min(chunk.len())])
+            .read(&mut chunk[..read_limit])
             .await
             .map_err(|error| anyhow::anyhow!("read wakeup proxy CONNECT response: {error}"))?;
         if read == 0 {
@@ -798,13 +930,27 @@ async fn open_wakeup_proxy_tunnel(
         }
         response.extend_from_slice(&chunk[..read]);
     }
-    let status = response
-        .split(|byte| *byte == b'\n')
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("loop exits only after complete headers");
+    let headers = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| anyhow::anyhow!("wakeup proxy CONNECT response is not valid HTTP"))?;
+    let status_line = headers
+        .split("\r\n")
         .next()
-        .and_then(|line| std::str::from_utf8(line).ok())
-        .map(str::trim)
-        .and_then(|line| line.split_ascii_whitespace().nth(1))
-        .and_then(|value| value.parse::<u16>().ok());
+        .ok_or_else(|| anyhow::anyhow!("wakeup proxy CONNECT response has no status"))?;
+    let mut parts = status_line.split_ascii_whitespace();
+    let version = parts.next();
+    let status_text = parts.next();
+    anyhow::ensure!(
+        matches!(version, Some("HTTP/1.0" | "HTTP/1.1"))
+            && status_text.is_some_and(|value| {
+                value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit())
+            }),
+        "wakeup proxy CONNECT response has malformed status line"
+    );
+    let status = status_text.and_then(|value| value.parse::<u16>().ok());
     if status != Some(200) {
         anyhow::bail!("wakeup proxy CONNECT refused with status {status:?}");
     }
@@ -1070,6 +1216,7 @@ mod tests {
     }
 
     const WAKEUP_PROXY_CHILD: &str = "CORDY_TEST_WAKEUP_PROXY_CHILD";
+    const WAKEUP_PROXY_ENV_CHILD: &str = "CORDY_TEST_WAKEUP_PROXY_ENV_CHILD";
     const WAKEUP_PROXY_TARGET: &str = "wakeup.example.invalid";
 
     #[tokio::test]
@@ -1113,9 +1260,10 @@ mod tests {
             }))
             .env(WAKEUP_PROXY_CHILD, "1")
             .env(
-                "HTTPS_PROXY",
+                "https_proxy",
                 format!("http://user:p%40ss@{proxy_addr}"),
             )
+            .env("HTTPS_PROXY", "http://127.0.0.1:1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let child = child.spawn().unwrap();
@@ -1168,16 +1316,54 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(proxy.uri().authority().unwrap(), "proxy.example:8080");
-        assert_eq!(
-            proxy.basic_auth().unwrap(),
-            "Basic dXNlcjpwQHNz"
-        );
+        assert_eq!(proxy.url.host_str(), Some("proxy.example"));
+        assert_eq!(proxy.url.port(), Some(8080));
+        assert_eq!(proxy.basic_auth.as_deref(), Some("Basic dXNlcjpwQHNz"));
         assert!(configured_proxy_for_target(
             &target,
             "https",
             "http://proxy.example:8080",
             ".example.invalid,10.0.0.0/8",
+        )
+        .unwrap()
+        .is_none());
+        assert!(configured_proxy_for_target(
+            &"wss://10.2.3.4/socket".parse().unwrap(),
+            "https",
+            "http://proxy.example:8080",
+            "10.0.0.0/8",
+        )
+        .unwrap()
+        .is_none());
+        assert!(configured_proxy_for_target(
+            &"wss://example.invalid/socket".parse().unwrap(),
+            "https",
+            "http://proxy.example:8080",
+            ".example.invalid",
+        )
+        .unwrap()
+        .is_some());
+        assert!(configured_proxy_for_target(
+            &"wss://child.example.invalid:444/socket".parse().unwrap(),
+            "https",
+            "http://proxy.example:8080",
+            "*.example.invalid:443",
+        )
+        .unwrap()
+        .is_some());
+        assert!(configured_proxy_for_target(
+            &"wss://child.example.invalid:443/socket".parse().unwrap(),
+            "https",
+            "http://proxy.example:8080",
+            "*.example.invalid:443",
+        )
+        .unwrap()
+        .is_none());
+        assert!(configured_proxy_for_target(
+            &"wss://[2001:db8::1]:443/socket".parse().unwrap(),
+            "https",
+            "http://proxy.example:8080",
+            "[2001:db8::1]:443",
         )
         .unwrap()
         .is_none());
@@ -1194,30 +1380,105 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(malformed.contains("malformed"));
-        let unsupported = configured_proxy_for_target(
-            &target,
-            "https",
-            "https://proxy.example:8443",
-            "",
-        )
-        .unwrap_err()
-        .to_string();
+        let unsupported =
+            configured_proxy_for_target(&target, "https", "https://proxy.example:8443", "")
+                .unwrap_err()
+                .to_string();
         assert!(unsupported.contains("only HTTP CONNECT"));
+
+        let username_only =
+            configured_proxy_for_target(&target, "https", "http://user@proxy.example:8080", "")
+                .unwrap()
+                .unwrap();
+        assert_eq!(username_only.basic_auth.as_deref(), Some("Basic dXNlcjo="));
+        let invalid_auth =
+            configured_proxy_for_target(&target, "https", "http://user:%FF@proxy.example:8080", "")
+                .unwrap_err()
+                .to_string();
+        assert!(invalid_auth.contains("not valid UTF-8"));
+
+        let ipv6_proxy =
+            configured_proxy_for_target(&target, "https", "http://[2001:db8::2]:8080", "")
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            format_host_port(ipv6_proxy.url.host_str().unwrap(), 8080),
+            "[2001:db8::2]:8080"
+        );
+    }
+
+    #[test]
+    fn environment_proxy_lowercase_precedes_uppercase_and_cgi_rejects_uppercase_http() {
+        if let Some(mode) = std::env::var_os(WAKEUP_PROXY_ENV_CHILD) {
+            let target: http::Uri = "ws://wakeup.example.invalid/socket".parse().unwrap();
+            if mode == "lower" {
+                let proxy = environment_proxy_for_target(&target).unwrap().unwrap();
+                assert_eq!(proxy.url.host_str(), Some("lower-proxy.invalid"));
+            } else {
+                let error = environment_proxy_for_target(&target)
+                    .unwrap_err()
+                    .to_string();
+                assert!(error.contains("CGI environment"));
+            }
+            return;
+        }
+
+        for mode in ["lower", "upper"] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .arg("manager::tests::environment_proxy_lowercase_precedes_uppercase_and_cgi_rejects_uppercase_http")
+                .arg("--exact")
+                .arg("--nocapture")
+                .env_clear()
+                .envs(std::env::vars_os().filter(|(key, _)| {
+                    !key.to_string_lossy().to_ascii_lowercase().ends_with("_proxy")
+                        && key != WAKEUP_PROXY_ENV_CHILD
+                        && key != "REQUEST_METHOD"
+                }))
+                .env(WAKEUP_PROXY_ENV_CHILD, mode)
+                .env("REQUEST_METHOD", "GET")
+                .env("HTTP_PROXY", "http://upper-proxy.invalid:8080");
+            if mode == "lower" {
+                child.env("http_proxy", "http://lower-proxy.invalid:8080");
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "proxy env child failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
     #[tokio::test]
     async fn wakeup_proxy_connect_rejects_refusal_truncation_and_oversize() {
-        let refused = proxy_tunnel_error(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
-            .await;
+        let refused =
+            proxy_tunnel_error(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n").await;
         assert!(refused.contains("status Some(407)"));
 
         let truncated = proxy_tunnel_error(b"HTTP/1.1 200 Connection Established\r\n").await;
         assert!(truncated.contains("closed before CONNECT completed"));
 
+        let malformed = proxy_tunnel_error(b"NOTHTTP 200 Fine\r\n\r\n").await;
+        assert!(malformed.contains("malformed status line"));
+
+        let malformed = proxy_tunnel_error(b"HTTP/1.1 ok Fine\r\n\r\n").await;
+        assert!(malformed.contains("malformed status line"));
+
         let mut oversized = b"HTTP/1.1 200 Connection Established\r\nX-Fill: ".to_vec();
         oversized.resize(WAKEUP_PROXY_RESPONSE_MAX_BYTES + 1024, b'x');
         let oversized = proxy_tunnel_error(&oversized).await;
         assert!(oversized.contains("exceeded byte limit"));
+    }
+
+    #[tokio::test]
+    async fn wakeup_handshake_observes_parent_cancellation() {
+        let ctx = Ctx::new();
+        ctx.cancel_with(CancelCause::Cancelled);
+        let result =
+            await_wakeup_handshake(&ctx, std::future::pending::<anyhow::Result<()>>()).await;
+        assert!(matches!(result, Err(ConnectionEnd::Cancelled)));
     }
 
     async fn proxy_tunnel_error(response: &[u8]) -> String {
@@ -1230,14 +1491,10 @@ mod tests {
             let _ = stream.write_all(&response).await;
         });
         let target: http::Uri = "wss://wakeup.example.invalid/socket".parse().unwrap();
-        let proxy = configured_proxy_for_target(
-            &target,
-            "https",
-            &format!("http://{proxy_addr}"),
-            "",
-        )
-        .unwrap()
-        .unwrap();
+        let proxy =
+            configured_proxy_for_target(&target, "https", &format!("http://{proxy_addr}"), "")
+                .unwrap()
+                .unwrap();
         let error = open_wakeup_proxy_tunnel(&proxy, &target)
             .await
             .unwrap_err()

@@ -2020,3 +2020,24 @@ workspace middleware；fixture 只在 happy path cleanup，panic/timeout 会污�
 - #562 未执行 Windows runtime smoke、process cancellation/forced-kill cleanup 或完整 daemon foreground smoke；
   direct adapter 证据覆盖 success 与 StartTask failure，但不把未执行的 build/launch/cancel/failure 全矩阵记为
   PASS。
+- #563 independent verifier/reviewer 历史（exact `2180ded88a00f48fe31e60e09d963c6d1c936a6a`）：
+  fixed-stable `manager.rs` rustfmt FAIL；workspace `hyper-util` 请求 0.1.20 不存在的 `runtime` feature，导致
+  metadata、daemon no-run、三个新增 exact、existing real WebSocket 与 Windows check 全部 101，实际 0 tests。
+  reviewer 另确认 lowercase/uppercase/CGI precedence、NO_PROXY port/IPv6/leading-dot/wildcard、IPv6 proxy dial、
+  cancellation、strict CONNECT status 与 userinfo 存在 parity 缺口；原 claims 超过实际执行证据。
+- #563 independent fixer（依赖传播 commits `3e2e88ca`/`6a3c6b57`/`741d9857`）：删除 daemon 对
+  `client-proxy` matcher 的依赖，并从 workspace hyper-util features 移除不存在的 `runtime`，由 Cargo 离线
+  正常更新 lock。唯一 manager dial 使用小型 `WakeupProxy`：lowercase proxy/no_proxy 优先；CGI 仅拒绝被选中
+  的 uppercase `HTTP_PROXY`；NO_PROXY 直接覆盖 exact/apex+subdomain/leading-dot/`*.`/port/IPv4+IPv6/CIDR；
+  IPv6 proxy address 统一 bracket formatting。proxy userinfo 严格 percent decode/UTF-8，username-only 生成
+  Basic `user:`；CONNECT 只接受合法 HTTP/1.0/1.1 三位 status line。整个 DNS/TCP/CONNECT/TLS/WS future 同时
+  受 parent context 与既有 handshake timeout 约束。
+- #563 fixer verification：locked/offline metadata 与
+  `CARGO_INCREMENTAL=0 cargo check --locked --offline -p cordy-daemon --tests` PASS；selection/NO_PROXY/auth/IPv6、
+  env precedence+CGI、parent cancellation、CONNECT refusal/truncation/malformed/oversize、production child exact
+  CONNECT+Basic+target TLS、existing real WebSocket 六条 exact tests 各 1/1 PASS。fixed-stable manager rustfmt 与
+  `git diff --check` PASS；manager 聚焦组 9/9 PASS。真实 CONNECT/WebSocket tests 在非沙箱 loopback 权限下执行；reviewed head 的 resolver
+  101/0-test 与 rustfmt failure 均保留为历史。
+- #563 尚未执行真实 corporate proxy/DNS failure、Windows target compile 或 HTTP polling live fallback smoke；
+  `cordy-lark` 仍有独立 CONNECT 实现，跨 crate 共享 primitive 作为 P3 debt 保留，本切片不借机扩大公共网络
+  抽象，也不把这些未执行项声明为通过。
