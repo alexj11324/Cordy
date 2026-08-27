@@ -1361,7 +1361,6 @@ mod tests {
         app_url, channel_secret_box, configure_telegram, configure_wecom_security,
         lease_backend_settings, ChannelRouter, ChannelServices, LeaseBackendSettings, RouterConfig,
     };
-    use base64::Engine as _;
     use cordy_lark::client::ApiClient as _;
     use std::sync::Arc;
 
@@ -1486,9 +1485,8 @@ mod tests {
         assert!(registry.types().is_empty());
 
         std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        let secret_box = channel_secret_box(KEY_ENV).unwrap().unwrap();
-        let encrypted = base64::engine::general_purpose::STANDARD
-            .encode(secret_box.seal(b"123456:test-token").unwrap());
+        // SecretBox wire fixture for zero key + zero nonce + "123456:test-token".
+        let encrypted = "AAAAAAAAAAAAAAAA/5VzCXhWURpiPbH+zpz2fRywHKYN3+Y5+wsRBx2QX13v";
         configure();
         let telegram = cordy_channel::Type(cordy_telegram::TYPE_TELEGRAM.to_string());
         assert_eq!(registry.types(), vec![telegram.clone()]);
