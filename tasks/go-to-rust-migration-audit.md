@@ -1998,3 +1998,17 @@ PostgreSQL fixture 和真实 WebSocket client执行完整会话矩阵。需要 D
 主 agent 只运行 `git diff --check`（PASS），没有运行 cargo/rustfmt/test，也没有机械重算 Cargo.lock；非 Draft Ready
 PR #567 已创建，base 是 #566 branch。独立 verifier/reviewer 已异步派发，必须核对新增 dev dependency 是否要求
 lock update并执行 exact loopback test；fixer 尚无 finding。当前不能声称 WS contract 已验证或删除 Go。
+
+独立 verifier 在 exact Ready SHA `3a493196d7b876e27ed8bb4d81a87ccb6d84435a` 上确认 worktree、祖先关系、diff
+和原 lock hash 检查通过，但发现新增 handler dev dependency 未写入 `Cargo.lock`，且新增测试 direct rustfmt 失败；继承自
+#563 的非法 `hyper-util/runtime` feature 令 locked metadata、no-run、server/Windows build 和 exact WS test 全部 exit 101，
+因此 exact test 是 0/0/0。环境没有 `DATABASE_URL`/PostgreSQL，DB、loopback 和 network contract 均未执行；目前只静态
+确认 production assembly，不能把本次验证记为通过。
+
+独立 reviewer 同一 exact SHA 无 P0，报告 2 个 P1、3 个 P2 和 1 个 P3：缺失 lock update；未认证连接未注册便轮询
+connections，导致 auth error 后 close 断言是假阳性，且主动 unsubscribe 后才 close，不能证明 disconnect 清理自动 rooms；
+所谓完整矩阵缺少 JWT、frame limit、chat、foreign broadcast/user isolation；loopback 没有复现 production ConnectInfo，
+origin env precedence 与 Go 不同且受 ambient env 影响；失败路径不会关闭 server 或清理 DB fixture；325 行单体测试耦合过重
+却仍缺矩阵。review 同时确认 required-DB 不会 self-skip、唯一 production `/ws` 使用真实 Hub/authorizer/HandlerState，未发现
+Stub/Noop/Fake 或 alternate hub。上述 finding 已异步派发给独立 fixer；在修复及重验完成前，Go user WebSocket contract
+不能下线，PR 保持 Ready。
