@@ -257,7 +257,7 @@ impl Client {
         // The retry budget applies only until the upstream returns a
         // successful response. Once headers are returned, the response body
         // belongs to the caller and cannot be replayed safely here.
-        for attempt in 0..=self.max_retries {
+        for attempt in 0..=self.retry.max_retries {
             let mut builder = http.post(&self.endpoint).json(request);
             if !self.api_key.is_empty() {
                 builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", self.api_key));
@@ -270,7 +270,7 @@ impl Client {
                     let retry_after = retry_after(response.headers());
                     let should_retry = retry_directive(response.headers())
                         .unwrap_or_else(|| retryable_status(status));
-                    if attempt == self.max_retries || !should_retry {
+                    if attempt == self.retry.max_retries || !should_retry {
                         return Err(Error::Upstream(status));
                     }
                     // Drop the failed response before waiting and opening the
@@ -279,7 +279,7 @@ impl Client {
                     tokio::time::sleep(retry_after.unwrap_or_else(|| retry_delay(attempt))).await;
                 }
                 Err(error) => {
-                    if attempt == self.max_retries || !retryable_error(&error) {
+                    if attempt == self.retry.max_retries || !retryable_error(&error) {
                         return Err(Error::Request(error));
                     }
                     tokio::time::sleep(retry_delay(attempt)).await;
@@ -1099,7 +1099,7 @@ mod tests {
             api_key: "test-key".into(),
             base_url: format!("http://{address}"),
             default_model: "stream-model".into(),
-            max_retries: Some(1),
+            max_retries: Some(retry_override(1)),
             http_client: None,
         });
         let response = client
