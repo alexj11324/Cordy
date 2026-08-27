@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI 命令树/退出码/daemon control 矩阵已交付；当前切片迁移 issue-status API、事务竞态、错误 JSON 与事件副作用完整契约 | 一次收口 catalog self-heal、member/admin/flag gate、系统状态不可变、custom category、archive/write/reorder 锁语义和 commit 后事件；随后继续其他 API/WS/background worker smoke | 依赖 AUDIT-001 Rust 默认 server 与已迁移 issue-status handler/service/query；堆叠在 Ready #564 | §5、§6.2、§18、§52 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI 命令树/退出码/daemon control 矩阵已交付；issue-status API、事务竞态、错误 JSON 与事件副作用完整契约已交付 Ready #565 | 异步收口 #565 verification/review/fix，同时继续其他 API/WS/background worker smoke | 依赖 AUDIT-001 Rust 默认 server 与已迁移 issue-status handler/service/query；#565 堆叠在 Ready #564 | PR #565；§5、§6.2、§18、§52 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -1869,6 +1869,7 @@ framework、repository、service 或 test-only production seam：
 - DB fixture 在正常路径显式删除 issue、issue_status 和 workspace；无 `DATABASE_URL` 或连接失败会明确输出 skipped，
   不把 0 个真实 DB case 误报为通过。
 
-主 agent 只运行 `git diff --check`（PASS），没有运行 cargo/rustfmt/测试。独立 verifier 尚未执行，reviewer 尚未
-检查 Go parity，fixer 尚未接收 finding；因此当前只能标记为 implementation delivered/pending async evidence，不能
-声称已验证，也不能删除 Go。Ready PR 尚待 push/create。
+主 agent 只运行 `git diff --check`（PASS），没有运行 cargo/rustfmt/测试。非 Draft Ready PR #565 已从 branch
+`codex/cord-229-issue-status-production-contract-rust` 创建并明确以 #564 branch 为 base；独立 verifier/reviewer
+已异步派发，fixer 尚未接收 finding。因此当前只能标记为 implementation delivered/pending async evidence，不能
+声称已验证，也不能删除 Go。
