@@ -616,6 +616,11 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     fn health_snapshot(&self) -> HealthResponse {
         let mut snapshot = self.provider.health_snapshot();
         snapshot.profile = self.config.profile.clone();
+        snapshot.skipped_agents = self
+            .registration
+            .skipped_agents_snapshot()
+            .into_iter()
+            .collect();
         snapshot
     }
 
