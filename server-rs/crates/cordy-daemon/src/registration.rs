@@ -466,13 +466,11 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<BuiltinRefreshOutcome> {
         let gained_hint = if reason == BuiltinRefreshReason::Discovery {
-            let Some(gained) = self
+            let gained = self
                 .source
                 .refresh_builtin_availability(ctx.child())
                 .await?
-            else {
-                false
-            };
+                .unwrap_or(false);
 
             // Go's discovery loop checks the live availability set before it
             // enters the expensive convergence half. This also avoids probing
