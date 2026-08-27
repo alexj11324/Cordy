@@ -199,7 +199,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 登记 daemon event ID 生成器迁移 | 收口 #577/#579 异步 V/R/F；完成真实 production event/Redis field 的 ULID 生成与 golden/round-trip，再继续 JSON/时间/DB/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577；§6.2、§64、§66 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579 | 收口 #577/#579 异步 V/R/F；继续完成真实 event/Redis field 的 golden/round-trip 与 JSON/时间/DB/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577/#579；§6.2、§64、§66 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578 | 收口 #578 异步 V/R/F；继续对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
@@ -282,7 +282,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 53. `[~]` `T-53 / §63` AUDIT-007 Go 测试契约映射（PR #576 Ready，待异步退出证据）
 54. `[~]` `T-54 / §64` AUDIT-008 UUID/ULID utility wire serialization（PR #577，待异步退出证据）
-55. `[~]` `T-54A / §66` AUDIT-008 daemon event ID generator cutover（已登记，PR 待创建）
+55. `[~]` `T-54A / §66` AUDIT-008 daemon event ID generator cutover（PR #579 Ready，待异步退出证据）
 56. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
 57. `[ ]` `T-56` AUDIT-010 Go 源码退休
 
@@ -2759,6 +2759,29 @@ canonical max `7ZZ...` vectors。台账据实降格为 utility-only prerequisite
 过度声明；真实 field 接入仍是 AUDIT-008 blocker。fixer 的 `rustfmt --config skip_children=true --check` 与
 `git diff --check` PASS；locked/offline exact unit test 在 discovery 前被 inherited #563 `hyper-util 0.1.20` 不存在
 `runtime` feature 阻断（exit 101，实际 0 tests），不能登记为 executed PASS。
+
+## 66. [~] AUDIT-008 daemon event ID generator cutover（T-54A）
+
+本项在开始编码前登记。Go `server/internal/daemonws/notifier.go` 使用 `ulid.Make().String()` 生成 daemon wakeup
+event ID；Rust `server-rs/crates/cordy-daemon/src/notifier.rs::new_event_id` 当前自行复制 timestamp/random/Crockford
+编码。两者 wire 形状相同但实现分叉，Rust 入口没有复用 workspace 已有 ULID 实现，后续修复容易产生跨进程兼容漂移。
+
+范围只替换该 daemon notifier 的 ID 生成实现：复用 workspace 已有 `ulid::Ulid::new().to_string()`，删除手写编码和不再需要
+的时间导入；保留现有 `String` API、事件 payload、Redis/本地 fanout、dedup 和错误语义。既有 notifier contract test 继续验证
+26 字符 canonical Crockford、唯一性和所有 wakeup 事件路径；不新增 ID service、wrapper、生成器或测试框架。
+
+- 默认生产路径：`cordy-daemon::RelayNotifier` 的 task-available、runtime-profile、workspace-change 和 pending-work
+  事件统一经 `new_event_id` 使用 `ulid` crate 生成，并继续走现有 local hub/Redis relay 入口。
+- Go 是否可下线：该 daemon event ID 生成器已切到共享 Rust 依赖后，可标记此窄能力迁移；AUDIT-008 其余 event envelope/
+  Redis 旧数据、AUDIT-002/005 生产验证和 AUDIT-001..010 总退出仍未完成，不能删除 Go。
+- owner：主 agent 负责生产入口迁移、机械检查、提交和 Ready PR；独立 verifier/reviewer/fixer 异步验证 ULID 向量、编译和
+  Redis/event 兼容并处理 finding，结果追加到本节。
+
+实现 commit `f6a48f7e` 更新 `cordy-daemon` 的既有 `new_event_id` 生产 helper：依赖 workspace 已有 `ulid` crate，四类
+notifier 事件现在统一调用 `ulid::Ulid::new().to_string()`；删除手写编码但保留所有 relay、dedup、payload 和错误语义。
+主 agent 仅执行 `git diff --check`（PASS），未运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；非 Draft Ready PR #579
+已创建，base 为 `codex/cord-242-backfill-runbook-rust` 的 `39325098`。异步 verifier/reviewer/fixer 结果待回写，在
+exact compile、matched/executed 和真实 event/Redis 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
 
 ## 66. [~] AUDIT-008 daemon event ID generator cutover（T-54A）
 
