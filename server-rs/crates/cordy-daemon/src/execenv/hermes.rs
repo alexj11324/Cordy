@@ -15,7 +15,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
 
 use anyhow::{anyhow, bail, Context};
 use serde_yaml::{Mapping, Value};
@@ -52,7 +53,7 @@ pub fn resolve_hermes_profile(custom_home: &str, profile: Option<&str>) -> Herme
     let explicit = profile.is_some();
     let name = match profile {
         Some(value) => value.to_string(),
-        None if base
+        None if Path::new(&base)
             .parent()
             .and_then(Path::file_name)
             .is_some_and(|p| p == "profiles") =>
@@ -355,11 +356,17 @@ fn restrict_permissions(path: &str) -> io::Result<()> {
 
 fn prepare_task_local_state(home: &str) -> anyhow::Result<()> {
     let marker = Path::new(home).join(TASK_LOCAL_STATE_MARKER);
-    if marker.exists() {
-        if !marker.is_file() {
-            bail!("Hermes state marker is not a regular file");
+    match fs::symlink_metadata(&marker) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                bail!("Hermes state marker is not a regular file");
+            }
+            return Ok(());
         }
-        return Ok(());
+        Err(error) if error.kind() != io::ErrorKind::NotFound => {
+            return Err(error.into());
+        }
+        Err(_) => {}
     }
     for entry in fs::read_dir(home)? {
         let entry = entry?;
@@ -426,10 +433,14 @@ fn link_shared_entry(source: &Path, target: &Path) -> anyhow::Result<()> {
         }
         remove_path(target)?;
     }
-    if fs::metadata(source).is_err() {
-        return Ok(()); // dangling source links are ignored, like Go.
-    }
-    if fs::metadata(source)?.is_dir() {
+    let source_metadata = match fs::metadata(source) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(()); // dangling source links are ignored, like Go.
+        }
+        Err(error) => return Err(error.into()),
+    };
+    if source_metadata.is_dir() {
         create_dir_link(source, target)?;
     } else {
         create_file_link(source, target)?;
@@ -463,6 +474,21 @@ fn create_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
     }
 }
 
+fn create_session_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, target)?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        // A copied SQLite file is not a session mount: writes stay in the
+        // overlay and disappear with the task.  Match Go's fail-closed
+        // behavior when the host cannot create a real symlink.
+        std::os::windows::fs::symlink_file(source, target).map_err(anyhow::Error::new)
+    }
+}
+
 fn write_derived_config(
     shared: &str,
     overlay: &str,
@@ -481,14 +507,18 @@ fn write_derived_config(
         Err(error) if error.kind() == io::ErrorKind::NotFound => Value::Mapping(Mapping::new()),
         Err(error) => return Err(error.into()),
     };
-    let dirs = existing_external_dirs(&doc)
-        .into_iter()
-        .map(|value| normalize_external_dir(shared, &value, env))
-        .filter(|value| !value.is_empty())
-        .chain(std::iter::once(
-            Path::new(shared).join("skills").display().to_string(),
-        ))
-        .collect::<Vec<_>>();
+    let mut dirs = Vec::new();
+    let mut seen = HashSet::new();
+    for value in existing_external_dirs(&doc) {
+        let value = normalize_external_dir(shared, &value, env);
+        if !value.is_empty() && seen.insert(value.clone()) {
+            dirs.push(value);
+        }
+    }
+    let shared_skills = Path::new(shared).join("skills").display().to_string();
+    if seen.insert(shared_skills.clone()) {
+        dirs.push(shared_skills);
+    }
     set_external_dirs(&mut doc, dirs);
     disable_memory_provider(&mut doc);
     let data = serde_yaml::to_string(&doc)?;
@@ -515,42 +545,82 @@ fn normalize_external_dir(shared: &str, raw: &str, env: &HashMap<String, String>
     if value.is_empty() {
         return value;
     }
+    // Leave unresolved variables for Hermes to expand at runtime. Prefixing
+    // such a value with the shared home changes the meaning of the config and
+    // diverges from Go's os.Expand-based implementation.
+    if value.contains("${") {
+        return value;
+    }
     if value == "~" || value.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            value = format!("{}{}", home, value.trim_start_matches('~'));
+        if let Some(home) = process_user_home() {
+            value = format!("{}{}", home.display(), value.trim_start_matches('~'));
         }
     }
     let path = PathBuf::from(&value);
     if path.is_absolute() {
-        path.display().to_string()
+        lexical_clean(path).display().to_string()
     } else {
-        Path::new(shared).join(path).display().to_string()
+        lexical_clean(Path::new(shared).join(path))
+            .display()
+            .to_string()
+    }
+}
+
+fn process_user_home() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
+fn lexical_clean(path: PathBuf) -> PathBuf {
+    let rooted = path.has_root();
+    let mut cleaned = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !cleaned.pop() && !rooted {
+                    cleaned.push(component.as_os_str());
+                }
+            }
+            _ => cleaned.push(component.as_os_str()),
+        }
+    }
+    if cleaned.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        cleaned
     }
 }
 
 fn expand_vars(value: &str, env: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(value.len());
-    let bytes = value.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            if let Some(end) = value[i + 2..].find('}') {
-                let end = i + 2 + end;
-                let key = &value[i + 2..end];
-                if let Some(replacement) = env.get(key) {
-                    out.push_str(replacement);
-                } else if let Ok(replacement) = std::env::var(key) {
-                    out.push_str(&replacement);
-                } else {
-                    out.push_str(&value[i..=end]);
-                }
-                i = end + 1;
-                continue;
-            }
+    let mut cursor = 0;
+    while let Some(start) = value[cursor..].find("${").map(|offset| cursor + offset) {
+        out.push_str(&value[cursor..start]);
+        let Some(end_offset) = value[start + 2..].find('}') else {
+            out.push_str(&value[start..]);
+            return out;
+        };
+        let end = start + 2 + end_offset;
+        let key = &value[start + 2..end];
+        if let Some(replacement) = env.get(key) {
+            out.push_str(replacement);
+        } else if let Ok(replacement) = std::env::var(key) {
+            out.push_str(&replacement);
+        } else {
+            out.push_str(&value[start..=end]);
         }
-        out.push(bytes[i] as char);
-        i += 1;
+        cursor = end + 1;
     }
+    out.push_str(&value[cursor..]);
     out
 }
 
@@ -590,7 +660,11 @@ fn ensure_mapping(value: &mut Value) -> &mut Mapping {
 
 fn write_derived_env(shared: &str, overlay: &str) -> anyhow::Result<()> {
     let source = Path::new(shared).join(".env");
-    let mut body = fs::read_to_string(&source).unwrap_or_default();
+    let mut body = match fs::read_to_string(&source) {
+        Ok(body) => body,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
     body = body
         .lines()
         .filter(|line| dotenv_key(line) != Some("HERMES_HOME"))
@@ -654,6 +728,9 @@ fn detach_memories(overlay: &str) -> anyhow::Result<()> {
 }
 
 fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions> {
+    let _mount_guard = SESSION_MOUNT_LOCK
+        .lock()
+        .map_err(|_| anyhow!("Hermes session mount lock poisoned"))?;
     let store = Path::new(store);
     fs::create_dir_all(store)?;
     restrict_permissions(&store.display().to_string())?;
@@ -676,10 +753,10 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     // Prove the link can be created before deleting a task-local database.
     let staged = Path::new(overlay).join(SESSION_LINK_STAGING);
     remove_path(&staged)?;
-    if create_file_link(&store_db, &staged).is_err() {
+    if create_session_file_link(&store_db, &staged).is_err() {
         return Ok(HermesSessions::default());
     }
-    remove_state_files(overlay)?;
+    remove_session_state_files(Path::new(overlay))?;
     fs::rename(&staged, &target).context("publish Hermes session link")?;
     touch_store(store);
     Ok(HermesSessions {
@@ -688,7 +765,12 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     })
 }
 
-fn touch_store(path: &str) {
+// Session-store migration and publication are serialized in this process so
+// the occupancy check, stale-family cleanup, and directory promotion cannot
+// interleave between concurrent task preparations.
+static SESSION_MOUNT_LOCK: Mutex<()> = Mutex::new(());
+
+fn touch_store(path: &Path) {
     // Store GC uses directory mtime as the last-activity signal. Updating it
     // is best-effort: active-store reservations still protect a live mount,
     // while a read-only filesystem should not make task preparation fail.
@@ -716,18 +798,33 @@ fn migrate_session_files(overlay: &str, store: &Path) -> anyhow::Result<()> {
     for entry in files {
         fs::copy(entry.path(), staging.path().join(entry.file_name()))?;
     }
-    for entry in fs::read_dir(staging.path())? {
-        let entry = entry?;
-        fs::rename(entry.path(), store.join(entry.file_name()))?;
-    }
-    Ok(())
+    publish_session_staging(staging.path(), store)
 }
 
-fn remove_state_files(dir: &str) -> anyhow::Result<()> {
+fn publish_session_staging(staging: &Path, store: &Path) -> anyhow::Result<()> {
+    if has_session_db(store) {
+        return Ok(());
+    }
+    remove_session_state_files(store)?;
+    if fs::read_dir(store)?.next().is_some() {
+        bail!("refusing to replace non-empty Hermes session store");
+    }
+    fs::remove_dir(store).context("remove empty Hermes session store")?;
+    fs::rename(staging, store).context("publish Hermes session staging")
+}
+
+fn remove_session_state_files(dir: &Path) -> anyhow::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         if is_state_entry(&entry.file_name().to_string_lossy()) {
-            remove_path(&entry.path())?;
+            let file_type = entry.file_type()?;
+            if !file_type.is_file() && !file_type.is_symlink() {
+                bail!(
+                    "refusing to remove Hermes session state {}: unexpected entry type",
+                    entry.path().display()
+                );
+            }
+            fs::remove_file(entry.path())?;
         }
     }
     Ok(())
@@ -843,6 +940,89 @@ mod tests {
             fs::read_to_string(shared.join(".env")).unwrap(),
             "API_KEY=secret\nHERMES_HOME=/wrong\n"
         );
+    }
+
+    #[test]
+    fn external_dirs_preserve_unknown_vars_clean_paths_and_ordered_uniqueness() {
+        let root = tempdir().unwrap();
+        let shared = root.path().join("shared");
+        let overlay = root.path().join("overlay");
+        fs::create_dir_all(shared.join("skills")).unwrap();
+        fs::write(
+            shared.join("config.yaml"),
+            "skills:\n  external_dirs:\n    - ${CORDY_HERMES_UNKNOWN_EXTERNAL_DIR_9f4d}\n    - ./skills/../skills\n    - ./skills\n    - ${CORDY_HERMES_UNKNOWN_EXTERNAL_DIR_9f4d}\n",
+        )
+        .unwrap();
+
+        write_derived_config(
+            &shared.display().to_string(),
+            &overlay.display().to_string(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let doc: Value =
+            serde_yaml::from_str(&fs::read_to_string(overlay.join("config.yaml")).unwrap())
+                .unwrap();
+        let dirs = doc["skills"]["external_dirs"].as_sequence().unwrap();
+        assert_eq!(
+            dirs[0].as_str(),
+            Some("${CORDY_HERMES_UNKNOWN_EXTERNAL_DIR_9f4d}")
+        );
+        assert_eq!(
+            dirs[1].as_str(),
+            Some(shared.join("skills").to_str().unwrap())
+        );
+        assert_eq!(dirs.len(), 2);
+    }
+
+    #[test]
+    fn unreadable_shared_env_is_not_silently_replaced() {
+        let root = tempdir().unwrap();
+        let shared = root.path().join("shared");
+        let overlay = root.path().join("overlay");
+        fs::create_dir_all(shared.join(".env")).unwrap();
+        fs::create_dir_all(&overlay).unwrap();
+
+        assert!(write_derived_env(
+            &shared.display().to_string(),
+            &overlay.display().to_string(),
+        )
+        .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_task_state_marker_is_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempdir().unwrap();
+        let marker = root.path().join(TASK_LOCAL_STATE_MARKER);
+        let target = root.path().join("marker-target");
+        fs::write(&target, b"marker").unwrap();
+        symlink(&target, &marker).unwrap();
+
+        assert!(prepare_task_local_state(root.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn session_migration_publishes_database_family_before_cleanup() {
+        let root = tempdir().unwrap();
+        let overlay = root.path().join("overlay");
+        let store = root.path().join("store");
+        fs::create_dir_all(&overlay).unwrap();
+        fs::create_dir_all(&store).unwrap();
+        fs::write(overlay.join(SESSION_DB), b"sqlite").unwrap();
+        fs::write(overlay.join("state.db-wal"), b"wal").unwrap();
+
+        let result = mount_session_db(overlay.to_str().unwrap(), store.to_str().unwrap()).unwrap();
+
+        assert!(result.mounted);
+        assert!(has_session_db(&store));
+        assert_eq!(fs::read(store.join("state.db-wal")).unwrap(), b"wal");
+        assert!(fs::symlink_metadata(overlay.join(SESSION_DB))
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]
