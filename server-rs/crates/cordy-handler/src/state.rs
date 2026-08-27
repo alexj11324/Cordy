@@ -383,6 +383,8 @@ pub struct HandlerState {
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     pub heartbeat_scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
     pub liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
+    /// Required migration versions captured at startup for `/readyz`.
+    pub readiness: Arc<crate::health::ReadinessState>,
     /// Public authentication dependencies and boot-time policy.
     pub auth_settings: crate::auth::AuthSettings,
     pub email_service: Arc<EmailService>,
@@ -583,6 +585,7 @@ impl HandlerState {
             http_metrics: None,
             heartbeat_scheduler,
             liveness_store: Arc::new(crate::runtime_liveness::NoopLivenessStore),
+            readiness: Arc::new(crate::health::ReadinessState::discover()),
             auth_settings: crate::auth::AuthSettings::from_env(),
             email_service: Arc::new(EmailService::new()),
             analytics,

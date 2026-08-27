@@ -24,10 +24,44 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 use crate::workspace::MemberWithUserResponse;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct InvitationAdmission {
     entries: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
     redis: Option<RecoveringConnection>,
+    limits: InvitationRateLimits,
+}
+
+/// Independent invitation admission budgets. A zero limit disables that
+/// gate, matching the Go server's `envNonNegativeInt` overrides.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvitationRateLimits {
+    pub actor_10m: usize,
+    pub workspace_24h: usize,
+    pub recipient_24h: usize,
+}
+
+impl Default for InvitationRateLimits {
+    fn default() -> Self {
+        Self {
+            actor_10m: invitation_limit_from_env("RATE_LIMIT_INVITATION_ACTOR_10M", 10),
+            workspace_24h: invitation_limit_from_env("RATE_LIMIT_INVITATION_WORKSPACE_24H", 50),
+            recipient_24h: invitation_limit_from_env("RATE_LIMIT_INVITATION_RECIPIENT_24H", 6),
+        }
+    }
+}
+
+fn invitation_limit_from_env(name: &str, fallback: usize) -> usize {
+    let Some(raw) = std::env::var_os(name) else {
+        return fallback;
+    };
+    let raw = raw.to_string_lossy();
+    match raw.trim().parse::<usize>() {
+        Ok(value) => value,
+        Err(_) => {
+            tracing::warn!(name, value = %raw, default = fallback, "invalid invitation rate limit; using default");
+            fallback
+        }
+    }
 }
 
 const REDIS_CHECK_SCRIPT: &str = r#"
@@ -67,30 +101,43 @@ struct AdmissionGate {
 }
 
 impl InvitationAdmission {
+    pub fn with_limits(limits: InvitationRateLimits) -> Self {
+        Self {
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            redis: None,
+            limits,
+        }
+    }
+
     pub fn with_redis(mut self, redis: RecoveringConnection) -> Self {
         self.redis = Some(redis);
         self
     }
 
-    fn gates(actor_id: Uuid, workspace_id: Uuid, email: &str) -> [AdmissionGate; 3] {
+    fn gates(
+        actor_id: Uuid,
+        workspace_id: Uuid,
+        email: &str,
+        limits: InvitationRateLimits,
+    ) -> [AdmissionGate; 3] {
         let recipient = hex::encode(Sha256::digest(email.trim().to_ascii_lowercase().as_bytes()));
         [
             AdmissionGate {
                 name: "actor",
                 key: format!("mul:invitation:actor:{actor_id}"),
-                limit: 10,
+                limit: limits.actor_10m,
                 window: Duration::from_secs(600),
             },
             AdmissionGate {
                 name: "workspace",
                 key: format!("mul:invitation:workspace:{workspace_id}"),
-                limit: 50,
+                limit: limits.workspace_24h,
                 window: Duration::from_secs(86_400),
             },
             AdmissionGate {
                 name: "recipient",
                 key: format!("mul:invitation:recipient:{recipient}"),
-                limit: 6,
+                limit: limits.recipient_24h,
                 window: Duration::from_secs(86_400),
             },
         ]
@@ -102,7 +149,7 @@ impl InvitationAdmission {
         workspace_id: Uuid,
         email: &str,
     ) -> Result<(), AdmissionError> {
-        let gates = Self::gates(actor_id, workspace_id, email);
+        let gates = Self::gates(actor_id, workspace_id, email, self.limits);
         if let Some(redis) = self.redis.as_ref() {
             return Self::admit_redis(redis, &gates).await;
         }
@@ -115,6 +162,9 @@ impl InvitationAdmission {
         let mut retry_after = 0_u64;
         let mut denied = Vec::new();
         for gate in gates {
+            if gate.limit == 0 {
+                continue;
+            }
             let values = entries.entry(gate.key.clone()).or_default();
             while values
                 .front()
@@ -137,6 +187,9 @@ impl InvitationAdmission {
             });
         }
         for gate in gates {
+            if gate.limit == 0 {
+                continue;
+            }
             entries.entry(gate.key.clone()).or_default().push_back(now);
         }
         Ok(())
@@ -156,6 +209,9 @@ impl InvitationAdmission {
         let mut denied = Vec::new();
         let mut retry_after = 0_u64;
         for gate in gates {
+            if gate.limit == 0 {
+                continue;
+            }
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
             let check = redis::Script::new(REDIS_CHECK_SCRIPT);
@@ -186,6 +242,9 @@ impl InvitationAdmission {
         }
 
         for gate in gates {
+            if gate.limit == 0 {
+                continue;
+            }
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
             let consume = redis::Script::new(REDIS_CONSUME_SCRIPT);
@@ -209,6 +268,12 @@ impl InvitationAdmission {
             }
         }
         Ok(())
+    }
+}
+
+impl Default for InvitationAdmission {
+    fn default() -> Self {
+        Self::with_limits(InvitationRateLimits::default())
     }
 }
 
@@ -1035,5 +1100,22 @@ mod tests {
             .admit(actor_id, workspace_id, "another@example.com")
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn zero_invitation_limits_disable_their_gates() {
+        let admission = InvitationAdmission::with_limits(InvitationRateLimits {
+            actor_10m: 0,
+            workspace_24h: 0,
+            recipient_24h: 0,
+        });
+        let actor_id = Uuid::new_v4();
+        let workspace_id = Uuid::new_v4();
+        for _ in 0..100 {
+            assert!(admission
+                .admit(actor_id, workspace_id, "recipient@example.com")
+                .await
+                .is_ok());
+        }
     }
 }

@@ -45,6 +45,33 @@ struct MetricsRuntime {
     task: tokio::task::JoinHandle<()>,
 }
 
+const HTTP_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn log_filter() -> tracing_subscriber::EnvFilter {
+    // Keep the Rust-native override for local debugging, but preserve the Go
+    // deployment contract: LOG_LEVEL controls the process-wide level and
+    // defaults to debug when unset or unrecognised.
+    if let Ok(raw) = std::env::var("RUST_LOG") {
+        if !raw.trim().is_empty() {
+            if let Ok(filter) = raw.parse() {
+                return filter;
+            }
+        }
+    }
+    let level = match std::env::var("LOG_LEVEL")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "info" => "info",
+        "warn" | "warning" => "warn",
+        "error" => "error",
+        _ => "debug",
+    };
+    tracing_subscriber::EnvFilter::new(level)
+}
+
 impl MetricsRuntime {
     async fn shutdown(self) {
         if !self.shutdown_with_timeout(Duration::from_secs(3)).await {
@@ -477,10 +504,7 @@ fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cordy=info,tower=info".into()),
-        )
+        .with_env_filter(log_filter())
         .init();
 
     let cfg = cordy_config::Config::load(Some(std::path::Path::new("cordy.toml")))?;
@@ -607,12 +631,28 @@ async fn main() -> anyhow::Result<()> {
         task_side_effects,
         analytics,
     } = app;
-    let serve_result = axum::serve(
-        listener,
-        router.into_make_service_with_connect_info::<SocketAddr>(),
+    let serve_result = match tokio::time::timeout(
+        HTTP_SHUTDOWN_TIMEOUT,
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal()),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await;
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            // Dropping the axum server future cancels its accept/connection
+            // tasks. Continue with the bounded worker shutdown below, matching
+            // net/http.Server.Shutdown's ten-second deadline in Go.
+            tracing::warn!(
+                timeout = ?HTTP_SHUTDOWN_TIMEOUT,
+                "HTTP server did not drain before shutdown deadline; forcing shutdown"
+            );
+            Ok(())
+        }
+    };
     // Match Go's shutdown ordering: drain every in-flight HTTP handler before
     // stopping maintenance workers. Channel adapters are producers and must
     // drain while realtime fanout is still accepting their final events.
