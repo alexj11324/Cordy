@@ -45,6 +45,7 @@ license = "UNLICENSED"
 # async runtime & web
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "multipart", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
 percent-encoding = "2.3"
