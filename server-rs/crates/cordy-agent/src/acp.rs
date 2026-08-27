@@ -1,12 +1,16 @@
 //! Sequential ACP JSON-RPC transport with headless permission handling.
 
 use std::io;
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
 
 use crate::stream::AgentLineReader;
+
+pub const ACP_NOTIFICATION_QUIET_TIME: Duration = Duration::from_millis(250);
+pub const ACP_NOTIFICATION_DRAIN_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AcpNotification {
@@ -29,6 +33,8 @@ pub enum AcpError {
     },
     #[error("ACP stream ended while awaiting {0}")]
     UnexpectedEof(String),
+    #[error("invalid ACP response for {0}: missing result or error")]
+    InvalidResponse(String),
 }
 
 impl AcpError {
@@ -56,7 +62,10 @@ pub struct AcpClient<R, W> {
     reader: AgentLineReader<R>,
     writer: W,
     next_id: u64,
+    permission_selector: Box<PermissionSelector>,
 }
+
+type PermissionSelector = dyn FnMut(Option<&Value>) -> Option<String> + Send;
 
 impl<R, W> AcpClient<R, W>
 where
@@ -68,7 +77,19 @@ where
             reader: AgentLineReader::new(reader),
             writer,
             next_id: 1,
+            permission_selector: Box::new(select_permission),
         }
+    }
+
+    /// Replaces the generic headless permission policy with the provider's
+    /// own offered-option selector. The selector must return an option ID
+    /// that appeared in the request, or `None` to fail closed.
+    pub fn with_permission_selector<F>(mut self, selector: F) -> Self
+    where
+        F: FnMut(Option<&Value>) -> Option<String> + Send + 'static,
+    {
+        self.permission_selector = Box::new(selector);
+        self
     }
 
     /// Sends one request and continues servicing agent→client requests and
@@ -91,43 +112,98 @@ where
         }))
         .await?;
 
+        let expected_id = Value::from(id);
         loop {
-            let line = self
-                .reader
-                .next_line()
+            let frame = self
+                .next_frame()
                 .await?
                 .ok_or_else(|| AcpError::UnexpectedEof(method.to_string()))?;
-            let Ok(frame) = serde_json::from_str::<Value>(line.trim()) else {
-                continue;
-            };
-            let Some(frame) = frame.as_object() else {
-                continue;
-            };
-            let frame_id = frame.get("id").and_then(Value::as_u64);
+            let has_id = frame.contains_key("id");
+            let frame_id = frame.get("id");
             let frame_method = frame.get("method").and_then(Value::as_str);
-            match (frame_id, frame_method) {
-                (Some(request_id), Some(agent_method)) => {
-                    self.answer_agent_request(request_id, agent_method, frame.get("params"))
-                        .await?;
-                }
-                (Some(response_id), None) if response_id == id => {
+            if has_id {
+                if let Some(agent_method) = frame_method {
+                    self.answer_agent_request(
+                        frame_id.unwrap_or(&Value::Null),
+                        agent_method,
+                        frame.get("params"),
+                    )
+                    .await?;
+                } else if frame_id == Some(&expected_id) {
                     if let Some(error) = frame.get("error") {
                         return Err(rpc_error(method, error));
                     }
-                    return Ok(frame.get("result").cloned().unwrap_or(Value::Null));
+                    if let Some(result) = frame.get("result") {
+                        return Ok(result.clone());
+                    }
+                    return Err(AcpError::InvalidResponse(method.to_string()));
                 }
-                (None, Some(notification_method)) => on_notification(AcpNotification {
+            } else if let Some(notification_method) = frame_method {
+                on_notification(AcpNotification {
                     method: notification_method.to_string(),
                     params: frame.get("params").cloned().unwrap_or(Value::Null),
-                }),
-                _ => {}
+                });
             }
+        }
+    }
+
+    /// Drains notifications emitted after a completed request. The drain ends
+    /// after `quiet` without a notification, EOF, or the `hard` bound. Agent
+    /// requests continue to receive responses during the drain.
+    pub async fn drain_notifications(
+        &mut self,
+        quiet: Duration,
+        hard: Duration,
+        mut on_notification: impl FnMut(AcpNotification),
+    ) -> Result<(), AcpError> {
+        let hard_deadline = tokio::time::Instant::now() + hard;
+        let mut quiet_deadline = tokio::time::Instant::now() + quiet;
+        loop {
+            let frame = tokio::select! {
+                _ = tokio::time::sleep_until(hard_deadline) => return Ok(()),
+                _ = tokio::time::sleep_until(quiet_deadline) => return Ok(()),
+                frame = self.next_frame() => frame?,
+            };
+            let Some(frame) = frame else {
+                return Ok(());
+            };
+            let has_id = frame.contains_key("id");
+            let frame_id = frame.get("id");
+            let frame_method = frame.get("method").and_then(Value::as_str);
+            if has_id {
+                if let Some(agent_method) = frame_method {
+                    self.answer_agent_request(
+                        frame_id.unwrap_or(&Value::Null),
+                        agent_method,
+                        frame.get("params"),
+                    )
+                    .await?;
+                }
+            } else if let Some(notification_method) = frame_method {
+                on_notification(AcpNotification {
+                    method: notification_method.to_string(),
+                    params: frame.get("params").cloned().unwrap_or(Value::Null),
+                });
+                quiet_deadline = tokio::time::Instant::now() + quiet;
+            }
+        }
+    }
+
+    async fn next_frame(&mut self) -> Result<Option<serde_json::Map<String, Value>>, AcpError> {
+        loop {
+            let Some(line) = self.reader.next_line().await? else {
+                return Ok(None);
+            };
+            let Ok(Value::Object(frame)) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            return Ok(Some(frame));
         }
     }
 
     async fn answer_agent_request(
         &mut self,
-        id: u64,
+        id: &Value,
         method: &str,
         params: Option<&Value>,
     ) -> Result<(), AcpError> {
@@ -140,7 +216,7 @@ where
                 }))
                 .await;
         }
-        if let Some(option_id) = select_permission(params) {
+        if let Some(option_id) = (self.permission_selector)(params) {
             return self
                 .write(&serde_json::json!({
                     "jsonrpc": "2.0",
@@ -248,7 +324,7 @@ mod tests {
                 .unwrap_or_else(|error| panic!("read request: {error}"))
                 .unwrap_or_else(|| panic!("request line"));
             assert!(request.contains("session/prompt"));
-            agent_write.write_all(br#"{"jsonrpc":"2.0","id":91,"method":"session/request_permission","params":{"options":[{"optionId":"permanent","kind":"allow_always"},{"optionId":"once","kind":"allow_once"}]}}
+            agent_write.write_all(br#"{"jsonrpc":"2.0","id":"permission-91","method":"session/request_permission","params":{"options":[{"optionId":"permanent","kind":"allow_always"},{"optionId":"once","kind":"allow_once"}]}}
 {"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk"}}}
 "#).await.unwrap_or_else(|error| panic!("write agent frames: {error}"));
             let permission = lines
@@ -279,6 +355,134 @@ mod tests {
             .unwrap_or_else(|error| panic!("agent task: {error}"));
         assert_eq!(result["stopReason"], "end_turn");
         assert_eq!(notifications.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn request_rejects_response_without_result_or_error() {
+        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (agent_read, mut agent_write) = tokio::io::split(agent_io);
+        let agent = tokio::spawn(async move {
+            let mut lines = BufReader::new(agent_read).lines();
+            lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read request: {error}"));
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","id":1}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write malformed response: {error}"));
+        });
+        let mut client = AcpClient::new(BufReader::new(client_read), client_write);
+        let error = client
+            .request("session/prompt", serde_json::json!({}), |_| {})
+            .await
+            .expect_err("missing result/error must fail the request");
+        assert!(matches!(
+            error,
+            AcpError::InvalidResponse(method) if method == "session/prompt"
+        ));
+        agent
+            .await
+            .unwrap_or_else(|error| panic!("agent task: {error}"));
+    }
+
+    #[tokio::test]
+    async fn drain_notifications_captures_updates_after_response() {
+        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (agent_read, mut agent_write) = tokio::io::split(agent_io);
+        let agent = tokio::spawn(async move {
+            let mut lines = BufReader::new(agent_read).lines();
+            lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read request: {error}"));
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","id":1,"result":{"stopReason":"end_turn"}}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write response: {error}"));
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            agent_write
+                .write_all(br#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk"}}}
+"#)
+                .await
+                .unwrap_or_else(|error| panic!("write trailing notification: {error}"));
+        });
+        let mut client = AcpClient::new(BufReader::new(client_read), client_write);
+        client
+            .request("session/prompt", serde_json::json!({}), |_| {})
+            .await
+            .unwrap_or_else(|error| panic!("ACP request: {error}"));
+        let mut notifications = Vec::new();
+        client
+            .drain_notifications(
+                Duration::from_millis(50),
+                Duration::from_millis(500),
+                |notification| notifications.push(notification),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("ACP notification drain: {error}"));
+        agent
+            .await
+            .unwrap_or_else(|error| panic!("agent task: {error}"));
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].method, "session/update");
+    }
+
+    #[tokio::test]
+    async fn request_uses_provider_permission_selector() {
+        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (agent_read, mut agent_write) = tokio::io::split(agent_io);
+        let agent = tokio::spawn(async move {
+            let mut lines = BufReader::new(agent_read).lines();
+            lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read request: {error}"));
+            agent_write
+                .write_all(br#"{"jsonrpc":"2.0","id":"reasonix-permission","method":"session/request_permission","params":{"options":[{"optionId":"protected-decision","kind":"question"}]}}
+"#)
+                .await
+                .unwrap_or_else(|error| panic!("write permission request: {error}"));
+            let permission = lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read permission response: {error}"))
+                .unwrap_or_else(|| panic!("permission response line"));
+            assert!(permission.contains("\"optionId\":\"protected-decision\""));
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","id":1,"result":null}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write response: {error}"));
+        });
+        let mut client = AcpClient::new(BufReader::new(client_read), client_write)
+            .with_permission_selector(|params| {
+                params?
+                    .get("options")?
+                    .as_array()?
+                    .first()?
+                    .get("optionId")?
+                    .as_str()
+                    .map(str::to_string)
+            });
+        client
+            .request("session/prompt", serde_json::json!({}), |_| {})
+            .await
+            .unwrap_or_else(|error| panic!("ACP request: {error}"));
+        agent
+            .await
+            .unwrap_or_else(|error| panic!("agent task: {error}"));
     }
 
     #[test]
