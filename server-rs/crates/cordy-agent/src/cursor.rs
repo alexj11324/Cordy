@@ -13,17 +13,17 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
 
-use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
+use crate::command::{BlockedArgMode, RuntimeCommand, filter_custom_args, filter_launch_prefix};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
+use crate::model::{Catalog, CatalogCache, Model};
 use crate::process::OwnedProcessTree;
-use crate::stderr::{sanitize_diagnostic, with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
+use crate::stderr::{DEFAULT_TAIL_BYTES, SharedDiagnosticBuffer, sanitize_diagnostic, with_stderr};
 use crate::stream::AgentLineReader;
 
 const MESSAGE_BUFFER: usize = 256;
@@ -80,9 +80,7 @@ impl CursorBackend {
         } else {
             runtime_scope
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return static_catalog();
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -214,6 +212,13 @@ fn command_path(command: &RuntimeCommand) -> String {
     } else {
         command.path.clone()
     }
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
 }
 
 fn configure_child_environment(command: &mut Command, extra: &BTreeMap<String, String>) {
@@ -384,11 +389,23 @@ async fn run_cursor(
 
 async fn write_cursor_prompt(stdin: SharedStdin, prompt: Vec<u8>) -> io::Result<()> {
     let mut guard = stdin.lock().await;
-    let writer = guard
-        .as_mut()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Cursor stdin closed"))?;
-    writer.write_all(&prompt).await?;
-    writer.flush().await
+    let result = if let Some(writer) = guard.as_mut() {
+        let result = async {
+            writer.write_all(&prompt).await?;
+            writer.flush().await
+        }
+        .await;
+        // Cursor reads the one-shot prompt until EOF. Drop the pipe on both
+        // successful and failed writes so the CLI cannot wait indefinitely.
+        guard.take();
+        result
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "Cursor stdin closed",
+        ))
+    };
+    result
 }
 
 async fn close_stdin(stdin: &SharedStdin) {
@@ -1520,5 +1537,44 @@ mod tests {
         assert_eq!(status, "failed");
         assert_eq!(error, "provider rejected request");
         assert_eq!(cursor_result_output(&structured_error), "");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execute_closes_prompt_stdin_after_write() {
+        let command = RuntimeCommand::new(
+            "sh",
+            vec![
+                "-c".to_string(),
+                "cat >/dev/null\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"done\"}'".to_string(),
+                "cursor-agent".to_string(),
+            ],
+        );
+        let backend = CursorBackend::new(CursorConfig {
+            command,
+            ..CursorConfig::default()
+        });
+        let session = backend
+            .execute(
+                "prompt that must be followed by EOF",
+                ExecOptions {
+                    timeout: Duration::from_secs(2),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .expect("fake cursor process should start");
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let messages_task = tokio::spawn(async move { while messages.recv().await.is_some() {} });
+        let execution = result.await.expect("cursor execution should finish");
+        messages_task
+            .await
+            .expect("message drain should finish without panicking");
+
+        assert_eq!(execution.status, "completed");
+        assert_eq!(execution.output, "done");
     }
 }
