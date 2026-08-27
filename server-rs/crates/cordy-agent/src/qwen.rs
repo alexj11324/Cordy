@@ -1,6 +1,7 @@
 //! Qwen Code's native non-interactive stream-JSON adapter.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io::{self, Write};
 use std::process::{ExitStatus, Stdio};
 use std::sync::LazyLock;
@@ -94,6 +95,7 @@ pub fn build_qwen_args(prompt: &str, options: &ExecOptions) -> Vec<String> {
 impl Backend for QwenBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
         managed_object(options.mcp_config.as_ref()).map_err(AgentError::InvalidConfig)?;
+        validate_working_directory(&options.cwd)?;
 
         let command_path = if self.config.command.path.is_empty() {
             "qwen"
@@ -102,17 +104,19 @@ impl Backend for QwenBackend {
         };
         let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS);
         log_blocked("launch prefix", &prefix.blocked_flags);
-        let mut argv = prefix.args;
+        let mut argv: Vec<OsString> = prefix.args.into_iter().map(OsString::from).collect();
         let provider_args = build_qwen_args(prompt, &options);
         log_blocked_args(&options);
-        argv.extend(provider_args);
+        argv.extend(provider_args.into_iter().map(OsString::from));
 
         let mut mcp_file = write_managed_mcp(options.mcp_config.as_ref())?;
         if let Some(file) = mcp_file.as_ref() {
-            let path = file.path().to_str().ok_or_else(|| {
-                AgentError::InvalidConfig("Qwen MCP path is not valid UTF-8".to_string())
-            })?;
-            argv.extend(["--mcp-config".to_string(), path.to_string()]);
+            // `Command` accepts OsStr arguments, so keep a platform-native
+            // temp path. Go's exec.Cmd also passes the raw path bytes; a
+            // non-UTF-8 TMPDIR must not turn a valid managed MCP config into a
+            // pre-launch configuration error on Unix.
+            argv.push(OsString::from("--mcp-config"));
+            argv.push(file.path().as_os_str().to_owned());
         }
 
         let mut command = Command::new(command_path);
@@ -136,12 +140,18 @@ impl Backend for QwenBackend {
                     AgentError::Process(error)
                 }
             })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("Qwen stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("Qwen stderr pipe unavailable after spawn".to_string())
-        })?;
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "Qwen stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "Qwen stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
 
         let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
@@ -163,6 +173,11 @@ impl Backend for QwenBackend {
             let end = {
                 let completion = async {
                     let exit = tree.wait().await;
+                    // A wrapper can exit while one of its descendants still
+                    // owns the inherited stdout pipe. Reap/stop the owned
+                    // tree before waiting for the stream pump, otherwise a
+                    // zero-timeout run can wait forever for EOF.
+                    stop_process_tree(&mut tree).await;
                     let stream = (&mut stdout_task).await;
                     (exit, stream)
                 };
@@ -296,6 +311,22 @@ fn write_managed_mcp(config: Option<&Value>) -> Result<Option<NamedTempFile>, Ag
     Ok(Some(file))
 }
 
+fn validate_working_directory(cwd: &str) -> Result<(), AgentError> {
+    if cwd.is_empty() {
+        return Ok(());
+    }
+    match std::fs::metadata(cwd) {
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err(AgentError::InvalidConfig(format!(
+            "Qwen working directory is not a directory: {cwd}"
+        ))),
+        Err(error) => Err(AgentError::Process(io::Error::new(
+            error.kind(),
+            format!("Qwen working directory {cwd}: {error}"),
+        ))),
+    }
+}
+
 async fn pump_stderr(mut stderr: tokio::process::ChildStderr, tail: SharedDiagnosticBuffer) {
     let mut buffer = [0_u8; 8192];
     loop {
@@ -391,6 +422,7 @@ fn join_failure_state(error: JoinError) -> QwenStreamState {
 #[derive(Debug, Deserialize)]
 struct QwenStreamEvent {
     #[serde(rename = "type")]
+    #[serde(default)]
     event_type: String,
     #[serde(default)]
     subtype: String,
@@ -415,6 +447,7 @@ struct QwenPayload {
     model: String,
     #[serde(default)]
     content: Vec<QwenContentBlock>,
+    #[serde(default)]
     usage: Option<QwenUsage>,
 }
 
@@ -431,6 +464,7 @@ struct QwenUsage {
 #[derive(Debug, Deserialize)]
 struct QwenContentBlock {
     #[serde(rename = "type")]
+    #[serde(default)]
     block_type: String,
     #[serde(default)]
     thinking: String,
@@ -490,7 +524,7 @@ fn handle_event(
                 event.result
             };
             if let Some(usage) = event.usage {
-                set_usage(&mut state.usage, &state.model, usage);
+                set_result_usage(&mut state.usage, &state.model, usage);
             }
         }
         "error" => {
@@ -587,9 +621,7 @@ fn handle_user(raw: Value, messages: &mpsc::Sender<Message>) {
 }
 
 fn set_usage(usage: &mut BTreeMap<String, TokenUsage>, model: &str, qwen: QwenUsage) {
-    if model.is_empty()
-        || (qwen.input_tokens == 0 && qwen.output_tokens == 0 && qwen.cache_read_input_tokens == 0)
-    {
+    if model.is_empty() {
         return;
     }
     usage.insert(
@@ -601,6 +633,13 @@ fn set_usage(usage: &mut BTreeMap<String, TokenUsage>, model: &str, qwen: QwenUs
             ..TokenUsage::default()
         },
     );
+}
+
+fn set_result_usage(usage: &mut BTreeMap<String, TokenUsage>, model: &str, qwen: QwenUsage) {
+    if qwen.input_tokens == 0 && qwen.output_tokens == 0 && qwen.cache_read_input_tokens == 0 {
+        return;
+    }
+    set_usage(usage, model, qwen);
 }
 
 fn error_text(event: &QwenStreamEvent) -> String {
@@ -643,16 +682,9 @@ fn resume_was_rejected<'a>(
     if !failed || requested.is_empty() {
         return false;
     }
-    const PHRASES: &[&str] = &[
-        "invalid conversation id",
-        "conversation not found",
-        "session not found",
-        "no conversation found",
-        "no saved session found",
-        "已绑定另外",
-        "bound to another account",
-        "bound to a different account",
-    ];
+    // Keep this provider-specific. Generic session wording can come from a
+    // tool/MCP server and is not evidence that Qwen rejected its --resume.
+    const PHRASES: &[&str] = &["no saved session found"];
     if texts.into_iter().any(|text| {
         let text = text.to_lowercase();
         PHRASES.iter().any(|phrase| text.contains(phrase))
@@ -732,6 +764,27 @@ mod tests {
     }
 
     #[test]
+    fn assistant_wire_defaults_and_zero_usage_match_go_decoder() {
+        let event: QwenStreamEvent = serde_json::from_str(
+            r#"{"type":"assistant","message":{"model":"qwen-test","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0}}}"#,
+        )
+        .unwrap_or_else(|_| unreachable!());
+        let (tx, _) = mpsc::channel(1);
+        let mut state = QwenStreamState::default();
+        handle_event(event, &tx, &mut state);
+        assert_eq!(state.model, "qwen-test");
+        assert_eq!(state.usage["qwen-test"], TokenUsage::default());
+
+        let event: QwenStreamEvent =
+            serde_json::from_str(r#"{"message":{"content":[{"text":"ignored"}]}}"#)
+                .unwrap_or_else(|_| unreachable!());
+        assert_eq!(event.event_type, "");
+        let (tx, _) = mpsc::channel(1);
+        handle_event(event, &tx, &mut state);
+        assert!(state.terminal.last_assistant_text.is_empty());
+    }
+
+    #[test]
     fn terminal_error_and_resume_rejection_fail_closed() {
         let event: QwenStreamEvent = serde_json::from_str(
             r#"{"type":"result","subtype":"error_during_execution","session_id":"echoed","is_error":true,"error":{"message":"No saved session found with ID redacted"}}"#,
@@ -746,6 +799,24 @@ mod tests {
             &state.session_id,
             true,
             [&state.terminal.final_result_text]
+        ));
+    }
+
+    #[test]
+    fn generic_session_errors_do_not_reject_qwen_resume() {
+        let unrelated = "MCP tool failed: session not found".to_string();
+        assert!(!resume_was_rejected("requested", "", true, [&unrelated]));
+    }
+
+    #[test]
+    fn missing_working_directory_is_not_an_executable_error() {
+        let directory = tempfile::tempdir()
+            .unwrap_or_else(|error| panic!("create working directory fixture: {error}"));
+        let missing = directory.path().join("missing");
+        let error = validate_working_directory(missing.to_str().unwrap_or_else(|| unreachable!()));
+        assert!(matches!(
+            error,
+            Err(AgentError::Process(error)) if error.kind() == io::ErrorKind::NotFound
         ));
     }
 
@@ -819,6 +890,29 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"PONG"}'
         assert_eq!(result.status, "completed");
         assert_eq!(result.output, "PONG");
         assert_eq!(result.session_id, "session-real");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn direct_exit_cleans_descendants_before_stdout_eof() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+sleep 60 &
+printf '%s\n' '{"type":"result","subtype":"success","result":"PONG"}'
+exit 0
+"#,
+        );
+        let session = backend
+            .execute("finish with a child", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Qwen with descendant: {error}"));
+        let Session { result, .. } = session;
+        let result = tokio::time::timeout(Duration::from_secs(8), result)
+            .await
+            .unwrap_or_else(|error| panic!("descendant kept stdout open: {error}"))
+            .unwrap_or_else(|error| panic!("receive Qwen result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "PONG");
     }
 
     #[cfg(unix)]
