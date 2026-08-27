@@ -1357,7 +1357,29 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_url, configure_wecom_security, lease_backend_settings, LeaseBackendSettings};
+    use super::{
+        app_url, channel_secret_box, configure_wecom_security, lease_backend_settings,
+        LeaseBackendSettings,
+    };
+    use cordy_lark::client::ApiClient as _;
+
+    #[test]
+    fn lark_runtime_requires_a_valid_secret_and_uses_the_real_client() {
+        const KEY_ENV: &str = "CORDY_TEST_LARK_SECRET_KEY";
+
+        std::env::remove_var(KEY_ENV);
+        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
+
+        std::env::set_var(KEY_ENV, "not-base64");
+        assert!(channel_secret_box(KEY_ENV).is_err());
+
+        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
+        std::env::remove_var(KEY_ENV);
+
+        let api = cordy_lark::http_client::HttpApiClient::new(Default::default());
+        assert!(api.is_configured());
+    }
 
     #[test]
     fn app_url_prefers_explicit_app_host_and_trims_slash() {
