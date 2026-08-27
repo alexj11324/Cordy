@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566 与 user WebSocket session Ready #567 已交付 | 异步收口 #565..#567 V/R/F，同时继续 background worker smoke | 依赖现有 Rust ws handler/hub/auth/membership production chain；#567 堆叠在 Ready #566 | PR #565/#566/#567；§5、§6.2、§18、§52..§54 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566 与 user WebSocket session Ready #567 已交付；scheduler worker 契约 #568 实施中 | 异步收口 #565..#567 V/R/F，同时收口 scheduler distributed lease/audit lifecycle | 复用唯一 `cordy-server` scheduler production assembly；#568 基于 #567 | PR #565/#566/#567；§5、§6.2、§18、§52..§55 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2012,3 +2012,32 @@ origin env precedence 与 Go 不同且受 ambient env 影响；失败路径不�
 却仍缺矩阵。review 同时确认 required-DB 不会 self-skip、唯一 production `/ws` 使用真实 Hub/authorizer/HandlerState，未发现
 Stub/Noop/Fake 或 alternate hub。上述 finding 已异步派发给独立 fixer；在修复及重验完成前，Go user WebSocket contract
 不能下线，PR 保持 Ready。
+
+## 55. AUDIT-002 执行缺口：scheduler distributed worker lifecycle contract
+
+当前切片继续台账既定的 `AUDIT-002 background worker smoke`，选择 Go `internal/scheduler` 的完整 DB-backed worker
+契约，而不是再补一个局部 helper：
+
+- Go `scheduler.Manager` 在 server 启动时注册 task-usage rollup 与 Autopilot schedule jobs，立即 tick；每个
+  `(job, scope, plan_time)` 通过 `sys_cron_executions` 唯一约束和 lease token 保证多副本只有一个执行者，写入完整 audit
+  row，并在失败后按同一 plan 重试。
+- abandoned RUNNING 必须先标 FAILED；允许 reentry 时可带新 lease/attempt reclaim，旧 owner 的 heartbeat/terminal write
+  必须失败，防止 stale runner 覆盖新 owner；handler panic、timeout、root cancellation 都必须写 FAILED 分类，正常 shutdown
+  必须有界 join。
+- Rust 唯一生产入口是 `cordy-server::build_production_router` 创建并注册两个真实 job 后调用
+  `cordy_scheduler::Manager::start`，server drain HTTP 后 cancel root 并 `ManagerRuntime::shutdown`；实现已有但只有 planner/
+  classifier unit tests，没有真实 PostgreSQL claim、lease theft、retry、audit payload、immediate tick 和 shutdown contract，
+  因而不能证明 Go scheduler worker 可退休。
+
+本切片必须直接执行既有 `Manager`/`ManagerRuntime`、真实 `sys_cron_executions` 表和 production SQL，不新增 scheduler、
+queue、lease service、mock DB 或 test-only production seam。完整 evidence 至少覆盖 concurrent managers single winner、
+success audit、failure same-plan retry、stale close/reclaim与旧 lease fencing、panic/timeout/cancel分类、start immediate tick和
+bounded shutdown；删除 claim uniqueness、lease-token terminal guard、retry cursor、root cancellation 或 production job register/
+start 任一环节应使 contract 失败。required DB 缺失/坏 `DATABASE_URL` 必须失败，不得 self-skip；fixture 使用唯一 job/scope
+并 failure-safe 清理。
+
+- 默认生产路径：Rust server 已只启动这一 DB-backed scheduler manager，无 Stub/Noop/Fake 或 alternate scheduler。
+- Go 是否可下线：本 worker contract 及异步 finding 收口后，Go scheduler manager 回归可退出；两个 job 的业务副作用、
+  其他 background workers 和 AUDIT-001..010 总退出门仍需分别完成。
+- owner：主 agent 迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
+  `codex/cord-232-scheduler-worker-contract-rust`，基于 #567 branch at `97edeaa3`。
