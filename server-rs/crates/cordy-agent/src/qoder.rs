@@ -223,7 +223,20 @@ impl QoderBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_models(&self.config, cache, cancellation, timeout).await
+        self.discover_models_for_runtime(&self.config.provider, cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so custom profiles that
+    /// share a Qoder-compatible executable do not share a catalog cache entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(&self.config, runtime_scope, cache, cancellation, timeout).await
     }
 }
 
@@ -769,13 +782,19 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
     }
 }
 
-async fn discover_models(
+async fn discover_models_with_scope(
     config: &QoderConfig,
+    runtime_scope: &str,
     cache: &CatalogCache,
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new(&config.provider, &config.command) else {
+    let scope = if runtime_scope.trim().is_empty() {
+        config.provider.as_str()
+    } else {
+        runtime_scope
+    };
+    let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
         return Catalog::default();
     };
     if let Some(catalog) = cache.get(&key) {

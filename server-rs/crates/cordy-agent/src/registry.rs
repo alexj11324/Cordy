@@ -10,6 +10,7 @@ use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::codex::{CodexBackend, CodexConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
+use crate::copilot::{CopilotBackend, CopilotConfig};
 use crate::cursor::{CursorBackend, CursorConfig};
 use crate::deveco::{DevecoBackend, DevecoConfig};
 use crate::dsh::{DshBackend, DshConfig};
@@ -319,6 +320,9 @@ pub async fn discover_models(
         "claude" => Ok(ClaudeBackend::new(ClaudeConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),
+        "copilot" => Ok(CopilotBackend::new(CopilotConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
         "cursor" => Ok(CursorBackend::new(CursorConfig { command, env })
             .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
             .await),
@@ -410,6 +414,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "claude" => Ok(Arc::new(ClaudeBackend::new(ClaudeConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "copilot" => Ok(Arc::new(CopilotBackend::new(CopilotConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -598,6 +606,7 @@ mod tests {
             "claude",
             "codebuddy",
             "codex",
+            "copilot",
             "cursor",
             "deveco",
             "dsh",
@@ -626,7 +635,7 @@ mod tests {
 
     #[test]
     fn factory_fails_closed_for_unknown_or_unimplemented_runtime() {
-        for runtime in ["unknown", "copilot", "hermes"] {
+        for runtime in ["unknown", "hermes"] {
             assert!(matches!(
                 build_backend(runtime, backend_config()),
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
