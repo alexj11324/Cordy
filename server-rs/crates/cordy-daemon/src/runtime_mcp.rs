@@ -14,9 +14,8 @@
 //!
 //! Port notes: Go's `json.Marshal(map[string]any)` emits keys sorted;
 //! serde_json's default BTreeMap ordering matches. TOML configs convert
-//! value-by-value. The three `claude_plugins.go` helpers live here
-//! TEMPORARILY — lane B (CORD-12) owns claude_plugins.go and should move
-//! them into its module on landing.
+//! value-by-value. Claude plugin discovery is shared with the local-skills
+//! production path through the canonical `claude_plugins` port.
 //!
 //! S9-integration: entry points are wired by the daemon-runner lane.
 
@@ -26,6 +25,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context as _};
 use serde_json::{json, Map, Value};
+
+use crate::claude_plugins::{
+    claude_plugin_component_paths, list_enabled_claude_plugins, read_claude_plugin_manifest,
+    ClaudePluginInstall,
+};
 
 /// The intentionally non-secret inventory shown in Agent capabilities
 /// (go:19–24). Never add command arguments, URLs, headers, or environment
@@ -417,178 +421,6 @@ fn normalize_runtime_mcp_entry(provider: &str, value: Value) -> Value {
     Value::Object(entry)
 }
 
-// ---------------------------------------------------------------------------
-// claude_plugins.go helpers — TEMPORARY home; lane B owns the canonical port.
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone)]
-struct ClaudePluginInstall {
-    #[allow(dead_code)]
-    id: String,
-    name: String,
-    install_path: String,
-}
-
-/// Resolves the current user-scope plugin installs that Claude Code itself
-/// has enabled (claude_plugins.go:38–92). Reading the install registry is
-/// deliberate: recursively scanning ~/.claude/plugins would surface both the
-/// marketplace checkout and every cached version of the same plugin.
-fn list_enabled_claude_plugins(home: &Path) -> Vec<ClaudePluginInstall> {
-    #[derive(serde::Deserialize)]
-    struct Install {
-        #[serde(default)]
-        scope: String,
-        #[serde(default, rename = "installPath")]
-        install_path: String,
-    }
-    #[derive(serde::Deserialize)]
-    struct InstalledFile {
-        #[serde(default)]
-        plugins: std::collections::BTreeMap<String, Vec<Install>>,
-    }
-    #[derive(serde::Deserialize)]
-    struct SettingsFile {
-        #[serde(default, rename = "enabledPlugins")]
-        enabled_plugins: std::collections::BTreeMap<String, bool>,
-    }
-
-    let Ok(settings_raw) = std::fs::read_to_string(home.join(".claude").join("settings.json"))
-    else {
-        return Vec::new();
-    };
-    let Ok(settings) = serde_json::from_str::<SettingsFile>(&settings_raw) else {
-        return Vec::new();
-    };
-    if settings.enabled_plugins.is_empty() {
-        return Vec::new();
-    }
-
-    let Ok(installed_raw) = std::fs::read_to_string(
-        home.join(".claude")
-            .join("plugins")
-            .join("installed_plugins.json"),
-    ) else {
-        return Vec::new();
-    };
-    let Ok(installed) = serde_json::from_str::<InstalledFile>(&installed_raw) else {
-        return Vec::new();
-    };
-
-    let mut plugin_ids: Vec<String> = settings
-        .enabled_plugins
-        .iter()
-        .filter(|(_, enabled)| **enabled)
-        .map(|(id, _)| id.clone())
-        .collect();
-    plugin_ids.sort();
-
-    let mut plugins = Vec::with_capacity(plugin_ids.len());
-    for id in plugin_ids {
-        let Some(installs) = installed.plugins.get(&id) else {
-            continue;
-        };
-        if installs.is_empty() {
-            continue;
-        }
-        // Last entry wins unless a user-scope install exists.
-        let selected = installs
-            .iter()
-            .rev()
-            .find(|install| install.scope == "user")
-            .unwrap_or_else(|| installs.last().expect("checked non-empty above"));
-        let install_path = selected.install_path.trim();
-        if install_path.is_empty() {
-            continue;
-        }
-
-        let mut name = id.split('@').next().unwrap_or("").trim().to_string();
-        if let Some((manifest_name, _)) = read_claude_plugin_manifest(Path::new(install_path)) {
-            if !manifest_name.trim().is_empty() {
-                name = manifest_name.trim().to_string();
-            }
-        }
-        if name.is_empty() {
-            continue;
-        }
-        plugins.push(ClaudePluginInstall {
-            id,
-            name,
-            install_path: install_path.to_string(),
-        });
-    }
-    plugins
-}
-
-fn read_claude_plugin_manifest(install_path: &Path) -> Option<(String, Option<Value>)> {
-    #[derive(serde::Deserialize)]
-    struct ManifestFile {
-        #[serde(default)]
-        name: String,
-        #[serde(default, rename = "mcpServers")]
-        mcp_servers: Option<Value>,
-    }
-    let raw =
-        std::fs::read_to_string(install_path.join(".claude-plugin").join("plugin.json")).ok()?;
-    let manifest: ManifestFile = serde_json::from_str(&raw).ok()?;
-    Some((manifest.name, manifest.mcp_servers))
-}
-
-/// Component paths from a plugin manifest's `mcpServers` field: a single path
-/// string or a list; relative paths resolve under installPath and escapes
-/// above it are dropped (claude_plugins.go:106–139).
-fn claude_plugin_component_paths(
-    install_path: &Path,
-    raw: Option<&Value>,
-    default: Option<PathBuf>,
-) -> Vec<PathBuf> {
-    let mut paths: Vec<PathBuf> = default.into_iter().collect();
-    match raw {
-        Some(Value::String(one)) => {
-            if !one.trim().is_empty() {
-                paths.push(PathBuf::from(one.trim()));
-            }
-        }
-        Some(Value::Array(many)) => {
-            for item in many {
-                if let Some(one) = item.as_str() {
-                    if !one.trim().is_empty() {
-                        paths.push(PathBuf::from(one));
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-
-    let mut seen = std::collections::BTreeSet::new();
-    let mut out = Vec::with_capacity(paths.len());
-    for candidate in paths {
-        let candidate_text = candidate.to_string_lossy().trim().to_string();
-        if candidate_text.is_empty() {
-            continue;
-        }
-        let candidate_path = Path::new(&candidate_text);
-        let joined = if candidate_path.is_absolute() {
-            PathBuf::from(&candidate_text)
-        } else {
-            install_path.join(candidate_path)
-        };
-        let cleaned = crate::repocache::normalize_lexically(&joined);
-        // Rel(installPath, cleaned): anything outside the install tree is
-        // skipped, mirroring Go's ".." prefix rejection.
-        let Ok(rel) = cleaned.strip_prefix(install_path) else {
-            continue;
-        };
-        if rel.as_os_str().is_empty() {
-            continue;
-        }
-        if seen.insert(cleaned.clone()) {
-            out.push(cleaned);
-        }
-    }
-    out
-}
-
 /// Redacted inventory for Agent capabilities (go:371–456), deduped with user
 /// configuration winning on a same-name collision and sorted
 /// case-insensitively by name.
@@ -715,14 +547,7 @@ fn runtime_mcp_summaries(
 fn list_claude_plugin_mcp_servers(home: &Path) -> Vec<RuntimeLocalMcpServerSummary> {
     let mut out = Vec::new();
     for plugin in list_enabled_claude_plugins(home) {
-        let install_path = Path::new(&plugin.install_path);
-        let (_, manifest_mcp_servers) =
-            read_claude_plugin_manifest(install_path).unwrap_or_default();
-        let paths = claude_plugin_component_paths(
-            install_path,
-            manifest_mcp_servers.as_ref(),
-            Some(install_path.join(".mcp.json")),
-        );
+        let paths = claude_plugin_mcp_paths(&plugin);
         for path in paths {
             let Ok(raw) = std::fs::read_to_string(&path) else {
                 continue;
@@ -758,14 +583,7 @@ pub(crate) fn nested_runtime_mcp_map<'a>(
 fn load_claude_plugin_mcp_server_configs(home: &Path) -> Map<String, Value> {
     let mut out = Map::new();
     for plugin in list_enabled_claude_plugins(home) {
-        let install_path = Path::new(&plugin.install_path);
-        let (_, manifest_mcp_servers) =
-            read_claude_plugin_manifest(install_path).unwrap_or_default();
-        let paths = claude_plugin_component_paths(
-            install_path,
-            manifest_mcp_servers.as_ref(),
-            Some(install_path.join(".mcp.json")),
-        );
+        let paths = claude_plugin_mcp_paths(&plugin);
         for path in paths {
             let Ok(raw) = std::fs::read_to_string(&path) else {
                 continue;
@@ -781,6 +599,14 @@ fn load_claude_plugin_mcp_server_configs(home: &Path) -> Map<String, Value> {
         }
     }
     out
+}
+
+fn claude_plugin_mcp_paths(plugin: &ClaudePluginInstall) -> Vec<std::path::PathBuf> {
+    let raw = read_claude_plugin_manifest(&plugin.install_path)
+        .map(|manifest| manifest.mcp_servers_value().clone())
+        .unwrap_or(Value::Null);
+    let defaults = [plugin.install_path.join(".mcp.json")];
+    claude_plugin_component_paths(&plugin.install_path, &raw, &defaults)
 }
 
 pub(crate) fn runtime_mcp_transport(entry: &Map<String, Value>) -> String {

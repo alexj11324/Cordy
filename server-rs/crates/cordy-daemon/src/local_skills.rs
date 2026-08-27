@@ -223,16 +223,16 @@ pub(crate) fn local_skill_roots_for_provider(
         },
     ];
     if provider == "claude" {
-        for plugin in list_enabled_claude_plugins(&home) {
+        for plugin in list_enabled_claude_plugins(Path::new(&home)) {
             let manifest = read_claude_plugin_manifest(&plugin.install_path);
-            let defaults = vec![join_path(&[&plugin.install_path, "skills"])];
+            let defaults = vec![plugin.install_path.join("skills")];
             let raw = manifest
                 .as_ref()
                 .map(|m| m.skills_value().clone())
                 .unwrap_or(serde_json::Value::Null);
             for path in claude_plugin_component_paths(&plugin.install_path, &raw, &defaults) {
                 roots.push(LocalSkillRoot {
-                    path,
+                    path: path.to_string_lossy().into_owned(),
                     kind: LOCAL_SKILL_ROOT_PLUGIN,
                     key_prefix: format!("{}:", plugin.name),
                     plugin: plugin.id.clone(),
