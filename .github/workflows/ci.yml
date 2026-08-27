@@ -84,14 +84,20 @@ jobs:
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
+              - 'Dockerfile.web'
+              - '.dockerignore'
               - 'Makefile'
-            # Both backends remain production-relevant during the migration.
-            # A backend change exercises the Go deployment gate and the Rust
-            # migration gate until the deployed server switches fully.
+            # Go remains compatibility-test relevant during the migration,
+            # while Rust owns the deployed server and migration gates.
             backend:
               - 'server-rs/**'
               - 'server/**'
               - 'deploy/helm/**'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker/**'
+              - 'docker-compose.selfhost.yml'
+              - 'docker-compose.selfhost.build.yml'
               - 'scripts/**'
               - 'packages/core/runtimes/cli-version.ts'
               - 'Makefile'
@@ -439,6 +445,17 @@ jobs:
           check-latest: true
           cache-dependency-path: server/go.sum
 
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs -> target
+
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
@@ -454,16 +471,39 @@ jobs:
           bash scripts/makefile-build.test.sh
           bash scripts/test-go.test.sh
 
-      - name: Build deployed Go server
-        working-directory: server
-        run: go build ./...
+      - name: Build deployed Rust server
+        working-directory: server-rs
+        run: cargo build --locked -p cordy-server
 
-      - name: Apply database migrations
-        working-directory: server
-        run: go run ./cmd/migrate up
+      - name: Apply database migrations with the Rust runner
+        working-directory: server-rs
+        run: cargo run --locked -p cordy-migrate -- up
 
       - name: Run Go tests
         run: bash scripts/test-go.sh --race
+
+  rust-production-image:
+    name: rust-production-image
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build production backend image
+        env:
+          VERSION: ci
+          COMMIT: ${{ github.sha }}
+          DATE: ${{ github.run_started_at }}
+        run: |
+          docker build \
+            --file Dockerfile \
+            --tag cordy-backend:ci \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$COMMIT" \
+            --build-arg DATE="$DATE" \
+            .
 
   go-vulnerability-scan:
     needs: changes
@@ -579,10 +619,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
 
-  # Preserve the required check name while both production Go and migration
-  # Rust implementations are validated.
+  # Preserve the required check name while Go compatibility and Rust
+  # production implementations are validated.
   backend:
-    needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit]
+    needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit, rust-production-image]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -596,6 +636,7 @@ jobs:
           TEST_RESULT: ${{ needs.rust-tests.result }}
           PLATFORM_RESULT: ${{ needs.rust-platform.result }}
           AUDIT_RESULT: ${{ needs.rust-audit.result }}
+          PRODUCTION_IMAGE_RESULT: ${{ needs.rust-production-image.result }}
         run: |
           echo "changes:       $CHANGES_RESULT"
           echo "backend path:  $BACKEND_CHANGED"
@@ -605,6 +646,7 @@ jobs:
           echo "rust-tests:    $TEST_RESULT"
           echo "rust-platform: $PLATFORM_RESULT"
           echo "rust-audit:    $AUDIT_RESULT"
+          echo "production-image: $PRODUCTION_IMAGE_RESULT"
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::change classification failed"
             exit 1
@@ -613,7 +655,7 @@ jobs:
             echo "No backend paths changed."
             exit 0
           fi
-          if [ "$GO_TEST_RESULT" != "success" ] || [ "$GO_AUDIT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
+          if [ "$GO_TEST_RESULT" != "success" ] || [ "$GO_AUDIT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ] || [ "$PRODUCTION_IMAGE_RESULT" != "success" ]; then
             echo "::error::backend validation failed"
             exit 1
           fi
