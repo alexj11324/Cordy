@@ -76,7 +76,8 @@ impl MetricsRuntime {
 
 struct ProfilingRuntime {
     shutdown: tokio_util::sync::CancellationToken,
-    task: tokio::task::JoinHandle<()>,
+    pprof_task: tokio::task::JoinHandle<()>,
+    console_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl ProfilingRuntime {
@@ -88,12 +89,25 @@ impl ProfilingRuntime {
 
     async fn shutdown_with_timeout(self, timeout: Duration) -> bool {
         self.shutdown.cancel();
-        let mut task = self.task;
-        if tokio::time::timeout(timeout, &mut task).await.is_ok() {
+        let mut pprof_task = self.pprof_task;
+        let mut console_task = self.console_task;
+        let joined = tokio::time::timeout(timeout, async {
+            let _ = (&mut pprof_task).await;
+            if let Some(task) = &mut console_task {
+                let _ = task.await;
+            }
+        })
+        .await
+        .is_ok();
+        if joined {
             return true;
         }
-        task.abort();
-        let _ = task.await;
+        pprof_task.abort();
+        let _ = pprof_task.await;
+        if let Some(task) = console_task {
+            task.abort();
+            let _ = task.await;
+        }
         false
     }
 }
@@ -531,10 +545,24 @@ fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     let log_filter = tracing_subscriber::EnvFilter::try_new(cordy_util::logging::env_filter())
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"));
-    let console_addr: SocketAddr = profiling::TOKIO_CONSOLE_ADDR.parse()?;
-    let console_layer = console_subscriber::ConsoleLayer::builder()
-        .server_addr(console_addr)
-        .spawn();
+    let console_enabled =
+        profiling::console_enabled(std::env::var(profiling::TOKIO_CONSOLE_ENV).ok().as_deref());
+    let (console_layer, console_server) = if console_enabled {
+        let (layer, server) = profiling::build_console();
+        (Some(layer), Some(server))
+    } else {
+        (None, None)
+    };
+    let console_listener = if console_enabled {
+        Some(profiling::bind_console().await.map_err(|error| {
+            anyhow::anyhow!(
+                "failed to bind Tokio console at {}: {error}",
+                profiling::TOKIO_CONSOLE_ADDR
+            )
+        })?)
+    } else {
+        None
+    };
     let log_layer = tracing_subscriber::fmt::layer()
         .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
             cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
@@ -545,6 +573,12 @@ async fn main() -> anyhow::Result<()> {
         .with(console_layer)
         .with(log_layer)
         .init();
+    if console_enabled {
+        tracing::info!(
+            addr = profiling::TOKIO_CONSOLE_ADDR,
+            "Tokio console enabled"
+        );
+    }
 
     let cfg = cordy_config::Config::load(Some(std::path::Path::new("cordy.toml")))?;
     cfg.validate()?;
@@ -647,14 +681,26 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(%addr, "listening");
     let profiling_shutdown = tokio_util::sync::CancellationToken::new();
     let profiling_serve_shutdown = profiling_shutdown.clone();
-    let profiling_task = tokio::spawn(async move {
+    let pprof_task = tokio::spawn(async move {
         if let Err(error) = profiling::serve(profiling_serve_shutdown).await {
             tracing::error!(%error, "pprof server stopped");
         }
     });
+    let console_task = match (console_server, console_listener) {
+        (Some(server), Some(listener)) => {
+            let shutdown = profiling_shutdown.clone();
+            Some(tokio::spawn(async move {
+                if let Err(error) = profiling::serve_console(server, listener, shutdown).await {
+                    tracing::error!(%error, "Tokio console server stopped");
+                }
+            }))
+        }
+        _ => None,
+    };
     let profiling_runtime = ProfilingRuntime {
         shutdown: profiling_shutdown,
-        task: profiling_task,
+        pprof_task,
+        console_task,
     };
     let ProductionApp {
         router,
