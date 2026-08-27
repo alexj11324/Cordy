@@ -1979,4 +1979,22 @@ PostgreSQL fixture 和真实 WebSocket client执行完整会话矩阵。需要 D
 - Go 是否可下线：本契约与异步 finding 收口后，Go user WS session 回归不再是 Rust production 依赖；Redis relay、
   background worker、AUDIT-001..010 的剩余退出门仍未完成。
 - owner：主 agent 只迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
-  `codex/cord-231-user-websocket-session-rust`，依赖 Ready #566 branch at `1bf44476`；编码尚未开始。
+  `codex/cord-231-user-websocket-session-rust`，依赖 Ready #566 branch at `1bf44476`。
+
+实现 commit `a8de8250` 只在既有 `ws.rs` 的 `cfg(test)` 增加真实 loopback contract，并给 handler tests 复用 workspace
+已有的 `tokio-tungstenite` dev dependency；没有新增生产 server、router、hub、auth seam 或运行时依赖：
+
+- 用 `build_router_from_state` 顶层 production assembly 启动真实 Axum listener，因此同一测试会安装真实
+  `DbScopeAuthorizer`、CORS/request middleware、`ws_handler`、Hub 和 HandlerState services；
+- 用真实 user/workspace/member/PAT/agent/issue/task rows 覆盖 foreign Origin upgrade 前 403、非 auth 首帧 error+close、
+  有效 PAT 但非 member 的 auth_error+close、member PAT 第一帧 `auth_ack`，以及 workspace slug + cookie 的 upgrade 前
+  auth branch；
+- 已认证 session 直接断言 Hub 自动 workspace/user rooms、own workspace idempotent ack、foreign workspace deny、owned
+  task DB authorization ack、unsubscribe ack/room removal、unknown task deny、application ping/pong、workspace broadcast wire、
+  close 后 connections 与 task room 清理；
+- `DATABASE_URL` 缺失/坏连接直接失败而非 self-skip；正常路径在 server graceful shutdown 后显式删除 task/issue/agent/
+  PAT/member/workspace/users。sandbox loopback 或共享 DB 失败必须由 verifier 原样报告。
+
+主 agent 只运行 `git diff --check`（PASS），没有运行 cargo/rustfmt/test，也没有机械重算 Cargo.lock；独立 verifier 必须
+核对新增 dev dependency 是否要求 lock update并执行 exact loopback test。reviewer/fixer 尚未开始，Ready PR 待
+push/create；当前不能声称 WS contract 已验证或删除 Go。
