@@ -2331,6 +2331,6 @@ active agent/online/fresh runtime 排除、bounded candidate 与 blocked gauge�
   workspace 过滤事件。
 
 主 agent 仅执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令。非 Draft Ready PR #573
-将在本 branch 推送后创建，base 是 `codex/cord-236-stale-task-cleanup-contract-rust` 的 `b335afa4`，当前 Ready 代码 SHA
-`cb70bb98`；独立 verifier/reviewer/fixer 异步派发。exact compile、matched/executed counts、required DB、server/Windows
-和 timeout/rollback 证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
+已创建，base 是 `codex/cord-236-stale-task-cleanup-contract-rust` 的 `b335afa4`，当前 Ready tip `85c3e2fa`（实现
+`cb70bb98`）；独立 verifier/reviewer 已异步派发，fixer 待 finding 返回后异步交付。exact compile、matched/executed
+counts、required DB、server/Windows 和 timeout/rollback 证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
