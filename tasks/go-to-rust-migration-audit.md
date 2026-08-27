@@ -1948,3 +1948,18 @@ allocator 或生产 seam：
 并在正常路径显式清理。主 agent 只执行 `git diff --check`（PASS），没有运行 cargo/rustfmt/test。非 Draft Ready
 PR #566 已创建，base 是 #565 branch；独立 verifier/reviewer 已异步派发，fixer 尚无 finding。不能据此声称已验证
 或删除 Go。
+
+独立 verifier 在 exact HEAD `1bf444767ebef7103403c563a3112d5a7b4eef9d` 完成首轮：clean/range diff、base
+ancestry 和 Cargo.lock unchanged PASS；fixed stable rustfmt 对本 PR 新 handler/service test code exit 1。locked/offline
+metadata、两个 crate no-run、server/Windows checks 与四个 exact tests 都被继承 #563 `hyper-util runtime` feature
+resolver error 阻断并 exit 101；四个 filter matched/executed/ignored 均 `0/0/0`，不能记为通过。环境无
+`DATABASE_URL`/`psql`/`pg_isready`，真实 concurrency/position/HTTP/autopilot/cleanup 全未执行；required-DB tests 本身
+不会 self-skip，但 harness 未启动。direct rustfmt 与 inherited resolver 已交独立 fixer，原始失败保留。
+
+独立 reviewer 锚定同一 HEAD：无 P0，2 个 P1、4 个 P2。P1：Rust HTTP duplicate 409 使用泛化 error，而 Go 使用
+已有 `duplicate_message` 的 identifier/title/status 完整 wire，新 test 锁定了错误值；recent autopilot 只直调 helper，
+未经过真实 dispatch/position caller。P2：advisory concurrency 用固定 sleep 推测到达点且未证明 allow_duplicate 仍
+加锁；identity/effective/autopilot matrix 声明宽于断言；HTTP test 注入 WorkspaceContext 绕过 production auth/
+workspace middleware；fixture 只在 happy path cleanup，panic/timeout 会污染共享 DB。reviewer 确认 required-DB fail
+方向、唯一普通/autopilot production caller、无 Stub/Noop/Fake/alternate allocator，且两既有文件/无新依赖方向合理，
+但约 500 行证据仍不足以支持完整下线。全部 finding 已交独立 fixer，PR 保持 Ready。
