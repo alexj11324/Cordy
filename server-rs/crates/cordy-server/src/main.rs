@@ -89,6 +89,17 @@ impl ProfilingRuntime {
 }
 
 impl VcsWebhookConfig {
+    fn from_config(cfg: &cordy_config::Config) -> Self {
+        let enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
+        let secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
+            .ok()
+            .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
+        Self {
+            enabled,
+            secret_box,
+        }
+    }
+
     #[cfg(test)]
     fn disabled() -> Self {
         Self {
@@ -581,10 +592,7 @@ async fn main() -> anyhow::Result<()> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .collect();
-    let vcs_enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
-    let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
-        .ok()
-        .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
+    let vcs = VcsWebhookConfig::from_config(&cfg);
     let app = build_production_router(
         db,
         hub,
@@ -598,10 +606,7 @@ async fn main() -> anyhow::Result<()> {
         &cfg,
         attachment_storage,
         attachment_frame_ancestors,
-        VcsWebhookConfig {
-            enabled: vcs_enabled,
-            secret_box: vcs_secret_box,
-        },
+        vcs,
     )
     .await?;
 
@@ -854,6 +859,44 @@ mod tests {
             )
             .expect("test local storage"),
         )
+    }
+
+    #[test]
+    fn vcs_production_configuration_matches_go_exact_true_and_fails_closed() {
+        const KEY_ENV: &str = "CORDY_VCS_SECRET_KEY";
+        let original = std::env::var_os(KEY_ENV);
+        let mut cfg = cordy_config::Config::default();
+
+        std::env::remove_var(KEY_ENV);
+        cfg.integrations.vcs_integration_enabled = Some("1".into());
+        let noncanonical_flag = VcsWebhookConfig::from_config(&cfg);
+        assert!(!noncanonical_flag.enabled);
+        assert!(noncanonical_flag.secret_box.is_none());
+
+        cfg.integrations.vcs_integration_enabled = Some("true".into());
+        let missing_key = VcsWebhookConfig::from_config(&cfg);
+        assert!(missing_key.enabled);
+        assert!(missing_key.secret_box.is_none());
+
+        std::env::set_var(KEY_ENV, "not-base64");
+        let invalid_key = VcsWebhookConfig::from_config(&cfg);
+        assert!(invalid_key.enabled);
+        assert!(invalid_key.secret_box.is_none());
+
+        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        let configured = VcsWebhookConfig::from_config(&cfg);
+        assert!(configured.enabled);
+        assert!(configured.secret_box.is_some());
+
+        cfg.integrations.vcs_integration_enabled = Some("false".into());
+        let disabled = VcsWebhookConfig::from_config(&cfg);
+        assert!(!disabled.enabled);
+        assert!(disabled.secret_box.is_some());
+
+        match original {
+            Some(value) => std::env::set_var(KEY_ENV, value),
+            None => std::env::remove_var(KEY_ENV),
+        }
     }
 
     #[tokio::test]
