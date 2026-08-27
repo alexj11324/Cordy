@@ -931,7 +931,7 @@ pub const RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE: &str = "not_executable";
 
 /// `RuntimeOfflineReason` (client.go:843): why a runtime went offline, in the
 /// form clients can act on. Prose stays in Detail for logs.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeOfflineReason {
     pub code: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]

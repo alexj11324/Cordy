@@ -364,8 +364,8 @@ pub(crate) fn workspaces_behind_on_versions(
 /// daemon.go:2237, incl. the ExecFormatRepair lookup) ports with
 /// `detectBuiltinRuntimes` in daemon.go core; consumers only need these two
 /// fields.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct RuntimeVerdict {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuntimeVerdict {
     /// Evidence against the provider — user-visible in skipped_agents.
     pub reason: String,
     /// Stable code + repair command clients act on; `None` for verdicts that
@@ -455,8 +455,8 @@ pub(crate) fn partition_demotable_runtimes(
 /// `revivedRuntimes`: the rows a register response brought back for a provider
 /// the daemon has already condemned — the ids to take offline again, and the
 /// cause to re-attach per row because that register's upsert just overwrote it.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct RevivedRuntimes {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RevivedRuntimes {
     pub ids: Vec<String>,
     pub reasons: HashMap<String, crate::client::RuntimeOfflineReason>,
 }
