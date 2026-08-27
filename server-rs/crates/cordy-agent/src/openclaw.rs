@@ -7,6 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -21,11 +23,11 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
+use crate::command::{BlockedArgMode, RuntimeCommand, filter_custom_args, filter_launch_prefix};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
+use crate::model::{Catalog, CatalogCache, Model};
 use crate::process::OwnedProcessTree;
 use crate::stderr::SharedDiagnosticBuffer;
 
@@ -94,9 +96,7 @@ impl OpenclawBackend {
         } else {
             runtime_scope
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return Catalog::default();
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -108,19 +108,23 @@ impl OpenclawBackend {
         };
         let deadline = Instant::now() + timeout;
         let remaining = || deadline.saturating_duration_since(Instant::now());
-        let command_path = command_path(&self.config.command);
+        let raw_path = command_path(&self.config.command);
         let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS).args;
+        let (command_path, prefix) = resolve_openclaw_invocation(&raw_path, prefix);
 
         for arguments in [
             vec!["agents", "list", "--json"],
             vec!["agents", "list", "--output", "json"],
             vec!["agents", "list", "-o", "json"],
         ] {
+            if cancellation.is_cancelled() {
+                return Catalog::default();
+            }
             let budget = remaining();
             if budget.is_zero() {
                 break;
             }
-            let Some(captured) = capture_command(
+            let captured = capture_command(
                 &command_path,
                 &prefix,
                 &arguments,
@@ -129,9 +133,11 @@ impl OpenclawBackend {
                 budget,
                 DISCOVERY_OUTPUT_MAX,
             )
-            .await
-            .ok()
-            .flatten() else {
+            .await;
+            if cancellation.is_cancelled() {
+                return Catalog::default();
+            }
+            let Some(captured) = captured.ok().flatten() else {
                 continue;
             };
             if let Some(models) = parse_openclaw_agents_json(&captured.stdout) {
@@ -166,16 +172,17 @@ impl OpenclawBackend {
 #[async_trait]
 impl Backend for OpenclawBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
-        let path = command_path(&self.config.command);
+        let raw_path = command_path(&self.config.command);
+        let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS).args;
+        let (path, prefix) = resolve_openclaw_invocation(&raw_path, prefix);
         check_openclaw_version(
             &path,
-            &self.config.command.prefix,
+            &prefix,
             &self.config.env,
             options.cancellation.clone(),
         )
         .await?;
 
-        let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS).args;
         let mut argv = prefix;
         argv.extend(build_openclaw_args(prompt, &options));
 
@@ -201,13 +208,13 @@ impl Backend for OpenclawBackend {
                 }
             })?;
         let Some(stdout) = tree.child_mut().stdout.take() else {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             return Err(AgentError::Protocol(
                 "OpenClaw stdout pipe unavailable after spawn".to_string(),
             ));
         };
         let Some(stderr) = tree.child_mut().stderr.take() else {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             return Err(AgentError::Protocol(
                 "OpenClaw stderr pipe unavailable after spawn".to_string(),
             ));
@@ -396,37 +403,37 @@ async fn capture_command(
         .envs(env)
         .kill_on_drop(false);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-    let stdout = tree
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("capture stdout pipe unavailable"))?;
-    let stderr = tree
-        .child_mut()
-        .stderr
-        .take()
-        .ok_or_else(|| io::Error::other("capture stderr pipe unavailable"))?;
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(io::Error::other("capture stdout pipe unavailable"));
+    };
+    let Some(stderr) = tree.child_mut().stderr.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(io::Error::other("capture stderr pipe unavailable"));
+    };
     let mut stdout_task = tokio::spawn(read_limited(stdout, max_output));
     let mut stderr_task = tokio::spawn(read_limited(stderr, max_output));
 
     let wait = if timeout.is_zero() {
         tokio::select! {
-            status = tree.wait() => Some(status?),
+            status = tree.wait() => Some(status),
             () = cancellation.cancelled() => None,
         }
     } else {
         tokio::select! {
-            status = tree.wait() => Some(status?),
+            status = tree.wait() => Some(status),
             () = cancellation.cancelled() => None,
             () = tokio::time::sleep(timeout) => None,
         }
     };
     let Some(status) = wait else {
-        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+        stop_process_tree(&mut tree).await;
         stdout_task.abort();
         stderr_task.abort();
         return Ok(None);
     };
+    stop_process_tree(&mut tree).await;
+    let status = status?;
 
     let stdout = join_limited_reader(&mut stdout_task).await?;
     let stderr = join_limited_reader(&mut stderr_task).await?;
@@ -606,25 +613,31 @@ async fn run_openclaw(
 
     let first = first_openclaw_outcome(&mut tree, &mut stdout_task, &cancellation, deadline).await;
     let (run_end, mut exit, stdout_state) = match first {
-        FirstOutcome::Process(status) => (
-            RunEnd::Completed,
-            Some(status),
-            join_stdout_task(&mut stdout_task, &stop).await,
-        ),
+        FirstOutcome::Process(status) => {
+            stop_process_tree(&mut tree).await;
+            (
+                RunEnd::Completed,
+                Some(status),
+                join_stdout_task(&mut stdout_task, &stop).await,
+            )
+        }
         FirstOutcome::Stdout(result) => {
             let state = result.unwrap_or_else(|error| StdoutRead {
                 error: Some(format!("OpenClaw stdout task failed: {error}")),
                 ..StdoutRead::default()
             });
             if state.cut_short {
-                let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                stop_process_tree(&mut tree).await;
                 (RunEnd::CutShort, None, state)
             } else {
                 match first_openclaw_process_outcome(&mut tree, &cancellation, deadline).await {
-                    (RunEnd::Completed, status) => (RunEnd::Completed, Some(Ok(status)), state),
+                    (RunEnd::Completed, status) => {
+                        stop_process_tree(&mut tree).await;
+                        (RunEnd::Completed, Some(Ok(status)), state)
+                    }
                     (run_end, status) => {
                         stop.cancel();
-                        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                        stop_process_tree(&mut tree).await;
                         (run_end, Some(Ok(status)), state)
                     }
                 }
@@ -632,7 +645,7 @@ async fn run_openclaw(
         }
         FirstOutcome::Cancelled => {
             stop.cancel();
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             (
                 RunEnd::Cancelled,
                 None,
@@ -641,7 +654,7 @@ async fn run_openclaw(
         }
         FirstOutcome::TimedOut => {
             stop.cancel();
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             (
                 RunEnd::TimedOut,
                 None,
@@ -1192,6 +1205,118 @@ fn command_path(command: &RuntimeCommand) -> String {
     }
 }
 
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
+}
+
+/// Bypass npm's Windows batch shim when its JavaScript entrypoint is
+/// discoverable. Passing a multiline prompt through `%*` makes `cmd.exe`
+/// retokenize it; invoking Node with the entrypoint keeps each argv element
+/// intact. Non-Windows hosts and installations without a discoverable
+/// entrypoint retain the normal executable path.
+fn resolve_openclaw_invocation(path: &str, prefix: Vec<String>) -> (String, Vec<String>) {
+    #[cfg(windows)]
+    {
+        if let Some(shim) = locate_openclaw_shim(path) {
+            if is_openclaw_batch_shim(&shim) {
+                if let Some(entrypoint) = locate_openclaw_entrypoint(&shim) {
+                    let node = shim
+                        .parent()
+                        .map(|directory| directory.join("node.exe"))
+                        .filter(|candidate| candidate.is_file())
+                        .map(|candidate| candidate.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "node".to_string());
+                    let mut node_args = Vec::with_capacity(prefix.len() + 1);
+                    node_args.push(entrypoint.to_string_lossy().into_owned());
+                    node_args.extend(prefix);
+                    return (node, node_args);
+                }
+            }
+        }
+    }
+    (path.to_string(), prefix)
+}
+
+#[cfg(windows)]
+fn locate_openclaw_shim(path: &str) -> Option<PathBuf> {
+    let candidate = std::path::Path::new(path);
+    if candidate.is_absolute() || candidate.components().count() > 1 {
+        return candidate.is_file().then(|| candidate.to_path_buf());
+    }
+    let mut names = vec![candidate.to_path_buf()];
+    if candidate.extension().is_none() {
+        let extensions = std::env::var_os("PATHEXT")
+            .map(|value| {
+                value
+                    .to_string_lossy()
+                    .split(';')
+                    .filter(|extension| !extension.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| {
+                vec![
+                    ".COM".to_string(),
+                    ".EXE".to_string(),
+                    ".BAT".to_string(),
+                    ".CMD".to_string(),
+                ]
+            });
+        for extension in extensions {
+            let mut name = candidate.as_os_str().to_os_string();
+            name.push(extension);
+            names.push(std::path::PathBuf::from(name));
+        }
+    }
+    std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
+        .find(|candidate| candidate.is_file())
+}
+
+#[cfg(windows)]
+fn is_openclaw_batch_shim(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        matches!(
+            extension.to_string_lossy().to_ascii_lowercase().as_str(),
+            "cmd" | "bat"
+        )
+    })
+}
+
+#[cfg(windows)]
+fn locate_openclaw_entrypoint(shim: &std::path::Path) -> Option<PathBuf> {
+    let directory = shim.parent()?;
+    [
+        shim.with_extension("mjs"),
+        directory
+            .join("node_modules")
+            .join("openclaw")
+            .join("openclaw.mjs"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct OpenclawAgentEntry {
     #[serde(default)]
@@ -1284,7 +1409,7 @@ fn is_openclaw_identifier(value: &str) -> bool {
     })
 }
 
-fn cache_catalog(cache: &CatalogCache, key: ModelDiscoveryCacheKey, models: Vec<Model>) -> Catalog {
+fn cache_catalog(cache: &CatalogCache, key: String, models: Vec<Model>) -> Catalog {
     let catalog = Catalog {
         models,
         fallback: false,
@@ -1522,6 +1647,102 @@ sleep 30
             .unwrap_or_else(|error| panic!("receive result: {error}"));
         assert_eq!(result.status, "completed");
         assert_eq!(result.output, "done");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execute_stops_descendants_before_draining_stderr() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo 'openclaw 2026.5.5'
+  exit 0
+fi
+printf '%s\n' '{"payloads":[{"text":"done"}],"meta":{"durationMs":1}}'
+sleep 30 >/dev/null &
+exit 0
+"#,
+        );
+        let session = backend
+            .execute(
+                "ignored",
+                ExecOptions {
+                    timeout: Duration::from_secs(10),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute stderr-holder fake OpenClaw: {error}"));
+        let result = tokio::time::timeout(Duration::from_secs(3), session.result)
+            .await
+            .unwrap_or_else(|_| panic!("stderr descendant delayed the OpenClaw result"))
+            .unwrap_or_else(|error| panic!("receive stderr-holder result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "done");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovery_stops_retries_after_cancellation() {
+        let (directory, mut backend) = fake_backend(
+            r#"#!/bin/sh
+count=$(cat "$OPENCLAW_COUNT_FILE" 2>/dev/null || echo 0)
+echo $((count + 1)) > "$OPENCLAW_COUNT_FILE"
+sleep 60
+"#,
+        );
+        let count_file = directory.path().join("discovery-count");
+        backend.config.env.insert(
+            "OPENCLAW_COUNT_FILE".to_string(),
+            count_file.to_string_lossy().into_owned(),
+        );
+        let cancellation = CancellationToken::new();
+        let cancel_later = cancellation.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            cancel_later.cancel();
+        });
+        let catalog = backend
+            .discover_models_for_runtime(
+                "openclaw-cancel-test",
+                &CatalogCache::default(),
+                cancellation,
+                Duration::from_secs(5),
+            )
+            .await;
+        assert!(catalog.models.is_empty());
+        let invocations = std::fs::read_to_string(count_file)
+            .unwrap_or_default()
+            .trim()
+            .parse::<u32>()
+            .unwrap_or_default();
+        assert_eq!(invocations, 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_batch_shim_uses_node_entrypoint_without_retokenizing_args() {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let shim = directory.path().join("openclaw.cmd");
+        let entrypoint = directory.path().join("openclaw.mjs");
+        let node = directory.path().join("node.exe");
+        std::fs::write(&shim, "@echo off\r\n")
+            .unwrap_or_else(|error| panic!("write shim: {error}"));
+        std::fs::write(&entrypoint, "").unwrap_or_else(|error| panic!("write entrypoint: {error}"));
+        std::fs::write(&node, "").unwrap_or_else(|error| panic!("write node: {error}"));
+
+        let (path, prefix) = resolve_openclaw_invocation(
+            &shim.to_string_lossy(),
+            vec![
+                "agent".to_string(),
+                "--message".to_string(),
+                "line 1\nline 2".to_string(),
+            ],
+        );
+        assert_eq!(path, node.to_string_lossy());
+        assert_eq!(prefix[0], entrypoint.to_string_lossy());
+        assert_eq!(prefix[1], "agent");
+        assert_eq!(prefix[3], "line 1\nline 2");
     }
 
     #[cfg(unix)]
