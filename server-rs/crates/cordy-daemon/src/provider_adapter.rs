@@ -42,8 +42,15 @@ use crate::prompt::build_prompt;
 use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
+use crate::skill_cache::{
+    build_manifest, validate_skill_bundle, SkillBundleCache, SkillBundleFile, SkillBundleSkill,
+    SOURCE_PLUGIN,
+};
 use crate::task_execution::{TaskRunFailure, TaskRunOutcome};
-use crate::types::{RuntimeExecutionTarget, Task, TaskResult, TaskUsageEntry};
+use crate::types::{
+    RuntimeExecutionTarget, SkillData, SkillFileRefData, SkillRefData, Task, TaskResult,
+    TaskUsageEntry,
+};
 
 const TRANSCRIPT_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 const TRANSCRIPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -54,6 +61,9 @@ const TOOL_INPUT_BYTES: usize = 64 * 1024;
 const PREPARE_LEASE_REFRESH: Duration = Duration::from_secs(15);
 const PREPARE_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
+const SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
+const SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
 
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
 /// Metadata-only runtimes fail at `build_backend`; no provider can turn into a
@@ -61,6 +71,7 @@ const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 pub struct ProductionProviderAdapter {
     config: Arc<Config>,
     model_cache: Arc<CatalogCache>,
+    skill_cache: Arc<SkillBundleCache>,
     local_paths: Arc<LocalPathLocker>,
     started_at: Instant,
     active_tasks: AtomicI64,
@@ -70,9 +81,15 @@ pub struct ProductionProviderAdapter {
 
 impl ProductionProviderAdapter {
     pub fn new(config: Arc<Config>) -> Self {
+        let skill_cache_root = Path::new(&config.workspaces_root)
+            .join(".skill-cache")
+            .join("v1")
+            .to_string_lossy()
+            .into_owned();
         Self {
             config,
             model_cache: Arc::new(CatalogCache::default()),
+            skill_cache: Arc::new(SkillBundleCache::new(&skill_cache_root)),
             local_paths: Arc::new(LocalPathLocker::new()),
             started_at: Instant::now(),
             active_tasks: AtomicI64::new(0),
@@ -166,12 +183,6 @@ impl ProductionProviderAdapter {
                 inputs.local_work_dir = assignment.abs_path.clone();
             }
         }
-        let mut plan = match ProviderExecutionPlan::build(&self.config, &task, &target, inputs) {
-            Ok(plan) => plan,
-            Err(error) => return failed(error, None),
-        };
-        let requested_session_id = plan.resume_session_id().to_string();
-
         let client = runtime.client();
         let prepare_lease = PrepareLeaseExtender::start(
             ctx.clone(),
@@ -179,6 +190,22 @@ impl ProductionProviderAdapter {
             task.runtime_id.clone(),
             task.id.clone(),
         );
+        if let Err(error) = self
+            .ensure_task_skill_bundles(&ctx, &client, &mut task)
+            .await
+        {
+            return failed_with_reason(
+                error,
+                cordy_task_failure::Reason::SKILL_BUNDLE_UNAVAILABLE.as_str(),
+                None,
+            );
+        }
+        let mut plan = match ProviderExecutionPlan::build(&self.config, &task, &target, inputs) {
+            Ok(plan) => plan,
+            Err(error) => return failed(error, None),
+        };
+        let requested_session_id = plan.resume_session_id().to_string();
+
         let path_guard = match self
             .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
             .await
@@ -294,6 +321,136 @@ impl ProductionProviderAdapter {
         outcome = finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         drop(path_guard);
         outcome
+    }
+
+    async fn ensure_task_skill_bundles(
+        &self,
+        ctx: &Ctx,
+        client: &Client,
+        task: &mut Task,
+    ) -> anyhow::Result<()> {
+        let Some(agent) = task.agent.as_ref() else {
+            return Ok(());
+        };
+        if agent.skill_refs.is_empty() {
+            return Ok(());
+        }
+
+        // Copy the refs before mutating agent.skills after all cache/network
+        // work completes. This also keeps the borrow independent of each
+        // awaited download.
+        let refs = agent.skill_refs.clone();
+        let mut resolved = HashMap::with_capacity(refs.len());
+        let mut misses = Vec::new();
+        for skill_ref in &refs {
+            let cached = self
+                .skill_cache
+                .with_ref_lock(&task.workspace_id, skill_ref, || {
+                    self.skill_cache.load(&task.workspace_id, skill_ref)
+                });
+            if let Some(bundle) = cached {
+                resolved.insert(skill_ref_key(&skill_ref.source, &skill_ref.id), bundle);
+            } else {
+                misses.push(skill_ref.clone());
+            }
+        }
+
+        for skill_ref in misses {
+            let started = Instant::now();
+            let bundle = self
+                .resolve_skill_bundle(ctx, client, task, &skill_ref)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "skill bundle unavailable: skill {:?} (id={}, {} bytes) after {:?}: {error}",
+                        skill_ref.name,
+                        skill_ref.id,
+                        skill_ref.size_bytes,
+                        started.elapsed(),
+                    )
+                })?;
+            resolved.insert(skill_ref_key(&bundle.source, &bundle.id), bundle);
+        }
+
+        let skills = refs
+            .iter()
+            .map(|skill_ref| {
+                resolved
+                    .get(&skill_ref_key(&skill_ref.source, &skill_ref.id))
+                    .cloned()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "skill bundle missing after resolve: skill_id={} source={} hash={}",
+                            skill_ref.id,
+                            skill_ref.source,
+                            skill_ref.hash,
+                        )
+                    })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        task.agent
+            .as_mut()
+            .expect("agent remains present while resolving skill bundles")
+            .skills = skills;
+        Ok(())
+    }
+
+    async fn resolve_skill_bundle(
+        &self,
+        ctx: &Ctx,
+        client: &Client,
+        task: &Task,
+        skill_ref: &SkillRefData,
+    ) -> anyhow::Result<SkillData> {
+        let timeout = skill_bundle_resolve_timeout(skill_ref.size_bytes);
+        let bundle = tokio::time::timeout(
+            timeout,
+            client.resolve_skill_bundle(ctx, &task.runtime_id, &task.id, skill_ref.clone()),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("resolve skill bundle timed out after {timeout:?}"))??;
+
+        if bundle.source != skill_ref.source || bundle.id != skill_ref.id {
+            anyhow::bail!(
+                "resolve skill bundle returned wrong skill: requested source={} id={}, got source={} id={}",
+                skill_ref.source,
+                skill_ref.id,
+                bundle.source,
+                bundle.id,
+            );
+        }
+
+        let derived_ref = skill_ref_from_bundle(&bundle);
+        let validation_ref = if skill_ref.source == SOURCE_PLUGIN {
+            skill_ref.clone()
+        } else {
+            derived_ref
+        };
+        if !validate_skill_bundle(&validation_ref, &bundle) {
+            anyhow::bail!(
+                "resolve skill bundle returned invalid bundle: skill_id={} source={} hash={}",
+                bundle.id,
+                bundle.source,
+                bundle.hash,
+            );
+        }
+
+        let store_result =
+            self.skill_cache
+                .with_ref_lock(&task.workspace_id, &validation_ref, || {
+                    self.skill_cache.store(&task.workspace_id, &bundle)
+                });
+        if let Err(error) = store_result {
+            tracing::warn!(
+                workspace_id = %task.workspace_id,
+                skill_id = %bundle.id,
+                source = %bundle.source,
+                hash = %bundle.hash,
+                %error,
+                "skill bundle cache store failed; continuing with downloaded bundle"
+            );
+        }
+        Ok(bundle)
     }
 
     async fn acquire_local_path(
@@ -1003,6 +1160,69 @@ fn failed(error: anyhow::Error, environment: Option<&Environment>) -> TaskRunOut
     }
 }
 
+fn failed_with_reason(
+    error: anyhow::Error,
+    failure_reason: &str,
+    environment: Option<&Environment>,
+) -> TaskRunOutcome {
+    let mut outcome = failed(error, environment);
+    if let Some(failure) = outcome.failure.as_mut() {
+        failure.failure_reason = failure_reason.to_string();
+    }
+    outcome
+}
+
+fn skill_bundle_resolve_timeout(size_bytes: i64) -> Duration {
+    if size_bytes <= 0 {
+        return SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT;
+    }
+    let scaled_seconds = (size_bytes / SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT)
+        .min(SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT.as_secs() as i64);
+    Duration::from_secs(scaled_seconds as u64).max(SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT)
+}
+
+fn skill_ref_key(source: &str, id: &str) -> String {
+    format!("{source}\x00{id}")
+}
+
+fn skill_ref_from_bundle(bundle: &SkillData) -> SkillRefData {
+    let files = bundle
+        .files
+        .iter()
+        .map(|file| SkillBundleFile {
+            path: file.path.clone(),
+            content: file.content.clone(),
+        })
+        .collect();
+    let manifest = build_manifest(&SkillBundleSkill {
+        id: bundle.id.clone(),
+        source: bundle.source.clone(),
+        name: bundle.name.clone(),
+        description: bundle.description.clone(),
+        content: bundle.content.clone(),
+        files,
+    });
+    let file_count = manifest.files.len() as i64;
+    let files = manifest
+        .files
+        .into_iter()
+        .map(|file| SkillFileRefData {
+            path: file.path,
+            sha256: file.sha256,
+            size_bytes: file.size_bytes,
+        })
+        .collect();
+    SkillRefData {
+        id: bundle.id.clone(),
+        source: bundle.source.clone(),
+        hash: manifest.hash,
+        size_bytes: manifest.size_bytes,
+        file_count,
+        files,
+        ..SkillRefData::default()
+    }
+}
+
 async fn finalize_environment(
     mut outcome: TaskRunOutcome,
     environment: &mut Environment,
@@ -1124,7 +1344,50 @@ fn provider_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::SkillFileData;
     use cordy_agent::TokenUsage;
+
+    #[test]
+    fn skill_bundle_timeout_matches_size_budget() {
+        assert_eq!(
+            skill_bundle_resolve_timeout(0),
+            SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT
+        );
+        assert_eq!(
+            skill_bundle_resolve_timeout(2 * 1024 * 1024),
+            Duration::from_secs(40)
+        );
+        assert_eq!(
+            skill_bundle_resolve_timeout(100 * 1024 * 1024),
+            SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn skill_ref_from_bundle_rebuilds_the_manifest_identity() {
+        let mut bundle = SkillData {
+            id: "skill-1".into(),
+            source: "workspace".into(),
+            name: "deploy".into(),
+            content: "main".into(),
+            files: vec![SkillFileData {
+                path: "rules.md".into(),
+                content: "rules".into(),
+                ..SkillFileData::default()
+            }],
+            ..SkillData::default()
+        };
+        let r#ref = skill_ref_from_bundle(&bundle);
+        bundle.hash.clone_from(&r#ref.hash);
+        bundle.size_bytes = r#ref.size_bytes;
+        bundle.files[0].sha256.clone_from(&r#ref.files[0].sha256);
+        bundle.files[0].size_bytes = r#ref.files[0].size_bytes;
+
+        assert!(validate_skill_bundle(&r#ref, &bundle));
+        assert!(r#ref.name.is_empty());
+        assert_eq!(r#ref.file_count, 1);
+        assert_eq!(r#ref.files[0].path, "rules.md");
+    }
 
     #[test]
     fn tool_input_is_redacted_before_it_becomes_transcript_data() {

@@ -485,11 +485,12 @@ impl Client {
         let path =
             format!("/api/daemon/runtimes/{runtime_id}/tasks/{task_id}/skill-bundles/resolve");
         let resp: Resp = self
-            .post_json_with_retry(
+            .post_json_with_retry_timeout(
                 ctx,
                 &path,
                 json!({ "skills": vec![skill_ref] }),
                 SKILL_BUNDLE_RESOLVE_RETRY_SCHEDULE,
+                None,
             )
             .await?;
         if resp.bundles.len() != 1 {
@@ -1479,12 +1480,13 @@ impl Client {
     /// [`is_transient_error`], stops immediately on permanent 4xx. The
     /// CompleteTask/FailTask handlers treat "already terminal" as idempotent
     /// success, so duplicate replays are safe.
-    async fn post_json_with_retry<R: DeserializeOwned>(
+    async fn post_json_with_retry_timeout<R: DeserializeOwned>(
         &self,
         ctx: &crate::repocache::Ctx,
         path: &str,
         req_body: Value,
         schedule: &[Duration],
+        request_timeout: Option<Duration>,
     ) -> anyhow::Result<R> {
         let mut last_err: Option<anyhow::Error> = None;
         for attempt in 0..=schedule.len() {
@@ -1494,7 +1496,10 @@ impl Client {
                 }
                 anyhow::bail!("{cancelled}");
             }
-            match self.post_json::<R>(ctx, path, req_body.clone()).await {
+            match self
+                .post_json_with_optional_timeout(ctx, path, req_body.clone(), request_timeout)
+                .await
+            {
                 Ok(resp) => return Ok(resp),
                 Err(err) => {
                     if !is_transient_error(&err) {
@@ -1580,14 +1585,24 @@ impl Client {
         req_body: Value,
         timeout: Duration,
     ) -> anyhow::Result<R> {
+        self.post_json_with_optional_timeout(ctx, path, req_body, Some(timeout))
+            .await
+    }
+
+    async fn post_json_with_optional_timeout<R: DeserializeOwned>(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        req_body: Value,
+        timeout: Option<Duration>,
+    ) -> anyhow::Result<R> {
         let builder = self.builder_post(path, req_body)?;
+        let builder = match timeout {
+            Some(timeout) => builder.timeout(timeout),
+            None => builder,
+        };
         let opt = self
-            .execute_json::<R>(
-                apply_ctx_deadline(builder, ctx, timeout),
-                ctx.clone(),
-                true,
-                "POST",
-            )
+            .execute_json::<R>(builder, ctx.clone(), true, "POST")
             .await?;
         Ok(opt.unwrap_or_else(|| serde_json::from_value(Value::Null).unwrap()))
     }
