@@ -48,6 +48,8 @@ const INITIALIZE_TIMEOUT_PREFIX: &str = "codex app-server handshake timeout: ini
 const CODEX_SEMANTIC_INACTIVITY_MARKER: &str = "codex semantic inactivity timeout";
 const CODEX_FIRST_TURN_NO_PROGRESS_MARKER: &str = "codex app-server no progress timeout";
 const MODEL_CATALOG_REFRESH_FAILURE_SIGNAL: &str = "failed to refresh available models";
+const MODEL_CATALOG_REFRESH_TIMEOUT_SIGNAL: &str =
+    "failed to refresh available models: timeout waiting for child process to exit";
 const CODEX_RESUME_FAILURE_MARKER: &str = "thread/resume failed";
 const CODEX_RESUME_OVERFLOW_MARKER: &str = "token too long";
 const AGENT_STREAM_LINE_LIMIT_MARKER: &str = "agent stream line exceeds";
@@ -107,6 +109,24 @@ struct CodexTimeoutDiagnostic {
     turn_id: String,
     model: String,
     codex_version: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CodexStderrClassification {
+    model_refresh_failure: usize,
+    model_refresh_timeout: usize,
+    mcp_init_transport: usize,
+    bare_timeout: usize,
+}
+
+#[derive(Debug, Clone)]
+struct CodexFirstItemWaitObservation {
+    latency: Duration,
+    outcome: String,
+    thread_id: String,
+    turn_id: String,
+    timeout: Duration,
+    semantic_inactivity_timeout: Duration,
 }
 
 /// Builds the daemon-owned Codex app-server invocation.
@@ -796,6 +816,51 @@ async fn run_codex(
     }
     let retry_reason = classify_retry_reason(&result, &stderr, cleanup_confirmed);
     let _ = retry_tx.send(retry_reason);
+    if let Some(observation) = result.first_item_wait.take() {
+        let classification = classify_codex_startup_stderr(
+            &stderr,
+            observation.outcome.ends_with("_timeout"),
+        );
+        let retry_safe = retry_reason == RetryReason::ModelCatalogRefresh;
+        let latency_ms = observation.latency.as_millis().try_into().unwrap_or(i64::MAX);
+        let timeout_ms = observation.timeout.as_millis().try_into().unwrap_or(i64::MAX);
+        let semantic_inactivity_timeout_ms = observation
+            .semantic_inactivity_timeout
+            .as_millis()
+            .try_into()
+            .unwrap_or(i64::MAX);
+        macro_rules! log_first_item_wait {
+            ($level:path) => {
+                tracing::event!(
+                    $level,
+                    provider = "codex",
+                    phase = "first_item_wait",
+                    latency_ms = latency_ms,
+                    timeout_ms = timeout_ms,
+                    semantic_inactivity_timeout_ms = semantic_inactivity_timeout_ms,
+                    thread_id = %observation.thread_id,
+                    turn_id = %observation.turn_id,
+                    outcome = %observation.outcome,
+                    retry_safe = retry_safe,
+                    cleanup_confirmed = cleanup_confirmed,
+                    reaped = cleanup_confirmed,
+                    stderr_model_refresh_failure_count = classification.model_refresh_failure,
+                    stderr_model_refresh_timeout_count = classification.model_refresh_timeout,
+                    stderr_mcp_init_transport_count = classification.mcp_init_transport,
+                    stderr_bare_timeout_count = classification.bare_timeout,
+                    "codex lifecycle"
+                );
+            };
+        }
+        match observation.outcome.as_str() {
+            "progress" | "turn_completed" => {
+                log_first_item_wait!(tracing::Level::INFO);
+            }
+            _ => {
+                log_first_item_wait!(tracing::Level::WARN);
+            }
+        }
+    }
     if !has_usage(&result.usage) && !result.session_id.is_empty() {
         if let Some(scanned) = scan_codex_session_usage(
             codex_home.as_deref(),
@@ -844,6 +909,7 @@ struct ProtocolOutcome {
     usage: BTreeMap<String, TokenUsage>,
     resume_rejected: bool,
     timeout_diagnostic: Option<CodexTimeoutDiagnostic>,
+    first_item_wait: Option<CodexFirstItemWaitObservation>,
 }
 
 impl ProtocolOutcome {
@@ -988,6 +1054,9 @@ async fn run_protocol(
             ..ProtocolOutcome::default()
         };
     }
+    let semantic_timeout = resolved_semantic_inactivity_timeout(options.semantic_inactivity_timeout);
+    let first_turn_timeout =
+        first_turn_no_progress_timeout(semantic_timeout, options.first_turn_no_progress_timeout);
     if let Err(error) = client
         .wait_for_turn(
             options.semantic_inactivity_timeout,
@@ -995,7 +1064,7 @@ async fn run_protocol(
         )
         .await
     {
-        let (status, error) = match error {
+        match error {
             TurnWaitError::Timeout {
                 kind,
                 timeout,
@@ -1011,24 +1080,36 @@ async fn run_protocol(
                     ..CodexTimeoutDiagnostic::default()
                 };
                 let error = build_codex_timeout_diagnostic_error(&diagnostic, "");
+                let session_id = client.state.thread_id.clone();
+                let first_item_wait = client
+                    .state
+                    .first_item_wait_snapshot(first_turn_timeout, semantic_timeout);
                 return ProtocolOutcome {
                     status: "timeout".to_string(),
                     error,
-                    session_id: client.state.thread_id,
+                    session_id,
                     resume_rejected,
                     timeout_diagnostic: Some(diagnostic),
+                    first_item_wait,
                     ..ProtocolOutcome::default()
                 };
             }
-            TurnWaitError::Protocol(error) => ("failed", error),
-        };
-        return ProtocolOutcome {
-            status: status.to_string(),
-            error,
-            session_id: client.state.thread_id,
-            resume_rejected,
-            ..ProtocolOutcome::default()
-        };
+            TurnWaitError::Protocol(error) => {
+                client.state.finish_first_item_wait("protocol_error");
+                let session_id = client.state.thread_id.clone();
+                let first_item_wait = client
+                    .state
+                    .first_item_wait_snapshot(first_turn_timeout, semantic_timeout);
+                return ProtocolOutcome {
+                    status: "failed".to_string(),
+                    error,
+                    session_id,
+                    resume_rejected,
+                    first_item_wait,
+                    ..ProtocolOutcome::default()
+                };
+            }
+        }
     }
     let _ = client
         .drain_notifications(NOTIFICATION_QUIET, NOTIFICATION_DRAIN_MAX)
@@ -1036,6 +1117,8 @@ async fn run_protocol(
 
     let state = client.state;
     let session_id = state.thread_id.clone();
+    let first_item_wait =
+        state.first_item_wait_snapshot(first_turn_timeout, semantic_timeout);
     let usage = usage_map(&state, &configured_model(&state, &options));
     let mut result = ProtocolOutcome {
         status: "completed".to_string(),
@@ -1047,6 +1130,7 @@ async fn run_protocol(
         session_id,
         usage,
         resume_rejected,
+        first_item_wait,
         ..ProtocolOutcome::default()
     };
     if !state.turn_error.is_empty() {
@@ -1349,6 +1433,7 @@ where
                     if first_turn_deadline.is_some_and(|deadline| {
                         now >= deadline && deadline <= semantic_deadline
                     }) {
+                        self.state.finish_first_item_wait("no_progress_timeout");
                         return Err(TurnWaitError::Timeout {
                             kind: CodexTimeoutKind::FirstTurnNoProgress,
                             timeout: first_turn_timeout,
@@ -1356,6 +1441,7 @@ where
                         });
                     }
                     if now >= semantic_deadline {
+                        self.state.finish_first_item_wait("semantic_inactivity_timeout");
                         return Err(TurnWaitError::Timeout {
                             kind: CodexTimeoutKind::SemanticInactivity,
                             timeout: semantic_timeout,
@@ -1439,6 +1525,7 @@ where
         match event.get("type").and_then(Value::as_str).unwrap_or_default() {
             "task_started" => {
                 self.state.turn_started = true;
+                self.state.start_first_item_wait();
                 self.send(status_message("running", &self.state.thread_id));
             }
             "agent_message" => {
@@ -1501,10 +1588,12 @@ where
             }
             "task_complete" => {
                 self.state.merge_usage(event.get("usage"));
+                self.state.finish_first_item_wait("turn_completed");
                 self.state.turn_done = true;
             }
             "turn_aborted" => {
                 self.state.turn_aborted = true;
+                self.state.finish_first_item_wait("turn_aborted");
                 self.state.turn_done = true;
             }
             _ => {}
@@ -1518,6 +1607,7 @@ where
         match method {
             "turn/started" => {
                 self.state.turn_started = true;
+                self.state.start_first_item_wait();
                 if let Some(id) = nested_string(params, &["turn", "id"]) {
                     self.state.turn_id = id.to_string();
                 }
@@ -1542,6 +1632,14 @@ where
                     }
                 }
                 self.state.merge_usage(params.get("turn"));
+                let outcome = if self.state.turn_aborted {
+                    "turn_aborted"
+                } else if status == "failed" {
+                    "turn_failed"
+                } else {
+                    "turn_completed"
+                };
+                self.state.finish_first_item_wait(outcome);
                 self.state.turn_done = true;
             }
             "error" => {
@@ -1564,6 +1662,7 @@ where
                 if self.state.turn_started
                     && nested_string(params, &["status", "type"]) == Some("idle") =>
             {
+                self.state.finish_first_item_wait("turn_completed");
                 self.state.turn_done = true;
             }
             _ if method.starts_with("item/") => self.handle_item(method, params),
@@ -1695,11 +1794,15 @@ where
         }
         self.state.activity_generation = self.state.activity_generation.saturating_add(1);
         self.state.last_activity = description.to_string();
-        if self.state.turn_started
-            && !self.state.first_turn_progress_observed
-            && is_first_turn_progress_activity(description)
-        {
-            self.state.first_turn_progress_observed = true;
+        if self.state.turn_started && is_first_turn_progress_activity(description) {
+            if !self.state.first_turn_progress_observed {
+                self.state.first_turn_progress_observed = true;
+            }
+            self.state.finish_first_item_wait(if description == "error:terminal" {
+                "turn_failed"
+            } else {
+                "progress"
+            });
         }
     }
 
@@ -1785,6 +1888,9 @@ struct CodexState {
     last_activity: String,
     activity_generation: u64,
     first_turn_progress_observed: bool,
+    first_item_wait_started: Option<Instant>,
+    first_item_wait_finished: Option<Instant>,
+    first_item_wait_outcome: String,
     usage: TokenUsage,
     completed_turns: BTreeSet<String>,
 }
@@ -1817,6 +1923,31 @@ fn first_turn_no_progress_timeout(semantic_timeout: Duration, configured: Durati
 
 fn is_first_turn_progress_activity(activity: &str) -> bool {
     !activity.is_empty() && activity != "status:running" && activity != "error:retry"
+}
+
+fn classify_codex_startup_stderr(stderr: &str, timed_out: bool) -> CodexStderrClassification {
+    let lower = sanitize_diagnostic(stderr).to_ascii_lowercase();
+    let model_refresh_failure = lower.matches(MODEL_CATALOG_REFRESH_FAILURE_SIGNAL).count();
+    let model_refresh_timeout = lower.matches(MODEL_CATALOG_REFRESH_TIMEOUT_SIGNAL).count();
+    let mcp_init_transport = lower
+        .lines()
+        .filter(|line| {
+            line.contains("mcp")
+                && line.contains("transport")
+                && (line.contains("error")
+                    || line.contains("failed")
+                    || line.contains("closed"))
+        })
+        .count();
+    let bare_timeout = usize::from(
+        timed_out && model_refresh_failure == 0 && mcp_init_transport == 0,
+    );
+    CodexStderrClassification {
+        model_refresh_failure,
+        model_refresh_timeout,
+        mcp_init_transport,
+        bare_timeout,
+    }
 }
 
 fn build_codex_timeout_diagnostic_error(
@@ -1944,6 +2075,40 @@ fn describe_item_activity(method: &str, item_type: &str, item_id: &str) -> Strin
 }
 
 impl CodexState {
+    fn start_first_item_wait(&mut self) {
+        if self.first_item_wait_started.is_none() {
+            self.first_item_wait_started = Some(Instant::now());
+        }
+    }
+
+    fn finish_first_item_wait(&mut self, outcome: &str) {
+        if self.first_item_wait_started.is_none() || !self.first_item_wait_outcome.is_empty() {
+            return;
+        }
+        self.first_item_wait_finished = Some(Instant::now());
+        self.first_item_wait_outcome = outcome.to_string();
+    }
+
+    fn first_item_wait_snapshot(
+        &self,
+        timeout: Duration,
+        semantic_inactivity_timeout: Duration,
+    ) -> Option<CodexFirstItemWaitObservation> {
+        let started = self.first_item_wait_started?;
+        let finished = self.first_item_wait_finished?;
+        if self.first_item_wait_outcome.is_empty() {
+            return None;
+        }
+        Some(CodexFirstItemWaitObservation {
+            latency: finished.saturating_duration_since(started),
+            outcome: self.first_item_wait_outcome.clone(),
+            thread_id: self.thread_id.clone(),
+            turn_id: self.turn_id.clone(),
+            timeout,
+            semantic_inactivity_timeout,
+        })
+    }
+
     fn set_error(&mut self, error: &str) {
         if self.turn_error.is_empty() && !error.is_empty() {
             self.turn_error = error.to_string();
@@ -2035,9 +2200,7 @@ fn classify_retry_reason(
         && result
             .error
             .starts_with(CODEX_FIRST_TURN_NO_PROGRESS_MARKER)
-        && stderr
-            .to_ascii_lowercase()
-            .contains(MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+        && classify_codex_startup_stderr(stderr, true).model_refresh_failure > 0
     {
         RetryReason::ModelCatalogRefresh
     } else {
@@ -2747,6 +2910,35 @@ mod tests {
         assert!(error.contains("model=\"default(empty)\""));
         assert!(error.contains("diagnosis: Codex could not load its model catalog"));
         assert!(error.contains("codex stderr: failed to refresh available models: timeout"));
+    }
+
+    #[test]
+    fn first_item_wait_records_outcome_and_bounded_stderr_buckets() {
+        let mut state = CodexState {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            ..CodexState::default()
+        };
+        state.start_first_item_wait();
+        state.finish_first_item_wait("progress");
+        let observation = state
+            .first_item_wait_snapshot(Duration::from_secs(60), Duration::from_secs(300))
+            .unwrap_or_else(|| panic!("first-item wait observation"));
+        assert_eq!(observation.outcome, "progress");
+        assert_eq!(observation.thread_id, "thread-1");
+        assert_eq!(observation.turn_id, "turn-1");
+
+        let catalog = classify_codex_startup_stderr(
+            "failed to refresh available models: timeout waiting for child process to exit\nMCP transport error",
+            true,
+        );
+        assert_eq!(catalog.model_refresh_failure, 1);
+        assert_eq!(catalog.model_refresh_timeout, 1);
+        assert_eq!(catalog.mcp_init_transport, 1);
+        assert_eq!(catalog.bare_timeout, 0);
+
+        let bare = classify_codex_startup_stderr("request timed out", true);
+        assert_eq!(bare.bare_timeout, 1);
     }
 
     #[tokio::test]
