@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | Ready PR | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability 与 confirmed provider demotion/recovery production chain 已交付 | 异步收口 #558/#559/#561 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#561，可执行 | PR #542..#550/#558..#561；§5.2、§6.2、§29..§37、§45..§48 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability 与 confirmed provider demotion/recovery production chain 已交付；当前切片迁移 private task temp lifecycle | 将 socket-safe/private/override/cleanup 契约接入 Rust production task execution，同时异步收口 #558/#559/#561 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#561，可执行 | PR #542..#550/#558..#561；§5.2、§6.2、§29..§37、§45..§49 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1623,3 +1623,33 @@ probe 必须继续走既有 registration service。
 - 上述 lock/rustfmt/compile/test/smoke 和 reviewer findings 已排入 existing independent fixer，待其完成
   #560 后处理。主 agent 仅迁移、接线、交付并回写事实，不自行修复；PR 保持非 Draft Ready，不等待异步
   收口。
+
+## 49. AUDIT-005 执行缺口：private socket-safe task temp lifecycle
+
+当前切片继续 `AUDIT-005` 的 task execution / provider launch 完整生产链，而不是只替换一个环境变量：
+
+- Go `ensureTaskTempDir` 在每次 task run 中、provider 启动前创建独立的短路径临时目录，POSIX 权限为
+  `0700`，并把同一路径覆盖到 child 的 `TMPDIR`/`TMP`/`TEMP`；目录在成功、失败、取消和 provider
+  launch error 后都清理。默认 Unix base 优先 `/tmp` 以给 agent 的 AF_UNIX socket 留出 path headroom；
+  Windows 使用平台 temp。
+- 非 Windows production operator 可通过 `CORDY_AGENT_TEMP_BASE` 把目录迁移到指定 absolute base；相对
+  路径或真实创建失败必须 fail-closed，不能静默回退。Windows 明确忽略该 override。agent `custom_env`
+  不能覆盖 `CORDY_*` 或 `TMPDIR`/`TMP`/`TEMP`，所以 daemon-owned private path 始终权威。
+- 当前 Rust `ProductionProviderAdapter::run_task_inner` 直接使用
+  `predict_root_dir(...)/tmp` 并 `create_dir_all`。长 workspaces root/task ID 会把 child socket 路径推过
+  平台上限；路径不是 per-run 随机目录，也没有 `CORDY_AGENT_TEMP_BASE` contract。现有 execution plan 已
+  集中覆盖三个 temp env key，production adapter 也已有统一退出清理点；应复用这些入口，不新增 temp
+  manager、trait、crate 或 dependency。
+- 当前仓库历史中已有未进入本迁移堆栈的 task-temp 实现提交
+  `dcdba747`/`f38de802`/`90e844b3`；Ponytail 要求复用其已验证设计，但必须按当前 production adapter/
+  execution-plan 结构做最小移植，不能机械 cherry-pick 旧分支的无关 merge 或已被当前堆栈替代的代码。
+
+- 退出证据：真实 production task 在长 env root 下获得短路径、存在且 private 的独立 temp dir；三个
+  child env key 一致且不可被 agent env 覆盖；unset/valid/relative/unwritable override 行为符合平台契约；
+  两次同 task run 不复用目录；completed/failed/cancelled/launch-error 后均无残留。
+- 默认生产路径：Rust CLI daemon 唯一 `ProductionProviderAdapter` 在 `StartTask` 和 provider launch 前
+  创建并注入该目录；缺失或非法 operator 配置 fail-closed，不选择 Stub、Noop 或 Fake。
+- Go 是否可下线：本 private task temp 能力完成并经异步证据收口后不再需要 Go daemon；AUDIT-005
+  其余 daemon lifecycle、全仓 Go compatibility source 与最终 AUDIT-001..010 门仍未完成。
+- 当前状态：gap 已在编码前登记；branch `codex/cord-226-private-task-temp-rust` 堆叠于 #561 head
+  `93d38c16`。implementation/Ready PR/verification/review/fix 尚未发生，均不得记为通过。
