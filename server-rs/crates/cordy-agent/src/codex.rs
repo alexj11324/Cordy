@@ -15,7 +15,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use serde_json::{Map, Value};
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -39,6 +39,8 @@ const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_SEMANTIC_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_FIRST_TURN_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(60);
 const CODEX_VERSION_DIAGNOSTIC_TIMEOUT: Duration = Duration::from_secs(2);
+const CODEX_VERSION_DIAGNOSTIC_MAX_BYTES: usize = 64 * 1024;
+const CODEX_VERSION_PROCESS_TREE_GRACE: Duration = Duration::from_millis(100);
 const PATCH_INPUT_MAX_BYTES: usize = 64 * 1024;
 // ponytail: one bounded retry only needs a short fixed delay; add jitter if
 // launch contention becomes an observed production issue.
@@ -1882,25 +1884,50 @@ async fn detect_codex_version_for_diagnostics(
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // Go's `Cmd.Output` uses stdout as the version contract. Discard
+        // stderr here so provider diagnostics cannot be folded into the
+        // version field (and so it is not captured a second time without the
+        // normal stderr sanitizer).
+        .stderr(Stdio::null())
         .envs(env)
-        .kill_on_drop(true);
-    let output = match tokio::time::timeout(
-        CODEX_VERSION_DIAGNOSTIC_TIMEOUT,
-        command.output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) if output.status.success() => output,
-        _ => return "unknown".to_string(),
+        .kill_on_drop(false);
+    let mut tree = match OwnedProcessTree::spawn(&mut command).await {
+        Ok(tree) => tree,
+        Err(_) => return "unknown".to_string(),
     };
-    let mut data = output.stdout;
-    data.extend(output.stderr);
-    let version = extract_version_line(&String::from_utf8_lossy(&data));
-    if version.trim().is_empty() {
-        "unknown".to_string()
-    } else {
-        version
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+        return "unknown".to_string();
+    };
+
+    let probe = async {
+        let mut output = Vec::new();
+        let bytes = stdout
+            .take(CODEX_VERSION_DIAGNOSTIC_MAX_BYTES.saturating_add(1) as u64)
+            .read_to_end(&mut output)
+            .await?;
+        let status = tree.wait().await?;
+        if !tree.wait_tree_gone(CODEX_VERSION_PROCESS_TREE_GRACE).await {
+            return Err(io::Error::other(
+                "Codex version diagnostic left a descendant process running",
+            ));
+        }
+        if !status.success() || bytes > CODEX_VERSION_DIAGNOSTIC_MAX_BYTES {
+            return Ok::<Option<String>, io::Error>(None);
+        }
+        let version = sanitize_diagnostic(&extract_version_line(&String::from_utf8_lossy(&output)));
+        Ok::<Option<String>, io::Error>((!version.trim().is_empty()).then_some(version))
+    };
+    match tokio::time::timeout(CODEX_VERSION_DIAGNOSTIC_TIMEOUT, probe).await {
+        Ok(Ok(Some(version))) => version,
+        // The probe already waited for a terminal child status in this case;
+        // do not signal a potentially reused process group after the child is
+        // gone.
+        Ok(Ok(None)) => "unknown".to_string(),
+        _ => {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            "unknown".to_string()
+        }
     }
 }
 
@@ -2747,6 +2774,23 @@ mod tests {
         assert!(error.contains("model=\"default(empty)\""));
         assert!(error.contains("diagnosis: Codex could not load its model catalog"));
         assert!(error.contains("codex stderr: failed to refresh available models: timeout"));
+        assert_eq!(error.matches("codex stderr:").count(), 1);
+        assert_eq!(error.matches(CODEX_FIRST_TURN_NO_PROGRESS_MARKER).count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn version_diagnostic_keeps_stderr_out_of_version_context() {
+        let version = detect_codex_version_for_diagnostics(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "printf 'codex-build\\n'; printf 'opaque-stderr-secret\\n' >&2".to_string(),
+            ],
+            &BTreeMap::new(),
+        )
+        .await;
+        assert_eq!(version, "codex-build");
     }
 
     #[tokio::test]
