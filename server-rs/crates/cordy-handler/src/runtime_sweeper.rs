@@ -796,6 +796,7 @@ mod tests {
         user_id: Uuid,
         old_agent_id: Uuid,
         grace_agent_id: Uuid,
+        healthy_agent_id: Uuid,
         old_runtime_id: Uuid,
         grace_runtime_id: Uuid,
         healthy_runtime_id: Uuid,
@@ -972,6 +973,7 @@ mod tests {
                 user_id,
                 old_agent_id,
                 grace_agent_id,
+                healthy_agent_id,
                 old_runtime_id,
                 grace_runtime_id,
                 healthy_runtime_id,
@@ -1280,5 +1282,323 @@ mod tests {
         let cleanup = rows.cleanup().await;
         result.expect("offline task recovery contract failed");
         cleanup.expect("offline task recovery fixture cleanup failed");
+    }
+
+    #[tokio::test]
+    async fn production_stale_and_queued_task_cleanup_contract() {
+        let rows = RecoveryRows::required()
+            .await
+            .expect("DATABASE_URL and migrated PostgreSQL are required for cleanup contract");
+        let result = async {
+            sqlx::query(
+                "UPDATE agent_task_queue AS task SET status = 'completed', completed_at = now(), \
+                 error = NULL, failure_reason = NULL, wait_reason = NULL \
+                 FROM issue WHERE task.issue_id = issue.id AND issue.workspace_id = $1",
+            )
+            .bind(rows.workspace_id)
+            .execute(&rows.pool)
+            .await?;
+            sqlx::query("UPDATE agent SET status = 'idle' WHERE workspace_id = $1")
+                .bind(rows.workspace_id)
+                .execute(&rows.pool)
+                .await?;
+
+            let stale_runtime =
+                RecoveryRows::runtime(&rows.pool, rows.workspace_id, "stale", "online", "2 hours")
+                    .await?;
+            let stale_agent =
+                RecoveryRows::agent(&rows.pool, rows.workspace_id, rows.user_id, stale_runtime, "stale")
+                    .await?;
+
+            let stale_dispatch_issue =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, rows.healthy_agent_id, 101)
+                    .await?;
+            let stale_dispatch = RecoveryRows::task(
+                &rows.pool,
+                rows.healthy_agent_id,
+                rows.healthy_runtime_id,
+                stale_dispatch_issue,
+                "dispatched",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            let leased_dispatch_issue =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, rows.healthy_agent_id, 102)
+                    .await?;
+            let leased_dispatch = RecoveryRows::task(
+                &rows.pool,
+                rows.healthy_agent_id,
+                rows.healthy_runtime_id,
+                leased_dispatch_issue,
+                "dispatched",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            let fresh_running_issue =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, rows.healthy_agent_id, 103)
+                    .await?;
+            let fresh_running = RecoveryRows::task(
+                &rows.pool,
+                rows.healthy_agent_id,
+                rows.healthy_runtime_id,
+                fresh_running_issue,
+                "running",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            let stale_running_issue =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, stale_agent, 104)
+                    .await?;
+            let stale_running = RecoveryRows::task(
+                &rows.pool,
+                stale_agent,
+                stale_runtime,
+                stale_running_issue,
+                "running",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            let waiting_issue =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, stale_agent, 105)
+                    .await?;
+            let waiting = RecoveryRows::task(
+                &rows.pool,
+                stale_agent,
+                stale_runtime,
+                waiting_issue,
+                "waiting_local_directory",
+                None,
+                None,
+                None,
+                Some("local directory busy"),
+                None,
+            )
+            .await?;
+
+            sqlx::query(
+                "UPDATE agent_task_queue SET dispatched_at = now() - interval '10 minutes', \
+                 prepare_lease_expires_at = NULL WHERE id = $1",
+            )
+            .bind(stale_dispatch)
+            .execute(&rows.pool)
+            .await?;
+            sqlx::query(
+                "UPDATE agent_task_queue SET dispatched_at = now() - interval '10 minutes', \
+                 prepare_lease_expires_at = now() + interval '10 minutes' WHERE id = $1",
+            )
+            .bind(leased_dispatch)
+            .execute(&rows.pool)
+            .await?;
+            sqlx::query("UPDATE agent_task_queue SET started_at = now() - interval '4 hours' WHERE id IN ($1, $2)")
+                .bind(fresh_running)
+                .bind(stale_running)
+                .execute(&rows.pool)
+                .await?;
+            sqlx::query(
+                "UPDATE agent_task_queue SET dispatched_at = now() - interval '4 hours', \
+                 wait_reason = 'local directory busy' WHERE id = $1",
+            )
+            .bind(waiting)
+            .execute(&rows.pool)
+            .await?;
+
+            let queued_issue_one =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, rows.healthy_agent_id, 106)
+                    .await?;
+            let queued_one = RecoveryRows::task(
+                &rows.pool,
+                rows.healthy_agent_id,
+                rows.healthy_runtime_id,
+                queued_issue_one,
+                "queued",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            let queued_issue_two =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, rows.healthy_agent_id, 107)
+                    .await?;
+            let queued_two = RecoveryRows::task(
+                &rows.pool,
+                rows.healthy_agent_id,
+                rows.healthy_runtime_id,
+                queued_issue_two,
+                "queued",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            for id in [queued_one, queued_two] {
+                sqlx::query("UPDATE agent_task_queue SET created_at = now() - interval '3 hours' WHERE id = $1")
+                    .bind(id)
+                    .execute(&rows.pool)
+                    .await?;
+            }
+
+            let retry_issue =
+                RecoveryRows::issue(&rows.pool, rows.workspace_id, rows.user_id, rows.old_agent_id, 108)
+                    .await?;
+            let retry_parent = RecoveryRows::task(
+                &rows.pool,
+                rows.old_agent_id,
+                rows.old_runtime_id,
+                retry_issue,
+                "failed",
+                None,
+                None,
+                Some("runtime_offline"),
+                None,
+                None,
+            )
+            .await?;
+            let queued_retry = RecoveryRows::task(
+                &rows.pool,
+                rows.old_agent_id,
+                rows.old_runtime_id,
+                retry_issue,
+                "queued",
+                Some(retry_parent),
+                Some(retry_parent),
+                None,
+                None,
+                None,
+            )
+            .await?;
+            sqlx::query("UPDATE agent_task_queue SET created_at = now() - interval '3 hours' WHERE id = $1")
+                .bind(queued_retry)
+                .execute(&rows.pool)
+                .await?;
+
+            let mut lock = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM agent_task_queue WHERE id = $1 FOR UPDATE")
+                .bind(queued_one)
+                .fetch_one(&mut *lock)
+                .await?;
+            let selected = agent::expire_stale_queued_tasks(
+                &rows.pool,
+                Utc::now() - chrono::Duration::hours(2),
+                1,
+            )
+            .await?;
+            anyhow::ensure!(selected.len() == 1, "queued cleanup batch returned {} rows", selected.len());
+            anyhow::ensure!(selected[0].id == queued_two, "SKIP LOCKED selected the held or unrelated queued row");
+            lock.commit().await?;
+            sqlx::query(
+                "UPDATE agent_task_queue SET status = 'queued', completed_at = NULL, error = NULL, \
+                 failure_reason = NULL, prepare_lease_expires_at = NULL WHERE id = $1",
+            )
+            .bind(queued_two)
+            .execute(&rows.pool)
+            .await?;
+
+            let bus = Arc::new(Bus::new());
+            let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let events = events.clone();
+                bus.subscribe_all(move |event| {
+                    events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let tasks = Arc::new(TaskService::new(rows.pool.clone(), bus.clone()));
+            let liveness = Arc::new(TestLiveness {
+                available: true,
+                alive: HashSet::from([stale_runtime.to_string()]),
+                forgotten: Arc::new(Mutex::new(Vec::new())),
+                race_id: None,
+                pool: None,
+            });
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                liveness,
+                tasks,
+                bus,
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            )
+            .with_clock(Arc::new(FixedClock(Utc::now())));
+            let report = sweeper.run_once().await;
+            anyhow::ensure!(report.runtimes_offline == 0, "alive stale runtime was marked offline");
+            anyhow::ensure!(report.tasks_failed == 4, "stale/queued tasks failed = {}, want 4", report.tasks_failed);
+            anyhow::ensure!(report.queued_expired == 2, "queued_expired = {}, want 2", report.queued_expired);
+
+            for id in [stale_dispatch, stale_running] {
+                let (status, reason, error, lease): (String, Option<String>, Option<String>, Option<chrono::DateTime<Utc>>) = sqlx::query_as(
+                    "SELECT status, failure_reason, error, prepare_lease_expires_at FROM agent_task_queue WHERE id = $1",
+                )
+                .bind(id)
+                .fetch_one(&rows.pool)
+                .await?;
+                anyhow::ensure!(status == "failed", "stale task status = {status}");
+                anyhow::ensure!(reason.as_deref() == Some("timeout"), "stale task reason = {reason:?}");
+                anyhow::ensure!(error.as_deref() == Some("task timed out"), "stale task error = {error:?}");
+                anyhow::ensure!(lease.is_none(), "stale task retained prepare lease");
+            }
+            anyhow::ensure!(rows.status(leased_dispatch).await? == "dispatched", "active prepare lease was ignored");
+            anyhow::ensure!(rows.status(fresh_running).await? == "running", "fresh runtime running task was timed out");
+            anyhow::ensure!(rows.status(waiting).await? == "waiting_local_directory", "directory waiter was timed out");
+            for id in [queued_one, queued_two] {
+                let (status, reason, error): (String, Option<String>, Option<String>) = sqlx::query_as(
+                    "SELECT status, failure_reason, error FROM agent_task_queue WHERE id = $1",
+                )
+                .bind(id)
+                .fetch_one(&rows.pool)
+                .await?;
+                anyhow::ensure!(status == "failed", "queued task status = {status}");
+                anyhow::ensure!(reason.as_deref() == Some("queued_expired"), "queued reason = {reason:?}");
+                anyhow::ensure!(error.as_deref() == Some("task expired in queue"), "queued error = {error:?}");
+            }
+            anyhow::ensure!(rows.status(queued_retry).await? == "queued", "runtime_offline retry was expired by queue TTL");
+            let task_events = events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter(|event| event.event_type == cordy_protocol::EVENT_TASK_FAILED)
+                .cloned()
+                .collect::<Vec<_>>();
+            anyhow::ensure!(task_events.len() == 4, "task failure events = {}, want 4", task_events.len());
+            anyhow::ensure!(
+                task_events.iter().all(|event| event.workspace_id == rows.workspace_id.to_string()),
+                "task failure event workspace mismatch"
+            );
+            let reasons = task_events
+                .iter()
+                .filter_map(|event| event.payload["failure_reason"].as_str())
+                .collect::<Vec<_>>();
+            anyhow::ensure!(reasons.iter().filter(|reason| **reason == "timeout").count() == 2, "timeout event count mismatch");
+            anyhow::ensure!(
+                reasons.iter().filter(|reason| **reason == "queued_expired").count() == 2,
+                "queued_expired event count mismatch"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("stale and queued task cleanup contract failed");
+        cleanup.expect("stale and queued task cleanup fixture cleanup failed");
     }
 }
