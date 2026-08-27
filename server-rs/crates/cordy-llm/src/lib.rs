@@ -70,10 +70,13 @@ impl Client {
         // Construction remains infallible at startup, matching the Go layer.
         // A malformed configured URL remains configured but fails its calls;
         // it is never replaced with the default OpenAI endpoint.
-        let stream_client = reqwest::Client::builder()
-            .timeout(DEFAULT_REQUEST_TIMEOUT)
-            .build()
-            .ok();
+        // The non-streaming methods apply DEFAULT_REQUEST_TIMEOUT around
+        // their complete retry/response lifecycle. A total reqwest timeout
+        // would also expire a successfully opened stream while its caller is
+        // still consuming the body, so the streaming client deliberately has
+        // no total timeout; the caller owns that lifetime and can cancel the
+        // future or response when its ChatStream context equivalent expires.
+        let stream_client = reqwest::Client::builder().build().ok();
         let transport = stream_client
             .clone()
             .map(|client| Arc::new(ReqwestTransport(client)) as Arc<dyn Transport>);
@@ -135,8 +138,9 @@ impl Client {
     /// Opens an OpenAI-compatible streaming chat completion. The response is
     /// returned after the upstream accepts the request; callers own the
     /// response body and can consume its SSE bytes with `bytes_stream()`.
-    /// Unlike [`Client::chat`], no wrapper timeout is imposed after headers
-    /// arrive because the caller owns the stream lifetime.
+    /// Unlike [`Client::chat`], no implicit deadline is imposed because the
+    /// caller owns the stream lifetime and should bound both this future and
+    /// the returned body according to its request lifecycle.
     pub async fn chat_stream(
         &self,
         request: serde_json::Value,
@@ -156,15 +160,47 @@ impl Client {
             .stream_client
             .as_ref()
             .ok_or(Error::ClientUnavailable)?;
-        let mut builder = http.post(&self.endpoint).json(&request);
-        if !self.api_key.is_empty() {
-            builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", self.api_key));
+        self.post_stream_with_retries(http, &request).await
+    }
+
+    async fn post_stream_with_retries(
+        &self,
+        http: &reqwest::Client,
+        request: &serde_json::Value,
+    ) -> Result<reqwest::Response, Error> {
+        // The retry budget applies only until the upstream returns a
+        // successful response. Once headers are returned, the response body
+        // belongs to the caller and cannot be replayed safely here.
+        for attempt in 0..=self.max_retries {
+            let mut builder = http.post(&self.endpoint).json(request);
+            if !self.api_key.is_empty() {
+                builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", self.api_key));
+            }
+
+            match builder.send().await {
+                Ok(response) if response.status().is_success() => return Ok(response),
+                Ok(response) => {
+                    let status = response.status();
+                    let retry_after = retry_after(response.headers());
+                    let should_retry = retry_directive(response.headers())
+                        .unwrap_or_else(|| retryable_status(status));
+                    if attempt == self.max_retries || !should_retry {
+                        return Err(Error::Upstream(status));
+                    }
+                    // Drop the failed response before waiting and opening the
+                    // next connection; its body is intentionally not exposed.
+                    drop(response);
+                    tokio::time::sleep(retry_after.unwrap_or_else(|| retry_delay(attempt))).await;
+                }
+                Err(error) => {
+                    if attempt == self.max_retries || !retryable_error(&error) {
+                        return Err(Error::Request(error));
+                    }
+                    tokio::time::sleep(retry_delay(attempt)).await;
+                }
+            }
         }
-        let response = builder.send().await.map_err(Error::Request)?;
-        if !response.status().is_success() {
-            return Err(Error::Upstream(response.status()));
-        }
-        Ok(response)
+        unreachable!("inclusive streaming retry loop always returns")
     }
 
     fn prepare_chat_request(
@@ -655,6 +691,14 @@ mod tests {
             client.generate_text("", "system", "private opening").await,
             Err(Error::NotConfigured)
         ));
+        assert!(matches!(
+            client
+                .chat_stream(serde_json::json!({
+                    "messages": [{"role": "user", "content": "private opening"}]
+                }))
+                .await,
+            Err(Error::NotConfigured)
+        ));
         assert_eq!(transport.requests.load(Ordering::SeqCst), 0);
     }
 
@@ -816,6 +860,14 @@ mod tests {
                 "model missing from request: {}",
                 String::from_utf8_lossy(&request)
             );
+            let request_text = String::from_utf8_lossy(&request).to_ascii_lowercase();
+            assert!(
+                request_text
+                    .lines()
+                    .any(|line| line == "authorization: bearer test-key"),
+                "authorization header missing from request: {}",
+                String::from_utf8_lossy(&request)
+            );
             socket
                 .write_all(
                     concat!(
@@ -839,7 +891,8 @@ mod tests {
         });
         let response = client
             .chat_stream(serde_json::json!({
-                "messages": [{"role": "user", "content": "hi"}]
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": false
             }))
             .await
             .unwrap();
@@ -854,6 +907,73 @@ mod tests {
         assert!(body
             .windows(b"data: [DONE]".len())
             .any(|window| window == b"data: [DONE]"));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn raw_chat_stream_retries_before_returning_the_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            for attempt in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 2048];
+                for _ in 0..8 {
+                    let read = socket.read(&mut buffer).await.unwrap();
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                    if request
+                        .windows(b"\"stream\":true".len())
+                        .any(|window| window == b"\"stream\":true")
+                    {
+                        break;
+                    }
+                }
+                assert!(
+                    String::from_utf8_lossy(&request).contains("\"stream\":true"),
+                    "stream flag missing from attempt {attempt}"
+                );
+                let response = if attempt == 0 {
+                    concat!(
+                        "HTTP/1.1 503 Service Unavailable\r\n",
+                        "Content-Length: 0\r\n",
+                        "Connection: close\r\n",
+                        "x-should-retry: true\r\n",
+                        "retry-after-ms: 0\r\n",
+                        "\r\n"
+                    )
+                } else {
+                    concat!(
+                        "HTTP/1.1 200 OK\r\n",
+                        "Content-Type: text/event-stream\r\n",
+                        "Connection: close\r\n",
+                        "\r\n",
+                        "data: [DONE]\n\n"
+                    )
+                };
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+
+        let client = Client::new(Config {
+            api_key: "test-key".into(),
+            base_url: format!("http://{address}"),
+            default_model: "stream-model".into(),
+            max_retries: Some(1),
+        });
+        let response = client
+            .chat_stream(serde_json::json!({
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(String::from_utf8(response.bytes().await.unwrap().to_vec())
+            .unwrap()
+            .contains("data: [DONE]"));
         server.await.unwrap();
     }
 
