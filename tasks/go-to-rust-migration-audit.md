@@ -2669,7 +2669,8 @@ race/HTTP/commit evidence 登记为 executed PASS。
 
 ## 63. [~] AUDIT-007 Go 高风险回归契约映射索引（T-53）
 
-本项在开始补测试前登记，目标是把 807 个 Go 测试按业务契约归档，而不是按文件名机械翻译。索引只承认可定位的 Rust
+本项在开始补测试前登记。`807` 是登记时对 Go tests 的规划快照，不是本 PR 已逐项验证或映射的数量；本 PR 只建立八类
+taxonomy，后续仍须把每个高风险 contract 逐项回链或写明不适用理由，而不是按文件名机械翻译。索引只承认可定位的 Rust
 contract/production entry；仅有 route parity、类型能编译或 Rust 文件存在，不能标记为等价。每行必须区分“已有 Rust 证据”、
 “当前 PR/台账切片待 verifier”与“尚需新增 contract/不适用理由”，并把 wire/schema/ID 的细节转交 AUDIT-008，避免两个
 台账 ID 重复计数：
@@ -2689,12 +2690,17 @@ contract/production entry；仅有 route parity、类型能编译或 Rust 文件
 但 Ready PR 的存在不等于测试通过。AUDIT-007 的退出证据是所有高风险行都有可执行 Rust contract 或明确不适用理由，并能
 回链到 AUDIT-002..006/008 的具体 PR、命令和异步 verifier/reviewer/fixer 结果；主 agent 不运行长测试，也不代做缺陷修复。
 
-实现 commit `39532bfd` 只更新本台账：新增八个风险域映射行，分别回链代表性 Go 测试来源、Rust contract/production entry、
+实现 commit `16f5c69a` 只更新本台账：新增八个风险域 taxonomy 行，分别回链代表性 Go 测试来源、Rust contract/production entry、
 当前覆盖状态与下一步退出动作；明确 route parity 不等于行为等价、Ready PR 不等于测试通过、测试 helper 不等于生产缺口，
 并把 wire/schema/time/UUID/ULID/Redis/event envelope 交给 AUDIT-008。没有新增生产代码、依赖、测试框架、Stub/Noop/Fake 或
-默认入口。
+默认入口；taxonomy 本身不是逐测试 coverage matrix 或退出证据。
 
 主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、provider、daemon 或 release 命令。非 Draft
-Ready PR #576 已创建，base 为 `codex/cord-239-chat-finalize-contract-rust` 的 `840261fe`，当前 tip 为 `96662713`；独立
+Ready PR #576 已创建，实际 base 为 `codex/cord-239-chat-finalize-contract-rust` 的 `a9fdd2e1`；本 PR mapping commits 为
+`16f5c69a`/`7ef38657`，stacked evidence correction 为 `459308ae`，reviewed tip 为 `1486e6e3`。独立
 verifier/reviewer/fixer 已异步派发。索引引用的各 Ready PR 仍须分别记录 exact command、matched/executed、环境限制和异步
 finding；AUDIT-007 未完成前不能声称全部 Go 回归已映射或删除 Go。
+
+独立 review 在 exact `1486e6e3` 要求修正旧 implementation/base/tip 引用并收窄证据边界；上述回写只更正文档事实，
+不把八行 taxonomy、代表性 glob 或 Ready PR 列表误报为 807 个测试已一一核验。docs-only PR-range `git diff --check`
+PASS；本修复不运行或声称 cargo/DB/provider/daemon tests。
