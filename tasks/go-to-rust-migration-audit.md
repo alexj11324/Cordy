@@ -1853,4 +1853,22 @@ router 或 test-only production seam；在既有 Rust 文件内用真实 Postgre
   AUDIT-002 其余 API/WS/background worker、AUDIT-001..009 和最终 AUDIT-010 仍未完成。
 - owner：主 agent 只迁移契约、生产入口证据和 Ready PR；独立 verifier/reviewer/fixer 异步收口。branch
   `codex/cord-229-issue-status-production-contract-rust`，依赖 Ready #564 branch
-  `codex/cord-228-daemon-http-pool-recovery-rust` at `b68910a4`；尚无 implementation commit 或 PR。
+  `codex/cord-228-daemon-http-pool-recovery-rust` at `b68910a4`。
+
+实现 commit `889324d9` 在一个既有 Rust 文件内加入完整 production contract checks，没有新增 dependency、fixture
+framework、repository、service 或 test-only production seam：
+
+- 直接调用真实 list/create/update/archive/reorder handler arguments，证明 member read、admin/flag write gate、旧
+  workspace 七个 built-in self-heal、系统状态不可归档、custom create/color/category、duplicate error JSON、active/all
+  list wire shape 和 stored custom key；
+- 用真实 Postgres workspace 隔离 fixture 证明 partial reorder rollback 不改 position/不发 event，exact active set reorder
+  原子提交；成功 mutation 的同步 bus action 恰为 created/created/reordered/archived，拒绝和冲突不发布；
+- 用真实 `IssueService::create` 和 production issue PUT/batch-update router 穿过 shared catalog lock + in-transaction
+  re-resolve；exclusive archive 先提交时 create/update 拒绝，create/update 先提交时 archive 等待、随后只阻止未来
+  assignment，已提交 issue 保留 custom key 且 effective category 不变；
+- DB fixture 在正常路径显式删除 issue、issue_status 和 workspace；无 `DATABASE_URL` 或连接失败会明确输出 skipped，
+  不把 0 个真实 DB case 误报为通过。
+
+主 agent 只运行 `git diff --check`（PASS），没有运行 cargo/rustfmt/测试。独立 verifier 尚未执行，reviewer 尚未
+检查 Go parity，fixer 尚未接收 finding；因此当前只能标记为 implementation delivered/pending async evidence，不能
+声称已验证，也不能删除 Go。Ready PR 尚待 push/create。
