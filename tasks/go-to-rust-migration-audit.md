@@ -2313,3 +2313,24 @@ active agent/online/fresh runtime 排除、bounded candidate 与 blocked gauge�
   failure recovery、chat finalize、其他 background workers 与 AUDIT-001..010 总退出门仍未完成。
 - owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
   `codex/cord-236-stale-task-cleanup-contract-rust`，独立 worktree，编号待创建后回写。
+
+实现 commit `cb70bb98` 只在既有 `runtime_sweeper.rs` 的 `cfg(test)` 内增加 runtime GC 的真实 PostgreSQL contract，未
+修改 `gc_once`/`gc_with_budget`/`gc_runtime` production path、SQL、TaskService、Bus 或 server worker wiring：
+
+- 唯一 `GcRows` fixture 创建 workspace/user/member、fresh helper runtime/agent，并为每个场景创建唯一 offline runtime；
+  两个 drained runtime 通过真实 `run_full_once` 被删除，terminal completed/failed/cancelled task 的 message、usage、token
+  全部保留，`runtime_id` 显式解绑，且同 workspace 的两次删除只发布一个 `runtime_gc` daemon-register event。
+- 五种 non-terminal status（queued/dispatched/running/waiting_local_directory/deferred）逐一阻止 `gc_runtime`；active bound
+  agent、fresh offline runtime、online runtime 同样保留；blocked-count query 观察到全部五个 blocked runtime，bounded
+  candidate query 以 `max_per_tick=1` 不超过上限。
+- owner-lock contract 使用真实 PostgreSQL `FOR UPDATE` 与 `pg_stat_activity` wait evidence：writer 在 GC runtime 行锁期间被
+  `lock_task_owner_rows` 阻塞，释放后成功 enqueue，随后 GC 重新检查未排空 task 并保留 runtime；drained runtime 删除后相同
+  owner-fenced enqueue 返回空且不产生孤儿 task。
+- required `DATABASE_URL` 缺失/坏连接直接失败；正常和 failure 返回路径显式解绑 agent、删除 workspace/user，Drop 仅为
+  best-effort 兜底。shared DB 可能含其他旧候选，因此 full-sweeper 断言只要求本 fixture 的两个 runtime 被删除，并按本
+  workspace 过滤事件。
+
+主 agent 仅执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令。非 Draft Ready PR #573
+将在本 branch 推送后创建，base 是 `codex/cord-236-stale-task-cleanup-contract-rust` 的 `b335afa4`，当前 Ready 代码 SHA
+`cb70bb98`；独立 verifier/reviewer/fixer 异步派发。exact compile、matched/executed counts、required DB、server/Windows
+和 timeout/rollback 证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
