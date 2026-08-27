@@ -35,6 +35,14 @@ coverage
 /docs/
 *.md
 
+# Rust cordy-server embeds these Go-side assets at compile time. Keep the
+# narrow source trees in the Docker build context even though Markdown is
+# excluded elsewhere.
+!server/internal/service/builtin_agents/
+!server/internal/service/builtin_agents/**
+!server/internal/service/builtin_skills/
+!server/internal/service/builtin_skills/**
+
 # Only the web workspace is used by Dockerfile.web. Default-exclude future
 # app workspaces so they do not silently enter the build context.
 /apps/*

@@ -110,7 +110,10 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 pub use state::HandlerState;
 
 pub(crate) fn allowed_origins() -> Vec<String> {
-    let raw = ["CORS_ALLOWED_ORIGINS", "FRONTEND_ORIGIN"]
+    // Keep the WebSocket policy's established precedence. `ALLOWED_ORIGINS`
+    // is still used by self-hosted deployments that predate the CORS-specific
+    // setting, while the latter two remain compatible with the HTTP router.
+    let raw = ["ALLOWED_ORIGINS", "CORS_ALLOWED_ORIGINS", "FRONTEND_ORIGIN"]
         .into_iter()
         .find_map(|name| {
             std::env::var(name)
