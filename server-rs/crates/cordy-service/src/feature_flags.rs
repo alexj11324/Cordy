@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
+use serde::Deserialize;
+
 /// Why a flag decision has its value. The string representation is stable so
 /// callers can put it in diagnostics and structured logs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -189,8 +191,10 @@ impl FlagProvider for StaticProvider {
 /// Environment provider for emergency overrides and local development.
 pub struct EnvProvider {
     prefix: String,
-    lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
+    lookup: Arc<EnvLookup>,
 }
+
+type EnvLookup = dyn Fn(&str) -> Option<String> + Send + Sync;
 
 impl EnvProvider {
     pub fn new(prefix: impl Into<String>) -> Self {
@@ -328,15 +332,15 @@ impl Default for ConfiguredFlags {
 struct RuleConfig {
     #[serde(default)]
     default: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     variant: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     allow: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     allow_by: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     deny: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     deny_by: String,
     #[serde(default)]
     percent: Option<PercentConfig>,
@@ -344,10 +348,18 @@ struct RuleConfig {
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct PercentConfig {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     percent: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     by: String,
+}
+
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 impl RuleConfig {
@@ -382,11 +394,12 @@ impl ConfiguredFlags {
         if String::from_utf8_lossy(&bytes).trim().is_empty() {
             return Ok(Self::default());
         }
-        let raw: HashMap<String, RuleConfig> = serde_yaml::from_slice(&bytes)
+        let raw: Option<HashMap<String, Option<RuleConfig>>> = serde_yaml::from_slice(&bytes)
             .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
         let rules = raw
+            .unwrap_or_default()
             .into_iter()
-            .map(|(key, rule)| (key, rule.into_rule()))
+            .map(|(key, rule)| (key, rule.unwrap_or_default().into_rule()))
             .collect();
         let configured = Self::default();
         configured.load_rules(rules);
@@ -818,6 +831,43 @@ checkout_algo:
         assert_eq!(rule.deny, ["banned-tenant"]);
         assert_eq!(rule.deny_by, "workspace_id");
         assert_eq!(rule.percent.unwrap().percent, 25);
+    }
+
+    #[test]
+    fn yaml_nulls_preserve_go_zero_value_compatibility() {
+        let yaml = r#"
+null_rule:
+  default: null
+  variant: null
+  allow: null
+  allow_by: null
+  deny: null
+  deny_by: null
+  percent:
+    percent: null
+    by: null
+empty_rule: null
+"#;
+        let raw: Option<HashMap<String, Option<RuleConfig>>> = serde_yaml::from_str(yaml).unwrap();
+        let rules: HashMap<_, _> = raw
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(key, rule)| (key, rule.unwrap_or_default().into_rule()))
+            .collect();
+
+        assert_eq!(
+            rules["null_rule"],
+            Rule {
+                percent: Some(PercentRollout::default()),
+                ..Rule::default()
+            }
+        );
+        assert_eq!(rules["empty_rule"], Rule::default());
+        assert!(
+            serde_yaml::from_str::<Option<HashMap<String, Option<RuleConfig>>>>("null")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
