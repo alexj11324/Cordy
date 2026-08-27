@@ -1359,11 +1359,21 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 mod tests {
     use super::{
         app_url, channel_secret_box, configure_telegram, configure_wecom_security,
-        lease_backend_settings, ChannelRouter, ChannelServices, LeaseBackendSettings, RouterConfig,
+        lease_backend_settings, start_media_reconciler, ChannelRouter, ChannelServices,
+        ChannelStorage, LeaseBackendSettings, RouterConfig,
     };
     use base64::Engine as _;
     use cordy_lark::client::ApiClient as _;
+    use std::path::PathBuf;
     use std::sync::Arc;
+
+    struct TempStorageDir(PathBuf);
+
+    impl Drop for TempStorageDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn lark_runtime_requires_a_valid_secret_and_uses_the_real_client() {
@@ -1576,5 +1586,34 @@ mod tests {
                 namespace: String::new(),
             }
         );
+    }
+
+    #[tokio::test]
+    async fn media_reconciler_follows_storage_and_channel_cancellation() {
+        let state = cordy_handler::HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert!(start_media_reconciler(&state, None, None).is_none());
+
+        let root = std::env::temp_dir().join(format!(
+            "cordy-channel-media-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _temp = TempStorageDir(root.clone());
+        let storage = Arc::new(ChannelStorage {
+            inner: Arc::new(
+                cordy_handler::attachment_storage::LocalStorage::new(root, String::new()).unwrap(),
+            ),
+        });
+        let handle = start_media_reconciler(&state, Some(storage), None).unwrap();
+        assert!(!handle.is_finished());
+
+        state.channel_cancel.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(1), handle)
+            .await
+            .expect("media reconciler observes channel cancellation")
+            .expect("media reconciler exits without panicking");
     }
 }
