@@ -1403,6 +1403,27 @@ mod tests {
     }
 
     #[test]
+    fn dingtalk_runtime_requires_a_valid_secret_and_constructs_the_real_client() {
+        const KEY_ENV: &str = "CORDY_TEST_DINGTALK_SECRET_KEY";
+
+        std::env::remove_var(KEY_ENV);
+        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
+
+        std::env::set_var(KEY_ENV, "not-base64");
+        assert!(channel_secret_box(KEY_ENV).is_err());
+
+        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
+        std::env::remove_var(KEY_ENV);
+
+        let _client = cordy_dingtalk::client::Client::new(None, "");
+        assert_eq!(
+            cordy_dingtalk::client::DEFAULT_API_BASE,
+            "https://api.dingtalk.com"
+        );
+    }
+
+    #[test]
     fn app_url_prefers_explicit_app_host_and_trims_slash() {
         let mut cfg = cordy_config::Config::default();
         cfg.urls.frontend_origin = Some("https://frontend.example/".into());
