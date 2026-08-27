@@ -11,9 +11,10 @@ use serde::{Deserialize, Serialize};
 
 /// Typed ULID wrapper.
 ///
-/// Go side uses `oklog/ulid/v2`; on the wire ULIDs are 26-char uppercase
-/// Crockford base32 strings. Serde serializes as that string to keep API
-/// contracts byte-identical (see migration plan §二 hard constraints).
+/// Go side uses `oklog/ulid/v2`; canonical ULIDs are 26-char uppercase
+/// Crockford base32 strings. This compatibility utility is not yet used by a
+/// production wire field; callers must add field-level golden coverage when
+/// adopting it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Ulid(#[serde(with = "ulid_string")] pub uuid::Uuid);
 
@@ -27,6 +28,20 @@ mod ulid_string {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<uuid::Uuid, D::Error> {
         let s = String::deserialize(d)?;
+        if s.len() != 26 {
+            return Err(serde::de::Error::custom(
+                "ULID must be exactly 26 characters",
+            ));
+        }
+        if !s
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| matches!(byte, b'0'..=b'7'))
+        {
+            return Err(serde::de::Error::custom(
+                "ULID exceeds the 128-bit canonical range",
+            ));
+        }
         let value = ulid::Ulid::from_string(&s).map_err(serde::de::Error::custom)?;
         Ok(uuid::Uuid::from_bytes(value.to_bytes()))
     }
@@ -145,13 +160,40 @@ mod tests {
         let id = Ulid(uuid::Uuid::from_bytes(value.to_bytes()));
 
         assert_eq!(serde_json::to_string(&id).unwrap(), format!("\"{VECTOR}\""));
-        assert_eq!(serde_json::from_str::<Ulid>(&format!("\"{VECTOR}\"")).unwrap(), id);
+        assert_eq!(
+            serde_json::from_str::<Ulid>(&format!("\"{VECTOR}\"")).unwrap(),
+            id
+        );
     }
 
     #[test]
     fn ulid_rejects_uuid_hyphenated_wire_value() {
         let uuid_wire = format!("\"{}\"", uuid::Uuid::nil());
         assert!(serde_json::from_str::<Ulid>(&uuid_wire).is_err());
+    }
+
+    #[test]
+    fn ulid_rejects_overflow_invalid_and_wrong_length_vectors() {
+        for wire in [
+            "80000000000000000000000000",
+            "ZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+            "01ARZ3NDEKTSV4RRFFQ69G5FAI",
+            "01ARZ3NDEKTSV4RRFFQ69G5FA!",
+            "01ARZ3NDEKTSV4RRFFQ69G5FA",
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV0",
+        ] {
+            assert!(
+                serde_json::from_str::<Ulid>(&format!("\"{wire}\"")).is_err(),
+                "accepted invalid ULID {wire}"
+            );
+        }
+
+        const MAX: &str = "7ZZZZZZZZZZZZZZZZZZZZZZZZZ";
+        let parsed = serde_json::from_str::<Ulid>(&format!("\"{MAX}\"")).unwrap();
+        assert_eq!(
+            serde_json::to_string(&parsed).unwrap(),
+            format!("\"{MAX}\"")
+        );
     }
 
     #[test]
