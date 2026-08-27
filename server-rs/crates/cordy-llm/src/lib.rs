@@ -37,6 +37,8 @@ pub enum Error {
     Timeout,
     #[error("llm: invalid upstream response: {0}")]
     InvalidResponse(String),
+    #[error("llm: invalid request: {0}")]
+    InvalidRequest(String),
     #[error("llm: upstream returned HTTP {0}")]
     Upstream(StatusCode),
     #[error("llm: upstream returned no choices")]
@@ -98,6 +100,54 @@ impl Client {
         self.max_retries
     }
 
+    /// Sends a raw OpenAI-compatible chat completion request and returns the
+    /// decoded JSON response unchanged. The object form intentionally keeps
+    /// the request extensible for tools, response formats, and gateway
+    /// parameters that evolve independently of this crate.
+    ///
+    /// If `model` is absent, null, or an empty string, the configured default
+    /// model is inserted. Other fields are passed through unchanged.
+    pub async fn chat(&self, mut request: serde_json::Value) -> Result<serde_json::Value, Error> {
+        if !self.enabled {
+            return Err(Error::NotConfigured);
+        }
+        let Some(object) = request.as_object_mut() else {
+            return Err(Error::InvalidRequest(
+                "chat request must be a JSON object".into(),
+            ));
+        };
+        if matches!(object.get("stream"), Some(serde_json::Value::Bool(true))) {
+            return Err(Error::InvalidRequest(
+                "chat request must be non-streaming; use the streaming chat API".into(),
+            ));
+        }
+        let needs_model = match object.get("model") {
+            None | Some(serde_json::Value::Null) => true,
+            Some(serde_json::Value::String(model)) => model.trim().is_empty(),
+            Some(_) => false,
+        };
+        if needs_model {
+            object.insert(
+                "model".into(),
+                serde_json::Value::String(self.default_model.clone()),
+            );
+        }
+
+        match tokio::time::timeout(DEFAULT_REQUEST_TIMEOUT, self.chat_inner(request)).await {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
+    async fn chat_inner(&self, request: serde_json::Value) -> Result<serde_json::Value, Error> {
+        let response = self.post_with_retries(&request).await?;
+        if !response.status.is_success() {
+            return Err(Error::Upstream(response.status));
+        }
+        serde_json::from_slice(&response.body)
+            .map_err(|error| Error::InvalidResponse(error.to_string()))
+    }
+
     /// Sends one system/user chat completion and returns the first choice.
     /// The caller's deadline bounds the entire retry sequence.
     pub async fn generate_text(
@@ -137,7 +187,7 @@ impl Client {
             role: "user",
             content: user_prompt,
         });
-        let request = CompletionRequest {
+        let request = serde_json::to_value(CompletionRequest {
             model: if model.trim().is_empty() {
                 &self.default_model
             } else {
@@ -149,7 +199,8 @@ impl Client {
             max_completion_tokens: None,
             max_tokens: None,
             reasoning_effort: None,
-        };
+        })
+        .map_err(|error| Error::InvalidRequest(error.to_string()))?;
 
         let response = self.post_with_retries(&request).await?;
         if !response.status.is_success() {
@@ -227,7 +278,9 @@ impl Client {
         };
 
         for compatibility_retries in 0..=2 {
-            let response = self.post_with_retries(&request).await?;
+            let request_value = serde_json::to_value(&request)
+                .map_err(|error| Error::InvalidRequest(error.to_string()))?;
+            let response = self.post_with_retries(&request_value).await?;
             if response.status.is_success() {
                 let completion: CompletionResponse = serde_json::from_slice(&response.body)
                     .map_err(|error| Error::InvalidResponse(error.to_string()))?;
@@ -272,7 +325,7 @@ impl Client {
 
     async fn post_with_retries(
         &self,
-        request: &CompletionRequest<'_>,
+        request: &serde_json::Value,
     ) -> Result<TransportResponse, Error> {
         let transport = self.transport.as_ref().ok_or(Error::ClientUnavailable)?;
 
@@ -326,7 +379,7 @@ trait Transport: Send + Sync {
         &self,
         endpoint: &str,
         api_key: &str,
-        request: &CompletionRequest<'_>,
+        request: &serde_json::Value,
     ) -> Result<TransportResponse, reqwest::Error>;
 }
 
@@ -338,7 +391,7 @@ impl Transport for ReqwestTransport {
         &self,
         endpoint: &str,
         api_key: &str,
-        request: &CompletionRequest<'_>,
+        request: &serde_json::Value,
     ) -> Result<TransportResponse, reqwest::Error> {
         let mut builder = self.0.post(endpoint).json(request);
         if !api_key.is_empty() {
@@ -518,7 +571,7 @@ mod tests {
             &self,
             endpoint: &str,
             api_key: &str,
-            request: &CompletionRequest<'_>,
+            request: &serde_json::Value,
         ) -> Result<TransportResponse, reqwest::Error> {
             self.requests.fetch_add(1, Ordering::SeqCst);
             if let Ok(mut captured) = self.endpoint.lock() {
@@ -527,9 +580,8 @@ mod tests {
             if let Ok(mut captured) = self.api_key.lock() {
                 *captured = api_key.to_owned();
             }
-            if let (Ok(value), Ok(mut captured)) = (serde_json::to_value(request), self.body.lock())
-            {
-                *captured = Some(value);
+            if let Ok(mut captured) = self.body.lock() {
+                *captured = Some(request.clone());
             }
             Ok(TransportResponse {
                 status: StatusCode::OK,
@@ -589,6 +641,93 @@ mod tests {
             body.as_ref().map(|body| &body["messages"][1]["content"]),
             Some(&Value::String("private opening".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn raw_chat_applies_default_model_and_preserves_request_fields() {
+        let transport = Arc::new(RecordingTransport::default());
+        let mut client = Client::new(Config {
+            api_key: "test-key".into(),
+            base_url: "https://gateway.example/v1".into(),
+            default_model: "configured-model".into(),
+            max_retries: Some(0),
+        });
+        client.transport = Some(transport.clone());
+
+        let response = client
+            .chat(serde_json::json!({
+                "messages": [{"role": "user", "content": "hi"}],
+                "response_format": {"type": "json_object"}
+            }))
+            .await
+            .unwrap();
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "Semantic title"
+        );
+
+        let body = transport.body.lock().ok().and_then(|body| body.clone());
+        assert_eq!(
+            body.as_ref().map(|body| &body["model"]),
+            Some(&Value::String("configured-model".into()))
+        );
+        assert_eq!(
+            body.as_ref().map(|body| &body["response_format"]["type"]),
+            Some(&Value::String("json_object".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn raw_chat_respects_request_model_and_rejects_non_object() {
+        let transport = Arc::new(RecordingTransport::default());
+        let mut client = Client::new(Config {
+            api_key: "test-key".into(),
+            base_url: "https://gateway.example/v1".into(),
+            default_model: "configured-model".into(),
+            max_retries: Some(0),
+        });
+        client.transport = Some(transport.clone());
+
+        client
+            .chat(serde_json::json!({
+                "model": "caller-model",
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .await
+            .unwrap();
+        let body = transport.body.lock().ok().and_then(|body| body.clone());
+        assert_eq!(
+            body.as_ref().map(|body| &body["model"]),
+            Some(&Value::String("caller-model".into()))
+        );
+
+        let error = client.chat(serde_json::json!("not-an-object")).await;
+        assert!(
+            matches!(error, Err(Error::InvalidRequest(message)) if message.contains("JSON object"))
+        );
+    }
+
+    #[tokio::test]
+    async fn raw_chat_rejects_streaming_requests_before_network() {
+        let transport = Arc::new(RecordingTransport::default());
+        let mut client = Client::new(Config {
+            api_key: "test-key".into(),
+            base_url: "https://gateway.example/v1".into(),
+            max_retries: Some(0),
+            ..Config::default()
+        });
+        client.transport = Some(transport.clone());
+
+        let error = client
+            .chat(serde_json::json!({
+                "stream": true,
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .await;
+        assert!(
+            matches!(error, Err(Error::InvalidRequest(message)) if message.contains("non-streaming"))
+        );
+        assert_eq!(transport.requests.load(Ordering::SeqCst), 0);
     }
 
     #[test]
