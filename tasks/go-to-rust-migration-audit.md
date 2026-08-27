@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 review/fix；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | PR #531；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-004 | 当前切片 | Lark 在有效 secret 下使用真实 HTTP/WS client，缺失或非法 secret 均 fail-closed；shutdown 纳入 channel runtime deadline | 完成 Lark 机械验证与 Ready PR；WeCom/DingTalk/Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | §5.3、§6.2、§20 | 主 agent；review/fix subagent |
+| AUDIT-004 | 进行中 | Lark 在有效 secret 下使用真实 HTTP/WS client，缺失或非法 secret 均 fail-closed；shutdown 纳入 channel runtime deadline | WeCom/DingTalk/Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532；§5.3、§6.2、§20 | 主 agent；review/fix subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
@@ -536,7 +536,7 @@ Ready PR #531（`codex/cord-196-agent-concurrency-contract-rust-v2`）收口 Go
 
 ## 20. AUDIT-004 执行更新：Lark production configuration contract
 
-当前切片 `codex/cord-197-lark-production-contract-rust` 验证 Lark/飞书 production
+Ready PR #532（`codex/cord-197-lark-production-contract-rust`）验证 Lark/飞书 production
 assembly 的配置选择，不复制 provider 实现或增加第二套 client factory：
 
 - Go 能力：只有配置有效的 `CORDY_LARK_SECRET_KEY` 才启动安装凭证解密、真实
