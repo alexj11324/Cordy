@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567 与 scheduler worker #568 Ready | 异步收口 #565..#568 V/R/F，同时继续下一项完整 background-worker 契约 | 复用唯一 Rust production assemblies；#568 堆叠在 Ready #567 | PR #565..#568；§5、§6.2、§18、§52..§55 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567 与 scheduler worker #568 Ready；heartbeat worker 实施中 | 异步收口 #565..#568 V/R/F，同时收口 heartbeat coalescing/fallback/shutdown lifecycle | 复用唯一 Rust production heartbeat scheduler；当前切片基于 #568 | PR #565..#568；§5、§6.2、§18、§52..§56 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2063,3 +2063,31 @@ counts、真实 migrated DB、server/Windows build 与 failure-safe cleanup 行�
 
 非 Draft Ready PR #568 已创建，base 是 #567 branch；Ready SHA `e058e8b4`。独立 verifier/reviewer 已异步派发，
 fixer 尚无本 PR finding。PR 可在异步验证、review、fix 期间保持 Ready，主迁移线不等待。
+
+## 56. AUDIT-002 执行缺口：runtime heartbeat batching worker contract
+
+当前切片继续 `AUDIT-002 background worker smoke`，选择 Go `handler.HeartbeatScheduler` 的完整热路径与 shutdown
+契约；它是 runtime liveness/sweeper 的生产前置，而不是单个时间格式或 helper：
+
+- 已 online 且有 `last_seen_at` 的 heartbeat 必须只入 pending set，同一 runtime 高频 schedule 在窗口内去重，并由单次
+  PostgreSQL batch UPDATE 刷新；不同 runtime 同批处理，队列大小受 fleet ID 数量限制。
+- offline、never-seen，以及 online touch 与 sweeper offline race 必须同步走 passthrough/`mark online`，让调用返回时状态
+  已恢复；batch flush 时刚变 offline 的 row 不得被错误翻回 online，其下一次 heartbeat 必须自愈。
+- production `cordy-server` 将同一个 `BatchedHeartbeatScheduler` 同时注入 HTTP heartbeat handler 并启动 worker；关闭时
+  先 drain HTTP，再 cancel root，runtime 必须 flush pending、join，并额外 flush cancellation 后到达的 late schedule，不能
+  在进程退出时丢最后一批 liveness。
+
+Rust production 实现已在 `cordy-handler::heartbeat_scheduler` 与 `cordy-server` 接线，但没有直接测试；现有 Go DB tests
+覆盖 coalesce、多 ID batch、offline fallback、race-to-offline self-heal、Stop drain/late schedule。当前切片必须在既有 Rust
+module 内直接执行真实 `agent_runtime` PostgreSQL rows、`PassthroughHeartbeatScheduler`、`BatchedHeartbeatScheduler` 和
+`HeartbeatSchedulerRuntime`，不得新增 scheduler、queue、mock DB、sleep gate或 test-only production seam。required DB
+缺失/坏 `DATABASE_URL` 必须失败且 fixture failure-safe 清理。
+
+- 退出证据：真实 DB contract 同时证明 coalesce/batch、sync fallback/race recovery、batch offline preservation、root cancel
+  final flush、cancel 后 late schedule second drain与 bounded join；删除 production pending dedupe、status gate、fallback、batch
+  SQL、final/second flush 任一环节会失败。
+- 默认生产路径：唯一 Rust server assembly 复用同一 scheduler instance，无 Stub/Noop/Fake/alternate heartbeat worker。
+- Go 是否可下线：本契约及异步 finding 收口后，Go heartbeat batching worker 回归可退出；runtime sweeper、其他 workers与
+  AUDIT-001..010 总退出门仍未完成。
+- owner：主 agent 迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
+  `codex/cord-233-heartbeat-worker-contract-rust`，基于 #568 branch at `3d448d16`。
