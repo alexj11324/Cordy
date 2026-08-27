@@ -1100,3 +1100,13 @@ auto-update module allow 与 “CLI crate 尚未落地”说明已删除。
 - 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并通过
   `git diff --check`，未把编译、测试、rustfmt 或 HTTP 行为记录为通过。PR 堆叠在 #549，且
   #544 fix 尚待传播。
+- reviewer 在 head `019e6288` 返回两个 P1：新增检查只覆盖 Desktop、busy 与非法 target
+  失败，没有 concrete production success/restart、root cancellation 与 barrier hold 证据；
+  Desktop/busy 也只断言 `failed`，未核对 Go 的具体错误原因和各分支的 root/updating/barrier
+  恢复。finding 已交独立 fixer；reviewer 对 shared production host ownership、`cfg(test)`
+  constructor、过期 allow 删除与 Ponytail 无其他 finding。
+- verifier 在同一 head 通过两个 diff check；fixed-stable rustfmt 在 `auto_update.rs` 与
+  `daemon_core.rs` 失败。production exact、auto-update group、update-executor group 与 daemon
+  no-run 都被继承自 #544 的 7 处 `GcMetaKind` E0433 阻断，测试体实际执行数均为 0，不能记录
+  为通过；verifier 静态确认 heartbeat 与 periodic update owner 共享同一个
+  `Arc<DaemonCoreHost>`。格式、基线传播及 reviewer finding 已合并交给独立 fixer。
