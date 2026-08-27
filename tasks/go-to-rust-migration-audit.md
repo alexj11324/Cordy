@@ -2041,3 +2041,22 @@ start 任一环节应使 contract 失败。required DB 缺失/坏 `DATABASE_URL`
   其他 background workers 和 AUDIT-001..010 总退出门仍需分别完成。
 - owner：主 agent 迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
   `codex/cord-232-scheduler-worker-contract-rust`，基于 #567 branch at `97edeaa3`。
+
+实现 commit `f0ac870a` 在 `cordy-scheduler` 内增加一个 DB contract test module，直接调用现有 production
+`Manager`/`ManagerRuntime` 与 `sys_cron_executions` SQL；除 `cfg(test)` module 声明外没有修改生产代码、依赖或新增
+runtime seam：
+
+- 两个真实 manager 以不同 runner 并发 claim 同一 job/scope/plan，断言唯一 handler、一个 success/一个 conflict，以及
+  SUCCESS audit 的 attempt、owner、rows affected、JSON result、finished time；另由 `register` + `start` 证明进程 runtime
+  启动后立即 tick，并通过 `shutdown` 有界 join。
+- 同一 plan 第一次 handler error、第二次 success，断言 FAILED retry cursor 实际被 attempt 2 reclaim，终态清除 retry/error；
+  独立真实 rows 覆盖 handler panic、run timeout 与 root cancellation 的 `handler_panic`/`run_timeout`/`canceled` 分类。
+- stale owner 在 handler 内阻塞，测试把真实 lease 过期；第二 manager 的完整 tick 先 close stale row 再以新 lease/attempt
+  reclaim，旧 owner 随后完成时必须得到 `LeaseLost`，不能覆盖新 owner 的 SUCCESS audit。
+- required `DATABASE_URL` 缺失或 PostgreSQL 不可达直接失败；每个测试使用 UUID job prefix，正常路径显式删除，panic/failure
+  由 Drop guard best-effort 异步清理。没有 fake DB、mock lease、sleep-based concurrency gate或 alternate scheduler。
+
+主 agent 只执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试或 DB 命令。production server 中两个真实
+job 的注册、唯一 `Manager::start` 和 drain 后 `ManagerRuntime::shutdown` 已静态定位；exact compilation、matched/executed
+counts、真实 migrated DB、server/Windows build 与 failure-safe cleanup 行为必须由独立 verifier 执行并如实记录。当前不能
+声称 scheduler contract 已验证或删除 Go。
