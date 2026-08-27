@@ -2841,7 +2841,7 @@ impl AutopilotService {
                 tracing::warn!(
                     run_id = %existing.id,
                     trigger_id = %trigger_id,
-                    planned_at = %crate::task_notify::rfc3339_nano(planned_at),
+                    planned_at = %cordy_util::rfc3339_nano(planned_at),
                     status = %existing.status,
                     issue_set = existing.issue_id.is_some(),
                     task_set = existing.task_id.is_some(),
@@ -2870,7 +2870,7 @@ impl AutopilotService {
         let key = format!(
             "schedule:{}:{}",
             trigger_id,
-            crate::task_notify::rfc3339_nano(planned_at)
+            cordy_util::rfc3339_nano(planned_at)
         );
         let outcome = self
             .dispatch_autopilot(

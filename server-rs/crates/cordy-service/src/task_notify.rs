@@ -243,7 +243,7 @@ impl TaskService {
             payload.message_kind = msg.message_kind.clone();
             payload.quick_actions =
                 serde_json::from_value(msg.quick_actions.clone()).unwrap_or_default();
-            payload.created_at = rfc3339_nano(msg.created_at);
+            payload.created_at = cordy_util::rfc3339_nano(msg.created_at);
             payload.elapsed_ms = msg.elapsed_ms.unwrap_or(0);
         }
         self.bus.publish(&cordy_events::Event {
@@ -444,9 +444,9 @@ impl TaskService {
                     "content": updated.content,
                     "type": updated.type_,
                     "parent_id": updated.parent_id.map(|p| p.to_string()),
-                    "created_at": rfc3339_nano(updated.created_at),
-                    "updated_at": rfc3339_nano(updated.updated_at),
-                    "resolved_at": updated.resolved_at.map(rfc3339_nano),
+                    "created_at": cordy_util::rfc3339_nano(updated.created_at),
+                    "updated_at": cordy_util::rfc3339_nano(updated.updated_at),
+                    "resolved_at": updated.resolved_at.map(cordy_util::rfc3339_nano),
                     "resolved_by_type": updated.resolved_by_type.clone(),
                     "resolved_by_id": updated.resolved_by_id.map(|u| u.to_string()),
                     "revision": updated.revision,
@@ -500,7 +500,7 @@ pub fn issue_to_map(issue: &Issue, issue_prefix: &str) -> serde_json::Value {
         "due_date": date_ptr(issue.due_date),
         "created_at": rfc3339(issue.created_at),
         "updated_at": rfc3339(issue.updated_at),
-        "last_activity_at": issue.last_activity_at.map(rfc3339_nano),
+        "last_activity_at": issue.last_activity_at.map(cordy_util::rfc3339_nano),
         "revision": issue.revision,
         "metadata": json_object_or_empty(&issue.metadata),
         "properties": json_object_or_empty(&issue.properties),
@@ -837,7 +837,7 @@ pub fn agent_to_map(a: &cordy_db::models::Agent) -> serde_json::Value {
         "skills": [],
         "created_at": rfc3339(a.created_at),
         "updated_at": rfc3339(a.updated_at),
-        "archived_at": a.archived_at.map(rfc3339_nano),
+        "archived_at": a.archived_at.map(cordy_util::rfc3339_nano),
         "archived_by": a.archived_by.map(|u| u.to_string()),
     })
 }
@@ -847,22 +847,6 @@ pub fn agent_to_map(a: &cordy_db::models::Agent) -> serde_json::Value {
 /// Go time.RFC3339 (seconds precision, Z suffix for UTC instants).
 pub(crate) fn rfc3339(t: chrono::DateTime<chrono::Utc>) -> String {
     t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-}
-
-/// Go time.RFC3339Nano: fractional seconds without trailing zeros.
-pub(crate) fn rfc3339_nano(t: chrono::DateTime<chrono::Utc>) -> String {
-    let rendered = t.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
-    let Some((prefix, fraction_and_zone)) = rendered.split_once('.') else {
-        return rendered;
-    };
-    let fraction = fraction_and_zone
-        .trim_end_matches('Z')
-        .trim_end_matches('0');
-    if fraction.is_empty() {
-        format!("{prefix}Z")
-    } else {
-        format!("{prefix}.{fraction}Z")
-    }
 }
 
 /// Go util.DateToPtr equivalent (DateOnly rendering, null when absent).
@@ -875,23 +859,5 @@ fn json_object_or_empty(v: &serde_json::Value) -> serde_json::Value {
     match v {
         serde_json::Value::Object(_) => v.clone(),
         _ => serde_json::Value::Object(Default::default()),
-    }
-}
-
-#[cfg(test)]
-mod format_tests {
-    use super::*;
-
-    #[test]
-    fn rfc3339_nano_trims_every_fractional_zero() {
-        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-22T12:34:56.123400Z")
-            .unwrap()
-            .to_utc();
-        assert_eq!(rfc3339_nano(timestamp), "2026-08-22T12:34:56.1234Z");
-
-        let whole = chrono::DateTime::parse_from_rfc3339("2026-08-22T12:34:56Z")
-            .unwrap()
-            .to_utc();
-        assert_eq!(rfc3339_nano(whole), "2026-08-22T12:34:56Z");
     }
 }

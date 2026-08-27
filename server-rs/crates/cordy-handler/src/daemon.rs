@@ -2889,7 +2889,7 @@ pub(crate) fn task_message_payload(
     }
     payload.insert(
         "created_at".into(),
-        Value::String(crate::timefmt::rfc3339_nano(m.created_at)),
+        Value::String(cordy_util::rfc3339_nano(m.created_at)),
     );
     Value::Object(payload)
 }
@@ -4602,7 +4602,7 @@ mod tests {
         let issue_id = Uuid::parse_str("018f946a-5678-7890-abcd-1234567890ab").unwrap();
         let message = cordy_db::models::TaskMessage {
             content: None,
-            created_at: "2026-08-23T12:34:56.123Z".parse().unwrap(),
+            created_at: "2026-08-23T12:34:56.123400Z".parse().unwrap(),
             id: Uuid::parse_str("018f946a-9abc-7890-abcd-1234567890ab").unwrap(),
             input: Some(json!({"path": "README.md"})),
             output: Some(String::new()),
@@ -4619,7 +4619,7 @@ mod tests {
         assert_eq!(payload["seq"], json!(7));
         assert_eq!(payload["type"], json!("tool_call"));
         assert_eq!(payload["input"], json!({"path": "README.md"}));
-        assert_eq!(payload["created_at"], json!("2026-08-23T12:34:56.123Z"));
+        assert_eq!(payload["created_at"], json!("2026-08-23T12:34:56.1234Z"));
         assert!(payload.get("tool").is_none());
         assert!(payload.get("content").is_none());
         assert!(payload.get("output").is_none());

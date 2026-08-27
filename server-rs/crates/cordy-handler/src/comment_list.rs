@@ -778,7 +778,7 @@ pub(crate) async fn list_comments(
     if let Some((at, id)) = result.next_before {
         headers.insert(
             HeaderName::from_static("x-cordy-next-before"),
-            HeaderValue::from_str(&crate::timefmt::rfc3339_nano(at)).unwrap(),
+            HeaderValue::from_str(&cordy_util::rfc3339_nano(at)).unwrap(),
         );
         headers.insert(
             HeaderName::from_static("x-cordy-next-before-id"),
