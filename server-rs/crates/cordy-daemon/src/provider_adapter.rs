@@ -42,8 +42,7 @@ use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext}
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::remote_mcp_broker::{
-    merge_task_remote_mcp_config, start_task_remote_mcp_brokers,
-    RemoteMCPCredentialResolver,
+    merge_task_remote_mcp_config, start_task_remote_mcp_brokers, RemoteMCPCredentialResolver,
 };
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
@@ -69,6 +68,9 @@ const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
 const SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
+
+#[cfg(test)]
+pub(crate) static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct TaskModelSelection {
@@ -383,12 +385,7 @@ impl ProductionProviderAdapter {
         .await
         {
             Ok(startup) => startup,
-            Err(error) => {
-                return failed(
-                    error.context("prepare Remote MCP broker"),
-                    None,
-                )
-            }
+            Err(error) => return failed(error.context("prepare Remote MCP broker"), None),
         };
         for diagnostic in &remote_mcp.diagnostics {
             tracing::warn!(task = %task.id, reason = %diagnostic, "Remote MCP degraded");
@@ -400,7 +397,11 @@ impl ProductionProviderAdapter {
             let base = inputs
                 .effective_mcp_config
                 .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .or_else(|| {
+                    task.agent
+                        .as_ref()
+                        .and_then(|agent| agent.mcp_config.as_ref())
+                })
                 .map(Value::to_string)
                 .unwrap_or_default();
             let merged = match merge_task_remote_mcp_config(&base, &overlay.to_string())
@@ -408,10 +409,7 @@ impl ProductionProviderAdapter {
             {
                 Ok(merged) => merged,
                 Err(error) => {
-                    return failed(
-                        error.context("merge Remote MCP broker configuration"),
-                        None,
-                    )
+                    return failed(error.context("merge Remote MCP broker configuration"), None)
                 }
             };
             inputs.effective_mcp_config = Some(merged);
@@ -422,49 +420,55 @@ impl ProductionProviderAdapter {
         let plugin_invoke: PluginHookInvoker = {
             let client = Arc::clone(&client);
             let daemon_token = task.remote_mcp_daemon_token.clone();
-            Arc::new(
-                move |call_ctx, task_id, installation_id, hook_key, input| {
-                    let client = Arc::clone(&client);
-                    let daemon_token = daemon_token.clone();
-                    let task_id = task_id.to_string();
-                    let installation_id = installation_id.to_string();
-                    let hook_key = hook_key.to_string();
-                    let input = input.clone();
-                    Box::pin(async move {
-                        client
-                            .invoke_agent_plugin_hook(
-                                call_ctx,
-                                &daemon_token,
-                                &task_id,
-                                &installation_id,
-                                &hook_key,
-                                Some(input),
-                            )
-                            .await
-                            .map(|output| output.unwrap_or(Value::Null))
-                    })
-                },
-            )
+            Arc::new(move |call_ctx, task_id, installation_id, hook_key, input| {
+                let client = Arc::clone(&client);
+                let daemon_token = daemon_token.clone();
+                let task_id = task_id.to_string();
+                let installation_id = installation_id.to_string();
+                let hook_key = hook_key.to_string();
+                let input = input.clone();
+                Box::pin(async move {
+                    client
+                        .invoke_agent_plugin_hook(
+                            call_ctx,
+                            &daemon_token,
+                            &task_id,
+                            &installation_id,
+                            &hook_key,
+                            Some(input),
+                        )
+                        .await
+                        .map(|output| output.unwrap_or(Value::Null))
+                })
+            })
         };
-        let (plugin_overlay, plugin_hook_mcp) =
-            match start_task_plugin_hook_mcp(&ctx, &task.id, &task.plugin_hook_tools, plugin_invoke)
-                .await
-            {
-                Ok(started) => started,
-                Err(error) => {
-                    tracing::warn!(
-                        task = %task.id,
-                        %error,
-                        "plugin hook tools unavailable"
-                    );
-                    (None, None)
-                }
-            };
+        let (plugin_overlay, plugin_hook_mcp) = match start_task_plugin_hook_mcp(
+            &ctx,
+            &task.id,
+            &task.plugin_hook_tools,
+            plugin_invoke,
+        )
+        .await
+        {
+            Ok(started) => started,
+            Err(error) => {
+                tracing::warn!(
+                    task = %task.id,
+                    %error,
+                    "plugin hook tools unavailable"
+                );
+                (None, None)
+            }
+        };
         if let Some(overlay) = plugin_overlay {
             let base = inputs
                 .effective_mcp_config
                 .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .or_else(|| {
+                    task.agent
+                        .as_ref()
+                        .and_then(|agent| agent.mcp_config.as_ref())
+                })
                 .map(Value::to_string)
                 .unwrap_or_default();
             match merge_task_remote_mcp_config(&base, &overlay.to_string())
@@ -1693,6 +1697,10 @@ fn provider_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::daemon_core::DaemonCoreServices as _;
+    use crate::registration::{
+        BuiltinRefreshReason, RuntimeRegistrationRound, RuntimeRegistrationSource,
+    };
     use crate::runtime_set::RuntimeSet;
     use crate::types::{Runtime, SkillFileData};
     use cordy_agent::TokenUsage;
@@ -1703,6 +1711,26 @@ mod tests {
     struct EnvRestore {
         key: &'static str,
         value: Option<std::ffi::OsString>,
+    }
+
+    struct UnusedRegistrationSource;
+
+    #[async_trait::async_trait]
+    impl RuntimeRegistrationSource for UnusedRegistrationSource {
+        async fn begin_round(
+            &self,
+            _ctx: Ctx,
+        ) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>> {
+            anyhow::bail!("registration is not part of this heartbeat test")
+        }
+
+        async fn begin_builtin_refresh(
+            &self,
+            _ctx: Ctx,
+            _reason: BuiltinRefreshReason,
+        ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>> {
+            anyhow::bail!("registration is not part of this heartbeat test")
+        }
     }
 
     impl Drop for EnvRestore {
@@ -1716,6 +1744,9 @@ mod tests {
 
     #[tokio::test]
     async fn production_heartbeat_lists_and_imports_local_skills_with_retry() {
+        let _env_guard = ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let temp = tempfile::tempdir().unwrap();
         let skill_dir = temp.path().join("skills/deploy");
         std::fs::create_dir_all(&skill_dir).unwrap();
@@ -1746,22 +1777,27 @@ mod tests {
                             .await
                             .unwrap();
                         let payload: Value = serde_json::from_slice(&body).unwrap();
-                        reports_tx.send((path.clone(), payload)).unwrap();
-                        let mut attempts = attempts.lock().unwrap();
-                        let attempt = attempts.entry(path.clone()).or_default();
-                        *attempt += 1;
-                        if path.ends_with("/local-skills/list-1/result") && *attempt == 1 {
-                            axum::http::StatusCode::INTERNAL_SERVER_ERROR
-                        } else {
-                            axum::http::StatusCode::NO_CONTENT
-                        }
+                        let status = {
+                            let mut attempts = attempts.lock().unwrap();
+                            let attempt = attempts.entry(path.clone()).or_default();
+                            *attempt += 1;
+                            if path.ends_with("/local-skills/list-1/result") && *attempt == 1
+                                || path.contains("/import/cancel-1/result")
+                            {
+                                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                            } else if path.contains("/import/permanent-1/result") {
+                                axum::http::StatusCode::BAD_REQUEST
+                            } else {
+                                axum::http::StatusCode::NO_CONTENT
+                            }
+                        };
+                        reports_tx.send((path, payload)).unwrap();
+                        status
                     }
                 },
             ))
         };
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -1773,7 +1809,7 @@ mod tests {
             workspaces_root: temp.path().to_string_lossy().into_owned(),
             ..Config::default()
         });
-        let adapter = ProductionProviderAdapter::new(config);
+        let adapter = Arc::new(ProductionProviderAdapter::new(Arc::clone(&config)));
         let registry = Arc::new(RuntimeRegistry::new(Arc::new(RuntimeSet::new())));
         registry
             .apply_registration(
@@ -1788,10 +1824,34 @@ mod tests {
             .unwrap();
         let client = Arc::new(Client::new(format!("http://{address}")));
         let launches = Arc::new(RuntimeLaunchRegistry::default());
+        let services = crate::production_services::DaemonProductionServices::new(
+            Arc::clone(&config),
+            Arc::clone(&client),
+            Arc::new(crate::repocache::Cache::new(temp.path().join("repo-cache"))),
+            Arc::new(crate::health::RepoCheckoutRegistry::default()),
+            Arc::clone(&launches),
+            adapter,
+            Arc::new(UnusedRegistrationSource),
+        );
+        let heartbeat_ctx = Ctx::new();
+        let import_ack = |id: &str| DaemonHeartbeatAckPayload {
+            runtime_id: "runtime-1".to_string(),
+            status: "ok".to_string(),
+            pending_local_skill_import: Some(DaemonHeartbeatPendingLocalSkillImport {
+                id: id.to_string(),
+                skill_key: "deploy".to_string(),
+            }),
+            server_capabilities: Vec::new(),
+            runtime_gone: false,
+            pending_update: None,
+            pending_model_list: None,
+            pending_local_skills: None,
+            pending_local_skill_imports: Vec::new(),
+        };
 
-        adapter
+        services
             .handle_non_update_heartbeat_actions(
-                Ctx::new(),
+                heartbeat_ctx.child(),
                 Arc::clone(&registry),
                 "runtime-1".to_string(),
                 DaemonHeartbeatAckPayload {
@@ -1819,13 +1879,11 @@ mod tests {
                     pending_update: None,
                     pending_model_list: None,
                 },
-                Arc::clone(&client),
-                Arc::clone(&launches),
             )
             .await;
-        adapter
+        services
             .handle_non_update_heartbeat_actions(
-                Ctx::new(),
+                heartbeat_ctx.child(),
                 Arc::clone(&registry),
                 "runtime-1".to_string(),
                 DaemonHeartbeatAckPayload {
@@ -1842,11 +1900,8 @@ mod tests {
                     pending_local_skills: None,
                     pending_local_skill_imports: Vec::new(),
                 },
-                Arc::clone(&client),
-                Arc::clone(&launches),
             )
             .await;
-
         let mut reports = Vec::new();
         for _ in 0..5 {
             reports.push(
@@ -1864,7 +1919,9 @@ mod tests {
             Some(&2),
             "a transient 500 must retry the list report"
         );
-        assert!(reports.iter().all(|(path, _)| !path.contains("ignored-singular")));
+        assert!(reports
+            .iter()
+            .all(|(path, _)| !path.contains("ignored-singular")));
         let list = reports
             .iter()
             .find(|(path, _)| path.ends_with("/local-skills/list-1/result"))
@@ -1883,10 +1940,10 @@ mod tests {
             assert_eq!(payload["skill"]["files"][0]["path"], "run.sh");
         }
 
-        adapter
+        services
             .handle_non_update_heartbeat_actions(
-                Ctx::new(),
-                registry,
+                heartbeat_ctx.child(),
+                Arc::clone(&registry),
                 "unknown-runtime".to_string(),
                 DaemonHeartbeatAckPayload {
                     runtime_id: "unknown-runtime".to_string(),
@@ -1901,8 +1958,6 @@ mod tests {
                     pending_local_skill_import: None,
                     pending_local_skill_imports: Vec::new(),
                 },
-                client,
-                launches,
             )
             .await;
         assert!(
@@ -1911,7 +1966,62 @@ mod tests {
                 .is_err(),
             "unknown runtimes must not execute heartbeat actions"
         );
+
+        services
+            .handle_non_update_heartbeat_actions(
+                heartbeat_ctx.child(),
+                Arc::clone(&registry),
+                "runtime-1".to_string(),
+                import_ack("permanent-1"),
+            )
+            .await;
+        let (path, _) = tokio::time::timeout(Duration::from_secs(3), reports_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(path.contains("/import/permanent-1/result"), "{path}");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), reports_rx.recv())
+                .await
+                .is_err(),
+            "permanent 4xx responses must not retry"
+        );
+
+        services
+            .handle_non_update_heartbeat_actions(
+                heartbeat_ctx.child(),
+                Arc::clone(&registry),
+                "runtime-1".to_string(),
+                import_ack("cancel-1"),
+            )
+            .await;
+        let (path, _) = tokio::time::timeout(Duration::from_secs(3), reports_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(path.contains("/import/cancel-1/result"), "{path}");
+        heartbeat_ctx.cancel_with(crate::repocache::CancelCause::Cancelled);
+        let attempts_after_cancel = attempts.lock().unwrap().clone();
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(
+            *attempts.lock().unwrap(),
+            attempts_after_cancel,
+            "cancelled heartbeat jobs must not leave retries in flight"
+        );
+        assert_eq!(
+            attempts_after_cancel
+                .get("/api/daemon/runtimes/runtime-1/local-skills/import/permanent-1/result"),
+            Some(&1),
+            "permanent 4xx responses must not retry"
+        );
+        assert_eq!(
+            attempts_after_cancel
+                .get("/api/daemon/runtimes/runtime-1/local-skills/import/cancel-1/result"),
+            Some(&1),
+            "cancellation must stop the transient retry schedule"
+        );
         server.abort();
+        let _ = server.await;
     }
 
     #[tokio::test]
@@ -1966,9 +2076,9 @@ mod tests {
             .await;
         let failure = outcome.failure.expect("required broker failure");
         assert!(
-            failure.message.contains(
-                "Remote MCP required-tools is incompatible with provider deveco"
-            ),
+            failure
+                .message
+                .contains("Remote MCP required-tools is incompatible with provider deveco"),
             "{}",
             failure.message
         );

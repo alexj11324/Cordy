@@ -1020,3 +1020,15 @@ batch 与 singular import、完整 bundle、真实 Client result path 和 HTTP 5
 - 异步状态：verification 与 reviewer 已派发前状态为 pending，fixer 尚无本 PR finding。主
   agent 仅运行并通过 `git diff --check`，未把编译、测试、rustfmt 或 HTTP 行为记录为通过。
   PR 明确堆叠在 Ready PR #547；#544 fix 尚需传播到这条堆叠分支。
+- verifier 在 head `3c831f09` 的 diff/clean 检查通过，但 provider adapter fixed-stable
+  rustfmt 失败；production heartbeat/local-skills/client retry exact 与 daemon no-run 均被
+  未传播的 #544 7 处 E0433 阻断，实际 0 tests。reviewer 同时指出测试无共享 env mutex、
+  fixture 在确定 attempt/response 前通知、detached jobs 未收尾，且入口直接落在 adapter，
+  未证明 production services forwarding 或永久 4xx/cancel 边界。
+- fixer 传播 #544 后，使用 module-shared env mutex 并持有至 context/jobs/server 收尾；测试
+  入口上移到真实 `DaemonProductionServices` 的 `DaemonCoreServices` heartbeat forwarding，
+  所有 list/import jobs 共享一个父 `Ctx`。fixture 先更新 attempt 并确定响应再通知；分阶段
+  证明 HTTP 500 retry、永久 400 不 retry、parent cancel 后无在途 retry、unknown runtime
+  无请求，最后 join aborted fixture 后才恢复 `GROK_HOME`。production exact 1/1（445
+  filtered）、daemon locked/offline no-run、provider fixed-stable rustfmt 与 `git diff --check`
+  均通过；仅保留既有 agent/openclaw unused-import warnings。
