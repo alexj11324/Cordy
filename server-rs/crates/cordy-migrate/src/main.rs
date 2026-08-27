@@ -52,7 +52,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_issue_activity_backfill(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
-    let options = backfill::issue_activity::Options::parse(args)?;
+    let Some(options) = backfill::issue_activity::Options::parse(args)? else {
+        eprintln!("{}", backfill::issue_activity::USAGE);
+        return Ok(());
+    };
     let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable".to_string()
     });

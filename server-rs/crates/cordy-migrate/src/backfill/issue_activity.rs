@@ -15,6 +15,7 @@ pub const DEFAULT_SLEEP_BETWEEN_BATCHES: Duration = Duration::from_millis(100);
 pub const DEFAULT_MAX_STALLED_PASSES: u32 = 10;
 
 const ADVISORY_LOCK_NAME: &str = "issue_last_activity_backfill";
+pub const USAGE: &str = "usage: cordy-migrate backfill-issue-last-activity [--batch-size N] [--sleep-between-batches DURATION] [--max-batches N] [--max-stalled-passes N]";
 
 const BATCH_SQL: &str = r#"
 WITH batch AS (
@@ -68,15 +69,13 @@ impl Default for Options {
 
 impl Options {
     /// Parses the operator flags accepted by the Go command.
-    pub fn parse(args: impl Iterator<Item = String>) -> anyhow::Result<Self> {
+    pub fn parse(args: impl Iterator<Item = String>) -> anyhow::Result<Option<Self>> {
         let mut options = Self::default();
         let mut args = args.peekable();
 
         while let Some(argument) = args.next() {
             if argument == "--help" || argument == "-h" {
-                anyhow::bail!(
-                    "usage: cordy-migrate backfill-issue-last-activity [--batch-size N] [--sleep-between-batches DURATION] [--max-batches N] [--max-stalled-passes N]"
-                );
+                return Ok(None);
             }
 
             let (name, value) = if let Some((name, value)) = argument.split_once('=') {
@@ -90,17 +89,17 @@ impl Options {
 
             match name.as_str() {
                 "--batch-size" => {
-                    options.batch_size = value
-                        .parse()
-                        .map_err(|error| anyhow::anyhow!("invalid --batch-size {value:?}: {error}"))?;
+                    options.batch_size = value.parse().map_err(|error| {
+                        anyhow::anyhow!("invalid --batch-size {value:?}: {error}")
+                    })?;
                 }
                 "--sleep-between-batches" => {
                     options.sleep_between_batches = parse_duration(&value)?;
                 }
                 "--max-batches" => {
-                    let value: u64 = value
-                        .parse()
-                        .map_err(|error| anyhow::anyhow!("invalid --max-batches {value:?}: {error}"))?;
+                    let value: u64 = value.parse().map_err(|error| {
+                        anyhow::anyhow!("invalid --max-batches {value:?}: {error}")
+                    })?;
                     options.max_batches = (value > 0).then_some(value);
                 }
                 "--max-stalled-passes" => {
@@ -108,14 +107,12 @@ impl Options {
                         anyhow::anyhow!("invalid --max-stalled-passes {value:?}: {error}")
                     })?;
                 }
-                _ => anyhow::bail!(
-                    "unknown option {name}; usage: cordy-migrate backfill-issue-last-activity [--batch-size N] [--sleep-between-batches DURATION] [--max-batches N] [--max-stalled-passes N]"
-                ),
+                _ => anyhow::bail!("unknown option {name}; {USAGE}"),
             }
         }
 
         options.validate()?;
-        Ok(options)
+        Ok(Some(options))
     }
 
     fn validate(&self) -> anyhow::Result<()> {
@@ -380,6 +377,7 @@ mod tests {
             .map(String::from),
         )
         .unwrap();
+        let options = options.unwrap();
         assert_eq!(options.batch_size, 25);
         assert_eq!(options.sleep_between_batches, Duration::from_millis(250));
         assert_eq!(options.max_batches, Some(3));
@@ -396,6 +394,13 @@ mod tests {
         ] {
             assert!(Options::parse(args.into_iter().map(String::from)).is_err());
         }
+    }
+
+    #[test]
+    fn help_is_a_successful_parse_outcome() {
+        assert!(Options::parse(["--help"].into_iter().map(String::from))
+            .unwrap()
+            .is_none());
     }
 
     #[test]
