@@ -65,12 +65,7 @@ impl RuntimeRegistry {
         workspace_name: impl Into<String>,
         runtimes: Vec<Runtime>,
     ) -> anyhow::Result<RegistrationDelta> {
-        self.apply_registration_guarded(
-            workspace_id,
-            workspace_name,
-            runtimes,
-            &BTreeSet::new(),
-        )
+        self.apply_registration_guarded(workspace_id, workspace_name, runtimes, &BTreeSet::new())
     }
 
     pub(crate) fn apply_registration_guarded(
@@ -135,10 +130,8 @@ impl RuntimeRegistry {
             .collect();
         runtimes.extend(preserved);
 
-        let incoming_ids: BTreeSet<String> = runtimes
-            .iter()
-            .map(|runtime| runtime.id.clone())
-            .collect();
+        let incoming_ids: BTreeSet<String> =
+            runtimes.iter().map(|runtime| runtime.id.clone()).collect();
         for runtime_id in &incoming_ids {
             if let Some(owner) = state.runtime_workspaces.get(runtime_id) {
                 anyhow::ensure!(
@@ -366,9 +359,9 @@ impl RuntimeRegistry {
         sampled_after: u64,
     ) {
         let mut state = self.state.write().unwrap();
-        state.demoted_providers.retain(|provider, record| {
-            !providers.contains(provider) || record.seq > sampled_after
-        });
+        state
+            .demoted_providers
+            .retain(|provider, record| !providers.contains(provider) || record.seq > sampled_after);
     }
 
     /// Applies a confirmed machine-provider verdict as one local commit. The
@@ -398,8 +391,7 @@ impl RuntimeRegistry {
             .iter()
             .map(|(id, workspace)| (id.clone(), workspace.runtime_ids.clone()))
             .collect();
-        let (kept, partition) =
-            partition_demotable_runtimes(&workspaces, &state.runtimes, causes);
+        let (kept, partition) = partition_demotable_runtimes(&workspaces, &state.runtimes, causes);
         for runtime_id in &partition.demoted_ids {
             state.runtimes.remove(runtime_id);
             state.runtime_workspaces.remove(runtime_id);
@@ -631,11 +623,7 @@ mod tests {
         let mut profile = runtime("old-profile", "codex");
         profile.profile_id = "profile-1".to_string();
         registry
-            .apply_registration(
-                "ws-1",
-                "One",
-                vec![runtime("builtin", "codex"), profile],
-            )
+            .apply_registration("ws-1", "One", vec![runtime("builtin", "codex"), profile])
             .unwrap();
 
         let delta = registry
