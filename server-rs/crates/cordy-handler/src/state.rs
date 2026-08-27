@@ -1077,12 +1077,88 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
 mod tests {
     use super::*;
 
+    const COMPOSIO_ENV: [&str; 7] = [
+        "COMPOSIO_API_KEY",
+        "COMPOSIO_STATE_SECRET",
+        "COMPOSIO_CALLBACK_BASE_URL",
+        "CORDY_PUBLIC_URL",
+        "CORDY_APP_URL",
+        "FRONTEND_ORIGIN",
+        "FF_COMPOSIO_MCP_APPS",
+    ];
+
+    struct RestoreComposioEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl RestoreComposioEnv {
+        fn clear() -> Self {
+            let saved = COMPOSIO_ENV
+                .into_iter()
+                .map(|name| (name, std::env::var_os(name)))
+                .collect();
+            for name in COMPOSIO_ENV {
+                std::env::remove_var(name);
+            }
+            Self(saved)
+        }
+    }
+
+    impl Drop for RestoreComposioEnv {
+        fn drop(&mut self) {
+            for (name, value) in self.0.drain(..) {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+    }
+
     fn test_state() -> HandlerState {
         HandlerState::new(
             sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
             PatCache::disabled(),
             None,
         )
+    }
+
+    #[test]
+    fn production_dependencies_gate_composio_and_task_overlay() {
+        let _env = RestoreComposioEnv::clear();
+        let build = || {
+            HandlerState::new_with_production_dependencies(
+                sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+                PatCache::disabled(),
+                None,
+                Arc::new(cordy_analytics::NoopClient),
+                Arc::new(cordy_service::feature_flags::ConfiguredFlags::default()),
+                None,
+            )
+        };
+
+        std::env::set_var("FF_COMPOSIO_MCP_APPS", "1");
+        let missing_api_key = build();
+        assert!(missing_api_key.composio.is_none());
+        assert!(missing_api_key.tasks.composio.is_none());
+
+        std::env::set_var("COMPOSIO_API_KEY", "test-api-key");
+        let missing_state_secret = build();
+        assert!(missing_state_secret.composio.is_none());
+        assert!(missing_state_secret.tasks.composio.is_none());
+
+        std::env::set_var("COMPOSIO_STATE_SECRET", "test-state-secret");
+        let missing_callback = build();
+        assert!(missing_callback.composio.is_none());
+        assert!(missing_callback.tasks.composio.is_none());
+
+        std::env::set_var("COMPOSIO_CALLBACK_BASE_URL", "https://api.example.com/");
+        let configured = build();
+        assert!(configured.composio.is_some());
+        assert!(configured.tasks.composio.is_some());
+
+        std::env::set_var("FF_COMPOSIO_MCP_APPS", "0");
+        let flag_disabled = build();
+        assert!(flag_disabled.composio.is_none());
+        assert!(flag_disabled.tasks.composio.is_none());
     }
 
     #[tokio::test]
