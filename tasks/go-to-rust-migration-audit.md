@@ -1602,6 +1602,14 @@ probe 必须继续走既有 registration service。
 - 实现只修改五个既有 daemon 文件，共 855 insertions/70 deletions（含直接 registry/probe contract
   tests）；没有新增 crate、dependency、catalog、registry、client、supervisor、background loop、
   Stub、Noop、Fake 或测试专用 production seam。
-- 异步状态：independent verification/reviewer 待派发，finding 交 existing independent fixer。主 agent
-  仅运行并通过 `git diff --check`；Cargo resolution、compile、tests、rustfmt、clippy、真实 daemon probe/
-  register/deregister/recovery smoke 均未执行且未记为通过。PR 保持非 Draft Ready，不等待异步收口。
+- 异步 verification（exact head `21a3ab795bd9f1e5c53ea54a712cda1486a43b42`）：工作树前后均
+  clean；`git diff --check` 与 `git diff --check 9c4227c4...HEAD` 通过；`Cargo.lock` 前后 SHA-256
+  均为 `a40395d7b03895b86d2e8fdc717d492edf28ad94f667f7ed7555271880cb2dc4`。固定 stable
+  `rustfmt --edition 2021 --check` 失败，`provider_registration.rs`、`registration.rs`、
+  `runtime_registry.rs` 有 import/order/wrapping diff。`cargo metadata --locked --offline` 与
+  `cargo test --locked --offline -p cordy-daemon --lib --no-run` 均以 101 退出：继承自 #560 的
+  dependency-lock inconsistency 导致 `--locked` 拒绝更新 lockfile，尚未进入编译。五个新增精确测试
+  均以同一 101 在 discovery/execution 前退出，实际各执行 0 个测试；loopback 与真实 production smoke
+  未运行。因此所有行为仍是 execution-unverified，未记为通过。
+- 异步 reviewer 进行中；上述 lock/rustfmt/compile/test/smoke 问题待 existing independent fixer 依序
+  处理。主 agent 仅迁移、接线、交付并回写事实，不自行修复；PR 保持非 Draft Ready，不等待异步收口。
