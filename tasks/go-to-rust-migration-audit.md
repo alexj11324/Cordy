@@ -191,7 +191,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 与 process RSS/virtual memory/thread/fd metrics 已接入 Rust；Go-only heap/runtime-trace wire contract 显式退休并有运维替代 | 异步验证 production metrics/profiling listener、Cargo resolution 与 public boundary，finding 交 fixer | Rust server/metrics 入口已由 AUDIT-001 交付，可执行 | PR #524/#556；详见 §12、§43 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入；PR #556 增加 Linux process telemetry，但 reviewer 否定其足以替代 allocation-stack heap profile/runtime scheduler trace | fixer 收口 Cargo.lock/Linux/listener 证据；主线仍需 Rust-native heap/async诊断或明确获批的能力退役与 incident 证据 | Rust server/metrics 入口可执行；完整替代证据未成立 | PR #524/#556；详见 §12、§43 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 进行中 | logger 配置、TTY、component、request attrs 已接入 Rust；当前切片收口 operator 时间布局 | 让 server、migrate/backfill 和 daemon production subscriber 统一输出 Go-compatible 本地 `HH:MM:SS.mmm`，不扩大为新日志框架 | Rust server/daemon/migrate 入口已由 AUDIT-001/006 交付，可执行 | PR #525/当前切片；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
@@ -1346,6 +1346,11 @@ implementation commit `f6f8ef32`）已把 process collector、legacy endpoint re
 - 异步状态：verifier/reviewer 待派发，finding 交既有 fixer。主 agent 仅执行 `git diff --check`；
   Cargo resolution/lock、compile、tests、真实 scrape、loopback/public boundary 均未记为通过。
 - PR 堆叠在 Ready #555，既有 #544/#551..#555 问题保持在独立 fixer 队列。
+- reviewer 在 head `2580eb66` 返回两个 P1、两个 P2：新增 Prometheus feature 未同步
+  `Cargo.lock`，所有 `--locked` 路径会失败；process gauges/logs 不能定位 heap allocation stacks
+  或 runtime scheduler timing，不能据此关闭 AUDIT-003A；collector 仅 Linux 但文档未限定；测试
+  未覆盖真实 METRICS_ADDR listener/scrape/public-router 隔离。台账已立即降回“部分完成”，全部
+  finding 交 fixer；410 retirement 不能作为能力等价的证据。
 
 ## 44. AUDIT-003B 执行缺口：Rust operator log time layout
 

@@ -710,6 +710,9 @@ impl DaemonLogs {
         let env_filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("debug"));
         tracing_subscriber::fmt()
             .with_env_filter(env_filter)
+            .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
+                cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
+            ))
             .with_writer(writer)
             .with_ansi(rotating.is_none())
             .try_init()

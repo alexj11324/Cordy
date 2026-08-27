@@ -8,6 +8,7 @@
 use std::io::IsTerminal;
 
 pub const DEFAULT_LEVEL: &str = "debug";
+pub const LOCAL_TIME_FORMAT: &str = "%H:%M:%S%.3f";
 
 /// Resolve the process filter from the environment.
 pub fn env_filter() -> String {
@@ -72,5 +73,15 @@ mod tests {
         );
         assert_eq!(filter_from_values(None, Some("  ")), "debug");
         assert_eq!(filter_from_values(None, None), "debug");
+    }
+
+    #[test]
+    fn local_time_layout_matches_the_operator_contract() {
+        let time = chrono::NaiveTime::from_hms_milli_opt(14, 3, 2, 7)
+            .unwrap_or_else(|| unreachable!());
+        assert_eq!(
+            time.format(LOCAL_TIME_FORMAT).to_string(),
+            "14:03:02.007"
+        );
     }
 }
