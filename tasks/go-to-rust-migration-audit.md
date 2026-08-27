@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569 与 stale sweeper #570 Ready；§58 已登记下一项 offline-task/reconnect-retry 契约 | 收口 #565..#570 的异步 V/R/F 结果，同时交付 §58 完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#570 堆叠在 Ready #569；§58 先登记后实现，依赖 #570 branch | PR #565..#570；§5、§6.2、§18、§52..§58 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570 与 offline-task/reconnect-retry #571 Ready | 收口 #565..#571 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#571 堆叠在 #570；#571 verifier/reviewer 已派发，主线不等待 | PR #565..#571；§5、§6.2、§18、§52..§58 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2206,3 +2206,24 @@ lineage、failure reason 或 production `run_once` wiring 任一环节应使测�
   总退出门仍未完成。
 - owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
   `codex/cord-234-runtime-sweeper-contract-rust`，独立 worktree，编号待创建后回写。
+
+实现 commit `e7b6a3d1` 只在既有 `runtime_sweeper.rs` 的 `cfg(test)` 内增加真实 PostgreSQL recovery contract，没有修改
+production stage、SQL、TaskService、Bus 或新增 runtime seam：
+
+- 唯一 fixture 创建 workspace/user/member、三个 runtime（offline 超 grace、offline 在 grace 内、online+fresh）、对应
+  agents/issues 和完整 task lineage。三种 active 状态在超 grace 后都由真实 `RuntimeTaskSweeper::run_once` 终止，grace 内的
+  running task 保留；失败 row 断言 `runtime_offline`、错误、完成时间和清空 wait reason。
+- 一个 `runtime_offline` parent 的 deferred retry 在 offline runtime 超 grace 后由同一 `run_once` 终止为
+  `runtime_reconnect_timeout`；healthy+fresh runtime 的 retry 与非 runtime_offline parent 的 retry 均保留，证明健康重连
+  race 和 parent lineage gate。
+- 真实 `TaskService::handle_failed_tasks` 通过 shared Bus 收口 task failure/issue update，并断言 old agent 归 `idle`、grace
+  agent 仍为 `working`；额外持有一个 task 的 PostgreSQL `FOR UPDATE` 锁，以 production SQL 的 `SKIP LOCKED` 和 `max_per_tick=1`
+  直接证明限额及锁安全，再恢复该 row 后运行完整 worker。
+- required `DATABASE_URL` 缺失/坏连接直接失败；契约使用唯一 UUID fixture，测试正常和失败返回路径显式删除 workspace/user，
+  Drop 仅作为 best-effort 兜底，不把环境缺失写成通过。
+
+主 agent 仅执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试或 DB 命令。非 Draft Ready PR #571 已创建，
+base 是 `codex/cord-234-runtime-sweeper-contract-rust` 的 `78b04074`，当前 branch
+`codex/cord-235-offline-task-recovery-contract-rust`，Ready SHA `e7b6a3d1`。独立 verifier/reviewer 已异步派发；在 exact
+compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
+验证或删除 Go，PR 保持 Ready。
