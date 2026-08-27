@@ -1796,3 +1796,12 @@ cache、legacy endpoint state 或 runtime registry。
   `762be14d`、initial delivery ledger `5710efde`）堆叠在 Ready #563 branch at `2180ded8`，保持非 Draft；
   Go 本 stale-pool recovery 只有在异步证据收口后可退休，AUDIT-005 其他缺口和最终 AUDIT-001..010
   仍未完成。
+- independent verifier 在 exact HEAD `49bfaf87a499015b030979c96aa6be6b538644ec` 确认 base ancestry、
+  前后 clean、worktree/range diff check 通过，Cargo.lock 未变且 SHA-256 仍为
+  `a40395d7b03895b86d2e8fdc717d492edf28ad94f667f7ed7555271880cb2dc4`。fixed-stable
+  rustfmt exit 1：除继承 #563 的 proxy diff 外，本切片 heartbeat test 的 signature 和两个 response call
+  也需格式化。metadata、daemon no-run、Windows check、两个新增 exact tests 与四个相关既有 exact tests
+  均被继承自 #563 的 `hyper-util` invalid `runtime` feature 在 dependency resolution 阶段以 101 阻断，
+  每项实际执行 0 tests；生产 socket/loopback smoke 未运行，只完成静态 production call-chain 核对，不能
+  记录行为通过。direct format finding 与 blocker 后的全部 rerun 已排入 independent fixer，主 agent 不修复、
+  不等待。
