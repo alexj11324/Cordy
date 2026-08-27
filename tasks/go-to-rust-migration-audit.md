@@ -2936,3 +2936,9 @@ worktree、直接 touched-file rustfmt 和 base-range diff-check 均 PASS。lock
   真实 API/event smoke 及 AUDIT-001..010 总退出仍未完成。
 - owner：主 agent 负责最小 helper centralization、生产调用和 Ready PR；独立 verifier/reviewer/fixer 异步负责 exact Rust
   验证、Go/Rust timestamp review 和回归修复。
+
+实现 commit `93a45a58` 将 handler comment cursor/task-message payload 与 service task notification、issue/agent maps、autopilot
+schedule key 的全部 RFC3339Nano 调用切到 T-54D 已验证的 `cordy-util::rfc3339_nano`，删除 handler/service 两份 `AutoSi`
+helper；daemon task-message fixture 改为 `.123400Z` 并断言 Go-compatible `.1234Z`。seconds-only formatter、JSON/header/event
+字段、排序、配置、数据库和错误语义未改变。主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、
+API 或长编译命令；Ready PR #583 待创建，异步 verifier/reviewer/fixer 结果待回写。
