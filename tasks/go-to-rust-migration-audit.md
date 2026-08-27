@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | Ready PR | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付 | 异步收口 #558/#559/#561/#562/#563 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#563，可执行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§50 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；当前切片迁移 heartbeat HTTP pool recovery | 接通连续 transient heartbeat failure 后的真实 idle-pool eviction 与新连接恢复；异步收口 #558/#559/#561/#562/#563 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#563，可执行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§51 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1734,3 +1734,35 @@ error 并继续既有 bounded retry/fallback，不能 silently direct 绕过 ope
   implementation `544a603a`，initial delivery ledger `9cafc275`；base 是 Ready #562 branch
   `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。PR 为非 Draft Ready；verification/reviewer 待异步
   派发，fixer 尚无本 PR finding。
+
+## 51. AUDIT-005 执行缺口：heartbeat stale HTTP pool recovery lifecycle
+
+当前切片继续 `AUDIT-005` 的 control/heartbeat 生产生命周期，迁移 server restart、NAT/LB stale keepalive
+后的真实恢复能力，而不是只保留一个同名 no-op：
+
+- Go `runRuntimeHeartbeat` 将 404/runtime-gone 与 transient transport/5xx 分开；连续两次 transient failure
+  后调用真实 `http.Transport.CloseIdleConnections()`，使下一 heartbeat 不再复用 stale pooled socket。成功、
+  runtime-gone 或 WS heartbeat freshness 会重置 failure streak；in-flight request 不被取消。Go
+  `TestRuntimeHeartbeatClosesIdleConnectionsAfterRepeatedTransientFailures` 直接固定该调用阈值。
+- Rust `DaemonControl::run_runtime_heartbeat` 已保留相同 failure counter、第二次 failure 调用点、404/event
+  和 success reset；但 `Client::close_idle_connections` 明确是 best-effort no-op，只依赖 90s idle timeout。
+  因此源码表面有 parity，真实 client pool 没有任何 eviction，server restart 后可能连续复用失效路径并把
+  恢复延迟到 pool timeout。
+- reqwest 0.12 没有公开 close-idle handle，但 `reqwest::Client` clone 共享同一 pool；最小真实边界是在现有
+  `Client` 内原子替换用同一 builder 构造的新 client。已开始的 request 持有旧 clone 继续完成，旧 pool 在
+  最后一个 in-flight clone drop 后关闭；后续所有 centralized request builders 取新 clone。不得新增第二个
+  API client type、transport trait、heartbeat supervisor、generation registry 或 dependency。
+
+本切片必须把 HTTP client construction 收敛为现有 `Client` 内一个 helper，所有 GET/POST/token paths 从同一
+可替换 handle 建 builder，并让现有连续 failure 调用点真实换池。替换必须保留 environment proxy、TLS、
+identity/auth headers、per-request timeout、retry 和 cancellation；只清连接池，不清 token、ETag/workspace
+cache、legacy endpoint state 或 runtime registry。
+
+- 退出证据：同一 production `Client` 在 eviction 前复用 keepalive，eviction 后下一请求建立新 TCP
+  connection；正在执行的请求不因 swap 被取消；production heartbeat 仅在第二个连续 transient failure 后
+  触发 swap，success/404/WS freshness 重置 streak；后续 heartbeat 可恢复且 auth/identity headers 不回归。
+- 默认生产路径：Rust CLI daemon assembly 只构造这一 `Client` 并注入唯一 `DaemonControl`；没有 Stub、
+  Noop、Fake 或 test-only production selector。Go 是否可下线：本 stale-pool recovery 经异步证据收口后
+  不再需要 Go daemon；AUDIT-005 其余生命周期和最终 AUDIT-001..010 门仍未完成。
+- owner：主 agent 迁移、接线与 Ready PR；独立 verifier/reviewer/fixer 异步收口。依赖 Ready #563 branch
+  `codex/cord-227-daemon-wakeup-env-proxy-rust` at `2180ded8`；尚无 implementation commit 或 PR。
