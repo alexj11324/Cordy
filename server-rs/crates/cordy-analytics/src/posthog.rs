@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -264,13 +264,7 @@ fn build_capture_items(batch: &[Event], environment: &str) -> Vec<CaptureItem> {
             if let Some(set) = e.set.as_ref().filter(|m| !m.is_empty()) {
                 props.insert("$set".to_string(), Value::Object(set.clone()));
             }
-            let timestamp = e
-                .timestamp
-                .unwrap_or_else(Utc::now)
-                // Go formats RFC3339Nano (trailing zeros trimmed); AutoSi picks
-                // the shortest exact 0/3/6/9-digit form, which PostHog parses
-                // identically.
-                .to_rfc3339_opts(SecondsFormat::AutoSi, true);
+            let timestamp = cordy_util::rfc3339_nano(e.timestamp.unwrap_or_else(Utc::now));
             CaptureItem {
                 event: e.name.clone(),
                 distinct_id: e.distinct_id.clone(),
@@ -378,6 +372,19 @@ mod tests {
         let p = &items[0].properties;
         assert_eq!(p["is_demo"], json!(false), "is_demo always stamped");
         assert_eq!(p["user_id"], json!("user-7"));
+    }
+
+    #[test]
+    fn capture_items_timestamp_matches_go_rfc3339_nano() {
+        let mut e = event("signup", "user-1");
+        e.timestamp = Some(
+            chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123400Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+
+        let items = build_capture_items(&[e], "production");
+        assert_eq!(items[0].timestamp, "2026-08-27T23:00:00.1234Z");
     }
 
     #[test]
