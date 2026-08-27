@@ -693,6 +693,14 @@ feature flag、ClientBuilder、Service、HTTP state 和 TaskService overlay，�
   `https://backend.composio.dev/api/v3.1`，有效配置不会选择 Stub、Noop 或 Fake。
 - Go 是否可下线：否。Composio 选择路径已形成直接 Rust 证据，但 VCS、GitHub
   snapshot、真实外部凭证 smoke 和 AUDIT-001..010 最终门仍未完成。
-- 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查
-  记录为通过；fixer 尚未派发。该 PR 堆叠在 Telegram PR #536，base 中已知的
-  Telegram server-test `base64` 编译错误正由独立 fixer 处理。
+- Reviewer/fixer：reviewer 发现 production constructor 将 `build_service` 错误通过
+  `.ok()` 静默降为 `None`，测试遗漏 `JWT_SECRET` fallback、未串行化全局 env，且
+  普通 `#[test]` 构造 `PgPool` 会在 SQLx 中因缺少 Tokio context panic。fixer 保持
+  fail-closed 行为，同时对初始化错误记录 `tracing::error!`，为 crate 内 env 测试
+  增加共享 mutex 和完整 RAII 恢复，并覆盖仅 `JWT_SECRET` 可用的有效配置；测试改为
+  `#[tokio::test]`，不新增生产抽象或依赖。
+- 验证：基线精确命令
+  `cargo test --locked -p cordy-handler 'state::tests::production_dependencies_gate_composio_and_task_overlay' -- --exact --nocapture`
+  运行 1 个测试但因 `this functionality requires a Tokio context` 失败（0 passed、
+  1 failed、382 filtered）。修复后同一精确测试以 offline/locked 模式通过（1 passed、
+  0 failed、382 filtered）；stable rustfmt 与 `git diff --check` 通过。

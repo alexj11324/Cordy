@@ -10,6 +10,9 @@
 
 #![allow(clippy::result_large_err)]
 
+#[cfg(test)]
+pub(crate) static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub mod agent_aggregation;
 pub mod agent_api;
 pub mod agent_builder;

@@ -493,14 +493,19 @@ impl HandlerState {
         feature_flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
         business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Self {
-        let composio =
-            if cordy_service::feature_flags::composio_mcp_apps_enabled(feature_flags.as_ref()) {
-                crate::composio::build_service(pool.clone())
-                    .ok()
-                    .map(Arc::new)
-            } else {
-                None
-            };
+        let composio = if cordy_service::feature_flags::composio_mcp_apps_enabled(
+            feature_flags.as_ref(),
+        ) {
+            match crate::composio::build_service(pool.clone()) {
+                Ok(service) => Some(Arc::new(service)),
+                Err(error) => {
+                    tracing::error!(%error, "composio production service initialization failed");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         Self::new_with_dependencies(
             pool,
             pat_cache,
@@ -1077,9 +1082,10 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
 mod tests {
     use super::*;
 
-    const COMPOSIO_ENV: [&str; 7] = [
+    const COMPOSIO_ENV: [&str; 8] = [
         "COMPOSIO_API_KEY",
         "COMPOSIO_STATE_SECRET",
+        "JWT_SECRET",
         "COMPOSIO_CALLBACK_BASE_URL",
         "CORDY_PUBLIC_URL",
         "CORDY_APP_URL",
@@ -1121,8 +1127,11 @@ mod tests {
         )
     }
 
-    #[test]
-    fn production_dependencies_gate_composio_and_task_overlay() {
+    #[tokio::test]
+    async fn production_dependencies_gate_composio_and_task_overlay() {
+        let _lock = crate::ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = RestoreComposioEnv::clear();
         let build = || {
             HandlerState::new_with_production_dependencies(
@@ -1145,15 +1154,21 @@ mod tests {
         assert!(missing_state_secret.composio.is_none());
         assert!(missing_state_secret.tasks.composio.is_none());
 
-        std::env::set_var("COMPOSIO_STATE_SECRET", "test-state-secret");
+        std::env::set_var("JWT_SECRET", "test-jwt-secret");
         let missing_callback = build();
         assert!(missing_callback.composio.is_none());
         assert!(missing_callback.tasks.composio.is_none());
 
         std::env::set_var("COMPOSIO_CALLBACK_BASE_URL", "https://api.example.com/");
-        let configured = build();
-        assert!(configured.composio.is_some());
-        assert!(configured.tasks.composio.is_some());
+        let jwt_configured = build();
+        assert!(jwt_configured.composio.is_some());
+        assert!(jwt_configured.tasks.composio.is_some());
+
+        std::env::remove_var("JWT_SECRET");
+        std::env::set_var("COMPOSIO_STATE_SECRET", "test-state-secret");
+        let explicit_secret_configured = build();
+        assert!(explicit_secret_configured.composio.is_some());
+        assert!(explicit_secret_configured.tasks.composio.is_some());
 
         std::env::set_var("FF_COMPOSIO_MCP_APPS", "0");
         let flag_disabled = build();
