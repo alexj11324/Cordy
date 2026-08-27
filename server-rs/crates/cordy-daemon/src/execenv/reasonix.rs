@@ -106,7 +106,7 @@ fn clean_dir(env: &HashMap<String, String>, name: &str) -> String {
     }
     dir = expand_vars(&dir, env);
     let home = user_home(env);
-    if dir == "~" {
+    if dir == "~" && !home.is_empty() {
         dir = home;
     } else if let Some(rest) = dir.strip_prefix("~/").or_else(|| dir.strip_prefix(r"~\")) {
         if !home.is_empty() {
@@ -414,11 +414,27 @@ mod tests {
         let work_dir = temp.path().to_string_lossy().into_owned();
         let path = temp.path().join(PROJECT_CONFIG_FILE);
         fs::write(&path, "[permissions]\ndeny = [\"custom\"]\n").unwrap();
-        write_reasonix_project_config(&work_dir, &HashMap::new(), None).unwrap();
+        let mut manifest = SidecarManifest::default();
+        write_reasonix_project_config(&work_dir, &HashMap::new(), Some(&mut manifest)).unwrap();
         assert_eq!(
             fs::read_to_string(path).unwrap(),
             "[permissions]\ndeny = [\"custom\"]\n"
         );
+    }
+
+    #[test]
+    fn bare_tilde_is_preserved_without_a_home() {
+        let env = HashMap::from([
+            ("REASONIX_HOME".to_string(), "~".to_string()),
+            ("HOME".to_string(), String::new()),
+        ]);
+        let expected = clean_path(
+            &std::env::current_dir()
+                .unwrap()
+                .join("~")
+                .to_string_lossy(),
+        );
+        assert_eq!(isolated_home(&env), expected);
     }
 
     #[test]
