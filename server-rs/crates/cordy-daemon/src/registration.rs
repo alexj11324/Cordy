@@ -110,9 +110,9 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
         true
     }
 
-    /// Publishes provider-owned launch state only after the corresponding
-    /// server response has been accepted into the authoritative registry.
-    /// Failed register calls never invoke this hook.
+    /// Publishes provider-owned launch state in the same admission critical
+    /// section as the authoritative registry. Callers publish launch state
+    /// first so a newly visible runtime can always be resolved by a claimant.
     fn sampled_after_demotion_seq(&self) -> u64 {
         0
     }
@@ -162,6 +162,10 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
     /// longer authoritative. Implementations without launch state can keep
     /// the default no-op.
     fn workspace_removed(&self, _workspace_id: &str) {}
+
+    fn skipped_agents_snapshot(&self) -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -171,6 +175,13 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    pending_deregistrations: Mutex<PendingDeregistrations>,
+}
+
+#[derive(Default)]
+struct PendingDeregistrations {
+    ids: BTreeSet<String>,
+    reasons: HashMap<String, crate::client::RuntimeOfflineReason>,
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
@@ -188,6 +199,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             repo_warmups,
             source,
             serial: Mutex::new(HashMap::new()),
+            pending_deregistrations: Mutex::new(PendingDeregistrations::default()),
         }
     }
 
@@ -390,14 +402,20 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         round: Arc<dyn RuntimeRegistrationRound>,
         activity: &Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
+        if let Err(error) = self
+            .deregister_dropped(&ctx, registry, &[], HashMap::new())
+            .await
+        {
+            tracing::warn!(%error, "pending provider deregistration retry failed");
+        }
         let causes = round.demotable_providers();
         if causes.is_empty() {
             return Ok(());
         }
-        let _claim_barrier = activity
-            .pause_claims_until_idle(&ctx)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("provider demotion cancelled while draining tasks"))?;
+        let Some(_claim_barrier) = activity.try_claim_barrier() else {
+            tracing::info!("provider demotion deferred while claims or tasks are active");
+            return Ok(());
+        };
         let partition = registry.demote_builtins(&causes);
         let providers: BTreeSet<String> = causes.keys().cloned().collect();
         for workspace_id in registry.workspace_ids() {
@@ -412,8 +430,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .filter(|(runtime_id, _)| runtime_ids.contains(runtime_id))
                 .map(|(runtime_id, reason)| (runtime_id.clone(), reason.clone()))
                 .collect();
-            self.deregister_dropped(&ctx, registry, &runtime_ids, reasons)
-                .await?;
+            if let Err(error) = self
+                .deregister_dropped(&ctx, registry, &runtime_ids, reasons)
+                .await
+            {
+                tracing::warn!(%workspace_id, %error, "provider deregistration failed; continuing remaining workspaces");
+            }
         }
         Ok(())
     }
@@ -429,8 +451,6 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         allow_empty_refresh: bool,
         activity: Option<&Arc<DaemonActivity>>,
     ) -> anyhow::Result<()> {
-        let serial = self.workspace_lock(&workspace.id);
-        let _guard = serial.lock().await;
         let payload = round
             .payload_for_workspace(ctx.child(), &workspace.id)
             .await?;
@@ -450,8 +470,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .workspace_runtimes(&workspace.id)
                 .into_iter()
                 .filter(|runtime| {
-                    runtime.profile_id.is_empty()
-                        && preserved_providers.contains(&runtime.provider)
+                    runtime.profile_id.is_empty() && preserved_providers.contains(&runtime.provider)
                 })
                 .map(|runtime| runtime.id)
                 .collect();
@@ -463,6 +482,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 activity,
             )
             .await?;
+            let serial = self.workspace_lock(&workspace.id);
+            let _guard = serial.lock().await;
             let delta = registry.apply_registration_guarded(
                 workspace.id.clone(),
                 workspace.name.clone(),
@@ -471,13 +492,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             )?;
             let accepted = registry.workspace_runtimes(&workspace.id);
             round.registration_applied(&workspace.id, &accepted);
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.dropped,
-                HashMap::new(),
-            )
-            .await?;
+            self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+                .await?;
             tracing::info!(
                 workspace_id = %workspace.id,
                 dropped = delta.dropped.len(),
@@ -517,8 +533,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .workspace_runtimes(&workspace.id)
                 .into_iter()
                 .filter(|runtime| {
-                    runtime.profile_id.is_empty()
-                        && preserved_providers.contains(&runtime.provider)
+                    runtime.profile_id.is_empty() && preserved_providers.contains(&runtime.provider)
                 })
                 .map(|runtime| runtime.id),
         );
@@ -533,28 +548,29 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 activity,
             )
             .await?;
+            let serial = self.workspace_lock(&workspace.id);
+            let _guard = serial.lock().await;
+            let mut prospective = response.runtimes.clone();
+            prospective.extend(
+                registry
+                    .workspace_runtimes(&workspace.id)
+                    .into_iter()
+                    .filter(|runtime| {
+                        runtime.profile_id.is_empty()
+                            && preserved_providers.contains(&runtime.provider)
+                    }),
+            );
+            round.registration_applied(&workspace.id, &prospective);
             let delta = registry.apply_registration_guarded(
                 workspace.id.clone(),
                 workspace.name.clone(),
                 response.runtimes,
                 &preserved_providers,
             )?;
-            let accepted = registry.workspace_runtimes(&workspace.id);
-            round.registration_applied(&workspace.id, &accepted);
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.dropped,
-                HashMap::new(),
-            )
-            .await?;
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.revived.ids,
-                delta.revived.reasons,
-            )
-            .await?;
+            self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+                .await?;
+            self.deregister_dropped(&ctx, registry, &delta.revived.ids, delta.revived.reasons)
+                .await?;
         }
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
@@ -585,8 +601,6 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         round: Arc<dyn RuntimeRegistrationRound>,
         activity: &Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
-        let serial = self.workspace_lock(&workspace.id);
-        let _guard = serial.lock().await;
         let payload = round
             .payload_for_workspace(ctx.child(), &workspace.id)
             .await?;
@@ -605,23 +619,25 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .map(str::to_string)
             .collect();
         incoming_providers.extend(preserved_providers.iter().cloned());
-        let _demotion_barrier =
-            if registry.builtin_demotion_required(&workspace.id, &incoming_providers) {
-                Some(
-                    activity
-                        .pause_claims_until_idle(&ctx)
-                        .await
-                        .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "built-in runtime demotion cancelled for workspace {}",
-                                workspace.id
-                            )
-                        })?,
-                )
-            } else {
-                None
-            };
         if payload.runtimes.is_empty() {
+            let _demotion_barrier =
+                if registry.builtin_demotion_required(&workspace.id, &incoming_providers) {
+                    Some(
+                        activity
+                            .pause_claims_until_idle(&ctx)
+                            .await
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "built-in runtime demotion cancelled for workspace {}",
+                                    workspace.id
+                                )
+                            })?,
+                    )
+                } else {
+                    None
+                };
+            let serial = self.workspace_lock(&workspace.id);
+            let _guard = serial.lock().await;
             // `Some(round)` means the provider completed an authoritative
             // changed probe. Applying an empty built-in set removes the last
             // vanished executable while preserving custom-profile runtimes.
@@ -633,13 +649,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             )?;
             let accepted = registry.workspace_runtimes(&workspace.id);
             round.registration_applied(&workspace.id, &accepted);
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.dropped,
-                HashMap::new(),
-            )
-            .await?;
+            self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+                .await?;
             return Ok(());
         }
         let response = self
@@ -663,28 +674,44 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             "built-in register returned an empty response for workspace {}",
             workspace.id
         );
+        let _demotion_barrier =
+            if registry.builtin_demotion_required(&workspace.id, &incoming_providers) {
+                Some(
+                    activity
+                        .pause_claims_until_idle(&ctx)
+                        .await
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "built-in runtime demotion cancelled for workspace {}",
+                                workspace.id
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
+        let serial = self.workspace_lock(&workspace.id);
+        let _guard = serial.lock().await;
+        let mut prospective = response.runtimes.clone();
+        prospective.extend(
+            registry
+                .workspace_runtimes(&workspace.id)
+                .into_iter()
+                .filter(|runtime| {
+                    runtime.profile_id.is_empty() && preserved_providers.contains(&runtime.provider)
+                }),
+        );
+        round.registration_applied(&workspace.id, &prospective);
         let delta = registry.apply_builtin_registration_guarded(
             &workspace.id,
             &workspace.name,
             response.runtimes,
             &preserved_providers,
         )?;
-        let accepted = registry.workspace_runtimes(&workspace.id);
-        round.registration_applied(&workspace.id, &accepted);
-        self.deregister_dropped(
-            &ctx,
-            registry,
-            &delta.dropped,
-            HashMap::new(),
-        )
-        .await?;
-        self.deregister_dropped(
-            &ctx,
-            registry,
-            &delta.revived.ids,
-            delta.revived.reasons,
-        )
-        .await?;
+        self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+            .await?;
+        self.deregister_dropped(&ctx, registry, &delta.revived.ids, delta.revived.reasons)
+            .await?;
         Ok(())
     }
 
@@ -695,17 +722,42 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         runtime_ids: &[String],
         reasons: HashMap<String, crate::client::RuntimeOfflineReason>,
     ) -> anyhow::Result<()> {
-        let runtime_ids = registry.untracked_runtime_ids(runtime_ids);
-        if runtime_ids.is_empty() {
+        let requested = registry.untracked_runtime_ids(runtime_ids);
+        let (pending_ids, pending_reasons) = {
+            let mut pending = self.pending_deregistrations.lock().unwrap();
+            pending.ids.extend(requested.iter().cloned());
+            for (runtime_id, reason) in reasons {
+                if pending.ids.contains(&runtime_id) {
+                    pending.reasons.insert(runtime_id, reason);
+                }
+            }
+            let still_untracked =
+                registry.untracked_runtime_ids(&pending.ids.iter().cloned().collect::<Vec<_>>());
+            pending.ids = still_untracked.iter().cloned().collect();
+            let ids = pending.ids.clone();
+            pending
+                .reasons
+                .retain(|runtime_id, _| ids.contains(runtime_id));
+            let reasons = pending
+                .reasons
+                .iter()
+                .filter(|(runtime_id, _)| pending.ids.contains(*runtime_id))
+                .map(|(runtime_id, reason)| (runtime_id.clone(), reason.clone()))
+                .collect();
+            (still_untracked, reasons)
+        };
+        if pending_ids.is_empty() {
             return Ok(());
         }
-        let reasons = reasons
-            .into_iter()
-            .filter(|(runtime_id, _)| runtime_ids.contains(runtime_id))
-            .collect();
         self.client
-            .deregister(ctx, &runtime_ids, reasons)
-            .await
+            .deregister(ctx, &pending_ids, pending_reasons)
+            .await?;
+        let mut pending = self.pending_deregistrations.lock().unwrap();
+        for runtime_id in pending_ids {
+            pending.ids.remove(&runtime_id);
+            pending.reasons.remove(&runtime_id);
+        }
+        Ok(())
     }
 
     fn workspace_lock(&self, workspace_id: &str) -> Arc<AsyncMutex<()>> {
@@ -730,6 +782,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             return;
         }
         enqueue_repo_warmup(&self.repo_warmups, workspace_id.to_string(), repos);
+    }
+
+    pub(crate) fn skipped_agents_snapshot(&self) -> BTreeMap<String, String> {
+        self.source.skipped_agents_snapshot()
     }
 }
 

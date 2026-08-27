@@ -115,8 +115,10 @@ impl DaemonStartAssembly {
         >,
     > {
         let inputs = self.production_inputs(context, cli_version)?;
-        Ok(inputs
-            .into_production_assembly(Arc::new(LocalProviderCatalog::new()), checkout_registry))
+        let catalog = Arc::new(LocalProviderCatalog::from_agents(
+            inputs.config.agents.clone(),
+        ));
+        Ok(inputs.into_production_assembly(catalog, checkout_registry))
     }
 
     /// Generic assembly seam used by embedders and focused tests that provide
