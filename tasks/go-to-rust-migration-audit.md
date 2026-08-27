@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback 与 opt-in systemd 生命周期已切到 Rust | 异步收口 #551..#553 V/R/F；主线继续真实启动/升级/回滚演练 | release/installer/systemd gate 已交付，最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551/#552/#553；详见 §11、§15、§16、§38..§40 | 主 agent；独立 V/R/F subagent |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback 与 opt-in systemd 生命周期已切到 Rust；当前切片删除 required backend CI 的 Go gate | 把 required `backend` 聚合门完整切到 Rust deployment/quality/tests/platform/audit/image jobs；随后真实启动/升级/回滚演练 | release/installer/systemd gate 已交付，CI cutover 可独立执行；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#553/当前切片；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
@@ -1215,3 +1215,19 @@ config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollba
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 shell、systemd、Docker 或生命周期行为记为通过。PR 明确堆叠
   在 Ready PR #552。
+
+## 41. AUDIT-001 执行缺口：required backend CI Go gate cutover
+
+当前切片选择 `AUDIT-001` 的默认 CI/合并门完整生产契约：
+
+- 普通 CI 已有 Rust quality、workspace tests（含真实 `cordy-migrate up`）、macOS/Windows
+  daemon tests、RustSec 和 production image jobs，但 required `backend` 聚合 job 仍把
+  `go-backend-tests` 与 `go-vulnerability-scan` 列为硬依赖，并要求两者 success；因此每个
+  backend merge 仍必须安装 Go、生成/编译/测试 Go 和运行 `govulncheck`。
+- `go-backend-tests` 同时夹带 Helm/Makefile deployment contract；不能为了删 Go 一起丢掉。
+  本切片把这部分收敛为轻量 `rust-deployment-contracts` job，继续运行现有 Helm/默认 Rust build
+  contract，同时删除重复的 Rust build/migration 和所有 Go-only steps；实际 Rust build、DB
+  migration、tests、audit 和 image 分别由已经存在的 authoritative jobs 负责。
+- required `backend` 保持原 check name、path-filter skip 语义和 fail-closed aggregation，只从
+  Rust deployment/quality/tests/platform/audit/image 六个结果得出 verdict；不新增 workflow、
+  action、脚本、dependency 或兼容 shim。
