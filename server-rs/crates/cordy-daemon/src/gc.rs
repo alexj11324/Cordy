@@ -5,9 +5,8 @@
 //! - `*Daemon` receiver → [`GcHost`] trait; config fields live in
 //!   [`GcConfig`] mirroring the exact Go field names/types from
 //!   `internal/daemon/config.go:99–118`.
-//! - execenv-owned pieces (GCMeta, store pruners, managed-artifact helpers)
-//!   are local seam stand-ins marked `// S9-integration:`; this module never
-//!   references `crate::execenv`.
+//! - execenv-owned metadata and managed-artifact helpers are reused directly;
+//!   store pruning remains here because it is part of this production loop.
 //! - `time.Ticker` → `tokio::time::interval` with `MissedTickBehavior::Delay`
 //!   (Go tickers drop missed ticks).
 //! - `context.Context` → [`Ctx`](crate::repocache::Ctx); slog → tracing with
@@ -27,6 +26,7 @@ use crate::activity::DaemonActivity;
 use crate::artifact_matcher::{
     safe_relative_path, ArtifactMatcher, MANAGED_ARTIFACT_PATTERN_PREFIX,
 };
+use crate::execenv::execenv::{read_gc_meta, GcMeta, GCMetaKind};
 use crate::repocache::{CancelCause, Ctx};
 
 // ---------------------------------------------------------------------------
@@ -381,97 +381,6 @@ pub(crate) mod processtree {
 /// rather than one of them, so every walk over the root has to decide
 /// explicitly what to do with it.
 pub(crate) const REPOS_DIR_NAME: &str = ".repos";
-
-// ---------------------------------------------------------------------------
-// S9-integration seam stand-ins (gc.go imports execenv + daemon client).
-// ---------------------------------------------------------------------------
-
-// S9-integration: mirrors execenv.GCMetaKind / GCMeta / ReadGCMeta
-// (execenv/execenv.go:947–1023). Swap to the shared execenv module at
-// integration time; this module must not reference crate::execenv.
-
-/// `execenv.GCMetaKind`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum GcMetaKind {
-    #[default]
-    #[serde(rename = "")]
-    Unset,
-    #[serde(rename = "issue")]
-    Issue,
-    #[serde(rename = "chat")]
-    Chat,
-    #[serde(rename = "autopilot_run")]
-    AutopilotRun,
-    #[serde(rename = "quick_create")]
-    QuickCreate,
-    #[serde(untagged)]
-    Other(String),
-}
-
-impl GcMetaKind {
-    fn as_str(&self) -> &str {
-        match self {
-            GcMetaKind::Unset => "",
-            GcMetaKind::Issue => "issue",
-            GcMetaKind::Chat => "chat",
-            GcMetaKind::AutopilotRun => "autopilot_run",
-            GcMetaKind::QuickCreate => "quick_create",
-            GcMetaKind::Other(s) => s.as_str(),
-        }
-    }
-}
-
-/// `execenv.GCMeta` (execenv.go:963–984): persisted to `.gc_meta.json` inside
-/// the env root so the GC loop can make parent-aware decisions.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct GcMeta {
-    #[serde(default)]
-    kind: GcMetaKind,
-    #[serde(default, rename = "issue_id")]
-    issue_id: String,
-    #[serde(default, rename = "chat_session_id")]
-    chat_session_id: String,
-    #[serde(default, rename = "autopilot_run_id")]
-    autopilot_run_id: String,
-    #[serde(default, rename = "task_id")]
-    task_id: String,
-    #[serde(default, rename = "workspace_id")]
-    workspace_id: String,
-    #[serde(default, rename = "completed_at")]
-    completed_at: Option<DateTime<Utc>>,
-    /// Marks tasks whose WorkDir pointed at a user-owned path rather than the
-    /// synthesised envRoot/workdir. The GC loop honours this by never falling
-    /// into the full-clean branch.
-    #[serde(default, rename = "local_directory")]
-    local_directory: bool,
-}
-
-impl GcMeta {
-    pub(crate) fn kind(&self) -> &GcMetaKind {
-        &self.kind
-    }
-    pub(crate) fn issue_id(&self) -> &str {
-        &self.issue_id
-    }
-    pub(crate) fn completed_at(&self) -> Option<DateTime<Utc>> {
-        self.completed_at
-    }
-    pub(crate) fn local_directory(&self) -> bool {
-        self.local_directory
-    }
-}
-
-/// `execenv.ReadGCMeta` (execenv.go:1008–1023): reads GC metadata from a task
-/// directory root. Pre-v2 meta files (no kind field) are normalized to Issue
-/// so the legacy issue path keeps working without a migration.
-fn read_gc_meta(env_root: &Path) -> anyhow::Result<GcMeta> {
-    let data = std::fs::read(env_root.join(".gc_meta.json"))?;
-    let mut meta: GcMeta = serde_json::from_slice(&data).context("unmarshal gc meta")?;
-    if meta.kind == GcMetaKind::Unset {
-        meta.kind = GcMetaKind::Issue;
-    }
-    Ok(meta)
-}
 
 // S9-integration: mirrors daemon client requestError + isAccessNotFound
 // (gc.go:472–475). The real client lives behind GcHost.
@@ -1062,7 +971,10 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
             continue;
         }
         match read_gc_meta(&task_dir) {
-            Ok(meta) if meta.kind() == &GcMetaKind::Issue && !meta.issue_id().trim().is_empty() => {
+            Ok(meta)
+                if meta.kind.as_ref() == Some(&GcMetaKind::Issue)
+                    && !meta.issue_id.trim().is_empty() =>
+            {
                 issue_candidates.push(IssueGcCandidate { task_dir, meta });
                 continue;
             }
@@ -1103,7 +1015,7 @@ async fn gc_workspace_issues<H: GcHost>(
     let mut issue_ids: Vec<String> = Vec::with_capacity(candidates.len());
     let mut seen = std::collections::HashSet::new();
     for candidate in &candidates {
-        let issue_id = candidate.meta.issue_id().trim().to_string();
+        let issue_id = candidate.meta.issue_id.trim().to_string();
         if !seen.insert(issue_id.clone()) {
             continue;
         }
@@ -1140,7 +1052,7 @@ async fn gc_workspace_issues<H: GcHost>(
             stats.skipped += total_candidates - i as i32;
             break;
         }
-        let issue_id = candidate.meta.issue_id().trim().to_string();
+        let issue_id = candidate.meta.issue_id.trim().to_string();
         let Some(result) = results.get(&issue_id) else {
             // No usable answer about the parent issue this cycle, so the task
             // data stays. The regenerable Codex cache is still fair game.
@@ -1290,7 +1202,7 @@ fn apply_managed_artifact_fallback<H: GcHost>(
     // A zero CompletedAt means the task never reported completion through
     // WriteGCMeta. Leave those to the per-kind legacy handling rather than
     // guessing from an unrelated clock.
-    let Some(completed_at) = meta.completed_at() else {
+    let Some(completed_at) = meta.completed_at else {
         return action;
     };
     let age = Utc::now().signed_duration_since(completed_at);
@@ -1305,7 +1217,7 @@ fn apply_managed_artifact_fallback<H: GcHost>(
     }
     tracing::info!(
         dir = %task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-        kind = %meta.kind().as_str(),
+        kind = %meta.kind.as_ref().map(GcMetaKind::as_str).unwrap_or(""),
         completed_at = %completed_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "gc: eligible for managed artifact cleanup"
     );
@@ -1321,7 +1233,7 @@ fn apply_local_directory_gc_override<H: GcHost>(
     meta: &GcMeta,
     action: GcAction,
 ) -> GcAction {
-    if !meta.local_directory() {
+    if !meta.local_directory {
         return action;
     }
     if host.config().gc_artifact_ttl.is_zero() {
@@ -1342,18 +1254,17 @@ async fn should_clean_task_dir_for_kind<H: GcHost>(
     task_dir: &Path,
     meta: &GcMeta,
 ) -> GcAction {
-    match meta.kind() {
-        GcMetaKind::Issue => gc_decision_issue(host, ctx, task_dir, meta).await,
-        GcMetaKind::Chat => gc_decision_chat(host, ctx, task_dir, meta).await,
-        GcMetaKind::AutopilotRun => gc_decision_autopilot_run(host, ctx, task_dir, meta).await,
-        GcMetaKind::QuickCreate => gc_decision_quick_create(host, ctx, task_dir, meta).await,
-        // Unknown kind (including Unset and Other): fall back to mtime-based
+    match meta.kind.as_ref() {
+        Some(GcMetaKind::Issue) => gc_decision_issue(host, ctx, task_dir, meta).await,
+        Some(GcMetaKind::Chat) => gc_decision_chat(host, ctx, task_dir, meta).await,
+        Some(GcMetaKind::AutopilotRun) => {
+            gc_decision_autopilot_run(host, ctx, task_dir, meta).await
+        }
+        Some(GcMetaKind::QuickCreate) => gc_decision_quick_create(host, ctx, task_dir, meta).await,
+        // Unknown or absent kind: fall back to mtime-based
         // orphan cleanup so a future daemon writing a kind we don't recognize
         // doesn't get insta-wiped.
-        kind @ (GcMetaKind::Unset | GcMetaKind::Other(_)) => {
-            let _ = kind;
-            orphan_by_mtime(host, task_dir, "unknown kind")
-        }
+        Some(GcMetaKind::Other(_)) | None => orphan_by_mtime(host, task_dir, "unknown kind"),
     }
 }
 
@@ -1391,11 +1302,11 @@ async fn gc_decision_issue<H: GcHost>(
     task_dir: &Path,
     meta: &GcMeta,
 ) -> GcAction {
-    if meta.issue_id().trim().is_empty() {
+    if meta.issue_id.trim().is_empty() {
         return orphan_by_mtime(host, task_dir, "empty issue id");
     }
 
-    let status = match host.get_issue_gc_check(ctx, meta.issue_id()).await {
+    let status = match host.get_issue_gc_check(ctx, &meta.issue_id).await {
         Ok(status) => status,
         Err(err) => {
             if is_access_not_found(&err) {
@@ -1414,7 +1325,7 @@ async fn gc_decision_issue<H: GcHost>(
         task_dir,
         meta,
         IssueGCCheckResult {
-            id: meta.issue_id().to_string(),
+            id: meta.issue_id.clone(),
             found: true,
             status: status.status,
             updated_at: status.updated_at,
@@ -1448,7 +1359,7 @@ fn gc_decision_issue_result<H: GcHost>(
         tracing::info!(
             dir = %base_name(task_dir),
             kind = "issue",
-            issue = %meta.issue_id(),
+            issue = %meta.issue_id,
             status = %result.status,
             updated_at = %result.updated_at.map(|u| u.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)).unwrap_or_default(),
             "gc: eligible for cleanup"
@@ -1460,12 +1371,12 @@ fn gc_decision_issue_result<H: GcHost>(
     // environments even while the parent issue stays open (gc.go:522–544).
     let cfg = host.config();
     if !cfg.gc_completed_task_ttl.is_zero()
-        && !meta.local_directory()
-        && meta.completed_at().is_some()
+        && !meta.local_directory
+        && meta.completed_at.is_some()
         && is_known_issue_status(&result.status)
     {
         let completed_age = meta
-            .completed_at()
+            .completed_at
             .map(|c| Utc::now().signed_duration_since(c))
             .unwrap_or_default();
         if completed_age > chrono::Duration::from_std(cfg.gc_completed_task_ttl).unwrap_or_default()
@@ -1473,9 +1384,9 @@ fn gc_decision_issue_result<H: GcHost>(
             tracing::info!(
                 dir = %base_name(task_dir),
                 kind = "issue",
-                issue = %meta.issue_id(),
+                issue = %meta.issue_id,
                 status = %result.status,
-                completed_at = %meta.completed_at().map(|c| c.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)).unwrap_or_default(),
+                completed_at = %meta.completed_at.map(|c| c.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)).unwrap_or_default(),
                 completed_task_ttl = go_duration(cfg.gc_completed_task_ttl),
                 "gc: completed task eligible for full cleanup"
             );
@@ -1484,14 +1395,14 @@ fn gc_decision_issue_result<H: GcHost>(
     }
 
     if !cfg.gc_artifact_ttl.is_zero() {
-        if let Some(completed_at) = meta.completed_at() {
+        if let Some(completed_at) = meta.completed_at {
             if Utc::now().signed_duration_since(completed_at)
                 > chrono::Duration::from_std(cfg.gc_artifact_ttl).unwrap_or_default()
             {
                 tracing::info!(
                     dir = %base_name(task_dir),
                     kind = "issue",
-                    issue = %meta.issue_id(),
+                    issue = %meta.issue_id,
                     status = %result.status,
                     completed_at = %completed_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                     "gc: eligible for artifact cleanup"
@@ -1504,13 +1415,13 @@ fn gc_decision_issue_result<H: GcHost>(
     // Old metadata may not have completed_at. Keep that case conservative:
     // after the metadata file itself has been idle for the longer orphan TTL,
     // reclaim only the exact daemon-managed cache (gc.go:557–573).
-    if !cfg.gc_artifact_ttl.is_zero() && meta.completed_at().is_none() {
+    if !cfg.gc_artifact_ttl.is_zero() && meta.completed_at.is_none() {
         if let Some(age) = gc_meta_file_age(task_dir) {
             if age > chrono::Duration::from_std(cfg.gc_orphan_ttl).unwrap_or_default() {
                 tracing::info!(
                     dir = %base_name(task_dir),
                     kind = "issue",
-                    issue = %meta.issue_id(),
+                    issue = %meta.issue_id,
                     status = %result.status,
                     age = format!("{}h0m0s", age.num_hours()),
                     "gc: legacy task eligible for managed artifact cleanup"
@@ -2631,6 +2542,39 @@ mod tests {
         assert_eq!(p(".."), None);
         assert_eq!(p("../escape"), None);
         assert_eq!(p("a/../.."), None);
+    }
+
+    #[test]
+    fn unknown_local_directory_kind_is_never_fully_removed() {
+        let host = DisabledGcHost {
+            config: GcConfig {
+                profile: String::new(),
+                workspaces_root: PathBuf::new(),
+                gc_enabled: false,
+                gc_interval: Duration::ZERO,
+                gc_ttl: Duration::ZERO,
+                gc_completed_task_ttl: Duration::ZERO,
+                gc_orphan_ttl: Duration::ZERO,
+                gc_artifact_ttl: Duration::ZERO,
+                gc_codex_session_ttl: Duration::ZERO,
+                gc_hermes_memory_ttl: Duration::ZERO,
+                gc_hermes_session_ttl: Duration::ZERO,
+                gc_repo_ttl: Duration::ZERO,
+                gc_repo_maintenance_enabled: false,
+                gc_artifact_patterns: Vec::new(),
+            },
+            activity: DaemonActivity::new(),
+        };
+        let meta = GcMeta {
+            kind: Some(GCMetaKind::Other("future_parent".to_string())),
+            local_directory: true,
+            ..GcMeta::default()
+        };
+
+        assert_eq!(
+            apply_local_directory_gc_override(&host, &meta, GcAction::Clean),
+            GcAction::Skip
+        );
     }
 
     #[tokio::test]

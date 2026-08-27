@@ -367,7 +367,7 @@ fn build_task_usage(
     let mut meta_present = false;
     if let Ok(meta) = read_gc_meta(task_dir) {
         meta_present = true;
-        usage.kind = gc_kind_str(meta.kind).to_string();
+        usage.kind = gc_kind_str(meta.kind.as_ref()).to_string();
         usage.parent_id = parent_id_for_meta(&meta);
         if let Some(completed_at) = meta.completed_at {
             usage.age_seconds = (chrono::Utc::now() - completed_at).num_seconds();
@@ -394,12 +394,13 @@ fn build_task_usage(
 }
 
 /// GCMetaKind → its persisted string form (Go: `string(meta.Kind)`).
-fn gc_kind_str(kind: Option<GCMetaKind>) -> &'static str {
+fn gc_kind_str(kind: Option<&GCMetaKind>) -> &str {
     match kind {
         Some(GCMetaKind::Issue) => "issue",
         Some(GCMetaKind::Chat) => "chat",
         Some(GCMetaKind::AutopilotRun) => "autopilot_run",
         Some(GCMetaKind::QuickCreate) => "quick_create",
+        Some(GCMetaKind::Other(kind)) => kind,
         None => "",
     }
 }
@@ -420,12 +421,12 @@ fn gc_meta_file_age(task_dir: &str) -> Option<chrono::Duration> {
 /// `parentIDForMeta` (diskusage.go:342): only the field matching Kind is
 /// meaningful.
 fn parent_id_for_meta(meta: &GcMeta) -> String {
-    match meta.kind {
+    match meta.kind.as_ref() {
         Some(GCMetaKind::Issue) => meta.issue_id.trim().to_string(),
         Some(GCMetaKind::Chat) => meta.chat_session_id.trim().to_string(),
         Some(GCMetaKind::AutopilotRun) => meta.autopilot_run_id.trim().to_string(),
         Some(GCMetaKind::QuickCreate) => meta.task_id.trim().to_string(),
-        None => String::new(),
+        Some(GCMetaKind::Other(_)) | None => String::new(),
     }
 }
 

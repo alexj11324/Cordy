@@ -1174,16 +1174,43 @@ pub(crate) fn hydrate_codex_skills(
 /// to. The GC loop dispatches its decision tree on this value so chat /
 /// autopilot / quick-create tasks are no longer forced through the
 /// issue-centric path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GCMetaKind {
-    #[serde(rename = "issue")]
     Issue,
-    #[serde(rename = "chat")]
     Chat,
-    #[serde(rename = "autopilot_run")]
     AutopilotRun,
-    #[serde(rename = "quick_create")]
     QuickCreate,
+    Other(String),
+}
+
+impl GCMetaKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Issue => "issue",
+            Self::Chat => "chat",
+            Self::AutopilotRun => "autopilot_run",
+            Self::QuickCreate => "quick_create",
+            Self::Other(kind) => kind,
+        }
+    }
+}
+
+impl Serialize for GCMetaKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for GCMetaKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match String::deserialize(deserializer)?.as_str() {
+            "issue" => Self::Issue,
+            "chat" => Self::Chat,
+            "autopilot_run" => Self::AutopilotRun,
+            "quick_create" => Self::QuickCreate,
+            other => Self::Other(other.to_string()),
+        })
+    }
 }
 
 /// GCMeta is persisted to .gc_meta.json inside the env root so the GC loop
@@ -1225,7 +1252,13 @@ pub fn write_gc_meta(env_root: &str, mut meta: GcMeta) -> anyhow::Result<()> {
     if env_root.is_empty() {
         return Ok(());
     }
-    if meta.kind.is_none() {
+    if meta
+        .kind
+        .as_ref()
+        .map(GCMetaKind::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
         // Defensive: a task that doesn't fit any known kind would write a
         // meta file the GC loop can't dispatch on. Skip silently — the
         // directory falls back to the orphan-by-mtime path.
@@ -1241,10 +1274,16 @@ pub fn write_gc_meta(env_root: &str, mut meta: GcMeta) -> anyhow::Result<()> {
 /// ReadGCMeta reads GC metadata from a task directory root. Pre-v2 meta files
 /// (no kind field) are normalized to Issue so the legacy issue path keeps
 /// working without a migration.
-pub fn read_gc_meta(env_root: &str) -> anyhow::Result<GcMeta> {
-    let data = std::fs::read(Path::new(env_root).join(GC_META_FILE))?;
+pub fn read_gc_meta(env_root: impl AsRef<Path>) -> anyhow::Result<GcMeta> {
+    let data = std::fs::read(env_root.as_ref().join(GC_META_FILE))?;
     let mut meta: GcMeta = serde_json::from_slice(&data)?;
-    if meta.kind.is_none() {
+    if meta
+        .kind
+        .as_ref()
+        .map(GCMetaKind::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
         meta.kind = Some(GCMetaKind::Issue);
     }
     Ok(meta)
@@ -1793,9 +1832,20 @@ mod tests {
         // Pre-v2 file: no kind field at all.
         let legacy =
             br#"{"issue_id":"iss_1","workspace_id":"ws","completed_at":"2026-01-02T03:04:05Z"}"#;
-        let back: GcMeta = serde_json::from_slice(legacy).unwrap();
-        assert_eq!(back.kind, None);
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(GC_META_FILE), legacy).unwrap();
+        let back = read_gc_meta(tmp.path()).unwrap();
+        assert_eq!(back.kind, Some(GCMetaKind::Issue));
         assert_eq!(back.issue_id, "iss_1");
+
+        let future = br#"{"kind":"future_parent","workspace_id":"ws","local_directory":true}"#;
+        std::fs::write(tmp.path().join(GC_META_FILE), future).unwrap();
+        let back = read_gc_meta(tmp.path()).unwrap();
+        assert_eq!(
+            back.kind,
+            Some(GCMetaKind::Other("future_parent".to_string()))
+        );
+        assert!(back.local_directory);
 
         // Wire shape uses snake_case keys with omitempty.
         let v: Value = serde_json::from_slice(&data).unwrap();
