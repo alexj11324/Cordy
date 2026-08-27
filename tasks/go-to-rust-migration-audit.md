@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update 与 poisoned-session production chain 已交付；当前切片迁移 Codex session rollout durability/continuity | 完成 mid-flight pin 与 every-terminal rollout presence gate，并把缺失状态送达 server | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558，可执行 | PR #542..#550/#558；§5.2、§6.2、§29..§37、§45..§46 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session 与 Codex session rollout durability production chain 已交付 Ready PR | 异步收口 #558/#559 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558/#559，可执行 | PR #542..#550/#558/#559；§5.2、§6.2、§29..§37、§45..§46 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1458,5 +1458,24 @@ provider-specific runner。
   与既有 `Client` terminal API 保持唯一链路，不引入 Stub、Noop 或 Fake 生产选择。
 - Go 是否可下线：本 Codex continuity 能力收口后不再需要 Go daemon；其余 AUDIT-005 生命周期、
   异步收口和最终 AUDIT-001..010 门仍未完成。
-- 异步状态：尚未实现，verification/reviewer 未派发；编译、测试、真实 delayed/missing rollout smoke
-  均由独立 verifier 在 Ready PR 后执行，finding 交独立 fixer。
+交付状态（Ready PR #559）：
+
+- branch `codex/cord-223-codex-session-durability-rust`，堆叠 base
+  `codex/cord-222-poisoned-session-lifecycle-rust`（Ready #558）；缺口登记 `aedccda6`，terminal 扩展登记
+  `c07b1216`，迁移实现 `dacfe79c`。
+- Rust production adapter 现在复用既有 rollout finder：status-time pin 由 task-owned `JoinSet` waiter
+  持有，delayed rollout 出现后才调用真实 `Client::pin_task_session`，terminal/drop 均不会遗留 detached
+  task；最终 authoritative result（含 fresh retry reconciliation）再执行两秒 bounded gate，missing 时
+  withholding session id 并设置 `TaskResult.session_rollout_missing`。
+- daemon cancel-ack、Rust handler、TaskService 和 cordy-db cancelled CAS 已接入 missing flag；该事务按既有
+  chat-session-first 锁序 exact-match 清理仍指向 cancelled task session 的 chat pointer。没有新增 runner、
+  watcher、store、factory、registry、dependency 或 production Fake。
+- 当前实现代码 diff 为 6 个必要生产文件、470 insertions/51 deletions；测试直接覆盖 real Client HTTP
+  pin/cancel-ack boundary、delayed/missing/immediate rollout 和 non-Codex 路径，而非把几个纯 helper
+  测试拼成 production 声明。
+- 已知异步 fixer 项：既有 complete/fail service path 会在 task row 记录 missing 并清空 task session，
+  但对已经 mid-flight pin 的 chat pointer 尚缺直接 exact-match 清理证据；在 fixer 收口前不声称该分支
+  已完成 every-terminal chat-pointer cleanup。
+- 异步状态：verification/reviewer 将在 Ready 后分别派发；fixer 接收上述已知边界及后续 finding。主
+  agent 仅实际执行并通过 `git diff --check`，未运行/宣称 compile、tests、rustfmt、locked/offline 或
+  production smoke。PR 继承 #558 findings 及更早 #556/#557 lock/format 基线记录。
