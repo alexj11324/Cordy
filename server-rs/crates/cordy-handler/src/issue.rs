@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -32,7 +32,7 @@ use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -4484,7 +4484,16 @@ async fn apply_issue_update(
                 .await
             {
                 Ok(entry) => entry.key,
-                Err(_) => return Err(invalid_status(state, previous.workspace_id, &value).await),
+                Err(cordy_service::issue_status::ResolveError::Unknown(_)) => {
+                    return Err(invalid_status(state, previous.workspace_id, &value).await);
+                }
+                Err(cordy_service::issue_status::ResolveError::Database(error)) => {
+                    tracing::warn!(%error, "failed to resolve issue status");
+                    return Err(error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to update issue",
+                    ));
+                }
             };
     }
     if let UpdateField::Value(value) = update_field::<String>(fields, "priority")? {
@@ -4651,11 +4660,15 @@ async fn apply_issue_update(
             &next.status,
         )
         .await
-        .map_err(|_| {
-            error_response(
+        .map_err(|error| match error {
+            cordy_service::issue_status::ResolveError::Unknown(_) => error_response(
                 StatusCode::CONFLICT,
                 "the target status was archived while this request was in flight; reload the status list and retry",
-            )
+            ),
+            cordy_service::issue_status::ResolveError::Database(error) => {
+                tracing::warn!(%error, "failed to resolve issue status under catalog lock");
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+            }
         })?
         .key;
     }
@@ -5468,11 +5481,20 @@ async fn batch_update_issues(
     }
 
     if let Some(Value::String(status)) = updates.get("status") {
-        if cordy_service::issue_status::resolve(&state.pool, context.member.workspace_id, status)
+        match cordy_service::issue_status::resolve(&state.pool, context.member.workspace_id, status)
             .await
-            .is_err()
         {
-            return invalid_status(&state, context.member.workspace_id, status).await;
+            Ok(_) => {}
+            Err(cordy_service::issue_status::ResolveError::Unknown(_)) => {
+                return invalid_status(&state, context.member.workspace_id, status).await;
+            }
+            Err(cordy_service::issue_status::ResolveError::Database(error)) => {
+                tracing::warn!(%error, "failed to resolve batch issue status");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update issues",
+                );
+            }
         }
     } else if updates.contains_key("status") {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
@@ -5731,7 +5753,13 @@ async fn create_issue(
     let (status, status_category) =
         match cordy_service::issue_status::resolve(&state.pool, workspace_id, &status).await {
             Ok(entry) => (entry.key, entry.category),
-            Err(_) => return invalid_status(&state, workspace_id, &status).await,
+            Err(cordy_service::issue_status::ResolveError::Unknown(_)) => {
+                return invalid_status(&state, workspace_id, &status).await;
+            }
+            Err(cordy_service::issue_status::ResolveError::Database(error)) => {
+                tracing::warn!(%error, "failed to resolve issue status");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create issue");
+            }
         };
     let priority = if request.priority.is_empty() {
         "none".to_string()
@@ -6596,7 +6624,11 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() { value } else { json!({}) }
+    if value.is_object() {
+        value
+    } else {
+        json!({})
+    }
 }
 
 #[derive(Debug, Serialize)]

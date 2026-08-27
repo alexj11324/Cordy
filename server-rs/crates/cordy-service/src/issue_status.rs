@@ -56,6 +56,14 @@ fn canonical_rank(key: &str) -> Option<usize> {
 #[error("unknown issue status")]
 pub struct UnknownStatus;
 
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveError {
+    #[error(transparent)]
+    Unknown(#[from] UnknownStatus),
+    #[error(transparent)]
+    Database(#[from] anyhow::Error),
+}
+
 /// Returns the 7 built-in status keys in display order.
 pub fn canonical() -> Vec<&'static str> {
     CANONICAL_ORDER.to_vec()
@@ -201,27 +209,26 @@ pub async fn resolve<'e, E>(
     executor: E,
     workspace_id: Uuid,
     status: &str,
-) -> Result<IssueStatus, UnknownStatus>
+) -> Result<IssueStatus, ResolveError>
 where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
     let key = status.trim().to_lowercase();
     if key.is_empty() {
-        return Err(UnknownStatus);
+        return Err(UnknownStatus.into());
     }
     let entry = cordy_db::queries::issue_status::get_issue_status_entry_by_key(
         executor,
         workspace_id,
         &key,
     )
-    .await
-    .map_err(|_| UnknownStatus)?;
+    .await?;
     match entry {
         None => {
             if is_built_in(&key) {
                 Ok(built_in_entry(workspace_id, &key))
             } else {
-                Err(UnknownStatus)
+                Err(UnknownStatus.into())
             }
         }
         Some(entry) => {
@@ -229,7 +236,7 @@ where
                 // A built-in can never be archived (enforced by a table
                 // constraint), so reaching here means a custom status was
                 // retired.
-                return Err(UnknownStatus);
+                return Err(UnknownStatus.into());
             }
             Ok(entry)
         }
@@ -254,6 +261,25 @@ fn built_in_entry(workspace_id: Uuid, key: &str) -> IssueStatus {
         archived_at: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+    }
+}
+
+#[cfg(test)]
+mod resolve_error_tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    #[tokio::test]
+    async fn resolve_preserves_storage_errors() {
+        let pool = PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(200))
+            .connect_lazy("postgres://127.0.0.1:1/cordy_issue_status_error")
+            .expect("lazy pool");
+
+        assert!(matches!(
+            resolve(&pool, Uuid::now_v7(), "custom_status").await,
+            Err(ResolveError::Database(_))
+        ));
     }
 }
 
