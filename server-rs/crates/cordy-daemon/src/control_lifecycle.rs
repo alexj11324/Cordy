@@ -156,6 +156,7 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
+    use futures_util::{SinkExt, StreamExt};
     use serde_json::json;
 
     use super::*;
@@ -197,6 +198,172 @@ mod tests {
                 .unwrap()
                 .push(format!("heartbeat:{runtime_id}"));
         }
+    }
+
+    #[tokio::test]
+    async fn real_control_owner_routes_websocket_and_claim_rpc_until_cancelled() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new()
+            .route(
+                "/api/daemon/ws",
+                axum::routing::get(
+                    |headers: axum::http::HeaderMap,
+                     ws: axum::extract::WebSocketUpgrade| async move {
+                        assert_eq!(headers["authorization"], "Bearer token");
+                        assert!(headers["x-client-capabilities"]
+                            .to_str()
+                            .unwrap()
+                            .contains("rpc-v1"));
+                        ws.on_upgrade(|mut socket| async move {
+                            let heartbeat = socket.next().await.unwrap().unwrap();
+                            let heartbeat: cordy_protocol::Message =
+                                serde_json::from_slice(heartbeat.into_data().as_ref()).unwrap();
+                            assert_eq!(heartbeat.r#type, cordy_protocol::EVENT_DAEMON_HEARTBEAT);
+                            for message in [
+                                cordy_protocol::Message {
+                                    r#type: cordy_protocol::EVENT_DAEMON_HEARTBEAT_ACK.to_string(),
+                                    payload: json!({
+                                        "runtime_id": "runtime-1",
+                                        "status": "ok",
+                                        "server_capabilities": ["rpc-v1"]
+                                    }),
+                                },
+                                cordy_protocol::Message {
+                                    r#type: cordy_protocol::EVENT_DAEMON_TASK_AVAILABLE.to_string(),
+                                    payload: json!({
+                                        "runtime_id": "runtime-1",
+                                        "task_id": "task-1"
+                                    }),
+                                },
+                            ] {
+                                socket
+                                    .send(axum::extract::ws::Message::Text(
+                                        serde_json::to_string(&message).unwrap().into(),
+                                    ))
+                                    .await
+                                    .unwrap();
+                            }
+                            let rpc = socket.next().await.unwrap().unwrap();
+                            let rpc: cordy_protocol::Message =
+                                serde_json::from_slice(rpc.into_data().as_ref()).unwrap();
+                            assert_eq!(rpc.r#type, cordy_protocol::EVENT_DAEMON_RPC_REQUEST);
+                            assert_eq!(rpc.payload["method"], "tasks.claim");
+                            socket
+                                .send(axum::extract::ws::Message::Text(
+                                    serde_json::to_string(&cordy_protocol::Message {
+                                        r#type: cordy_protocol::EVENT_DAEMON_RPC_RESPONSE
+                                            .to_string(),
+                                        payload: json!({
+                                            "request_id": rpc.payload["request_id"],
+                                            "status": 200,
+                                            "body": {"tasks": []}
+                                        }),
+                                    })
+                                    .unwrap()
+                                    .into(),
+                                ))
+                                .await
+                                .unwrap();
+                            let _ = socket.next().await;
+                        })
+                    },
+                ),
+            )
+            .route(
+                "/api/daemon/runtimes/{runtime_id}/heartbeat",
+                axum::routing::post(|| async {
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE
+                }),
+            );
+        let server_stop = tokio_util::sync::CancellationToken::new();
+        let stop = server_stop.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(stop.cancelled_owned())
+                .await
+                .unwrap();
+        });
+
+        let client = Arc::new(crate::client::Client::new(format!("http://{address}")));
+        client.set_token("token");
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
+        let control = DaemonControl::new(
+            client,
+            format!("http://{address}"),
+            "daemon-1",
+            Duration::from_secs(60),
+            events_tx,
+        );
+        control.set_runtime_ids(["runtime-1".to_string()]);
+        let lifecycle = Arc::new(RecordingLifecycle::default());
+        let (wakeup_tx, mut wakeup_rx) = mpsc::channel(4);
+        let reconcile = Arc::new(ReconcileBroadcaster::new());
+        let reconcile_snapshot = reconcile.notify();
+        let consumer = Arc::new(ControlEventConsumer::new(
+            Arc::clone(&lifecycle),
+            wakeup_tx,
+            reconcile,
+            Arc::new(WorkspaceChangeSignal::new()),
+        ));
+        let ctx = Ctx::new();
+        let running = tokio::spawn(run_daemon_control(
+            ctx.clone(),
+            Arc::clone(&control),
+            consumer,
+            events_rx,
+        ));
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), wakeup_rx.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .runtime_id,
+            ""
+        );
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), wakeup_rx.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .runtime_id,
+            "runtime-1"
+        );
+        assert!(reconcile_snapshot.is_closed());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if lifecycle
+                    .calls
+                    .lock()
+                    .unwrap()
+                    .contains(&"heartbeat:runtime-1".to_string())
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(control
+            .claim_tasks(&ctx, &["runtime-1".to_string()], 1)
+            .await
+            .unwrap()
+            .is_empty());
+
+        ctx.cancel_with(CancelCause::Shutdown);
+        tokio::time::timeout(Duration::from_secs(2), running)
+            .await
+            .expect("control owner ignored cancellation")
+            .unwrap();
+        server_stop.cancel();
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("fixture server ignored shutdown")
+            .unwrap();
     }
 
     #[tokio::test]

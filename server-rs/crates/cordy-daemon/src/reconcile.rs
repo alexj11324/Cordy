@@ -16,9 +16,6 @@
 //! `close(ch)` becomes `token.cancel()`, and the replaced channel is simply a
 //! fresh token handed out by the next [`ReconcileBroadcaster::notify`] call.
 
-// S9-integration: consumed by daemon.go core (lane B) loops; silence dead-code until wired.
-#![allow(dead_code)]
-
 use std::sync::Mutex;
 use std::time::Instant;
 

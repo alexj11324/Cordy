@@ -34,10 +34,6 @@
 //!   [`WsRpcError::Unavailable`]-vs-[`WsRpcError::Uncertain`] via
 //!   [`WsOutbound::cancel`], exactly like Go's closed channel).
 
-// S9-integration: consumed by daemon.go core (lane B) and the hub WS pump;
-// silence dead-code until wired.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
