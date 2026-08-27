@@ -36,10 +36,9 @@
 //! - slog logger parameter dropped; tracing macros used directly.
 //! - Prepare is async: the worktree branch shells out to git through
 //!   tokio::process with timeouts (local_worktree.rs).
-//! - Provider families owned by lane E2 (hermes/qwenpaw/reasonix/openclaw)
-//!   are represented by fail-closed stand-ins at the bottom of this file,
-//!   each marked `// S9-integration:`. Their call sites in prepare are
-//!   already wired exactly as in Go, so E2 replaces the stub bodies only.
+//! - Hermes and OpenClaw remain explicit fail-closed stand-ins at the bottom
+//!   of this file. Reasonix and QwenPaw are implemented in their capability
+//!   modules and their prepare/reuse call sites are production-wired here.
 //! - OpenclawGatewayPin is a structural stand-in for openclaw_config.go's
 //!   type. Go's public type masks Token via MarshalJSON/Stringer; the
 //!   stand-in serializes plainly (the isolation helper protocol needs the
@@ -62,6 +61,7 @@ use super::context::{
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
 use super::local_worktree::{prepare_local_worktree, LocalWorktree, LocalWorktreeParams};
+use super::reasonix;
 use super::reclaimable::CODEX_HOME_DIR_NAME;
 
 // ---------------------------------------------------------------------------
@@ -952,6 +952,12 @@ pub fn reuse(params: ReuseParams) -> Option<Environment> {
         }
         if let Err(err) = super::context::cleanup_sidecars(&env.root_dir) {
             tracing::warn!(error = %format!("{err:#}"), "execenv: roll back prior sidecars on reuse failed");
+            // A failed rollback leaves the previous task's managed files in
+            // place. Do not let the refresh path mistake one of those files
+            // for a repository-owned collision (especially reasonix.toml),
+            // because its stale policy would override the current user
+            // configuration. The caller will fall back to a fresh prepare.
+            return None;
         }
     }
 
@@ -1717,13 +1723,14 @@ fn prepare_qwenpaw_workspace(workspace: &str, skills: &[SkillContextForEnv]) -> 
     Ok(())
 }
 
-// S9-integration: reasonix_user_config.go lands in lane E2.
+// Reasonix's full implementation lives in the capability module so the
+// prepare/reuse call sites stay aligned with the other provider families.
 fn write_reasonix_project_config(
-    _work_dir: &str,
-    _env: &HashMap<String, String>,
-    _manifest: Option<&mut SidecarManifest>,
+    work_dir: &str,
+    env: &HashMap<String, String>,
+    manifest: Option<&mut SidecarManifest>,
 ) -> anyhow::Result<()> {
-    bail!("execenv: reasonix provider family not yet ported (lane E2)")
+    reasonix::write_reasonix_project_config(work_dir, env, manifest)
 }
 
 // S9-integration: openclaw_config.go + openclaw_config_cache.go land in lane
