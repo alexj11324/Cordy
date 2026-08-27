@@ -13,10 +13,15 @@ use axum::{
     Router,
 };
 use serde::Deserialize;
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+use tonic::transport::Server;
 
 pub const ADDR: &str = "127.0.0.1:6060";
 pub const TOKIO_CONSOLE_ADDR: &str = "127.0.0.1:6669";
+pub const TOKIO_CONSOLE_ENV: &str = "CORDY_TOKIO_CONSOLE";
+const TOKIO_CONSOLE_RETENTION: std::time::Duration = std::time::Duration::from_secs(60);
+const TOKIO_CONSOLE_EVENT_BUFFER_CAPACITY: usize = 1024;
 const DEFAULT_PROFILE_SECONDS: u64 = 30;
 const INDEX: &str = "<!doctype html><html><head><title>pprof</title></head><body>\
 <h1>pprof</h1><ul>\
@@ -24,7 +29,7 @@ const INDEX: &str = "<!doctype html><html><head><title>pprof</title></head><body
 <li><a href=\"/debug/pprof/heap\">heap</a></li>\
 <li><a href=\"/debug/pprof/cmdline\">cmdline</a></li>\
 <li><a href=\"/debug/pprof/symbol\">symbol</a></li>\
-</ul><p>Async runtime diagnostics: tokio-console http://127.0.0.1:6669</p>\
+</ul><p>Async runtime diagnostics (when CORDY_TOKIO_CONSOLE=1): tokio-console http://127.0.0.1:6669</p>\
 </body></html>\n";
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +45,57 @@ pub async fn serve(shutdown: CancellationToken) -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown.cancelled_owned())
         .await?;
     Ok(())
+}
+
+pub fn console_enabled(raw: Option<&str>) -> bool {
+    raw == Some("1")
+}
+
+pub fn build_console() -> (console_subscriber::ConsoleLayer, console_subscriber::Server) {
+    let addr = TOKIO_CONSOLE_ADDR
+        .parse::<std::net::SocketAddr>()
+        .unwrap_or_else(|_| unreachable!("fixed Tokio console address must parse"));
+    console_subscriber::ConsoleLayer::builder()
+        .server_addr(addr)
+        .retention(TOKIO_CONSOLE_RETENTION)
+        .event_buffer_capacity(TOKIO_CONSOLE_EVENT_BUFFER_CAPACITY)
+        .build()
+}
+
+pub async fn bind_console() -> std::io::Result<TcpListener> {
+    bind_console_at(
+        TOKIO_CONSOLE_ADDR
+            .parse()
+            .unwrap_or_else(|_| unreachable!("fixed Tokio console address must parse")),
+    )
+    .await
+}
+
+async fn bind_console_at(addr: std::net::SocketAddr) -> std::io::Result<TcpListener> {
+    TcpListener::bind(addr).await
+}
+
+pub async fn serve_console(
+    console: console_subscriber::Server,
+    listener: TcpListener,
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
+    let console_subscriber::ServerParts {
+        instrument_server,
+        aggregator,
+        ..
+    } = console.into_parts();
+    let aggregate = tokio::spawn(aggregator.run());
+    let result = Server::builder()
+        .add_service(instrument_server)
+        .serve_with_incoming_shutdown(
+            tokio_stream::wrappers::TcpListenerStream::new(listener),
+            shutdown.cancelled_owned(),
+        )
+        .await;
+    aggregate.abort();
+    let _ = aggregate.await;
+    result.map_err(Into::into)
 }
 
 fn router() -> Router {
@@ -118,30 +174,56 @@ async fn symbol_post(body: axum::body::Bytes) -> Response {
 
 #[cfg(target_os = "linux")]
 async fn heap_profile() -> Response {
-    let Some(profiler) = jemalloc_pprof::PROF_CTL.as_ref() else {
-        return text_response(
+    enum Capture {
+        Unavailable,
+        Inactive,
+        Profile(Vec<u8>),
+        Empty,
+        Failed(anyhow::Error),
+    }
+
+    let capture = tokio::task::spawn_blocking(|| {
+        let Some(profiler) = jemalloc_pprof::PROF_CTL.as_ref() else {
+            return Capture::Unavailable;
+        };
+        let mut profiler = profiler.blocking_lock();
+        if !profiler.activated() {
+            return Capture::Inactive;
+        }
+        match profiler.dump_pprof() {
+            Ok(profile) if !profile.is_empty() => Capture::Profile(profile),
+            Ok(_) => Capture::Empty,
+            Err(error) => Capture::Failed(error),
+        }
+    })
+    .await;
+
+    match capture {
+        Ok(Capture::Unavailable) => text_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "jemalloc heap profiling is unavailable\n",
-        );
-    };
-    let mut profiler = profiler.lock().await;
-    if !profiler.activated() {
-        return text_response(
+        ),
+        Ok(Capture::Inactive) => text_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "jemalloc heap profiling is not active\n",
-        );
-    }
-    match profiler.dump_pprof() {
-        Ok(profile) if !profile.is_empty() => binary_response(profile),
-        Ok(_) => text_response(
+        ),
+        Ok(Capture::Profile(profile)) => binary_response(profile),
+        Ok(Capture::Empty) => text_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "heap profile capture returned no data\n",
         ),
-        Err(error) => {
+        Ok(Capture::Failed(error)) => {
             tracing::warn!(%error, "heap profile capture failed");
             text_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "heap profile capture failed\n",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, "heap profile worker failed");
+            text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "heap profile worker failed\n",
             )
         }
     }
@@ -158,7 +240,7 @@ async fn heap_profile() -> Response {
 async fn runtime_trace_replacement() -> Response {
     text_response(
         StatusCode::GONE,
-        "Go runtime trace is retired; use tokio-console http://127.0.0.1:6669 for Rust task/resource/operation diagnostics\n",
+        "Go runtime trace is retired; set CORDY_TOKIO_CONSOLE=1 and use tokio-console http://127.0.0.1:6669 for Rust task/resource/operation diagnostics\n",
     )
 }
 
@@ -278,6 +360,44 @@ mod tests {
     }
 
     #[test]
+    fn tokio_console_is_explicitly_opt_in() {
+        assert!(!console_enabled(None));
+        assert!(!console_enabled(Some("true")));
+        assert!(!console_enabled(Some(" 1 ")));
+        assert!(console_enabled(Some("1")));
+    }
+
+    #[tokio::test]
+    async fn occupied_console_address_is_rejected_before_startup() {
+        let occupied = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|_| unreachable!());
+        let address = occupied.local_addr().unwrap_or_else(|_| unreachable!());
+        let error = bind_console_at(address)
+            .await
+            .expect_err("occupied address must fail closed");
+        assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
+    }
+
+    #[tokio::test]
+    async fn console_server_joins_after_cancellation() {
+        let (_, server) = build_console();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap_or_else(|_| unreachable!());
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(serve_console(server, listener, shutdown.clone()));
+        tokio::task::yield_now().await;
+        shutdown.cancel();
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("console shutdown must be bounded")
+            .expect("console task must join");
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn symbol_protocol_returns_unknown_for_unresolved_addresses() {
         assert_eq!(
             resolve_symbols(b"0xnot-an-address\n"),
@@ -334,6 +454,10 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn heap_endpoint_returns_a_real_gzipped_pprof_profile() {
+        use flate2::read::GzDecoder;
+        use pprof::protos::Message;
+        use std::io::Read;
+
         let response = router()
             .oneshot(
                 axum::http::Request::builder()
@@ -356,5 +480,12 @@ mod tests {
             .unwrap_or_else(|_| unreachable!())
             .to_bytes();
         assert!(body.starts_with(&[0x1f, 0x8b]));
+        let mut protobuf = Vec::new();
+        GzDecoder::new(body.as_ref())
+            .read_to_end(&mut protobuf)
+            .expect("heap profile must be valid gzip");
+        let profile = pprof::protos::Profile::parse_from_bytes(&protobuf)
+            .expect("heap profile must be a valid pprof protobuf");
+        assert!(!profile.string_table.is_empty());
     }
 }
