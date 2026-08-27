@@ -176,7 +176,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm 入口已切到 Rust；CLI release 资产链已由本切片改为 Rust | 收口 Desktop 内嵌 CLI、install/systemd、兼容产物、启动与回滚演练 | PR #523/#527（待建）；详见 §11、§15 | 主 agent；Volta 异步 review/fix |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust | 收口 install/systemd、兼容产物、启动与回滚演练 | PR #523/#527/当前切片；详见 §11、§15、§16 | 主 agent；Volta 异步 review/fix |
 | AUDIT-002 | 待办 | 仅有 route parity 和局部包测试 | 建立并执行 API/WS/事务/错误/CLI/daemon 的成功与失败 smoke 矩阵 | §5、§6.2 | 主 agent；缺陷交 Volta |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；Volta 异步 review/fix |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；Volta 异步 review/fix |
@@ -203,8 +203,8 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 ##### AUDIT-001：Rust 默认生产入口切换
 
 - 范围：Makefile 的 server/cordy/build/migrate/test/dev/check、scripts/check.sh、scripts/dev.sh、Dockerfile、docker/entrypoint.sh、Helm backend、systemd/install/release 入口。
-- 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；本切片前 `.goreleaser.yml` 和 release workflow 仍用 Go CLI，Desktop packaging 仍从 Go 源码嵌入 CLI。
-- 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；Rust release 保留兼容的 binary/asset 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
+- 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；PR #527 将 CLI release 资产链改为 Rust；本切片再把 Desktop packaging 从 Go 源码嵌入改为按目标构建 Rust CLI。
+- 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；Rust release 和 Desktop 保留兼容的 binary/asset 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
 - 退出证据：新鲜 worktree 的 build/check、镜像启动 health/ready、migrate up/down/status、CLI --help/version、回滚演练均以 Rust 产物为准。
 - owner：主 agent 迁移/接线；Volta 异步 review/fix。
 
@@ -334,7 +334,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - Rust 入口：`Makefile` 的 `server`、`cli`/`cordy`、`build`、`test`、`migrate-up/down`，以及 `scripts/dev.sh`、`scripts/check.sh`；统一通过 `server-rs` 的 `cordy-server`、`cordy`、`cordy-migrate`。
 - 容器入口：`Dockerfile` 不再构建 Go runtime binary，改为构建 Rust server、CLI、migration runner 和三个 Rust backfill，并继续提供 `server`/`cordy`/`migrate` 兼容产物名；`docker/entrypoint.sh` 无需改名即可继续执行迁移后启动。
 - CI/Helm：部署构建与迁移验证改用 Rust，并新增生产镜像构建门；Helm 的 backend 注释改为 Rust 入口事实。
-- 生产路径状态：PR #523 覆盖本地默认入口、自托管镜像和 CI 部署验证；PR #527 将 CLI release workflow 和 Homebrew formula 输入改为 Rust。Desktop 内嵌 CLI、install/systemd 全链路和回滚目标仍未整体闭合，故 AUDIT-001 尚未完成。
+- 生产路径状态：PR #523 覆盖本地默认入口、自托管镜像和 CI 部署验证；PR #527 将 CLI release workflow 和 Homebrew formula 输入改为 Rust；本切片将 Desktop 内嵌 CLI 的 smoke/release 构建改为 Rust。install/systemd 全链路和回滚目标仍未整体闭合，故 AUDIT-001 尚未完成。
 - Go 是否可下线：否。Go compatibility build/test、CLI release/install、回滚目标和剩余 leaf contract 仍在清单中。
 - 验证状态：shell 语法、`git diff --check`、Makefile entrypoint/build contract 已通过；Helm 未执行（审计环境无 `helm`），Docker 构建和 Rust workspace 编译继续按本切片记录，不以环境缺失冒充通过。
 
@@ -428,3 +428,29 @@ profile 能力和管理端口边界：
   brew stub `Permission denied` 失败，未修改安装器。Rust CLI 构建会经过现有
   daemon 依赖图，当前本地基线仍有 `cordy-daemon` 7 个编译错误，已交 Volta 异步
   处理，不把它们伪报为 release 绿灯。
+
+## 16. AUDIT-001 执行更新：Desktop 内嵌 Rust CLI
+
+后续切片 `codex/cord-193-desktop-cli-rust` 收口 Desktop packaging 仍调用
+Go CLI 的生产边界，并沿用 `server-rs` 现有 `cordy-cli` 入口：
+
+- Go 能力：`apps/desktop/scripts/bundle-cli.mjs` 原来按 Desktop 目标设置
+  `GOOS/GOARCH`，从 `server/cmd/cordy` 构建并复制 `cordy`/`cordy.exe`；
+  现在由 Cargo 按目标 triple 构建同名 Rust CLI，再复制到既有
+  `resources/bin/` 位置，保持 Desktop daemon 启动契约不变。
+- Rust 入口：`server-rs -p cordy-cli`；macOS、Linux、Windows 的 x64/arm64
+  target 映射集中在 `bundle-cli.mjs`。Linux Desktop 使用 musl target，CI 提供
+  musl linker；Windows arm64 使用现有 MSVC cross compiler。
+- 生产路径状态：`.github/workflows/desktop-smoke.yml` 和 release workflow
+  按平台/架构分别准备 Rust target 并调用 `bundle-cli.mjs`；Desktop 内嵌 CLI
+  不再从 Go 源码构建。install/systemd、兼容产物和回滚演练仍待 AUDIT-001
+  后续切片。
+- Go 是否可下线：否。release verify 的 Go compatibility/vulnerability gate、
+  安装/回滚链路和最终全仓 Go 退休门槛仍存在。
+- 验证状态：`node --check`、`git diff --check`、两个 workflow YAML 解析和
+  目标映射纯逻辑检查已通过；目标映射测试文件已加入，但当前环境无
+  `pnpm`/Desktop 依赖，Vitest 未运行。针对 Desktop Linux musl target 的本地
+  Rust CLI 构建因本机未安装 `x86_64-unknown-linux-musl` target 在依赖编译前
+  失败；未模拟 GitHub runner 的 musl/MSVC 构建。默认 Rust CLI 构建的已登记
+  `cordy-daemon` 7 个基线编译错误仍不由本切片处理，不把它们伪报为 Desktop
+  绿灯。

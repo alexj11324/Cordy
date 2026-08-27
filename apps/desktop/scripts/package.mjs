@@ -6,7 +6,7 @@
 // matching CLI and Desktop versions.
 //
 // Builds the Electron bundles once, then for each requested target
-// (platform + arch) compiles the matching Go CLI into resources/bin/ and
+// (platform + arch) compiles the matching Rust CLI into resources/bin/ and
 // invokes electron-builder with `-c.extraMetadata.version=<derived>` so
 // the override applies at build time without mutating the tracked
 // package.json.

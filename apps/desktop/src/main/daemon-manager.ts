@@ -392,7 +392,7 @@ function findCliOnPath(): string | null {
  *
  * - Dev (`electron-vite dev`): `app.getAppPath()` → `apps/desktop`, resolving
  *   to `apps/desktop/resources/bin/cordy`. `bundle-cli.mjs` populates this
- *   before dev starts, so iterating on Go changes is "make build → restart".
+ *   before dev starts, so iterating on Rust changes is "cargo build → restart".
  * - Packaged: `app.getAppPath()` → `<Cordy.app>/Contents/Resources/app.asar`.
  *   electron-builder's `asarUnpack: resources/**` extracts the binary to
  *   `app.asar.unpacked/`, so we swap the path segment to execute it.
@@ -444,7 +444,7 @@ async function probeCliBinary(
  *   5. `cordy` on PATH (dev convenience / user-installed via brew).
  * Returns `null` only when all of the above fail.
  *
- * Bundled is preferred so Desktop iterates in lockstep with Go changes in
+ * Bundled is preferred so Desktop iterates in lockstep with Rust changes in
  * the same repo — avoids the 404 / stale-API problem when the Desktop's
  * TS side is ahead of the last published CLI release.
  *
@@ -642,7 +642,7 @@ async function mintPat(jwt: string): Promise<string> {
  *   path: without it, a previous user's PAT would be used by a new session.
  * - If the caller happens to pass a PAT directly, write it through.
  * - When we mint fresh and a daemon is already running, restart it so the
- *   new credentials take effect (the Go daemon reads config at startup).
+ *   new credentials take effect (the Rust daemon reads config at startup).
  */
 async function syncToken(
   tokenFromRenderer: string,
@@ -687,7 +687,7 @@ async function syncToken(
   await writeProfileUserId(active.name, userId);
 
   // If we just rotated credentials onto a running daemon, restart it so the
-  // in-memory token in the Go process matches the new config.
+  // in-memory token in the Rust process matches the new config.
   if (userChanged) {
     try {
       const existing = await fetchHealthAtPort(active.port);
