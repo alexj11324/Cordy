@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use futures_util::Future;
 use sha2::{Digest, Sha256};
@@ -26,7 +25,7 @@ use crate::activity::DaemonActivity;
 use crate::artifact_matcher::{
     safe_relative_path, ArtifactMatcher, MANAGED_ARTIFACT_PATTERN_PREFIX,
 };
-use crate::execenv::execenv::{read_gc_meta, GcMeta, GCMetaKind};
+use crate::execenv::execenv::{read_gc_meta, GCMetaKind, GcMeta};
 use crate::repocache::{CancelCause, Ctx};
 
 // ---------------------------------------------------------------------------
@@ -972,7 +971,7 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
         }
         match read_gc_meta(&task_dir) {
             Ok(meta)
-                if meta.kind.as_ref() == Some(&GcMetaKind::Issue)
+                if meta.kind.as_ref() == Some(&GCMetaKind::Issue)
                     && !meta.issue_id.trim().is_empty() =>
             {
                 issue_candidates.push(IssueGcCandidate { task_dir, meta });
@@ -1217,7 +1216,7 @@ fn apply_managed_artifact_fallback<H: GcHost>(
     }
     tracing::info!(
         dir = %task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-        kind = %meta.kind.as_ref().map(GcMetaKind::as_str).unwrap_or(""),
+        kind = %meta.kind.as_ref().map(GCMetaKind::as_str).unwrap_or(""),
         completed_at = %completed_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "gc: eligible for managed artifact cleanup"
     );
@@ -1255,16 +1254,16 @@ async fn should_clean_task_dir_for_kind<H: GcHost>(
     meta: &GcMeta,
 ) -> GcAction {
     match meta.kind.as_ref() {
-        Some(GcMetaKind::Issue) => gc_decision_issue(host, ctx, task_dir, meta).await,
-        Some(GcMetaKind::Chat) => gc_decision_chat(host, ctx, task_dir, meta).await,
-        Some(GcMetaKind::AutopilotRun) => {
+        Some(GCMetaKind::Issue) => gc_decision_issue(host, ctx, task_dir, meta).await,
+        Some(GCMetaKind::Chat) => gc_decision_chat(host, ctx, task_dir, meta).await,
+        Some(GCMetaKind::AutopilotRun) => {
             gc_decision_autopilot_run(host, ctx, task_dir, meta).await
         }
-        Some(GcMetaKind::QuickCreate) => gc_decision_quick_create(host, ctx, task_dir, meta).await,
+        Some(GCMetaKind::QuickCreate) => gc_decision_quick_create(host, ctx, task_dir, meta).await,
         // Unknown or absent kind: fall back to mtime-based
         // orphan cleanup so a future daemon writing a kind we don't recognize
         // doesn't get insta-wiped.
-        Some(GcMetaKind::Other(_)) | None => orphan_by_mtime(host, task_dir, "unknown kind"),
+        Some(GCMetaKind::Other(_)) | None => orphan_by_mtime(host, task_dir, "unknown kind"),
     }
 }
 
@@ -2544,8 +2543,18 @@ mod tests {
         assert_eq!(p("a/../.."), None);
     }
 
-    #[test]
-    fn unknown_local_directory_kind_is_never_fully_removed() {
+    #[tokio::test]
+    async fn unknown_local_directory_meta_cleans_only_managed_artifacts() {
+        let temp = tempfile::tempdir().unwrap();
+        let task_dir = temp.path().join("task");
+        std::fs::create_dir(&task_dir).unwrap();
+        std::fs::write(
+            task_dir.join(".gc_meta.json"),
+            r#"{"kind":"future_parent","local_directory":true}"#,
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+
         let host = DisabledGcHost {
             config: GcConfig {
                 profile: String::new(),
@@ -2554,8 +2563,8 @@ mod tests {
                 gc_interval: Duration::ZERO,
                 gc_ttl: Duration::ZERO,
                 gc_completed_task_ttl: Duration::ZERO,
-                gc_orphan_ttl: Duration::ZERO,
-                gc_artifact_ttl: Duration::ZERO,
+                gc_orphan_ttl: Duration::from_millis(1),
+                gc_artifact_ttl: Duration::from_secs(1),
                 gc_codex_session_ttl: Duration::ZERO,
                 gc_hermes_memory_ttl: Duration::ZERO,
                 gc_hermes_session_ttl: Duration::ZERO,
@@ -2565,15 +2574,10 @@ mod tests {
             },
             activity: DaemonActivity::new(),
         };
-        let meta = GcMeta {
-            kind: Some(GCMetaKind::Other("future_parent".to_string())),
-            local_directory: true,
-            ..GcMeta::default()
-        };
 
         assert_eq!(
-            apply_local_directory_gc_override(&host, &meta, GcAction::Clean),
-            GcAction::Skip
+            should_clean_task_dir(&host, &Ctx::new(), &task_dir).await,
+            GcAction::CleanManagedArtifacts
         );
     }
 
