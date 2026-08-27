@@ -20,9 +20,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
-};
+use crate::model::{Catalog, CatalogCache, Model, ModelThinking, ThinkingLevel};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::AgentLineReader;
@@ -83,9 +81,7 @@ impl PiBackend {
         } else {
             runtime_id
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return Catalog::default();
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -138,83 +134,104 @@ impl PiBackend {
         timeout: Duration,
     ) -> io::Result<Vec<Model>> {
         let rpc_timeout = timeout.min(PI_RPC_DISCOVERY_TIMEOUT);
-        let rpc = tokio::select! {
-            () = cancellation.cancelled() => return Err(io::Error::new(io::ErrorKind::Interrupted, "Pi model discovery cancelled")),
-            result = tokio::time::timeout(rpc_timeout, self.discover_pi_models_rpc()) => result.ok().and_then(Result::ok),
-        };
-        if let Some(models) = rpc.filter(|models| !models.is_empty()) {
-            return Ok(models);
-        }
+        let rpc = self
+            .discover_pi_models_rpc(cancellation.clone(), rpc_timeout)
+            .await;
         if cancellation.is_cancelled() {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "Pi model discovery cancelled",
             ));
         }
-        let table_timeout = timeout.min(PI_TABLE_DISCOVERY_TIMEOUT);
-        tokio::select! {
-            () = cancellation.cancelled() => Err(io::Error::new(io::ErrorKind::Interrupted, "Pi model discovery cancelled")),
-            result = tokio::time::timeout(table_timeout, self.discover_pi_models_table()) => {
-                result.unwrap_or_else(|_| Err(io::Error::new(io::ErrorKind::TimedOut, "Pi model table discovery timed out")))
-            }
+        if let Some(models) = rpc.ok().filter(|models| !models.is_empty()) {
+            return Ok(models);
         }
+        let table_timeout = timeout.min(PI_TABLE_DISCOVERY_TIMEOUT);
+        self.discover_pi_models_table(cancellation, table_timeout)
+            .await
     }
 
-    async fn discover_pi_models_rpc(&self) -> io::Result<Vec<Model>> {
+    async fn discover_pi_models_rpc(
+        &self,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> io::Result<Vec<Model>> {
         let mut command = self.discovery_command(&PI_DISCOVERY_RPC_PREFIX);
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-        let mut stdin = tree
-            .child_mut()
-            .stdin
-            .take()
-            .ok_or_else(|| io::Error::other("Pi RPC stdin pipe unavailable"))?;
-        let stdout = tree
-            .child_mut()
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("Pi RPC stdout pipe unavailable"))?;
+        let Some(mut stdin) = tree.child_mut().stdin.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(io::Error::other("Pi RPC stdin pipe unavailable"));
+        };
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(io::Error::other("Pi RPC stdout pipe unavailable"));
+        };
         for request in [
             serde_json::json!({"id":"cordy-state","type":"get_state"}),
             serde_json::json!({"id":"cordy-models","type":"get_available_models"}),
         ] {
-            write_json_line(&mut stdin, &request).await?;
+            if let Err(error) = write_json_line(&mut stdin, &request).await {
+                stop_process_tree(&mut tree).await;
+                return Err(error);
+            }
         }
 
         let mut reader = AgentLineReader::new(BufReader::new(stdout));
-        let mut raw_models = Vec::new();
-        let mut state = PiRpcState::default();
-        let mut models_done = false;
-        let mut state_done = false;
-        while let Some(line) = reader.next_line().await? {
-            let Ok(response) = serde_json::from_str::<PiRpcResponse>(line.trim()) else {
-                continue;
-            };
-            if response.response_type != "response" {
-                continue;
-            }
-            if response.id == "cordy-state" || response.command == "get_state" {
-                state_done = true;
-                if response.success {
-                    let _ = serde_json::from_value::<PiRpcState>(response.data)
-                        .map(|value| state = value);
+        let read_responses = async {
+            let mut raw_models = Vec::new();
+            let mut state = PiRpcState::default();
+            let mut models_done = false;
+            let mut state_done = false;
+            while let Some(line) = reader.next_line().await? {
+                let Ok(response) = serde_json::from_str::<PiRpcResponse>(line.trim()) else {
+                    continue;
+                };
+                if response.response_type != "response" {
+                    continue;
                 }
-            } else if response.id == "cordy-models" || response.command == "get_available_models" {
-                models_done = true;
-                if response.success {
-                    if let Ok(payload) = serde_json::from_value::<PiRpcModelsPayload>(response.data)
-                    {
-                        raw_models = payload.models;
+                if response.id == "cordy-state" || response.command == "get_state" {
+                    state_done = true;
+                    if response.success {
+                        let _ = serde_json::from_value::<PiRpcState>(response.data)
+                            .map(|value| state = value);
+                    }
+                } else if response.id == "cordy-models"
+                    || response.command == "get_available_models"
+                {
+                    models_done = true;
+                    if response.success {
+                        if let Ok(payload) =
+                            serde_json::from_value::<PiRpcModelsPayload>(response.data)
+                        {
+                            raw_models = payload.models;
+                        }
                     }
                 }
+                if models_done && state_done {
+                    break;
+                }
             }
-            if models_done && state_done {
-                break;
+            Ok::<_, io::Error>((raw_models, state, models_done, state_done))
+        };
+        let responses = {
+            tokio::pin!(read_responses);
+            tokio::select! {
+                () = cancellation.cancelled() => {
+                    stop_process_tree(&mut tree).await;
+                    return Err(io::Error::new(io::ErrorKind::Interrupted, "Pi model discovery cancelled"));
+                }
+                result = &mut read_responses => result,
+                () = tokio::time::sleep(timeout) => {
+                    stop_process_tree(&mut tree).await;
+                    return Err(io::Error::new(io::ErrorKind::TimedOut, "Pi RPC model discovery timed out"));
+                }
             }
-        }
+        }?;
+        let (raw_models, state, models_done, _state_done) = responses;
         // `ChildStdin::shutdown` is a no-op on Unix. Drop the pipe explicitly
         // so the RPC process observes EOF before we drain its stdout and wait.
         drop(stdin);
@@ -228,32 +245,52 @@ impl PiBackend {
         Ok(pi_models_from_rpc(raw_models, state))
     }
 
-    async fn discover_pi_models_table(&self) -> io::Result<Vec<Model>> {
+    async fn discover_pi_models_table(
+        &self,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> io::Result<Vec<Model>> {
         let mut command = self.discovery_command(&["--list-models"]);
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-        let stdout = tree
-            .child_mut()
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("Pi model stdout pipe unavailable"))?;
-        let stderr = tree
-            .child_mut()
-            .stderr
-            .take()
-            .ok_or_else(|| io::Error::other("Pi model stderr pipe unavailable"))?;
-        let stdout_task = tokio::spawn(read_all(stdout));
-        let stderr_task = tokio::spawn(read_all(stderr));
-        let status = tree.wait().await?;
-        let stdout = stdout_task
-            .await
-            .map_err(|error| io::Error::other(format!("Pi model stdout task: {error}")))??;
-        let stderr = stderr_task
-            .await
-            .map_err(|error| io::Error::other(format!("Pi model stderr task: {error}")))??;
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(io::Error::other("Pi model stdout pipe unavailable"));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(io::Error::other("Pi model stderr pipe unavailable"));
+        };
+        let mut stdout_task = tokio::spawn(read_all(stdout));
+        let mut stderr_task = tokio::spawn(read_all(stderr));
+        let completion = async {
+            let status = tree.wait().await?;
+            let stdout = (&mut stdout_task)
+                .await
+                .map_err(|error| io::Error::other(format!("Pi model stdout task: {error}")))??;
+            let stderr = (&mut stderr_task)
+                .await
+                .map_err(|error| io::Error::other(format!("Pi model stderr task: {error}")))??;
+            Ok::<_, io::Error>((status, stdout, stderr))
+        };
+        let outcome = {
+            tokio::pin!(completion);
+            tokio::select! {
+                result = &mut completion => Ok(result),
+                () = cancellation.cancelled() => Err(io::Error::new(io::ErrorKind::Interrupted, "Pi model discovery cancelled")),
+                () = tokio::time::sleep(timeout) => Err(io::Error::new(io::ErrorKind::TimedOut, "Pi model table discovery timed out")),
+            }
+        };
+        let (status, stdout, stderr) = match outcome {
+            Ok(result) => result?,
+            Err(error) => {
+                stop_process_tree(&mut tree).await;
+                return Err(error);
+            }
+        };
         let text = if stdout.iter().any(|byte| !byte.is_ascii_whitespace()) {
             String::from_utf8_lossy(&stdout).into_owned()
         } else {
@@ -277,15 +314,24 @@ impl PiBackend {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-        let stdout = tree
-            .child_mut()
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("OMP model stdout pipe unavailable"))?;
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(io::Error::other("OMP model stdout pipe unavailable"));
+        };
+        let mut read = tokio::spawn(read_all(stdout));
         let output = tokio::select! {
-            () = cancellation.cancelled() => return Err(io::Error::new(io::ErrorKind::Interrupted, "OMP model discovery cancelled")),
-            result = tokio::time::timeout(timeout, read_all(stdout)) => result
-                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "OMP model discovery timed out"))??,
+            () = cancellation.cancelled() => {
+                stop_process_tree(&mut tree).await;
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "OMP model discovery cancelled"));
+            }
+            result = tokio::time::timeout(timeout, &mut read) => match result {
+                Ok(result) => result
+                    .map_err(|error| io::Error::other(format!("OMP model stdout task: {error}")))??,
+                Err(_) => {
+                    stop_process_tree(&mut tree).await;
+                    return Err(io::Error::new(io::ErrorKind::TimedOut, "OMP model discovery timed out"));
+                }
+            },
         };
         let status = tree.wait().await?;
         if !status.success() || output.is_empty() {
@@ -334,8 +380,12 @@ impl Backend for PiBackend {
 
         let command_path = self.command_path().to_string();
         let prefix = filter_launch_prefix(&self.config.command.prefix, &pi_blocked_args());
-        let mut argv = prefix.args;
-        argv.extend(build_pi_args(&session_path.to_string_lossy(), &options));
+        let mut argv: Vec<std::ffi::OsString> = prefix
+            .args
+            .into_iter()
+            .map(std::ffi::OsString::from)
+            .collect();
+        argv.extend(build_pi_args_native(&session_path, &options));
         let mut command = Command::new(&command_path);
         command
             .args(argv)
@@ -428,12 +478,12 @@ impl Backend for PiBackend {
                     (PiRunEnd::Completed, completed.0, completed.1)
                 }
                 PiCompletionOutcome::Cancelled => {
-                    let _ = tree.shutdown(PI_TERMINATE_GRACE, PI_KILL_GRACE).await;
+                    stop_process_tree(&mut tree).await;
                     let stream = (&mut reader_task).await;
                     (PiRunEnd::Cancelled, Ok(success_exit_status()), stream)
                 }
                 PiCompletionOutcome::DeadlineExceeded => {
-                    let _ = tree.shutdown(PI_TERMINATE_GRACE, PI_KILL_GRACE).await;
+                    stop_process_tree(&mut tree).await;
                     let stream = (&mut reader_task).await;
                     (
                         PiRunEnd::DeadlineExceeded,
@@ -495,6 +545,43 @@ pub fn build_pi_args(session_path: &str, options: &ExecOptions) -> Vec<String> {
     }
     args.extend(filter_pi_custom_args(&options.custom_args));
     args
+}
+
+fn build_pi_args_native(session_path: &Path, options: &ExecOptions) -> Vec<std::ffi::OsString> {
+    let mut args = vec![
+        std::ffi::OsString::from("-p"),
+        std::ffi::OsString::from("--mode"),
+        std::ffi::OsString::from("json"),
+    ];
+    if !session_path.as_os_str().is_empty() {
+        args.push(std::ffi::OsString::from("--session"));
+        args.push(session_path.as_os_str().to_owned());
+    }
+    if !options.model.trim().is_empty() {
+        args.extend([
+            std::ffi::OsString::from("--model"),
+            std::ffi::OsString::from(options.model.trim()),
+        ]);
+    }
+    if !options.thinking_level.is_empty() {
+        args.extend([
+            std::ffi::OsString::from("--thinking"),
+            std::ffi::OsString::from(&options.thinking_level),
+        ]);
+    }
+    args.extend(
+        filter_pi_custom_args(&options.custom_args)
+            .into_iter()
+            .map(std::ffi::OsString::from),
+    );
+    args
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
 }
 
 fn pi_blocked_args() -> BTreeMap<&'static str, BlockedArgMode> {
@@ -920,6 +1007,16 @@ enum PiCompletionOutcome {
     Completed((io::Result<ExitStatus>, Result<PiStreamState, JoinError>)),
     Cancelled,
     DeadlineExceeded,
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tree.wait_tree_gone(PI_TERMINATE_GRACE).await {
+        return;
+    }
+    let _ = tree.kill();
+    let _ = tree.wait_tree_gone(PI_KILL_GRACE).await;
+    let _ = tree.wait().await;
 }
 
 fn join_failure_state(error: JoinError) -> PiStreamState {
