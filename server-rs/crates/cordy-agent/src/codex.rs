@@ -1677,20 +1677,24 @@ impl CodexTurnNotificationGate {
                     .to_string();
                 true
             }
-            "turn/completed" if self.started => self.accepts_turn(params),
-            "thread/status/changed" => !self.started || self.accepts_turn(params),
+            "turn/completed" if self.started => {
+                self.accepts_turn_id(nested_string(params, &["turn", "id"]))
+            }
+            "thread/status/changed" => {
+                !self.started || self.accepts_turn_id(params.get("turnId").and_then(Value::as_str))
+            }
             method if method.starts_with("item/") => {
-                !self.started || self.accepts_turn(params)
+                !self.started || self.accepts_turn_id(params.get("turnId").and_then(Value::as_str))
             }
             _ => true,
         }
     }
 
-    fn accepts_turn(&self, params: &Value) -> bool {
+    fn accepts_turn_id(&self, turn_id: Option<&str>) -> bool {
         self.turn_id.is_empty()
-            || nested_string(params, &["turnId"])
-                .or_else(|| nested_string(params, &["turn", "id"]))
-                .map_or(true, |turn_id| turn_id.is_empty() || turn_id == self.turn_id)
+            || turn_id.map_or(true, |turn_id| {
+                turn_id.is_empty() || turn_id == self.turn_id
+            })
     }
 }
 
@@ -2271,6 +2275,13 @@ mod tests {
             "item/completed",
             &serde_json::json!({"turnId":"old-turn","item":{"id":"item-old"}}),
         ));
+        // Match Go's permissive compatibility path: item/status notifications
+        // without the top-level turnId remain accepted, even if an unrelated
+        // nested shape happens to contain a turn id.
+        assert!(gate.accept(
+            "item/started",
+            &serde_json::json!({"turn":{"id":"old-turn"},"item":{"id":"item-untagged"}}),
+        ));
         assert!(gate.accept("error", &serde_json::json!({"message":"terminal"})));
     }
 
@@ -2286,6 +2297,38 @@ mod tests {
             "codex/event",
             &serde_json::json!({"msg":{"type":"agent_message"}}),
         ));
+    }
+
+    #[test]
+    fn foreign_thread_is_filtered_before_gate_state_changes() {
+        let (client_io, _agent_io) = tokio::io::duplex(1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (message_tx, _message_rx) = mpsc::channel(1);
+        let mut client = CodexClient::new(BufReader::new(client_read), client_write, message_tx);
+        client.notification_gate.arm();
+        client.state.thread_id = "thread-main".to_string();
+
+        client.handle_notification(
+            "turn/started",
+            Some(&serde_json::json!({
+                "threadId":"thread-child",
+                "turn":{"id":"turn-child"}
+            })),
+        );
+        assert!(!client.notification_gate.started);
+        assert!(client.notification_gate.turn_id.is_empty());
+        assert!(!client.state.turn_started);
+
+        client.handle_notification(
+            "turn/started",
+            Some(&serde_json::json!({
+                "threadId":"thread-main",
+                "turn":{"id":"turn-main"}
+            })),
+        );
+        assert!(client.notification_gate.started);
+        assert_eq!(client.notification_gate.turn_id, "turn-main");
+        assert!(client.state.turn_started);
     }
 
     #[test]
@@ -2594,6 +2637,7 @@ mod tests {
         let (messages, mut received) = (mpsc::channel(8), Vec::new());
         let (message_tx, mut message_rx) = messages;
         let mut client = CodexClient::new(BufReader::new(client_read), client_write, message_tx);
+        client.notification_gate.arm();
         let result = client
             .request("initialize", serde_json::json!({}), Duration::from_secs(1))
             .await
