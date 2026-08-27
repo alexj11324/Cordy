@@ -332,7 +332,7 @@ go-build: ## Build the legacy Go server, CLI, and migrate binaries into server/b
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/cordy$(EXE) ./cmd/cordy
 	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
 
-test: rust-test ## Run Rust workspace tests after ensuring the target DB exists and migrations are applied
+test: rust-test go-test ## Run Rust workspace and Go compatibility tests after ensuring the target DB exists and migrations are applied
 
 rust-test: ## Run Rust workspace tests after ensuring the target DB exists and migrations are applied
 	$(REQUIRE_ENV)

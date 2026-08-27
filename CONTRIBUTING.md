@@ -284,6 +284,7 @@ make stop
 make check
 make dev
 make test
+make rust-test
 make go-test
 make migrate-up
 make migrate-down
@@ -301,6 +302,7 @@ The following commands all ensure the target database exists before they continu
 - `make start`
 - `make dev`
 - `make test`
+- `make rust-test`
 - `make go-test`
 - `make migrate-up`
 - `make migrate-down`
@@ -310,8 +312,9 @@ That logic lives in `scripts/ensure-postgres.sh`.
 
 ## Testing
 
-`make test` runs the Rust workspace suite. Use `make go-test` for the explicit
-Go compatibility suite; `make check` runs both as part of full verification.
+`make test` runs both the Rust workspace and Go compatibility suites. Use
+`make rust-test` for Rust-only iteration or `make go-test` for the explicit Go
+compatibility suite; `make check` also runs both as part of full verification.
 
 Run all local checks:
 

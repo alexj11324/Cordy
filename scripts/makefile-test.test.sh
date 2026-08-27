@@ -3,12 +3,12 @@ set -eu
 
 rust_output=$(make -n test)
 if ! grep -Fq -- "cd server-rs && cargo test --workspace --all-targets --locked" <<<"$rust_output"; then
-  echo "make test must resolve to the Rust workspace test command:" >&2
+  echo "make test must include the Rust workspace test command:" >&2
   echo "$rust_output" >&2
   exit 1
 fi
-if grep -Fq -- "scripts/test-go.sh" <<<"$rust_output"; then
-  echo "make test unexpectedly resolved to the legacy Go test wrapper:" >&2
+if ! grep -Fq -- "bash scripts/test-go.sh --race" <<<"$rust_output"; then
+  echo "make test must retain the Go compatibility test wrapper:" >&2
   echo "$rust_output" >&2
   exit 1
 fi
@@ -20,4 +20,4 @@ if ! grep -Fq -- "bash scripts/test-go.sh --race" <<<"$go_output"; then
   exit 1
 fi
 
-echo "✓ make test uses Rust; go-test retains explicit Go compatibility coverage"
+echo "✓ make test runs Rust and Go compatibility coverage; go-test remains explicit"

@@ -236,7 +236,8 @@ Useful checks:
 ```bash
 pnpm typecheck
 pnpm test
-make test             # Rust workspace tests
+make test             # Rust workspace and Go compatibility tests
+make rust-test        # Rust workspace tests only
 make go-test          # Go compatibility tests
 pnpm exec playwright test
 make check

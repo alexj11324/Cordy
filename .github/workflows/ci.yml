@@ -469,6 +469,7 @@ jobs:
         run: |
           bash scripts/helm-config.test.sh
           bash scripts/makefile-build.test.sh
+          bash scripts/makefile-test.test.sh
           bash scripts/test-go.test.sh
 
       - name: Build deployed Rust server

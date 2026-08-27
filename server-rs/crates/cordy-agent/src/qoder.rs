@@ -5426,9 +5426,28 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Dim requests: {error}"));
         assert_eq!(requests.matches("session/load").count(), 2);
-        assert!(requests.contains(r#""configId":"permission","value":"full-access""#));
-        assert!(requests.contains(r#""configId":"mode","value":"agent""#));
-        assert!(requests.contains(r#""configId":"thought_level","value":"high""#));
+        let has_config = |config_id: &str, value: &str| {
+            requests
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .any(|request| {
+                    request.get("method").and_then(|method| method.as_str())
+                        == Some("session/set_config_option")
+                        && request
+                            .get("params")
+                            .and_then(|params| params.get("configId"))
+                            .and_then(|config| config.as_str())
+                            == Some(config_id)
+                        && request
+                            .get("params")
+                            .and_then(|params| params.get("value"))
+                            .and_then(|value| value.as_str())
+                            == Some(value)
+                })
+        };
+        assert!(has_config("permission", "full-access"));
+        assert!(has_config("mode", "agent"));
+        assert!(has_config("thought_level", "high"));
         assert!(requests.contains("session/close"));
     }
 
