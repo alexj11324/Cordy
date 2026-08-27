@@ -11,6 +11,7 @@ pub mod antigravity;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod codex;
+pub(crate) mod codex_usage;
 pub mod command;
 pub mod contract;
 pub mod cursor;

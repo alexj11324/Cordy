@@ -11,7 +11,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use serde_json::{Map, Value};
@@ -20,6 +20,7 @@ use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
+use crate::codex_usage::scan_codex_session_usage;
 use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
@@ -480,7 +481,11 @@ impl Backend for CodexBackend {
         let (result_tx, result_rx) = oneshot::channel();
         let timeout = options.timeout;
         let cancellation = options.cancellation.clone();
+        let configured_model = options.model.clone();
+        let codex_home = self.config.env.get("CODEX_HOME").cloned();
+        let resumed = !options.resume_session_id.is_empty();
         let started = Instant::now();
+        let started_at = SystemTime::now();
         let prompt = prompt.to_string();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
         let stderr_reader_tail = stderr_tail.clone();
@@ -497,7 +502,11 @@ impl Backend for CodexBackend {
                 result_tx,
                 cancellation,
                 timeout,
+                configured_model,
+                codex_home,
+                resumed,
                 started,
+                started_at,
                 stderr_tail,
                 stderr_reader_tail,
             )
@@ -522,7 +531,11 @@ async fn run_codex(
     result_tx: oneshot::Sender<ExecutionResult>,
     cancellation: CancellationToken,
     timeout: Duration,
+    configured_model: String,
+    codex_home: Option<String>,
+    resumed: bool,
     started: Instant,
+    started_at: SystemTime,
     stderr_tail: SharedDiagnosticBuffer,
     stderr_reader_tail: SharedDiagnosticBuffer,
 ) {
@@ -571,6 +584,25 @@ async fn run_codex(
         stderr_task.abort();
     }
     let stderr = stderr_tail.tail();
+    if !has_usage(&result.usage) && !result.session_id.is_empty() {
+        if let Some(scanned) = scan_codex_session_usage(
+            codex_home.as_deref(),
+            &result.session_id,
+            started_at,
+            resumed,
+        ) {
+            let model = if configured_model.is_empty() {
+                if scanned.model.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    scanned.model
+                }
+            } else {
+                configured_model
+            };
+            result.usage.insert(model, scanned.usage);
+        }
+    }
     if !result.error.is_empty() {
         result.error = with_stderr(&result.error, "codex", &stderr);
     }
@@ -1400,6 +1432,12 @@ fn usage_map(state: &CodexState, model: &str) -> BTreeMap<String, TokenUsage> {
     } else {
         BTreeMap::from([(model.to_string(), state.usage)])
     }
+}
+
+fn has_usage(usage: &BTreeMap<String, TokenUsage>) -> bool {
+    usage
+        .values()
+        .any(|value| value.input_tokens != 0 || value.output_tokens != 0)
 }
 
 fn number(object: &Map<String, Value>, keys: &[&str]) -> i64 {
