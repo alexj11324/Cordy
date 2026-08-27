@@ -1,8 +1,8 @@
 # Go→Rust 全量迁移：独立基线审计与执行 TODO
 
 > 审计快照：2026-08-27 UTC
-> 审计基线：0f92fb042ffc742b8dcf8af91cea3d97716c05a4
-> 审计分支：codex/cord-187-go-rust-migration-audit-v2
+> 审计基线：8a69d591fcd1c2948287bfef997f074f9588b8c6
+> 审计分支：codex/cord-187-go-rust-migration-audit-v3
 > 范围：server/、server-rs/、默认运行/构建/发布/部署链路
 
 这是一份独立的全局基线，不是按“完成一块再查一块”生成的局部记录。后续迁移只能从本清单选择切片；完成切片后更新对应证据和状态，再选择下一块。它取代 tasks/go-to-rust-migration.md 中互相矛盾的当前状态判断；旧文件保留为历史执行记录。
@@ -68,7 +68,7 @@ review/fix 派发后不等待、不轮询，也不把其结果作为下一块迁
 | Go cmd | 53 | 26,311 行；server 14、cordy 35、migrate 1、backfill 3 |
 | Go internal | 439 | 176,572 行 |
 | Go pkg | 146 | 73,821 行 |
-| Rust crates/src | 527 | 330,127 行，包含 inline tests |
+| Rust crates/src | 527 | 330,264 行，包含 inline tests |
 | Rust 外部 integration tests | 5 | 不含 inline tests |
 
 Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
@@ -186,7 +186,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 - pprof：Go internal/profiling 在 127.0.0.1:6060 提供 /debug/pprof/；Rust server 未发现等价 listener。必须迁移或明确替代并更新运维文档。
 - logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 行为需要与 Rust tracing 对账；Rust 当前证据主要是 RUST_LOG/tracing subscriber。
-- Squad avatar：Rust squad.rs 的 SquadResponse 直接返回 raw avatar_url，并注明 HandlerState 尚未携带 Go object-store signer；Go squadToResponse 会调用 resolveAvatarURLPtr。必须补完整的私有对象 URL/签名契约或证明当前存储策略等价。
+- Squad avatar：Rust squad.rs 的 SquadResponse 仍直接返回 raw avatar_url，未调用现有 avatar::resolve_url；HandlerState 已有 attachment_storage，但 squad 生产路径尚未接入完整的 Go resolveAvatarURLPtr/私有对象签名语义。必须补完整的私有对象 URL/签名契约或证明当前存储策略等价。
 - agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust handler 有 inline 1..50，但 daemon config 有独立默认值。必须确认这是两个不同边界还是迁移遗漏，形成单一 contract 证据。
 - 退出证据：每个 leaf 明确为“Rust 迁移并接线”“已由现有模块吸收”或“仍需迁移”，并有对应测试/生产路径。
 - owner：主 agent 负责真正迁移；Volta 负责 review/fix。
@@ -262,7 +262,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | source inventory | 通过 | Go 1,445/807 tests/638 non-test；Rust 527 source + 5 external test files |
 | route parity | 通过 | 424 contract、424 Rust、missing 0、extra 0 |
 | cargo fmt --all -- --check | 未通过 | 基线 Rust 多文件已有 rustfmt diff；审计分支未修改实现 |
-| cargo test --workspace --all-targets --locked | 未通过 | cordy-daemon hermes.rs/openclaw.rs 有 7 个编译错误；交给异步 fix 队列 |
+| cargo test --workspace --all-targets --locked | 未通过 | cordy-daemon hermes.rs/openclaw.rs 有 7 个编译错误；该基线修复另见独立 PR #522，未并入本审计分支 |
 | go build ./... | 未执行 | 审计环境 shell 没有 go 命令（zsh: command not found: go），不是把它误报为通过 |
 | old migration doc reconciliation | 完成 | 旧 S7/S8/S9/S10 checkbox 与当前 Rust source/route/assembly 不完全一致，已降级为历史记录 |
 
@@ -290,6 +290,6 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 生产路径是否已切换：否；审计证明默认 Makefile/Docker/release 仍是 Go，切换列为 AUDIT-001。
 - Go 代码是否可以下线：否。
 - 当前验证：route parity 通过；Rust fmt/test 有基线失败；Go build 因环境无 go 未执行，详见第 8 节。
-- 异步 subagent：Volta 继续处理既有 PR #518/#519/#520 的 review/fix；其结果不阻断本审计文档或后续迁移。
+- 异步 subagent：#518/#519/#520 的 review/fix 独立处理且不阻断本审计文档或后续迁移；#520 已完成 review/fix（提交 26342027、8a69d591）。daemon execenv 基线编译修复另见独立 PR #522，未并入本审计分支。
 
 结束条件仍是：全项目完成 Go→Rust、默认生产路径和发布链路切换、生产验证通过，并删除全部 Go 源文件；在此之前不得结束 goal。
