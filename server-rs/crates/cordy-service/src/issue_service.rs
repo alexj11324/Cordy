@@ -1164,6 +1164,35 @@ mod tests {
             .expect("delete workspace");
     }
 
+    async fn wait_for_duplicate_lock(pool: &PgPool, workspace_id: Uuid, title: &str) {
+        let key = format!(
+            "issue-active-duplicate|{workspace_id}|||{}",
+            crate::issue_guard::normalize_title(title)
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let acquired: bool = sqlx::query_scalar(
+                    "SELECT pg_try_advisory_lock(hashtextextended($1::text, 0))",
+                )
+                .bind(&key)
+                .fetch_one(pool)
+                .await
+                .expect("probe duplicate lock");
+                if !acquired {
+                    return;
+                }
+                sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))")
+                    .bind(&key)
+                    .execute(pool)
+                    .await
+                    .expect("release duplicate lock probe");
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("production create did not acquire the duplicate lock");
+    }
+
     #[tokio::test]
     async fn production_create_enforces_duplicate_identity_and_column_top_order() {
         let pool = required_pool().await;
@@ -1282,27 +1311,19 @@ mod tests {
         create(&service, project_issue)
             .await
             .expect("project-scoped issue");
-        create(
-            &service,
-            params(workspace_id, "Scoped identity", "todo"),
-        )
-        .await
-        .expect("root and project identities are independent");
+        create(&service, params(workspace_id, "Scoped identity", "todo"))
+            .await
+            .expect("root and project identities are independent");
 
         let parent = create(&service, params(workspace_id, "Parent", "todo"))
             .await
             .expect("parent issue");
         let mut child = params(workspace_id, "Child identity", "todo");
         child.parent_issue_id = Some(parent.id);
-        create(&service, child)
+        create(&service, child).await.expect("parent-scoped issue");
+        create(&service, params(workspace_id, "Child identity", "todo"))
             .await
-            .expect("parent-scoped issue");
-        create(
-            &service,
-            params(workspace_id, "Child identity", "todo"),
-        )
-        .await
-        .expect("root and child identities are independent");
+            .expect("root and child identities are independent");
 
         let other_workspace = workspace(&pool).await;
         create(
@@ -1342,7 +1363,7 @@ mod tests {
             )
             .await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        wait_for_duplicate_lock(&pool, workspace_id, "Concurrent identity").await;
         let second_service = service.clone();
         let second = tokio::spawn(async move {
             create(
@@ -1351,10 +1372,12 @@ mod tests {
             )
             .await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         blocker.commit().await.expect("release workspace counter");
 
-        let results = [first.await.expect("first task"), second.await.expect("second task")];
+        let results = [
+            first.await.expect("first task"),
+            second.await.expect("second task"),
+        ];
         assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
         assert_eq!(
             results
@@ -1431,7 +1454,11 @@ mod tests {
         for (autopilot, title, window) in [
             (None, "recurring work", chrono::Duration::hours(1)),
             (Some(autopilot_id), "   ", chrono::Duration::hours(1)),
-            (Some(autopilot_id), "recurring work", chrono::Duration::zero()),
+            (
+                Some(autopilot_id),
+                "recurring work",
+                chrono::Duration::zero(),
+            ),
         ] {
             let mut tx = pool.begin().await.expect("no-op transaction");
             let (_, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(

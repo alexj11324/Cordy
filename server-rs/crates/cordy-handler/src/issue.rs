@@ -5913,11 +5913,21 @@ async fn create_issue(
         }
         Err(IssueCreateError::ActiveDuplicate { duplicate }) => {
             let duplicate = duplicate.map(|issue| IssueResponse::from_issue(&issue, &prefix));
+            let message = duplicate.as_ref().map_or_else(
+                || "Active duplicate issue exists".to_string(),
+                |issue| {
+                    cordy_service::issue_guard::duplicate_message(
+                        &issue.identifier,
+                        &issue.title,
+                        &issue.status,
+                    )
+                },
+            );
             (
                 StatusCode::CONFLICT,
                 Json(json!({
                     "code": "active_duplicate_issue",
-                    "error": "an active duplicate issue already exists",
+                    "error": message,
                     "issue": duplicate,
                 })),
             )
@@ -7106,10 +7116,7 @@ mod tests {
             .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
             .layer(Extension(context));
 
-        async fn post(
-            app: &Router,
-            body: Value,
-        ) -> (StatusCode, Value) {
+        async fn post(app: &Router, body: Value) -> (StatusCode, Value) {
             let response = app
                 .clone()
                 .oneshot(
@@ -7140,14 +7147,19 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(first["position"], -1.0);
 
-        let (status, duplicate) = post(
-            &app,
-            json!({"title": "http duplicate", "status": "todo"}),
-        )
-        .await;
+        let (status, duplicate) =
+            post(&app, json!({"title": "http duplicate", "status": "todo"})).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(duplicate["code"], "active_duplicate_issue");
-        assert_eq!(duplicate["error"], "an active duplicate issue already exists");
+        assert_eq!(
+            duplicate["error"],
+            format!(
+                "Active duplicate issue exists: {} {} (status: {}). Set allow_duplicate=true or use --allow-duplicate to create another.",
+                first["identifier"].as_str().expect("identifier"),
+                first["title"].as_str().expect("title"),
+                first["status"].as_str().expect("status")
+            )
+        );
         assert_eq!(duplicate["issue"]["id"], first["id"]);
 
         let (status, allowed) = post(

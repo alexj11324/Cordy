@@ -1965,6 +1965,22 @@ resolver error 阻断并 exit 101；四个 filter matched/executed/ignored 均 `
 workspace middleware；fixture 只在 happy path cleanup，panic/timeout 会污染共享 DB。reviewer 确认 required-DB fail
 方向、唯一普通/autopilot production caller、无 Stub/Noop/Fake/alternate allocator，且两既有文件/无新依赖方向合理，
 但约 500 行证据仍不足以支持完整下线。全部 finding 已交独立 fixer，PR 保持 Ready。
+
+independent fixer 传播 #560..#565 的 verified Cargo/resolver/API 修复后，最小修复本切片可直接证伪的 finding：
+
+- HTTP duplicate 409 现在复用既有 `issue_guard::duplicate_message`，wire error 精确包含 blocking issue 的
+  identifier/title/status 及 `allow_duplicate=true`/`--allow-duplicate` remediation；DB-backed route assertion 不再
+  锁定错误的泛化文案。
+- advisory concurrency 不再用固定 sleep 猜测第一个 create 的执行位置。workspace row 仍确定性暂停真实
+  `IssueService::create`，独立连接用 `pg_try_advisory_lock` 观察 production duplicate key 已被持有后才启动第二个
+  create；释放后仍要求恰好一个成功、一个 typed duplicate。allow-duplicate lock 与 autopilot recent guard 仍只有
+  helper/static caller evidence；production auth/workspace middleware、真实 autopilot dispatch/position、panic-safe
+  DB cleanup 也未新增直接证据，因此对应完整矩阵/Go 下线声明明确保持未满足，而不继续堆弱 helper cases。
+- fixer verification：historical rustfmt exit 1、resolver exit 101/0 tests 与无 DB 环境记录保留；传播后
+  `cargo check --locked --offline -p cordy-handler -p cordy-service --tests` PASS，fixed-stable touched-file rustfmt 与
+  `git diff --check` PASS。当前仍无 `DATABASE_URL`，DB-backed duplicate/concurrency/HTTP/autopilot tests 未运行通过；
+  只运行可离线 duplicate message unit contract 1/1 PASS（171 filtered），真实 DB/production middleware smoke 仍是
+  明确 blocker。
 independent fixer 传播 #560..#564 已验证的 Cargo/resolver 修复后，按最小根因收口本切片：
 
 - `issue_status::resolve` 现在以 typed error 区分 unknown/archived 与 storage failure；真实 issue create、single update、
