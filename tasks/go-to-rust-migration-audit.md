@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门和 self-host exact-image rollback 已切到 Rust；当前切片接通 systemd 生命周期 | 用既有 installer/Compose 建立 opt-in Linux user-systemd start/stop/boot ownership，不新增第二部署器；随后完成真实启动/回滚演练 | release/installer gate 已交付，systemd 可独立接线；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551/#552/当前切片；详见 §11、§15、§16、§38..§40 | 主 agent；独立 V/R/F subagent |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback 与 opt-in systemd 生命周期已切到 Rust | 异步收口 #551..#553 V/R/F；主线继续真实启动/升级/回滚演练 | release/installer/systemd gate 已交付，最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551/#552/#553；详见 §11、§15、§16、§38..§40 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
@@ -1198,3 +1198,20 @@ implementation commit `593cbc0d`）已把 Unix/Windows installer、Git ref check
   installer exact-ref 路径完成，unit 不复制 image-selection 逻辑。
 - 本切片只改 Unix installer、现有 installer check 与 self-host runbook；unit 在安装时生成，
   不新增含占位符的模板、systemd crate、root daemon 或第二个 deployment script。
+
+Ready PR #553（`codex/cord-217-selfhost-systemd-rust-lifecycle`，gap commit `fe374402`，
+implementation commit `056bee27`）已把 explicit installer flag、user unit generation、Compose
+config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollback 串成单一生命周期。
+
+- 默认生产路径：systemd 是 Linux self-host 的显式 opt-in；unit 使用安装器解析出的 exact
+  working directory/Docker executable，并执行同一 `.env`/Compose/Rust backend image，不存在
+  第二份配置选择。
+- fail-closed：非 Linux、缺 systemctl/loginctl、无 user manager、linger/reload/enable/start 任一
+  失败都会显式退出；unit 用 `ExecStartPre ... compose config --quiet` 拒绝非法配置。
+- shutdown：`--stop` 先 disable/stop unit，再保留 Compose down，避免容器在 reboot 后复活，
+  同时覆盖 unit stop 失败的现有 fallback。
+- Go 是否可下线：此 systemd 路径不依赖 Go，但真实 host boot/logout/start/stop/rollback smoke、
+  #552 fix、普通 CI compatibility 和最终 AUDIT-001..010 门仍未完成。
+- 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
+  通过 `git diff --check`；未把 shell、systemd、Docker 或生命周期行为记为通过。PR 明确堆叠
+  在 Ready PR #552。
