@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust | 收口 install/systemd、兼容产物、启动与回滚演练 | 入口切换已可交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/当前切片；详见 §11、§15、§16 | 主 agent；独立 V/R/F subagent |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust；当前切片切换 tag release 验证门 | 删除 release workflow 对 Go tests/toolchain/govulncheck 的依赖，改由 Rust workspace、migration、production bins 与 RustSec fail-closed gate 验证；随后收口 install/systemd、启动与回滚演练 | 入口切换已可交付；当前 release gate 可独立切换，最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/当前切片；详见 §11、§15、§16、§38 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
@@ -1110,3 +1110,19 @@ auto-update module allow 与 “CLI crate 尚未落地”说明已删除。
   no-run 都被继承自 #544 的 7 处 `GcMetaKind` E0433 阻断，测试体实际执行数均为 0，不能记录
   为通过；verifier 静态确认 heartbeat 与 periodic update owner 共享同一个
   `Arc<DaemonCoreHost>`。格式、基线传播及 reviewer finding 已合并交给独立 fixer。
+
+## 38. AUDIT-001 执行缺口：tag release verification Go dependency cutover
+
+当前切片选择 `AUDIT-001` 已列出的 release 完整生产链，而不是单独修改一条 CI 命令：
+
+- release asset matrix、Homebrew 包和 backend image 已产出 Rust binary，但 tag workflow 的
+  publish 前置 `verify` job 仍安装 Go、运行 Go compatibility tests 和 `govulncheck`；因此即使
+  Rust 资产能够构建，缺少 Go toolchain 或 Go 测试失败仍会阻止发布，仓库尚不能声称 release
+  链已切到 Rust。
+- 现有普通 CI 已有 Rust workspace quality/tests、Rust migration runner、production image 和
+  `rustsec/audit-check`，但 tag 是独立发布触发器，不能依赖某个未被 workflow 明确绑定的历史
+  branch check 代替发布时验证。
+- 本切片将同一个 publish gate 一次切换为：Postgres service、Rust stable/cache、真实
+  `cordy-migrate up`、workspace all-target tests、server/CLI/migrate/三个 backfill production
+  binary build，以及保持 tag-scoped emergency override 的 RustSec fail-closed audit；同步修改
+  release runbook。复用现有 action 和命令，不新增脚本、依赖或并行验证框架。
