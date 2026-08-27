@@ -532,6 +532,232 @@ impl<S: DaemonCoreServices> GcHost for DaemonCoreHost<S> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::runtime_set::RuntimeSet;
+    use crate::types::TaskResult;
+
+    #[derive(Default)]
+    struct RecordingServices {
+        heartbeat_calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl DaemonCoreServices for RecordingServices {
+        async fn handle_runtime_gone(
+            &self,
+            _ctx: Ctx,
+            _registry: Arc<RuntimeRegistry>,
+            _runtime_id: String,
+        ) {
+        }
+
+        async fn refresh_workspace_runtime_profiles(
+            &self,
+            _ctx: Ctx,
+            _registry: Arc<RuntimeRegistry>,
+            _activity: Arc<DaemonActivity>,
+            _payload: RuntimeProfilesChangedPayload,
+        ) {
+        }
+
+        async fn handle_non_update_heartbeat_actions(
+            &self,
+            _ctx: Ctx,
+            _registry: Arc<RuntimeRegistry>,
+            _runtime_id: String,
+            _ack: DaemonHeartbeatAckPayload,
+        ) {
+            self.heartbeat_calls.fetch_add(1, Ordering::SeqCst);
+        }
+
+        async fn run_task(
+            &self,
+            _ctx: Ctx,
+            _task: Task,
+            _target: RuntimeExecutionTarget,
+            _slot: usize,
+            _activity: Arc<DaemonActivity>,
+        ) -> TaskRunOutcome {
+            TaskRunOutcome {
+                result: TaskResult::default(),
+                failure: None,
+            }
+        }
+
+        fn repo_bare_path_is_live(&self, _bare_path: &Path) -> bool {
+            false
+        }
+    }
+
+    fn update_ack(id: &str, target: &str) -> DaemonHeartbeatAckPayload {
+        serde_json::from_value(json!({
+            "runtime_id": "runtime-1",
+            "status": "ok",
+            "pending_update": {"id": id, "target_version": target}
+        }))
+        .unwrap()
+    }
+
+    fn host(
+        server_base_url: &str,
+        launched_by: &str,
+        root: &Path,
+        services: Arc<RecordingServices>,
+        activity: Arc<DaemonActivity>,
+        root_ctx: Ctx,
+    ) -> DaemonCoreHost<RecordingServices> {
+        let config = Arc::new(Config {
+            server_base_url: server_base_url.to_string(),
+            launched_by: launched_by.to_string(),
+            workspaces_root: root.to_string_lossy().into_owned(),
+            ..Config::default()
+        });
+        DaemonCoreHost::new(DaemonCoreDependencies {
+            client: Arc::new(Client::new(server_base_url)),
+            repo_cache: Arc::new(Cache::new(root.join("repos"))),
+            registry: Arc::new(RuntimeRegistry::new(Arc::new(RuntimeSet::new()))),
+            update_executor: Arc::new(UpdateExecutor::direct_for_test(root.join("cordy"))),
+            config,
+            services,
+            activity,
+            root_ctx,
+        })
+    }
+
+    #[tokio::test]
+    async fn production_heartbeat_update_reports_and_restores_machine_barriers() {
+        let reports = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
+        let app = {
+            let reports = Arc::clone(&reports);
+            axum::Router::new().fallback(axum::routing::any(
+                move |request: axum::extract::Request| {
+                    let reports = Arc::clone(&reports);
+                    async move {
+                        let path = request.uri().path().to_string();
+                        let body = axum::body::to_bytes(request.into_body(), 1 << 20)
+                            .await
+                            .unwrap();
+                        reports
+                            .lock()
+                            .unwrap()
+                            .push((path, serde_json::from_slice(&body).unwrap()));
+                        axum::http::StatusCode::NO_CONTENT
+                    }
+                },
+            ))
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server_stop = tokio_util::sync::CancellationToken::new();
+        let stop = server_stop.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(stop.cancelled_owned())
+                .await
+                .unwrap();
+        });
+        let base_url = format!("http://{address}");
+        let temp = tempfile::tempdir().unwrap();
+        let services = Arc::new(RecordingServices::default());
+
+        let desktop_activity = DaemonActivity::new();
+        let desktop_root = Ctx::new();
+        let desktop = host(
+            &base_url,
+            "desktop",
+            temp.path(),
+            Arc::clone(&services),
+            Arc::clone(&desktop_activity),
+            desktop_root.clone(),
+        );
+        desktop
+            .handle_heartbeat_actions(
+                desktop_root.clone(),
+                "runtime-1".to_string(),
+                update_ack("desktop", "v1.2.3"),
+            )
+            .await;
+        assert!(!desktop_activity.claims_paused());
+        assert!(desktop.scheduled_restart_binary().is_empty());
+
+        let busy_activity = DaemonActivity::new();
+        let claim = busy_activity.try_enter_claim().unwrap();
+        let active_tasks = claim.handoff(vec![Vec::new()]).await;
+        let busy_root = Ctx::new();
+        let busy = host(
+            &base_url,
+            "",
+            temp.path(),
+            Arc::clone(&services),
+            Arc::clone(&busy_activity),
+            busy_root.clone(),
+        );
+        busy.handle_heartbeat_actions(
+            busy_root.clone(),
+            "runtime-1".to_string(),
+            update_ack("busy", "v1.2.3"),
+        )
+        .await;
+        assert!(!busy_activity.claims_paused());
+        assert!(!busy.updating.load(Ordering::Acquire));
+        drop(active_tasks);
+
+        let invalid_activity = DaemonActivity::new();
+        let invalid_root = Ctx::new();
+        let invalid = host(
+            &base_url,
+            "",
+            temp.path(),
+            Arc::clone(&services),
+            Arc::clone(&invalid_activity),
+            invalid_root.clone(),
+        );
+        invalid
+            .handle_heartbeat_actions(
+                invalid_root.clone(),
+                "runtime-1".to_string(),
+                update_ack("invalid", "not-a-version"),
+            )
+            .await;
+        assert!(!invalid_activity.claims_paused());
+        assert!(!invalid.updating.load(Ordering::Acquire));
+        assert!(invalid_root.err().is_none());
+
+        let reports = reports.lock().unwrap();
+        let payloads = |id: &str| {
+            reports
+                .iter()
+                .filter(|(path, _)| path.ends_with(&format!("/update/{id}/result")))
+                .map(|(_, payload)| payload.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(payloads("desktop")[0]["status"], "failed");
+        assert_eq!(payloads("busy")[0]["status"], "failed");
+        let invalid_payloads = payloads("invalid");
+        assert_eq!(invalid_payloads[0]["status"], "running");
+        assert_eq!(invalid_payloads[1]["status"], "failed");
+        assert!(invalid_payloads[1]["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid-version"));
+        assert_eq!(services.heartbeat_calls.load(Ordering::SeqCst), 3);
+        drop(payloads);
+        drop(reports);
+
+        server_stop.cancel();
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("update report fixture ignored shutdown")
+            .unwrap();
+    }
+}
+
 fn map_gc_error(err: anyhow::Error) -> anyhow::Error {
     if request_status_code(&err) == Some(404) {
         anyhow::Error::new(GcRequestError { status_code: 404 })

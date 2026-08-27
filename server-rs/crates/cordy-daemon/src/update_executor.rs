@@ -114,6 +114,16 @@ struct ReleaseAsset {
 }
 
 impl UpdateExecutor {
+    #[cfg(test)]
+    pub(crate) fn direct_for_test(executable: PathBuf) -> Self {
+        Self {
+            executable,
+            install_method: InstallMethod::Direct,
+            metadata_client: http_client(METADATA_TIMEOUT)
+                .expect("build update metadata client for test"),
+        }
+    }
+
     /// Resolves the running inode and detects a Homebrew install. Detection is
     /// bounded; a broken `brew` cannot block daemon startup indefinitely.
     pub async fn detect() -> Result<Self> {
