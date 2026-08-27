@@ -13,15 +13,16 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
+use crate::command::{BlockedArgMode, RuntimeCommand, filter_custom_args, filter_launch_prefix};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session,
 };
-use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
+use crate::model::{Catalog, CatalogCache, Model};
 use crate::process::OwnedProcessTree;
-use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
+use crate::stderr::{DEFAULT_TAIL_BYTES, SharedDiagnosticBuffer, with_stderr};
 use crate::stream::AgentLineReader;
 
 const MESSAGE_BUFFER: usize = 256;
@@ -98,9 +99,7 @@ impl AntigravityBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        let Some(key) = ModelDiscoveryCacheKey::new("antigravity", &self.config.command) else {
-            return Catalog::default();
-        };
+        let key = discovery_cache_key("antigravity", &self.config.command);
         if let Some(catalog) = self.config.catalog_cache.get(&key) {
             return catalog;
         }
@@ -190,8 +189,8 @@ impl Backend for AntigravityBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        apply_sanitized_environment(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -204,12 +203,18 @@ impl Backend for AntigravityBackend {
                     AgentError::Process(error)
                 }
             })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("Antigravity stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("Antigravity stderr pipe unavailable after spawn".to_string())
-        })?;
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "Antigravity stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "Antigravity stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
 
         let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
@@ -237,7 +242,11 @@ impl Backend for AntigravityBackend {
             let outcome = {
                 let completion = async {
                     let exit = tree.wait().await;
-                    let stream = (&mut stdout_task).await;
+                    // The direct process can exit while a descendant still
+                    // owns stdout. Stop the owned tree before joining the
+                    // reader so normal completion cannot outlive this run.
+                    stop_process_tree(&mut tree).await;
+                    let stream = join_plain_output(&mut stdout_task).await;
                     (exit, stream)
                 };
                 tokio::pin!(completion);
@@ -247,10 +256,15 @@ impl Backend for AntigravityBackend {
                         () = cancellation.cancelled() => RunOutcome::Cancelled,
                     }
                 } else {
-                    tokio::select! {
-                        completed = &mut completion => RunOutcome::Completed(completed),
-                        () = cancellation.cancelled() => RunOutcome::Cancelled,
-                        () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        RunOutcome::TimedOut
+                    } else {
+                        tokio::select! {
+                            completed = &mut completion => RunOutcome::Completed(completed),
+                            () = cancellation.cancelled() => RunOutcome::Cancelled,
+                            () = tokio::time::sleep(remaining) => RunOutcome::TimedOut,
+                        }
                     }
                 }
             };
@@ -258,12 +272,20 @@ impl Backend for AntigravityBackend {
             let (end, exit, stream) = match outcome {
                 RunOutcome::Completed((exit, stream)) => (RunEnd::Completed, Some(exit), stream),
                 RunOutcome::Cancelled => {
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-                    (RunEnd::Cancelled, None, (&mut stdout_task).await)
+                    stop_process_tree(&mut tree).await;
+                    (
+                        RunEnd::Cancelled,
+                        None,
+                        join_plain_output(&mut stdout_task).await,
+                    )
                 }
                 RunOutcome::TimedOut => {
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-                    (RunEnd::TimedOut, None, (&mut stdout_task).await)
+                    stop_process_tree(&mut tree).await;
+                    (
+                        RunEnd::TimedOut,
+                        None,
+                        join_plain_output(&mut stdout_task).await,
+                    )
                 }
             };
             if tokio::time::timeout(KILL_GRACE, &mut stderr_task)
@@ -273,10 +295,7 @@ impl Backend for AntigravityBackend {
                 stderr_task.abort();
             }
             let stderr = stderr_tail.tail();
-            let stream = stream.unwrap_or_else(|error| PlainOutput {
-                read_error: format!("stdout task failed: {error}"),
-                ..PlainOutput::default()
-            });
+            let stream = stream;
             let log = std::fs::read_to_string(&_log_path).unwrap_or_default();
             let session_id = last_capture(&CONVERSATION_ID, &log);
             let mut status = "completed".to_string();
@@ -310,7 +329,14 @@ impl Backend for AntigravityBackend {
                         );
                     } else if PRINT_TIMEOUT.is_match(&log) {
                         status = "timeout".to_string();
-                        error = format!("agy --print-timeout elapsed after {} waiting for the agent response; a long-running command likely outlived the print timeout", format_cli_duration(if timeout.is_zero() { NO_CAP_PRINT_TIMEOUT } else { timeout }));
+                        error = format!(
+                            "agy --print-timeout elapsed after {} waiting for the agent response; a long-running command likely outlived the print timeout",
+                            format_cli_duration(if timeout.is_zero() {
+                                NO_CAP_PRINT_TIMEOUT
+                            } else {
+                                timeout
+                            })
+                        );
                     } else if let Some(provider_error) =
                         last_optional_capture(&PROVIDER_ERROR, &log)
                     {
@@ -392,6 +418,74 @@ async fn read_plain_text(
     }
 }
 
+async fn join_plain_output(task: &mut JoinHandle<PlainOutput>) -> PlainOutput {
+    match tokio::time::timeout(KILL_GRACE, &mut *task).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(error)) => PlainOutput {
+            read_error: format!("stdout task failed: {error}"),
+            ..PlainOutput::default()
+        },
+        Err(_) => {
+            task.abort();
+            PlainOutput {
+                read_error: "Antigravity stdout reader did not terminate".to_string(),
+                ..PlainOutput::default()
+            }
+        }
+    }
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
+fn apply_sanitized_environment(command: &mut Command, configured: &BTreeMap<String, String>) {
+    command.env_clear();
+    for (key, value) in std::env::vars_os() {
+        let Some(key_text) = key.to_str() else {
+            command.env(key, value);
+            continue;
+        };
+        if should_filter_inherited_env(key_text) {
+            continue;
+        }
+        command.env(key, value);
+    }
+    command.envs(configured);
+}
+
+fn should_filter_inherited_env(key: &str) -> bool {
+    if key.to_ascii_uppercase().starts_with("CORDY_") {
+        return true;
+    }
+    matches!(
+        key,
+        "CLAUDECODE"
+            | "CLAUDE_CODE_ENTRYPOINT"
+            | "CLAUDE_CODE_EXECPATH"
+            | "CLAUDE_CODE_SESSION_ID"
+            | "CLAUDE_CODE_SSE_PORT"
+    ) || key.starts_with("CLAUDECODE_")
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
+}
+
 fn message(message_type: MessageType, content: &str, status: &str) -> Message {
     Message {
         message_type,
@@ -423,14 +517,15 @@ async fn discover_once(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    apply_sanitized_environment(&mut command, &config.env);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-    let stdout = tree
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("Antigravity model stdout pipe unavailable"))?;
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(io::Error::other(
+            "Antigravity model stdout pipe unavailable",
+        ));
+    };
     let outcome = {
         let read = async {
             let mut output = Vec::new();
@@ -439,10 +534,14 @@ async fn discover_once(
                 .read_to_end(&mut output)
                 .await?;
             let status = tree.wait().await?;
-            if !status.success() || bytes as u64 > MAX_DISCOVERY_BYTES {
+            if bytes as u64 > MAX_DISCOVERY_BYTES {
                 return Ok(Vec::new());
             }
-            Ok(parse_models(&String::from_utf8_lossy(&output)))
+            let models = parse_models(&String::from_utf8_lossy(&output));
+            if !status.success() && models.is_empty() {
+                return Ok(Vec::new());
+            }
+            Ok(models)
         };
         tokio::pin!(read);
         tokio::select! {
@@ -451,12 +550,10 @@ async fn discover_once(
             () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
         }
     };
+    stop_process_tree(&mut tree).await;
     match outcome {
         RunOutcome::Completed(result) => result,
-        RunOutcome::Cancelled | RunOutcome::TimedOut => {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-            Ok(Vec::new())
-        }
+        RunOutcome::Cancelled | RunOutcome::TimedOut => Ok(Vec::new()),
     }
 }
 
@@ -500,16 +597,28 @@ fn validate_model(model: &str, available: &[Model]) -> Result<(), AgentError> {
 }
 
 fn format_cli_duration(duration: Duration) -> String {
-    let seconds = duration.as_secs().max(1);
+    if duration < Duration::from_secs(1) {
+        return "1s".to_string();
+    }
+    let seconds = duration.as_secs();
+    let fraction = if duration.subsec_nanos() == 0 {
+        String::new()
+    } else {
+        let mut fraction = format!("{:09}", duration.subsec_nanos());
+        while fraction.ends_with('0') {
+            fraction.pop();
+        }
+        format!(".{fraction}")
+    };
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;
     if hours > 0 {
-        format!("{hours}h{minutes}m{seconds}s")
+        format!("{hours}h{minutes}m{seconds}{fraction}s")
     } else if minutes > 0 {
-        format!("{minutes}m{seconds}s")
+        format!("{minutes}m{seconds}{fraction}s")
     } else {
-        format!("{seconds}s")
+        format!("{seconds}{fraction}s")
     }
 }
 
@@ -553,12 +662,22 @@ fn recover_transcript(log: &str, conversation_id: &str) -> String {
         .join(".system_generated")
         .join("logs")
         .join("transcript.jsonl");
-    let Ok(transcript) = std::fs::read_to_string(path) else {
+    let Ok(file) = std::fs::File::open(path) else {
         return String::new();
     };
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = String::new();
     let mut parts = Vec::new();
-    for line in transcript.lines() {
-        let Ok(record) = serde_json::from_str::<TranscriptRecord>(line) else {
+    loop {
+        line.clear();
+        let bytes = match std::io::BufRead::read_line(&mut reader, &mut line) {
+            Ok(bytes) => bytes,
+            Err(_) => return String::new(),
+        };
+        if bytes == 0 {
+            break;
+        }
+        let Ok(record) = serde_json::from_str::<TranscriptRecord>(&line) else {
             continue;
         };
         if record.record_type == "USER_INPUT" {
@@ -623,16 +742,27 @@ mod tests {
             args.iter().filter(|arg| arg.as_str() == "--model").count(),
             1
         );
-        assert!(!args
-            .iter()
-            .any(|arg| arg == "bad" || arg.starts_with("--settings")));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--print-timeout", "20m0s"]));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--conversation", "cid"]));
+        assert!(
+            !args
+                .iter()
+                .any(|arg| arg == "bad" || arg.starts_with("--settings"))
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--print-timeout", "20m0s"])
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--conversation", "cid"])
+        );
         assert!(args.windows(2).any(|pair| pair == ["--add-dir", "/extra"]));
+    }
+
+    #[test]
+    fn cli_duration_preserves_fractional_seconds() {
+        assert_eq!(format_cli_duration(Duration::from_millis(500)), "1s");
+        assert_eq!(format_cli_duration(Duration::from_millis(1500)), "1.5s");
+        assert_eq!(format_cli_duration(Duration::from_millis(60_500)), "1m0.5s");
     }
 
     #[test]
@@ -681,7 +811,7 @@ mod tests {
         std::fs::write(
             &executable,
             r#"#!/bin/sh
-if [ "$1" = models ]; then printf 'gemini-high\tGemini High\n'; exit 0; fi
+if [ "$1" = models ]; then printf 'gemini-high\tGemini High\n'; exit 7; fi
 log=''
 while [ $# -gt 0 ]; do case "$1" in --log-file) log="$2"; shift 2;; *) shift;; esac; done
 printf 'conversation=b8b263a4-4b2f-4339-acc9-78b248e2b606\n' >> "$log"
@@ -785,6 +915,44 @@ exit 0
         assert!(recovered_message);
         assert_eq!(result.status, "completed");
         assert_eq!(result.output, "recovered answer");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn direct_exit_cleans_descendants_before_draining_stdout() {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("agy");
+        std::fs::write(
+            &executable,
+            r#"#!/bin/sh
+printf 'done\n'
+sleep 60 &
+exit 0
+"#,
+        )
+        .unwrap_or_else(|error| panic!("write descendant agy: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod descendant agy: {error}"));
+        let backend = AntigravityBackend::new(AntigravityConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            ..AntigravityConfig::default()
+        });
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    timeout: Duration::from_secs(5),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute descendant agy: {error}"));
+        let result = tokio::time::timeout(Duration::from_secs(2), session.result)
+            .await
+            .unwrap_or_else(|_| panic!("agy result waited for an unowned descendant"))
+            .unwrap_or_else(|error| panic!("receive descendant agy result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "done");
     }
 
     #[cfg(unix)]
