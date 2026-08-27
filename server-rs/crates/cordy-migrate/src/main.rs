@@ -1,6 +1,8 @@
 //! cordy-migrate — Rust replacement for `server/cmd/migrate`.
 //!
-//! Usage: `cordy-migrate up|down` (DATABASE_URL env required).
+//! Usage: `cordy-migrate up|down|status` (DATABASE_URL env required).
+//! The issue activity backfill is available as
+//! `cordy-migrate backfill-issue-last-activity [options]`.
 
 mod backfill;
 mod files;
@@ -19,9 +21,17 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let command = std::env::args().nth(1).unwrap_or_else(|| "up".to_string());
-    if !matches!(command.as_str(), "up" | "down" | "status") {
-        anyhow::bail!("usage: cordy-migrate up|down|status");
+    let mut args = std::env::args();
+    let command = args.next().unwrap_or_else(|| "cordy-migrate".to_string());
+    let subcommand = args.next().unwrap_or_else(|| "up".to_string());
+
+    if subcommand == "backfill-issue-last-activity" {
+        return run_issue_activity_backfill(args).await;
+    }
+    if !matches!(subcommand.as_str(), "up" | "down" | "status") {
+        anyhow::bail!(
+            "usage: {command} up|down|status\n       {command} backfill-issue-last-activity [options]"
+        );
     }
 
     let db_url =
@@ -31,12 +41,40 @@ async fn main() -> anyhow::Result<()> {
         .connect(&db_url)
         .await?;
 
-    match command.as_str() {
+    match subcommand.as_str() {
         "status" => {
             runner::check_ready(&pool).await?;
             println!("ready: all migrations recorded");
             Ok(())
         }
         dir => runner::run_migrations(&pool, dir).await,
+    }
+}
+
+async fn run_issue_activity_backfill(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
+    let options = backfill::issue_activity::Options::parse(args)?;
+    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable".to_string()
+    });
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&db_url)
+        .await?;
+    let run = backfill::issue_activity::run(&pool, options);
+    tokio::select! {
+        result = run => result.map(|summary| {
+            tracing::info!(
+                rows_backfilled = summary.rows_backfilled,
+                remaining = summary.remaining,
+                batches = summary.batches,
+                passes = summary.passes,
+                "issue last-activity backfill complete"
+            );
+        }),
+        result = tokio::signal::ctrl_c() => {
+            result?;
+            tracing::warn!("issue last-activity backfill interrupted");
+            Ok(())
+        }
     }
 }
