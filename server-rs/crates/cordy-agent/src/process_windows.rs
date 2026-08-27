@@ -23,8 +23,8 @@ pub(crate) struct ProcessTree {
     job: Option<JobObject>,
 }
 
-pub(crate) fn prepare(command: &mut Command) {
-    command.creation_flags(CREATE_SUSPENDED);
+pub(crate) fn prepare(command: &mut Command, creation_flags: u32) {
+    command.creation_flags(creation_flags | CREATE_SUSPENDED);
 }
 
 pub(crate) async fn claim(child: &mut Child) -> io::Result<ProcessTree> {

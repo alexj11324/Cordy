@@ -9,7 +9,7 @@ pub(crate) struct ProcessTree {
     process_group_id: i32,
 }
 
-pub(crate) fn prepare(command: &mut Command) {
+pub(crate) fn prepare(command: &mut Command, _creation_flags: u32) {
     command.process_group(0);
 }
 

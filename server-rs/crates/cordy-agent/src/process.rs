@@ -36,7 +36,19 @@ pub struct OwnedProcessTree {
 
 impl OwnedProcessTree {
     pub async fn spawn(command: &mut Command) -> io::Result<Self> {
-        platform::prepare(command);
+        Self::spawn_with_creation_flags(command, 0).await
+    }
+
+    /// Spawns a process tree while preserving the caller's Windows creation
+    /// flags. Tokio exposes only a replacing `creation_flags` setter, so
+    /// callers must pass every Windows flag they need here; the process-tree
+    /// boundary adds `CREATE_SUSPENDED` to that set in one operation. The
+    /// value is ignored on Unix.
+    pub async fn spawn_with_creation_flags(
+        command: &mut Command,
+        creation_flags: u32,
+    ) -> io::Result<Self> {
+        platform::prepare(command, creation_flags);
         let mut child = command.spawn()?;
         let platform = match platform::claim(&mut child).await {
             Ok(platform) => platform,
