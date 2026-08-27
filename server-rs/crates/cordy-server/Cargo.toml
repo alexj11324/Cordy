@@ -23,7 +23,10 @@ cordy-util = { path = "../cordy-util" }
 
 anyhow = { workspace = true }
 axum = { workspace = true }
+flate2 = { workspace = true }
+pprof = { workspace = true }
 redis = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }

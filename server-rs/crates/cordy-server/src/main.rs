@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod profiling;
+
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -497,6 +499,12 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    tokio::spawn(async {
+        tracing::info!(addr = profiling::ADDR, "pprof server starting");
+        if let Err(error) = profiling::serve().await {
+            tracing::error!(%error, "pprof server disabled after startup error");
+        }
+    });
     tracing::info!(%addr, "listening");
     axum::serve(
         listener,

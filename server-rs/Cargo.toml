@@ -63,6 +63,7 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 prometheus = "0.14"
+pprof = { version = "0.15", default-features = false, features = ["protobuf-codec"] }
 # errors
 thiserror = "2"
 anyhow = "1"
@@ -89,6 +90,7 @@ chrono-tz = "0.9"
 regex = "1"
 croner = "1"
 serde_yaml = "0.9"
+flate2 = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 infer = "0.19"
 # email & integrations
