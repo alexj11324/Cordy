@@ -2119,3 +2119,11 @@ feature 令 locked/offline metadata、handler no-run、server/Windows build和�
 每个 exact 均 matched/executed/passed/failed 0/0/0/0，不能记为通过。环境无 `DATABASE_URL`、psql或pg_isready；required
 fixture静态确认缺配置会失败而非skip，但真实 coalesce、status-race、row-lock shutdown和cleanup均未执行。#567 stale
 lock/rustfmt与#568 scheduler rustfmt仍为继承问题；本切片无 direct formatting finding。review仍在进行，PR保持Ready。
+
+独立 reviewer 同一 exact SHA 无 P0，报告 1 个 P1、4 个 P2：测试直接构造 heartbeat scheduler/runtime，未穿过
+`build_production_router` 的同实例注入、真实 heartbeat handler 或 HTTP-drain→root-cancel→shutdown 顺序，因此删除生产
+接线仍可能绿；offline+已有 timestamp 与 online+NULL never-seen 被同一 fixture 合并，不能独立证明两个 fallback gate；
+同 ID schedule 仅顺序调用，没有 Go 50-goroutine 并发 coalesce 证据；Rust passthrough 丢弃 `mark_agent_runtime_online`
+返回的 `None`，runtime 被 TOCTOU 删除时会静默成功而 Go 返回 no-rows error；Drop 异步 cleanup 不可证明 panic failure-safe。
+review确认 FOR UPDATE shutdown gate 是确定性的、required DB 不 self-skip、无新增生产 fake/依赖风险；上述 findings 已派发
+独立 fixer，PR保持Ready。
