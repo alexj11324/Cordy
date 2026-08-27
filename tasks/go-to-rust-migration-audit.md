@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 review/fix；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | PR #531；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-004 | 进行中 | Lark 与 WeCom 均要求有效 secret，使用真实 production transport，错误配置 fail-closed；shutdown 纳入 channel runtime deadline | DingTalk/Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532/#533；§5.3、§6.2、§20、§21 | 主 agent；review/fix subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom 与 DingTalk 均要求有效 secret，使用真实 production transport，错误配置 fail-closed；shutdown 纳入 channel runtime deadline | Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532/#533/#534；§5.3、§6.2、§20..§22 | 主 agent；review/fix subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
@@ -588,7 +588,32 @@ shutdown wiring，不增加新的 factory 或生产抽象：
   凭证 smoke、其他 AUDIT-004 provider 与最终 AUDIT-001..010 门仍未完成。
 - 验证状态：`cordy-wecom --lib` 121/121 通过，覆盖 credential/factory fail-closed、
   subscribe 拒绝、inbound、media、relay、transport deadline 与 cancellation；固定
-  stable rustfmt 和 `git diff --check` 通过。首次 server 定向测试在越过已修复的
-  Slack/daemon 基线后，于 AWS/Lark 依赖归档阶段因共享 target 磁盘耗尽中止；已清理
-  9.4 GiB 可再生 Cargo 缓存并启动低调试信息、关闭 incremental 的 fresh rerun，
-  当前不把尚未完成的 rerun 记录为通过。
+  stable rustfmt 和 `git diff --check` 通过。首次 server 定向测试于 AWS/Lark
+  依赖归档阶段因共享 target 磁盘耗尽中止；清理 9.4 GiB 可再生 Cargo 缓存后的
+  低调试信息 fresh rerun 继续到 `cordy-slack`，但被既有
+  `EnvelopeKind::Disconnect` 非穷尽匹配阻断。该修复传播已异步交给独立 fix agent，
+  当前不把两次未执行到测试体的 server 命令记录为通过。
+
+## 22. AUDIT-004 执行更新：DingTalk production configuration contract
+
+Ready PR #534（`codex/cord-199-dingtalk-production-contract-rust`）验证 DingTalk
+production assembly 的配置与 transport 选择，复用现有 decrypter、token cache、
+Stream connector、inbound/outbound、media 和 shutdown wiring，不增加新的生产抽象：
+
+- Go 能力：只有配置有效的 `CORDY_DINGTALK_SECRET_KEY` 才注册安装 AppSecret
+  解密、真实 HTTP/Stream transport、access-token cache、reply、ack、media 与
+  resolver wiring；缺失或非法 key 必须禁用而不是回退到 fake。
+- Rust 入口：`cordy-server::channel_runtime::configure_dingtalk` 直接构造
+  `cordy_dingtalk::client::Client::new(None, "")`，默认使用官方
+  `https://api.dingtalk.com`，并把同一个 client 注入 factory、outbound、ack、
+  replier 和 media；factory 继续拒绝空安装 AppSecret。
+- 生产路径状态：Rust server 的 `ChannelRuntime::start` 调用该 wiring；channel
+  connector、conversation dispatch、outbound runtime tasks 与 supervisor shutdown
+  复用现有生命周期边界。
+- Go 是否可下线：否。DingTalk 配置选择和 crate 内部契约已有 Rust 证据，但真实
+  外部凭证 smoke、其他 AUDIT-004 provider 与最终 AUDIT-001..010 门仍未完成。
+- 验证状态：`cordy-dingtalk --lib` 48/48 通过，覆盖配置解密、安装校验、inbound、
+  media guard、Stream frame、dispatch 顺序与 shutdown deadline；固定 stable rustfmt
+  和 `git diff --check` 通过。新增 server 定向测试已实际运行构建，但在执行测试前
+  被现有 `cordy-slack` `EnvelopeKind::Disconnect` 非穷尽匹配阻断；既有修复传播已
+  异步交给独立 fix agent，本切片不夹带该修复，也不把 server 测试伪报为通过。
