@@ -2178,4 +2178,220 @@ mod tests {
         result.expect("runtime GC owner-lock contract failed");
         cleanup.expect("runtime GC owner-lock fixture cleanup failed");
     }
+
+    struct DelegatedSweeperRows {
+        pool: PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        source_task_id: Uuid,
+        failed_task_id: Uuid,
+    }
+
+    impl DelegatedSweeperRows {
+        async fn required() -> anyhow::Result<Self> {
+            let url = std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL is required for delegated sweeper contract");
+            let pool = PgPool::connect(&url).await?;
+            let workspace_id = new_v7();
+            sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind("Rust delegated sweeper contract")
+                .bind(format!("rust-delegated-sweeper-{workspace_id}"))
+                .execute(&pool)
+                .await?;
+            let user_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
+            )
+            .bind("delegated sweeper contract user")
+            .bind(format!("delegated-sweeper-{}@example.test", workspace_id.simple()))
+            .fetch_one(&pool)
+            .await?;
+            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
+                .bind(workspace_id)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+
+            let runtime_id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) \
+                 VALUES ($1, $2, $3, $4, 'local', $5, 'online', now())",
+            )
+            .bind(runtime_id)
+            .bind(workspace_id)
+            .bind(format!("delegated-sweeper-{runtime_id}"))
+            .bind("Delegated sweeper runtime")
+            .bind(format!("delegated-sweeper-{runtime_id}"))
+            .execute(&pool)
+            .await?;
+            let coordinator_id = new_v7();
+            let worker_id = new_v7();
+            for (id, name) in [(coordinator_id, "Delegated sweeper coordinator"), (worker_id, "Delegated sweeper worker")] {
+                sqlx::query(
+                    "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) \
+                     VALUES ($1, $2, $3, 'local', 'idle', 4, $4, $5)",
+                )
+                .bind(id)
+                .bind(workspace_id)
+                .bind(name)
+                .bind(user_id)
+                .bind(runtime_id)
+                .execute(&pool)
+                .await?;
+            }
+            let source_issue_id = new_v7();
+            let worker_issue_id = new_v7();
+            sqlx::query(
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                 VALUES ($1, $2, 'Delegated sweeper source', 'in_progress', 'medium', 'member', $3, 'agent', $4, 1, 0)",
+            )
+            .bind(source_issue_id)
+            .bind(workspace_id)
+            .bind(user_id)
+            .bind(coordinator_id)
+            .execute(&pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, parent_issue_id, number, position) \
+                 VALUES ($1, $2, 'Delegated sweeper worker', 'in_progress', 'medium', 'member', $3, 'agent', $4, $5, 2, 0)",
+            )
+            .bind(worker_issue_id)
+            .bind(workspace_id)
+            .bind(user_id)
+            .bind(worker_id)
+            .bind(source_issue_id)
+            .execute(&pool)
+            .await?;
+
+            let source_task_id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent_task_queue (id, agent_id, runtime_id, issue_id, status, priority, completed_at, originator_user_id, accountable_user_id, originator_source) \
+                 VALUES ($1, $2, $3, $4, 'completed', 0, now(), $5, $5, 'direct_human')",
+            )
+            .bind(source_task_id)
+            .bind(coordinator_id)
+            .bind(runtime_id)
+            .bind(source_issue_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
+            let failed_task_id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent_task_queue (id, agent_id, runtime_id, issue_id, status, priority, attempt, max_attempts, completed_at, error, failure_reason, delegated_from_task_id, trigger_evidence_kind) \
+                 VALUES ($1, $2, $3, $4, 'failed', 0, 1, 1, now(), 'worker exited', 'provider_auth', $5, 'comment')",
+            )
+            .bind(failed_task_id)
+            .bind(worker_id)
+            .bind(runtime_id)
+            .bind(worker_issue_id)
+            .bind(source_task_id)
+            .execute(&pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO comment (id, issue_id, workspace_id, author_type, author_id, content, type, source_task_id) \
+                 VALUES ($1, $2, $3, 'system', $4, 'delegated worker failed; inspect and resume', 'progress_update', $5)",
+            )
+            .bind(new_v7())
+            .bind(source_issue_id)
+            .bind(workspace_id)
+            .bind(Uuid::nil())
+            .bind(failed_task_id)
+            .execute(&pool)
+            .await?;
+
+            Ok(Self {
+                pool,
+                workspace_id,
+                user_id,
+                source_task_id,
+                failed_task_id,
+            })
+        }
+
+        async fn cleanup(&self) -> anyhow::Result<()> {
+            sqlx::query("DELETE FROM workspace WHERE id = $1")
+                .bind(self.workspace_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                .bind(self.user_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+    }
+
+    impl Drop for DelegatedSweeperRows {
+        fn drop(&mut self) {
+            let pool = self.pool.clone();
+            let workspace_id = self.workspace_id;
+            let user_id = self.user_id;
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
+                        .bind(workspace_id)
+                        .execute(&pool)
+                        .await;
+                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                        .bind(user_id)
+                        .execute(&pool)
+                        .await;
+                });
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn production_run_once_replays_delegated_recovery_outbox() {
+        let rows = DelegatedSweeperRows::required()
+            .await
+            .expect("DATABASE_URL and migrated PostgreSQL are required for delegated sweeper contract");
+        let result = async {
+            let bus = Arc::new(Bus::new());
+            let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let events = events.clone();
+                bus.subscribe_all(move |event| {
+                    events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let tasks = Arc::new(TaskService::new(rows.pool.clone(), bus.clone()));
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: true,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    pool: None,
+                }),
+                tasks,
+                bus,
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            )
+            .with_clock(Arc::new(FixedClock(Utc::now())));
+            let report = sweeper.run_once().await;
+            anyhow::ensure!(report.recoveries_replayed == 1, "run_once recovery report = {report:?}");
+            anyhow::ensure!(report.recoveries_exhausted == 0, "run_once unexpectedly exhausted recovery: {report:?}");
+            let recovery_tasks: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM agent_task_queue WHERE trigger_evidence_kind = 'delegated_failure' AND trigger_evidence_ref_id = $1",
+            )
+            .bind(rows.failed_task_id)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(recovery_tasks == 1, "run_once recovery tasks = {recovery_tasks}, want 1");
+            let captured = events.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            anyhow::ensure!(captured.iter().any(|event| event.event_type == cordy_protocol::EVENT_TASK_QUEUED), "run_once did not publish task queued event");
+            anyhow::ensure!(rows.source_task_id != rows.failed_task_id, "fixture lost delegated lineage");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("delegated sweeper run_once contract failed");
+        cleanup.expect("delegated sweeper fixture cleanup failed");
+    }
 }
