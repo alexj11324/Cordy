@@ -2643,7 +2643,8 @@ lock order、transaction boundary、idempotence、cleanup 或 production wiring 
   session fence；第二个 expired marker 用生产查询证明批次 cap，而不是只断言单行结果。
 
 主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令。非 Draft Ready PR #575 已创建，
-base 为 `codex/cord-238-delegated-failure-recovery-contract-rust` 的 `e7b268b9`，当前 tip 为 `8782170f`；独立
+base 为 `codex/cord-238-delegated-failure-recovery-contract-rust` 的 `e7b268b9`；原始实现 commit 为 `8782170f`，随后 fixer 提交
+`840261fe` 修正事务提交与删除错误传播，当前 PR tip 为 `840261fe`；独立
 verifier/reviewer/fixer 已异步派发。exact compile、matched/executed counts、required PostgreSQL、server/Windows、取消/ack、
 session deletion race、failure cleanup 和完整 sweeper evidence 返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
 
@@ -2687,12 +2688,12 @@ contract/production entry；仅有 route parity、类型能编译或 Rust 文件
 但 Ready PR 的存在不等于测试通过。AUDIT-007 的退出证据是所有高风险行都有可执行 Rust contract 或明确不适用理由，并能
 回链到 AUDIT-002..006/008 的具体 PR、命令和异步 verifier/reviewer/fixer 结果；主 agent 不运行长测试，也不代做缺陷修复。
 
-实现 commit `a5e65aa2` 只更新本台账：新增八个风险域映射行，分别回链代表性 Go 测试来源、Rust contract/production entry、
+实现 commit `39532bfd` 只更新本台账：新增八个风险域映射行，分别回链代表性 Go 测试来源、Rust contract/production entry、
 当前覆盖状态与下一步退出动作；明确 route parity 不等于行为等价、Ready PR 不等于测试通过、测试 helper 不等于生产缺口，
 并把 wire/schema/time/UUID/ULID/Redis/event envelope 交给 AUDIT-008。没有新增生产代码、依赖、测试框架、Stub/Noop/Fake 或
 默认入口。
 
 主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、provider、daemon 或 release 命令。非 Draft
-Ready PR #576 已创建，base 为 `codex/cord-239-chat-finalize-contract-rust` 的 `840261fe`，当前 tip 为 `a5e65aa2`；独立
+Ready PR #576 已创建，base 为 `codex/cord-239-chat-finalize-contract-rust` 的 `840261fe`，当前 tip 为 `96662713`；独立
 verifier/reviewer/fixer 已异步派发。索引引用的各 Ready PR 仍须分别记录 exact command、matched/executed、环境限制和异步
 finding；AUDIT-007 未完成前不能声称全部 Go 回归已映射或删除 Go。
