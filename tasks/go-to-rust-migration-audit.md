@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 review/fix；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | PR #531；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
-| AUDIT-004 | 进行中 | Lark 在有效 secret 下使用真实 HTTP/WS client，缺失或非法 secret 均 fail-closed；shutdown 纳入 channel runtime deadline | WeCom/DingTalk/Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532；§5.3、§6.2、§20 | 主 agent；review/fix subagent |
+| AUDIT-004 | 进行中 | Lark 与 WeCom 均要求有效 secret，使用真实 production transport，错误配置 fail-closed；shutdown 纳入 channel runtime deadline | DingTalk/Slack/Telegram/Composio/VCS/GHSnapshot 仍待逐项矩阵 | PR #532/#533；§5.3、§6.2、§20、§21 | 主 agent；review/fix subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
@@ -567,3 +567,28 @@ assembly 的配置选择，不复制 provider 实现或增加第二套 client fa
   metadata 通过；Lark stub fail-closed 定向测试 1/1 通过。新增 server production
   gate 测试已开始构建，但在运行测试前因共享磁盘空间耗尽而中止；未把环境失败
   伪报为通过。对应 daemon 基线修复现已从 PR #530 传播到本分支。
+
+## 21. AUDIT-004 执行更新：WeCom production configuration contract
+
+Ready PR #533（`codex/cord-198-wecom-production-contract-rust`）验证 WeCom production
+assembly 的配置与 transport 选择，复用现有 resolver、dialer、relay、media 和
+shutdown wiring，不增加新的 factory 或生产抽象：
+
+- Go 能力：只有配置有效的 `CORDY_WECOM_SECRET_KEY` 才注册安装凭证解密、真实
+  WebSocket transport、inbound/session resolver、outbound、media 与可选 Redis relay；
+  缺失或非法 key 必须禁用而不是回退到可伪成功的 fake。
+- Rust 入口：`cordy-server::channel_runtime::configure_wecom` 注入
+  `SecretboxCredentialsResolver`，并把 `ChannelDeps::dialer` 留空，使既有 factory
+  选择 `DefaultDialer` 与官方 `wss://openws.work.weixin.qq.com`；factory 继续拒绝
+  缺 resolver、缺 bot_id 和解密失败。
+- 生产路径状态：Rust server 的 `ChannelRuntime::start` 调用该 wiring；supervisor
+  管理连接租约与重试，取消 token、outbound tasks、relay handles 和 router drain
+  都受现有 shutdown deadline 管理。
+- Go 是否可下线：否。WeCom 配置选择和 crate 内部契约已有 Rust 证据，但真实外部
+  凭证 smoke、其他 AUDIT-004 provider 与最终 AUDIT-001..010 门仍未完成。
+- 验证状态：`cordy-wecom --lib` 121/121 通过，覆盖 credential/factory fail-closed、
+  subscribe 拒绝、inbound、media、relay、transport deadline 与 cancellation；固定
+  stable rustfmt 和 `git diff --check` 通过。首次 server 定向测试在越过已修复的
+  Slack/daemon 基线后，于 AWS/Lark 依赖归档阶段因共享 target 磁盘耗尽中止；已清理
+  9.4 GiB 可再生 Cargo 缓存并启动低调试信息、关闭 incremental 的 fresh rerun，
+  当前不把尚未完成的 rerun 记录为通过。
