@@ -2070,3 +2070,12 @@ range/worktree diff check和 Cargo.lock 未变化通过；本切片 direct sched
 exit 101，三个 exact 均 matched/executed/passed/failed 0/0/0/0，不能记为通过。环境无 `DATABASE_URL`、psql或
 pg_isready；required DB fixture静态确认缺配置会失败而非 skip，但真实 rows、并发 claim、retry、lease fencing、shutdown与
 cleanup均未执行。#567 stale lock/rustfmt 仍是继承问题。direct rustfmt finding 已异步交 fixer；review 仍在进行，PR保持Ready。
+
+独立 reviewer 同一 exact SHA 无 P0，报告 3 个 P1、3 个 P2 和 1 个 P3。P1：retry case 总是注入
+`plans_for_scope`，绕过真实 EveryPlan FAILED-plan cursor；stale case 等新 owner 已 SUCCESS 才释放旧 owner，因此 status guard
+足以令旧 terminal 失败，删 lease-token guard 仍可通过，且未调用旧 heartbeat；测试只构造 generic scheduler crate Manager，
+删除 `cordy-server` 两个真实 job register/start/root-drain shutdown 也不失败。P2：并发 claim 无 pre-claim barrier且靠 handler
+sleep 保持重叠；shutdown 只测 SUCCESS 后 idle Stopped，未测 timeout/abort；Drop cleanup 只 spawn DELETE 不等待，panic时并非
+failure-safe。P3：LIKE prefix 含未转义 `_`，可能扩大删除范围。Ponytail确认文件/依赖范围小且无 production abstraction，
+但 502 行被过强 fixed-plan helper 抽掉关键行为。全部 findings 已异步派发 fixer；在收口前不得声明完整 scheduler production
+entry或 Go manager 可退出，PR保持Ready。
