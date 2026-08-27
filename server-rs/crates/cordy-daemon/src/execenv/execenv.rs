@@ -56,8 +56,8 @@ use serde_json::Value;
 
 use super::codex_home::{codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions};
 use super::context::{
-    ensure_workspaces_root_marker, prepare_claude_skill_settings, roll_back_prepared_sidecars,
-    write_context_files, SidecarManifest,
+    ensure_workspaces_root_marker, prepare_claude_skill_settings, resolve_skill_slugs,
+    roll_back_prepared_sidecars, write_context_files, write_skill_files, SidecarManifest,
 };
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
@@ -1607,12 +1607,114 @@ fn prepare_hermes_home(
     bail!("execenv: hermes provider family not yet ported (lane E2)")
 }
 
-// S9-integration: qwenpaw_workspace.go lands in lane E2.
-fn prepare_qwenpaw_workspace(
-    _workspace: &str,
-    _skills: &[SkillContextForEnv],
-) -> anyhow::Result<()> {
-    bail!("execenv: qwenpaw provider family not yet ported (lane E2)")
+/// Ensures the managed QwenPaw workspace root is a real directory.
+///
+/// `create_dir_all` follows a symlink when the final path already points to a
+/// directory. That is unsafe for this managed path because all of the cleanup
+/// and manifest writes below operate on descendants of it. Refuse symlinks and
+/// other non-directory entries before touching any descendant.
+fn ensure_qwenpaw_workspace_root(workspace: &str) -> anyhow::Result<()> {
+    let path = Path::new(workspace);
+    match path.symlink_metadata() {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("execenv: qwenpaw workspace root must not be a symlink: {workspace}");
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            bail!("execenv: qwenpaw workspace root must be a directory: {workspace}");
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(path)
+                .with_context(|| format!("create qwenpaw workspace directory {workspace}"))?;
+        }
+        Err(error) => {
+            return Err(anyhow::Error::new(error)
+                .context(format!("inspect qwenpaw workspace root {workspace}")));
+        }
+    }
+
+    // Re-check after creation so a path created between the initial probe and
+    // create_dir_all cannot become an accepted symlink or non-directory.
+    let metadata = path
+        .symlink_metadata()
+        .with_context(|| format!("inspect qwenpaw workspace root {workspace}"))?;
+    if metadata.file_type().is_symlink() {
+        bail!("execenv: qwenpaw workspace root must not be a symlink: {workspace}");
+    }
+    if !metadata.is_dir() {
+        bail!("execenv: qwenpaw workspace root must be a directory: {workspace}");
+    }
+    Ok(())
+}
+
+/// Prepares QwenPaw's per-task workspace and native skill manifest.
+///
+/// QwenPaw does not read Cordy's generic `.agent_context/skills` tree: its ACP
+/// process discovers `<workspace>/skills` and enables entries listed by the
+/// workspace `skill.json` manifest. Rebuilding both paths on every prepare (and
+/// reuse) is therefore part of the provider contract, not an optional cache
+/// refresh. Removing the old tree first also revokes a skill when an agent's
+/// bindings change or become empty.
+fn prepare_qwenpaw_workspace(workspace: &str, skills: &[SkillContextForEnv]) -> anyhow::Result<()> {
+    if workspace.is_empty() {
+        bail!("execenv: qwenpaw workspace is required");
+    }
+
+    ensure_qwenpaw_workspace_root(workspace)?;
+    restrict_permissions(workspace)
+        .with_context(|| format!("restrict qwenpaw workspace directory {workspace}"))?;
+
+    let skills_dir = join_path(&[workspace, "skills"]);
+    let manifest_path = join_path(&[workspace, "skill.json"]);
+    remove_tree(&skills_dir)
+        .with_context(|| format!("remove qwenpaw skills directory {skills_dir}"))?;
+    remove_tree(&manifest_path)
+        .with_context(|| format!("remove qwenpaw manifest {manifest_path}"))?;
+
+    if skills.is_empty() {
+        return Ok(());
+    }
+
+    // write_skill_files owns frontmatter normalization, collision-free slugs,
+    // and supporting-file materialization shared by the other providers. The
+    // QwenPaw tree was removed above, so its natural slug candidates are the
+    // same ones represented in the manifest below.
+    write_skill_files(&skills_dir, skills, None).context("write qwenpaw workspace skills")?;
+
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut entries = serde_json::Map::new();
+    for slug in resolve_skill_slugs(skills) {
+        entries.insert(
+            slug.clone(),
+            serde_json::json!({
+                "enabled": true,
+                "channels": ["all"],
+                "source": "customized",
+                "metadata": {
+                    "name": slug,
+                    "description": "",
+                    "source": "customized",
+                    "protected": false,
+                    "updated_at": now.clone(),
+                },
+                "updated_at": now.clone(),
+            }),
+        );
+    }
+    let manifest = serde_json::json!({
+        "schema_version": "workspace-skill-manifest.v1",
+        "version": 0,
+        "skills": entries,
+    });
+    let data = serde_json::to_vec_pretty(&manifest).context("encode qwenpaw skill manifest")?;
+    std::fs::write(&manifest_path, data)
+        .with_context(|| format!("write qwenpaw skill manifest {manifest_path}"))?;
+    tracing::info!(
+        workspace,
+        skills = skills.len(),
+        "qwenpaw workspace prepared"
+    );
+    Ok(())
 }
 
 // S9-integration: reasonix_user_config.go lands in lane E2.
@@ -1833,6 +1935,144 @@ mod tests {
         let v: Value = serde_json::to_value(&no_ref).unwrap();
         assert_eq!(v["resource_ref"], serde_json::json!({}));
         assert_eq!(v["label"], "mine");
+    }
+
+    #[test]
+    fn qwenpaw_workspace_writes_native_skills_and_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skills = vec![
+            SkillContextForEnv {
+                name: "Review Helper".into(),
+                description: "Reviews changes".into(),
+                content: "# Review Helper\n\nReview body".into(),
+                files: vec![SkillFileContextForEnv {
+                    path: "scripts/check.py".into(),
+                    content: "print('ok')".into(),
+                }],
+            },
+            SkillContextForEnv {
+                name: "Bug Finder".into(),
+                content: "# Bug Finder\n\nFind bugs".into(),
+                ..Default::default()
+            },
+        ];
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &skills).unwrap();
+
+        assert!(workspace.join("skills/review-helper/SKILL.md").is_file());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("skills/review-helper/scripts/check.py"))
+                .unwrap(),
+            "print('ok')"
+        );
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(workspace.join("skill.json")).unwrap()).unwrap();
+        assert_eq!(manifest["schema_version"], "workspace-skill-manifest.v1");
+        assert_eq!(manifest["version"], 0);
+        assert_eq!(manifest["skills"]["review-helper"]["enabled"], true);
+        assert_eq!(manifest["skills"]["review-helper"]["channels"][0], "all");
+        assert_eq!(
+            manifest["skills"]["review-helper"]["metadata"]["name"],
+            "review-helper"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&workspace).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+    }
+
+    #[test]
+    fn qwenpaw_workspace_rebuild_revokes_removed_skills() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skill = SkillContextForEnv {
+            name: "Deploy Helper".into(),
+            content: "# Deploy Helper".into(),
+            ..Default::default()
+        };
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[skill]).unwrap();
+        assert!(workspace.join("skills/deploy-helper").exists());
+        assert!(workspace.join("skill.json").exists());
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap();
+        assert!(!workspace.join("skills").exists());
+        assert!(!workspace.join("skill.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn qwenpaw_workspace_rejects_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(target.join("skills")).unwrap();
+        std::fs::write(target.join("skills/keep.txt"), b"keep").unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        symlink(&target, &workspace).unwrap();
+
+        let err = prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("must not be a symlink"),
+            "unexpected error: {message}"
+        );
+        assert!(target.join("skills/keep.txt").is_file());
+        assert!(workspace
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn qwenpaw_workspace_rejects_non_directory_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        std::fs::write(&workspace, b"not a directory").unwrap();
+
+        let err = prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("must be a directory"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn qwenpaw_workspace_deduplicates_skill_slugs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skills = vec![
+            SkillContextForEnv {
+                name: "A B".into(),
+                content: "# First".into(),
+                ..Default::default()
+            },
+            SkillContextForEnv {
+                name: "A-B".into(),
+                content: "# Second".into(),
+                ..Default::default()
+            },
+        ];
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &skills).unwrap();
+        assert!(workspace.join("skills/a-b/SKILL.md").is_file());
+        assert!(workspace.join("skills/a-b-cordy/SKILL.md").is_file());
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(workspace.join("skill.json")).unwrap()).unwrap();
+        assert_eq!(manifest["skills"].as_object().unwrap().len(), 2);
+        assert_eq!(
+            manifest["skills"]["a-b-cordy"]["metadata"]["name"],
+            "a-b-cordy"
+        );
     }
 
     // Port of TestOpenclawGatewayPinZeroAndMasking.
