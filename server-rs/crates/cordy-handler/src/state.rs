@@ -1122,8 +1122,8 @@ mod tests {
         assert!(runtime.is_none());
     }
 
-    #[test]
-    fn llm_wiring_uses_resolved_config_and_preserves_explicit_zero() {
+    #[tokio::test]
+    async fn llm_wiring_uses_resolved_config_and_preserves_explicit_zero() {
         let config = cordy_config::LlmConfig {
             api_key: Some(" configured-key ".into()),
             base_url: Some(" http://llm.test/v1 ".into()),
@@ -1139,8 +1139,8 @@ mod tests {
         assert_eq!(client.retry_budget().source, cordy_llm::RetrySource::Config);
     }
 
-    #[test]
-    fn llm_wiring_rejects_retry_budget_above_server_limit() {
+    #[tokio::test]
+    async fn llm_wiring_rejects_retry_budget_above_server_limit() {
         let config = cordy_config::LlmConfig {
             max_retries: Some(6),
             ..Default::default()

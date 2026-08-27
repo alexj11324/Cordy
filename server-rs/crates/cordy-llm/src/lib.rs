@@ -901,7 +901,7 @@ mod tests {
         let mut client = Client::new(Config {
             api_key: "test-key".into(),
             base_url: "https://gateway.example/v1".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
             ..Config::default()
         });
         client.transport = Some(transport.clone());
