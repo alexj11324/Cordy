@@ -56,6 +56,31 @@ go_server_output="$(make -n go-server)"
 grep -Fq -- "cd server && go run ./cmd/server" <<<"$go_server_output" ||
   fail "go-server: expected the explicit legacy Go server entrypoint, got:\n$go_server_output"
 
+# The default migration runner follows the Rust port across local workflows;
+# retain explicit Go targets until the migration source is retired.
+for target in migrate-up rust-migrate-up migrate-down rust-migrate-down; do
+  migration_output="$(make -n "$target")"
+  case "$target" in
+    migrate-up|rust-migrate-up)
+      grep -Fq -- "./scripts/run-rust-server.sh run --locked -p cordy-migrate -- up" <<<"$migration_output" ||
+        fail "$target: expected the Rust up migration runner, got:\n$migration_output"
+      ;;
+    migrate-down|rust-migrate-down)
+      grep -Fq -- "./scripts/run-rust-server.sh run --locked -p cordy-migrate -- down" <<<"$migration_output" ||
+        fail "$target: expected the Rust down migration runner, got:\n$migration_output"
+      ;;
+  esac
+  if grep -Fq -- "cd server && go run ./cmd/migrate" <<<"$migration_output"; then
+    fail "$target: unexpectedly resolved to the legacy Go migration runner:\n$migration_output"
+  fi
+done
+
+for target in go-migrate-up go-migrate-down; do
+  legacy_migration_output="$(make -n "$target")"
+  grep -Fq -- "cd server && go run ./cmd/migrate" <<<"$legacy_migration_output" ||
+    fail "$target: expected the explicit legacy Go migration runner, got:\n$legacy_migration_output"
+done
+
 # The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
 # what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
 require_outputs() {
