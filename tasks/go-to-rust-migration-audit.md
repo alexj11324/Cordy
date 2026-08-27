@@ -1215,3 +1215,8 @@ config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollba
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 shell、systemd、Docker 或生命周期行为记为通过。PR 明确堆叠
   在 Ready PR #552。
+- reviewer 在 head `7f4616c4` 返回一个 P1、两个 P2：systemd 阶段失败可能残留已运行 stack、
+  linger 或 enabled-but-failed unit，不满足 fail-closed；linger owner 错误信任可伪造/陈旧的
+  `$USER` 而非实际 UID；现有 stub 只证明命令被打印，未覆盖 unit verify、失败清理、Docker
+  readiness、已有 unit 升级或真实 stop 生命周期。finding 已交独立 fixer；reviewer 对
+  oneshot/restart 基本语义、路径 escaping、#552 finding 继承和 Ponytail 无其他 finding。
