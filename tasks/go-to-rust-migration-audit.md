@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI 与 tag release 验证门已切到 Rust | 异步收口 #551 V/R/F；主线继续 install/systemd、启动与回滚演练 | release gate 已交付，最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551；详见 §11、§15、§16、§38 | 主 agent；独立 V/R/F subagent |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI 与 tag release 验证门已切到 Rust；当前切片收口 self-host image ref/rollback | 让 Unix/Windows installer 选定的 release ref 同时固定 backend/web Rust image tag，并记录可重复升级/回滚路径；随后继续 systemd、启动演练 | release gate 已交付，installer rollback 可独立接线；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551/当前切片；详见 §11、§15、§16、§38、§39 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
@@ -1140,3 +1140,18 @@ Homebrew 和 multi-arch backend image 都依赖同一 verify job。
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 YAML、Cargo、migration、tests、release build 或 RustSec 记为
   通过。PR 明确堆叠在 Ready PR #550。
+
+## 39. AUDIT-001 执行缺口：self-host Rust image upgrade/rollback ref ownership
+
+当前切片选择 `AUDIT-001` 的 installer→Compose→Rust image 升级/回滚完整生产链：
+
+- Unix/Windows installer 已用 `CORDY_SELFHOST_REF`（默认 latest release tag）checkout 对应
+  self-host assets，但 `.env.example` 写入的 `CORDY_IMAGE_TAG=latest` 此后不再同步；因此显式
+  `CORDY_SELFHOST_REF=vX.Y.Z` 只切换 Compose 文件，实际 backend/web 仍拉取 `latest`，回滚
+  声明不成立，安装时还可能混用旧 assets 与新 Rust image。
+- `docker-compose.selfhost.yml` 已有唯一的 `CORDY_IMAGE_TAG` 生产选择边界，不需要第二个
+  image resolver、rollback script 或状态文件。installer 应在 checkout 后、pull/up 前把选定
+  release ref 写到该字段；`main` fallback 继续选择 `latest`，显式/默认 release tag 则固定同名
+  immutable GHCR tag。
+- 本切片同时修改 Bash 与 PowerShell installer，并把升级、精确版本固定和回滚命令写入现有
+  self-host runbook；不修改数据库迁移语义，也不声称镜像回滚会自动执行 down migration。
