@@ -1713,6 +1713,20 @@ error 并继续既有 bounded retry/fallback，不能 silently direct 绕过 ope
 - 默认生产路径：Rust CLI daemon 构造的唯一 `DaemonManager` 直接使用该连接边界；没有 Stub、Noop、Fake
   或 test-only production selector。Go 是否可下线：本 proxy 能力经异步证据收口后不再需要 Go daemon；
   AUDIT-005 其余生命周期和最终 AUDIT-001..010 门仍未完成。
+- implementation commit `544a603a` 已在唯一 `DaemonControl::run_task_wakeup_connection` 接入
+  environment selection、NO_PROXY/loopback bypass、HTTP-only proxy fail-closed、Basic auth、16 KiB bounded
+  CONNECT 和 tunnel 后 target TLS/WS handshake。真实 production child-process check 直接以 wss target、
+  `HTTPS_PROXY` credentials 与 stand-in proxy 断言 exact CONNECT、auth 不泄到 target request、200 后发出
+  TLS ClientHello；另有 selection/NO_PROXY/malformed/unsupported 与 refusal/truncation/oversize checks。
+- 实现只修改现有 `manager.rs` 和 daemon manifest，共 377 insertions/1 deletion；复用 workspace 已安装并
+  已锁定的 `hyper-util` matcher（只为 daemon 启用现有 `client-proxy` feature）、`tokio` 和
+  `tokio-tungstenite`，未新增 crate、proxy manager/trait/client/background loop、Stub、Noop 或 Fake。
+- 默认 production Rust CLI daemon 仍只构造同一 `DaemonControl`；unset/NO_PROXY/loopback 保持 direct，
+  有效 environment proxy 走 CONNECT，malformed/non-UTF-8/unsupported scheme、connect/write/read/status 错误
+  进入既有 transport retry 与 HTTP polling fallback，不 silently direct。Go 本能力待异步证据收口后可退休；
+  全局 Go 删除仍依赖 AUDIT-001..010。
 - owner：主 agent 仅迁移、接线与 Ready PR 交付；独立 verifier 负责 compile/test/real CONNECT smoke，
   reviewer 只读审查，finding 交 existing independent fixer。依赖 #562 branch
-  `codex/cord-226-private-task-temp-rust` at `1bf5cccd`；尚无 implementation commit 或 PR。
+  `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。主 agent 只运行并通过 `git diff --check`；Cargo
+  resolution、Cargo.lock、rustfmt、compile、tests、real CONNECT/TLS/control/fallback 与平台检查均尚未由
+  verifier 执行或记为通过。Ready PR 尚待 push/create。
