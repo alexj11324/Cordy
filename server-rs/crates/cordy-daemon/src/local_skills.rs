@@ -109,14 +109,10 @@ pub struct LocalSkillRoot {
     pub plugin: String,
 }
 
-/// Built-in runtime identities (e.g. "omp") declare their user skills dir in
-/// the descriptor (pkg/agent/builtin_runtimes.go). Extend when more built-ins
-/// are ported.
+/// Built-in runtime identities declare their user skills directory in the
+/// canonical `cordy_agent` descriptor (pkg/agent/builtin_runtimes.go).
 fn builtin_runtime_user_skills_dir(provider: &str) -> Option<&'static str> {
-    match provider {
-        "omp" => Some(".omp/agent/skills"),
-        _ => None,
-    }
+    cordy_agent::builtin_runtime(provider).map(|runtime| runtime.user_skills_dir)
 }
 
 /// `localSkillRootsForProvider` returns the ordered user-level skill roots
