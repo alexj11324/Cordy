@@ -2394,4 +2394,603 @@ mod tests {
         result.expect("delegated sweeper run_once contract failed");
         cleanup.expect("delegated sweeper fixture cleanup failed");
     }
+
+    struct ChatFinalizeRows {
+        pool: PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        runtime_id: Uuid,
+        agent_id: Uuid,
+        session_id: Uuid,
+        task_id: Uuid,
+        user_message_id: Uuid,
+        attachment_id: Uuid,
+    }
+
+    impl ChatFinalizeRows {
+        // Every insert happens in one transaction. If setup fails before the
+        // commit, dropping the transaction rolls the partial fixture back;
+        // callers only receive a fixture after all ids are durable.
+        async fn required(status: &str, started: bool) -> anyhow::Result<Self> {
+            let url = std::env::var("DATABASE_URL")
+                .map_err(|_| anyhow::anyhow!("DATABASE_URL is required for chat finalize contracts"))?;
+            let pool = PgPool::connect(&url).await?;
+            let workspace_id = new_v7();
+            let user_id = new_v7();
+            let runtime_id = new_v7();
+            let agent_id = new_v7();
+            let session_id = new_v7();
+            let task_id = new_v7();
+            let user_message_id = new_v7();
+            let attachment_id = new_v7();
+            let started_at = if started { Some(Utc::now()) } else { None };
+
+            let mut tx = pool.begin().await?;
+            sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, $2, $3)")
+                .bind(user_id)
+                .bind("Rust chat finalize contract")
+                .bind(format!("chat-finalize-{user_id}@cordy.ai"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind("Rust chat finalize contract")
+                .bind(format!("chat-finalize-{workspace_id}"))
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query(
+                "INSERT INTO member (id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'owner')",
+            )
+            .bind(new_v7())
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, visibility, owner_id) \
+                 VALUES ($1, $2, NULL, $3, 'local', $4, 'online', 'contract runtime', '{}'::jsonb, now(), 'private', $5)",
+            )
+            .bind(runtime_id)
+            .bind(workspace_id)
+            .bind("Chat finalize runtime")
+            .bind(format!("chat_finalize_{runtime_id}"))
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO agent (id, workspace_id, name, description, runtime_mode, runtime_config, runtime_id, visibility, status, max_concurrent_tasks, owner_id) \
+                 VALUES ($1, $2, 'Chat finalize agent', '', 'local', '{}'::jsonb, $3, 'private', 'idle', 2, $4)",
+            )
+            .bind(agent_id)
+            .bind(workspace_id)
+            .bind(runtime_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO chat_session (id, workspace_id, agent_id, creator_id, title, status) \
+                 VALUES ($1, $2, $3, $4, 'chat finalize contract', 'active')",
+            )
+            .bind(session_id)
+            .bind(workspace_id)
+            .bind(agent_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO agent_task_queue (id, agent_id, chat_session_id, status, priority, context, runtime_id, started_at) \
+                 VALUES ($1, $2, $3, $4, 0, '{}'::jsonb, $5, $6)",
+            )
+            .bind(task_id)
+            .bind(agent_id)
+            .bind(session_id)
+            .bind(status)
+            .bind(runtime_id)
+            .bind(started_at)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO chat_message (id, chat_session_id, role, content, task_id) \
+                 VALUES ($1, $2, 'user', 'restore this prompt', $3)",
+            )
+            .bind(user_message_id)
+            .bind(session_id)
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO attachment (id, workspace_id, chat_session_id, chat_message_id, uploader_type, uploader_id, filename, url, content_type, size_bytes) \
+                 VALUES ($1, $2, $3, $4, 'member', $5, 'notes.txt', 'https://files.test/notes.txt', 'text/plain', 12)",
+            )
+            .bind(attachment_id)
+            .bind(workspace_id)
+            .bind(session_id)
+            .bind(user_message_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+
+            Ok(Self {
+                pool,
+                workspace_id,
+                user_id,
+                runtime_id,
+                agent_id,
+                session_id,
+                task_id,
+                user_message_id,
+                attachment_id,
+            })
+        }
+
+        async fn cleanup(&self) -> anyhow::Result<()> {
+            // chat_draft_restore intentionally has no FK, so prune it before
+            // the workspace cascade rather than relying on the test Drop path.
+            sqlx::query(
+                "DELETE FROM chat_draft_restore WHERE chat_session_id = $1 OR task_id = $2",
+            )
+            .bind(self.session_id)
+            .bind(self.task_id)
+            .execute(&self.pool)
+            .await?;
+            sqlx::query("DELETE FROM workspace WHERE id = $1")
+                .bind(self.workspace_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                .bind(self.user_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn backdate_marker(&self, seconds: f64) -> anyhow::Result<()> {
+            sqlx::query(
+                "UPDATE agent_task_queue SET status = 'cancelled', completed_at = now(), chat_finalize_deferred_at = now() - make_interval(secs => $2::double precision) WHERE id = $1",
+            )
+            .bind(self.task_id)
+            .bind(seconds)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        }
+
+        async fn marker_is_null(&self) -> anyhow::Result<bool> {
+            Ok(sqlx::query_scalar(
+                "SELECT chat_finalize_deferred_at IS NULL FROM agent_task_queue WHERE id = $1",
+            )
+            .bind(self.task_id)
+            .fetch_one(&self.pool)
+            .await?)
+        }
+
+        async fn user_message_exists(&self) -> anyhow::Result<bool> {
+            Ok(sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM chat_message WHERE id = $1)")
+                .bind(self.user_message_id)
+                .fetch_one(&self.pool)
+                .await?)
+        }
+
+        async fn assistant_contents(&self) -> anyhow::Result<Vec<String>> {
+            Ok(sqlx::query_scalar(
+                "SELECT content FROM chat_message WHERE task_id = $1 AND role = 'assistant' ORDER BY created_at, id",
+            )
+            .bind(self.task_id)
+            .fetch_all(&self.pool)
+            .await?)
+        }
+
+        async fn restore_count(&self) -> anyhow::Result<i64> {
+            Ok(sqlx::query_scalar(
+                "SELECT count(*) FROM chat_draft_restore WHERE task_id = $1",
+            )
+            .bind(self.task_id)
+            .fetch_one(&self.pool)
+            .await?)
+        }
+
+        async fn attachment_message_id(&self) -> anyhow::Result<Option<Uuid>> {
+            Ok(sqlx::query_scalar("SELECT chat_message_id FROM attachment WHERE id = $1")
+                .bind(self.attachment_id)
+                .fetch_one(&self.pool)
+                .await?)
+        }
+
+        async fn insert_transcript(&self) -> anyhow::Result<()> {
+            sqlx::query(
+                "INSERT INTO task_message (task_id, seq, type, content) VALUES ($1, 1, 'text', 'late transcript')",
+            )
+            .bind(self.task_id)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        }
+
+        async fn mark_channel_ingested(&self) -> anyhow::Result<()> {
+            sqlx::query("UPDATE chat_message SET channel_ingested = TRUE WHERE id = $1")
+                .bind(self.user_message_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn insert_second_expired_marker(&self) -> anyhow::Result<Uuid> {
+            let id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent_task_queue (id, agent_id, status, priority, context, runtime_id, completed_at, chat_finalize_deferred_at) \
+                 VALUES ($1, $2, 'cancelled', 0, '{}'::jsonb, $3, now(), now() - interval '2 minutes')",
+            )
+            .bind(id)
+            .bind(self.agent_id)
+            .bind(self.runtime_id)
+            .execute(&self.pool)
+            .await?;
+            Ok(id)
+        }
+    }
+
+    fn chat_finalize_sweeper(
+        pool: PgPool,
+        bus: Arc<Bus>,
+        tasks: Arc<TaskService>,
+        now: DateTime<Utc>,
+    ) -> RuntimeTaskSweeper {
+        RuntimeTaskSweeper::new(
+            pool,
+            Arc::new(TestLiveness {
+                available: true,
+                alive: HashSet::new(),
+                forgotten: Arc::new(Mutex::new(Vec::new())),
+                race_id: None,
+                pool: None,
+            }),
+            tasks,
+            bus,
+            None,
+            DEFAULT_RECONNECT_GRACE,
+        )
+        .with_clock(Arc::new(FixedClock(now)))
+    }
+
+    fn cancel_finalized_events(events: &Arc<Mutex<Vec<Event>>>) -> Vec<Event> {
+        events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|event| event.event_type == cordy_protocol::EVENT_CHAT_CANCEL_FINALIZED)
+            .cloned()
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn production_run_once_finalizes_deferred_chat_and_is_idempotent() -> anyhow::Result<()> {
+        let rows = ChatFinalizeRows::required("running", true).await?;
+        let result = async {
+            let bus = Arc::new(Bus::new());
+            let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let events = events.clone();
+                bus.subscribe_all(move |event| {
+                    events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let tasks = Arc::new(TaskService::new(rows.pool.clone(), bus.clone()));
+            let cancelled = tasks
+                .cancel_task_with_result(
+                    rows.task_id,
+                    cordy_service::task_service::CancelTaskOptions {
+                        client_supports_draft_restore: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("cancel task: {error}"))?;
+            anyhow::ensure!(
+                cancelled.cancelled_chat_message.is_none(),
+                "started empty chat finalized synchronously"
+            );
+            anyhow::ensure!(!rows.marker_is_null().await?, "cancel did not arm marker");
+            rows.backdate_marker(120.0).await?;
+
+            let now = Utc::now();
+            let sweeper = chat_finalize_sweeper(rows.pool.clone(), bus, tasks, now);
+            let report = sweeper.run_once().await;
+            anyhow::ensure!(report.chats_finalized == 1, "chat finalize report = {report:?}");
+            anyhow::ensure!(!rows.user_message_exists().await?, "empty prompt was not deleted");
+            anyhow::ensure!(rows.marker_is_null().await?, "marker was not claimed");
+            anyhow::ensure!(rows.restore_count().await? == 1, "restore row missing");
+            anyhow::ensure!(
+                rows.attachment_message_id().await?.is_none(),
+                "attachment remained bound to deleted message"
+            );
+            let finalized = cancel_finalized_events(&events);
+            anyhow::ensure!(finalized.len() == 1, "finalized events = {}", finalized.len());
+            let payload = &finalized[0].payload;
+            anyhow::ensure!(
+                payload.get("outcome").and_then(serde_json::Value::as_str)
+                    == Some(cordy_protocol::CHAT_CANCEL_OUTCOME_RESTORED),
+                "unexpected finalized payload: {payload}"
+            );
+            anyhow::ensure!(
+                payload.get("content").and_then(serde_json::Value::as_str).unwrap_or("")
+                    .is_empty(),
+                "restore event leaked prompt content: {payload}"
+            );
+            anyhow::ensure!(
+                !payload.to_string().contains("restore this prompt"),
+                "restore event contains prompt text: {payload}"
+            );
+
+            let second = sweeper.run_once().await;
+            anyhow::ensure!(second.chats_finalized == 0, "second sweep report = {second:?}");
+            anyhow::ensure!(rows.restore_count().await? == 1, "second sweep duplicated restore");
+            anyhow::ensure!(cancel_finalized_events(&events).len() == 1, "second sweep duplicated event");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result?;
+        cleanup?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancel_task_covers_sync_empty_nonempty_and_deferred_grace() -> anyhow::Result<()> {
+        let empty = ChatFinalizeRows::required("queued", false).await?;
+        let empty_result = async {
+            let tasks = TaskService::new(empty.pool.clone(), Arc::new(Bus::new()));
+            let cancelled = tasks
+                .cancel_task_with_result(
+                    empty.task_id,
+                    cordy_service::task_service::CancelTaskOptions {
+                        client_supports_draft_restore: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("cancel not-started task: {error}"))?;
+            anyhow::ensure!(
+                cancelled
+                    .cancelled_chat_message
+                    .as_ref()
+                    .is_some_and(|message| message.restore_to_input),
+                "not-started empty task did not restore synchronously"
+            );
+            anyhow::ensure!(!empty.user_message_exists().await?, "sync restore kept input row");
+            anyhow::ensure!(empty.marker_is_null().await?, "sync restore armed marker");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let empty_cleanup = empty.cleanup().await;
+        empty_result?;
+        empty_cleanup?;
+
+        let nonempty = ChatFinalizeRows::required("running", true).await?;
+        let nonempty_result = async {
+            nonempty.insert_transcript().await?;
+            let tasks = TaskService::new(nonempty.pool.clone(), Arc::new(Bus::new()));
+            let cancelled = tasks
+                .cancel_task_with_result(
+                    nonempty.task_id,
+                    cordy_service::task_service::CancelTaskOptions {
+                        client_supports_draft_restore: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("cancel nonempty task: {error}"))?;
+            anyhow::ensure!(cancelled.cancelled_chat_message.is_none(), "nonempty task restored");
+            anyhow::ensure!(nonempty.user_message_exists().await?, "nonempty input was deleted");
+            anyhow::ensure!(
+                nonempty.assistant_contents().await? == vec!["Stopped.".to_string()],
+                "nonempty assistant outcome mismatch"
+            );
+            anyhow::ensure!(nonempty.marker_is_null().await?, "nonempty task armed marker");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let nonempty_cleanup = nonempty.cleanup().await;
+        nonempty_result?;
+        nonempty_cleanup?;
+
+        let deferred = ChatFinalizeRows::required("running", true).await?;
+        let deferred_result = async {
+            let tasks = TaskService::new(deferred.pool.clone(), Arc::new(Bus::new()));
+            tasks
+                .cancel_task_with_result(
+                    deferred.task_id,
+                    cordy_service::task_service::CancelTaskOptions {
+                        client_supports_draft_restore: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("cancel deferred task: {error}"))?;
+            anyhow::ensure!(!deferred.marker_is_null().await?, "deferred marker missing");
+            anyhow::ensure!(deferred.user_message_exists().await?, "deferred input was deleted");
+            let fresh = agent::list_chat_finalize_deferred_expired(
+                &deferred.pool,
+                Utc::now() - chrono::Duration::seconds(60),
+                100,
+            )
+            .await?;
+            anyhow::ensure!(
+                !fresh.iter().any(|task| task.id == deferred.task_id),
+                "fresh marker crossed grace boundary"
+            );
+            deferred.backdate_marker(120.0).await?;
+            let expired = agent::list_chat_finalize_deferred_expired(
+                &deferred.pool,
+                Utc::now() - chrono::Duration::seconds(60),
+                100,
+            )
+            .await?;
+            anyhow::ensure!(
+                expired.iter().any(|task| task.id == deferred.task_id),
+                "expired marker was not returned"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let deferred_cleanup = deferred.cleanup().await;
+        deferred_result?;
+        deferred_cleanup?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deferred_finalize_late_transcript_claims_once_and_stops() -> anyhow::Result<()> {
+        let rows = ChatFinalizeRows::required("running", true).await?;
+        let result = async {
+            let bus = Arc::new(Bus::new());
+            let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let events = events.clone();
+                bus.subscribe_all(move |event| {
+                    events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let tasks = TaskService::new(rows.pool.clone(), bus);
+            tasks
+                .cancel_task_with_result(
+                    rows.task_id,
+                    cordy_service::task_service::CancelTaskOptions {
+                        client_supports_draft_restore: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("cancel task: {error}"))?;
+            rows.backdate_marker(120.0).await?;
+            rows.insert_transcript().await?;
+            tasks.finalize_deferred_cancelled_chat(rows.task_id).await;
+            tasks.finalize_deferred_cancelled_chat(rows.task_id).await;
+            anyhow::ensure!(rows.marker_is_null().await?, "marker was not claimed");
+            anyhow::ensure!(rows.user_message_exists().await?, "late transcript deleted input");
+            anyhow::ensure!(rows.restore_count().await? == 0, "late transcript created restore");
+            anyhow::ensure!(
+                rows.assistant_contents().await? == vec!["Stopped.".to_string()],
+                "late transcript outcome was not exactly one Stopped."
+            );
+            anyhow::ensure!(
+                cancel_finalized_events(&events).len() == 1,
+                "duplicate finalization event"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result?;
+        cleanup?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn channel_ingested_and_missing_session_fail_closed() -> anyhow::Result<()> {
+        let channel = ChatFinalizeRows::required("running", true).await?;
+        let channel_result = async {
+            channel.mark_channel_ingested().await?;
+            channel.backdate_marker(120.0).await?;
+            let bus = Arc::new(Bus::new());
+            let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let events = events.clone();
+                bus.subscribe_all(move |event| {
+                    events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let tasks = TaskService::new(channel.pool.clone(), bus);
+            tasks.finalize_deferred_cancelled_chat(channel.task_id).await;
+            anyhow::ensure!(channel.marker_is_null().await?, "channel marker not claimed");
+            anyhow::ensure!(channel.user_message_exists().await?, "channel input was deleted");
+            anyhow::ensure!(channel.restore_count().await? == 0, "channel input became restorable");
+            anyhow::ensure!(
+                channel.assistant_contents().await? == vec!["Stopped.".to_string()],
+                "channel outcome did not stop"
+            );
+            anyhow::ensure!(cancel_finalized_events(&events).len() == 1, "channel event missing");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let channel_cleanup = channel.cleanup().await;
+        channel_result?;
+        channel_cleanup?;
+
+        let gone = ChatFinalizeRows::required("running", true).await?;
+        let gone_result = async {
+            gone.backdate_marker(120.0).await?;
+            sqlx::query("DELETE FROM chat_session WHERE id = $1")
+                .bind(gone.session_id)
+                .execute(&gone.pool)
+                .await?;
+            let tasks = TaskService::new(gone.pool.clone(), Arc::new(Bus::new()));
+            tasks.finalize_deferred_cancelled_chat(gone.task_id).await;
+            anyhow::ensure!(gone.marker_is_null().await?, "missing-session marker not claimed");
+            anyhow::ensure!(gone.restore_count().await? == 0, "missing session got restore");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let gone_cleanup = gone.cleanup().await;
+        gone_result?;
+        gone_cleanup?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalize_lock_waits_for_session_owner_and_positive_batch_is_bounded() -> anyhow::Result<()> {
+        let rows = ChatFinalizeRows::required("cancelled", true).await?;
+        let result = async {
+            rows.backdate_marker(120.0).await?;
+            let second_id = rows.insert_second_expired_marker().await?;
+            let selected = agent::list_chat_finalize_deferred_expired(
+                &rows.pool,
+                Utc::now() - chrono::Duration::seconds(60),
+                1,
+            )
+            .await?;
+            anyhow::ensure!(selected.len() <= 1, "positive batch returned {} rows", selected.len());
+            let all = agent::list_chat_finalize_deferred_expired(
+                &rows.pool,
+                Utc::now() - chrono::Duration::seconds(60),
+                100,
+            )
+            .await?;
+            anyhow::ensure!(all.iter().any(|task| task.id == rows.task_id), "primary marker missing");
+            anyhow::ensure!(all.iter().any(|task| task.id == second_id), "second marker missing");
+
+            let mut lock_tx = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM chat_session WHERE id = $1 FOR UPDATE")
+                .bind(rows.session_id)
+                .execute(&mut *lock_tx)
+                .await?;
+            let tasks = Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new())));
+            let task_id = rows.task_id;
+            let finalizer = tasks.clone();
+            let pending = tokio::spawn(async move {
+                finalizer.finalize_deferred_cancelled_chat(task_id).await;
+            });
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            anyhow::ensure!(!rows.marker_is_null().await?, "finalizer bypassed session lock");
+            drop(lock_tx);
+            pending.await?;
+            anyhow::ensure!(rows.marker_is_null().await?, "finalizer did not claim after lock release");
+            anyhow::ensure!(rows.restore_count().await? == 1, "lock-wait finalizer missed restore");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result?;
+        cleanup?;
+        Ok(())
+    }
 }
