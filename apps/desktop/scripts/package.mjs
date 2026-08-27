@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 // Wrapper around `electron-builder` that keeps the Desktop version in
 // lockstep with the CLI. Both are derived from `git describe --tags
-// --match 'v[0-9]*' --always --dirty` — the same source GoReleaser reads
-// for the CLI
-// binary via the `main.version` ldflag — so a single `vX.Y.Z` tag push
+// --match 'v[0-9]*' --always --dirty` — the same source the Rust CLI build
+// uses for its build environment — so a single `vX.Y.Z` tag push
 // produces matching CLI and Desktop versions.
 //
 // Builds the Electron bundles once, then for each requested target
-// (platform + arch) compiles the matching Go CLI into resources/bin/ and
+// (platform + arch) compiles the matching Rust CLI into resources/bin/ and
 // invokes electron-builder with `-c.extraMetadata.version=<derived>` so
 // the override applies at build time without mutating the tracked
 // package.json.
