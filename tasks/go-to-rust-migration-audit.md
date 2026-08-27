@@ -197,7 +197,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control 与 auto-update production chain 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550，可执行 | PR #542..#550；§5.2、§6.2、§29..§37 | 主 agent；独立 V/R/F subagent |
-| AUDIT-006 | 进行中 | 三个 backfill 业务能力及 Rust Makefile/image 产物已交付；当前切片收口 migration operator lifecycle | 为 Rust migrate 接入有界 advisory-lock wait、SIGINT/SIGTERM 取消、status/退出码和运维恢复契约 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523/当前切片；§6.2、§42 | 主 agent；独立 V/R/F subagent |
+| AUDIT-006 | Ready PR | 三个 backfill 业务能力及 Rust Makefile/image 产物已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步验证真实 PostgreSQL 并发/超时/信号/恢复，finding 交 fixer；再核对剩余发布入口 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
@@ -1295,3 +1295,16 @@ implementation commit `d607e429`）已经完整删除 required merge gate 的 Go
 - 退出证据：并发 runner 串行；锁超时、信号取消和 pending migration 都 fail nonzero；成功
   up/down/status 保持现有 production entry 与输出；取消或失败后 session lock 可由后继 runner
   获取。编译、数据库并发/信号/恢复验证由独立 verifier 执行，finding 由独立 fixer 处理。
+
+Ready PR #555（`codex/cord-219-rust-migration-operator-lifecycle`，gap commit `3d801ba5`，
+implementation commit `0adcc450`）已把上述 CLI、锁、取消、status 与 runbook 作为同一个完整
+生产能力交付；修改限于现有 migrate main/runner、self-host runbook 和唯一台账。
+
+- 默认生产路径：Docker/Makefile/CI/release 已有的 Rust migrate entry 保持不变，默认五分钟
+  bounded lock 直接作用于生产 binary；CLI flag 优先于环境变量，零值 fail nonzero。
+- Go 是否可下线：本 lifecycle 不再需要 Go runner，但仍公开的 compatibility/rollback 入口及
+  AUDIT-002..010 退出尚未完成，不能删除 Go。
+- 异步状态：independent verifier/reviewer 待派发，finding 交既有 fixer；主 agent 仅运行
+  `git diff --check`，未把 compile、CLI、PostgreSQL 并发、signal 或 recovery 记为通过。
+- PR 堆叠在 Ready #554；已知 #551 migrate invocation、#544 compile baseline 与 #552..#554
+  findings 均保持诚实记录，未在本切片顺手代修。
