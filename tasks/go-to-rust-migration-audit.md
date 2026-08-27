@@ -203,35 +203,90 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
-### 6.1.1 勾选式推荐执行顺序
+### 6.1.1 时间顺序执行计划
 
-下面是给人看的“按依赖推进”视图；上面的详细表仍是唯一执行台账和事实来源。
+下面是给主 agent 和后续 Agent 使用的严格先后顺序；上面的详细表仍是唯一事实来源。
+这里约束“实现切片何时开始”，不约束异步 verification/review/fix 何时返回。
 
-- `[ ]` = 尚未完成；`[~]` = 已开始或已有 Ready PR，但退出证据尚未齐；`[x]` = 该 ID 的全部退出证据均已记录。
-- 顺序是推荐的依赖顺序，不是已经发生的时间线；已经开始的切片不会因为排序而倒退。
-- 同一阶段标注“可并行”的项目可以异步推进。创建 Ready PR 不等于打勾，review/fix、编译和长测试的异步结果也不自动改变勾选状态。
+- `[ ]` = 尚未开始；`[~]` = 已实现/已有 Ready PR，但该切片仍缺退出证据；`[x]` = 该切片的全部退出证据已记录。
+- 前一步完成“实现提交、生产入口接线、`git diff --check`、推送和 Ready PR”后，才能开始下一步实现。
+- 编译、测试、review 和 fix 在切片交付后异步运行，不作为下一步实现的前置条件；结果必须回写，不能伪报通过。
+- `T-xx` 是排程编号，`§xx` 是已有台账章节，不新增 AUDIT ID；已经交付的历史切片不重做。
+- 当前 `T-36 / §61`（PR #574）已交付，下一实现游标是 `T-52`：先登记 AUDIT-005 的下一个未闭合 background-worker 缺口，再开始编码。
 
-1. `[~]` **AUDIT-001 — Rust 默认生产入口**（Makefile、Docker、CI、Helm、CLI、installer/systemd 和回滚）
-   - `[ ]` 默认构建、启动、health/ready 使用 Rust
-   - `[ ]` install/systemd、兼容产物和回滚演练完成
-2. `[~]` **AUDIT-006 — migration/backfill 发布闭环**（依赖 AUDIT-001；可与后续验证并行）
-   - `[ ]` migrate up/down/status、锁、取消/恢复和三个 backfill 的 image/release packaging 完成
-3. `[~]` **AUDIT-003A..003D — 剩余 leaf contract**（可并行）
-   - `[ ]` pprof heap/trace 或替代方案、logger 时间布局、avatar 对象存储、agent/daemon concurrency 生命周期均有退出证据
-4. `[~]` **AUDIT-004 — integrations 生产矩阵**（可并行；依赖 channel runtime 已接线）
-   - `[ ]` Telegram、Composio、VCS、GitHub snapshot 等 provider 的正/负向 smoke、fail-closed 和回滚证据完成
-5. `[~]` **AUDIT-002 — API/WS/daemon 行为 smoke**（可按完整契约分片）
-   - `[ ]` 认证、权限、事务、错误 JSON、WS/realtime、background worker 和 CLI/daemon smoke 完成
-6. `[~]` **AUDIT-005 — daemon 完整能力验收**（依赖相关 leaf/provider 契约证据）
-   - `[ ]` control/health、registration/reconcile、execution、GC、MCP、update 和 shutdown 生命周期完成
-7. `[ ]` **AUDIT-007 — Go 测试契约映射**（可并行建立索引）
-   - `[ ]` 高风险 Go 回归均映射到 Rust 可执行测试，或记录不适用理由
-8. `[ ]` **AUDIT-008 — wire/schema/ID 兼容性**（可并行）
-   - `[ ]` JSON、时间、UUID/ULID、Redis、DB nullable/enum、error/event golden vectors 完成
-9. `[~]` **AUDIT-009 — 运维与文档切换**（跟随 001 的实际产物）
-   - `[ ]` install/systemd/release/rollback/pprof/metrics 文档与已验证 Rust 入口一致
-10. `[ ]` **AUDIT-010 — Go 源码退休**（严格依赖 AUDIT-001..009 全部 `[x]`）
-    - `[ ]` 全仓引用审计、生产 build/deploy smoke、回滚演练通过后删除全部 Go source
+#### 阶段一：生产基础与发布资产
+
+1. `[~]` `T-01 / §11` AUDIT-001 backend 默认入口
+2. `[~]` `T-02 / §15` AUDIT-001 CLI release assets
+3. `[~]` `T-03 / §16` AUDIT-001 Desktop 内嵌 Rust CLI
+4. `[~]` `T-04 / §17` AUDIT-001 installer/运维入口
+5. `[~]` `T-05 / §38` AUDIT-001 tag release verification
+6. `[~]` `T-06 / §39` AUDIT-001 self-host image upgrade/rollback
+7. `[~]` `T-07 / §40` AUDIT-001 systemd lifecycle
+8. `[~]` `T-08 / §41` AUDIT-001 required backend CI gate
+9. `[~]` `T-09 / §42` AUDIT-006 migration operator/backfill 发布闭环
+
+#### 阶段二：leaf contract 与 integrations
+
+10. `[~]` `T-10 / §12` AUDIT-003A CPU/cmdline/symbol pprof
+11. `[~]` `T-11 / §13` AUDIT-003B logger 基础配置与字段
+12. `[~]` `T-12 / §14` AUDIT-003C squad avatar
+13. `[~]` `T-13 / §19` AUDIT-003D agent/daemon concurrency
+14. `[~]` `T-14 / §43` AUDIT-003A process profiling/metrics replacement
+15. `[~]` `T-15 / §44` AUDIT-003B operator log time layout
+16. `[~]` `T-16 / §47` AUDIT-003A heap profile/async diagnostics
+17. `[~]` `T-17 / §20` AUDIT-004 Lark
+18. `[~]` `T-18 / §21` AUDIT-004 WeCom
+19. `[~]` `T-19 / §22` AUDIT-004 DingTalk
+20. `[~]` `T-20 / §23` AUDIT-004 Slack
+21. `[~]` `T-21 / §24` AUDIT-004 Telegram
+22. `[~]` `T-22 / §25` AUDIT-004 Composio
+23. `[~]` `T-23 / §26` AUDIT-004 VCS
+24. `[~]` `T-24 / §27` AUDIT-004 GitHub snapshot
+25. `[~]` `T-25 / §28` AUDIT-004 channel media lifecycle
+
+#### 阶段三：API、WS 与 background worker
+
+26. `[~]` `T-26 / §18` AUDIT-002 CLI/daemon control smoke（route parity 424/424 已完成；真实 daemon smoke 仍待收口）
+27. `[~]` `T-27 / §52` AUDIT-002 issue-status
+28. `[~]` `T-28 / §53` AUDIT-002 issue create admission/order
+29. `[~]` `T-29 / §54` AUDIT-002 user WebSocket session
+30. `[~]` `T-30 / §55` AUDIT-002 scheduler worker
+31. `[~]` `T-31 / §56` AUDIT-002 heartbeat batching
+32. `[~]` `T-32 / §57` AUDIT-002 stale-liveness/offline
+33. `[~]` `T-33 / §58` AUDIT-002 offline task/reconnect retry
+34. `[~]` `T-34 / §59` AUDIT-002 stale dispatched/running/queued cleanup
+35. `[~]` `T-35 / §60` AUDIT-002 runtime GC
+36. `[~]` `T-36 / §61` AUDIT-002 delegated failure recovery
+
+#### 阶段四：daemon 剩余能力（按既有切片继续）
+
+37. `[~]` `T-37 / §29` AUDIT-005 health/uptime
+38. `[~]` `T-38 / §30` AUDIT-005 provider refresh retry
+39. `[~]` `T-39 / §31` AUDIT-005 GC metadata
+40. `[~]` `T-40 / §32` AUDIT-005 runtime MCP
+41. `[~]` `T-41 / §33` AUDIT-005 Remote MCP broker
+42. `[~]` `T-42 / §34` AUDIT-005 plugin-hook MCP
+43. `[~]` `T-43 / §35` AUDIT-005 local-skills heartbeat
+44. `[~]` `T-44 / §36` AUDIT-005 wakeup WS/RPC/control
+45. `[~]` `T-45 / §37` AUDIT-005 auto-update/restart handoff
+46. `[~]` `T-46 / §45` AUDIT-005 poisoned-session lifecycle
+47. `[~]` `T-47 / §46` AUDIT-005 Codex rollout durability
+48. `[~]` `T-48 / §48` AUDIT-005 provider demotion/recovery
+49. `[~]` `T-49 / §49` AUDIT-005 private task temp lifecycle
+50. `[~]` `T-50 / §50` AUDIT-005 wakeup proxy/CONNECT lifecycle
+51. `[~]` `T-51 / §51` AUDIT-005 heartbeat HTTP pool recovery
+52. `[ ]` `T-52` AUDIT-005 下一个未闭合 background-worker 能力（先登记新 §，再实现）
+
+#### 阶段五：最终兼容与退休门
+
+53. `[ ]` `T-53` AUDIT-007 Go 测试契约映射
+54. `[ ]` `T-54` AUDIT-008 wire/schema/ID 兼容性
+55. `[~]` `T-55` AUDIT-009 运维与文档切换
+56. `[ ]` `T-56` AUDIT-010 Go 源码退休
+
+每一步都按同一个交付门执行：登记缺口 → 实现完整业务契约 → 接入唯一 Rust 生产入口 →
+运行机械检查 → 提交/推送 → 创建 Ready PR → 记录异步 V/R/F → 收齐退出证据后才把该步改为 `[x]`。
 
 执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
 立即提交、推送并创建 Ready PR，同时回写本表。verification/review/fix 可以
