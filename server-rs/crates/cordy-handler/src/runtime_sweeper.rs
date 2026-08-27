@@ -1601,4 +1601,581 @@ mod tests {
         result.expect("stale and queued task cleanup contract failed");
         cleanup.expect("stale and queued task cleanup fixture cleanup failed");
     }
+
+    struct GcRows {
+        pool: PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        helper_agent_id: Uuid,
+    }
+
+    impl GcRows {
+        async fn required() -> anyhow::Result<Self> {
+            let url = std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL is required for runtime GC contracts");
+            let pool = PgPool::connect(&url).await?;
+            let workspace_id = new_v7();
+            sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind("Rust runtime GC contract")
+                .bind(format!("rust-runtime-gc-{workspace_id}"))
+                .execute(&pool)
+                .await?;
+            let suffix = workspace_id.simple().to_string();
+            let user_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
+            )
+            .bind("runtime GC contract user")
+            .bind(format!("runtime-gc-{suffix}@example.test"))
+            .fetch_one(&pool)
+            .await?;
+            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
+                .bind(workspace_id)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+            let helper_runtime_id =
+                RecoveryRows::runtime(&pool, workspace_id, "gc-helper", "online", "1 minute")
+                    .await?;
+            let helper_agent_id =
+                RecoveryRows::agent(&pool, workspace_id, user_id, helper_runtime_id, "gc-helper")
+                    .await?;
+            Ok(Self {
+                pool,
+                workspace_id,
+                user_id,
+                helper_agent_id,
+            })
+        }
+
+        async fn runtime(&self, suffix: &str, status: &str, age: &str) -> anyhow::Result<Uuid> {
+            RecoveryRows::runtime(&self.pool, self.workspace_id, suffix, status, age).await
+        }
+
+        async fn issue(&self, number: i32) -> anyhow::Result<Uuid> {
+            RecoveryRows::issue(
+                &self.pool,
+                self.workspace_id,
+                self.user_id,
+                self.helper_agent_id,
+                number,
+            )
+            .await
+        }
+
+        async fn task(
+            &self,
+            runtime_id: Uuid,
+            issue_id: Uuid,
+            status: &str,
+        ) -> anyhow::Result<Uuid> {
+            RecoveryRows::task(
+                &self.pool,
+                self.helper_agent_id,
+                runtime_id,
+                issue_id,
+                status,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+        }
+
+        async fn cleanup(&self) -> anyhow::Result<()> {
+            sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
+                .bind(self.workspace_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM workspace WHERE id = $1")
+                .bind(self.workspace_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                .bind(self.user_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+    }
+
+    impl Drop for GcRows {
+        fn drop(&mut self) {
+            let pool = self.pool.clone();
+            let workspace_id = self.workspace_id;
+            let user_id = self.user_id;
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
+                        .bind(workspace_id)
+                        .execute(&pool)
+                        .await;
+                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
+                        .bind(workspace_id)
+                        .execute(&pool)
+                        .await;
+                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                        .bind(user_id)
+                        .execute(&pool)
+                        .await;
+                });
+            }
+        }
+    }
+
+    async fn mark_task_terminal(pool: &PgPool, task_id: Uuid, status: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE agent_task_queue SET status = $2, completed_at = now(), error = NULL, failure_reason = NULL WHERE id = $1",
+        )
+        .bind(task_id)
+        .bind(status)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn owner_fenced_enqueue(
+        pool: &PgPool,
+        agent_id: Uuid,
+        runtime_id: Uuid,
+        issue_id: Uuid,
+    ) -> anyhow::Result<Option<Uuid>> {
+        Ok(sqlx::query_scalar(
+            "INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority) \
+             SELECT $1, $2, $3, 'queued', 0 \
+             WHERE lock_task_owner_rows($1, $3, $2) \
+             RETURNING id",
+        )
+        .bind(agent_id)
+        .bind(runtime_id)
+        .bind(issue_id)
+        .fetch_optional(pool)
+        .await?)
+    }
+
+    async fn wait_for_lock_wait(pool: &PgPool, pid: i32) -> anyhow::Result<()> {
+        for _ in 0..500 {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = $1 AND state = 'active' AND wait_event_type = 'Lock')",
+            )
+            .bind(pid)
+            .fetch_one(pool)
+            .await?;
+            if waiting {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        anyhow::bail!("backend {pid} never waited for the runtime row lock")
+    }
+
+    #[tokio::test]
+    async fn production_runtime_gc_preserves_terminal_history_and_deduplicates_workspace_event() {
+        let rows = GcRows::required()
+            .await
+            .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC contract");
+        let result = async {
+            let drainable_one = rows.runtime("drainable-one", "offline", "8 days").await?;
+            let drainable_two = rows.runtime("drainable-two", "offline", "8 days").await?;
+            let blocked = rows.runtime("blocked", "offline", "8 days").await?;
+            let active_agent_runtime = rows.runtime("active-agent", "offline", "8 days").await?;
+            let fresh = rows.runtime("fresh", "offline", "1 day").await?;
+            let online = rows.runtime("online", "online", "1 minute").await?;
+
+            let terminal_issue = rows.issue(601).await?;
+            let completed = rows
+                .task(drainable_one, terminal_issue, "completed")
+                .await?;
+            let failed_issue = rows.issue(602).await?;
+            let failed = rows.task(drainable_one, failed_issue, "failed").await?;
+            let cancelled_issue = rows.issue(603).await?;
+            let cancelled = rows
+                .task(drainable_one, cancelled_issue, "cancelled")
+                .await?;
+            for (task_id, status) in [(completed, "completed"), (failed, "failed"), (cancelled, "cancelled")] {
+                mark_task_terminal(&rows.pool, task_id, status).await?;
+            }
+            sqlx::query(
+                "INSERT INTO task_message (task_id, seq, type, content) VALUES ($1, 1, 'assistant', 'runtime GC preserves this transcript')",
+            )
+            .bind(completed)
+            .execute(&rows.pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO task_usage (task_id, provider, model, input_tokens, output_tokens) VALUES ($1, 'test', 'runtime-gc', 10, 20)",
+            )
+            .bind(completed)
+            .execute(&rows.pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at) VALUES ($1, $2, $3, $4, $5, now() + interval '1 hour')",
+            )
+            .bind(format!("runtime-gc-{completed}"))
+            .bind(completed)
+            .bind(rows.helper_agent_id)
+            .bind(rows.workspace_id)
+            .bind(rows.user_id)
+            .execute(&rows.pool)
+            .await?;
+
+            let blocked_issue = rows.issue(604).await?;
+            let blocked_task = rows
+                .task(blocked, blocked_issue, "deferred")
+                .await?;
+            let active_agent = RecoveryRows::agent(
+                &rows.pool,
+                rows.workspace_id,
+                rows.user_id,
+                active_agent_runtime,
+                "gc-active",
+            )
+            .await?;
+
+            let bus = Arc::new(Bus::new());
+            let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let events = events.clone();
+                bus.subscribe(cordy_protocol::EVENT_DAEMON_REGISTER, move |event| {
+                    events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: true,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    pool: None,
+                }),
+                Arc::new(TaskService::new(rows.pool.clone(), bus.clone())),
+                bus,
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            )
+            .with_clock(Arc::new(FixedClock(Utc::now())));
+            let report = sweeper.run_full_once().await;
+            anyhow::ensure!(
+                report.runtimes_gc_deleted >= 2,
+                "runtime GC deleted {} rows, want at least the two drainable candidates",
+                report.runtimes_gc_deleted
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = ANY($1::uuid[])")
+                    .bind(vec![drainable_one, drainable_two])
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 0,
+                "drainable runtimes still exist after full sweeper"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE runtime_id = $1")
+                    .bind(drainable_one)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 0,
+                "terminal history still references deleted runtime"
+            );
+            let detached: (i64, bool, bool, bool) = sqlx::query_as(
+                "SELECT count(*), bool_and(runtime_id IS NULL), EXISTS (SELECT 1 FROM task_message WHERE task_id = $1), EXISTS (SELECT 1 FROM task_usage WHERE task_id = $1 AND provider = 'test') FROM agent_task_queue WHERE id IN ($1, $2, $3)",
+            )
+            .bind(completed)
+            .bind(failed)
+            .bind(cancelled)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(detached.0 == 3 && detached.1 && detached.2 && detached.3, "terminal history was not retained and detached: {detached:?}");
+            let token_count: i64 = sqlx::query_scalar("SELECT count(*) FROM task_token WHERE task_id = $1")
+                .bind(completed)
+                .fetch_one(&rows.pool)
+                .await?;
+            anyhow::ensure!(token_count == 1, "task-scoped token was deleted with runtime");
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(blocked)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1
+                    && sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2 AND completed_at IS NULL")
+                        .bind(blocked_task)
+                        .bind(blocked)
+                        .fetch_one(&rows.pool)
+                        .await?
+                        == 1,
+                "non-terminal task was not protected from GC"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(active_agent_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1
+                    && sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent WHERE id = $1 AND runtime_id = $2")
+                        .bind(active_agent)
+                        .bind(active_agent_runtime)
+                        .fetch_one(&rows.pool)
+                        .await?
+                        == 1,
+                "runtime with a bound agent was deleted"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = ANY($1::uuid[])")
+                    .bind(vec![fresh, online])
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 2,
+                "fresh or online runtime was incorrectly collected"
+            );
+            let events = events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let gc_events = events
+                .iter()
+                .filter(|event| {
+                    event.workspace_id == rows.workspace_id.to_string()
+                        && event.payload == serde_json::json!({"action": "runtime_gc"})
+                })
+                .collect::<Vec<_>>();
+            anyhow::ensure!(gc_events.len() == 1, "runtime GC published {} workspace events, want one deduplicated event", gc_events.len());
+            anyhow::ensure!(gc_events[0].workspace_id == rows.workspace_id.to_string(), "runtime GC event workspace mismatch");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("runtime GC history/event contract failed");
+        cleanup.expect("runtime GC fixture cleanup failed");
+    }
+
+    #[tokio::test]
+    async fn production_runtime_gc_rechecks_all_task_and_agent_guards() {
+        let rows = GcRows::required()
+            .await
+            .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC guards");
+        let result = async {
+            for (offset, status) in [
+                "queued",
+                "dispatched",
+                "running",
+                "waiting_local_directory",
+                "deferred",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let runtime_id = rows
+                    .runtime(&format!("blocked-{status}"), "offline", "8 days")
+                    .await?;
+                let issue_id = rows.issue(620 + offset as i32).await?;
+                let task_id = rows.task(runtime_id, issue_id, status).await?;
+                if status == "waiting_local_directory" {
+                    sqlx::query("UPDATE agent_task_queue SET wait_reason = 'directory busy' WHERE id = $1")
+                        .bind(task_id)
+                        .execute(&rows.pool)
+                        .await?;
+                }
+                let deleted = RuntimeTaskSweeper::new(
+                    rows.pool.clone(),
+                    Arc::new(TestLiveness {
+                        available: false,
+                        alive: HashSet::new(),
+                        forgotten: Arc::new(Mutex::new(Vec::new())),
+                        race_id: None,
+                        pool: None,
+                    }),
+                    Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
+                    Arc::new(Bus::new()),
+                    None,
+                    DEFAULT_RECONNECT_GRACE,
+                )
+                .gc_runtime(runtime_id, Utc::now() - chrono::Duration::days(7))
+                .await?;
+                anyhow::ensure!(deleted.is_none(), "GC deleted runtime with {status} task");
+                anyhow::ensure!(
+                    sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2 AND completed_at IS NULL")
+                        .bind(task_id)
+                        .bind(runtime_id)
+                        .fetch_one(&rows.pool)
+                        .await?
+                        == 1,
+                    "GC changed protected {status} task"
+                );
+            }
+
+            let bounded_candidates = runtime::list_stale_offline_runtime_gc_candidates(
+                &rows.pool,
+                Utc::now() - chrono::Duration::days(7),
+                1,
+            )
+            .await?;
+            anyhow::ensure!(
+                bounded_candidates.len() <= 1,
+                "GC candidate query returned {} rows for max_per_tick=1",
+                bounded_candidates.len()
+            );
+
+            let active_runtime = rows.runtime("guard-active-agent", "offline", "8 days").await?;
+            let active_agent = RecoveryRows::agent(
+                &rows.pool,
+                rows.workspace_id,
+                rows.user_id,
+                active_runtime,
+                "guard-active-agent",
+            )
+            .await?;
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: false,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    pool: None,
+                }),
+                Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
+                Arc::new(Bus::new()),
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            );
+            anyhow::ensure!(
+                sweeper
+                    .gc_runtime(active_runtime, Utc::now() - chrono::Duration::days(7))
+                    .await?
+                    .is_none(),
+                "GC deleted runtime with bound agent"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent WHERE id = $1 AND runtime_id = $2")
+                    .bind(active_agent)
+                    .bind(active_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1,
+                "bound agent was changed by blocked GC"
+            );
+
+            for (suffix, status, age) in [("fresh-guard", "offline", "1 day"), ("online-guard", "online", "8 days")] {
+                let runtime_id = rows.runtime(suffix, status, age).await?;
+                anyhow::ensure!(
+                    sweeper
+                        .gc_runtime(runtime_id, Utc::now() - chrono::Duration::days(7))
+                        .await?
+                        .is_none(),
+                    "GC deleted {status} runtime that should be ineligible"
+                );
+            }
+            let blocked_count = runtime::count_stale_offline_runtimes_blocked_by_tasks(
+                &rows.pool,
+                Utc::now() - chrono::Duration::days(7),
+                GC_BLOCKED_LIMIT,
+            )
+            .await?
+            .unwrap_or_default();
+            anyhow::ensure!(blocked_count >= 5, "blocked runtime gauge observed {blocked_count}, want all five statuses");
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("runtime GC guard contract failed");
+        cleanup.expect("runtime GC guard fixture cleanup failed");
+    }
+
+    #[tokio::test]
+    async fn production_runtime_gc_owner_lock_orders_enqueue_and_delete_safely() {
+        let rows = GcRows::required()
+            .await
+            .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC owner lock contract");
+        let result = async {
+            let writer_runtime = rows.runtime("writer-wins", "offline", "8 days").await?;
+            let writer_issue = rows.issue(640).await?;
+            let mut holder = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM agent_runtime WHERE id = $1 FOR UPDATE")
+                .bind(writer_runtime)
+                .fetch_one(&mut *holder)
+                .await?;
+            let mut writer = rows.pool.acquire().await?;
+            let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                .fetch_one(&mut *writer)
+                .await?;
+            let agent_id = rows.helper_agent_id;
+            let writer_handle = tokio::spawn(async move {
+                sqlx::query_scalar::<_, Uuid>(
+                    "INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority) \
+                     SELECT $1, $2, $3, 'queued', 0 \
+                     WHERE lock_task_owner_rows($1, $3, $2) RETURNING id",
+                )
+                .bind(agent_id)
+                .bind(writer_runtime)
+                .bind(writer_issue)
+                .fetch_optional(&mut *writer)
+                .await
+            });
+            wait_for_lock_wait(&rows.pool, writer_pid).await?;
+            holder.commit().await?;
+            let writer_task = writer_handle.await??.expect("owner-fenced writer inserted no task");
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: false,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    pool: None,
+                }),
+                Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
+                Arc::new(Bus::new()),
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            );
+            anyhow::ensure!(
+                sweeper
+                    .gc_runtime(writer_runtime, Utc::now() - chrono::Duration::days(7))
+                    .await?
+                    .is_none(),
+                "GC deleted runtime after owner-fenced enqueue committed"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2 AND completed_at IS NULL")
+                    .bind(writer_task)
+                    .bind(writer_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1,
+                "writer task was detached or deleted despite blocking GC"
+            );
+
+            let delete_runtime = rows.runtime("delete-wins", "offline", "8 days").await?;
+            let delete_issue = rows.issue(641).await?;
+            anyhow::ensure!(
+                sweeper
+                    .gc_runtime(delete_runtime, Utc::now() - chrono::Duration::days(7))
+                    .await?
+                    .is_some(),
+                "drained runtime was not deleted"
+            );
+            anyhow::ensure!(
+                owner_fenced_enqueue(&rows.pool, rows.helper_agent_id, delete_runtime, delete_issue)
+                    .await?
+                    .is_none(),
+                "owner-fenced enqueue created a task for a deleted runtime"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE runtime_id = $1")
+                    .bind(delete_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 0,
+                "deleted runtime retained an orphaned task"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("runtime GC owner-lock contract failed");
+        cleanup.expect("runtime GC owner-lock fixture cleanup failed");
+    }
 }
