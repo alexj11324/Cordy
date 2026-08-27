@@ -2872,3 +2872,12 @@ keys/fields 和 daemon deliverer wiring 未改变。主 agent 仅执行 `git dif
 Redis、daemon 或 release 命令；Ready PR #581 将以 `codex/cord-245-realtime-ulid-wrapper`（base SHA `068400ee`）为 base
 创建。异步 verifier/reviewer/fixer 结果待回写；在 exact compile、matched/executed、真实 Redis/loopback、旧数据读取和
 生产 smoke 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
+
+独立 verifier 在 exact `ed439ac2` 发现新增 `envelope.rs` test 未通过 fixed-stable rustfmt。独立 reviewer 另发现 P1：production
+Redis URL 允许 RESP3，但 `parse_xread_response` 只接受 RESP2 `Value::Array`，会静默丢弃合法 `Value::Map`；P2：所谓固定
+Redis fixture 由 Rust writer 自己生成后再交 Rust reader，且 routing harness 没有断言 workspace scope ID、user/global
+exclude、frame 和 event ID；P3：该 harness 与 sharded relay 的弱版本重复。fixer 让同一 parser 同时接受 RESP2 array 与
+RESP3 map，并增加真实 RESP3 top-level map vector；fixture 改为九个字面 Go field pairs，四个 routing branch 的全部参数均直接
+断言，旧弱 harness 删除而不新增测试框架。fixed-stable rustfmt 与 `git diff --check` PASS；locked/offline `xread_parser_`
+精确 filter 仍在 discovery 前被 inherited #563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests）。
+未执行真实 Redis/daemon smoke，不能把新增 direct contract 登记成 external loopback PASS。

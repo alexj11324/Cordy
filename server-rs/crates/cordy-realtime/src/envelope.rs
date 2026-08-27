@@ -349,15 +349,38 @@ mod tests {
     #[test]
     fn go_envelope_fixture_roundtrips_without_field_drift() {
         const GO_JSON: &str = r#"{"event_id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","event_type":"issue:updated","scope":"workspace","scope_id":"ws-1","workspace_id":"","actor_id":"member-7","created_at":"2026-08-27T23:00:00.123Z","node_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","payload_json":"{\"type\":\"issue:updated\",\"actor_id\":\"member-7\"}"}"#;
-        let envelope: Envelope = serde_json::from_str(GO_JSON).expect("Go envelope fixture");
+        let fields = vec![
+            (
+                "event_id".to_string(),
+                "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+            ),
+            ("event_type".to_string(), "issue:updated".to_string()),
+            ("scope".to_string(), "workspace".to_string()),
+            ("scope_id".to_string(), "ws-1".to_string()),
+            ("workspace_id".to_string(), String::new()),
+            ("actor_id".to_string(), "member-7".to_string()),
+            (
+                "created_at".to_string(),
+                "2026-08-27T23:00:00.123Z".to_string(),
+            ),
+            (
+                "node_id".to_string(),
+                "01ARZ3NDEKTSV4RRFFQ69G5FAW".to_string(),
+            ),
+            (
+                "payload_json".to_string(),
+                r#"{"type":"issue:updated","actor_id":"member-7"}"#.to_string(),
+            ),
+        ];
+        let envelope = Envelope::from_field_pairs(&fields).expect("literal Go Redis fields");
         assert_eq!(serde_json::to_string(&envelope).unwrap(), GO_JSON);
 
-        let pairs = envelope.redis_field_pairs();
-        let owned: Vec<(String, String)> = pairs
+        let written: Vec<(String, String)> = envelope
+            .redis_field_pairs()
             .iter()
             .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
             .collect();
-        assert_eq!(Envelope::from_field_pairs(&owned), Some(envelope));
+        assert_eq!(written, fields);
     }
 
     #[tokio::test]
@@ -366,31 +389,38 @@ mod tests {
 
         #[derive(Default)]
         struct RecordingHub {
-            scopes: Mutex<Vec<(String, String, String)>>,
-            users: Mutex<Vec<(String, String, String)>>,
-            globals: Mutex<Vec<String>>,
+            scopes: Mutex<Vec<(String, String, String, String)>>,
+            users: Mutex<Vec<(String, String, String, String)>>,
+            globals: Mutex<Vec<(String, String, String)>>,
         }
 
         #[async_trait]
         impl HubFanout for RecordingHub {
-            async fn fanout_all_dedup(&self, frame: &[u8], _: &str, event_id: &str) {
-                self.globals
-                    .lock()
-                    .unwrap()
-                    .push(format!("{event_id}:{}", String::from_utf8_lossy(frame)));
+            async fn fanout_all_dedup(
+                &self,
+                frame: &[u8],
+                exclude_workspace: &str,
+                event_id: &str,
+            ) {
+                self.globals.lock().unwrap().push((
+                    String::from_utf8_lossy(frame).to_string(),
+                    exclude_workspace.to_string(),
+                    event_id.to_string(),
+                ));
             }
 
             async fn fanout_user(
                 &self,
                 user_id: &str,
                 frame: &[u8],
-                _: &str,
+                exclude_workspace: &str,
                 event_id: &str,
             ) {
                 self.users.lock().unwrap().push((
                     user_id.to_string(),
-                    event_id.to_string(),
                     String::from_utf8_lossy(frame).to_string(),
+                    exclude_workspace.to_string(),
+                    event_id.to_string(),
                 ));
             }
 
@@ -404,7 +434,8 @@ mod tests {
                 self.scopes.lock().unwrap().push((
                     scope_type.to_string(),
                     scope_id.to_string(),
-                    format!("{event_id}:{}", String::from_utf8_lossy(frame)),
+                    String::from_utf8_lossy(frame).to_string(),
+                    event_id.to_string(),
                 ));
             }
         }
@@ -434,14 +465,33 @@ mod tests {
             }
         }
 
+        fn assert_injected_frame(frame: &str) {
+            let frame: serde_json::Value = serde_json::from_str(frame).unwrap();
+            assert_eq!(frame["event_id"], "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+            assert_eq!(frame["type"], "issue:updated");
+            assert_eq!(frame["actor_id"], "member-7");
+        }
+
         let hub = Arc::new(RecordingHub::default());
         let daemon = Arc::new(RecordingDaemon(Mutex::new(Vec::new())));
-        deliver_envelope(hub.clone(), Some(daemon.clone()), fixture("workspace", "ws-1", ""))
-            .await;
-        deliver_envelope(hub.clone(), Some(daemon.clone()), fixture(SCOPE_USER, "u-1", "ws-1"))
-            .await;
-        deliver_envelope(hub.clone(), Some(daemon.clone()), fixture("global", "all", ""))
-            .await;
+        deliver_envelope(
+            hub.clone(),
+            Some(daemon.clone()),
+            fixture("workspace", "ws-1", ""),
+        )
+        .await;
+        deliver_envelope(
+            hub.clone(),
+            Some(daemon.clone()),
+            fixture(SCOPE_USER, "u-1", "ws-1"),
+        )
+        .await;
+        deliver_envelope(
+            hub.clone(),
+            Some(daemon.clone()),
+            fixture("global", "all", ""),
+        )
+        .await;
         deliver_envelope(
             hub.clone(),
             Some(daemon.clone()),
@@ -452,14 +502,31 @@ mod tests {
         let scopes = hub.scopes.lock().unwrap();
         assert_eq!(scopes.len(), 1);
         assert_eq!(scopes[0].0, "workspace");
-        assert!(scopes[0].2.contains("\"event_id\":\"01ARZ3NDEKTSV4RRFFQ69G5FAV\""));
+        assert_eq!(scopes[0].1, "ws-1");
+        assert_injected_frame(&scopes[0].2);
+        assert_eq!(scopes[0].3, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
         drop(scopes);
-        assert_eq!(hub.users.lock().unwrap().len(), 1);
-        assert_eq!(hub.globals.lock().unwrap().len(), 1);
+
+        let users = hub.users.lock().unwrap();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].0, "u-1");
+        assert_injected_frame(&users[0].1);
+        assert_eq!(users[0].2, "ws-1");
+        assert_eq!(users[0].3, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        drop(users);
+
+        let globals = hub.globals.lock().unwrap();
+        assert_eq!(globals.len(), 1);
+        assert_injected_frame(&globals[0].0);
+        assert_eq!(globals[0].1, "");
+        assert_eq!(globals[0].2, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        drop(globals);
+
         let daemon_events = daemon.0.lock().unwrap();
         assert_eq!(daemon_events.len(), 1);
         assert_eq!(daemon_events[0].0, "runtime-1");
-        assert!(daemon_events[0].1.contains("\"event_id\":\"01ARZ3NDEKTSV4RRFFQ69G5FAV\""));
+        assert_injected_frame(&daemon_events[0].1);
+        assert_eq!(daemon_events[0].2, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
         drop(daemon_events);
 
         deliver_envelope(

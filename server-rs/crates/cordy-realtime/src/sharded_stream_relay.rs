@@ -731,55 +731,80 @@ type XReadStreamBatch = Vec<(String, Vec<(String, Vec<(String, String)>)>)>;
 
 pub fn parse_xread_response(raw: &redis::Value) -> XReadStreamBatch {
     let mut out = Vec::new();
-    let redis::Value::Array(streams) = raw else {
-        return out;
-    };
-    for stream in streams {
-        let redis::Value::Array(pair) = stream else {
-            continue;
-        };
-        let (Some(key), Some(entries)) = (pair.first(), pair.get(1)) else {
-            continue;
-        };
+    let mut push_stream = |key: &redis::Value, entries: &redis::Value| {
         let Some(key) = bulk_str(key) else {
-            continue;
+            return;
         };
-        let mut messages = Vec::new();
-        if let redis::Value::Array(list) = entries {
-            for msg in list {
-                let redis::Value::Array(id_fields) = msg else {
+        out.push((key, parse_stream_entries(entries)));
+    };
+    match raw {
+        redis::Value::Array(streams) => {
+            for stream in streams {
+                let redis::Value::Array(pair) = stream else {
                     continue;
                 };
-                let (Some(id), Some(fields)) = (id_fields.first(), id_fields.get(1)) else {
+                let (Some(key), Some(entries)) = (pair.first(), pair.get(1)) else {
                     continue;
                 };
-                let Some(id) = bulk_str(id) else {
-                    continue;
-                };
-                let mut kv = Vec::new();
-                let redis::Value::Array(fv) = fields else {
-                    continue;
-                };
-                if fv.is_empty() {
-                    continue;
-                }
-                let mut it = fv.iter();
-                while let (Some(k), Some(v)) = (it.next(), it.next()) {
-                    let (Some(k), Some(v)) = (bulk_str(k), bulk_str(v)) else {
-                        kv.clear();
-                        break;
-                    };
-                    kv.push((k, v));
-                }
-                if kv.len() * 2 != fv.len() {
-                    continue;
-                }
-                messages.push((id, kv));
+                push_stream(key, entries);
             }
         }
-        out.push((key, messages));
+        redis::Value::Map(streams) => {
+            for (key, entries) in streams {
+                push_stream(key, entries);
+            }
+        }
+        _ => {}
     }
     out
+}
+
+fn parse_stream_entries(entries: &redis::Value) -> Vec<(String, Vec<(String, String)>)> {
+    match entries {
+        redis::Value::Array(entries) => entries
+            .iter()
+            .filter_map(|entry| {
+                let redis::Value::Array(parts) = entry else {
+                    return None;
+                };
+                parse_stream_entry(parts.first()?, parts.get(1)?)
+            })
+            .collect(),
+        redis::Value::Map(entries) => entries
+            .iter()
+            .filter_map(|(id, fields)| parse_stream_entry(id, fields))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn parse_stream_entry(
+    id: &redis::Value,
+    fields: &redis::Value,
+) -> Option<(String, Vec<(String, String)>)> {
+    let id = bulk_str(id)?;
+    let fields = match fields {
+        redis::Value::Array(values) => {
+            if values.is_empty() || values.len() % 2 != 0 {
+                return None;
+            }
+            values
+                .chunks_exact(2)
+                .map(|pair| Some((bulk_str(&pair[0])?, bulk_str(&pair[1])?)))
+                .collect::<Option<Vec<_>>>()?
+        }
+        redis::Value::Map(values) => {
+            if values.is_empty() {
+                return None;
+            }
+            values
+                .iter()
+                .map(|(key, value)| Some((bulk_str(key)?, bulk_str(value)?)))
+                .collect::<Option<Vec<_>>>()?
+        }
+        _ => return None,
+    };
+    Some((id, fields))
 }
 
 fn bulk_str(v: &redis::Value) -> Option<String> {
@@ -1055,54 +1080,41 @@ mod tests {
         assert_eq!(parsed[0].1[0].1[0].0, "payload_json");
     }
 
-    #[tokio::test]
-    async fn envelope_delivery_via_hub_fanout() {
-        use crate::envelope::{deliver_envelope, Envelope};
+    #[test]
+    fn xread_parser_accepts_resp3_maps() {
+        use redis::Value;
 
-        #[derive(Default)]
-        struct RecordingHub {
-            scopes: Mutex<Vec<(String, String)>>,
-            users: Mutex<Vec<String>>,
-            globals: Mutex<u32>,
-        }
+        let raw = Value::Map(vec![(
+            Value::SimpleString("ws:relay:shard:3".into()),
+            Value::Array(vec![Value::Array(vec![
+                Value::SimpleString("1702-0".into()),
+                Value::Array(vec![
+                    Value::SimpleString("event_id".into()),
+                    Value::SimpleString("01ARZ3NDEKTSV4RRFFQ69G5FAV".into()),
+                    Value::SimpleString("payload_json".into()),
+                    Value::BulkString(br#"{"type":"fixture"}"#.to_vec()),
+                ]),
+            ])]),
+        )]);
 
-        #[async_trait]
-        impl HubFanout for RecordingHub {
-            async fn fanout_all_dedup(&self, _: &[u8], _: &str, _: &str) {
-                *self.globals.lock().unwrap() += 1;
-            }
-            async fn fanout_user(&self, user_id: &str, _: &[u8], _: &str, _: &str) {
-                self.users.lock().unwrap().push(user_id.to_string());
-            }
-            async fn broadcast_to_scope_dedup(
-                &self,
-                scope_type: &str,
-                scope_id: &str,
-                _: &[u8],
-                _: &str,
-            ) {
-                self.scopes
-                    .lock()
-                    .unwrap()
-                    .push((scope_type.to_string(), scope_id.to_string()));
-            }
-        }
-
-        let hub = Arc::new(RecordingHub::default());
-
-        // Workspace-scoped envelope routes to broadcast_to_scope_dedup.
-        let ev = Envelope::new("n", "workspace", "ws-1", "", br#"{"type":"t"}"#, "e-1");
-        deliver_envelope(hub.clone(), None, ev).await;
-        assert_eq!(hub.scopes.lock().unwrap().len(), 1);
-
-        // User-scoped routes to fanout_user.
-        let ev = Envelope::new("n", SCOPE_USER, "u-1", "", br#"{"type":"t"}"#, "e-2");
-        deliver_envelope(hub.clone(), None, ev).await;
-        assert_eq!(hub.users.lock().unwrap().last().unwrap(), "u-1");
-
-        // Global routes to fanout_all_dedup.
-        let ev = Envelope::new("n", "global", "all", "", br#"{"type":"t"}"#, "e-3");
-        deliver_envelope(hub.clone(), None, ev).await;
-        assert_eq!(*hub.globals.lock().unwrap(), 1);
+        assert_eq!(
+            parse_xread_response(&raw),
+            vec![(
+                "ws:relay:shard:3".to_string(),
+                vec![(
+                    "1702-0".to_string(),
+                    vec![
+                        (
+                            "event_id".to_string(),
+                            "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string(),
+                        ),
+                        (
+                            "payload_json".to_string(),
+                            r#"{"type":"fixture"}"#.to_string(),
+                        ),
+                    ],
+                )],
+            )]
+        );
     }
 }
