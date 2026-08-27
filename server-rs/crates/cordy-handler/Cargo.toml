@@ -70,3 +70,4 @@ zip = { workspace = true }
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 tempfile = { workspace = true }
+tokio-tungstenite = { workspace = true }
