@@ -116,6 +116,11 @@ impl Client {
                 "chat request must be a JSON object".into(),
             ));
         };
+        if matches!(object.get("stream"), Some(serde_json::Value::Bool(true))) {
+            return Err(Error::InvalidRequest(
+                "chat request must be non-streaming; use the streaming chat API".into(),
+            ));
+        }
         let needs_model = match object.get("model") {
             None | Some(serde_json::Value::Null) => true,
             Some(serde_json::Value::String(model)) => model.trim().is_empty(),
@@ -700,6 +705,29 @@ mod tests {
         assert!(
             matches!(error, Err(Error::InvalidRequest(message)) if message.contains("JSON object"))
         );
+    }
+
+    #[tokio::test]
+    async fn raw_chat_rejects_streaming_requests_before_network() {
+        let transport = Arc::new(RecordingTransport::default());
+        let mut client = Client::new(Config {
+            api_key: "test-key".into(),
+            base_url: "https://gateway.example/v1".into(),
+            max_retries: Some(0),
+            ..Config::default()
+        });
+        client.transport = Some(transport.clone());
+
+        let error = client
+            .chat(serde_json::json!({
+                "stream": true,
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .await;
+        assert!(
+            matches!(error, Err(Error::InvalidRequest(message)) if message.contains("non-streaming"))
+        );
+        assert_eq!(transport.requests.load(Ordering::SeqCst), 0);
     }
 
     #[test]
