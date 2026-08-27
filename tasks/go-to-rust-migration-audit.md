@@ -1181,3 +1181,9 @@ implementation commit `593cbc0d`）已把 Unix/Windows installer、Git ref check
   Compose 单一 selector/ambient precedence、pull-before-up、DB rollback 警告、Go 声明与
   Ponytail 方向无其他 finding；其 Bash 尝试因 sandbox tmp noexec 失败，pwsh 不可用，均不能
   记录为测试通过。
+- verifier 在未变实现上通过两个 diff check、Bash syntax 和 workspace-executable TMPDIR 下
+  installer suite 7/7；默认 `/tmp` 的两次运行因 noexec `Permission denied` 失败并保留记录。
+  额外只读 harness 的 main→latest、fetch failure-before-Compose、checkout failure-before-Compose
+  3/3 通过。环境没有 pwsh，Docker socket 无权限，故 PowerShell、真实 registry pull、真实
+  upgrade/rollback 均未执行；这些通过项不解决 reviewer 的 atomic pull/pin/custom/encoding
+  findings，已一并交 fixer。
