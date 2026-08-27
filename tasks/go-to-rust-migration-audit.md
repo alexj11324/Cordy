@@ -195,7 +195,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack、Telegram 与 Composio 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | 下一切片 VCS；随后 GHSnapshot | 依赖 AUDIT-001 已交付的 Rust server 入口；各 provider 互不重叠，可执行 | PR #532..#536/#538；§5.3、§6.2、§20..§25 | 主 agent；独立 V/R/F subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack、Telegram、Composio 与 VCS 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | 下一切片 GHSnapshot | 依赖 AUDIT-001 已交付的 Rust server 入口；各 provider 互不重叠，可执行 | PR #532..#536/#538/#539；§5.3、§6.2、§20..§26 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | §5.2、§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -696,3 +696,25 @@ feature flag、ClientBuilder、Service、HTTP state 和 TaskService overlay，�
 - 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查
   记录为通过；fixer 尚未派发。该 PR 堆叠在 Telegram PR #536，base 中已知的
   Telegram server-test `base64` 编译错误正由独立 fixer 处理。
+
+## 26. AUDIT-004 执行更新：VCS production configuration contract
+
+Ready PR #539（`codex/cord-203-vcs-production-contract-rust`，implementation commit
+`ee43168b`）直接覆盖 VCS 的 server boot 配置边界，复用现有 Config、SecretBox、
+HandlerState、handler 和 `cordy_vcs` provider，不增加新 registry 或兼容路径：
+
+- Go 能力：`server/cmd/server/router.go` 仅在
+  `CORDY_VCS_INTEGRATION_ENABLED` 精确为 `true` 时公开自托管 VCS integration；
+  `CORDY_VCS_SECRET_KEY` 必须能构造 SecretBox，才能加密 token/webhook secret。
+- Rust 入口：`VcsWebhookConfig::from_config` 是 `cordy-server::main` 实际调用的
+  boot 选择边界，结果传入 `build_production_router`，再由
+  `HandlerState::with_vcs_webhooks` 注入 connect/rotate 与 public webhook 路径。
+- 生产路径状态：flag 关闭时路径保持隐藏；flag 开启但 key 缺失或非法时 SecretBox
+  为 `None`，写入与 webhook 路径返回 503 而不存明文；有效 32-byte key 构造真实
+  `cordy_util::secretbox::SecretBox`。已有连接继续通过 `cordy_vcs::for_kind` 选择
+  Forgejo/Gitea/GitLab 实现，不会选择 Stub、Noop 或 Fake。
+- Go 是否可下线：否。VCS boot gate 已有直接 Rust 证据，但 provider 外部 HTTP/
+  webhook smoke、GitHub snapshot、其余 AUDIT-004 退出证据和 AUDIT-001..010 最终门
+  仍未完成。
+- 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
+  通过；fixer 尚未派发。PR 堆叠在 Composio PR #538。
