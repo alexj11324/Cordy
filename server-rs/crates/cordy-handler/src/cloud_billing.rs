@@ -180,6 +180,7 @@ async fn stripe_webhook(
         .execute(CloudRuntimeRequest {
             method: Method::POST,
             path: "/api/v1/webhooks/stripe".into(),
+            op: "billing".into(),
             query: None,
             body,
             headers: forwarded,
@@ -682,6 +683,7 @@ async fn proxy_call(
         .execute(CloudRuntimeRequest {
             method,
             path,
+            op: "billing".into(),
             query,
             body,
             headers: forwarded_headers,
@@ -837,6 +839,7 @@ mod tests {
         assert_eq!(result.status(), StatusCode::OK);
         let request = cloud.request.lock().await.take().unwrap();
         assert_eq!(request.path, "/api/v1/billing/transactions");
+        assert_eq!(request.op, "billing");
         assert_eq!(request.query.as_deref(), Some("page=2&page_size=50"));
         assert_eq!(request.user_id, "user-1");
         assert_eq!(request.request_id, "request-1");
@@ -860,6 +863,7 @@ mod tests {
         assert_eq!(result.status(), StatusCode::OK);
         let request = cloud.request.lock().await.take().unwrap();
         assert_eq!(request.body, body);
+        assert_eq!(request.op, "billing");
         assert!(request.user_id.is_empty());
         assert_eq!(
             request

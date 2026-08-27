@@ -29,6 +29,10 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(35);
 pub struct CloudRuntimeRequest {
     pub method: Method,
     pub path: String,
+    /// Optional high-level metric operation. An empty value falls back to
+    /// path/method inference, while a non-empty value is normalized and used
+    /// as the operation bucket (the Go cloudruntime contract).
+    pub op: String,
     pub query: Option<String>,
     pub body: Vec<u8>,
     pub headers: HeaderMap,
@@ -219,7 +223,7 @@ impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
         &self,
         request: CloudRuntimeRequest,
     ) -> Result<CloudRuntimeResponse, CloudRuntimeError> {
-        let operation = infer_cloud_runtime_op(&request.method, &request.path);
+        let operation = infer_cloud_runtime_op(&request.op, &request.method, &request.path);
         let started = Instant::now();
         let result = async {
             let url = self.target_url(&request.path, request.query.as_deref())?;
@@ -286,7 +290,7 @@ impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
 
         if let Some(metrics) = self.metrics.as_ref() {
             metrics.record_cloud_runtime_request(
-                operation,
+                &operation,
                 cloud_runtime_status_bucket(&result),
                 started.elapsed().as_secs_f64(),
             );
@@ -295,23 +299,27 @@ impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
     }
 }
 
-fn infer_cloud_runtime_op(method: &Method, path: &str) -> &'static str {
+fn infer_cloud_runtime_op(op: &str, method: &Method, path: &str) -> String {
+    let op = op.trim().to_ascii_lowercase();
+    if !op.is_empty() {
+        return op;
+    }
     match () {
-        _ if path.contains("/billing") => "billing",
+        _ if path.contains("/billing") => "billing".into(),
         _ if path.contains("/gateway") || path.contains("/proxy") || path.contains("/exec") => {
-            "gateway"
+            "gateway".into()
         }
-        _ if path.contains("/start") || path.contains("/provision") => "provision",
+        _ if path.contains("/start") || path.contains("/provision") => "provision".into(),
         _ if path.contains("/stop") || path.contains("/terminate") || path.contains("/reboot") => {
-            "terminate"
+            "terminate".into()
         }
         _ if path.contains("/status") || path.contains("/health") || path.contains("/ready") => {
-            "status"
+            "status".into()
         }
-        _ if path.contains("/nodes") && *method == Method::POST => "provision",
-        _ if path.contains("/nodes") && *method == Method::DELETE => "terminate",
-        _ if path.contains("/nodes") => "status",
-        _ => "fleet",
+        _ if path.contains("/nodes") && *method == Method::POST => "provision".into(),
+        _ if path.contains("/nodes") && *method == Method::DELETE => "terminate".into(),
+        _ if path.contains("/nodes") => "status".into(),
+        _ => "fleet".into(),
     }
 }
 
@@ -483,6 +491,7 @@ async fn execute(
         .execute(CloudRuntimeRequest {
             method,
             path: path.to_string(),
+            op: String::new(),
             query,
             body,
             headers: HeaderMap::new(),
@@ -801,12 +810,16 @@ mod tests {
     #[test]
     fn metrics_labels_cover_success_and_failure_paths() {
         assert_eq!(
-            infer_cloud_runtime_op(&Method::POST, "/api/v1/nodes"),
+            infer_cloud_runtime_op("", &Method::POST, "/api/v1/nodes"),
             "provision"
         );
         assert_eq!(
-            infer_cloud_runtime_op(&Method::POST, "/api/v1/nodes/exec"),
+            infer_cloud_runtime_op("", &Method::POST, "/api/v1/nodes/exec"),
             "gateway"
+        );
+        assert_eq!(
+            infer_cloud_runtime_op(" Billing ", &Method::POST, "/api/v1/webhooks/stripe"),
+            "billing"
         );
         assert_eq!(
             cloud_runtime_status_bucket(&Ok(response(StatusCode::CREATED, b"{}"))),
