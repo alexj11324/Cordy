@@ -13,9 +13,10 @@ use crate::client::Client;
 use crate::config::{normalize_server_base_url, DEFAULT_SERVER_URL};
 use crate::control_client::{health_port_for_profile, DaemonControlClient};
 use crate::process_control::{
-    restart_daemon, start_daemon, stop_daemon, AuthenticatedLaunchPreflight,
-    BackgroundLaunchOptions, DaemonRestartOutcome, DaemonRestartRequest, DaemonStartOutcome,
-    DaemonStartRequest, DaemonStopOutcome, SystemProcessTerminator, SystemStartupClock,
+    restart_daemon, start_daemon, stop_daemon, stop_daemon_with_preflight,
+    AuthenticatedLaunchPreflight, BackgroundLaunchOptions, DaemonRestartOutcome,
+    DaemonRestartRequest, DaemonStartOutcome, DaemonStartRequest, DaemonStopOutcome,
+    SystemProcessTerminator, SystemStartupClock,
 };
 
 const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(45);
@@ -124,6 +125,22 @@ impl DaemonLifecycle {
             &self.launch.profile,
             self.port,
             self.stop_timeout,
+        )
+        .await
+    }
+
+    /// Stops with the restart preflight while leaving the actual foreground
+    /// start to the caller. This preserves `daemon restart --foreground`
+    /// without risking a healthy daemon when its replacement cannot start.
+    pub async fn stop_for_restart(&self) -> anyhow::Result<DaemonStopOutcome> {
+        stop_daemon_with_preflight(
+            &self.control,
+            &SystemStartupClock,
+            &SystemProcessTerminator,
+            &self.launch.profile,
+            self.port,
+            self.stop_timeout,
+            Some(&self.preflight),
         )
         .await
     }

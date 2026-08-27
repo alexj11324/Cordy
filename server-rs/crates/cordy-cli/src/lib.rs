@@ -169,6 +169,8 @@ struct DaemonArgs {
 enum DaemonCommand {
     #[command(about = "Start the production daemon")]
     Start(DaemonStartArgs),
+    #[command(about = "Restart the running daemon")]
+    Restart(DaemonStartArgs),
     #[command(about = "Stop the running daemon")]
     Stop,
     #[command(about = "Show daemon status")]
@@ -3008,6 +3010,9 @@ async fn run_with_input<R: Read>(
             command: DaemonCommand::Start(args),
         }) => run_daemon_start(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Restart(args),
+        }) => run_daemon_restart(cli, environment, args).await,
+        Command::Daemon(DaemonArgs {
             command: DaemonCommand::Status { output },
         }) => run_daemon_status(cli, environment, *output).await,
         Command::Daemon(DaemonArgs {
@@ -5550,12 +5555,8 @@ async fn run_squad_activity(
 
 const DEFAULT_DAEMON_HEALTH_PORT: u32 = 19_514;
 
-async fn run_daemon_start(
-    cli: &Cli,
-    environment: &Environment,
-    args: &DaemonStartArgs,
-) -> Result<RunOutput> {
-    let launch_flags = config::DaemonLaunchFlags {
+fn daemon_launch_flags(cli: &Cli, args: &DaemonStartArgs) -> config::DaemonLaunchFlags {
+    config::DaemonLaunchFlags {
         server_url: cli.server_url.clone(),
         daemon_id: args.daemon_id.clone(),
         device_name: args.device_name.clone(),
@@ -5570,9 +5571,22 @@ async fn run_daemon_start(
         disable_auto_update: args.disable_auto_update,
         auto_update_check_interval: args.auto_update_interval,
         disable_auto_reload: args.disable_auto_reload,
-    };
-    let start = daemon::DaemonStartAssembly::load(&cli.profile, &launch_flags, environment)
-        .context("load daemon start profile")?;
+    }
+}
+
+fn load_daemon_start(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonStartArgs,
+) -> Result<daemon::DaemonStartAssembly> {
+    daemon::DaemonStartAssembly::load(&cli.profile, &daemon_launch_flags(cli, args), environment)
+        .context("load daemon start profile")
+}
+
+fn validate_daemon_health_port(
+    start: &daemon::DaemonStartAssembly,
+    args: &DaemonStartArgs,
+) -> Result<()> {
     if let Some(health_port) = args.health_port {
         anyhow::ensure!(
             i32::from(health_port) == start.launch.health_port,
@@ -5580,6 +5594,16 @@ async fn run_daemon_start(
             start.launch.health_port
         );
     }
+    Ok(())
+}
+
+async fn run_daemon_start(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonStartArgs,
+) -> Result<RunOutput> {
+    let start = load_daemon_start(cli, environment, args)?;
+    validate_daemon_health_port(&start, args)?;
 
     if !args.foreground {
         let executable = std::env::current_exe().context("resolve cordy executable")?;
@@ -5595,6 +5619,46 @@ async fn run_daemon_start(
         });
     }
 
+    run_daemon_foreground(start).await
+}
+
+async fn run_daemon_restart(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonStartArgs,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "daemon restart")?;
+    require_known_daemon_profile(environment, &cli.profile)?;
+
+    let start = load_daemon_start(cli, environment, args)?;
+    validate_daemon_health_port(&start, args)?;
+    let executable = std::env::current_exe().context("resolve cordy executable")?;
+    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
+        start.lifecycle_options(executable, CLIENT_VERSION),
+        &start.profile_input,
+    )
+    .context("assemble daemon restart lifecycle")?;
+
+    if args.foreground {
+        match lifecycle
+            .stop_for_restart()
+            .await
+            .context("stop daemon before foreground restart")?
+        {
+            cordy_daemon::process_control::DaemonStopOutcome::AlreadyStopped
+            | cordy_daemon::process_control::DaemonStopOutcome::Stopped { .. } => {}
+            cordy_daemon::process_control::DaemonStopOutcome::StillStopping { pid, .. } => {
+                bail!("daemon is still stopping (pid {pid}); retry 'cordy daemon restart'")
+            }
+        }
+        return run_daemon_foreground(start).await;
+    }
+
+    let outcome = lifecycle.restart().await.context("restart daemon")?;
+    format_daemon_restart_outcome(outcome)
+}
+
+async fn run_daemon_foreground(start: daemon::DaemonStartAssembly) -> Result<RunOutput> {
     let options = start.bootstrap_options();
     let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
     cordy_daemon::assembly::run_production_daemon(options, move |context| {
@@ -5607,6 +5671,27 @@ async fn run_daemon_start(
         stdout: String::new(),
         stderr: String::new(),
     })
+}
+
+fn format_daemon_restart_outcome(
+    outcome: cordy_daemon::process_control::DaemonRestartOutcome,
+) -> Result<RunOutput> {
+    match outcome {
+        cordy_daemon::process_control::DaemonRestartOutcome::StopIncomplete(
+            cordy_daemon::process_control::DaemonStopOutcome::StillStopping { pid, .. },
+        ) => bail!("daemon is still stopping (pid {pid}); retry 'cordy daemon restart'"),
+        cordy_daemon::process_control::DaemonRestartOutcome::StopIncomplete(_) => {
+            bail!("daemon restart stopped without starting a replacement")
+        }
+        cordy_daemon::process_control::DaemonRestartOutcome::Launch { startup, .. } => {
+            Ok(RunOutput {
+                stdout: format_daemon_start_outcome(
+                    cordy_daemon::process_control::DaemonStartOutcome::Launch(startup),
+                )?,
+                stderr: String::new(),
+            })
+        }
+    }
 }
 
 fn format_daemon_start_outcome(
@@ -15708,6 +15793,32 @@ mod tests {
         assert_eq!(args.agent_timeout, Some(Duration::ZERO));
         assert_eq!(args.health_port, Some(19710));
         assert!(args.disable_auto_update);
+    }
+
+    #[test]
+    fn daemon_restart_parser_reuses_start_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "daemon",
+            "restart",
+            "--foreground",
+            "--daemon-id",
+            "daemon-1",
+            "--agent-timeout",
+            "0s",
+        ])
+        .expect("daemon restart CLI");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Restart(args),
+        }) = cli.command
+        else {
+            panic!("expected daemon restart command");
+        };
+        assert!(args.foreground);
+        assert_eq!(args.daemon_id.as_deref(), Some("daemon-1"));
+        assert_eq!(args.agent_timeout, Some(Duration::ZERO));
     }
 
     #[test]
