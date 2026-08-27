@@ -195,7 +195,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS 与 GHSnapshot 已建立 production 配置/transport 证据 | 收口 channel-engine/lease/media 的完整生产生命周期，以及外部凭证 smoke/不可测原因与回滚策略 | 依赖 AUDIT-001 已交付的 Rust server 入口；provider boot 切片已交付，生命周期切片可执行 | PR #532..#536/#538..#540；§5.3、§6.2、§20..§27 | 主 agent；独立 V/R/F subagent |
+| AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | §5.2、§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -738,3 +738,27 @@ commit `be02f618`）收口 GHSnapshot 非法凭证会终止 Rust server 的生�
   channel-engine/lease/media 完整生命周期和 AUDIT-001..010 最终门仍未完成。
 - 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
   通过；fixer 尚未派发。PR 堆叠在 VCS PR #539。
+
+## 28. AUDIT-004 执行更新：channel media production lifecycle contract
+
+Ready PR #541（`codex/cord-205-channel-runtime-lifecycle-contract-rust`，implementation
+commit `0e6d5ec1`）直接执行 `ChannelRuntime::start` 使用的 production media worker
+边界，复用现有 storage、reconciler、lease store、supervisor 与 shutdown 机制：
+
+- Go 能力：channel media intent reconciler 只在 attachment storage 可用时启动，独立
+  于某个 provider；channel runtime 取消时 worker 必须退出。Supervisor 默认使用
+  PostgreSQL lease，可选 ready Redis，并以 token-fenced acquire/renew/release 管理
+  installation connection。
+- Rust 入口：契约测试直接调用 `start_media_reconciler`，证明无 storage 不创建
+  worker，真实 `LocalStorage` 经 `ChannelStorage` 创建 worker，`channel_cancel` 后在
+  deadline 内正常退出。生产 `ChannelRuntime::start` 同时保留已有 provider registry、
+  `RuntimeLeaseStore`、`ChannelSupervisor` 和 metrics wiring。
+- 生产路径状态：`build_production_router` 启动 ChannelRuntime；shutdown 依次取消并
+  join outbound、supervisor、media、maintenance/relay，最后 drain router。缺 storage
+  不会选择 Fake/Noop；无效或不可用 Redis lease 会可观测地禁用 supervisor，而不运行
+  无 fencing 的连接。
+- Go 是否可下线：否。主线 provider boot 与 media lifecycle 切片已交付，但独立
+  verification 尚需实际执行 supervisor/lease 矩阵，并记录真实外部凭证 smoke 或
+  明确环境限制和回滚策略；AUDIT-001..010 最终门仍未完成。
+- 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查记录
+  为通过；fixer 尚未派发。PR 堆叠在 GHSnapshot PR #540。
