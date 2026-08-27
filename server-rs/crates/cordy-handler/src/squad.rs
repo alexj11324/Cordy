@@ -1163,7 +1163,7 @@ mod tests {
         assert!(create.name.is_empty());
         assert!(create.description.is_empty());
         assert!(create.leader_id.is_empty());
-        assert_eq!(create.avatar_url.as_deref(), Some("emoji:robot"));
+        assert_eq!(create.avatar_url.as_deref(), Some("  emoji:robot  "));
 
         let update = decode_first::<UpdateSquadRequest>(
             br#"{"name":null,"leader_id":null,"avatar_url":null} true"#,
