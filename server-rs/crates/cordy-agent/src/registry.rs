@@ -279,6 +279,13 @@ pub fn model_selection_supported(id: &str) -> bool {
         .is_none_or(|provider| provider.model_selection_supported)
 }
 
+/// Reports whether a runtime rejects a model selector without its provider
+/// prefix. This is an execution contract: only these runtimes need a catalog
+/// read before launching a task with a pinned model.
+pub fn model_selector_must_be_provider_qualified(id: &str) -> bool {
+    matches!(protocol_family(id), Some("opencode" | "deveco"))
+}
+
 /// Discovers the model catalog for an accepted runtime command.
 ///
 /// The daemon must use the command selected by registration, including a
@@ -565,6 +572,15 @@ mod tests {
         assert!(!model_selection_supported("mcode"));
         assert!(model_selection_supported("omp"));
         assert!(model_selection_supported("unknown"));
+    }
+
+    #[test]
+    fn selector_qualification_follows_the_runtime_protocol_family() {
+        assert!(model_selector_must_be_provider_qualified("opencode"));
+        assert!(model_selector_must_be_provider_qualified("deveco"));
+        assert!(!model_selector_must_be_provider_qualified("pi"));
+        assert!(!model_selector_must_be_provider_qualified("omp"));
+        assert!(!model_selector_must_be_provider_qualified("unknown"));
     }
 
     #[test]

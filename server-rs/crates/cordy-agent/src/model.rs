@@ -134,6 +134,92 @@ pub fn qualify_model_id(catalog: &Catalog, model: &str) -> (String, bool) {
     )
 }
 
+/// Reports whether a task's thinking-level override is advertised for the
+/// selected model. An empty model means the runtime's default model, except
+/// for Codex: its effective model comes from config.toml and cannot be known
+/// from this catalog, so the safe answer is false.
+pub fn validate_thinking_level(
+    catalog: &Catalog,
+    provider: &str,
+    model: &str,
+    value: &str,
+) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if model.is_empty() && provider == "codex" {
+        return false;
+    }
+
+    let mut target = model_id_for_capability_lookup(provider, model).to_string();
+    if target.is_empty() {
+        target = catalog
+            .models
+            .iter()
+            .find(|entry| entry.default)
+            .map(|entry| entry.id.clone())
+            .unwrap_or_default();
+        if target.is_empty() {
+            return provider == "opencode"
+                && catalog.models.iter().any(|entry| {
+                    entry.thinking.as_ref().is_some_and(|thinking| {
+                        thinking
+                            .supported_levels
+                            .iter()
+                            .any(|level| level.value == value)
+                    })
+                });
+        }
+    }
+
+    catalog.models.iter().any(|entry| {
+        entry.id == target
+            && entry.thinking.as_ref().is_some_and(|thinking| {
+                thinking
+                    .supported_levels
+                    .iter()
+                    .any(|level| level.value == value)
+            })
+    })
+}
+
+/// Reports whether a task's service-tier override is advertised for the
+/// selected Codex model. Other providers do not own this capability.
+pub fn validate_service_tier(catalog: &Catalog, provider: &str, model: &str, value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if provider != "codex" || model.is_empty() {
+        return false;
+    }
+    catalog
+        .models
+        .iter()
+        .any(|entry| entry.id == model && entry.service_tiers.iter().any(|tier| tier.id == value))
+}
+
+fn model_id_for_capability_lookup<'a>(provider: &str, model: &'a str) -> &'a str {
+    if provider != "claude" {
+        return model;
+    }
+    let Some(without_bracket) = model.strip_suffix(']') else {
+        return model;
+    };
+    let Some(bracket) = without_bracket.rfind('[') else {
+        return model;
+    };
+    let tag = &without_bracket[bracket + 1..];
+    let bytes = tag.as_bytes();
+    if bytes.len() < 2
+        || !matches!(bytes.last(), Some(b'k' | b'm'))
+        || bytes[0] == b'0'
+        || !bytes[..bytes.len() - 1].iter().all(u8::is_ascii_digit)
+    {
+        return model;
+    }
+    &without_bracket[..bracket]
+}
+
 #[derive(Debug, Clone)]
 struct CacheEntry {
     catalog: Catalog,
@@ -322,5 +408,80 @@ mod tests {
             }
         ));
         assert!(cache.get(&real_key).is_none());
+    }
+
+    #[test]
+    fn capability_validation_uses_the_canonical_model_and_runtime_guards() {
+        let catalog = Catalog {
+            models: vec![
+                Model {
+                    id: "claude-opus-5".to_string(),
+                    default: true,
+                    thinking: Some(ModelThinking {
+                        supported_levels: vec![ThinkingLevel {
+                            value: "high".to_string(),
+                            ..ThinkingLevel::default()
+                        }],
+                        ..ModelThinking::default()
+                    }),
+                    ..Model::default()
+                },
+                Model {
+                    id: "gpt-5.6-sol".to_string(),
+                    service_tiers: vec![ModelServiceTier {
+                        id: "priority".to_string(),
+                        ..ModelServiceTier::default()
+                    }],
+                    ..Model::default()
+                },
+            ],
+            ..Catalog::default()
+        };
+
+        assert!(validate_thinking_level(
+            &catalog,
+            "claude",
+            "claude-opus-5[1m]",
+            "high"
+        ));
+        assert!(!validate_thinking_level(
+            &catalog,
+            "claude",
+            "claude-opus-5[0m]",
+            "high"
+        ));
+        assert!(validate_service_tier(
+            &catalog,
+            "codex",
+            "gpt-5.6-sol",
+            "priority"
+        ));
+        assert!(!validate_service_tier(
+            &catalog,
+            "claude",
+            "gpt-5.6-sol",
+            "priority"
+        ));
+        assert!(!validate_thinking_level(&catalog, "codex", "", "high"));
+    }
+
+    #[test]
+    fn thinking_validation_handles_default_and_opencode_any_model() {
+        let catalog = Catalog {
+            models: vec![Model {
+                id: "openai/o3".to_string(),
+                thinking: Some(ModelThinking {
+                    supported_levels: vec![ThinkingLevel {
+                        value: "high".to_string(),
+                        ..ThinkingLevel::default()
+                    }],
+                    ..ModelThinking::default()
+                }),
+                ..Model::default()
+            }],
+            ..Catalog::default()
+        };
+        assert!(!validate_thinking_level(&catalog, "pi", "", "high"));
+        assert!(validate_thinking_level(&catalog, "opencode", "", "high"));
     }
 }

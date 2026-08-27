@@ -39,7 +39,7 @@ use crate::local_directory::{
 };
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
-use crate::provider_registration::RuntimeLaunchRegistry;
+use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
 use crate::skill_cache::{
@@ -64,6 +64,13 @@ const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
 const SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct TaskModelSelection {
+    model: String,
+    thinking_level: String,
+    service_tier: String,
+}
 
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
 /// Metadata-only runtimes fail at `build_backend`; no provider can turn into a
@@ -96,6 +103,157 @@ impl ProductionProviderAdapter {
             running_tasks: AtomicI64::new(0),
             resource_wait_tasks: AtomicI64::new(0),
         }
+    }
+
+    /// Resolves the values a task will actually pass to the provider. The
+    /// catalog is deliberately loaded at most once: qualification and both
+    /// capability checks share one discovery result, while providers that do
+    /// not need a catalog avoid spawning a CLI subprocess entirely.
+    async fn resolve_task_model_selection(
+        &self,
+        ctx: &Ctx,
+        task_id: &str,
+        target: &RuntimeExecutionTarget,
+        launch: &RuntimeLaunchSpec,
+        mut selection: TaskModelSelection,
+    ) -> TaskModelSelection {
+        let capability_checks_pending =
+            !selection.thinking_level.is_empty() || !selection.service_tier.is_empty();
+        let needs_catalog = (!selection.model.is_empty()
+            && (cordy_agent::registry::model_selector_must_be_provider_qualified(
+                &target.provider,
+            ) || capability_checks_pending))
+            || (!selection.thinking_level.is_empty()
+                && !(target.provider == "codex" && selection.model.is_empty()));
+
+        let catalog = if needs_catalog {
+            Some(
+                cordy_agent::registry::discover_models(
+                    &target.provider,
+                    cordy_agent::BackendConfig {
+                        command: cordy_agent::RuntimeCommand::new(
+                            launch.command_path.clone(),
+                            launch.fixed_args.clone(),
+                        ),
+                        env: BTreeMap::new(),
+                    },
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    Duration::ZERO,
+                )
+                .await,
+            )
+        } else {
+            None
+        };
+
+        if !selection.model.is_empty()
+            && (cordy_agent::registry::model_selector_must_be_provider_qualified(&target.provider)
+                || capability_checks_pending)
+        {
+            match catalog.as_ref() {
+                Some(Ok(catalog)) => {
+                    let (qualified, rewritten) =
+                        cordy_agent::model::qualify_model_id(catalog, &selection.model);
+                    if rewritten {
+                        tracing::info!(
+                            task = %task_id,
+                            provider = %target.provider,
+                            configured_model = %selection.model,
+                            model = %qualified,
+                            "model qualified against the runtime catalog"
+                        );
+                        selection.model = qualified;
+                    }
+                }
+                Some(Err(error)) => {
+                    tracing::warn!(
+                        task = %task_id,
+                        provider = %target.provider,
+                        model = %selection.model,
+                        %error,
+                        "model catalog lookup failed; using the configured model as-is"
+                    );
+                }
+                None => {}
+            }
+        }
+
+        if !selection.service_tier.is_empty() {
+            let valid = if target.provider != "codex" || selection.model.is_empty() {
+                false
+            } else {
+                match catalog.as_ref() {
+                    Some(Ok(catalog)) => cordy_agent::model::validate_service_tier(
+                        catalog,
+                        &target.provider,
+                        &selection.model,
+                        &selection.service_tier,
+                    ),
+                    Some(Err(error)) => {
+                        tracing::warn!(
+                            task = %task_id,
+                            provider = %target.provider,
+                            model = %selection.model,
+                            service_tier = %selection.service_tier,
+                            %error,
+                            "service_tier catalog lookup failed; passing through"
+                        );
+                        true
+                    }
+                    None => false,
+                }
+            };
+            if !valid {
+                tracing::warn!(
+                    task = %task_id,
+                    provider = %target.provider,
+                    model = %selection.model,
+                    service_tier = %selection.service_tier,
+                    "service_tier is not valid for this provider/model; skipping injection"
+                );
+                selection.service_tier.clear();
+            }
+        }
+
+        if !selection.thinking_level.is_empty() {
+            let valid = if target.provider == "codex" && selection.model.is_empty() {
+                false
+            } else {
+                match catalog.as_ref() {
+                    Some(Ok(catalog)) => cordy_agent::model::validate_thinking_level(
+                        catalog,
+                        &target.provider,
+                        &selection.model,
+                        &selection.thinking_level,
+                    ),
+                    Some(Err(error)) => {
+                        tracing::warn!(
+                            task = %task_id,
+                            provider = %target.provider,
+                            model = %selection.model,
+                            thinking_level = %selection.thinking_level,
+                            %error,
+                            "thinking_level catalog lookup failed; passing through"
+                        );
+                        true
+                    }
+                    None => false,
+                }
+            };
+            if !valid {
+                tracing::warn!(
+                    task = %task_id,
+                    provider = %target.provider,
+                    model = %selection.model,
+                    thinking_level = %selection.thinking_level,
+                    "thinking_level is not valid for this provider/model; skipping injection"
+                );
+                selection.thinking_level.clear();
+            }
+        }
+
+        selection
     }
 
     async fn run_task_inner(
@@ -199,6 +357,47 @@ impl ProductionProviderAdapter {
                 cordy_task_failure::Reason::SKILL_BUNDLE_UNAVAILABLE.as_str(),
                 None,
             );
+        }
+        let explicit_model = task
+            .agent
+            .as_ref()
+            .is_some_and(|agent| !agent.model.is_empty());
+        let selection = self
+            .resolve_task_model_selection(
+                &ctx,
+                &task.id,
+                &target,
+                &launch,
+                TaskModelSelection {
+                    model: task
+                        .agent
+                        .as_ref()
+                        .map(|agent| agent.model.clone())
+                        .filter(|model| !model.is_empty())
+                        .unwrap_or_else(|| inputs.default_model.clone()),
+                    thinking_level: task
+                        .agent
+                        .as_ref()
+                        .map(|agent| agent.thinking_level.clone())
+                        .unwrap_or_default(),
+                    service_tier: task
+                        .agent
+                        .as_ref()
+                        .map(|agent| agent.service_tier.clone())
+                        .unwrap_or_default(),
+                },
+            )
+            .await;
+        if explicit_model {
+            if let Some(agent) = task.agent.as_mut() {
+                agent.model = selection.model;
+            }
+        } else {
+            inputs.default_model = selection.model;
+        }
+        if let Some(agent) = task.agent.as_mut() {
+            agent.thinking_level = selection.thinking_level;
+            agent.service_tier = selection.service_tier;
         }
         let mut plan = match ProviderExecutionPlan::build(&self.config, &task, &target, inputs) {
             Ok(plan) => plan,
