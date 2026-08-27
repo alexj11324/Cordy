@@ -1476,6 +1476,12 @@ provider-specific runner。
 - 已知异步 fixer 项：既有 complete/fail service path 会在 task row 记录 missing 并清空 task session，
   但对已经 mid-flight pin 的 chat pointer 尚缺直接 exact-match 清理证据；在 fixer 收口前不声称该分支
   已完成 every-terminal chat-pointer cleanup。
-- 异步状态：verification/reviewer 将在 Ready 后分别派发；fixer 接收上述已知边界及后续 finding。主
-  agent 仅实际执行并通过 `git diff --check`，未运行/宣称 compile、tests、rustfmt、locked/offline 或
-  production smoke。PR 继承 #558 findings 及更早 #556/#557 lock/format 基线记录。
+- verification（exact HEAD `f36e24c2`）：`git diff --check` 与
+  `git diff --check 08a1f9ee...HEAD` 均通过；fixed-stable rustfmt check 失败，除继承 #558 外含 #559
+  `provider_adapter.rs`/`task_execution.rs` 布局差异。daemon 及 db/service/handler 的 locked/offline
+  no-run 均在编译前被继承的 #556/#557 Cargo.lock 缺 `procfs`/`procfs-core`/chrono 变更阻断（exit 101）；
+  两个 exact 新测试同样未到 discovery，实际 0+0，不能记录通过。verifier 静态确认唯一 production
+  chain 已接入，worktree/Cargo.lock 前后 clean/unchanged；runtime smoke 未执行。
+- reviewer 尚在异步审查；fixer 已排队接收 complete/fail exact-match chat-pointer 缺口、上述格式/
+  lock/test 阻断及后续 review finding。主 agent 未运行或伪报 compile/tests/rustfmt/production smoke；
+  PR 继续继承 #558 findings 及更早 #556/#557 lock/format 基线记录并保持 Ready。
