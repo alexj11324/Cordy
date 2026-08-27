@@ -5,17 +5,12 @@
 //! Consumers: the cordy-service plugin hook engine making outbound
 //! HMAC-signed POSTs to manifest-declared hosts.
 //!
-//! Deferred symbols, with reasons:
-//! - `oauth.go` (383 LOC): OAuth discovery/token flows. Verified against
-//!   source that they consume only [`validate_public_https_endpoint`] and
-//!   [`new_secure_http_client`] — no additional requirements.
-//! - `remotemcptest/`: Go-only test fixtures package.
-
 mod client;
 mod connector;
 mod devorigin;
 mod discover;
 mod error;
+mod oauth;
 mod types;
 mod validate;
 
@@ -26,6 +21,11 @@ pub use discover::{
     contains_string, discover, supported_protocol_versions, tool_set_digest, ExtraHeaders,
 };
 pub use error::Error;
+pub use oauth::{
+    build_authorization_url, discover_oauth, exchange_oauth_code, oauth_expiry,
+    refresh_oauth_token, register_oauth_client, validate_oauth_metadata, OAuthClientRegistration,
+    OAuthMetadata, OAuthRegistration, OAuthToken, OAuthTokenResponse, Registration, Token,
+};
 pub use types::{digest_bytes, Connection, Tool, PLUGIN_CONTRIBUTION_PREFIX};
 pub use validate::{
     host_allowed, is_public_address, validate_public_https_endpoint, Resolver, SystemResolver,

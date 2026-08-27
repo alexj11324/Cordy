@@ -51,21 +51,22 @@ pub async fn validate_public_https_endpoint(
     allowed_hosts: &[String],
     resolver: Option<&dyn Resolver>,
 ) -> Result<Url, Error> {
-    let endpoint = Url::parse(raw.trim()).map_err(|e| Error::ParseEndpoint(e.to_string()))?;
+    let raw = raw.trim();
+    let endpoint = Url::parse(raw).map_err(|e| Error::ParseEndpoint(e.to_string()))?;
+    if endpoint.scheme() != "https"
+        || endpoint.host_str().is_none_or(str::is_empty)
+        || has_userinfo(raw)
+        || non_empty(endpoint.fragment())
+        || non_empty(endpoint.query())
+    {
+        return Err(Error::NotPublicHttps);
+    }
     if is_dev_origin(&endpoint) {
         let dev_host = normalize_host(endpoint.host_str().unwrap_or_default());
         if !allowed_hosts.is_empty() && !host_allowed(&dev_host, allowed_hosts) {
             return Err(Error::HostOutsidePolicy);
         }
         return Ok(endpoint);
-    }
-    if endpoint.scheme() != "https"
-        || endpoint.host_str().is_none_or(str::is_empty)
-        || has_userinfo(&endpoint)
-        || non_empty(endpoint.fragment())
-        || non_empty(endpoint.query())
-    {
-        return Err(Error::NotPublicHttps);
     }
     let host = normalize_host(endpoint.host_str().unwrap_or_default());
     if host == "localhost" || host.ends_with(".localhost") {
@@ -212,9 +213,8 @@ pub(crate) fn normalize_host(raw: &str) -> String {
 /// The `url` crate cannot distinguish `https://host/` from `https://@host/`
 /// through its accessors, so scan the authority text directly — Go rejects
 /// any non-nil `URL.User`.
-fn has_userinfo(endpoint: &Url) -> bool {
-    let serialized = endpoint.as_str();
-    let Some((_, rest)) = serialized.split_once("://") else {
+fn has_userinfo(raw: &str) -> bool {
+    let Some((_, rest)) = raw.split_once("://") else {
         return false;
     };
     let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
@@ -278,6 +278,7 @@ mod tests {
             "https://sub.localhost/mcp",
             "https://localhost.:443/mcp",
             "https://token@mcp.example.com/mcp",
+            "https://@mcp.example.com/mcp",
             "https://private.example/mcp",
             "https://mcp.example.com/mcp?x=1",
             "https://mcp.example.com/mcp#frag",
