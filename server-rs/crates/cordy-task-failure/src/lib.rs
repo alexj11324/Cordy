@@ -300,6 +300,7 @@ pub fn classify(raw_error: &str) -> Reason {
             "stream disconnected",
             OPENCODE_STREAM_ENDED_PREFIX,
             "connection closed",
+            "connection reset",
             "mid-response",
             "error sending request",
             "unable to connect",

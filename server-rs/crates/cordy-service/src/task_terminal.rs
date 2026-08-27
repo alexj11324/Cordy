@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use sqlx::Row;
 use uuid::Uuid;
 
 use cordy_db::dbid::new_v7;
@@ -69,6 +70,58 @@ fn retryable_reason(reason: &str) -> bool {
 }
 
 impl TaskService {
+    /// Records a session abandoned by a run whose terminal callback became a
+    /// cancel acknowledgement. The task row and chat pointer move together;
+    /// the exact id/runtime match prevents a late ack from clearing a newer
+    /// session installed by another turn.
+    pub async fn retire_cancelled_task_session(
+        &self,
+        task_id: Uuid,
+        retired_session_id: &str,
+    ) -> Result<(), TaskServiceError> {
+        if retired_session_id.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        lock_chat_session_for_task_write(&mut tx, task_id).await?;
+        let row = sqlx::query(
+            r#"UPDATE agent_task_queue
+SET retired_session_id = COALESCE(retired_session_id, $2)
+WHERE id = $1 AND status = 'cancelled'
+RETURNING chat_session_id, runtime_id, retired_session_id"#,
+        )
+        .bind(task_id)
+        .bind(retired_session_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(TaskServiceError::Sql)?;
+        if let Some(row) = row {
+            let chat_session_id: Option<Uuid> = row
+                .try_get("chat_session_id")
+                .map_err(TaskServiceError::Sql)?;
+            let runtime_id: Option<Uuid> =
+                row.try_get("runtime_id").map_err(TaskServiceError::Sql)?;
+            let retired: Option<String> = row
+                .try_get("retired_session_id")
+                .map_err(TaskServiceError::Sql)?;
+            if let (Some(chat_session_id), Some(retired)) = (chat_session_id, retired) {
+                clear_chat_session_session_if_matches(
+                    &mut *tx,
+                    chat_session_id,
+                    Some(&retired),
+                    runtime_id,
+                )
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "clear cancelled retired chat session pointer: {error}"
+                    ))
+                })?;
+            }
+        }
+        tx.commit().await.map_err(TaskServiceError::Sql)
+    }
+
     /// Marks a task completed inside one transaction: status CAS, chat
     /// resume-pointer advance, assistant outcome row. Idempotent under
     /// parallel-terminal races (ErrNoRows → return the existing row).

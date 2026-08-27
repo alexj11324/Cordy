@@ -737,6 +737,10 @@ pub struct TaskCancelAck {
     /// Set when the cancelled run additionally FAILED to persist its work.
     pub error_message: String,
     pub failure_reason: String,
+    /// A provider session abandoned by a fresh retry. Cancellation is a
+    /// terminal delivery too, so it must retire the same pointer as the
+    /// complete/fail callbacks.
+    pub retired_session_id: String,
 }
 
 /// `TaskMessageData` (client.go:426): a single agent execution message for
@@ -780,6 +784,9 @@ impl Client {
         }
         if !ack.failure_reason.is_empty() {
             body.insert("failure_reason".into(), json!(ack.failure_reason));
+        }
+        if !ack.retired_session_id.is_empty() {
+            body.insert("retired_session_id".into(), json!(ack.retired_session_id));
         }
         self.post_json_unit_with_retry(
             ctx,
@@ -1797,6 +1804,46 @@ mod tests {
         format!("http://{address}")
     }
 
+    fn capture_once() -> (String, std::sync::mpsc::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let read = stream.read(&mut chunk).unwrap();
+                request.extend_from_slice(&chunk[..read]);
+                let complete = request
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                    .is_some_and(|header_end| {
+                        let headers = String::from_utf8_lossy(&request[..header_end]);
+                        let content_length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())
+                                    .flatten()
+                            })
+                            .unwrap_or_default();
+                        request.len() >= header_end + 4 + content_length
+                    });
+                if read == 0 || complete {
+                    break;
+                }
+            }
+            let text = String::from_utf8_lossy(&request).into_owned();
+            tx.send(text).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .unwrap();
+        });
+        (format!("http://{address}"), rx)
+    }
+
     fn request_error_with_status(status_code: u16) -> anyhow::Error {
         RequestError {
             path: "/test".to_string(),
@@ -1840,5 +1887,27 @@ mod tests {
 
         assert!(result.is_err());
         assert!(started.elapsed() < Duration::from_millis(150));
+    }
+
+    #[tokio::test]
+    async fn cancel_ack_sends_retired_session_id() {
+        let (base_url, request) = capture_once();
+        let client = Client::new(base_url);
+
+        client
+            .ack_task_cancelled(
+                &crate::repocache::Ctx::new(),
+                "task-1",
+                TaskCancelAck {
+                    retired_session_id: "poisoned-session".to_string(),
+                    ..TaskCancelAck::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let request = request.recv().unwrap();
+        assert!(request.starts_with("POST /api/daemon/tasks/task-1/cancel-ack "));
+        assert!(request.contains("\"retired_session_id\":\"poisoned-session\""));
     }
 }

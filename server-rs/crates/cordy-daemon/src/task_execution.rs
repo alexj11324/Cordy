@@ -545,9 +545,18 @@ fn should_interrupt_agent(status: &anyhow::Result<String>) -> bool {
 }
 
 async fn acknowledge_cancelled_run(client: &Client, task_id: &str, outcome: &TaskRunOutcome) {
+    let ack = cancel_ack_for_outcome(outcome);
+    let report_ctx = Ctx::new();
+    if let Err(err) = client.ack_task_cancelled(&report_ctx, task_id, ack).await {
+        tracing::warn!(task = %task_id, error = %err, "cancel ack failed; server sweeper will finalize");
+    }
+}
+
+fn cancel_ack_for_outcome(outcome: &TaskRunOutcome) -> TaskCancelAck {
     let mut ack = TaskCancelAck {
         branch_name: outcome.result.branch_name.clone(),
         durable_work_dir: outcome.result.durable_work_dir.clone(),
+        retired_session_id: outcome.result.retired_session_id.clone(),
         ..TaskCancelAck::default()
     };
     if let Some(delivery) = outcome
@@ -558,10 +567,7 @@ async fn acknowledge_cancelled_run(client: &Client, task_id: &str, outcome: &Tas
         ack.error_message.clone_from(&delivery.error_message);
         ack.failure_reason.clone_from(&delivery.failure_reason);
     }
-    let report_ctx = Ctx::new();
-    if let Err(err) = client.ack_task_cancelled(&report_ctx, task_id, ack).await {
-        tracing::warn!(task = %task_id, error = %err, "cancel ack failed; server sweeper will finalize");
-    }
+    ack
 }
 
 async fn report_task_result(client: &Client, task_id: &str, result: &TaskResult) {
@@ -740,6 +746,21 @@ mod tests {
             failure_reason_for_result(&explicit),
             "skill_bundle_unavailable"
         );
+    }
+
+    #[test]
+    fn cancel_ack_preserves_retired_session_on_the_terminal_path() {
+        let outcome = TaskRunOutcome {
+            result: TaskResult {
+                status: "cancelled".into(),
+                retired_session_id: "poisoned-session".into(),
+                ..TaskResult::default()
+            },
+            failure: None,
+        };
+
+        let ack = cancel_ack_for_outcome(&outcome);
+        assert_eq!(ack.retired_session_id, "poisoned-session");
     }
 
     #[test]

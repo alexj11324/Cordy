@@ -48,8 +48,7 @@ use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext}
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::remote_mcp_broker::{
-    merge_task_remote_mcp_config, start_task_remote_mcp_brokers,
-    RemoteMCPCredentialResolver,
+    merge_task_remote_mcp_config, start_task_remote_mcp_brokers, RemoteMCPCredentialResolver,
 };
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
@@ -389,12 +388,7 @@ impl ProductionProviderAdapter {
         .await
         {
             Ok(startup) => startup,
-            Err(error) => {
-                return failed(
-                    error.context("prepare Remote MCP broker"),
-                    None,
-                )
-            }
+            Err(error) => return failed(error.context("prepare Remote MCP broker"), None),
         };
         for diagnostic in &remote_mcp.diagnostics {
             tracing::warn!(task = %task.id, reason = %diagnostic, "Remote MCP degraded");
@@ -406,7 +400,11 @@ impl ProductionProviderAdapter {
             let base = inputs
                 .effective_mcp_config
                 .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .or_else(|| {
+                    task.agent
+                        .as_ref()
+                        .and_then(|agent| agent.mcp_config.as_ref())
+                })
                 .map(Value::to_string)
                 .unwrap_or_default();
             let merged = match merge_task_remote_mcp_config(&base, &overlay.to_string())
@@ -414,10 +412,7 @@ impl ProductionProviderAdapter {
             {
                 Ok(merged) => merged,
                 Err(error) => {
-                    return failed(
-                        error.context("merge Remote MCP broker configuration"),
-                        None,
-                    )
+                    return failed(error.context("merge Remote MCP broker configuration"), None)
                 }
             };
             inputs.effective_mcp_config = Some(merged);
@@ -428,49 +423,55 @@ impl ProductionProviderAdapter {
         let plugin_invoke: PluginHookInvoker = {
             let client = Arc::clone(&client);
             let daemon_token = task.remote_mcp_daemon_token.clone();
-            Arc::new(
-                move |call_ctx, task_id, installation_id, hook_key, input| {
-                    let client = Arc::clone(&client);
-                    let daemon_token = daemon_token.clone();
-                    let task_id = task_id.to_string();
-                    let installation_id = installation_id.to_string();
-                    let hook_key = hook_key.to_string();
-                    let input = input.clone();
-                    Box::pin(async move {
-                        client
-                            .invoke_agent_plugin_hook(
-                                call_ctx,
-                                &daemon_token,
-                                &task_id,
-                                &installation_id,
-                                &hook_key,
-                                Some(input),
-                            )
-                            .await
-                            .map(|output| output.unwrap_or(Value::Null))
-                    })
-                },
-            )
+            Arc::new(move |call_ctx, task_id, installation_id, hook_key, input| {
+                let client = Arc::clone(&client);
+                let daemon_token = daemon_token.clone();
+                let task_id = task_id.to_string();
+                let installation_id = installation_id.to_string();
+                let hook_key = hook_key.to_string();
+                let input = input.clone();
+                Box::pin(async move {
+                    client
+                        .invoke_agent_plugin_hook(
+                            call_ctx,
+                            &daemon_token,
+                            &task_id,
+                            &installation_id,
+                            &hook_key,
+                            Some(input),
+                        )
+                        .await
+                        .map(|output| output.unwrap_or(Value::Null))
+                })
+            })
         };
-        let (plugin_overlay, plugin_hook_mcp) =
-            match start_task_plugin_hook_mcp(&ctx, &task.id, &task.plugin_hook_tools, plugin_invoke)
-                .await
-            {
-                Ok(started) => started,
-                Err(error) => {
-                    tracing::warn!(
-                        task = %task.id,
-                        %error,
-                        "plugin hook tools unavailable"
-                    );
-                    (None, None)
-                }
-            };
+        let (plugin_overlay, plugin_hook_mcp) = match start_task_plugin_hook_mcp(
+            &ctx,
+            &task.id,
+            &task.plugin_hook_tools,
+            plugin_invoke,
+        )
+        .await
+        {
+            Ok(started) => started,
+            Err(error) => {
+                tracing::warn!(
+                    task = %task.id,
+                    %error,
+                    "plugin hook tools unavailable"
+                );
+                (None, None)
+            }
+        };
         if let Some(overlay) = plugin_overlay {
             let base = inputs
                 .effective_mcp_config
                 .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .or_else(|| {
+                    task.agent
+                        .as_ref()
+                        .and_then(|agent| agent.mcp_config.as_ref())
+                })
                 .map(Value::to_string)
                 .unwrap_or_default();
             match merge_task_remote_mcp_config(&base, &overlay.to_string())
@@ -682,6 +683,14 @@ impl ProductionProviderAdapter {
             task.prior_session_id.clear();
             task.prior_session_resume_unavailable = true;
             plan.drop_resume();
+            if let Some(refreshed) = reuse(plan.fresh_retry_reuse_params(&environment)) {
+                environment = refreshed;
+            } else {
+                tracing::warn!(
+                    task = %task.id,
+                    "fresh retry could not refresh cold runtime context; continuing without resume"
+                );
+            }
             let fresh = plan.bind_environment(
                 &environment,
                 PreparedEnvironmentInputs {
@@ -703,11 +712,7 @@ impl ProductionProviderAdapter {
             )
             .await;
             let result = reconcile_fresh_retry_result(first, retry);
-            Ok((
-                result,
-                requested_session_id.clone(),
-                requested_session_id,
-            ))
+            Ok((result, requested_session_id.clone(), requested_session_id))
         }
         .await;
 
@@ -1560,7 +1565,10 @@ fn reconcile_fresh_retry_result(
     let Ok((mut retry, _retry_tools)) = retry else {
         return first;
     };
-    let usage = merge_usage(std::mem::take(&mut first.usage), std::mem::take(&mut retry.usage));
+    let usage = merge_usage(
+        std::mem::take(&mut first.usage),
+        std::mem::take(&mut retry.usage),
+    );
     if !retry.session_id.is_empty() || retry.status == "completed" {
         retry.usage = usage;
         retry
@@ -1601,7 +1609,12 @@ fn result_outcome(
     usage.sort_by(|left, right| left.model.cmp(&right.model));
     let (status, comment, failure_reason) = match result.status.as_str() {
         "completed" => match classify_poisoned_output(&result.output) {
-            Some(reason) => ("blocked", result.output, reason.to_string()),
+            Some(reason) => {
+                if retired_session_id.is_empty() {
+                    retired_session_id = requested_session_id.to_string();
+                }
+                ("blocked", result.output, reason.to_string())
+            }
             None => ("completed", result.output, String::new()),
         },
         "cancelled" => (
@@ -1619,7 +1632,11 @@ fn result_outcome(
             } else {
                 result.error
             };
-            let reason = classify_resume_unsafe_timeout(provider, &comment).unwrap_or("timeout");
+            let classified = classify_resume_unsafe_timeout(provider, &comment);
+            if classified.is_some() && retired_session_id.is_empty() {
+                retired_session_id = requested_session_id.to_string();
+            }
+            let reason = classified.unwrap_or("timeout");
             ("blocked", comment, reason.to_string())
         }
         "idle_watchdog" => ("blocked", result.error, "idle_watchdog".to_string()),
@@ -1630,6 +1647,9 @@ fn result_outcome(
                 result.error
             };
             let failure_reason = if let Some(reason) = classify_poisoned_error(&comment) {
+                if retired_session_id.is_empty() {
+                    retired_session_id = requested_session_id.to_string();
+                }
                 reason.to_string()
             } else if let Some(reason) = classify_resume_unsafe_transport(provider, &comment) {
                 if retired_session_id.is_empty() {
@@ -1929,9 +1949,7 @@ mod tests {
                 },
             ))
         };
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -2034,7 +2052,9 @@ mod tests {
             Some(&2),
             "a transient 500 must retry the list report"
         );
-        assert!(reports.iter().all(|(path, _)| !path.contains("ignored-singular")));
+        assert!(reports
+            .iter()
+            .all(|(path, _)| !path.contains("ignored-singular")));
         let list = reports
             .iter()
             .find(|(path, _)| path.ends_with("/local-skills/list-1/result"))
@@ -2136,9 +2156,9 @@ mod tests {
             .await;
         let failure = outcome.failure.expect("required broker failure");
         assert!(
-            failure.message.contains(
-                "Remote MCP required-tools is incompatible with provider deveco"
-            ),
+            failure
+                .message
+                .contains("Remote MCP required-tools is incompatible with provider deveco"),
             "{}",
             failure.message
         );
@@ -2267,9 +2287,7 @@ mod tests {
             1,
             "qwen"
         ));
-        assert!(!should_retry_with_fresh_session(
-            &rejected, "", 0, "qwen"
-        ));
+        assert!(!should_retry_with_fresh_session(&rejected, "", 0, "qwen"));
 
         let broken_history = ExecutionResult {
             status: "failed".to_string(),
@@ -2345,13 +2363,32 @@ mod tests {
             )]),
             ..ExecutionResult::default()
         };
-        let kept = reconcile_fresh_retry_result(
-            first.clone(),
-            Ok((retry_without_session, 0)),
-        );
+        let kept = reconcile_fresh_retry_result(first.clone(), Ok((retry_without_session, 0)));
         assert_eq!(kept.session_id, "old-session");
         assert_eq!(kept.usage["model"].input_tokens, 10);
         assert_eq!(kept.usage["model"].output_tokens, 3);
+
+        let startup_error = reconcile_fresh_retry_result(
+            first.clone(),
+            Err(anyhow::anyhow!("fresh backend did not start")),
+        );
+        assert_eq!(startup_error.status, "failed");
+        assert_eq!(startup_error.session_id, "old-session");
+
+        let new_session = reconcile_fresh_retry_result(
+            first.clone(),
+            Ok((
+                ExecutionResult {
+                    status: "failed".to_string(),
+                    error: "new session later failed".to_string(),
+                    session_id: "new-session".to_string(),
+                    ..ExecutionResult::default()
+                },
+                0,
+            )),
+        );
+        assert_eq!(new_session.session_id, "new-session");
+        assert_ne!(new_session.session_id, "old-session");
 
         let completed_without_session = ExecutionResult {
             status: "completed".to_string(),
@@ -2365,10 +2402,7 @@ mod tests {
             )]),
             ..ExecutionResult::default()
         };
-        let completed = reconcile_fresh_retry_result(
-            first,
-            Ok((completed_without_session, 0)),
-        );
+        let completed = reconcile_fresh_retry_result(first, Ok((completed_without_session, 0)));
         assert_eq!(completed.status, "completed");
         assert!(completed.session_id.is_empty());
         assert_eq!(completed.usage["model"].input_tokens, 10);
@@ -2456,11 +2490,12 @@ mod tests {
                 ..ExecutionResult::default()
             },
             &env,
-            "",
+            "session-1",
             "",
         );
         assert_eq!(fallback.result.status, "blocked");
         assert_eq!(fallback.result.failure_reason, "iteration_limit");
+        assert_eq!(fallback.result.retired_session_id, "session-1");
 
         let invalid_history = result_outcome(
             "claude",
@@ -2471,10 +2506,11 @@ mod tests {
                 ..ExecutionResult::default()
             },
             &env,
-            "",
+            "session-2",
             "",
         );
         assert_eq!(invalid_history.result.failure_reason, "api_invalid_request");
+        assert_eq!(invalid_history.result.retired_session_id, "session-2");
 
         let timeout = result_outcome(
             "codex",
@@ -2487,10 +2523,8 @@ mod tests {
             "session-stuck",
             "",
         );
-        assert_eq!(
-            timeout.result.failure_reason,
-            "codex_semantic_inactivity"
-        );
+        assert_eq!(timeout.result.failure_reason, "codex_semantic_inactivity");
+        assert_eq!(timeout.result.retired_session_id, "session-stuck");
 
         let overflow = result_outcome(
             "codex",
@@ -2504,9 +2538,6 @@ mod tests {
             "",
         );
         assert_eq!(overflow.result.failure_reason, "codex_resume_oversized");
-        assert_eq!(
-            overflow.result.retired_session_id,
-            "session-oversized"
-        );
+        assert_eq!(overflow.result.retired_session_id, "session-oversized");
     }
 }

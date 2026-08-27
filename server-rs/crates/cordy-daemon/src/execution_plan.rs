@@ -367,6 +367,15 @@ impl ProviderExecutionPlan {
         }
     }
 
+    /// Reuses the prepared environment after abandoning a poisoned session.
+    /// This runs the normal context/config refresh with the cold task flags,
+    /// rather than changing only the provider command-line resume option.
+    pub fn fresh_retry_reuse_params(&self, environment: &Environment) -> ReuseParams {
+        let mut params = self.reuse_params(environment.work_dir.clone());
+        params.local_directory = environment.local_directory;
+        params
+    }
+
     /// Drops a server-provided resume pointer after the adapter proves its
     /// daemon-owned workdir cannot be reused. The continuity-loss signal is
     /// updated in the same operation so both the refreshed runtime files and
@@ -806,6 +815,23 @@ mod tests {
             prepare.codex_custom_args,
             vec!["--sandbox", "workspace-write", "--agent-flag", "secret-arg"]
         );
+    }
+
+    #[test]
+    fn fresh_retry_projects_cold_context_onto_the_real_reuse_path() {
+        let mut plan =
+            ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        plan.drop_resume();
+        let params = plan.fresh_retry_reuse_params(&Environment {
+            work_dir: "/user/project".to_string(),
+            local_directory: true,
+            ..Environment::default()
+        });
+
+        assert!(params.resume_session_id.is_empty());
+        assert!(!params.task.prior_session_resumed);
+        assert!(params.task.prior_session_resume_unavailable);
+        assert!(params.local_directory);
     }
 
     #[test]

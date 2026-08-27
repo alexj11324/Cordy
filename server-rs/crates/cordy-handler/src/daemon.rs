@@ -3034,6 +3034,8 @@ struct CancelAckBody {
     error_message: String,
     #[serde(default, rename = "failure_reason")]
     failure_reason: String,
+    #[serde(default, rename = "retired_session_id")]
+    retired_session_id: String,
 }
 
 /// POST /api/daemon/tasks/{taskId}/cancel-ack. Both writes carry a
@@ -3056,6 +3058,7 @@ async fn ack_task_cancelled(
     let durable = sanitize(req.durable_work_dir.trim());
     let error_message = sanitize(req.error_message.trim());
     let failure_reason = sanitize(req.failure_reason.trim());
+    let retired_session_id = sanitize(req.retired_session_id.trim());
 
     let mut delivered = false;
     if !durable.is_empty() {
@@ -3097,6 +3100,20 @@ async fn ack_task_cancelled(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to record task error",
+            );
+        }
+        delivered = true;
+    }
+    if !retired_session_id.is_empty() {
+        if let Err(e) = state
+            .tasks
+            .retire_cancelled_task_session(task.id, &retired_session_id)
+            .await
+        {
+            tracing::error!(error = %e, task_id = %task_id, "cancel ack: retire session failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to retire cancelled task session",
             );
         }
         delivered = true;
@@ -4365,6 +4382,16 @@ fn plugin_error_response(err: &cordy_service::plugin::PluginError, fallback: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancel_ack_accepts_retired_session_id() {
+        let body: CancelAckBody = serde_json::from_value(json!({
+            "retired_session_id": "poisoned-session"
+        }))
+        .unwrap();
+
+        assert_eq!(body.retired_session_id, "poisoned-session");
+    }
 
     fn lazy_test_state() -> HandlerState {
         let pool = sqlx::postgres::PgPoolOptions::new()
