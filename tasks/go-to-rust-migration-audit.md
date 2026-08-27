@@ -195,7 +195,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack、Telegram、Composio 与 VCS 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | 下一切片 GHSnapshot | 依赖 AUDIT-001 已交付的 Rust server 入口；各 provider 互不重叠，可执行 | PR #532..#536/#538/#539；§5.3、§6.2、§20..§26 | 主 agent；独立 V/R/F subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack、Telegram、Composio 与 VCS 已建立 production 配置/transport 证据；当前切片 GHSnapshot | 收口非法 App key 的可观测 fail-closed、Manager 注入与 lifecycle 证据 | 依赖 AUDIT-001 已交付的 Rust server 入口；GHSnapshot 与其他 provider 不重叠，可执行 | PR #532..#536/#538/#539；`codex/cord-204-ghsnapshot-production-contract-rust`；§5.3、§6.2、§20..§27 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | §5.2、§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -718,3 +718,18 @@ HandlerState、handler 和 `cordy_vcs` provider，不增加新 registry 或兼�
   仍未完成。
 - 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
   通过；fixer 尚未派发。PR 堆叠在 Composio PR #538。
+
+## 27. AUDIT-004 当前切片：GitHub snapshot production configuration contract
+
+分支 `codex/cord-204-ghsnapshot-production-contract-rust` 已选择现有 GHSnapshot
+退出缺口。编码前追踪确认：
+
+- Go `handler.New` 调用 `ghsnapshot.NewClientFromEnv`；凭证缺失时保持 inert，private
+  key 非法时记录 warning 并把 nil client 交给 Manager，server 继续启动。
+- Rust `cordy-server::main` 当前直接执行 `Client::new_from_env()?`；凭证缺失会得到
+  `None`，但非法 private key 会向上传播并终止整个 server，尚未对齐 Go 的可观测
+  fail-closed 降级契约。
+- 当前切片只收口这个 boot 选择边界，并直接证明有效 client 注入既有 Manager、
+  worker/sweeper 由现有 root cancellation 和 shutdown deadline 管理；不重复实现
+  GitHub client、Manager、queue、snapshot parser 或数据库 apply 逻辑。
+- PR、verification、review 和 fix 尚未产生；不得把本登记写成已验证或已交付。
