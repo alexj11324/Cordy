@@ -381,6 +381,22 @@ impl ProviderExecutionPlan {
         self.prepare.task.prior_session_resume_unavailable = true;
     }
 
+    /// Rebinds the three provider temp variables after the task environment
+    /// exists and the daemon has allocated its private per-run directory.
+    pub fn set_task_temp_dir(&mut self, temp_dir: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !temp_dir.trim().is_empty(),
+            "invalid execution configuration: missing task temp directory"
+        );
+        validate_env_value("temp_dir", temp_dir)?;
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            self.child_env
+                .values
+                .insert(key.to_string(), temp_dir.to_string());
+        }
+        Ok(())
+    }
+
     pub fn bind_environment(
         &self,
         environment: &Environment,
@@ -947,5 +963,38 @@ mod tests {
             bound.child_env.get("CORDY_QUICK_CREATE_ATTACHMENT_IDS"),
             Some("[\"attachment-1\"]")
         );
+    }
+
+    #[test]
+    fn private_task_temp_rebind_is_authoritative_over_custom_env() {
+        let mut claim = task();
+        let custom = claim
+            .agent
+            .as_mut()
+            .unwrap()
+            .custom_env
+            .get_or_insert_with(Default::default);
+        custom.insert("TMPDIR".to_string(), "/attacker/tmpdir".to_string());
+        custom.insert("TMP".to_string(), "/attacker/tmp".to_string());
+        custom.insert("TEMP".to_string(), "/attacker/temp".to_string());
+
+        let mut plan =
+            ProviderExecutionPlan::build(&config(), &claim, &target(), inputs()).unwrap();
+        plan.set_task_temp_dir("/tmp/cordy-task-private").unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".to_string(),
+                    cordy_config_root: "/config".to_string(),
+                    codex_home: "/codex".to_string(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            assert_eq!(bound.child_env.get(key), Some("/tmp/cordy-task-private"));
+        }
     }
 }

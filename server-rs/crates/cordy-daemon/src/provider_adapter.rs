@@ -28,8 +28,8 @@ use crate::execenv::context::{
 };
 use crate::execenv::codex_home::codex_resume_rollout_present;
 use crate::execenv::execenv::{
-    predict_root_dir, prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
-    MANAGED_ENV_PROVENANCE_MANAGED_BY,
+    ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, reuse,
+    Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execution_plan::{
@@ -304,7 +304,9 @@ impl ProductionProviderAdapter {
 
         let predicted_root =
             predict_root_dir(&self.config.workspaces_root, &task.workspace_id, &task.id);
-        let temp_dir = Path::new(&predicted_root)
+        // Planning needs a non-empty placeholder before execenv claims the
+        // root. It is replaced after preparation by the short private dir.
+        let planned_temp_dir = Path::new(&predicted_root)
             .join("tmp")
             .to_string_lossy()
             .into_owned();
@@ -329,7 +331,7 @@ impl ProductionProviderAdapter {
             .unwrap_or_default();
         let mut inputs = ProviderExecutionInputs {
             slot,
-            temp_dir: temp_dir.clone(),
+            temp_dir: planned_temp_dir,
             default_model,
             codex_version: launch.version.clone(),
             openclaw_bin: (target.provider == "openclaw")
@@ -587,13 +589,31 @@ impl ProductionProviderAdapter {
         } else {
             path_guard
         };
-        prepare_lease.stop().await;
-
-        if let Err(error) = std::fs::create_dir_all(&temp_dir) {
+        let task_temp_dir = match ensure_task_temp_dir(
+            &environment.root_dir,
+            &task.workspace_id,
+            &task.id,
+        ) {
+            Ok(directory) => directory,
+            Err(error) => {
+                let outcome = failed(error.context("prepare task temp dir"), Some(&environment));
+                return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            }
+        };
+        let Some(task_temp_dir_path) = task_temp_dir.path().to_str() else {
             let outcome = failed(
-                anyhow::Error::new(error).context("create task temp directory"),
+                anyhow::anyhow!("task temp directory path is not valid UTF-8"),
                 Some(&environment),
             );
+            close_task_temp_dir(&task.id, task_temp_dir);
+            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+        };
+        if let Err(error) = plan.set_task_temp_dir(task_temp_dir_path) {
+            let outcome = failed(
+                error.context("bind task temp directory"),
+                Some(&environment),
+            );
+            close_task_temp_dir(&task.id, task_temp_dir);
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
@@ -601,6 +621,9 @@ impl ProductionProviderAdapter {
                 .start_task(&ctx, &task.id)
                 .await
                 .map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            // The dispatched-task lease remains owned through temp allocation
+            // and stops only after the server confirms the running transition.
+            prepare_lease.stop().await;
             if let Err(error) = client
                 .report_progress(
                     &ctx,
@@ -740,9 +763,7 @@ impl ProductionProviderAdapter {
             }
             Err(error) => failed(error, Some(&environment)),
         };
-        if let Err(error) = remove_tree(&temp_dir) {
-            tracing::warn!(task = %task.id, %error, "task temp directory cleanup failed");
-        }
+        close_task_temp_dir(&task.id, task_temp_dir);
         outcome = finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         drop(path_guard);
         outcome
@@ -1805,6 +1826,13 @@ fn failed(error: anyhow::Error, environment: Option<&Environment>) -> TaskRunOut
             failure_reason: String::new(),
             cancelled_delivery_failure: None,
         }),
+    }
+}
+
+fn close_task_temp_dir(task_id: &str, directory: tempfile::TempDir) {
+    let path = directory.path().to_path_buf();
+    if let Err(error) = directory.close() {
+        tracing::warn!(task = %task_id, path = %path.display(), %error, "task temp directory cleanup failed");
     }
 }
 
