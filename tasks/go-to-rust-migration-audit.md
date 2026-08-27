@@ -1145,6 +1145,12 @@ Homebrew 和 multi-arch backend image 都依赖同一 verify job。
   异常阻断发布；runbook 把全部 container assets 说成 Rust binary 过宽，web image 仍是
   Next.js/Node。两项已交独立 fixer；其余 Go toolchain 退出、migration/tests/全部 production
   binary gate、downstream dependency、tag-scoped fail-closed bypass 与 Ponytail 核对无 finding。
+- verifier 对未变 workflow 通过 diff、Psych YAML、tag/stable 逻辑、Go command absence 与
+  downstream `needs.verify` 静态检查；发现 release-blocking 缺口：`cargo run --locked
+  -p cordy-migrate -- up` 因 package 有四个 bin 无法选择 executable，必须显式 `--bin
+  cordy-migrate`。workspace tests 与 production release build 仍被继承 #544 的 7 处
+  `GcMetaKind` E0433 阻断、实际 0 tests；DB migration、RustSec action 均未在本地完成。
+  新缺口和 reviewer finding 已合并交独立 fixer。
 
 ## 39. AUDIT-001 执行缺口：self-host Rust image upgrade/rollback ref ownership
 
@@ -1181,6 +1187,12 @@ implementation commit `593cbc0d`）已把 Unix/Windows installer、Git ref check
   Compose 单一 selector/ambient precedence、pull-before-up、DB rollback 警告、Go 声明与
   Ponytail 方向无其他 finding；其 Bash 尝试因 sandbox tmp noexec 失败，pwsh 不可用，均不能
   记录为测试通过。
+- verifier 在未变实现上通过两个 diff check、Bash syntax 和 workspace-executable TMPDIR 下
+  installer suite 7/7；默认 `/tmp` 的两次运行因 noexec `Permission denied` 失败并保留记录。
+  额外只读 harness 的 main→latest、fetch failure-before-Compose、checkout failure-before-Compose
+  3/3 通过。环境没有 pwsh，Docker socket 无权限，故 PowerShell、真实 registry pull、真实
+  upgrade/rollback 均未执行；这些通过项不解决 reviewer 的 atomic pull/pin/custom/encoding
+  findings，已一并交 fixer。
 
 ## 40. AUDIT-001 执行缺口：self-host Rust Compose systemd lifecycle
 
@@ -1215,6 +1227,11 @@ config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollba
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 shell、systemd、Docker 或生命周期行为记为通过。PR 明确堆叠
   在 Ready PR #552。
+- reviewer 在 head `7f4616c4` 返回一个 P1、两个 P2：systemd 阶段失败可能残留已运行 stack、
+  linger 或 enabled-but-failed unit，不满足 fail-closed；linger owner 错误信任可伪造/陈旧的
+  `$USER` 而非实际 UID；现有 stub 只证明命令被打印，未覆盖 unit verify、失败清理、Docker
+  readiness、已有 unit 升级或真实 stop 生命周期。finding 已交独立 fixer；reviewer 对
+  oneshot/restart 基本语义、路径 escaping、#552 finding 继承和 Ponytail 无其他 finding。
 
 ## 41. AUDIT-001 执行缺口：required backend CI Go gate cutover
 
