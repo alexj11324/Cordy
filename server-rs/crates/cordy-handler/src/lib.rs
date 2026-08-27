@@ -105,6 +105,7 @@ use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
 use cordy_middleware::workspace::WorkspaceGuardState;
 use cordy_realtime::hub::Hub;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 
 pub use state::HandlerState;
 
@@ -624,7 +625,17 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         ))
         .layer(middleware::from_fn(
             cordy_middleware::client::client_metadata,
-        ));
+        ))
+        // Set the ID before request logging so every request has the same
+        // correlation field as the Go chi RequestID middleware; propagate it
+        // back to clients after the handler completes.
+        .layer(SetRequestIdLayer::new(
+            HeaderName::from_static("x-request-id"),
+            MakeRequestUuid,
+        ))
+        .layer(PropagateRequestIdLayer::new(HeaderName::from_static(
+            "x-request-id",
+        )));
 
     match http_metrics {
         Some(metrics) => app.layer(middleware::from_fn_with_state(
@@ -654,6 +665,43 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn request_id_is_generated_and_returned_to_client() {
+        let response = build_router(None, None)
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok())
+            .expect("request ID response header");
+        assert!(!request_id.is_empty());
+        assert!(uuid::Uuid::parse_str(request_id).is_ok());
+    }
+
+    #[tokio::test]
+    async fn request_id_header_is_preserved() {
+        let response = build_router(None, None)
+            .oneshot(
+                Request::get("/health")
+                    .header("x-request-id", "incoming-request")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response
+                .headers()
+                .get("x-request-id")
+                .and_then(|value| value.to_str().ok()),
+            Some("incoming-request")
+        );
     }
 
     #[tokio::test]

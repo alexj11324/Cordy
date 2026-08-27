@@ -178,21 +178,24 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     let path = redact_webhook_path(&raw_path);
 
     // The event! macro requires a static level path, so branch explicitly;
-    // the local macro keeps the field list in one place.
+    // the local macro keeps the field list in one place. These values include
+    // request headers and JWT claims. Render them with Debug so newlines,
+    // escape bytes, and other control characters cannot forge log records or
+    // inject terminal control sequences when ANSI is enabled for a TTY.
     macro_rules! log_http {
         ($level:path) => {
             tracing::event!(
                 $level,
-                method = %method,
-                path = %path,
+                method = ?method,
+                path = ?path,
                 status = status,
                 duration = ?duration,
-                request_id = %request_id,
-                user_id = %user_id,
-                webhook_trigger_id = %trigger_id,
-                client_platform = %meta.platform,
-                client_version = %meta.version,
-                client_os = %meta.os,
+                request_id = ?request_id,
+                user_id = ?user_id,
+                webhook_trigger_id = ?trigger_id,
+                client_platform = ?meta.platform,
+                client_version = ?meta.version,
+                client_os = ?meta.os,
                 "http request",
             );
         };
@@ -223,7 +226,7 @@ fn header_str(req: &Request, name: &str) -> String {
 
 fn record_nonempty(span: &tracing::Span, name: &'static str, value: &str) {
     if !value.is_empty() {
-        span.record(name, tracing::field::display(value));
+        span.record(name, tracing::field::debug(value));
     }
 }
 
@@ -290,5 +293,15 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert_eq!(verified_jwt_user_id(&request), "user-1");
+    }
+
+    #[test]
+    fn request_log_fields_escape_record_and_terminal_control_characters() {
+        let rendered = format!(
+            "{:?}",
+            tracing::field::debug("request-id\nforged-entry\x1b[31m")
+        );
+        assert!(!rendered.contains('\n'));
+        assert!(!rendered.contains('\x1b'));
     }
 }

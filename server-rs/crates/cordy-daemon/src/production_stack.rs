@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use crate::activity::DaemonActivity;
 use crate::auth_lifecycle::{renew_token_once, token_renewal_loop};
@@ -263,7 +264,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let bridge = tokio::spawn(async move {
             bootstrap_shutdown.cancelled().await;
             bridge_ctx.cancel_with(CancelCause::Shutdown);
-        });
+        }.in_current_span());
 
         // Go renews the PAT synchronously before the first workspace request.
         // Renewal itself is best-effort; preflight remains the readiness gate.
@@ -326,7 +327,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 tracing::error!("daemon token renewal owner stopped unexpectedly");
                 renewal_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+        }.in_current_span());
         let control_ctx = root_ctx.child();
         let control_root = root_ctx.clone();
         owners.spawn(async move {
@@ -335,7 +336,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 tracing::error!("daemon control owner stopped unexpectedly");
                 control_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+        }.in_current_span());
         let task_ctx = root_ctx.child();
         let task_root = root_ctx.clone();
         owners.spawn(async move {
@@ -344,7 +345,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 tracing::error!("daemon task execution owner stopped unexpectedly");
                 task_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+        }.in_current_span());
         let reconcile_ctx = root_ctx.child();
         let reconcile_root = root_ctx.clone();
         let reconcile_services = Arc::clone(&self.services);
@@ -369,7 +370,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 }
                 reconcile_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+        }.in_current_span());
         let gc_ctx = root_ctx.child();
         let gc_root = root_ctx.clone();
         let gc_host = Arc::clone(&host);
@@ -379,7 +380,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 tracing::error!("daemon GC owner stopped unexpectedly");
                 gc_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+        }.in_current_span());
         let update_ctx = root_ctx.child();
         let update_root = root_ctx.clone();
         let update_host = Arc::clone(&host);
@@ -389,7 +390,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 tracing::error!("daemon auto-update owner stopped unexpectedly");
                 update_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+        }.in_current_span());
 
         ready.store(true, Ordering::Release);
         let mut owner_failure = None;
@@ -526,7 +527,7 @@ fn spawn_health_server<S: ProductionRuntimeServices>(
             .with_graceful_shutdown(async move { ctx.cancelled().await })
             .await
             .map_err(anyhow::Error::from)
-    })
+    }.in_current_span())
 }
 
 async fn stop_health_task(task: &mut JoinHandle<anyhow::Result<()>>) {

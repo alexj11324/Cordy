@@ -5,14 +5,26 @@
 //! implementation: `LOG_LEVEL` wins, invalid values mean debug, and
 //! `RUST_LOG` remains an explicit Rust-only fallback for existing operators.
 
+use std::ffi::OsStr;
 use std::io::IsTerminal;
 
 pub const DEFAULT_LEVEL: &str = "debug";
 
 /// Resolve the process filter from the environment.
 pub fn env_filter() -> String {
-    let log_level = std::env::var("LOG_LEVEL").ok();
-    let rust_log = std::env::var("RUST_LOG").ok();
+    // `var` treats a present non-UTF-8 value as if it were absent. That would
+    // incorrectly let RUST_LOG win over an invalid LOG_LEVEL on Unix. Go's
+    // os.Getenv returns the raw string and parseLevel falls back to debug, so
+    // preserve the fact that LOG_LEVEL was present while applying the same
+    // invalid-value behavior here.
+    let log_level = std::env::var_os("LOG_LEVEL");
+    let rust_log = std::env::var_os("RUST_LOG");
+    filter_from_os_values(log_level.as_deref(), rust_log.as_deref())
+}
+
+fn filter_from_os_values(log_level: Option<&OsStr>, rust_log: Option<&OsStr>) -> String {
+    let log_level = log_level.map(|value| value.to_string_lossy().into_owned());
+    let rust_log = rust_log.map(|value| value.to_string_lossy().into_owned());
     filter_from_values(log_level.as_deref(), rust_log.as_deref())
 }
 
@@ -72,5 +84,17 @@ mod tests {
         );
         assert_eq!(filter_from_values(None, Some("  ")), "debug");
         assert_eq!(filter_from_values(None, None), "debug");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_log_level_is_invalid_instead_of_unset() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let invalid = OsStr::from_bytes(b"\xff");
+        assert_eq!(
+            filter_from_os_values(Some(invalid), Some(OsStr::new("trace"))),
+            "debug"
+        );
     }
 }

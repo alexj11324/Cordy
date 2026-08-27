@@ -46,7 +46,7 @@ license = "UNLICENSED"
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "multipart", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "request-id"] }
 percent-encoding = "2.3"
 # data
 sqlx = { version = "0.8", features = [
