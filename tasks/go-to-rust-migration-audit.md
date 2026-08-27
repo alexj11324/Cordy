@@ -191,7 +191,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003A | 进行中 | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；当前切片迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | Linux Rust server 使用可采样 allocator 并从既有 loopback route 导出真实 pprof；Tokio task/resource/operation telemetry 固定 loopback 接线；非 Linux fail-closed；异步收口构建、运行和开销证据 | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556；当前切片详见 §47 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
@@ -1520,3 +1520,23 @@ allocator；启动后 heap route 返回非空 gzip pprof 且 public API 不暴�
 固定 loopback endpoint 观察 server 实际 task/resource/operation；非法 capture 环境和非 Linux heap
 fail-closed；SIGTERM/shutdown 与既有日志输出不回归。compile、format、tests、真实 capture、console client、
 Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer；主 agent 不代跑或代修。
+
+交付状态（Ready PR #560）：
+
+- branch `codex/cord-224-rust-heap-trace-contract`，堆叠 base
+  `codex/cord-223-codex-session-durability-rust`（Ready #559）；缺口登记 commit `ce6bbd54`，production
+  implementation commit `c6ee2f10`。
+- Linux `cordy-server` 生产 binary 使用带 profiling 的 jemalloc；现有固定 loopback profiling router 的
+  heap route 从真实 allocator dump 返回 non-empty gzipped pprof，inactive/empty/dump failure 均非 2xx；
+  非 Linux 明确返回 501，不伪造 profile。
+- 现有 production tracing subscriber 同时安装 Tokio console layer，固定绑定 `127.0.0.1:6669`，保留
+  LOG_LEVEL、本地毫秒时间、ANSI 与 structured fields；legacy Go trace route 诚实返回 410 并指向真实
+  task/resource/operation endpoint。Docker 带上 workspace `tokio_unstable` instrumentation config，运维
+  文档覆盖 bare-metal、container heap capture 与 network-namespace console client。
+- 实现只触及 allocator/subscriber、既有 profiling router、crate manifest、Docker build 和现有 runbook
+  六个必要文件，共 162 insertions/49 deletions；无新 service abstraction、factory、registry、config
+  parser、Fake 或第二套 logger。
+- 异步状态：independent verifier/reviewer 待派发，finding 交 independent fixer。主 agent 仅实际运行并
+  通过 `git diff --check 0a4c4258..c6ee2f10`；Cargo.lock/resolution、rustfmt、compile、tests、Linux release
+  pprof decode、Tokio console client、public isolation、shutdown、Docker/non-Linux build 与 overhead 尚未
+  记为通过。PR 保持非 Draft Ready，不等待异步收口。
