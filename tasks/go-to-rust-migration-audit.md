@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570 与 offline-task/reconnect-retry #571 Ready | 收口 #565..#571 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#571 堆叠在 #570；#571 verifier/reviewer 已派发，主线不等待 | PR #565..#571；§5、§6.2、§18、§52..§58 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570 与 offline-task/reconnect-retry #571 Ready；§59 已登记 stale/queued cleanup 契约 | 收口 #565..#571 的异步 V/R/F 结果，同时交付 §59 完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#571 堆叠在 #570；§59 先登记后实现，依赖 #571 branch | PR #565..#571；§5、§6.2、§18、§52..§59 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2227,3 +2227,35 @@ base 是 `codex/cord-234-runtime-sweeper-contract-rust` 的 `78b04074`，当前 
 `codex/cord-235-offline-task-recovery-contract-rust`，Ready SHA `e7b6a3d1`。独立 verifier/reviewer 已异步派发；在 exact
 compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
 验证或删除 Go，PR 保持 Ready。
+
+## 59. AUDIT-002 已登记执行缺口：stale dispatched/running and queued task cleanup contract
+
+本项在开始编码前登记，选择 runtime sweeper 中另一条完整任务清理能力；它与 §58 的 offline/reconnect terminal path
+共享 `TaskService` 收口但有独立的 liveness、lease、wall-clock 和 queued-lineage 语义：
+
+- Go `sweepStaleTasks` 必须把超 dispatch/run wall-clock 的任务置为 `failed/timeout`，但 dispatched 的有效
+  `prepare_lease`、online+fresh runtime heartbeat 和 running runtime 在 reconnect grace 内必须保留；runtime 缺失、
+  lease 过期或 heartbeat 超过 reconnect grace 才可进入 backstop，`waiting_local_directory` 不得被误杀。
+- Go `sweepExpiredQueuedTasks` 必须只清理超过两小时 TTL 的 `queued` rows，使用 bounded `FOR UPDATE SKIP LOCKED`；
+  与 `runtime_offline` parent 关联的 deferred/retry lineage 不得被通用 queued TTL 误杀，抢占/claim race 在 apply-time
+  status+TTL predicate 下必须安全收敛。终止 rows 交由 `TaskService.HandleFailedTasks`，保留 issue/agent/event/retry
+  一致性。
+- Rust 唯一生产入口是 `RuntimeTaskSweeper::run_once` 中的 `fail_stale_tasks` 与 `expire_stale_queued_tasks`
+  stages，server 仍由唯一 `run_full_once` worker 调用；实现和 production SQL 已存在，但当前没有真实任务状态、
+  prepare lease、runtime freshness/reconnect gate、queued retry exemption、claim race 和生产 `run_once` side-effect
+  evidence。
+
+本切片必须复用既有 `RuntimeTaskSweeper::run_once`、`cordy-db` production SQL、`TaskService` 与 shared `Bus`，不新增
+task cleanup service、queue、fake DB 或 alternate worker。required `DATABASE_URL` 缺失/坏连接必须失败而不能 self-skip；
+fixture 使用唯一 workspace/user/member/agent/runtime/issue/task lineage，并在正常和 failure path 确定性清理。contract 至少
+覆盖：有效 lease/fresh runtime 保留、expired lease/absent-or-stale runtime timeout、running reconnect-grace gate、
+waiting-local-directory 保留、queued TTL bounded cleanup、runtime_offline retry exemption、claim/cleanup `SKIP LOCKED`
+竞态、`timeout`/`queued_expired` reason/error/completion、真实 `TaskService` 的 issue/agent/event 收口；删除对应 gate、
+lineage predicate、batch cap、apply-time guard 或 production `run_once` wiring 任一环节应使测试失败。
+
+- 默认生产路径：Rust `RuntimeTaskSweeper::run_full_once` 是唯一 server sweeper，stale/queued stages 使用真实 `PgPool`、
+  production `TaskService` 与 shared `Bus`；有效配置不选择 Stub/Noop/Fake。
+- Go 是否可下线：本 stale/queued cleanup contract 与异步 finding 收口后，Go 两段 cleanup 逻辑可退休；delegated recovery、
+  chat finalize、runtime GC、其他 background workers 与 AUDIT-001..010 总退出门仍未完成。
+- owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
+  `codex/cord-235-offline-task-recovery-contract-rust`，独立 worktree，编号待创建后回写。
