@@ -1660,7 +1660,24 @@ probe 必须继续走既有 registration service。
   checks）；没有新增文件、crate、dependency、temp manager、trait、adapter、Stub、Noop 或 Fake。实现复用
   当前仓库已有 `tempfile`/execenv/execution plan/prepare lease，并按当前堆栈移植历史设计而非 cherry-pick
   无关 merge。
-- 异步状态：independent verification/reviewer 待派发，finding 交 existing independent fixer。主 agent
-  仅运行并通过 `git diff --check`；Cargo resolution、rustfmt、compile、tests、long-path provider launch、
-  permission/override/platform matrix 与 completed/failed/cancelled/launch-error cleanup smoke 均未执行且未记为
-  通过。PR 保持非 Draft Ready，不等待异步收口。
+- independent verifier 在 exact HEAD `d0fd2a073e3559e2145591ff9c2d10d24db7d02a` 确认 branch/base range
+  与前后 clean worktree；`git diff --check`、`git diff --check 93d38c16...HEAD` 和 Cargo.lock unchanged
+  check 均通过，lock SHA-256 前后都是
+  `a40395d7b03895b86d2e8fdc717d492edf28ad94f667f7ed7555271880cb2dc4`。fixed stable rustfmt 在
+  `provider_adapter.rs` 失败；另两个改动文件无 diff。继承自 #560 的 dependency-lock inconsistency 使
+  `cargo metadata --locked --offline`、daemon lib no-run、五个新增 exact tests 和既有 blocked-custom-env
+  exact test 全部在 compile/discovery 前 exit 101，每项实际执行 0 tests，不能记录为通过。production
+  adapter、long-path、override、permission、completed/failed/cancelled/start/launch-error cleanup、prepare
+  lease 与 Windows runtime smoke 均未执行；verifier 只静态确认 allocation/env/ordering/cleanup wiring，
+  不作为运行通过证据。
+- 上述 inherited lock、#562 rustfmt、compile/test 与 runtime smoke 已排给 existing independent fixer；
+  主 agent 不自行修复或复验，PR 保持非 Draft Ready，不等待异步收口。
+- independent reviewer 在同一 exact HEAD 无 P0/P1，报告 3 个 P2：Rust 未 trim
+  `CORDY_AGENT_TEMP_BASE`，使 whitespace-only 或带首尾空格的 absolute value 与 Go 语义不等价；helper
+  接受 non-Unicode absolute override，但唯一 production adapter 随后必然在 `to_str` 处拒绝，现有
+  “accepts” test 与生产声明矛盾且错误未点名 operator variable；新增检查没有穿过
+  `ProductionProviderAdapter::run_task_inner`，不能直接证明 StartTask/child env/prepare lease 与
+  success/failure/cancel/start/launch-error cleanup。另有 1 个 P3/Ponytail：同一 test module 的三份
+  `EnvRestore` 完全重复，应合并为一个 test-only helper。其余三文件复用、唯一 production adapter、
+  custom-env gate、0700 创建和 guard lifetime 核对无 finding。全部 finding 已排给同一 independent
+  fixer，尚无 fix SHA 或重新验证结果。
