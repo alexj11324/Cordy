@@ -48,12 +48,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "backfill_codex_usage_cache=info".into()),
-        )
-        .init();
+    cordy_migrate::init_logging();
 
     let args = Args::parse();
     let options = options_from_args(&args, Utc::now())?;

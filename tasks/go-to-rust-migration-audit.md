@@ -97,7 +97,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | daemon、daemonws | cordy-daemon | cordy-daemon::run_production_daemon、cordy-cli daemon | Rust CLI 内部已接线，默认发布仍 Go | 生产 stack 存在，但有 43 条 S9-integration 标记、28 个文件受 dead_code allow 影响；需按能力验证，不做机械清标 |
 | local/S3/CloudFront storage | handler::attachment_storage、cloudfront、attachment | cordy-server main 注入 attachment storage | 否 | 主存储能力已落地/接线；Squad avatar 返回仍有 signer 缺口，归 AUDIT-003 |
 | CLI bins（cordy、migrate、3 backfill） | cordy-cli、cordy-migrate 及 3 个 Rust backfill bin | Rust bin 可独立运行 | 否，Makefile/Docker/release 仍产出 Go | Rust bin 已存在；构建产物、命令行为、安装/发布和 Docker packaging 未闭环 |
-| pprof、logger | Go internal/profiling、internal/logger | cordy-server::profiling 已接入 loopback CPU pprof；logger 仍只有 tracing 初始化证据 | 否 | CPU/cmdline/symbol 已有 Rust listener；heap/trace 和 LOG_LEVEL、TTY/color、RequestAttrs 等 logger 契约仍未证明等价 |
+| pprof、logger | Go internal/profiling、internal/logger | cordy-server::profiling 已接入 loopback CPU pprof；cordy-util logging、cordy-server、cordy-migrate、cordy-daemon 和 request middleware 已接线 | Rust 默认后端/daemon 已使用 | CPU/cmdline/symbol 已有 Rust listener；heap/trace 和 logger 的人类可读时间布局、剩余发布路径仍未闭合 |
 | Go tests（807 文件） | Rust inline tests + 5 个外部 integration test 文件 | CI 同时运行两套 | CI 验证不等于生产切换 | 不能机械改写 807 个文件；需按业务契约建立覆盖矩阵，见 AUDIT-007 |
 
 ### 4.3 Go leaf package 对账
@@ -118,7 +118,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | internal/featureflags | cordy-service::feature_flags | 已落地；此前契约测试 9/9，需要纳入总矩阵 |
 | internal/issueactivitybackfill | cordy-migrate::backfill::issue_activity | 已落地为 Rust bin；发布 packaging 未闭环 |
 | internal/issueguard、issueposition、issuestatus | cordy-service/handler 对应模块 | 已落地；需行为 contract smoke |
-| internal/logger | cordy-server/cordy-daemon tracing 初始化 | 可能是吸收式迁移；LOG_LEVEL、属性和输出格式待证明 |
+| internal/logger | cordy-util::logging、cordy-server/cordy-migrate/cordy-daemon tracing 初始化、cordy-middleware request span | 吸收式迁移已接线；LOG_LEVEL、TTY、daemon component 和请求属性已对齐，默认 tracing 时间布局仍需单独决定是否作为兼容契约 |
 | internal/migrations | cordy-migrate runner/hooks | 已落地；默认入口仍 Go |
 | internal/profiling | cordy-server::profiling | CPU/cmdline/symbol 已迁移并由 Rust server 启动；heap/trace 仍未闭合，见 AUDIT-003 |
 | internal/runtimeapps、selfexec、util | cordy-service、cordy-daemon::update_executor、cordy-util/daemon | 已吸收式落地；不拆重复小 PR，按调用路径验证 |
@@ -185,7 +185,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 #### AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
 
 - pprof：Rust `cordy-server::profiling` 已在 127.0.0.1:6060 启动独立 listener，迁移 CPU profile、index、cmdline 和 symbol；heap/trace 尚未等价，必须继续迁移或明确替代并保持运维文档诚实。
-- logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 行为需要与 Rust tracing 对账；Rust 当前证据主要是 RUST_LOG/tracing subscriber。
+- logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 已在 Rust 入口对账；Rust 保留 RUST_LOG 作为未设置 LOG_LEVEL 时的兼容回退，默认级别与 Go 一样是 debug。
 - Squad avatar：Rust squad.rs 的 SquadResponse 直接返回 raw avatar_url，并注明 HandlerState 尚未携带 Go object-store signer；Go squadToResponse 会调用 resolveAvatarURLPtr。必须补完整的私有对象 URL/签名契约或证明当前存储策略等价。
 - agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust handler 有 inline 1..50，但 daemon config 有独立默认值。必须确认这是两个不同边界还是迁移遗漏，形成单一 contract 证据。
 - 退出证据：每个 leaf 明确为“Rust 迁移并接线”“已由现有模块吸收”或“仍需迁移”，并有对应测试/生产路径。
@@ -322,3 +322,27 @@ profile 能力和管理端口边界：
 - 验证状态：Cargo metadata、锁文件一致性、Rustfmt（触及文件）和 `git diff --check`
   通过；workspace check 仍被基线 `cordy-slack` 1 个 exhaustiveness 错误及
   `cordy-daemon` 7 个既有编译错误阻断，已交给 Volta 异步处理。
+
+## 13. AUDIT-003 执行更新：Rust logger contract
+
+后续切片 `codex/cord-190-logger-rust` 收口了 Go `internal/logger` 的进程级
+配置和请求属性传播，不另建 logger 框架：
+
+- Rust 入口：`cordy-util::logging` 集中解析 `LOG_LEVEL`、保留未设置时的
+  `RUST_LOG` 回退、实现 Go 的 debug 默认和 `warn`/`warning` 别名，并集中提供
+  `stderr` TTY 判定；`cordy-server`、`cordy-migrate` 及三个 backfill 使用同一
+  初始化路径，daemon 的轮转 writer 继续由 `cordy-daemon::bootstrap` 管理。
+- component/请求属性：daemon production stack 运行在
+  `component=daemon` span 中；HTTP request middleware 把非空的
+  `request_id`、经 JWT 独立验证的 `user_id` 和 `client_*` 元数据放入 handler
+  span，使 handler 日志继承 Go `RequestAttrs` 的维度。未经验证的
+  `X-User-ID` 不会成为身份归因。
+- 生产路径状态：当前 Rust 默认 server、migration/backfill 和 daemon 路径已
+  使用该契约；非 TTY 明确关闭 ANSI，daemon 文件 sink 仍保持无色，TTY 前台
+  daemon 保持彩色输出。
+- Go 是否可下线：否。Go release/install 路径、剩余 leaf contract、pprof
+  heap/trace 以及最终全仓 Go 退休门槛仍未完成；tracing 默认的时间文本布局
+  也没有被宣称为 Go tint 的字节级兼容契约。
+- 验证状态：`cordy-util` 22 个测试通过，其中新增 logger precedence/default
+  矩阵 3 个通过；受影响包的 workspace 检查继续记录既有 Slack exhaustiveness
+  与 daemon 编译基线错误，不因环境/基线问题伪报全绿。

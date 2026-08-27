@@ -8,7 +8,7 @@
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::future::Future;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,7 @@ use anyhow::Context;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::EnvFilter;
 
@@ -158,11 +159,12 @@ where
         launched_by: std::env::var("CORDY_LAUNCHED_BY").unwrap_or_default(),
         shutdown: shutdown.clone(),
     };
+    let stack = run_stack(context).instrument(tracing::info_span!("daemon", component = "daemon"));
     let stack_result = drive_stack(
         shutdown,
         options.graceful_shutdown_timeout,
         shutdown_signal,
-        run_stack(context),
+        stack,
     )
     .await;
     let stack_exit = stack_result.context("daemon stack failed")?;
@@ -200,7 +202,7 @@ where
         result = &mut stack => result,
         signal = &mut shutdown_signal => {
             if let Err(error) = signal {
-                tracing::error!(%error, "daemon shutdown signal listener failed");
+                tracing::error!(component = "daemon", %error, "daemon shutdown signal listener failed");
             }
             shutdown.cancel();
             tokio::time::timeout(graceful_shutdown_timeout, &mut stack)
@@ -683,7 +685,7 @@ impl DaemonLogs {
         filter: Option<&str>,
         clock: Arc<dyn BootstrapClock>,
     ) -> anyhow::Result<Self> {
-        let terminal = io::stderr().is_terminal();
+        let terminal = cordy_util::logging::stderr_is_terminal();
         let crash_stdio = if terminal {
             None
         } else {
@@ -704,10 +706,10 @@ impl DaemonLogs {
         };
         let filter = filter
             .map(str::to_owned)
-            .or_else(|| std::env::var("RUST_LOG").ok())
-            .unwrap_or_else(|| "info".to_string());
+            .unwrap_or_else(cordy_util::logging::env_filter);
+        let env_filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("debug"));
         tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::new(filter))
+            .with_env_filter(env_filter)
             .with_writer(writer)
             .with_ansi(rotating.is_none())
             .try_init()

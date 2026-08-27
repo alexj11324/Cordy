@@ -11,12 +11,7 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cordy_migrate=info".into()),
-        )
-        .init();
+    cordy_migrate::init_logging();
 
     let command = std::env::args().nth(1).unwrap_or_else(|| "up".to_string());
     if !matches!(command.as_str(), "up" | "down" | "status") {

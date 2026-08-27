@@ -15,6 +15,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
 use crate::client::ClientMetadata;
+use tracing::Instrument;
 
 /// Public webhook ingress path prefix. The path segment after this prefix IS
 /// a bearer credential, so the logger must redact it.
@@ -126,8 +127,23 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     let request_id = header_str(&req, "x-request-id");
     let user_id = verified_jwt_user_id(&req);
     let meta = req.extensions().get::<ClientMetadata>().cloned();
+    let request_span = tracing::info_span!(
+        "http_request",
+        request_id = tracing::field::Empty,
+        user_id = tracing::field::Empty,
+        client_platform = tracing::field::Empty,
+        client_version = tracing::field::Empty,
+        client_os = tracing::field::Empty,
+    );
+    record_nonempty(&request_span, "request_id", &request_id);
+    record_nonempty(&request_span, "user_id", &user_id);
+    if let Some(meta) = meta.as_ref() {
+        record_nonempty(&request_span, "client_platform", &meta.platform);
+        record_nonempty(&request_span, "client_version", &meta.version);
+        record_nonempty(&request_span, "client_os", &meta.os);
+    }
 
-    let mut res = next.run(req).await;
+    let mut res = next.run(req).instrument(request_span).await;
     let duration = start.elapsed();
     let status = res.status().as_u16();
 
@@ -203,6 +219,12 @@ fn header_str(req: &Request, name: &str) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string()
+}
+
+fn record_nonempty(span: &tracing::Span, name: &'static str, value: &str) {
+    if !value.is_empty() {
+        span.record(name, tracing::field::display(value));
+    }
 }
 
 #[cfg(test)]

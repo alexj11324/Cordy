@@ -143,7 +143,7 @@ If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN`
 | `METRICS_ADDR` | empty | Optional Prometheus metrics listener, for example `127.0.0.1:9090` |
 | `FRONTEND_PORT` | `3000` | Frontend port. Host port in Compose; the container always listens on `3000` internally. |
 | `CORS_ALLOWED_ORIGINS` | Value of `FRONTEND_ORIGIN` | Comma-separated list of allowed origins. Governs **both** the HTTP CORS allowlist **and** the WebSocket `Origin` check. A browser origin that isn't listed here (and isn't `localhost`) has its real-time WebSocket upgrade rejected with `403`, so live updates stop working until a manual refresh. |
-| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `LOG_LEVEL` | `debug` | Log level: `debug`, `info`, `warn`, `error`; `warning` is accepted as an alias for `warn` |
 
 > **Which source wins depends on the entry point**, and only the alias order above
 > is shared. Docker Compose lets the calling environment outrank `.env`

@@ -4,6 +4,7 @@
 //! progresses. Keep this crate dependency-light: it is linked by everything.
 
 pub mod channel_media;
+pub mod logging;
 pub mod secretbox;
 
 use serde::{Deserialize, Serialize};
