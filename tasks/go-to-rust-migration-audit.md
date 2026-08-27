@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP 与 local-skills heartbeat production chain 已交付；当前选择 wakeup/WS RPC/control consumer 完整生命周期 | 接通直接生产证据：真实 socket 消息必须驱动 task wakeup、reconcile 与 heartbeat lifecycle | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#548，可执行 | PR #542..#548/当前切片；§5.2、§6.2、§29..§36 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills heartbeat 与 wakeup/WS RPC/control lifecycle 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#549，可执行 | PR #542..#549；§5.2、§6.2、§29..§36 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1020,6 +1020,15 @@ batch 与 singular import、完整 bundle、真实 Client result path 和 HTTP 5
 - 异步状态：verification 与 reviewer 已派发前状态为 pending，fixer 尚无本 PR finding。主
   agent 仅运行并通过 `git diff --check`，未把编译、测试、rustfmt 或 HTTP 行为记录为通过。
   PR 明确堆叠在 Ready PR #547；#544 fix 尚需传播到这条堆叠分支。
+- verifier 在 head `3c831f09` 通过 diff check、保持 worktree clean，并确认默认
+  assembly→DaemonCoreHost→services→production adapter 调用链；fixed-stable rustfmt 在
+  `provider_adapter.rs` 失败。production heartbeat exact、local-skills group、client retry
+  exact 与 daemon no-run 均因未传播 #544 的 7 处 E0433 而 0-run/compile blocked。
+- reviewer 在同一 head 返回三个 P1：无锁修改进程级 `GROK_HOME` 不满足并行安全；fixture
+  在更新 attempt/发送 HTTP response 前通知且 detached jobs 未确定收口；检查入口从 adapter
+  开始，未穿过 daemon heartbeat owner/services，也没有直接覆盖永久 4xx/cancellation。
+  finding 与 verifier 的传播/格式问题均已交独立 fixer；其余 batch-first/singular fallback、
+  filesystem bundle、registry provider 与 shared Client retry 静态核对无 finding。
 
 ## 36. AUDIT-005 执行缺口：wakeup WebSocket / RPC / control consumer lifecycle
 
@@ -1035,7 +1044,20 @@ batch 与 singular import、完整 bundle、真实 Client result path 和 HTTP 5
   `allow(dead_code)`，而 production stack、manager、consumer 已真实调用它们，台账状态与源码
   自述不一致。
 
-本切片必须一次证明真实 handshake/heartbeat ack、RPC capability、task hint、Connected 所触发
-的 task wakeup/reconcile，以及 heartbeat action 进入 lifecycle owner，并在 root cancellation 后
-关闭 transport/consumer；复用现有 manager、consumer、registry、Ctx 和 protocol types，不新增
-第二套 hub、RPC client、event bus、dispatcher 或 shutdown owner。实现、Ready PR、V/R/F 尚未产生。
+Ready PR #549（`codex/cord-213-daemon-wakeup-control-contract-rust`，gap commit
+`4fb9105c`，implementation commit `8d0aafb8`）用真实 loopback WebSocket 和 production
+`run_daemon_control` owner 一次穿过 transport、RPC negotiation/correlation、event sender、single
+consumer、task wakeup、reconcile、heartbeat lifecycle 与 root cancellation；HTTP heartbeat route
+同时存在，避免绕开 production supervisor。wakeup/wsrpc/reconcile 的过期 awaiting-wiring allow
+与说明已删除。
+
+- 默认生产路径：`production_stack.rs` 已构造同一 control/consumer/events owner；有效配置使用
+  authenticated real client/socket，没有 Stub、Noop 或 Fake dispatcher。
+- 直接检查：bearer/capability handshake、heartbeat frame、rpc-v1 ack、task hint、`tasks.claim`
+  request/response、Connected/task-specific wakeups、reconcile broadcast、lifecycle heartbeat action
+  和 cancellation join 在同一条调用链中断言。
+- Go 是否可下线：此 wakeup/control 能力已迁移接线，但 AUDIT-005 其余能力与最终
+  AUDIT-001..010 门未完成。
+- 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 仅运行并通过
+  `git diff --check`，未把编译、测试、rustfmt 或 socket 行为记为通过。PR 堆叠在 Ready
+  PR #548；#544 fix 尚待传播。
