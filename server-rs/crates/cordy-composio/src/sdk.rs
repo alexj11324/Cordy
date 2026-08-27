@@ -998,6 +998,48 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+/// The V3 webhook envelope. Event-specific `metadata` and `data` are kept as
+/// generic JSON so consumers can decode them according to `event_type`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct EventEnvelope {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default, rename = "type")]
+    pub event_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub timestamp: String,
+}
+
+/// Error returned when a webhook body is not a valid V3 JSON envelope.
+#[derive(Debug, Error)]
+#[error("composio: parse webhook envelope: {0}")]
+pub struct ParseEventError(#[from] serde_json::Error);
+
+/// Decodes a V3 webhook envelope. Signature verification is deliberately
+/// separate; call [`verify_webhook`] or [`verify_http_request`] first.
+pub fn parse_event(raw_body: &[u8]) -> Result<EventEnvelope, ParseEventError> {
+    serde_json::from_slice(raw_body).map_err(ParseEventError::from)
+}
+
+/// Verifies a webhook using headers taken from an HTTP request whose body has
+/// already been read by the framework. Rust HTTP handlers own body reading,
+/// so this is the equivalent composition of Go's `HeadersFromHTTP` and
+/// `VerifyHTTPRequest` without coupling this SDK to a particular body type.
+pub fn verify_http_request(
+    secret: &str,
+    headers: &http::HeaderMap,
+    raw_body: &[u8],
+    tolerance: Option<Duration>,
+    now: std::time::SystemTime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let webhook_headers = WebhookHeaders::from_http(headers);
+    verify_webhook(secret, &webhook_headers, raw_body, tolerance, now)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1308,5 +1350,57 @@ mod tests {
             late
         )
         .is_err());
+    }
+
+    #[test]
+    fn parse_event_decodes_v3_envelope() {
+        let event = parse_event(
+            br#"{
+                "id":"evt_1",
+                "type":"composio.connected_account.expired",
+                "metadata":{"project_id":"pr_a"},
+                "data":{"status":"EXPIRED"},
+                "timestamp":"2026-02-06T12:00:00Z"
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(event.id, "evt_1");
+        assert_eq!(event.event_type, "composio.connected_account.expired");
+        assert_eq!(event.metadata.unwrap()["project_id"], "pr_a");
+        assert_eq!(event.data.unwrap()["status"], "EXPIRED");
+        assert_eq!(event.timestamp, "2026-02-06T12:00:00Z");
+    }
+
+    #[test]
+    fn parse_event_rejects_garbage() {
+        assert!(parse_event(b"not-json").is_err());
+    }
+
+    #[test]
+    fn verify_http_request_extracts_composio_headers() {
+        let secret = "whsec_test";
+        let id = "msg_http";
+        let timestamp = "1700000000";
+        let body = br#"{"type":"connection"}"#;
+        let signing_string = format!("{id}.{timestamp}.{}", String::from_utf8_lossy(body));
+        let mut mac =
+            <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(signing_string.as_bytes());
+        use base64::Engine as _;
+        let signature =
+            base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+
+        let mut headers = http::HeaderMap::new();
+        headers.insert(HEADER_WEBHOOK_ID, http::HeaderValue::from_static(id));
+        headers.insert(
+            HEADER_WEBHOOK_TIMESTAMP,
+            http::HeaderValue::from_static(timestamp),
+        );
+        headers.insert(
+            HEADER_WEBHOOK_SIGNATURE,
+            http::HeaderValue::from_str(&format!("v1,{signature}")).unwrap(),
+        );
+        let now = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000 + 10);
+        assert!(verify_http_request(secret, &headers, body, None, now).is_ok());
     }
 }
