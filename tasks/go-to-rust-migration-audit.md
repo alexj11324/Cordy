@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | Ready PR | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery 与 private task temp production chain 已交付 | 异步收口 #558/#559/#561/#562 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#562，可执行 | PR #542..#550/#558..#562；§5.2、§6.2、§29..§37、§45..§49 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery 与 private task temp production chain 已交付；当前切片迁移 wakeup 环境代理契约 | 接通 environment proxy selection、HTTP CONNECT 与真实 authenticated WS control；异步收口 #558/#559/#561/#562 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#562，可执行 | PR #542..#550/#558..#562；§5.2、§6.2、§29..§37、§45..§50 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1681,3 +1681,38 @@ probe 必须继续走既有 registration service。
   `EnvRestore` 完全重复，应合并为一个 test-only helper。其余三文件复用、唯一 production adapter、
   custom-env gate、0700 创建和 guard lifetime 核对无 finding。全部 finding 已排给同一 independent
   fixer，尚无 fix SHA 或重新验证结果。
+
+## 50. AUDIT-005 执行缺口：wakeup environment proxy and CONNECT lifecycle
+
+当前切片继续 `AUDIT-005` 已迁移的 wakeup/WS RPC/control 生产链，补齐企业网络中真实连接能否建立的
+完整边界，而不是新增一个孤立 proxy parser：
+
+- Go `runTaskWakeupConnection` 的手工 `websocket.Dialer` 明确使用 `http.ProxyFromEnvironment`；wss
+  target 按 `HTTPS_PROXY` 选择 HTTP CONNECT proxy，`NO_PROXY` 可绕过，未配置时保持 direct。proxy URL
+  credentials 由 CONNECT `Proxy-Authorization` 使用；`wakeup_proxy_test.go` 直接以真实
+  `wakeup.example.invalid:443` target 证明生产 dial 发出 CONNECT。否则 corporate-egress daemon 永远无法
+  建立 control socket，只会静默退化为 HTTP polling。
+- Rust 唯一 production `DaemonManager::run_task_wakeup_connection` 已构造真实 authenticated request、
+  message limits、handshake timeout 和完整 control owner，但直接调用
+  `tokio_tungstenite::connect_async_with_config`，仓库中没有任何 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`
+  选择或 CONNECT。现有 #549 loopback 检查不设置代理，删除或遗漏该能力仍会通过。
+- 当前 workspace 已有 `url`、`base64`、`tokio`、`tokio-tungstenite`，且 Lark production connector 已有
+  bounded HTTP CONNECT、Basic auth、target TLS-after-tunnel 的既有设计。实现必须复用这些现有依赖与
+  handshake API；不新增 proxy crate、manager、trait、client、background loop 或第二条 wakeup path。
+
+本切片必须在唯一 manager dial 中接通 Go-compatible environment selection、`NO_PROXY` bypass、bounded
+HTTP CONNECT response、optional Basic proxy auth、target TLS/WebSocket handshake、既有 bearer/capability
+headers、timeout/cancellation 与 polling fallback。非法/unsupported proxy 配置必须返回明确 transport
+error 并继续既有 bounded retry/fallback，不能 silently direct 绕过 operator policy；proxy credentials
+不得进入日志或 target WebSocket headers。
+
+- 退出证据：真实 production dial 对 wss + HTTPS_PROXY 向 stand-in proxy 发出 exact target CONNECT，
+  200 后继续 target TLS/WS handshake；credential proxy 只收到正确 Basic auth；NO_PROXY/unset 走 direct；
+  malformed scheme/host、非 2xx、oversized/truncated response fail-closed；既有 auth/capability headers、
+  message limits、RPC/control consumer、cancellation 和 HTTP polling fallback 不回归。
+- 默认生产路径：Rust CLI daemon 构造的唯一 `DaemonManager` 直接使用该连接边界；没有 Stub、Noop、Fake
+  或 test-only production selector。Go 是否可下线：本 proxy 能力经异步证据收口后不再需要 Go daemon；
+  AUDIT-005 其余生命周期和最终 AUDIT-001..010 门仍未完成。
+- owner：主 agent 仅迁移、接线与 Ready PR 交付；独立 verifier 负责 compile/test/real CONNECT smoke，
+  reviewer 只读审查，finding 交 existing independent fixer。依赖 #562 branch
+  `codex/cord-226-private-task-temp-rust` at `1bf5cccd`；尚无 implementation commit 或 PR。
