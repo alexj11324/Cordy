@@ -494,19 +494,25 @@ AUDIT-002 已完成。
 
 | 契约 | Go 来源 | Rust 入口 | 当前可执行证据 | 生产/Go 状态 |
 | --- | --- | --- | --- | --- |
-| CLI 顶层命令树 | `server/cmd/cordy/main.go` 及各 `cmd_*.go` | `cordy-cli::Cli` / `Command` | `top_level_and_daemon_commands_match_go_contract_except_completion_gap` 对账 Go 完整集合，并固定当前唯一缺口：隐藏但可调用的 `completion` 尚未迁移 | Rust CLI 除 `completion` 外已接线；该缺口迁移前不得宣称命令树完整；Go 仍保留作兼容验证 |
+| CLI 顶层命令树 | `server/cmd/cordy/main.go` 及各 `cmd_*.go` | `cordy-cli::Cli` / `Command` | `top_level_and_daemon_commands_match_go_contract` 对账完整命令集合，包括隐藏但可调用的 `completion`；Rust 复用 clap shell completion 生成器支持 bash/zsh/fish/powershell | Rust CLI 已接线；默认发布已切 Rust；Go 仍保留作兼容验证 |
 | CLI 成功输出与失败退出码 | `server/internal/cli/errors.go`、`server/cmd/cordy/main.go` | `cordy-cli/src/main.rs`、`error.rs` | `http_exit_codes_match_go_contract` 与既有 validation message 测试；stdout/stderr 真实 artifact smoke 待执行 | Rust 入口已接线；需在可运行 artifact 上执行 smoke；Go 不可删 |
 | daemon profile health/control | `server/internal/daemon` 与 Go CLI daemon commands | `cordy-daemon::control_client`、`production_stack`、`cordy-cli` daemon commands | Rust daemon control parser/health tests；真实进程 smoke 待环境可用后执行 | Rust 内部已接线；默认发布已切 Rust；Go 不可删 |
 
-本切片的退出条件是：命令树除已登记的 `completion` 缺口外无其他缺口、错误码/输出契约测试可执行、daemon
+本切片的退出条件是：命令树无缺口、错误码/输出契约测试可执行、daemon
 health/control 的成功和失败路径有记录，并把剩余 API/WS/事务/worker 项目继续
 留在本 ID 的下一动作中。验证失败只记录为基线或环境问题并交独立 fix agent，
 不由主 agent 在本切片自行修复。
 
-- 验证状态：Go root 与 Rust 测试清单的静态集合对账、默认 Makefile Rust 入口、
-  Cargo metadata、触及 Rust 文件的 `rustfmt` 与 `git diff --check` 通过；定向
-  `cargo test --locked -p cordy-cli --lib match_go_contract` 在运行本切片测试前，
-  被已登记的 `cordy-daemon` `hermes.rs`/`openclaw.rs` 7 个编译错误阻断，不能
-  记录为测试通过。Linnaeus 只执行 review（submission
-  `01a043b2-de54-7850-9828-03d77f3304aa`）；其结束并关闭后，由新的 fix agent
-  接手这 7 个错误，主迁移不等待。
+- 交付证据：主切片 `86887169` 已推送到 Ready PR #530；独立 fix 提交
+  `25618fcd` 修复 `hermes.rs`/`openclaw.rs` 的 7 个编译错误，后续提交
+  `e7ecba1a` 迁移 `completion` 并修复 fresh build 暴露的 CLI 编译/参数冲突。
+  Linnaeus 只执行 review（submission `01a043b2-de54-7850-9828-03d77f3304aa`），
+  review 与 fix 角色保持隔离。
+- 验证状态：清空 Rust target 后的 fresh build 已越过 `cordy-daemon` 与
+  `cordy-cli` 编译；低磁盘配置下
+  `cargo test --offline --locked -p cordy-cli --lib top_level_and_daemon_commands_match_go_contract`、
+  `setup_parser_supports_default_cloud_and_self_host_modes` 和
+  `http_exit_codes_match_go_contract` 均通过，触及文件 `rustfmt` 与
+  `git diff --check` 通过。默认 debug test link 两次因工作区磁盘耗尽失败；联网
+  重试因受限环境 DNS 失败，因此最终使用已锁定的本地 crate 缓存验证。真实 daemon
+  进程和 stdout/stderr artifact smoke 仍是本 ID 的明确剩余缺口。
