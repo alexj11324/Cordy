@@ -198,7 +198,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
-| [ ] | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 已登记高风险 Go 回归映射索引 | 建立 API/DB/provider/daemon/security/backfill/CLI 分层映射，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | §6.2、§63 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
@@ -280,7 +280,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 #### 阶段五：最终兼容与退休门
 
-53. `[ ]` `T-53` AUDIT-007 Go 测试契约映射
+53. `[~]` `T-53 / §63` AUDIT-007 Go 测试契约映射（已登记，待提交映射索引）
 54. `[ ]` `T-54` AUDIT-008 wire/schema/ID 兼容性
 55. `[~]` `T-55` AUDIT-009 运维与文档切换
 56. `[ ]` `T-56` AUDIT-010 Go 源码退休
@@ -2664,3 +2664,25 @@ fixer 环境 `DATABASE_URL` unset，required PostgreSQL contracts 未执行；lo
 #563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests）。fixed-stable rustfmt 对 fixer 触及的
 `chat_api.rs`/`runtime_sweeper.rs` PASS，`git diff --check` PASS；在 resolver 修复传播且有 migrated PostgreSQL 前不能把上述
 race/HTTP/commit evidence 登记为 executed PASS。
+
+## 63. [~] AUDIT-007 Go 高风险回归契约映射索引（T-53）
+
+本项在开始补测试前登记，目标是把 807 个 Go 测试按业务契约归档，而不是按文件名机械翻译。索引只承认可定位的 Rust
+contract/production entry；仅有 route parity、类型能编译或 Rust 文件存在，不能标记为等价。每行必须区分“已有 Rust 证据”、
+“当前 PR/台账切片待 verifier”与“尚需新增 contract/不适用理由”，并把 wire/schema/ID 的细节转交 AUDIT-008，避免两个
+台账 ID 重复计数：
+
+| 风险域 | Go 回归来源（代表性，不声称穷尽） | Rust 证据/入口 | 当前状态 | 退出动作 |
+| --- | --- | --- | --- | --- |
+| API、auth、permission、错误 JSON | `server/internal/handler/*_test.go`、`middleware/*_test.go`、`daemon_auth_test.go` | `server-rs/scripts/route_parity.py`；`cordy-handler` 的 route/validation/error contract；`cordy-auth` JWT/Redis tests；Rust production router | 部分覆盖；route method/path 不是响应/权限/事务等价证明 | 为高风险 handler 补 response/auth/permission/error-envelope smoke；wire 字段转 AUDIT-008 |
+| DB transaction、locking、rollback | `server/internal/service/*_test.go`、`handler/*race_test.go`、scheduler lock tests | #565/#566 issue transaction contracts；#567 WS session；#568/#569 workers；#571/#573/#575 sweeper contracts；`cordy-db` production SQL | 已按完整业务切片登记/提交，真实 DB 与异步 finding 未全部收口 | 每个切片记录 required DB、并发/rollback、matched/executed 与 cleanup 证据；缺口回到对应 AUDIT-002/005 |
+| provider、integration、fail-closed | `server/internal/integrations/**/*_test.go`、provider client/credential tests | PR #532..#541 channel/provider production contracts；各 crate 的 credential/config guards；`cordy-server` channel runtime | 生产 wiring 已有，真实凭证/网络 smoke 仍待 verifier | 为每 provider 记录正/负向矩阵、Stub/Noop 只在测试或 fail-closed 的理由；不适用项写明外部依赖 |
+| daemon、task lifecycle、concurrency | `server/internal/daemon/**/*_test.go`、`daemonws/**/*_test.go`、task terminal/retry tests | PR #542..#563 daemon lifecycle contracts；`cordy-daemon::ProductionStack`、task execution、control/heartbeat；#565..#575 task workers | 部分覆盖；长生命周期/跨平台/真实 daemon 进程仍未完成 | 继续按 registration→claim→execute→reconcile→shutdown 业务链补 contract，不拆成按文件 PR |
+| security boundary、redaction、secret handling | `server/internal/util/secretbox/*_test.go`、`middleware/auth_test.go`、provider redaction tests | `cordy-service::redact`、`cordy-agent::command` redaction、`cordy-auth` JWT、#574 recovery payload redaction | 核心静态/单元证据已有；Unicode/control、真实日志和外部凭证边界仍需审计 | 补不泄露 secret 的 wire/log vectors；安全 finding 交独立 reviewer/fixer，不能以“字符串相等”代替 |
+| backfill、migration、CLI/exit code | `server/internal/*backfill/**/*_test.go`、`cli/*_test.go`、`migrate/*_test.go` | `cordy-migrate` runner/backfill bins；`cordy-cli::error` exit-code tests、CLI command contract tests；PR #518..#523/#555 | CLI/parser 多数已有 Rust unit contract；新鲜 DB/image/operator recovery 未完全执行 | 记录参数、退出码、锁/取消/恢复、镜像产物和 Windows/Linux evidence；发布入口仍归 AUDIT-001/006 |
+| wire/schema、time、UUID/ULID、Redis/event envelope | `server/internal/*_test.go` 中 JSON/time/id/redis/event tests | 现有 protocol/event/serde tests、WS tests；route parity | 不在本索引重复宣布；属于 AUDIT-008 的独立兼容门 | 建 golden vectors、round-trip、旧数据读取与跨语言 event fixture；完成前不得删除 Go |
+| 不适用或仅测试辅助 | `internal/testutil`、纯 UI/mock helper、仅 Go runtime 的测试 harness | Rust fixture/test helper 或无生产对应物 | 不把测试辅助文件当作缺失业务能力；若 helper 隐含契约，转入上面风险域 | 每项写出“不适用”理由和替代 Rust evidence，禁止用删除测试文件掩盖契约丢失 |
+
+索引的首批落点是 #565..#575 与既有 #518..#563：它们按业务契约记录了 Go 来源、Rust 入口、默认生产状态和 Go 下线条件，
+但 Ready PR 的存在不等于测试通过。AUDIT-007 的退出证据是所有高风险行都有可执行 Rust contract 或明确不适用理由，并能
+回链到 AUDIT-002..006/008 的具体 PR、命令和异步 verifier/reviewer/fixer 结果；主 agent 不运行长测试，也不代做缺陷修复。
