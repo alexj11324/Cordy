@@ -26,7 +26,9 @@ use crate::contract::{
     COST_USD_TICKS_PER_USD,
 };
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
+use crate::model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -829,7 +831,9 @@ fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String
     if config.effort_process_arg && !options.thinking_level.is_empty() {
         args.extend(["--effort".to_string(), options.thinking_level.clone()]);
     }
-    args.extend(filter_custom_args(&options.extra_args, blocked).args);
+    if config.provider != "hermes" {
+        args.extend(filter_custom_args(&options.extra_args, blocked).args);
+    }
     args.extend(filter_custom_args(&options.custom_args, blocked).args);
     if config.provider == "qwenpaw" && !options.qwenpaw_workspace.is_empty() {
         args.extend(["--workspace".to_string(), options.qwenpaw_workspace.clone()]);
@@ -993,7 +997,7 @@ async fn discover_models_with_scope(
         } else {
             parse_acp_session_models(&session, &config.provider)
         };
-        if matches!(config.provider.as_str(), "dim" | "reasonix") {
+        if matches!(config.provider.as_str(), "hermes" | "dim" | "reasonix") {
             annotate_acp_effort(&mut models, &session);
         }
         Catalog {
@@ -1007,7 +1011,7 @@ async fn discover_models_with_scope(
 
 fn parse_hermes_session_models(result: &Value) -> Vec<Model> {
     let Some(models) = result.get("models") else {
-        return Vec::new();
+        return parse_hermes_config_option_models(result);
     };
     let current = models
         .get("currentModelId")
@@ -1020,10 +1024,10 @@ fn parse_hermes_session_models(result: &Value) -> Vec<Model> {
         .or_else(|| models.get("available_models"))
         .and_then(Value::as_array)
     else {
-        return Vec::new();
+        return parse_hermes_config_option_models(result);
     };
     let mut seen = std::collections::BTreeSet::new();
-    available
+    let parsed: Vec<Model> = available
         .iter()
         .filter_map(|entry| {
             let id = entry
@@ -1044,7 +1048,7 @@ fn parse_hermes_session_models(result: &Value) -> Vec<Model> {
                 .split_once(':')
                 .map(|(provider, _)| provider)
                 .filter(|provider| !provider.is_empty())
-                .unwrap_or("hermes");
+                .unwrap_or_default();
             Some(Model {
                 id: id.to_string(),
                 label: label.to_string(),
@@ -1053,7 +1057,78 @@ fn parse_hermes_session_models(result: &Value) -> Vec<Model> {
                 ..Model::default()
             })
         })
-        .collect()
+        .collect();
+    if parsed.is_empty() {
+        parse_hermes_config_option_models(result)
+    } else {
+        parsed
+    }
+}
+
+fn parse_hermes_config_option_models(result: &Value) -> Vec<Model> {
+    let Some(options) = result
+        .get("configOptions")
+        .or_else(|| result.get("config_options"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    for option in options {
+        let id = option
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let category = option
+            .get("category")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        if !id.eq_ignore_ascii_case("model") && !category.eq_ignore_ascii_case("model") {
+            continue;
+        }
+        let current = option
+            .get("currentValue")
+            .or_else(|| option.get("current_value"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let Some(choices) = option.get("options").and_then(Value::as_array) else {
+            continue;
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let models: Vec<Model> = choices
+            .iter()
+            .filter_map(|choice| {
+                let id = choice.get("value").and_then(Value::as_str)?.trim();
+                if id.is_empty() || !seen.insert(id.to_string()) {
+                    return None;
+                }
+                let label = choice
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|label| !label.is_empty() && !label.eq_ignore_ascii_case("unknown"))
+                    .unwrap_or(id);
+                let provider = id
+                    .split_once(':')
+                    .map(|(provider, _)| provider)
+                    .filter(|provider| !provider.is_empty())
+                    .unwrap_or_default();
+                Some(Model {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    provider: provider.to_string(),
+                    default: id == current,
+                    ..Model::default()
+                })
+            })
+            .collect();
+        if !models.is_empty() {
+            return models;
+        }
+    }
+    Vec::new()
 }
 
 #[async_trait]
@@ -1098,15 +1173,24 @@ impl Backend for QoderBackend {
                     AgentError::Process(error)
                 }
             })?;
-        let stdin = tree.child_mut().stdin.take().ok_or_else(|| {
-            AgentError::Protocol("Qoder stdin pipe unavailable after spawn".to_string())
-        })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("Qoder stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("Qoder stderr pipe unavailable after spawn".to_string())
-        })?;
+        let Some(stdin) = tree.child_mut().stdin.take() else {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            return Err(AgentError::Protocol(
+                "Qoder stdin pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            return Err(AgentError::Protocol(
+                "Qoder stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            return Err(AgentError::Protocol(
+                "Qoder stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
 
         let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
@@ -1833,8 +1917,10 @@ async fn run_protocol(
     let resume_lost = provider == "hermes"
         && hermes_resume_session_lost(&options.resume_session_id, stop_reason, state.activity);
     if resume_lost {
-        status = "failed";
-        error = HERMES_RESUME_LOST_ERROR.to_string();
+        if status == "completed" {
+            status = "failed";
+            error = HERMES_RESUME_LOST_ERROR.to_string();
+        }
         session_id.clear();
     }
     if provider == "reasonix"
@@ -1987,17 +2073,14 @@ fn handle_notification(
             }
         }
         "toolcall" => {
-            state.activity = state.activity.saturating_add(1);
-            handle_tool_start(data, messages, state);
-        }
-        "toolcallupdate" => {
-            if matches!(
-                data.get("status").and_then(Value::as_str),
-                Some("completed" | "failed")
-            ) {
+            if handle_tool_start(data, messages, state) {
                 state.activity = state.activity.saturating_add(1);
             }
-            handle_tool_update(data, messages, state);
+        }
+        "toolcallupdate" => {
+            if handle_tool_update(data, messages, state) {
+                state.activity = state.activity.saturating_add(1);
+            }
         }
         "usageupdate" | "turnend" => {
             let update = parse_usage(data.get("usage").or(Some(data)));
@@ -2108,32 +2191,32 @@ fn handle_tool_start(
     data: &Value,
     messages: &mpsc::Sender<Message>,
     state: &mut NotificationState,
-) {
+) -> bool {
     let id = data
         .get("toolCallId")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
     if id.is_empty() {
-        return;
+        return false;
     }
     if state.hermes_dialect {
         let name = hermes_tool_name(data);
-        let input = tool_input(data);
-        let deferred_text = if !state.hermes_builtin_runtime && input.is_empty() {
+        let (input, input_present) = tool_input_with_presence(data);
+        let deferred_text = if !state.hermes_builtin_runtime && !input_present {
             hermes_tool_call_text(data)
         } else {
             String::new()
         };
         let mut invocation = input.clone();
-        if state.hermes_builtin_runtime && input.is_empty() {
+        if state.hermes_builtin_runtime && !input_present {
             let rendered = hermes_tool_call_text(data);
             if name == "terminal" && rendered.trim_start().starts_with("$ ") {
                 invocation = parse_hermes_tool_input(&rendered);
             }
         }
         state.deliverable.tool_boundary();
-        let emitted = state.hermes_builtin_runtime || !invocation.is_empty();
+        let emitted = state.hermes_builtin_runtime || input_present || !invocation.is_empty();
         if emitted {
             send(messages, tool_use(&id, &name, invocation.clone()));
         }
@@ -2147,13 +2230,13 @@ fn handle_tool_start(
                 finishing: false,
             },
         );
-        return;
+        return emitted;
     }
     let name = tool_name(data, state.extended_tool_names);
-    let input = tool_input(data);
+    let (input, input_present) = tool_input_with_presence(data);
     let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
     state.deliverable.tool_boundary();
-    let emitted = !input.is_empty();
+    let emitted = input_present || !input.is_empty();
     if emitted {
         send(messages, tool_use(&id, &name, input.clone()));
     }
@@ -2167,26 +2250,27 @@ fn handle_tool_start(
             finishing,
         },
     );
+    emitted
 }
 
 fn handle_tool_update(
     data: &Value,
     messages: &mpsc::Sender<Message>,
     state: &mut NotificationState,
-) {
+) -> bool {
     let status = data
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if !matches!(status, "completed" | "failed") {
-        return;
+        return false;
     }
     let id = data
         .get("toolCallId")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if id.is_empty() {
-        return;
+        return false;
     }
     let mut pending = match state.tools.remove(id) {
         Some(pending) => pending,
@@ -2206,8 +2290,8 @@ fn handle_tool_update(
         }
     };
     if state.hermes_dialect && !pending.emitted {
-        let update_input = tool_input(data);
-        if !update_input.is_empty() {
+        let (update_input, input_present) = tool_input_with_presence(data);
+        if input_present {
             pending.input = update_input;
         } else if pending.input.is_empty() && !pending.deferred_text.is_empty() {
             pending.input = parse_hermes_tool_input(&pending.deferred_text);
@@ -2238,6 +2322,7 @@ fn handle_tool_update(
     if finishing {
         state.last_finishing_status = status.to_string();
     }
+    true
 }
 
 fn tool_name(data: &Value, extended_names: bool) -> String {
@@ -2449,17 +2534,25 @@ fn is_kiro_oversized_history_image(error: &AcpError) -> bool {
     })
 }
 
-fn tool_input(data: &Value) -> BTreeMap<String, Value> {
+fn tool_input_with_presence(data: &Value) -> (BTreeMap<String, Value>, bool) {
     ["rawInput", "input", "parameters"]
         .iter()
-        .find_map(|key| data.get(*key).and_then(Value::as_object))
-        .map(|object| {
-            object
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect()
+        .find_map(|key| {
+            data.get(*key).and_then(Value::as_object).map(|object| {
+                (
+                    object
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
+                    true,
+                )
+            })
         })
         .unwrap_or_default()
+}
+
+fn tool_input(data: &Value) -> BTreeMap<String, Value> {
+    tool_input_with_presence(data).0
 }
 
 fn render_value(value: &Value) -> String {
@@ -3088,7 +3181,7 @@ mod tests {
         );
         assert_eq!(args[0], "acp");
         assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
-        assert!(args.iter().any(|arg| arg == "--verbose"));
+        assert!(!args.iter().any(|arg| arg == "--verbose"));
         assert!(args.iter().any(|arg| arg == "--debug"));
     }
 
@@ -3118,6 +3211,62 @@ mod tests {
         assert_eq!(models[0].provider, "nous");
         assert_eq!(models[1].label, "nous:anthropic/claude-opus-4.7");
         assert!(models[1].default);
+    }
+
+    #[test]
+    fn hermes_session_models_keep_bare_ids_unqualified() {
+        let models = parse_hermes_session_models(&serde_json::json!({
+            "models": {
+                "currentModelId": "hermes-4",
+                "availableModels": [{"modelId": "hermes-4", "name": "Hermes 4"}]
+            }
+        }));
+        assert_eq!(models.len(), 1);
+        assert!(models[0].provider.is_empty());
+        assert!(models[0].default);
+    }
+
+    #[test]
+    fn hermes_session_models_fall_back_to_model_config_option() {
+        let models = parse_hermes_session_models(&serde_json::json!({
+            "configOptions": [{
+                "id": "model",
+                "currentValue": "nous:anthropic/claude-opus-4.7",
+                "options": [
+                    {"value": "nous:anthropic/claude-opus-4.7", "name": "Claude Opus"},
+                    {"value": "nous:moonshotai/kimi-k2.6", "name": "Kimi"},
+                    {"value": "nous:moonshotai/kimi-k2.6", "name": "duplicate"}
+                ]
+            }]
+        }));
+        assert_eq!(models.len(), 2);
+        assert!(models[0].default);
+        assert_eq!(models[0].provider, "nous");
+        assert_eq!(models[1].label, "Kimi");
+    }
+
+    #[test]
+    fn hermes_effort_catalog_is_attached_to_current_model() {
+        let session = serde_json::json!({
+            "models": {
+                "currentModelId": "hermes-4",
+                "availableModels": [{"modelId": "hermes-4", "name": "Hermes 4"}]
+            },
+            "configOptions": [{
+                "id": "reasoning_effort",
+                "category": "thought_level",
+                "currentValue": "medium",
+                "options": [{"value": "low"}, {"value": "medium"}]
+            }]
+        });
+        let mut models = parse_hermes_session_models(&session);
+        annotate_acp_effort(&mut models, &session);
+        let thinking = models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Hermes effort catalog missing"));
+        assert_eq!(thinking.default_level, "medium");
+        assert_eq!(thinking.supported_levels.len(), 2);
     }
 
     #[test]
@@ -3527,6 +3676,63 @@ mod tests {
             tool.input.get("command").and_then(Value::as_str),
             Some("echo right")
         );
+    }
+
+    #[test]
+    fn custom_hermes_empty_input_is_present_and_unresolved_call_is_not_activity() {
+        let (messages, mut received) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_notification(
+            AcpNotification {
+                method: "session/update".to_string(),
+                params: serde_json::json!({
+                    "update": {
+                        "sessionUpdate": "tool_call",
+                        "toolCallId": "empty-input",
+                        "title": "think",
+                        "rawInput": {}
+                    }
+                }),
+            },
+            &messages,
+            &mut state,
+        );
+        assert_eq!(state.activity, 1);
+        let tool = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("empty-input Hermes tool use: {error}"));
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert!(tool.input.is_empty());
+
+        let mut deferred_state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_notification(
+            AcpNotification {
+                method: "session/update".to_string(),
+                params: serde_json::json!({
+                    "update": {
+                        "sessionUpdate": "tool_call",
+                        "toolCallId": "deferred",
+                        "title": "terminal: $ echo deferred"
+                    }
+                }),
+            },
+            &messages,
+            &mut deferred_state,
+        );
+        assert_eq!(deferred_state.activity, 0);
+        assert!(hermes_resume_session_lost(
+            "requested",
+            "refusal",
+            deferred_state.activity
+        ));
     }
 
     #[test]

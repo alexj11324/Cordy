@@ -393,8 +393,8 @@ pub async fn discover_models(
             env,
             builtin_runtime,
         })
-            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
-            .await),
+        .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+        .await),
         "dim" => Ok(DimBackend::new(DimConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),
