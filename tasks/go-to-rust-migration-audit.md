@@ -1611,5 +1611,15 @@ probe 必须继续走既有 registration service。
   dependency-lock inconsistency 导致 `--locked` 拒绝更新 lockfile，尚未进入编译。五个新增精确测试
   均以同一 101 在 discovery/execution 前退出，实际各执行 0 个测试；loopback 与真实 production smoke
   未运行。因此所有行为仍是 execution-unverified，未记为通过。
-- 异步 reviewer 进行中；上述 lock/rustfmt/compile/test/smoke 问题待 existing independent fixer 依序
-  处理。主 agent 仅迁移、接线、交付并回写事实，不自行修复；PR 保持非 Draft Ready，不等待异步收口。
+- 异步 reviewer（只读 exact product head `21a3ab795bd9f1e5c53ea54a712cda1486a43b42`）无 P0，
+  报告 4 个 P1：workspace serial→claim barrier 与 demotion barrier→serial 锁序反转可永久互等；fresh
+  resolver miss 被误当 authoritative disappearance；runtime identity 与 launch spec 分两次发布存在 claim
+  中间窗口；provider probe 串行化使最坏启动/refresh 延迟退化为全部 CLI timeout 之和。另有 4 个 P2：
+  busy daemon 应 defer demotion 而非冻结所有新 claim；单 workspace deregister 失败不应中止其余且必须可
+  重试；真实 health 未暴露 `skipped_agents`；无 minimum floor 的 CLI 空输出未保留 last-known version。
+  P3 记录当前 locked compile/测试 0-run/rustfmt failure 不能支持 production lifecycle 已验证措辞，并要求
+  锁序、registry/launch interleave、真实 Client deregister continuation 的直接检查。未发现 Stub/Noop/Fake
+  误入 production，五个既有文件与对象的复用方向符合 Ponytail。
+- 上述 lock/rustfmt/compile/test/smoke 和 reviewer findings 已排入 existing independent fixer，待其完成
+  #560 后处理。主 agent 仅迁移、接线、交付并回写事实，不自行修复；PR 保持非 Draft Ready，不等待异步
+  收口。
