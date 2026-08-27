@@ -553,14 +553,12 @@ async fn health_handler<S: ProductionRuntimeServices>(
     };
     response.pid = std::process::id() as i32;
     response.os = std::env::consts::OS.to_string();
-    response.uptime = format!(
-        "{}s",
+    response.uptime = format_uptime(
         state
             .clock
             .now()
             .duration_since(state.started_at)
-            .unwrap_or_default()
-            .as_secs()
+            .unwrap_or_default(),
     );
     response.profile = state.config.profile.clone();
     response.daemon_id = state.config.daemon_id.clone();
@@ -715,4 +713,38 @@ fn response_error(status: StatusCode, message: &'static str) -> RepoCheckoutHttp
 
 fn response_owned_error(status: StatusCode, message: String) -> RepoCheckoutHttpError {
     RepoCheckoutHttpError::new(status, HeaderMap::new(), format!("{message}\n"))
+}
+
+fn format_uptime(duration: Duration) -> String {
+    let total_seconds = duration.as_secs();
+    let seconds = total_seconds % 60;
+    let minutes = total_seconds / 60 % 60;
+    let hours = total_seconds / 60 / 60;
+    if hours > 0 {
+        format!("{hours}h{minutes}m{seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m{seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_uptime;
+    use std::time::Duration;
+
+    #[test]
+    fn health_uptime_matches_go_duration_text() {
+        for (seconds, expected) in [
+            (0, "0s"),
+            (59, "59s"),
+            (60, "1m0s"),
+            (65, "1m5s"),
+            (3_600, "1h0m0s"),
+            (3_661, "1h1m1s"),
+        ] {
+            assert_eq!(format_uptime(Duration::from_secs(seconds)), expected);
+        }
+    }
 }
