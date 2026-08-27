@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::antigravity::{AntigravityBackend, AntigravityConfig};
+use crate::claude::{ClaudeBackend, ClaudeConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::codex::{CodexBackend, CodexConfig};
 use crate::command::RuntimeCommand;
@@ -315,6 +316,9 @@ pub async fn discover_models(
         "codebuddy" => Ok(CodebuddyBackend::new(CodebuddyConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),
+        "claude" => Ok(ClaudeBackend::new(ClaudeConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
         "cursor" => Ok(CursorBackend::new(CursorConfig { command, env })
             .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
             .await),
@@ -402,6 +406,10 @@ pub fn build_backend(
             ..AntigravityConfig::default()
         }))),
         "codebuddy" => Ok(Arc::new(CodebuddyBackend::new(CodebuddyConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "claude" => Ok(Arc::new(ClaudeBackend::new(ClaudeConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -587,6 +595,7 @@ mod tests {
     fn factory_constructs_every_implemented_runtime() {
         for runtime in [
             "antigravity",
+            "claude",
             "codebuddy",
             "codex",
             "cursor",
@@ -617,7 +626,7 @@ mod tests {
 
     #[test]
     fn factory_fails_closed_for_unknown_or_unimplemented_runtime() {
-        for runtime in ["unknown", "claude", "copilot", "hermes"] {
+        for runtime in ["unknown", "copilot", "hermes"] {
             assert!(matches!(
                 build_backend(runtime, backend_config()),
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
