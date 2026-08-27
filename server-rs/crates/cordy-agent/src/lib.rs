@@ -10,6 +10,7 @@ pub mod acp_mcp;
 pub mod antigravity;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
+pub mod codex;
 pub mod command;
 pub mod contract;
 pub mod cursor;
@@ -38,6 +39,7 @@ pub use acp_mcp::{
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
+pub use codex::{build_codex_args, CodexBackend, CodexConfig};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };

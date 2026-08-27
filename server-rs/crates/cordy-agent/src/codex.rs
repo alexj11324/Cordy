@@ -1,0 +1,1487 @@
+//! Codex app-server JSON-RPC adapter.
+//!
+//! This slice owns the provider's core execution contract: launch
+//! normalization, initialize/thread/turn RPCs, legacy and raw event
+//! normalization, headless approvals, and process-tree cleanup. MCP config
+//! materialization and session-log usage recovery remain separate contracts;
+//! silently dropping either would be worse than making that boundary explicit.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::io;
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+use async_trait::async_trait;
+use serde_json::{Map, Value};
+use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
+
+use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
+use crate::contract::{
+    AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
+};
+use crate::process::OwnedProcessTree;
+use crate::stderr::{sanitize_diagnostic, with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
+use crate::stream::AgentLineReader;
+
+const MESSAGE_BUFFER: usize = 256;
+const TERMINATION_GRACE: Duration = Duration::from_secs(2);
+const KILL_GRACE: Duration = Duration::from_secs(10);
+const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
+const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
+const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+const PATCH_INPUT_MAX_BYTES: usize = 64 * 1024;
+
+static BLOCKED_ARGS: std::sync::LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    std::sync::LazyLock::new(|| {
+        BTreeMap::from([("--listen", BlockedArgMode::WithValue)])
+    });
+
+#[derive(Debug, Clone, Default)]
+pub struct CodexConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CodexBackend {
+    config: CodexConfig,
+}
+
+impl CodexBackend {
+    pub fn new(config: CodexConfig) -> Self {
+        Self { config }
+    }
+}
+
+/// Builds the daemon-owned Codex app-server invocation.
+pub fn build_codex_args(options: &ExecOptions) -> Vec<String> {
+    let mut args = vec![
+        "app-server".to_string(),
+        "--listen".to_string(),
+        "stdio://".to_string(),
+    ];
+    args.extend(filter_custom_args(&options.extra_args, &BLOCKED_ARGS).args);
+    args.extend(filter_custom_args(&options.custom_args, &BLOCKED_ARGS).args);
+    if options.service_tier == "priority" {
+        args = strip_fast_mode_conflicts(args);
+        args.extend(["--enable".to_string(), "fast_mode".to_string()]);
+    }
+    args
+}
+
+fn strip_fast_mode_conflicts(args: Vec<String>) -> Vec<String> {
+    let mut filtered = Vec::with_capacity(args.len());
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        if arg == "--disable=fast_mode" {
+            index += 1;
+            continue;
+        }
+        if arg == "--disable" && args.get(index + 1).is_some_and(|value| value == "fast_mode") {
+            index += 2;
+            continue;
+        }
+        if (arg == "-c" || arg == "--config")
+            && args
+                .get(index + 1)
+                .is_some_and(|value| value.starts_with("features.fast_mode"))
+        {
+            index += 2;
+            continue;
+        }
+        if (arg.starts_with("-c=") || arg.starts_with("--config="))
+            && arg
+                .split_once('=')
+                .is_some_and(|(_, value)| value.starts_with("features.fast_mode"))
+        {
+            index += 1;
+            continue;
+        }
+        filtered.push(args[index].clone());
+        index += 1;
+    }
+    filtered
+}
+
+#[async_trait]
+impl Backend for CodexBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        if crate::mcp::has_managed_config(options.mcp_config.as_ref()) {
+            return Err(AgentError::InvalidConfig(
+                "Codex managed MCP materialization is not part of the app-server core slice"
+                    .to_string(),
+            ));
+        }
+
+        let command_path = if self.config.command.path.trim().is_empty() {
+            "codex"
+        } else {
+            self.config.command.path.as_str()
+        };
+        let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS);
+        let mut argv = prefix.args;
+        argv.extend(build_codex_args(&options));
+
+        let mut command = Command::new(command_path);
+        command
+            .args(&argv)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .envs(&self.config.env)
+            .kill_on_drop(false);
+        if !options.cwd.is_empty() {
+            command.current_dir(&options.cwd);
+        }
+
+        let mut tree = OwnedProcessTree::spawn(&mut command)
+            .await
+            .map_err(|error| {
+                if error.kind() == io::ErrorKind::NotFound {
+                    AgentError::ExecutableNotFound(command_path.to_string())
+                } else {
+                    AgentError::Process(error)
+                }
+            })?;
+        let Some(stdin) = tree.child_mut().stdin.take() else {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            return Err(AgentError::Protocol(
+                "Codex stdin pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            return Err(AgentError::Protocol(
+                "Codex stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            return Err(AgentError::Protocol(
+                "Codex stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
+
+        let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
+        let (result_tx, result_rx) = oneshot::channel();
+        let timeout = options.timeout;
+        let cancellation = options.cancellation.clone();
+        let started = Instant::now();
+        let prompt = prompt.to_string();
+        let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
+        let stderr_reader_tail = stderr_tail.clone();
+
+        tokio::spawn(async move {
+            run_codex(
+                tree,
+                stdin,
+                stdout,
+                stderr,
+                prompt,
+                options,
+                message_tx,
+                result_tx,
+                cancellation,
+                timeout,
+                started,
+                stderr_tail,
+                stderr_reader_tail,
+            )
+            .await;
+        });
+
+        Ok(Session {
+            messages: message_rx,
+            result: result_rx,
+        })
+    }
+}
+
+async fn run_codex(
+    mut tree: OwnedProcessTree,
+    stdin: ChildStdin,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+    prompt: String,
+    options: ExecOptions,
+    messages: mpsc::Sender<Message>,
+    result_tx: oneshot::Sender<ExecutionResult>,
+    cancellation: CancellationToken,
+    timeout: Duration,
+    started: Instant,
+    stderr_tail: SharedDiagnosticBuffer,
+    stderr_reader_tail: SharedDiagnosticBuffer,
+) {
+    let mut stderr_task = tokio::spawn(pump_stderr(stderr, stderr_reader_tail));
+    let handshake_timeout = if options.handshake_timeout.is_zero() {
+        DEFAULT_HANDSHAKE_TIMEOUT
+    } else {
+        options.handshake_timeout
+    };
+    let mut protocol = Box::pin(run_protocol(
+        stdin,
+        stdout,
+        prompt,
+        options,
+        messages,
+        handshake_timeout,
+    ));
+
+    let outcome = if timeout.is_zero() {
+        tokio::select! {
+            result = &mut protocol => RunOutcome::Protocol(result),
+            () = cancellation.cancelled() => RunOutcome::Cancelled,
+        }
+    } else {
+        tokio::select! {
+            result = &mut protocol => RunOutcome::Protocol(result),
+            () = cancellation.cancelled() => RunOutcome::Cancelled,
+            () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
+        }
+    };
+
+    let mut result = match outcome {
+        RunOutcome::Protocol(result) => result,
+        RunOutcome::Cancelled => ProtocolOutcome::terminal("aborted", "execution cancelled"),
+        RunOutcome::TimedOut => ProtocolOutcome::terminal(
+            "timeout",
+            format!("codex timed out after {}s", timeout.as_secs_f64()),
+        ),
+    };
+    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+
+    if tokio::time::timeout(KILL_GRACE, &mut stderr_task)
+        .await
+        .is_err()
+    {
+        stderr_task.abort();
+    }
+    let stderr = stderr_tail.tail();
+    if !result.error.is_empty() {
+        result.error = with_stderr(&result.error, "codex", &stderr);
+    }
+    let _ = result_tx.send(ExecutionResult {
+        status: result.status,
+        output: result.output,
+        error: result.error,
+        duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
+        session_id: result.session_id,
+        usage: result.usage,
+        resume_rejected: result.resume_rejected,
+    });
+}
+
+enum RunOutcome {
+    Protocol(ProtocolOutcome),
+    Cancelled,
+    TimedOut,
+}
+
+#[derive(Debug, Default)]
+struct ProtocolOutcome {
+    status: String,
+    output: String,
+    error: String,
+    session_id: String,
+    usage: BTreeMap<String, TokenUsage>,
+    resume_rejected: bool,
+}
+
+impl ProtocolOutcome {
+    fn terminal(status: &str, error: impl Into<String>) -> Self {
+        Self {
+            status: status.to_string(),
+            error: error.into(),
+            ..Self::default()
+        }
+    }
+
+    fn failed(error: impl Into<String>) -> Self {
+        Self::terminal("failed", error)
+    }
+}
+
+async fn run_protocol(
+    stdin: ChildStdin,
+    stdout: ChildStdout,
+    prompt: String,
+    options: ExecOptions,
+    messages: mpsc::Sender<Message>,
+    handshake_timeout: Duration,
+) -> ProtocolOutcome {
+    let mut client = CodexClient::new(BufReader::new(stdout), stdin, messages);
+    if let Err(error) = client
+        .request(
+            "initialize",
+            serde_json::json!({
+                "clientInfo": {
+                    "name": "cordy-agent-sdk",
+                    "title": "Cordy Agent SDK",
+                    "version": "0.2.0"
+                },
+                "capabilities": {"experimentalApi": true}
+            }),
+            handshake_timeout,
+        )
+        .await
+    {
+        return ProtocolOutcome::failed(error);
+    }
+    if let Err(error) = client.notify("initialized").await {
+        return ProtocolOutcome::failed(format!("codex initialized notification failed: {error}"));
+    }
+
+    let cwd = if options.cwd.is_empty() {
+        "."
+    } else {
+        options.cwd.as_str()
+    };
+    let mut resume_rejected = false;
+    let (thread_id, resumed, thread_value) = if options.resume_session_id.is_empty() {
+        match start_thread(&mut client, &options, cwd, handshake_timeout).await {
+            Ok(value) => value,
+            Err(error) => return ProtocolOutcome::failed(error),
+        }
+    } else {
+        let mut resume_params = serde_json::json!({
+            "threadId": options.resume_session_id.clone(),
+            "cwd": cwd,
+            "model": null,
+            "developerInstructions": null,
+        });
+        apply_reasoning_effort(&mut resume_params, &options.thinking_level, false);
+        apply_service_tier(&mut resume_params, &options.service_tier);
+        match client
+            .request("thread/resume", resume_params, handshake_timeout)
+            .await
+        {
+            Ok(value) => {
+                if let Some(thread_id) = extract_thread_id(&value) {
+                    (thread_id, true, value)
+                } else {
+                    resume_rejected = true;
+                    match start_thread(&mut client, &options, cwd, handshake_timeout).await {
+                        Ok(value) => value,
+                        Err(error) => return ProtocolOutcome::failed(error),
+                    }
+                }
+            }
+            Err(error) if !is_transport_error(&error) => {
+                resume_rejected = true;
+                match start_thread(&mut client, &options, cwd, handshake_timeout).await {
+                    Ok(value) => value,
+                    Err(start_error) => {
+                        return ProtocolOutcome::failed(format!(
+                            "{error}; fresh Codex thread/start failed: {start_error}"
+                        ));
+                    }
+                }
+            }
+            Err(error) => return ProtocolOutcome::failed(error),
+        }
+    };
+
+    client.state.thread_id = thread_id.clone();
+    client.state.model = if options.model.is_empty() {
+        extract_model(&thread_value).unwrap_or_default()
+    } else {
+        options.model.clone()
+    };
+    if !options.thread_name.trim().is_empty() {
+        let _ = client
+            .request(
+                "thread/name/set",
+                serde_json::json!({"threadId": thread_id.clone(), "name": options.thread_name.clone()}),
+                handshake_timeout,
+            )
+            .await;
+    }
+
+    let input = codex_turn_input(
+        &prompt,
+        options.resume_expected,
+        resumed,
+        &options.resume_continuity_notice,
+    );
+    let mut turn_params = serde_json::json!({"threadId": thread_id, "input": input});
+    apply_reasoning_effort(&mut turn_params, &options.thinking_level, true);
+    apply_service_tier(&mut turn_params, &options.service_tier);
+    if let Err(error) = client
+        .request("turn/start", turn_params, handshake_timeout)
+        .await
+    {
+        return ProtocolOutcome {
+            status: "failed".to_string(),
+            error,
+            session_id: client.state.thread_id,
+            resume_rejected,
+            ..ProtocolOutcome::default()
+        };
+    }
+    if let Err(error) = client.wait_for_turn().await {
+        return ProtocolOutcome {
+            status: "failed".to_string(),
+            error,
+            session_id: client.state.thread_id,
+            resume_rejected,
+            ..ProtocolOutcome::default()
+        };
+    }
+    let _ = client
+        .drain_notifications(NOTIFICATION_QUIET, NOTIFICATION_DRAIN_MAX)
+        .await;
+
+    let state = client.state;
+    let session_id = state.thread_id.clone();
+    let usage = usage_map(&state, &configured_model(&state, &options));
+    let mut result = ProtocolOutcome {
+        status: "completed".to_string(),
+        output: if !state.final_answer.is_empty() {
+            state.final_answer.clone()
+        } else {
+            state.last_agent_message.clone()
+        },
+        session_id,
+        usage,
+        resume_rejected,
+        ..ProtocolOutcome::default()
+    };
+    if !state.turn_error.is_empty() {
+        result.status = "failed".to_string();
+        result.error = state.turn_error.clone();
+        result.output.clear();
+    } else if state.turn_aborted {
+        result.status = "aborted".to_string();
+        result.error = "turn was aborted".to_string();
+        result.output.clear();
+    } else if !state.turn_done {
+        result.status = "failed".to_string();
+        result.error = "codex turn ended without completion".to_string();
+        result.output.clear();
+    }
+    result
+}
+
+async fn start_thread<R, W>(
+    client: &mut CodexClient<R, W>,
+    options: &ExecOptions,
+    cwd: &str,
+    handshake_timeout: Duration,
+) -> Result<(String, bool, Value), String>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut params = serde_json::json!({
+        "model": null,
+        "modelProvider": null,
+        "profile": null,
+        "cwd": cwd,
+        "approvalPolicy": null,
+        "sandbox": null,
+        "config": null,
+        "baseInstructions": null,
+        "developerInstructions": null,
+        "compactPrompt": null,
+        "includeApplyPatchTool": null,
+        "experimentalRawEvents": false,
+        "persistExtendedHistory": true,
+    });
+    if !options.model.is_empty() {
+        params["model"] = Value::String(options.model.clone());
+    }
+    apply_reasoning_effort(&mut params, &options.thinking_level, false);
+    apply_service_tier(&mut params, &options.service_tier);
+    let value = client
+        .request("thread/start", params, handshake_timeout)
+        .await?;
+    let thread_id = extract_thread_id(&value)
+        .ok_or_else(|| "codex thread/start returned no thread ID".to_string())?;
+    Ok((thread_id, false, value))
+}
+
+fn apply_reasoning_effort(params: &mut Value, level: &str, turn_start: bool) {
+    if level.is_empty() {
+        return;
+    }
+    if turn_start {
+        params["effort"] = Value::String(level.to_string());
+        return;
+    }
+    if !params["config"].is_object() {
+        params["config"] = Value::Object(Map::new());
+    }
+    if let Some(config) = params["config"].as_object_mut() {
+        config.insert(
+            "model_reasoning_effort".to_string(),
+            Value::String(level.to_string()),
+        );
+    }
+}
+
+fn apply_service_tier(params: &mut Value, tier: &str) {
+    if !tier.is_empty() {
+        params["serviceTier"] = Value::String(tier.to_string());
+    }
+}
+
+fn codex_turn_input(
+    prompt: &str,
+    resume_expected: bool,
+    resumed: bool,
+    continuity_notice: &str,
+) -> Vec<Value> {
+    let text = if resume_expected && !resumed {
+        format!("{continuity_notice}{prompt}")
+    } else {
+        prompt.to_string()
+    };
+    vec![serde_json::json!({"type":"text","text":text})]
+}
+
+struct CodexClient<R, W> {
+    reader: AgentLineReader<R>,
+    writer: W,
+    next_id: u64,
+    state: CodexState,
+    messages: mpsc::Sender<Message>,
+}
+
+impl<R, W> CodexClient<R, W>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    fn new(reader: R, writer: W, messages: mpsc::Sender<Message>) -> Self {
+        Self {
+            reader: AgentLineReader::new(reader),
+            writer,
+            next_id: 1,
+            state: CodexState::default(),
+            messages,
+        }
+    }
+
+    async fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+        handshake_timeout: Duration,
+    ) -> Result<Value, String> {
+        let request = self.request_inner(method, params);
+        match tokio::time::timeout(handshake_timeout, request).await {
+            Ok(result) => result,
+            Err(_) => Err(format!(
+                "codex app-server handshake timeout: {method} did not respond after {}s",
+                handshake_timeout.as_secs_f64()
+            )),
+        }
+    }
+
+    async fn request_inner(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let id = self.next_id;
+        self.next_id = self.next_id.saturating_add(1);
+        self.write(&serde_json::json!({
+            "jsonrpc":"2.0",
+            "id":id,
+            "method":method,
+            "params":params,
+        }))
+        .await
+        .map_err(|error| format!("write {method}: {error}"))?;
+
+        loop {
+            let line = self
+                .reader
+                .next_line()
+                .await
+                .map_err(|error| format!("codex stdout read failed: {error}"))?
+                .ok_or_else(|| format!("codex app-server stream ended while awaiting {method}"))?;
+            let Ok(frame) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            let Some(object) = frame.as_object() else {
+                continue;
+            };
+            let frame_id = object.get("id").and_then(Value::as_u64);
+            if let (Some(frame_id), Some(agent_method)) = (
+                frame_id,
+                object.get("method").and_then(Value::as_str),
+            ) {
+                self.answer_server_request(frame_id, agent_method, object.get("params"))
+                    .await?;
+                continue;
+            }
+            if frame_id == Some(id) && object.get("method").is_none() {
+                if let Some(error) = object.get("error") {
+                    return Err(rpc_error(method, error));
+                }
+                return Ok(object.get("result").cloned().unwrap_or(Value::Null));
+            }
+            if frame_id.is_none() {
+                if let Some(notification_method) = object.get("method").and_then(Value::as_str) {
+                    self.handle_notification(notification_method, object.get("params"));
+                }
+            }
+        }
+    }
+
+    async fn notify(&mut self, method: &str) -> Result<(), io::Error> {
+        self.write(&serde_json::json!({"jsonrpc":"2.0","method":method}))
+            .await
+    }
+
+    async fn drain_notifications(
+        &mut self,
+        quiet: Duration,
+        maximum: Duration,
+    ) -> Result<(), String> {
+        let deadline = tokio::time::Instant::now() + maximum;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Ok(());
+            }
+            let wait = quiet.min(remaining);
+            let line = tokio::select! {
+                line = self.reader.next_line() => line.map_err(|error| error.to_string())?,
+                () = tokio::time::sleep(wait) => return Ok(()),
+            };
+            let Some(line) = line else {
+                return Ok(());
+            };
+            let Ok(frame) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            let Some(object) = frame.as_object() else {
+                continue;
+            };
+            if let (Some(id), Some(method)) = (
+                object.get("id").and_then(Value::as_u64),
+                object.get("method").and_then(Value::as_str),
+            ) {
+                self.answer_server_request(id, method, object.get("params"))
+                    .await?;
+            } else if object.get("id").is_none() {
+                if let Some(method) = object.get("method").and_then(Value::as_str) {
+                    self.handle_notification(method, object.get("params"));
+                }
+            }
+        }
+    }
+
+    async fn wait_for_turn(&mut self) -> Result<(), String> {
+        while !self.state.turn_done {
+            let line = self
+                .reader
+                .next_line()
+                .await
+                .map_err(|error| format!("codex stdout read failed: {error}"))?
+                .ok_or_else(|| "codex app-server stream ended before turn completion".to_string())?;
+            let Ok(frame) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            let Some(object) = frame.as_object() else {
+                continue;
+            };
+            if let (Some(id), Some(method)) = (
+                object.get("id").and_then(Value::as_u64),
+                object.get("method").and_then(Value::as_str),
+            ) {
+                self.answer_server_request(id, method, object.get("params"))
+                    .await?;
+            } else if object.get("id").is_none() {
+                if let Some(method) = object.get("method").and_then(Value::as_str) {
+                    self.handle_notification(method, object.get("params"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn answer_server_request(
+        &mut self,
+        id: u64,
+        method: &str,
+        params: Option<&Value>,
+    ) -> Result<(), String> {
+        let result = match method {
+            "item/commandExecution/requestApproval" | "execCommandApproval"
+            | "item/fileChange/requestApproval" | "applyPatchApproval" => {
+                Some(serde_json::json!({"decision":"accept"}))
+            }
+            "item/permissions/requestApproval" => Some(permission_response(params)),
+            "mcpServer/elicitation/request" => {
+                Some(serde_json::json!({"action":"accept","content":null,"_meta":null}))
+            }
+            _ => None,
+        };
+        if let Some(result) = result {
+            self.write(&serde_json::json!({"jsonrpc":"2.0","id":id,"result":result}))
+                .await
+                .map_err(|error| error.to_string())
+        } else {
+            let error = format!("unsupported codex app-server request: {method}");
+            self.state.set_error(&error);
+            self.write(&serde_json::json!({
+                "jsonrpc":"2.0",
+                "id":id,
+                "error":{"code":-32601,"message":error},
+            }))
+            .await
+            .map_err(|write_error| write_error.to_string())
+        }
+    }
+
+    async fn write(&mut self, frame: &Value) -> Result<(), io::Error> {
+        let mut encoded = serde_json::to_vec(frame)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        encoded.push(b'\n');
+        self.writer.write_all(&encoded).await?;
+        self.writer.flush().await
+    }
+
+    fn handle_notification(&mut self, method: &str, params: Option<&Value>) {
+        let params = params.cloned().unwrap_or(Value::Null);
+        if method == "codex/event" || method.starts_with("codex/event/") {
+            self.state.legacy = true;
+            if let Some(message) = params.get("msg") {
+                self.handle_legacy_event(message);
+            }
+            return;
+        }
+        if self.state.legacy {
+            return;
+        }
+        if matches!(method, "turn/started" | "turn/completed" | "error" | "thread/status/changed")
+            || method.starts_with("item/")
+        {
+            self.handle_raw_notification(method, &params);
+        }
+    }
+
+    fn handle_legacy_event(&mut self, value: &Value) {
+        let Some(event) = value.as_object() else {
+            return;
+        };
+        match event.get("type").and_then(Value::as_str).unwrap_or_default() {
+            "task_started" => {
+                self.state.turn_started = true;
+                self.send(status_message("running", &self.state.thread_id));
+            }
+            "agent_message" => {
+                if let Some(text) = event.get("message").and_then(Value::as_str) {
+                    self.state.last_agent_message = text.to_string();
+                    self.send(message(MessageType::Text, text));
+                }
+            }
+            "exec_command_begin" => {
+                let mut input = BTreeMap::new();
+                if let Some(command) = event.get("command").and_then(Value::as_str) {
+                    input.insert("command".to_string(), Value::String(command.to_string()));
+                }
+                self.send(tool_message(
+                    MessageType::ToolUse,
+                    event.get("call_id").and_then(Value::as_str).unwrap_or_default(),
+                    "exec_command",
+                    input,
+                    String::new(),
+                ));
+            }
+            "exec_command_end" => self.send(tool_message(
+                MessageType::ToolResult,
+                event.get("call_id").and_then(Value::as_str).unwrap_or_default(),
+                "exec_command",
+                BTreeMap::new(),
+                event
+                    .get("output")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            )),
+            "patch_apply_begin" => self.send(tool_message(
+                MessageType::ToolUse,
+                event.get("call_id").and_then(Value::as_str).unwrap_or_default(),
+                "patch_apply",
+                patch_input(normalize_legacy_changes(event.get("changes"))),
+                String::new(),
+            )),
+            "patch_apply_end" => {
+                let changes = normalize_legacy_changes(event.get("changes"));
+                let status = event
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .or_else(|| event.get("success").and_then(Value::as_bool).map(|ok| if ok { "completed" } else { "failed" }))
+                    .unwrap_or_default();
+                let output = patch_result_output(
+                    status,
+                    changes.len(),
+                    event.get("stdout").and_then(Value::as_str).unwrap_or_default(),
+                    event.get("stderr").and_then(Value::as_str).unwrap_or_default(),
+                );
+                self.send(tool_message(
+                    MessageType::ToolResult,
+                    event.get("call_id").and_then(Value::as_str).unwrap_or_default(),
+                    "patch_apply",
+                    BTreeMap::new(),
+                    output,
+                ));
+            }
+            "task_complete" => {
+                self.state.merge_usage(event.get("usage"));
+                self.state.turn_done = true;
+            }
+            "turn_aborted" => {
+                self.state.turn_aborted = true;
+                self.state.turn_done = true;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_raw_notification(&mut self, method: &str, params: &Value) {
+        if self.foreign_thread(params) || self.foreign_turn(params) {
+            return;
+        }
+        match method {
+            "turn/started" => {
+                self.state.turn_started = true;
+                if let Some(id) = nested_string(params, &["turn", "id"]) {
+                    self.state.turn_id = id.to_string();
+                }
+                if let Some(id) = params.get("threadId").and_then(Value::as_str) {
+                    self.state.thread_id = id.to_string();
+                }
+                self.send(status_message("running", &self.state.thread_id));
+            }
+            "turn/completed" => {
+                let status = nested_string(params, &["turn", "status"]).unwrap_or_default();
+                if status == "failed" {
+                    let error = nested_string(params, &["turn", "error", "message"])
+                        .unwrap_or("codex turn failed");
+                    self.state.set_error(error);
+                }
+                if matches!(status, "cancelled" | "canceled" | "aborted" | "interrupted") {
+                    self.state.turn_aborted = true;
+                }
+                if let Some(turn_id) = nested_string(params, &["turn", "id"]) {
+                    if !self.state.completed_turns.insert(turn_id.to_string()) {
+                        return;
+                    }
+                }
+                self.state.merge_usage(params.get("turn"));
+                self.state.turn_done = true;
+            }
+            "error" => {
+                if !params
+                    .get("willRetry")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    let error = nested_string(params, &["error", "message"])
+                        .or_else(|| params.get("message").and_then(Value::as_str))
+                        .unwrap_or("codex app-server error");
+                    self.state.set_error(error);
+                    self.state.turn_done = true;
+                }
+            }
+            "thread/status/changed"
+                if self.state.turn_started
+                    && nested_string(params, &["status", "type"]) == Some("idle") =>
+            {
+                self.state.turn_done = true;
+            }
+            _ if method.starts_with("item/") => self.handle_item(method, params),
+            _ => {}
+        }
+    }
+
+    fn handle_item(&mut self, method: &str, params: &Value) {
+        let Some(item) = params.get("item").and_then(Value::as_object) else {
+            return;
+        };
+        let item_type = item.get("type").and_then(Value::as_str).unwrap_or_default();
+        let item_id = item.get("id").and_then(Value::as_str).unwrap_or_default();
+        match (method, item_type) {
+            ("item/started", "commandExecution") => {
+                let mut input = BTreeMap::new();
+                if let Some(command) = item.get("command").and_then(Value::as_str) {
+                    input.insert("command".to_string(), Value::String(command.to_string()));
+                }
+                self.send(tool_message(
+                    MessageType::ToolUse,
+                    item_id,
+                    "exec_command",
+                    input,
+                    String::new(),
+                ));
+            }
+            ("item/completed", "commandExecution") => self.send(tool_message(
+                MessageType::ToolResult,
+                item_id,
+                "exec_command",
+                BTreeMap::new(),
+                item.get("aggregatedOutput")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            )),
+            ("item/started", "fileChange") => self.send(tool_message(
+                MessageType::ToolUse,
+                item_id,
+                "patch_apply",
+                patch_input(normalize_raw_changes(item.get("changes"))),
+                String::new(),
+            )),
+            ("item/completed", "fileChange") => self.send(tool_message(
+                MessageType::ToolResult,
+                item_id,
+                "patch_apply",
+                BTreeMap::new(),
+                patch_result_output(
+                    item.get("status").and_then(Value::as_str).unwrap_or_default(),
+                    normalize_raw_changes(item.get("changes")).len(),
+                    "",
+                    "",
+                ),
+            )),
+            ("item/started", "mcpToolCall") => self.send(tool_message(
+                MessageType::ToolUse,
+                item_id,
+                item.get("tool").and_then(Value::as_str).unwrap_or("mcp_tool"),
+                mcp_input(item),
+                String::new(),
+            )),
+            ("item/completed", "mcpToolCall") => {
+                let status = item.get("status").and_then(Value::as_str).unwrap_or("completed");
+                let error = item
+                    .get("error")
+                    .and_then(|value| value.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let output = if error.is_empty() {
+                    status.to_string()
+                } else {
+                    format!("{status}\nerror: {}", sanitize_diagnostic(error))
+                };
+                self.send(tool_message_with_status(
+                    item_id,
+                    item.get("tool").and_then(Value::as_str).unwrap_or("mcp_tool"),
+                    output,
+                    normalize_status(status),
+                ));
+            }
+            (_, "agentMessage") if method == "item/completed" => {
+                if let Some(text) = item.get("text").and_then(Value::as_str) {
+                    self.state.last_agent_message = text.to_string();
+                    self.send(message(MessageType::Text, text));
+                    if item.get("phase").and_then(Value::as_str) == Some("final_answer") {
+                        self.state.final_answer = text.to_string();
+                        if self.state.turn_started {
+                            self.state.turn_done = true;
+                        }
+                    }
+                }
+            }
+            (_, "reasoning") if method == "item/completed" => {
+                if let Some(text) = item.get("text").and_then(Value::as_str) {
+                    self.send(message(MessageType::Thinking, text));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn foreign_thread(&self, params: &Value) -> bool {
+        params
+            .get("threadId")
+            .and_then(Value::as_str)
+            .is_some_and(|thread_id| !self.state.thread_id.is_empty() && thread_id != self.state.thread_id)
+    }
+
+    fn foreign_turn(&self, params: &Value) -> bool {
+        params
+            .get("turnId")
+            .and_then(Value::as_str)
+            .is_some_and(|turn_id| !self.state.turn_id.is_empty() && turn_id != self.state.turn_id)
+    }
+
+    fn send(&self, value: Message) {
+        let _ = self.messages.try_send(value);
+    }
+}
+
+#[derive(Debug, Default)]
+struct CodexState {
+    legacy: bool,
+    thread_id: String,
+    turn_id: String,
+    model: String,
+    turn_started: bool,
+    turn_done: bool,
+    turn_aborted: bool,
+    final_answer: String,
+    last_agent_message: String,
+    turn_error: String,
+    usage: TokenUsage,
+    completed_turns: BTreeSet<String>,
+}
+
+impl CodexState {
+    fn set_error(&mut self, error: &str) {
+        if self.turn_error.is_empty() && !error.is_empty() {
+            self.turn_error = error.to_string();
+        }
+    }
+
+    fn merge_usage(&mut self, value: Option<&Value>) {
+        let Some(value) = value else {
+            return;
+        };
+        let usage = value
+            .get("usage")
+            .or_else(|| value.get("token_usage"))
+            .or_else(|| value.get("tokens"))
+            .unwrap_or(value);
+        let Some(usage) = usage.as_object() else {
+            return;
+        };
+        let input = number(usage, &["input_tokens", "input", "prompt_tokens"]);
+        let cached = number(
+            usage,
+            &["cached_input_tokens", "cache_read_tokens", "cache_read_input_tokens"],
+        );
+        let parsed = TokenUsage {
+            input_tokens: input.saturating_sub(cached).max(0),
+            output_tokens: number(usage, &["output_tokens", "output", "completion_tokens"])
+                .saturating_add(number(usage, &["reasoning_output_tokens"])),
+            cache_read_tokens: cached,
+            cache_write_tokens: number(
+                usage,
+                &["cache_write_tokens", "cache_creation_input_tokens"],
+            ),
+            cost_usd_ticks: number(usage, &["cost_usd_ticks"]),
+        };
+        self.usage.input_tokens = self.usage.input_tokens.max(parsed.input_tokens);
+        self.usage.output_tokens = self.usage.output_tokens.max(parsed.output_tokens);
+        self.usage.cache_read_tokens = self.usage.cache_read_tokens.max(parsed.cache_read_tokens);
+        self.usage.cache_write_tokens = self.usage.cache_write_tokens.max(parsed.cache_write_tokens);
+        self.usage.cost_usd_ticks = self.usage.cost_usd_ticks.max(parsed.cost_usd_ticks);
+    }
+}
+
+fn configured_model(state: &CodexState, options: &ExecOptions) -> String {
+    if !options.model.is_empty() {
+        options.model.clone()
+    } else if !state.model.is_empty() {
+        state.model.clone()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+fn usage_map(state: &CodexState, model: &str) -> BTreeMap<String, TokenUsage> {
+    if state.usage == TokenUsage::default() {
+        BTreeMap::new()
+    } else {
+        BTreeMap::from([(model.to_string(), state.usage)])
+    }
+}
+
+fn number(object: &Map<String, Value>, keys: &[&str]) -> i64 {
+    for key in keys {
+        let Some(value) = object.get(*key) else {
+            continue;
+        };
+        if let Some(value) = value.as_i64() {
+            return value;
+        }
+        if let Some(value) = value.as_u64() {
+            return value.try_into().unwrap_or(i64::MAX);
+        }
+        if let Some(value) = value.as_f64() {
+            if value.is_finite() && value > 0.0 {
+                return value.min(i64::MAX as f64) as i64;
+            }
+        }
+    }
+    0
+}
+
+fn extract_thread_id(value: &Value) -> Option<String> {
+    value
+        .get("thread")
+        .and_then(|thread| thread.get("id"))
+        .and_then(Value::as_str)
+        .or_else(|| value.get("threadId").and_then(Value::as_str))
+        .or_else(|| value.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .filter(|id| !id.is_empty())
+}
+
+fn extract_model(value: &Value) -> Option<String> {
+    value
+        .get("model")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("thread").and_then(|thread| thread.get("model")).and_then(Value::as_str))
+        .map(str::to_string)
+        .filter(|model| !model.is_empty())
+}
+
+fn nested_string<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    let mut current = value;
+    for key in keys {
+        current = current.get(*key)?;
+    }
+    current.as_str()
+}
+
+fn rpc_error(method: &str, value: &Value) -> String {
+    let code = value.get("code").and_then(Value::as_i64).unwrap_or_default();
+    let message = value
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("RPC error without message");
+    format!("{method}: {message} (code={code})")
+}
+
+fn is_transport_error(error: &str) -> bool {
+    error.starts_with("write ")
+        || error.contains("stream ended")
+        || error.contains("stdout read failed")
+        || error.contains("handshake timeout")
+}
+
+fn permission_response(params: Option<&Value>) -> Value {
+    let mut permissions = Map::new();
+    if let Some(object) = params
+        .and_then(|value| value.get("permissions"))
+        .and_then(Value::as_object)
+    {
+        for key in ["network", "fileSystem"] {
+            if let Some(value) = object.get(key).filter(|value| !value.is_null()) {
+                permissions.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    serde_json::json!({"permissions":permissions,"scope":"turn"})
+}
+
+fn message(message_type: MessageType, content: &str) -> Message {
+    Message {
+        message_type,
+        content: content.to_string(),
+        tool: String::new(),
+        call_id: String::new(),
+        input: BTreeMap::new(),
+        output: String::new(),
+        status: String::new(),
+        level: String::new(),
+        session_id: String::new(),
+    }
+}
+
+fn status_message(status: &str, session_id: &str) -> Message {
+    let mut value = message(MessageType::Status, "");
+    value.status = status.to_string();
+    value.session_id = session_id.to_string();
+    value
+}
+
+fn tool_message(
+    message_type: MessageType,
+    call_id: &str,
+    tool: &str,
+    input: BTreeMap<String, Value>,
+    output: String,
+) -> Message {
+    Message {
+        message_type,
+        call_id: call_id.to_string(),
+        tool: tool.to_string(),
+        input,
+        output,
+        ..message(message_type, "")
+    }
+}
+
+fn tool_message_with_status(call_id: &str, tool: &str, output: String, status: String) -> Message {
+    let mut value = tool_message(
+        MessageType::ToolResult,
+        call_id,
+        tool,
+        BTreeMap::new(),
+        output,
+    );
+    value.status = status;
+    value
+}
+
+fn normalize_status(status: &str) -> String {
+    if status == "inProgress" {
+        "in_progress".to_string()
+    } else {
+        status.to_string()
+    }
+}
+
+fn redact_value(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| {
+                    let lower = key.to_ascii_lowercase();
+                    let sensitive = ["token", "secret", "password", "authorization", "api_key", "apikey", "auth"]
+                        .iter()
+                        .any(|needle| lower.contains(needle));
+                    let value = if sensitive {
+                        Value::String("[REDACTED]".to_string())
+                    } else {
+                        redact_value(value)
+                    };
+                    (key.clone(), value)
+                })
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(redact_value).collect()),
+        Value::String(value) => Value::String(sanitize_diagnostic(value)),
+        _ => value.clone(),
+    }
+}
+
+fn mcp_input(item: &Map<String, Value>) -> BTreeMap<String, Value> {
+    let mut input = BTreeMap::new();
+    if let Some(server) = item.get("server") {
+        input.insert("server".to_string(), redact_value(server));
+    }
+    if let Some(arguments) = item.get("arguments") {
+        input.insert("arguments".to_string(), redact_value(arguments));
+    }
+    input
+}
+
+fn normalize_legacy_changes(value: Option<&Value>) -> Vec<Value> {
+    let Some(object) = value.and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let mut changes = Vec::new();
+    for (path, value) in object {
+        let Some(change) = value.as_object() else {
+            continue;
+        };
+        let mut normalized = Map::new();
+        normalized.insert("path".to_string(), Value::String(path.clone()));
+        if let Some(kind) = change.get("type").and_then(Value::as_str) {
+            normalized.insert("kind".to_string(), Value::String(kind.to_string()));
+        }
+        if let Some(diff) = change.get("unified_diff").and_then(Value::as_str) {
+            normalized.insert("diff".to_string(), Value::String(diff.to_string()));
+        }
+        if let Some(content) = change.get("content") {
+            normalized.insert("content".to_string(), content.clone());
+        }
+        if let Some(move_path) = change.get("move_path") {
+            normalized.insert("move_path".to_string(), move_path.clone());
+        }
+        changes.push(Value::Object(normalized));
+    }
+    changes
+}
+
+fn normalize_raw_changes(value: Option<&Value>) -> Vec<Value> {
+    let Some(array) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    array
+        .iter()
+        .filter_map(|value| {
+            let object = value.as_object()?;
+            let mut normalized = Map::new();
+            if let Some(path) = object.get("path") {
+                normalized.insert("path".to_string(), path.clone());
+            }
+            let (kind, move_path) = match object.get("kind") {
+                Some(Value::Object(kind)) => (
+                    kind.get("type").and_then(Value::as_str),
+                    kind.get("move_path"),
+                ),
+                Some(Value::String(kind)) => (Some(kind.as_str()), None),
+                _ => (None, None),
+            };
+            if let Some(kind) = kind {
+                normalized.insert("kind".to_string(), Value::String(kind.to_string()));
+            }
+            if let Some(move_path) = move_path {
+                normalized.insert("move_path".to_string(), move_path.clone());
+            }
+            if let Some(diff) = object.get("diff") {
+                if matches!(kind, Some("add" | "delete")) {
+                    normalized.insert("content".to_string(), diff.clone());
+                } else {
+                    normalized.insert("diff".to_string(), diff.clone());
+                }
+            } else if let Some(content) = object.get("content") {
+                normalized.insert("content".to_string(), content.clone());
+            }
+            (!normalized.is_empty()).then_some(Value::Object(normalized))
+        })
+        .collect()
+}
+
+fn patch_input(changes: Vec<Value>) -> BTreeMap<String, Value> {
+    if changes.is_empty() {
+        return BTreeMap::new();
+    }
+    let safe = redact_value(&Value::Array(changes));
+    let mut input = BTreeMap::from([("changes".to_string(), safe)]);
+    let bytes = serde_json::to_vec(&input).map_or(0, |value| value.len());
+    if bytes > PATCH_INPUT_MAX_BYTES {
+        if let Some(Value::Array(changes)) = input.get_mut("changes") {
+            let mut remaining = PATCH_INPUT_MAX_BYTES;
+            for change in changes {
+                let Some(object) = change.as_object_mut() else {
+                    continue;
+                };
+                for key in ["diff", "content"] {
+                    let Some(body) = object.get(key).and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let kept = truncate_utf8(body, remaining);
+                    remaining = remaining.saturating_sub(kept.len());
+                    object.insert(key.to_string(), Value::String(kept));
+                    if remaining == 0 {
+                        object.insert("truncated".to_string(), Value::Bool(true));
+                    }
+                }
+            }
+        }
+        input.insert("truncated".to_string(), Value::Bool(true));
+    }
+    input
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+    let mut end = 0;
+    for (index, character) in value.char_indices() {
+        let next = index + character.len_utf8();
+        if next > max_bytes {
+            break;
+        }
+        end = next;
+    }
+    value[..end].to_string()
+}
+
+fn patch_result_output(status: &str, files: usize, stdout: &str, stderr: &str) -> String {
+    let normalized = normalize_status(status);
+    let headline = match (normalized.is_empty(), files) {
+        (true, 0) => String::new(),
+        (true, 1) => "1 file changed".to_string(),
+        (true, count) => format!("{count} files changed"),
+        (false, 1) => format!("{normalized} (1 file)"),
+        (false, count) => format!("{normalized} ({count} files)"),
+    };
+    [headline, stdout.trim().to_string(), stderr.trim().to_string()]
+        .into_iter()
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn pump_stderr(mut stderr: ChildStderr, tail: SharedDiagnosticBuffer) {
+    use tokio::io::AsyncReadExt;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        match stderr.read(&mut buffer).await {
+            Ok(0) | Err(_) => return,
+            Ok(bytes) => tail.push(&buffer[..bytes]),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    use super::*;
+
+    #[test]
+    fn managed_launch_args_keep_transport_owned_and_fast_mode_unique() {
+        let options = ExecOptions {
+            extra_args: vec!["--listen".into(), "tcp://evil".into(), "--disable".into(), "fast_mode".into()],
+            custom_args: vec!["-c".into(), "features.fast_mode=false".into(), "--config=features.other=true".into()],
+            service_tier: "priority".into(),
+            ..ExecOptions::default()
+        };
+        assert_eq!(
+            build_codex_args(&options),
+            vec![
+                "app-server", "--listen", "stdio://", "--config=features.other=true", "--enable",
+                "fast_mode"
+            ]
+        );
+    }
+
+    #[test]
+    fn continuity_notice_is_added_only_after_resume_fallback() {
+        let fresh = codex_turn_input("prompt", true, false, "NOTICE: ");
+        let resumed = codex_turn_input("prompt", true, true, "NOTICE: ");
+        assert_eq!(fresh[0]["text"], "NOTICE: prompt");
+        assert_eq!(resumed[0]["text"], "prompt");
+    }
+
+    #[tokio::test]
+    async fn rpc_loop_services_approval_and_normalizes_turn_events() {
+        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (agent_read, mut agent_write) = tokio::io::split(agent_io);
+        let agent = tokio::spawn(async move {
+            let mut lines = BufReader::new(agent_read).lines();
+            let request = lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read initialize: {error}"))
+                .unwrap_or_else(|| panic!("initialize request"));
+            assert!(request.contains("initialize"));
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","id":77,"method":"item/commandExecution/requestApproval","params":{}}
+{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"turn-1"}}}
+{"jsonrpc":"2.0","id":1,"result":{"thread":{"id":"thread-1"}}}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write initialize frames: {error}"));
+            let approval = lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read approval: {error}"))
+                .unwrap_or_else(|| panic!("approval response"));
+            assert!(approval.contains("\"decision\":\"accept\""));
+        });
+
+        let (messages, mut received) = (mpsc::channel(8), Vec::new());
+        let (message_tx, mut message_rx) = messages;
+        let mut client = CodexClient::new(BufReader::new(client_read), client_write, message_tx);
+        let result = client
+            .request("initialize", serde_json::json!({}), Duration::from_secs(1))
+            .await
+            .unwrap_or_else(|error| panic!("initialize request: {error}"));
+        assert_eq!(extract_thread_id(&result).as_deref(), Some("thread-1"));
+        while let Ok(message) = message_rx.try_recv() {
+            received.push(message);
+        }
+        assert!(received.iter().any(|message| {
+            message.message_type == MessageType::Status && message.status == "running"
+        }));
+        assert_eq!(client.state.turn_id, "turn-1");
+        agent
+            .await
+            .unwrap_or_else(|error| panic!("agent task: {error}"));
+    }
+}
