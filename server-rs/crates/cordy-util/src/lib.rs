@@ -12,11 +12,22 @@ use serde::{Deserialize, Serialize};
 /// Typed ULID wrapper.
 ///
 /// Go side uses `oklog/ulid/v2`; canonical ULIDs are 26-char uppercase
-/// Crockford base32 strings. This compatibility utility is not yet used by a
-/// production wire field; callers must add field-level golden coverage when
-/// adopting it.
+/// Crockford base32 strings. Realtime and daemon production ID generators use
+/// [`new_ulid`] so the shared wire representation is kept in one place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Ulid(#[serde(with = "ulid_string")] pub uuid::Uuid);
+
+impl Ulid {
+    /// Generates a ULID using the Rust crate's cryptographically random source.
+    pub fn new() -> Self {
+        Self(uuid::Uuid::from_bytes(ulid::Ulid::new().to_bytes()))
+    }
+}
+
+/// Generates a canonical uppercase 26-character ULID string.
+pub fn new_ulid() -> String {
+    Ulid::new().to_string()
+}
 
 mod ulid_string {
     use serde::{Deserialize, Deserializer, Serializer};
@@ -151,6 +162,13 @@ mod tests {
         }));
         let back: Ulid = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
+    }
+
+    #[test]
+    fn generated_ulid_is_canonical_wire_value() {
+        let wire = new_ulid();
+        assert_eq!(wire.len(), 26);
+        assert_eq!(ulid::Ulid::from_string(&wire).unwrap().to_string(), wire);
     }
 
     #[test]

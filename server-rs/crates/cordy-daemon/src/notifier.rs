@@ -7,7 +7,7 @@
 //!   [`RelayNotifier::new`]
 //! - `NotifyTaskAvailable` / `NotifyRuntimeProfilesChanged` /
 //!   `NotifyWorkspacesChanged` / `NotifyPendingWork` → same-named async methods
-//! - `ulid.Make().String()` → [`new_event_id`] (`ulid::Ulid::new().to_string()`)
+//! - `ulid.Make().String()` → [`new_event_id`] (`cordy_util::new_ulid()`)
 //! - `taskAvailableFrame` / `runtimeProfilesChangedFrame` /
 //!   `workspacesChangedFrame` / `pendingWorkFrame` → re-exported from
 //!   `hub.rs` (package-private in Go, pub(crate) here)
@@ -231,7 +231,7 @@ impl RelayNotifier {
 /// (they key the per-client dedup LRU), but matching the Go wire/log format
 /// keeps dashboards comparable across the cutover.
 fn new_event_id() -> String {
-    ulid::Ulid::new().to_string()
+    cordy_util::new_ulid()
 }
 
 #[cfg(test)]
