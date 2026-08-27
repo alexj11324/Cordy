@@ -889,6 +889,102 @@ mod tests {
             .expect("event channel closed")
     }
 
+    async fn read_control_request(stream: &mut tokio::net::TcpStream) {
+        let mut headers = Vec::new();
+        while !headers.windows(4).any(|window| window == b"\r\n\r\n") {
+            let mut byte = [0_u8; 1];
+            stream.read_exact(&mut byte).await.unwrap();
+            headers.push(byte[0]);
+        }
+        let headers = String::from_utf8(headers).unwrap();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                line.split_once(':').and_then(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+            })
+            .unwrap_or(0);
+        let mut body = vec![0_u8; content_length];
+        stream.read_exact(&mut body).await.unwrap();
+    }
+
+    async fn write_control_response(
+        stream: &mut tokio::net::TcpStream,
+        status: &str,
+        body: &str,
+    ) {
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn production_heartbeat_retires_http_pool_after_two_failures_and_resets_on_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let ack = r#"{"runtime_id":"runtime-1","status":"ok"}"#;
+
+            let (mut first_pool, _) = listener.accept().await.unwrap();
+            for _ in 0..2 {
+                read_control_request(&mut first_pool).await;
+                write_control_response(&mut first_pool, "500 Internal Server Error", "{}")
+                    .await;
+            }
+
+            let (mut second_pool, _) = listener.accept().await.unwrap();
+            read_control_request(&mut second_pool).await;
+            write_control_response(&mut second_pool, "200 OK", ack).await;
+            for _ in 0..2 {
+                read_control_request(&mut second_pool).await;
+                write_control_response(&mut second_pool, "500 Internal Server Error", "{}")
+                    .await;
+            }
+
+            let (mut third_pool, _) = listener.accept().await.unwrap();
+            read_control_request(&mut third_pool).await;
+            write_control_response(&mut third_pool, "200 OK", ack).await;
+            3usize
+        });
+
+        let client = Arc::new(Client::new(format!("http://{address}")));
+        let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+        let control = DaemonControl::new(
+            client,
+            format!("http://{address}"),
+            "daemon-1",
+            Duration::from_millis(5),
+            events_tx,
+        );
+        let ctx = Ctx::new();
+        let heartbeat_control = Arc::clone(&control);
+        let heartbeat_ctx = ctx.clone();
+        let heartbeat = tokio::spawn(async move {
+            heartbeat_control
+                .run_runtime_heartbeat(heartbeat_ctx, "runtime-1".into())
+                .await;
+        });
+
+        for _ in 0..2 {
+            assert!(matches!(
+                next_event(&mut events_rx).await,
+                ControlEvent::HeartbeatAck(ack) if ack.runtime_id == "runtime-1"
+            ));
+        }
+        ctx.cancel_with(CancelCause::Cancelled);
+        heartbeat.await.unwrap();
+        assert_eq!(server.await.unwrap(), 3);
+    }
+
     #[tokio::test]
     #[allow(clippy::result_large_err)] // tungstenite's required handshake callback error type
     async fn real_websocket_negotiates_heartbeat_and_claim_rpc() {

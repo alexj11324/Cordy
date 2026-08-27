@@ -163,7 +163,7 @@ pub(crate) fn is_issue_gc_batch_unsupported(err: &ClientError) -> bool {
 pub struct Client {
     base_url: String,
     token: std::sync::Mutex<String>,
-    http: reqwest::Client,
+    http: std::sync::RwLock<reqwest::Client>,
 
     version: std::sync::Mutex<String>,
 
@@ -191,10 +191,7 @@ impl Client {
         Self {
             base_url: base_url.into(),
             token: std::sync::Mutex::new(String::new()),
-            http: reqwest::Client::builder()
-                .pool_idle_timeout(Duration::from_secs(90))
-                .build()
-                .expect("reqwest client builder with valid config"),
+            http: std::sync::RwLock::new(Self::build_http_client()),
             version: std::sync::Mutex::new(String::new()),
             workspace_state: std::sync::Mutex::new(WorkspaceCacheState::default()),
             issue_gc_batch_state: std::sync::Mutex::new(IssueGcBatchState::default()),
@@ -205,10 +202,22 @@ impl Client {
     /// connections. Called after repeated heartbeat transport failures so a
     /// stale keep-alive socket from a server restart cannot delay recovery.
     pub fn close_idle_connections(&self) {
-        // reqwest 0.12 pools per-client with idle timeouts; there is no public
-        // force-close handle. Dropping pooled sockets happens on the pool's own
-        // idle timeout, so this is a best-effort no-op that keeps the Go call
-        // site shape.
+        // reqwest does not expose hyper's pool eviction handle. Its Client
+        // clones share one pool, so atomically replacing the stored handle
+        // retires that pool without cancelling requests that already cloned it.
+        let replacement = Self::build_http_client();
+        *self.http.write().unwrap() = replacement;
+    }
+
+    fn build_http_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .pool_idle_timeout(Duration::from_secs(90))
+            .build()
+            .expect("reqwest client builder with valid config")
+    }
+
+    fn http_client(&self) -> reqwest::Client {
+        self.http.read().unwrap().clone()
     }
 
     /// `SetVersion` (client.go:166): records the daemon's CLI version, sent as
@@ -1100,7 +1109,7 @@ impl Client {
         }
 
         let path = "/api/daemon/workspaces";
-        let mut builder = self.http.get(format!("{}{path}", self.base_url));
+        let mut builder = self.http_client().get(format!("{}{path}", self.base_url));
         let token = self.token();
         if !token.is_empty() {
             builder = builder.header("Authorization", format!("Bearer {token}"));
@@ -1648,7 +1657,7 @@ impl Client {
             headers.insert("Authorization", format!("Bearer {token}").parse().unwrap());
         }
         let builder = self
-            .http
+            .http_client()
             .post(format!("{}{path}", self.base_url))
             .headers(headers)
             .json(&req_body);
@@ -1681,7 +1690,7 @@ impl Client {
         path: &str,
         token: &str,
     ) -> anyhow::Result<R> {
-        let mut builder = self.http.get(format!("{}{path}", self.base_url));
+        let mut builder = self.http_client().get(format!("{}{path}", self.base_url));
         if !token.is_empty() {
             builder = builder.header("Authorization", format!("Bearer {token}"));
         }
@@ -1705,7 +1714,7 @@ impl Client {
             headers.insert("Authorization", format!("Bearer {token}").parse().unwrap());
         }
         let builder = self
-            .http
+            .http_client()
             .post(format!("{}{path}", self.base_url))
             .headers(headers)
             .json(&req_body);
@@ -1783,7 +1792,39 @@ async fn cdp_discard(resp: reqwest::Response) {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::net::{TcpListener, TcpStream};
+
+    fn read_request(stream: &mut TcpStream) {
+        let mut headers = Vec::new();
+        while !headers.windows(4).any(|window| window == b"\r\n\r\n") {
+            let mut byte = [0u8; 1];
+            stream.read_exact(&mut byte).unwrap();
+            headers.push(byte[0]);
+        }
+        let headers = String::from_utf8(headers).unwrap();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                line.split_once(':').and_then(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+            })
+            .unwrap_or(0);
+        let mut body = vec![0u8; content_length];
+        stream.read_exact(&mut body).unwrap();
+    }
+
+    fn write_json_response(stream: &mut TcpStream, connection: &str) {
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: {connection}\r\n\r\n{{}}"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+    }
 
     fn serve_once(delay: Duration, body: &'static [u8]) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1846,5 +1887,53 @@ mod tests {
 
         assert!(result.is_err());
         assert!(started.elapsed() < Duration::from_millis(150));
+    }
+
+    #[tokio::test]
+    async fn close_idle_connections_retires_pool_without_cancelling_in_flight_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (in_flight_tx, in_flight_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut first_connection, _) = listener.accept().unwrap();
+            read_request(&mut first_connection);
+            write_json_response(&mut first_connection, "keep-alive");
+
+            read_request(&mut first_connection);
+            in_flight_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            write_json_response(&mut first_connection, "keep-alive");
+
+            let (mut replacement_connection, _) = listener.accept().unwrap();
+            read_request(&mut replacement_connection);
+            write_json_response(&mut replacement_connection, "close");
+            2usize
+        });
+
+        let client = std::sync::Arc::new(Client::new(format!("http://{address}")));
+        let ctx = crate::repocache::Ctx::new();
+        client
+            .post_json::<Value>(&ctx, "/first", json!({}))
+            .await
+            .unwrap();
+
+        let in_flight_client = std::sync::Arc::clone(&client);
+        let in_flight_ctx = ctx.clone();
+        let in_flight = tokio::spawn(async move {
+            in_flight_client
+                .post_json::<Value>(&in_flight_ctx, "/in-flight", json!({}))
+                .await
+        });
+        in_flight_rx.await.unwrap();
+        client.close_idle_connections();
+        release_tx.send(()).unwrap();
+        in_flight.await.unwrap().unwrap();
+
+        client
+            .post_json::<Value>(&ctx, "/replacement", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(server.join().unwrap(), 2);
     }
 }
