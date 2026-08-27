@@ -2124,8 +2124,9 @@ mod tests {
         let rendered = format!("{pin}");
         assert!(rendered.contains("***"), "token masked: {rendered}");
         assert!(!rendered.contains("sekrit"), "token leaked: {rendered}");
-        // Wire form keeps the token (helper protocol needs it).
+        // Public serialization masks the token; the trusted preparation wire
+        // restores it explicitly in isolation::PreparationWireParams.
         let v: Value = serde_json::to_value(&pin).unwrap();
-        assert_eq!(v["token"], "sekrit");
+        assert_eq!(v["token"], "***");
     }
 }

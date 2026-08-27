@@ -933,6 +933,63 @@ mod tests {
             parse_timeout_override("1.5s"),
             Some(Duration::from_millis(1500))
         );
+        assert_eq!(
+            parse_timeout_override("1m30s"),
+            Some(Duration::from_secs(90))
+        );
+        assert_eq!(
+            parse_timeout_override("+50000ms"),
+            Some(Duration::from_secs(50))
+        );
         assert_eq!(parse_timeout_override("2m"), Some(Duration::from_secs(120)));
+        assert_eq!(parse_timeout_override("-5s"), None);
+        assert_eq!(parse_timeout_override("soon"), None);
+    }
+
+    #[test]
+    fn agent_discovery_requires_array_shaped_json() {
+        let error = agents_array(serde_json::json!({"agents": []}), "agents list")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("agents list"));
+    }
+
+    #[test]
+    fn structured_missing_key_requires_the_agents_list_path() {
+        let unrelated = anyhow::Error::new(OpenclawCliError {
+            message: "openclaw config get failed: not set".into(),
+            stdout: br#"{"error":"OPENAI_API_KEY is not set","token":"secret"}"#.to_vec(),
+        });
+        assert!(!missing_key(&unrelated));
+        assert!(!unrelated.to_string().contains("secret"));
+
+        let missing = anyhow::Error::new(OpenclawCliError {
+            message: "openclaw config get failed".into(),
+            stdout: br#"{"error":"Config path not found: agents.list"}"#.to_vec(),
+        });
+        assert!(missing_key(&missing));
+    }
+
+    #[test]
+    fn managed_mcp_with_empty_resolved_config_is_managed_only() {
+        let cfg = build_wrapper(
+            "",
+            false,
+            None,
+            &[],
+            false,
+            "/task/workdir",
+            BTreeMap::new(),
+            true,
+            &OpenclawGatewayPin::default(),
+        );
+        assert!(cfg.get("$include").is_none());
+        assert_eq!(cfg["mcp"]["servers"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn timeout_error_keeps_the_typed_sentinel() {
+        let error = anyhow::Error::new(ErrOpenclawCliTimeout).context("CLI deadline");
+        assert!(error.downcast_ref::<ErrOpenclawCliTimeout>().is_some());
     }
 }
