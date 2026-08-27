@@ -2766,36 +2766,33 @@ canonical max `7ZZ...` vectors。台账据实降格为 utility-only prerequisite
 event ID；Rust `server-rs/crates/cordy-daemon/src/notifier.rs::new_event_id` 当前自行复制 timestamp/random/Crockford
 编码。两者 wire 形状相同但实现分叉，Rust 入口没有复用 workspace 已有 ULID 实现，后续修复容易产生跨进程兼容漂移。
 
-范围只替换该 daemon notifier 的 ID 生成实现：复用 workspace 已有 `ulid::Ulid::new().to_string()`，删除手写编码和不再需要
+范围只替换该 daemon notifier 的 ID 生成实现：复用 workspace 已有 `cordy_util::Ulid::new().to_string()`，删除手写编码和不再需要
 的时间导入；保留现有 `String` API、事件 payload、Redis/本地 fanout、dedup 和错误语义。既有 notifier contract test 继续验证
 26 字符 canonical Crockford、唯一性和所有 wakeup 事件路径；不新增 ID service、wrapper、生成器或测试框架。
 
 - 默认生产路径：`cordy-daemon::RelayNotifier` 的 task-available、runtime-profile、workspace-change 和 pending-work
-  事件统一经 `new_event_id` 使用 `ulid` crate 生成，并继续走现有 local hub/Redis relay 入口。
+  事件统一经 `new_event_id` 使用 `cordy-util` wrapper 生成，并继续走现有 local hub/Redis relay 入口。
 - Go 是否可下线：该 daemon event ID 生成器已切到共享 Rust 依赖后，可标记此窄能力迁移；AUDIT-008 其余 event envelope/
   Redis 旧数据、AUDIT-002/005 生产验证和 AUDIT-001..010 总退出仍未完成，不能删除 Go。
 - owner：主 agent 负责生产入口迁移、机械检查、提交和 Ready PR；独立 verifier/reviewer/fixer 异步验证 ULID 向量、编译和
   Redis/event 兼容并处理 finding，结果追加到本节。
 
-实现 commit `f6a48f7e` 更新 `cordy-daemon` 的既有 `new_event_id` 生产 helper：依赖 workspace 已有 `ulid` crate，四类
-notifier 事件现在统一调用 `ulid::Ulid::new().to_string()`；删除手写编码但保留所有 relay、dedup、payload 和错误语义。
+实现 commit `f6a48f7e` 更新 `cordy-daemon` 的既有 `new_event_id` 生产 helper；fixer follow-up 把生成入口收口到 #577
+新增的 `cordy_util::Ulid::new().to_string()`，避免生产路径绕过共享 wire wrapper，并移除 daemon 对 `ulid` 的重复直接依赖。
+task-available、runtime-profile、workspace-change 和 pending-work 四类 public notifier 都由正向 relay 测试断言 canonical event ID；
+删除手写编码但保留所有 relay、dedup、payload 和错误语义。
 主 agent 仅执行 `git diff --check`（PASS），未运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；非 Draft Ready PR #579
 已创建，base 为 `codex/cord-242-backfill-runbook-rust` 的 `39325098`。异步 verifier/reviewer/fixer 结果待回写，在
 exact compile、matched/executed 和真实 event/Redis 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
 
-## 66. [~] AUDIT-008 daemon event ID generator cutover（T-54A）
+独立 verifier 在 exact HEAD `1d214da8` 核对四条 notifier 生产路径、依赖锁文件和 base ancestry：`git diff --check`、
+`git diff --check 39325098...HEAD`、依赖静态一致性及 `rustfmt --edition 2021 --check notifier.rs` PASS。locked/offline
+`cargo metadata`、daemon `cargo check`、`--no-run` 和精确 `event_ids_are_crockford_ulids` test 均在 discovery 前被
+继承的 #563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101；matched/executed 为 0），因此没有登记为
+测试通过；Redis、daemon、发布和跨平台 smoke 未执行。
 
-本项在开始编码前登记。Go `server/internal/daemonws/notifier.go` 使用 `ulid.Make().String()` 生成 daemon wakeup
-event ID；Rust `server-rs/crates/cordy-daemon/src/notifier.rs::new_event_id` 当前自行复制 timestamp/random/Crockford
-编码。两者 wire 形状相同但实现分叉，Rust 入口没有复用 workspace 已有 ULID 实现，后续修复容易产生跨进程兼容漂移。
-
-范围只替换该 daemon notifier 的 ID 生成实现：复用 workspace 已有 `ulid::Ulid::new().to_string()`，删除手写编码和不再需要
-的时间导入；保留现有 `String` API、事件 payload、Redis/本地 fanout、dedup 和错误语义。既有 notifier contract test 继续验证
-26 字符 canonical Crockford、唯一性和所有 wakeup 事件路径；不新增 ID service、wrapper、生成器或测试框架。
-
-- 默认生产路径：`cordy-daemon::RelayNotifier` 的 task-available、runtime-profile、workspace-change 和 pending-work
-  事件统一经 `new_event_id` 使用 `ulid` crate 生成，并继续走现有 local hub/Redis relay 入口。
-- Go 是否可下线：该 daemon event ID 生成器已切到共享 Rust 依赖后，可标记此窄能力迁移；AUDIT-008 其余 event envelope/
-  Redis 旧数据、AUDIT-002/005 生产验证和 AUDIT-001..010 总退出仍未完成，不能删除 Go。
-- owner：主 agent 负责生产入口迁移、机械检查、提交和 Ready PR；独立 verifier/reviewer/fixer 异步验证 ULID 向量、编译和
-  Redis/event 兼容并处理 finding，结果追加到本节。
+独立 reviewer 在 exact HEAD 确认 task-available、runtime-profile、workspace-change、pending-work 四条真实 notifier
+路径都经 `new_event_id`，生产 `HandlerState`/server wiring 继续注入并调用该 notifier；手写 timestamp/random/Crockford
+编码和无用时间导入已删除，锁文件只增加既有 `ulid` 的 daemon 直接依赖。Rust `Ulid::new()` 与 Go `ulid.Make()` 的
+canonical 26 字符 Crockford wire shape/唯一性契约一致，但同毫秒 entropy 单调性不同；当前 event ID 仅作 dedup key、不作
+排序，因此不扩大本切片声明。reviewer 唯一 P2 是本节重复标题，已在本提交删除重复段；fixer 尚无新增代码 finding。
