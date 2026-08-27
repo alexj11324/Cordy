@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback 与 opt-in systemd 生命周期已切到 Rust；当前切片删除 required backend CI 的 Go gate | 把 required `backend` 聚合门完整切到 Rust deployment/quality/tests/platform/audit/image jobs；随后真实启动/升级/回滚演练 | release/installer/systemd gate 已交付，CI cutover 可独立执行；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#553/当前切片；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
@@ -1232,6 +1232,11 @@ config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollba
   `$USER` 而非实际 UID；现有 stub 只证明命令被打印，未覆盖 unit verify、失败清理、Docker
   readiness、已有 unit 升级或真实 stop 生命周期。finding 已交独立 fixer；reviewer 对
   oneshot/restart 基本语义、路径 escaping、#552 finding 继承和 Ponytail 无其他 finding。
+- verifier 在 docs-only head `e4d2a04d` 通过两个 diff check、shell syntax、installer suite 8/8
+  和补充 stub 4/4；但两次 `systemd-analyze verify` 都确认生成的
+  `WorkingDirectory="..."` 被 systemd 249 视为非绝对路径，unit 属 fatal invalid、不会启动。
+  当前环境又无可用 user manager/Docker socket，真实 linger、boot/logout 与 Compose 生命周期未执行。
+  release-blocking finding 已交独立 fixer，不能把 stub 通过记成真实 systemd 生产通过。
 
 ## 41. AUDIT-001 执行缺口：required backend CI Go gate cutover
 
@@ -1248,3 +1253,16 @@ config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollba
 - required `backend` 保持原 check name、path-filter skip 语义和 fail-closed aggregation，只从
   Rust deployment/quality/tests/platform/audit/image 六个结果得出 verdict；不新增 workflow、
   action、脚本、dependency 或兼容 shim。
+
+Ready PR #554（`codex/cord-218-rust-required-backend-ci`，gap commit `0eca0e72`，
+implementation commit `d607e429`）已经完整删除 required merge gate 的 Go install/build/test/audit
+依赖，并保留同名 required `backend` check 与 Helm/Makefile 部署契约。
+
+- 默认生产路径：本能力已切换；backend path 的 merge gate 只从 Rust production image、quality、
+  tests、platform、RustSec audit 与 deployment contract 得出 verdict。
+- Go 是否可下线：CI required gate 不再依赖 Go，但其他源代码、workflow 与 AUDIT-002..010
+  退出条件尚未完成，不能删除 Go。
+- 异步状态：独立 verifier/reviewer 待派发，finding 交既有 fixer；主 agent 仅通过
+  `git diff --check`，未把 YAML、job graph、path-filter 或 contract scripts 记为通过。
+- 已知继承问题：#551 的 migrate bin 选择、#552/#553 review/verification finding 仍在 fixer
+  队列，本 PR 不声称这些堆叠问题已解决。
