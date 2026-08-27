@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills heartbeat 与 wakeup/control lifecycle 已交付；当前选择 auto-update/restart 完整契约 | 直接证明 heartbeat update 与 periodic update 共享 barrier/executor/report/restart owner | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#549，可执行 | PR #542..#549/当前切片；§5.2、§6.2、§29..§37 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control 与 auto-update production chain 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550，可执行 | PR #542..#550；§5.2、§6.2、§29..§37 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1061,6 +1061,13 @@ consumer、task wakeup、reconcile、heartbeat lifecycle 与 root cancellation�
 - 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 仅运行并通过
   `git diff --check`，未把编译、测试、rustfmt 或 socket 行为记为通过。PR 堆叠在 Ready
   PR #548；#544 fix 尚待传播。
+- verifier 在 head `582d5c50` 通过 diff check、保持 clean 并确认 production stack 调用链；
+  fixed-stable rustfmt 在新测试失败且有 unused `SinkExt` warning。新增 exact、manager real WS、
+  wsrpc group 与 daemon no-run 均被未传播 #544 的 7 处 E0433 阻断，执行数为 0。
+- reviewer 在同一 head 返回两个 P1：测试自行消费 wakeup 后手工调用 claim，未穿真实
+  `TaskExecutionOrchestrator`，故不能声称 task hint→poller→WS claim 同链；HTTP heartbeat route
+  无调用断言且 60s randomized initial delay 通常使 supervisor 未执行。两项连同 verifier 问题
+  已交独立 fixer；其余 WS auth/RPC correlation/event consumer/cancellation 核对无 finding。
 
 ## 37. AUDIT-005 执行缺口：auto-update / server update / restart handoff contract
 
@@ -1076,8 +1083,20 @@ consumer、task wakeup、reconcile、heartbeat lifecycle 与 root cancellation�
 - `auto_update.rs` 仍全模块 `allow(dead_code)` 并把 CLI helper 标为“直到 CLI crate lands”，而
   Rust CLI、真实 UpdateExecutor 和 production owner 已存在，源码自述落后于默认路径。
 
-本切片必须把 heartbeat pending update 与 periodic owner 视作同一契约：复用真实
-`DaemonCoreHost`、activity、Client result endpoint、UpdateExecutor validation 和既有 FakeHost
-success/restart checks，补直接 production owner 的 Desktop拒绝、busy/claim barrier 与 executor
-failure restore 证据；不新增第二个 updater、installer、HTTP client、barrier 或 restart state machine。
-实现、Ready PR、verification/review/fix 尚未产生。
+Ready PR #550（`codex/cord-214-daemon-auto-update-contract-rust`，gap commit
+`0d50fe35`，implementation commit `3e73a2b6`）直接从 production
+`DaemonCoreHost::handle_heartbeat_actions` 驱动 pending updates，通过真实 Client result endpoint
+证明 Desktop 拒绝、active-task defer、非法 target 进入 concrete `UpdateExecutor` validation，且
+每条失败路径都恢复 updating/claim barrier、不取消 root；non-update heartbeat actions 同时执行。
+periodic newer-release success/restart 继续由既有 shared `AutoUpdateHost` checks 证明。过期的
+auto-update module allow 与 “CLI crate 尚未落地”说明已删除。
+
+- 默认生产路径：production stack 为 heartbeat 与 periodic owner 共享同一 host、activity、
+  concrete executor 与 root context；有效配置没有 Stub/Noop updater。
+- 安全边界：只新增 `cfg(test)` concrete executor constructor，选择同一实现但避免真实替换测试
+  binary；没有新增 runtime trait、installer、barrier、HTTP client 或 restart state machine。
+- Go 是否可下线：否；真实 GitHub/Homebrew mutation/rollback、AUDIT-005 其余能力与最终
+  AUDIT-001..010 门仍未完成。
+- 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并通过
+  `git diff --check`，未把编译、测试、rustfmt 或 HTTP 行为记录为通过。PR 堆叠在 #549，且
+  #544 fix 尚待传播。
