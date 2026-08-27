@@ -187,21 +187,51 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 状态只描述主线交付，不把异步 verification/review/fix 当作阻塞状态。ID 是稳定的
 能力轨道标识，不是必须按数字完成的流水阶段；选择顺序由“依赖/可执行门”决定：
 
-| ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
-| --- | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570、offline-task/reconnect-retry #571 与 stale/queued cleanup #572 Ready | 收口 #565..#572 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#572 堆叠在 #571；#572 verifier/reviewer 已派发，主线不等待 | PR #565..#572；§5、§6.2、§18、§52..§59 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
-| AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；当前切片迁移 heartbeat HTTP pool recovery | 接通连续 transient heartbeat failure 后的真实 idle-pool eviction 与新连接恢复；异步收口 #558/#559/#561/#562/#563 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#563，可执行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§51 | 主 agent；独立 V/R/F subagent |
-| AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
-| AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
-| AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
-| AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
-| AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
+| 完成 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [~] | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570、offline-task/reconnect-retry #571、stale/queued cleanup #572 与 delegated recovery #574 Ready | 收口 #565..#574 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#572 堆叠在 #571、#574 堆叠在 #573；主线不等待 verifier/reviewer/fixer | PR #565..#574；§5、§6.2、§18、§52..§61 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；当前切片迁移 heartbeat HTTP pool recovery | 接通连续 transient heartbeat failure 后的真实 idle-pool eviction 与新连接恢复；异步收口 #558/#559/#561/#562/#563 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#563，可执行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§51 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
+| [ ] | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
+| [ ] | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
+| [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
+
+### 6.1.1 勾选式推荐执行顺序
+
+下面是给人看的“按依赖推进”视图；上面的详细表仍是唯一执行台账和事实来源。
+
+- `[ ]` = 尚未完成；`[~]` = 已开始或已有 Ready PR，但退出证据尚未齐；`[x]` = 该 ID 的全部退出证据均已记录。
+- 顺序是推荐的依赖顺序，不是已经发生的时间线；已经开始的切片不会因为排序而倒退。
+- 同一阶段标注“可并行”的项目可以异步推进。创建 Ready PR 不等于打勾，review/fix、编译和长测试的异步结果也不自动改变勾选状态。
+
+1. `[~]` **AUDIT-001 — Rust 默认生产入口**（Makefile、Docker、CI、Helm、CLI、installer/systemd 和回滚）
+   - `[ ]` 默认构建、启动、health/ready 使用 Rust
+   - `[ ]` install/systemd、兼容产物和回滚演练完成
+2. `[~]` **AUDIT-006 — migration/backfill 发布闭环**（依赖 AUDIT-001；可与后续验证并行）
+   - `[ ]` migrate up/down/status、锁、取消/恢复和三个 backfill 的 image/release packaging 完成
+3. `[~]` **AUDIT-003A..003D — 剩余 leaf contract**（可并行）
+   - `[ ]` pprof heap/trace 或替代方案、logger 时间布局、avatar 对象存储、agent/daemon concurrency 生命周期均有退出证据
+4. `[~]` **AUDIT-004 — integrations 生产矩阵**（可并行；依赖 channel runtime 已接线）
+   - `[ ]` Telegram、Composio、VCS、GitHub snapshot 等 provider 的正/负向 smoke、fail-closed 和回滚证据完成
+5. `[~]` **AUDIT-002 — API/WS/daemon 行为 smoke**（可按完整契约分片）
+   - `[ ]` 认证、权限、事务、错误 JSON、WS/realtime、background worker 和 CLI/daemon smoke 完成
+6. `[~]` **AUDIT-005 — daemon 完整能力验收**（依赖相关 leaf/provider 契约证据）
+   - `[ ]` control/health、registration/reconcile、execution、GC、MCP、update 和 shutdown 生命周期完成
+7. `[ ]` **AUDIT-007 — Go 测试契约映射**（可并行建立索引）
+   - `[ ]` 高风险 Go 回归均映射到 Rust 可执行测试，或记录不适用理由
+8. `[ ]` **AUDIT-008 — wire/schema/ID 兼容性**（可并行）
+   - `[ ]` JSON、时间、UUID/ULID、Redis、DB nullable/enum、error/event golden vectors 完成
+9. `[~]` **AUDIT-009 — 运维与文档切换**（跟随 001 的实际产物）
+   - `[ ]` install/systemd/release/rollback/pprof/metrics 文档与已验证 Rust 入口一致
+10. `[ ]` **AUDIT-010 — Go 源码退休**（严格依赖 AUDIT-001..009 全部 `[x]`）
+    - `[ ]` 全仓引用审计、生产 build/deploy smoke、回滚演练通过后删除全部 Go source
 
 执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
 立即提交、推送并创建 Ready PR，同时回写本表。verification/review/fix 可以
@@ -209,13 +239,124 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 按完整生产能力/完整契约及其退出条件决定，不按行数决定；禁止仅为补测试、allow、
 说明或制造小 PR 而拆开同一能力。
 
+### 6.1.2 细粒度验收清单
+
+下面把每个能力轨道拆成“可独立验收”的子项，方便直观看剩余工作。它不是第二套
+ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已有的 PR 或章节证据。
+一个主 ID 只有全部子项和退出证据齐全后才能标 `[x]`。`[~]` 表示实现/PR 已交付，
+但仍缺异步验证、生产 smoke、review/fix 或回滚证据；`[ ]` 表示尚未开始或尚无足够证据。
+
+#### AUDIT-001 — 默认生产入口与发布切换
+
+- `[~]` Rust server 默认构建、启动、health/ready 与信号退出
+- `[~]` Rust CLI/cordy 默认构建、`--help`/`--version` 与退出码
+- `[~]` Rust migrate up/down/status、锁等待、取消和恢复入口
+- `[~]` Docker backend image、entrypoint、兼容 binary 名称与启动顺序
+- `[~]` Helm backend、CI required gate 与 tag release workflow
+- `[~]` Desktop 内嵌 CLI、installer/Homebrew/release asset 链
+- `[~]` self-host exact-image upgrade、旧版本回滚和 pinned/custom ref
+- `[ ]` 新鲜环境的完整 build/check、启动、升级和回滚验收闭环
+
+#### AUDIT-002 — API、WS、CLI 与 background worker 契约
+
+- `[x]` 424/424 route method/path parity
+- `[~]` CLI command tree、daemon control、health 与退出码 smoke
+- `[~]` issue-status list/create/update/archive/reorder 的权限、事务、错误 JSON 和 event 顺序
+- `[~]` issue create duplicate admission、position ordering、autopilot guard 与并发竞态
+- `[~]` user WebSocket auth、membership、scope ownership、subscribe/ping/disconnect 隔离
+- `[~]` scheduler distributed claim、lease、retry、stale-owner 和 reentry
+- `[~]` heartbeat batching、offline fallback、coalesce、flush 和 shutdown
+- `[~]` stale runtime liveness/offline task recovery
+- `[~]` stale dispatched/running 与 queued TTL cleanup
+- `[~]` runtime GC transactional lifecycle
+- `[ ]` 将上述切片的真实 DB/loopback/daemon smoke 结果全部收口并形成退出矩阵
+
+#### AUDIT-003 — leaf contract
+
+- `[~]` CPU/cmdline/symbol pprof loopback listener 与公开路由隔离
+- `[~]` heap profile、async runtime diagnostics、Linux/non-Linux fail-closed
+- `[~]` server/migrate/backfill/daemon logger level、TTY、component、request attrs
+- `[~]` 本地时间布局、rotating sink、timezone/DST 与 operator 文档
+- `[~]` squad avatar 读写、私有对象签名、扩展名和归属校验
+- `[~]` agent 每实体并发上限与 daemon 进程级 slot pool 生命周期
+- `[ ]` leaf 的真实产物、开销、对象存储和跨平台生产证据全部收口
+
+#### AUDIT-004 — integrations 生产矩阵
+
+- `[~]` Lark production credentials、HTTP/WS、shutdown 和 fail-closed
+- `[~]` WeCom credentials、官方 endpoint、relay/media 和 shutdown
+- `[~]` DingTalk credentials、inbound/outbound/media 和 shutdown
+- `[~]` Slack credentials、Socket Mode、typing/outbound 和 shutdown
+- `[~]` Telegram credentials、long-poll、media/outbound 和 shutdown
+- `[~]` Composio API/state secret、HTTP 与 task overlay wiring
+- `[~]` VCS integration flag、SecretBox、connect/rotate/webhook
+- `[~]` GitHub snapshot credentials、GraphQL/HTTP 和非法凭证降级
+- `[~]` channel-engine lease/media、supervisor、retry 与 cancellation
+- `[ ]` 每个 provider 的真实凭证 smoke、坏凭证/网络失败、回滚和不可测原因矩阵
+
+#### AUDIT-005 — daemon 完整能力验收
+
+- `[~]` health/uptime、registration/reconcile 与 provider refresh/retry
+- `[~]` runtime registry、GC metadata 和 runtime identity lifecycle
+- `[~]` local-skills heartbeat list/import/report
+- `[~]` wakeup WebSocket/RPC、control consumer、proxy/CONNECT 与取消
+- `[~]` task execution、poisoned-session retry、session rollout durability
+- `[~]` confirmed provider demotion、hold/barrier 与恢复
+- `[~]` private task temp、权限、长路径和 success/failure/cancel cleanup
+- `[~]` auto-update、server update、restart handoff 与 rollback
+- `[~]` heartbeat HTTP pool stale eviction 与新连接恢复
+- `[ ]` 真实 daemon 进程的 registration→claim→execute→reconcile→shutdown 全链路
+- `[ ]` server/daemon/Windows/Linux/Docker 产物与资源开销证据
+
+#### AUDIT-006 — migration/backfill 发布闭环
+
+- `[~]` Rust migration runner 的 up/down/status 与 advisory lock
+- `[~]` timeout、SIGINT/SIGTERM、退出码和 pending/recovery 行为
+- `[~]` 三个 backfill bin 的构建、参数、日志和失败语义
+- `[~]` Makefile、Docker image、entrypoint、CI 和 release packaging 一致
+- `[ ]` 新鲜 PostgreSQL、镜像启动和 operator recovery 的真实演练
+
+#### AUDIT-007 — Go 测试契约映射
+
+- `[ ]` API/auth/permission/error JSON 回归索引
+- `[ ]` DB transaction/locking/rollback 回归索引
+- `[ ]` provider/integration/fail-closed 回归索引
+- `[ ]` daemon/task lifecycle 与 concurrency 回归索引
+- `[ ]` security boundary、backfill、CLI/exit-code 回归索引
+- `[ ]` 每项标记 Rust 已有测试、需新增测试或不适用理由
+
+#### AUDIT-008 — wire/schema/ID 兼容性
+
+- `[ ]` JSON null/empty、错误码和错误 envelope
+- `[ ]` 时间、timezone/DST 和 RFC3339 精度
+- `[ ]` UUID/ULID 序列化、解析和旧数据读取
+- `[ ]` Redis key/channel 与跨进程 event envelope
+- `[ ]` DB nullable/enum、旧 schema 和迁移后读取
+- `[ ]` golden vector、round-trip 和跨语言 fixture
+
+#### AUDIT-009 — 运维与文档切换
+
+- `[~]` README/install 与 Rust binary 名称、参数和默认入口
+- `[~]` Helm/Docker/self-host 启动、升级和回滚文档
+- `[~]` systemd unit、linger、stop/start 和失败清理文档
+- `[~]` release/compatibility/rollback 说明与实际 asset/ref
+- `[~]` pprof/metrics/logger/operator troubleshooting 文档
+- `[ ]` 文档逐项通过新鲜产物和真实命令复核
+
+#### AUDIT-010 — Go 源码退休最终门
+
+- `[ ]` 全仓 Go import/call/reference、生成代码和脚本引用审计
+- `[ ]` 默认 build/deploy/release/installer 不再需要 Go
+- `[ ]` 生产 smoke、升级/回滚演练和完整验证通过
+- `[ ]` 删除 server/cmd、internal、pkg、tests、go.mod/go.sum 及剩余 Go assets
+
 ### 6.2 任务范围与退出证据
 
 以下条目是执行台账的详细定义；它们规定每个任务何时真正完成。
 
 #### P0
 
-##### AUDIT-001：Rust 默认生产入口切换
+##### [~] AUDIT-001：Rust 默认生产入口切换
 
 - 范围：Makefile 的 server/cordy/build/migrate/test/dev/check、scripts/check.sh、scripts/dev.sh、Dockerfile、docker/entrypoint.sh、Helm backend、systemd/install/release 入口。
 - 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；PR #527 将 CLI release 资产链改为 Rust；PR #528 将 Desktop packaging 从 Go 源码嵌入改为按目标构建 Rust CLI；本切片对齐 installer/手工运维文档。
@@ -223,14 +364,14 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：新鲜 worktree 的 build/check、镜像启动 health/ready、migrate up/down/status、CLI --help/version、回滚演练均以 Rust 产物为准。
 - owner：主 agent 迁移/接线；Volta 异步 review/fix。
 
-##### AUDIT-002：生产行为与完整契约 smoke
+##### [~] AUDIT-002：生产行为与完整契约 smoke
 
 - 范围：route parity 之外的认证、权限、事务、错误码/JSON、WS、realtime、background worker、CLI 退出码、daemon control/health。
 - 交付：按业务能力建立可执行矩阵；每项标记 Go contract、Rust entry、生产是否切换、Go 是否可删。
 - 退出证据：关键 API/WS/CLI/daemon smoke 在 Rust 默认产物上通过，并有失败路径和回滚记录。
 - owner：主 agent 负责迁移与机械验证；review 与 fix 交给两个独立 subagent。
 
-##### AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
+##### [~] AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
 
 - pprof：Rust `cordy-server::profiling` 已在 127.0.0.1:6060 启动独立 listener，迁移 CPU profile、index、cmdline 和 symbol；heap/trace 尚未等价，必须继续迁移或明确替代并保持运维文档诚实。
 - logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 已在 Rust 入口对账；Rust 保留 RUST_LOG 作为未设置 LOG_LEVEL 时的兼容回退，默认级别与 Go 一样是 debug。
@@ -239,7 +380,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：每个 leaf 明确为“Rust 迁移并接线”“已由现有模块吸收”或“仍需迁移”，并有对应测试/生产路径。
 - owner：主 agent 负责真正迁移；Volta 负责 review/fix。
 
-##### AUDIT-004：integrations 生产配置矩阵
+##### [~] AUDIT-004：integrations 生产配置矩阵
 
 - provider：Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GitHub snapshot，以及 channel-engine/lease/media。
 - 正向场景：有效凭证、真实 outbound、inbound/session 路由、media、重试和 shutdown。
@@ -247,7 +388,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：每个 provider 有 Rust entry、配置开关、最小 smoke 或明确的不可测原因和回滚策略。
 - owner：主 agent 负责迁移/生产接线；Volta 异步处理安全和回归修复。
 
-##### AUDIT-005：daemon 完整能力验收
+##### [~] AUDIT-005：daemon 完整能力验收
 
 - 范围：control/health、registration、reconcile、runtime registry、provider refresh、task execution、wakeup/WS RPC、GC、repo cache、local skills、auto update、MCP broker。
 - 现状：Rust production stack 已存在，但有 43 条 S9-integration 标记、28 个相关文件，且 crate 顶层仍写着“awaiting daemon wiring”。
@@ -255,7 +396,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 退出证据：daemon 生产进程可启动、控制面可用、task/provider/GC/reconcile 生命周期通过；不再依赖 Go daemon。
 - owner：主 agent 迁移/接线；Volta review/fix。
 
-##### AUDIT-006：migration 与 backfill 发布闭环
+##### [~] AUDIT-006：migration 与 backfill 发布闭环
 
 - Rust 已有 cordy-migrate 和 backfill_task_usage_hourly、backfill_issue_last_activity、backfill_codex_usage_cache 三个 bin；对应业务切片已在 PR #518、#519、#520。
 - 当前 Dockerfile 只构建/复制两个旧 backfill，Makefile build 没有三个 Rust backfill 的默认产物，CI 仍以 Go migrate 为主验证之一。
@@ -265,26 +406,26 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 #### P1
 
-##### AUDIT-007：Go 测试契约映射
+##### [ ] AUDIT-007：Go 测试契约映射
 
 - 不按 807 个 Go test 文件机械复制。
 - 先按 API、DB transaction、provider、daemon lifecycle、security boundary、backfill、CLI contract 建索引。
 - 每个高风险 Go 回归用例标记 Rust 已有测试、需新增测试、或不适用及理由。
 - 退出证据：关键 contract 有 Rust 可执行测试；测试失败由 Volta 处理，主 agent 不代做修复。
 
-##### AUDIT-008：wire/schema/ID 兼容性
+##### [ ] AUDIT-008：wire/schema/ID 兼容性
 
 - 对齐 JSON null/empty、时间格式、UUID/ULID、Redis key/channel、DB nullable/enum、错误码和事件 envelope。
 - cordy-util 当前明确留下 ULID TODO：wrapper 的 serde 仍输出 UUID hyphenated string，而 Go wire contract 使用 26 字符 Crockford ULID；必须在删除 Go 前完成或证明所有当前路径不使用该 wrapper。
 - 退出证据：golden vectors/round-trip/旧数据读取和跨语言事件 fixture 通过。
 
-##### AUDIT-009：运维与文档切换
+##### [~] AUDIT-009：运维与文档切换
 
 - 更新 SELF_HOSTING_ADVANCED.md、Helm 注释、README/install/systemd、release 说明、pprof/metrics/rollback 文档。
 - 文档中的 go run ./cmd/...、go tool pprof 和 binary 名称必须与实际 Rust 产物一致。
 - 只在 AUDIT-001 的默认入口确定后落地，避免先写一套与产物不一致的文档。
 
-##### AUDIT-010：Go 源码退休门槛
+##### [ ] AUDIT-010：Go 源码退休门槛
 
 - 建立最终删除清单：server/cmd、internal、pkg、Go generated/query、Go tests/testutil、go.mod/go.sum、Docker/CI/release 引用。
 - 删除前必须通过全仓 import/call/reference 搜索、Rust production build、部署 smoke、回滚演练和完整测试。
@@ -342,7 +483,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 结束条件仍是：全项目完成 Go→Rust、默认生产路径和发布链路切换、生产验证通过，并删除全部 Go 源文件；在此之前不得结束 goal。
 
-## 11. AUDIT-001 执行更新
+## 11. [~] AUDIT-001 执行更新
 
 后续切片 `codex/cord-188-rust-production-cutover` 已开始收口 AUDIT-001 的后端生产边界：
 
@@ -353,7 +494,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - Go 是否可下线：否。Go compatibility build/test、CLI release/install、回滚目标和剩余 leaf contract 仍在清单中。
 - 验证状态：shell 语法、`git diff --check`、Makefile entrypoint/build contract 已通过；Helm 未执行（审计环境无 `helm`），Docker 构建和 Rust workspace 编译继续按本切片记录，不以环境缺失冒充通过。
 
-## 12. AUDIT-003 执行更新：Rust CPU pprof
+## 12. [~] AUDIT-003 执行更新：Rust CPU pprof
 
 后续切片 `codex/cord-189-pprof-rust` 收口了 `internal/profiling` 的 CPU
 profile 能力和管理端口边界：
@@ -371,7 +512,7 @@ profile 能力和管理端口边界：
   通过；workspace check 仍被基线 `cordy-slack` 1 个 exhaustiveness 错误及
   `cordy-daemon` 7 个既有编译错误阻断，已交给 Volta 异步处理。
 
-## 13. AUDIT-003 执行更新：Rust logger contract
+## 13. [~] AUDIT-003 执行更新：Rust logger contract
 
 后续切片 `codex/cord-190-logger-rust` 收口了 Go `internal/logger` 的进程级
 配置和请求属性传播，不另建 logger 框架：
@@ -395,7 +536,7 @@ profile 能力和管理端口边界：
   矩阵 3 个通过；受影响包的 workspace 检查继续记录既有 Slack exhaustiveness
   与 daemon 编译基线错误，不因环境/基线问题伪报全绿。
 
-## 14. AUDIT-003 执行更新：Rust squad avatar contract
+## 14. [~] AUDIT-003 执行更新：Rust squad avatar contract
 
 后续切片 `codex/cord-191-squad-avatar-rust` 收口 Go squad CRUD 对 avatar
 对象 URL 的读写契约：
@@ -418,7 +559,7 @@ profile 能力和管理端口边界：
   `cordy-daemon` 7 个编译错误和 `cordy-slack` 1 个 exhaustiveness 错误，未出现
   squad/avatar 本切片错误。Volta 的 review/fix 继续异步，不作为提交或 PR 前置条件。
 
-## 15. AUDIT-001 执行更新：Rust CLI release assets
+## 15. [~] AUDIT-001 执行更新：Rust CLI release assets
 
 后续切片 `codex/cord-192-release-install-rust` 将 CLI 的发布构建从 GoReleaser
 切到 Rust，同时保留现有安装器和自更新器已经使用的资产契约：
@@ -444,7 +585,7 @@ profile 能力和管理端口边界：
   daemon 依赖图，当前本地基线仍有 `cordy-daemon` 7 个编译错误，已交 Volta 异步
   处理，不把它们伪报为 release 绿灯。
 
-## 16. AUDIT-001 执行更新：Desktop 内嵌 Rust CLI
+## 16. [~] AUDIT-001 执行更新：Desktop 内嵌 Rust CLI
 
 后续切片 `codex/cord-193-desktop-cli-rust` 收口 Desktop packaging 仍调用
 Go CLI 的生产边界，并沿用 `server-rs` 现有 `cordy-cli` 入口：
@@ -470,7 +611,7 @@ Go CLI 的生产边界，并沿用 `server-rs` 现有 `cordy-cli` 入口：
   `cordy-daemon` 7 个基线编译错误仍不由本切片处理，不把它们伪报为 Desktop
   绿灯。
 
-## 17. AUDIT-001 执行更新：安装与运维入口对齐
+## 17. [~] AUDIT-001 执行更新：安装与运维入口对齐
 
 后续切片 `codex/cord-194-rust-install-systemd` 对账 install/self-host 运维
 入口，修正仍指向 Go 源码的说明，不新增仓库中不存在的 systemd 服务定义：
@@ -493,7 +634,7 @@ Go CLI 的生产边界，并沿用 `server-rs` 现有 `cordy-cli` 入口：
   installer smoke。此前 `bash scripts/install.test.sh` 的环境权限失败和
   PowerShell/Helm 工具缺失仍按前述记录保留。
 
-## 18. AUDIT-002 执行更新：CLI 与 daemon control smoke 矩阵
+## 18. [~] AUDIT-002 执行更新：CLI 与 daemon control smoke 矩阵
 
 当前切片 `codex/cord-195-cli-daemon-smoke` 先收口不依赖外部服务即可验证的
 CLI/daemon 生产契约；它不是把 807 个 Go 测试逐个改写，也不宣称整个
@@ -531,7 +672,7 @@ health/control 的成功和失败路径有记录，并把剩余 API/WS/事务/wo
   重试因受限环境 DNS 失败，因此最终使用已锁定的本地 crate 缓存验证。真实 daemon
   进程和 stdout/stderr artifact smoke 仍是本 ID 的明确剩余缺口。
 
-## 19. AUDIT-003D 执行更新：agent 与 daemon concurrency contract
+## 19. [~] AUDIT-003D 执行更新：agent 与 daemon concurrency contract
 
 Ready PR #531（`codex/cord-196-agent-concurrency-contract-rust-v2`）收口 Go
 `internal/agentconfig/concurrency.go`，并明确它与 daemon 全局槽位不是同一个配置：
@@ -554,7 +695,7 @@ Ready PR #531（`codex/cord-196-agent-concurrency-contract-rust-v2`）收口 Go
   Hermes/OpenClaw 编译错误阻断；这些基线错误现已由 PR #530 的独立 fix 提交
   `25618fcd`/`e7ecba1a` 修复并传播到本分支。
 
-## 20. AUDIT-004 执行更新：Lark production configuration contract
+## 20. [~] AUDIT-004 执行更新：Lark production configuration contract
 
 Ready PR #532（`codex/cord-197-lark-production-contract-rust`）验证 Lark/飞书 production
 assembly 的配置选择，不复制 provider 实现或增加第二套 client factory：
@@ -576,7 +717,7 @@ assembly 的配置选择，不复制 provider 实现或增加第二套 client fa
   伪报为通过。后续 PR #535 在清理生成缓存并传播独立基线修复后实际运行四个
   provider production gate，Lark/WeCom/DingTalk/Slack 4/4 通过。
 
-## 21. AUDIT-004 执行更新：WeCom production configuration contract
+## 21. [~] AUDIT-004 执行更新：WeCom production configuration contract
 
 Ready PR #533（`codex/cord-198-wecom-production-contract-rust`）验证 WeCom production
 assembly 的配置与 transport 选择，复用现有 resolver、dialer、relay、media 和
@@ -602,7 +743,7 @@ shutdown wiring，不增加新的 factory 或生产抽象：
   `EnvelopeKind::Disconnect` 非穷尽匹配阻断。独立 fix agent 随后以 `8fcf8272`
   传播既有修复；PR #535 的组合 server production gate 实际运行 4/4 通过。
 
-## 22. AUDIT-004 执行更新：DingTalk production configuration contract
+## 22. [~] AUDIT-004 执行更新：DingTalk production configuration contract
 
 Ready PR #534（`codex/cord-199-dingtalk-production-contract-rust`）验证 DingTalk
 production assembly 的配置与 transport 选择，复用现有 decrypter、token cache、
@@ -627,7 +768,7 @@ Stream connector、inbound/outbound、media 和 shutdown wiring，不增加新�
   修复。独立 fix agent 传播 `8fcf8272` 后，PR #535 的组合 server production gate
   实际运行 4/4 通过。
 
-## 23. AUDIT-004 执行更新：Slack production configuration contract
+## 23. [~] AUDIT-004 执行更新：Slack production configuration contract
 
 Ready PR #535（`codex/cord-200-slack-production-contract-rust`）验证 Slack production
 assembly 的配置与 transport 选择，复用现有 token decrypter、Socket Mode、slash、
@@ -652,7 +793,7 @@ typing、media、outbound 和 shutdown wiring，不增加新的生产抽象：
   61 通过、2 个本地 listener 因 `EPERM` 失败，沙箱外原样重跑后两项均通过；固定
   stable rustfmt 与 `git diff --check` 通过。
 
-## 24. AUDIT-004 执行更新：Telegram production configuration contract
+## 24. [~] AUDIT-004 执行更新：Telegram production configuration contract
 
 Ready PR #536（`codex/cord-201-telegram-production-contract-rust`）直接执行 Telegram
 production configure/Registry 路径，复用现有 HandlerState、router、BotApi、media、
@@ -676,7 +817,7 @@ outbound 和 shutdown wiring，不增加生产抽象：
   测试已启动完整依赖编译/链接，当前尚未返回结果，因此不记录为通过；长编译不阻塞
   Ready PR 或后续主线迁移。
 
-## 25. AUDIT-004 执行更新：Composio production configuration contract
+## 25. [~] AUDIT-004 执行更新：Composio production configuration contract
 
 Ready PR #538（`codex/cord-202-composio-production-contract-rust`，implementation
 commit `711940c4`，fixer commit `68c903a0`）直接执行 Composio 的 production
@@ -704,7 +845,7 @@ feature flag、ClientBuilder、Service、HTTP state 和 TaskService overlay，�
   独立 verification/reviewer 对该 commit 的复验仍在队列，不能用 fixer 自测替代。
   上游 Telegram compile 问题已由 PR #536 fixer commit `62e7f3d5` 修复。
 
-## 26. AUDIT-004 执行更新：VCS production configuration contract
+## 26. [~] AUDIT-004 执行更新：VCS production configuration contract
 
 Ready PR #539（`codex/cord-203-vcs-production-contract-rust`，implementation commit
 `ee43168b`）直接覆盖 VCS 的 server boot 配置边界，复用现有 Config、SecretBox、
@@ -726,7 +867,7 @@ HandlerState、handler 和 `cordy_vcs` provider，不增加新 registry 或兼�
 - 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
   通过；fixer 尚未派发。PR 堆叠在 Composio PR #538。
 
-## 27. AUDIT-004 执行更新：GitHub snapshot production configuration contract
+## 27. [~] AUDIT-004 执行更新：GitHub snapshot production configuration contract
 
 Ready PR #540（`codex/cord-204-ghsnapshot-production-contract-rust`，implementation
 commit `be02f618`）收口 GHSnapshot 非法凭证会终止 Rust server 的生产差异：
@@ -746,7 +887,7 @@ commit `be02f618`）收口 GHSnapshot 非法凭证会终止 Rust server 的生�
 - 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
   通过；fixer 尚未派发。PR 堆叠在 VCS PR #539。
 
-## 28. AUDIT-004 执行更新：channel media production lifecycle contract
+## 28. [~] AUDIT-004 执行更新：channel media production lifecycle contract
 
 Ready PR #541（`codex/cord-205-channel-runtime-lifecycle-contract-rust`，implementation
 commit `0e6d5ec1`）直接执行 `ChannelRuntime::start` 使用的 production media worker
@@ -770,7 +911,7 @@ commit `0e6d5ec1`）直接执行 `ChannelRuntime::start` 使用的 production me
 - 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查记录
   为通过；fixer 尚未派发。PR 堆叠在 GHSnapshot PR #540。
 
-## 29. AUDIT-005 执行缺口：daemon health uptime wire contract
+## 29. [~] AUDIT-005 执行缺口：daemon health uptime wire contract
 
 当前切片选择 `AUDIT-005` 的 control/health 生产调用链。编码前确认的真实差异是：
 
@@ -798,7 +939,7 @@ production handler 和 `std::time::Duration`，不新增依赖、router、health
   runtime services，不能把私有 handler 单测扩大声明成进程 smoke。review/fix 仍异步；
   上游历史失败继续保留。
 
-## 30. AUDIT-005 执行缺口：provider refresh partial-failure retry
+## 30. [~] AUDIT-005 执行缺口：provider refresh partial-failure retry
 
 当前切片继续 `AUDIT-005` 的 registration/reconcile 生产调用链。编码前确认的真实差异：
 
@@ -828,7 +969,7 @@ ws-1 成功应用新版本后只跳过 ws-1，尚未应用的 ws-2 仍需要 ref
   stable rustfmt 在 `provider_registration.rs` 失败，已交独立 fixer；verifier 只恢复其
   Cargo 命令产生的单 hunk lockfile 顺序副作用，最终 worktree clean。
 
-## 31. AUDIT-005 执行缺口：GC metadata single wire contract
+## 31. [~] AUDIT-005 执行缺口：GC metadata single wire contract
 
 当前切片选择 `AUDIT-005` 的 GC production 调用链。编码前确认的真实差异：
 
@@ -869,7 +1010,7 @@ reader。缺失、坏 metadata 仍走既有 mtime fallback；unknown kind 保留
   daemon locked/offline no-run、targeted rustfmt 与 diff check 通过；早期 0-test/compile failure
   历史保留。
 
-## 32. AUDIT-005 执行缺口：runtime MCP production merge
+## 32. [~] AUDIT-005 执行缺口：runtime MCP production merge
 
 当前切片选择 `AUDIT-005` 的任务启动/MCP production 调用链。编码前确认的真实差异：
 
@@ -906,7 +1047,7 @@ override，继续使用 provider 原生 inheritance；存在配置时，合并�
   确认 assembly 到 production adapter 的调用；runtime MCP exact filter 与 daemon no-run
   均被堆叠基线 #544 的 `GcMetaKind` E0433 阻断，测试体执行数为 0，不能记录为通过。
 
-## 33. AUDIT-005 执行缺口：Remote MCP broker production wiring
+## 33. [~] AUDIT-005 执行缺口：Remote MCP broker production wiring
 
 当前切片继续 `AUDIT-005` 的任务启动/MCP production 调用链。编码前确认的真实差异：
 
@@ -949,7 +1090,7 @@ daemon claim wire 删除重复 stand-in，直接复用 `cordy-remotemcp::{Connec
   connection 的 credential/discovery、overlay 进入 plan 和 cleanup。两项均已交独立 fixer；
   reviewer 其余核对（wire alias、required/optional、安全 gate、生命周期与 Ponytail）无 finding。
 
-## 34. AUDIT-005 执行缺口：plugin-hook MCP production wiring
+## 34. [~] AUDIT-005 执行缺口：plugin-hook MCP production wiring
 
 当前切片继续 `AUDIT-005` 的任务启动/MCP production 调用链。编码前确认的真实差异：
 
@@ -992,7 +1133,7 @@ provider execution 与 environment finalization 结束；`Drop` 覆盖所有早�
   堆叠分支尚未传播 #544 的 7 处 E0433 修复而均为 0-test/compile blocked，不能记录通过；
   已交独立 fixer随 #547 findings 一并处理。
 
-## 35. AUDIT-005 执行缺口：local-skills heartbeat list/import/report contract
+## 35. [~] AUDIT-005 执行缺口：local-skills heartbeat list/import/report contract
 
 当前切片选择 `AUDIT-005` 已列出的 local skills 完整生产能力，而不是一个零散 helper：
 
@@ -1032,7 +1173,7 @@ batch 与 singular import、完整 bundle、真实 Client result path 和 HTTP 5
   finding 与 verifier 的传播/格式问题均已交独立 fixer；其余 batch-first/singular fallback、
   filesystem bundle、registry provider 与 shared Client retry 静态核对无 finding。
 
-## 36. AUDIT-005 执行缺口：wakeup WebSocket / RPC / control consumer lifecycle
+## 36. [~] AUDIT-005 执行缺口：wakeup WebSocket / RPC / control consumer lifecycle
 
 当前切片选择 `AUDIT-005` 的 wakeup/WS RPC 与 control lifecycle 作为一条完整能力链：
 
@@ -1071,7 +1212,7 @@ consumer、task wakeup、reconcile、heartbeat lifecycle 与 root cancellation�
   无调用断言且 60s randomized initial delay 通常使 supervisor 未执行。两项连同 verifier 问题
   已交独立 fixer；其余 WS auth/RPC correlation/event consumer/cancellation 核对无 finding。
 
-## 37. AUDIT-005 执行缺口：auto-update / server update / restart handoff contract
+## 37. [~] AUDIT-005 执行缺口：auto-update / server update / restart handoff contract
 
 当前切片选择 `AUDIT-005` 的 auto update 作为一条完整 machine-level 生命周期：
 
@@ -1113,7 +1254,7 @@ auto-update module allow 与 “CLI crate 尚未落地”说明已删除。
   为通过；verifier 静态确认 heartbeat 与 periodic update owner 共享同一个
   `Arc<DaemonCoreHost>`。格式、基线传播及 reviewer finding 已合并交给独立 fixer。
 
-## 38. AUDIT-001 执行缺口：tag release verification Go dependency cutover
+## 38. [~] AUDIT-001 执行缺口：tag release verification Go dependency cutover
 
 当前切片选择 `AUDIT-001` 已列出的 release 完整生产链，而不是单独修改一条 CI 命令：
 
@@ -1154,7 +1295,7 @@ Homebrew 和 multi-arch backend image 都依赖同一 verify job。
   `GcMetaKind` E0433 阻断、实际 0 tests；DB migration、RustSec action 均未在本地完成。
   新缺口和 reviewer finding 已合并交独立 fixer。
 
-## 39. AUDIT-001 执行缺口：self-host Rust image upgrade/rollback ref ownership
+## 39. [~] AUDIT-001 执行缺口：self-host Rust image upgrade/rollback ref ownership
 
 当前切片选择 `AUDIT-001` 的 installer→Compose→Rust image 升级/回滚完整生产链：
 
@@ -1196,7 +1337,7 @@ implementation commit `593cbc0d`）已把 Unix/Windows installer、Git ref check
   upgrade/rollback 均未执行；这些通过项不解决 reviewer 的 atomic pull/pin/custom/encoding
   findings，已一并交 fixer。
 
-## 40. AUDIT-001 执行缺口：self-host Rust Compose systemd lifecycle
+## 40. [~] AUDIT-001 执行缺口：self-host Rust Compose systemd lifecycle
 
 当前切片选择 `AUDIT-001` 已明确列出的 systemd/启动/停止生产生命周期：
 
@@ -1240,7 +1381,7 @@ config/start/stop、linger、enable/disable 和现有 exact-image upgrade/rollba
   当前环境又无可用 user manager/Docker socket，真实 linger、boot/logout 与 Compose 生命周期未执行。
   release-blocking finding 已交独立 fixer，不能把 stub 通过记成真实 systemd 生产通过。
 
-## 41. AUDIT-001 执行缺口：required backend CI Go gate cutover
+## 41. [~] AUDIT-001 执行缺口：required backend CI Go gate cutover
 
 当前切片选择 `AUDIT-001` 的默认 CI/合并门完整生产契约：
 
@@ -1279,7 +1420,7 @@ implementation commit `d607e429`）已经完整删除 required merge gate 的 Go
   返回成功。另精确复现 #551 ambiguous migrate command 与 #544 七处 E0433；均已交 fixer，不能
   记录为通过。
 
-## 42. AUDIT-006 执行缺口：Rust migration operator lifecycle
+## 42. [~] AUDIT-006 执行缺口：Rust migration operator lifecycle
 
 当前切片选择 `AUDIT-006` 的 migration runner 完整运维生命周期，而不是单独补一条命令或测试：
 
@@ -1316,7 +1457,7 @@ implementation commit `0adcc450`）已把上述 CLI、锁、取消、status 与 
   undefined-table；Helm 约 300 秒 startup budget 与默认 300 秒 lock wait 冲突；高风险锁/取消
   逻辑缺直接并发/恢复证据。全部已交独立 fixer，主 agent 不代修。
 
-## 43. AUDIT-003A 执行缺口：Rust process profiling replacement contract
+## 43. [~] AUDIT-003A 执行缺口：Rust process profiling replacement contract
 
 当前切片选择 `AUDIT-003A` 的完整运维诊断契约，而不是伪造 Go heap/runtime trace 格式：
 
@@ -1352,7 +1493,7 @@ implementation commit `f6f8ef32`）已把 process collector、legacy endpoint re
   未覆盖真实 METRICS_ADDR listener/scrape/public-router 隔离。台账已立即降回“部分完成”，全部
   finding 交 fixer；410 retirement 不能作为能力等价的证据。
 
-## 44. AUDIT-003B 执行缺口：Rust operator log time layout
+## 44. [~] AUDIT-003B 执行缺口：Rust operator log time layout
 
 当前切片选择 `AUDIT-003B` 已列出的最后一个 logger 生产契约：
 
@@ -1379,7 +1520,7 @@ server、migrate/三个 backfill、foreground daemon 与 rotating daemon sink。
 - 异步状态：independent verifier/reviewer 待派发，finding 交 fixer；主 agent 仅运行
   `git diff --check`，未把 Cargo、format、compile、output 或 daemon sink 记为通过。
 
-## 45. AUDIT-005 执行缺口：poisoned session retry and retirement lifecycle
+## 45. [~] AUDIT-005 执行缺口：poisoned session retry and retirement lifecycle
 
 当前切片选择 `AUDIT-005` 的 task execution / terminal delivery 完整生产能力，而不是单独接入
 一个分类 helper：
@@ -1426,7 +1567,7 @@ runner、session registry 或测试专用 production seam。
   `git diff --check 2833e418..232a4afe`；未把 compile、tests、rustfmt、locked/offline 或 production
   smoke 记为通过。PR 明确堆叠在 Ready #557，继承 #556 lock 与 #557 format/lock finding。
 
-## 46. AUDIT-005 执行缺口：Codex session rollout durability and continuity
+## 46. [~] AUDIT-005 执行缺口：Codex session rollout durability and continuity
 
 当前切片继续 `AUDIT-005` 的 task execution / crash recovery / terminal delivery 完整生产链：
 
@@ -1492,7 +1633,7 @@ provider-specific runner。
   present/missing 证据。主 agent 未运行或伪报 compile/tests/rustfmt/production smoke；PR 继续继承 #558
   findings 及更早 #556/#557 lock/format 基线记录并保持 Ready。
 
-## 47. AUDIT-003A 执行缺口：Rust allocation heap profile and async runtime diagnostics
+## 47. [~] AUDIT-003A 执行缺口：Rust allocation heap profile and async runtime diagnostics
 
 当前切片回到尚未退出的 `AUDIT-003A`，迁移 Go profiling 的剩余真实运维能力，而不是继续把进程
 总量指标或 410 retirement response 当成 heap/runtime diagnosis：
@@ -1558,7 +1699,7 @@ Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer�
   `~/.cargo/bin`。Ponytail 未发现多余 factory/registry/file；问题是 lifecycle、blocking boundary、默认
   成本和直接证据。全部 finding 已交 independent fixer，当前不声明该切片已完成 AUDIT-003A 退出。
 
-## 48. AUDIT-005 执行缺口：confirmed provider demotion and recovery lifecycle
+## 48. [~] AUDIT-005 执行缺口：confirmed provider demotion and recovery lifecycle
 
 当前切片选择 `AUDIT-005` registration/reconcile 的完整 machine-provider 生命周期，而不是只接一个
 demotion helper：
@@ -1624,7 +1765,7 @@ probe 必须继续走既有 registration service。
   #560 后处理。主 agent 仅迁移、接线、交付并回写事实，不自行修复；PR 保持非 Draft Ready，不等待异步
   收口。
 
-## 49. AUDIT-005 执行缺口：private socket-safe task temp lifecycle
+## 49. [~] AUDIT-005 执行缺口：private socket-safe task temp lifecycle
 
 当前切片继续 `AUDIT-005` 的 task execution / provider launch 完整生产链，而不是只替换一个环境变量：
 
@@ -1682,7 +1823,7 @@ probe 必须继续走既有 registration service。
   custom-env gate、0700 创建和 guard lifetime 核对无 finding。全部 finding 已排给同一 independent
   fixer，尚无 fix SHA 或重新验证结果。
 
-## 50. AUDIT-005 执行缺口：wakeup environment proxy and CONNECT lifecycle
+## 50. [~] AUDIT-005 执行缺口：wakeup environment proxy and CONNECT lifecycle
 
 当前切片继续 `AUDIT-005` 已迁移的 wakeup/WS RPC/control 生产链，补齐企业网络中真实连接能否建立的
 完整边界，而不是新增一个孤立 proxy parser：
@@ -1746,7 +1887,7 @@ error 并继续既有 bounded retry/fallback，不能 silently direct 绕过 ope
   Lark 已有近似 CONNECT 实现而 daemon 重复协议逻辑。全部 verifier/reviewer findings 已排入 existing
   independent fixer；主 agent 不修复、不等待，PR 保持 Ready。
 
-## 51. AUDIT-005 执行缺口：heartbeat stale HTTP pool recovery lifecycle
+## 51. [~] AUDIT-005 执行缺口：heartbeat stale HTTP pool recovery lifecycle
 
 当前切片继续 `AUDIT-005` 的 control/heartbeat 生产生命周期，迁移 server restart、NAT/LB stale keepalive
 后的真实恢复能力，而不是只保留一个同名 no-op：
@@ -1814,7 +1955,7 @@ cache、legacy endpoint state 或 runtime registry。
   builder、独一 production `Arc<Client>` 和两文件最小抽象方向成立，未发现 Stub/Noop/Fake/alternate path。
   finding 已排入同一 independent fixer，PR 继续 Ready，未把该能力标记为已验证或可删除 Go。
 
-## 52. AUDIT-002 执行缺口：issue-status production API and transaction contract
+## 52. [~] AUDIT-002 执行缺口：issue-status production API and transaction contract
 
 当前切片选择 `AUDIT-002` 已列出的 API authentication/authorization、transaction、error JSON 与 side-effect
 smoke，并以一个完整 workflow contract 迁移 Go issue-status 回归，不按 `issue_status*_test.go` 文件或单个
@@ -1893,7 +2034,7 @@ handler，绕过 production router/middleware/extractor，TestFlags 也未断言
 production mount 复用同一 HandlerState/pool/bus/service/query、无 Stub/Noop/Fake/alternate path，单文件无新依赖方向
 成立，但 635 行测试证据强度不足，不能支持完整契约或 Go 下线声明。全部 finding 已交独立 fixer，PR 保持 Ready。
 
-## 53. AUDIT-002 执行缺口：issue create admission and column ordering transaction contract
+## 53. [~] AUDIT-002 执行缺口：issue create admission and column ordering transaction contract
 
 当前切片继续选择 `AUDIT-002`，把台账 §5 已点名但尚无 production behavior smoke 的 `internal/issueguard` 与
 `internal/issueposition` 作为同一条 issue-create 事务能力迁移，不按两个小模块或 helper 拆 PR：
@@ -1949,7 +2090,7 @@ allocator 或生产 seam：
 PR #566 已创建，base 是 #565 branch；独立 verifier/reviewer 已异步派发，fixer 尚无 finding。不能据此声称已验证
 或删除 Go。
 
-## 54. AUDIT-002 执行缺口：user WebSocket authenticated session contract
+## 54. [~] AUDIT-002 执行缺口：user WebSocket authenticated session contract
 
 当前切片选择 `AUDIT-002` 的 user-facing WebSocket/realtime session，不与 daemon wakeup WS 或已核对等价的 Redis
 event envelope 重叠：
@@ -2013,7 +2154,7 @@ origin env precedence 与 Go 不同且受 ambient env 影响；失败路径不�
 Stub/Noop/Fake 或 alternate hub。上述 finding 已异步派发给独立 fixer；在修复及重验完成前，Go user WebSocket contract
 不能下线，PR 保持 Ready。
 
-## 55. AUDIT-002 执行缺口：scheduler distributed worker lifecycle contract
+## 55. [~] AUDIT-002 执行缺口：scheduler distributed worker lifecycle contract
 
 当前切片继续台账既定的 `AUDIT-002 background worker smoke`，选择 Go `internal/scheduler` 的完整 DB-backed worker
 契约，而不是再补一个局部 helper：
@@ -2064,7 +2205,7 @@ counts、真实 migrated DB、server/Windows build 与 failure-safe cleanup 行�
 非 Draft Ready PR #568 已创建，base 是 #567 branch；Ready SHA `e058e8b4`。独立 verifier/reviewer 已异步派发，
 fixer 尚无本 PR finding。PR 可在异步验证、review、fix 期间保持 Ready，主迁移线不等待。
 
-## 56. AUDIT-002 执行缺口：runtime heartbeat batching worker contract
+## 56. [~] AUDIT-002 执行缺口：runtime heartbeat batching worker contract
 
 当前切片继续 `AUDIT-002 background worker smoke`，选择 Go `handler.HeartbeatScheduler` 的完整热路径与 shutdown
 契约；它是 runtime liveness/sweeper 的生产前置，而不是单个时间格式或 helper：
@@ -2113,7 +2254,7 @@ production scheduler、SQL、依赖、文件边界或新增 runtime seam：
 非 Draft Ready PR #569 已创建，base 是 #568 branch，Ready SHA `be2bc21d`；独立 verifier/reviewer 已异步派发，
 fixer 尚无本 PR finding。PR可在异步结果期间保持Ready，主线不等待。
 
-## 57. AUDIT-002 执行缺口：runtime sweeper stale-liveness/offline contract
+## 57. [~] AUDIT-002 执行缺口：runtime sweeper stale-liveness/offline contract
 
 当前切片继续台账既定的 background-worker smoke，选择 runtime sweeper 中一个完整、可独立验收的生产行为面：
 
@@ -2174,7 +2315,7 @@ server/Windows 或 cleanup 行为写成通过。verifier 静态确认唯一 serv
 `Drop` 异步清理不是确定性的 failure-path cleanup。reviewer 确认 production assembly 使用真实 shared state，未发现有效生产路径
 误选 Stub/Noop/Fake。上述 verification/review finding 已交独立 fixer；在修复并重新验证前，本契约不能声称已验证或删除 Go。
 
-## 58. AUDIT-002 已登记执行缺口：offline task failure and reconnect-retry terminal contract
+## 58. [~] AUDIT-002 已登记执行缺口：offline task failure and reconnect-retry terminal contract
 
 本项在开始编码前登记，选择 runtime sweeper 中共享 reconnect-grace 的完整任务恢复能力，而不是只增加一个 SQL
 helper 或把整套 sweeper 混入同一 PR：
@@ -2228,7 +2369,7 @@ base 是 `codex/cord-234-runtime-sweeper-contract-rust` 的 `78b04074`，当前 
 compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
 验证或删除 Go，PR 保持 Ready。
 
-## 59. AUDIT-002 已登记执行缺口：stale dispatched/running and queued task cleanup contract
+## 59. [~] AUDIT-002 已登记执行缺口：stale dispatched/running and queued task cleanup contract
 
 本项在开始编码前登记，选择 runtime sweeper 中另一条完整任务清理能力；它与 §58 的 offline/reconnect terminal path
 共享 `TaskService` 收口但有独立的 liveness、lease、wall-clock 和 queued-lineage 语义：
@@ -2281,7 +2422,7 @@ base 是 `codex/cord-235-offline-task-recovery-contract-rust` 的 `cce8b6b1`，�
 compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
 验证或删除 Go，PR 保持 Ready。
 
-## 60. AUDIT-002 已登记执行缺口：runtime GC transactional lifecycle contract
+## 60. [~] AUDIT-002 已登记执行缺口：runtime GC transactional lifecycle contract
 
 本项在开始编码前登记，选择 runtime sweeper 中最后一条可独立收口的 runtime GC 业务能力；它不是对前两项 task
 cleanup 再加几个断言，而是完整覆盖“候选发现→每 runtime 行锁→资格重检→未排空任务保护→历史解绑→删除→workspace
@@ -2335,7 +2476,7 @@ active agent/online/fresh runtime 排除、bounded candidate 与 blocked gauge�
 `cb70bb98`）；独立 verifier/reviewer 已异步派发，fixer 待 finding 返回后异步交付。exact compile、matched/executed
 counts、required DB、server/Windows 和 timeout/rollback 证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
 
-## 61. AUDIT-002 已登记执行缺口：delegated failure recovery durable outbox contract
+## 61. [~] AUDIT-002 delegated failure recovery durable outbox contract
 
 本项在开始编码前登记，选择 runtime sweeper 中 delegated failure recovery 的完整业务能力：终态 delegated task 生成平台
 恢复信号、持久化 comment outbox、coordinator dispatch/merge、崩溃后 bounded replay、用户取消/手动 rerun 语义、三次未
@@ -2373,4 +2514,25 @@ production wiring 应使测试失败。
 - Go 是否可下线：本 delegated failure recovery durable-outbox contract 与异步 finding 收口后，Go recovery service/sweeper
   逻辑可退休；chat finalize、其他 background workers 与 AUDIT-001..010 总退出门仍未完成。
 - owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
-  `codex/cord-237-runtime-gc-contract-rust`，独立 worktree，编号待创建后回写。
+  `codex/cord-237-runtime-gc-contract-rust`，独立 worktree；实现、PR 与验证事实在下方回写。
+
+实现 commit `82b51570` 在既有 production recovery path 上增加完整 PostgreSQL contract，未新增 recovery service、fake DB
+或 alternate dispatcher；同时在既有 `RuntimeTaskSweeper` 测试模块增加真实 worker assembly 覆盖：
+
+- `cordy-service::task_recovery` 的 fixture 创建唯一 workspace/user/member、同 runtime 的 coordinator/worker、source/worker
+  issue 与 task lineage。真实 `TaskService::handle_failed_tasks` 断言终态 delegated failure 只生成一个 system
+  `progress_update`、错误中的 API key 被 redacted、source/evidence/delegated-from lineage、comment/task event 与重复调用幂等。
+- outbox replay 覆盖 comment 已提交但没有 task、bounded `max_per_tick=0`、重复 sweep、queued coordinator 合并最新 signal
+  并保留旧 coalesced comment、dispatched planned-but-undelivered 的 completion successor、running coordinator 的独立 successor，
+  以及 retry-pending、backlog、unbound source agent、普通 failure 与 recovery self-recursion 的 fail-closed guards。
+- 用户取消通过真实 `cancel_task_by_user` 断言 `delivered_comment_ids` acknowledgement 后不 replay；manual rerun 通过真实
+  `rerun_issue` 断言取消 pending recovery row 时不伪造 delivery receipt、信号仍可被 sweeper replay；三次 undelivered attempt
+  后只创建一次 exhaustion system comment/action-required inbox，不产生第四个 recovery task。
+- `cordy-handler::RuntimeTaskSweeper::run_once` 的 production assembly 使用真实 `PgPool`、`TaskService`、shared `Bus` 和固定时钟
+  replay 同一 outbox，断言 report 的 `recoveries_replayed` 与 task-queued event；required `DATABASE_URL` 缺失/坏连接直接失败，
+  正常和失败路径显式删除 workspace/user，Drop 仅作 best-effort 兜底。
+
+主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令。非 Draft Ready PR #574 已创建，
+base 是 `codex/cord-237-runtime-gc-contract-rust` 的 `5d4532af`，当前 Ready tip `82b51570`；独立 verifier/reviewer/fixer
+已异步派发。exact compile、matched/executed counts、required DB、server/Windows、取消/rerun、failure cleanup 和完整 sweeper
+运行证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
