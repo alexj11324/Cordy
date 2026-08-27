@@ -52,7 +52,7 @@ pub fn resolve_hermes_profile(custom_home: &str, profile: Option<&str>) -> Herme
     let explicit = profile.is_some();
     let name = match profile {
         Some(value) => value.to_string(),
-        None if base
+        None if Path::new(&base)
             .parent()
             .and_then(Path::file_name)
             .is_some_and(|p| p == "profiles") =>
@@ -688,7 +688,7 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     })
 }
 
-fn touch_store(path: &str) {
+fn touch_store(path: &Path) {
     // Store GC uses directory mtime as the last-activity signal. Updating it
     // is best-effort: active-store reservations still protect a live mount,
     // while a read-only filesystem should not make task preparation fail.
