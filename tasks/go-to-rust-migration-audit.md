@@ -203,8 +203,8 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 ##### AUDIT-001：Rust 默认生产入口切换
 
 - 范围：Makefile 的 server/cordy/build/migrate/test/dev/check、scripts/check.sh、scripts/dev.sh、Dockerfile、docker/entrypoint.sh、Helm backend、systemd/install/release 入口。
-- 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；PR #527 将 CLI release 资产链改为 Rust；本切片再把 Desktop packaging 从 Go 源码嵌入改为按目标构建 Rust CLI。
-- 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；Rust release 和 Desktop 保留兼容的 binary/asset 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
+- 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；PR #527 将 CLI release 资产链改为 Rust；PR #528 将 Desktop packaging 从 Go 源码嵌入改为按目标构建 Rust CLI；本切片对齐 installer/手工运维文档。
+- 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；Rust release、Desktop 和 installer 保留兼容的 binary/asset 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
 - 退出证据：新鲜 worktree 的 build/check、镜像启动 health/ready、migrate up/down/status、CLI --help/version、回滚演练均以 Rust 产物为准。
 - owner：主 agent 迁移/接线；Volta 异步 review/fix。
 
@@ -454,3 +454,26 @@ Go CLI 的生产边界，并沿用 `server-rs` 现有 `cordy-cli` 入口：
   失败；未模拟 GitHub runner 的 musl/MSVC 构建。默认 Rust CLI 构建的已登记
   `cordy-daemon` 7 个基线编译错误仍不由本切片处理，不把它们伪报为 Desktop
   绿灯。
+
+## 17. AUDIT-001 执行更新：安装与运维入口对齐
+
+后续切片 `codex/cord-194-rust-install-systemd` 对账 install/self-host 运维
+入口，修正仍指向 Go 源码的说明，不新增仓库中不存在的 systemd 服务定义：
+
+- Go 能力：`scripts/install.sh`、`scripts/install.ps1` 的 CLI 安装继续消费
+  versioned/legacy release asset；self-host installer 通过 Docker Compose 拉取
+  backend image；手工运维文档提供构建后二进制和源码 migration 两种路径。
+- Rust 入口：release asset 由 PR #527 的 Rust CLI workflow 提供；self-host
+  backend image 和 `server/bin/server`、`server/bin/migrate` 兼容产物由
+  Rust 构建；`SELF_HOSTING_ADVANCED.md` 的源码 migration 已改为
+  `server-rs` 的 `cordy-migrate`。
+- 生产路径状态：默认 CLI installer 的资产名、Homebrew 输入和 self-host 镜像
+  路径已与 Rust 对齐；手工 Kubernetes/Docker 回滚仍依赖 operator 选择旧的
+  Rust image/tag。当前 HEAD 没有已跟踪的 systemd unit，因此 systemd 启动、
+  停止和回滚演练仍是明确缺口，不以文档替代实测。
+- Go 是否可下线：否。release verify/CI 的 Go compatibility gate、installer
+  的真实跨平台 smoke、systemd/回滚演练以及最终全仓 Go 退休门槛仍未完成。
+- 验证状态：文档入口静态对账、`bash -n scripts/install.sh` 和相关 diff
+  检查已通过；未执行真实发布、Homebrew API、Kubernetes/systemd 或跨平台
+  installer smoke。此前 `bash scripts/install.test.sh` 的环境权限失败和
+  PowerShell/Helm 工具缺失仍按前述记录保留。

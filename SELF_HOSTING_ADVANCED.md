@@ -247,8 +247,8 @@ The Docker Compose setup runs migrations automatically. If you need to run them 
 # Using the built binary
 ./server/bin/migrate up
 
-# Or from source
-cd server && go run ./cmd/migrate up
+# Or from the Rust source
+cd server-rs && cargo run --locked -p cordy-migrate -- up
 ```
 
 ## Usage Dashboard Rollup
@@ -313,7 +313,7 @@ If you are upgrading from a binary that pre-dates MUL-2957 (or the auto-hook fai
 
 If you prefer to build and run services manually:
 
-**Prerequisites:** Go 1.26.6, Node.js 22, pnpm 10.28.2, PostgreSQL 17 with pgvector.
+**Prerequisites:** Rust stable, Node.js 22, pnpm 10.28.2, PostgreSQL 17 with pgvector.
 
 ```bash
 # Start your PostgreSQL (or use: docker compose up -d postgres)

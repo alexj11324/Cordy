@@ -6,7 +6,7 @@ Deploy Cordy on your own infrastructure in minutes.
 
 | Component | Description | Technology |
 |-----------|-------------|------------|
-| **Backend** | REST API + WebSocket server | Go (single binary) |
+| **Backend** | REST API + WebSocket server | Rust (`cordy-server` binary) |
 | **Frontend** | Web application | Next.js 16 |
 | **Database** | Primary data store | PostgreSQL 17 with pgvector |
 
@@ -175,7 +175,7 @@ If you already run a Kubernetes cluster, you can deploy Cordy there instead of D
 The chart creates the following resources in the target namespace:
 
 - `cordy-postgres` — `pgvector/pgvector:pg17` backed by a 10Gi PVC
-- `cordy-backend` — Go API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
+- `cordy-backend` — Rust API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
 - `cordy-frontend` — Next.js standalone server
 - Two `Ingress` resources: one for the web host, one for the backend host
 - `cordy-config` ConfigMap (rendered from `values.yaml`)
