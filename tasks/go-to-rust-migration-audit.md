@@ -1549,3 +1549,11 @@ Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer�
   live heap gzip/pprof decode、public isolation、Tokio console client、shutdown、Docker build 与 overhead
   全部未执行。静态检查只能确认 allocator/route/fixed-loopback wiring 存在，不能替代 runtime evidence；
   完整 lock 及后续暴露问题已排给 independent fixer，修后必须重跑上述验证。
+- reviewer（exact code HEAD `47897fca`）报告两个 P1、三个 P2、一个 P3：除缺 lock 外，当前
+  `ConsoleLayer::spawn` 自建 detached thread/runtime，6669 bind failure 只 panic 该线程，未进入 startup
+  failure、root cancellation 或 graceful join；heap tempfile/dump/parse/gzip 直接阻塞 Tokio worker；全
+  workspace `tokio_unstable`、server tracing 与 console 默认一小时 retention 无条件常驻，尚无安全默认、
+  容量上界或负载开销证据；helper tests 未直接覆盖 production binary/pprof decode/console client/public
+  404/conflict/shutdown/musl/non-Linux；runbook 的 `sudo nsenter ... tokio-console` 通常找不到用户
+  `~/.cargo/bin`。Ponytail 未发现多余 factory/registry/file；问题是 lifecycle、blocking boundary、默认
+  成本和直接证据。全部 finding 已交 independent fixer，当前不声明该切片已完成 AUDIT-003A 退出。
