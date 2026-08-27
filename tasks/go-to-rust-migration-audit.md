@@ -2280,3 +2280,36 @@ base 是 `codex/cord-235-offline-task-recovery-contract-rust` 的 `cce8b6b1`，�
 `codex/cord-236-stale-task-cleanup-contract-rust`，Ready SHA `480105aa`。独立 verifier/reviewer 已异步派发；在 exact
 compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
 验证或删除 Go，PR 保持 Ready。
+
+## 60. AUDIT-002 已登记执行缺口：runtime GC transactional lifecycle contract
+
+本项在开始编码前登记，选择 runtime sweeper 中最后一条可独立收口的 runtime GC 业务能力；它不是对前两项 task
+cleanup 再加几个断言，而是完整覆盖“候选发现→每 runtime 行锁→资格重检→未排空任务保护→历史解绑→删除→workspace
+事件”的事务生命周期：
+
+- Go `gcRuntimesWithBudget` 以 7 天 offline TTL、blocked gauge 上限和每 tick bounded candidates 扫描；每个候选在独立
+  5 秒操作预算内以 `FOR UPDATE` 锁定 runtime，重新确认 offline/stale/unbound，检查所有未完成 task，只有 drained runtime
+  才解绑 terminal task history、fail-closed 确认没有残留引用并删除 runtime；一个候选失败或超时不得中止同 tick 其他候选。
+- 并发 enqueue 必须与 runtime 行锁协调：写入方拿不到已删除 runtime 的 owner fence 时失败，不能在 GC commit 后留下孤儿 task；
+  blocked runtime、active agent、fresh/online runtime、非 terminal history 和 runtime 消失等 apply-time 竞态必须安全保留。
+- 删除成功后按 workspace 去重发布 `EVENT_DAEMON_REGISTER` 的 `{"action":"runtime_gc"}`，metrics/gauge/error/budget
+  结果不能被弱化为只看 SQL helper 的单元自返回。
+- Rust production implementation 已存在于 `RuntimeTaskSweeper::gc_once`/`gc_with_budget`/`gc_runtime`，并由唯一
+  `run_full_once` worker 调用；但当前没有真实 PostgreSQL contract 证明事务回滚、所有 non-terminal status 保护、owner-lock
+  enqueue race、bounded candidate/blocked count、tick/operation budget、terminal history 保留、workspace event 去重和
+  production full-sweeper wiring。因此 Go GC 逻辑仍不能退休。
+
+本切片必须复用既有 `RuntimeTaskSweeper`、`cordy-db` production SQL、`TaskService`、shared `Bus` 和现有唯一 sweeper
+入口，不新增 GC service、fake transaction、alternate deletion path 或通用测试框架。required `DATABASE_URL` 缺失/坏连接
+必须失败而不能 self-skip；fixture 使用唯一 workspace/user/member/agent/runtime/task lineage，正常和 failure path 都
+确定性清理。contract 至少覆盖：terminal message/usage/token history 保留且解绑、每种 non-terminal task status 阻止删除、
+active agent/online/fresh runtime 排除、bounded candidate 与 blocked gauge、删除失败事务 rollback、runtime `FOR UPDATE`
+与 concurrent enqueue owner fence、每 tick budget、candidate 失败隔离、dedup workspace event，以及真实 `run_full_once`
+返回的 GC report；删除任何 status/agent/task guard、transaction boundary、lock/race、budget 或 event assertion 应使测试失败。
+
+- 默认生产路径：Rust `RuntimeTaskSweeper::run_full_once` 是唯一 server sweeper，GC stage 使用真实 `PgPool`、production
+  `cordy-db` queries、shared `Bus` 和 metrics；有效配置不选择 Stub/Noop/Fake。
+- Go 是否可下线：本 runtime GC transactional contract 与异步 finding 收口后，Go `gcRuntimes` 生命周期可退休；delegated
+  failure recovery、chat finalize、其他 background workers 与 AUDIT-001..010 总退出门仍未完成。
+- owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
+  `codex/cord-236-stale-task-cleanup-contract-rust`，独立 worktree，编号待创建后回写。
