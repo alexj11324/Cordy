@@ -6,6 +6,8 @@
 //! metadata alone never manufactures a backend that cannot execute.
 
 pub mod claude;
+pub mod codebuddy;
+pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
 pub mod deveco;
@@ -23,6 +25,7 @@ pub mod stream;
 pub mod version;
 
 pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
+pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
