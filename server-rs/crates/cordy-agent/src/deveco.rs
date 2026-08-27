@@ -8,6 +8,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -24,7 +27,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
+use crate::model::{Catalog, CatalogCache, Model};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::AgentLineReader;
@@ -82,9 +85,7 @@ impl DevecoBackend {
         } else {
             runtime_scope
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return Catalog::default();
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -118,15 +119,16 @@ impl DevecoBackend {
             self.config.command.path.as_str()
         };
         let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS);
-        let mut command = Command::new(command_path);
+        let executable = resolve_deveco_executable(command_path);
+        let mut command = Command::new(&executable);
         command
             .args(prefix.args)
             .arg("models")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        apply_sanitized_environment(&mut command, &self.config.env);
         let mut tree = match OwnedProcessTree::spawn(&mut command).await {
             Ok(tree) => tree,
             Err(error) => {
@@ -135,7 +137,7 @@ impl DevecoBackend {
             }
         };
         let Some(stdout) = tree.child_mut().stdout.take() else {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             return Vec::new();
         };
         let mut reader = tokio::spawn(async move {
@@ -159,9 +161,10 @@ impl DevecoBackend {
             () = cancellation.cancelled() => DiscoveryOutcome::Cancelled,
             () = tokio::time::sleep(timeout) => DiscoveryOutcome::TimedOut,
         };
-        if !matches!(outcome, DiscoveryOutcome::Completed) {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        }
+        // A wrapper can exit while a descendant still owns stdout. Reap the
+        // leader and stop the owned tree before waiting for the reader so a
+        // stale descendant cannot turn discovery into a leaked task.
+        stop_process_tree(&mut tree).await;
         let output = tokio::time::timeout(KILL_GRACE, &mut reader)
             .await
             .ok()
@@ -225,14 +228,16 @@ impl Backend for DevecoBackend {
         let mut argv = prefix.args;
         argv.extend(build_deveco_args(prompt, &options));
 
-        let mut command = Command::new(command_path);
+        let started = Instant::now();
+        let executable = resolve_deveco_executable(command_path);
+        let mut command = Command::new(&executable);
         command
             .args(argv)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        apply_sanitized_environment(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd).env("PWD", &options.cwd);
         }
@@ -246,51 +251,75 @@ impl Backend for DevecoBackend {
                     AgentError::Process(error)
                 }
             })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("DevEco stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("DevEco stderr pipe unavailable after spawn".to_string())
-        })?;
+        let Some(stdout) = tree.child_mut().stdout.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "DevEco stdout pipe unavailable after spawn".to_string(),
+            ));
+        };
+        let Some(stderr) = tree.child_mut().stderr.take() else {
+            stop_process_tree(&mut tree).await;
+            return Err(AgentError::Protocol(
+                "DevEco stderr pipe unavailable after spawn".to_string(),
+            ));
+        };
 
         let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
         let cancellation = options.cancellation.clone();
         let timeout = options.timeout;
         let configured_model = options.model.clone();
-        let started = Instant::now();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
         let stderr_reader_tail = stderr_tail.clone();
         let mut events_task = tokio::spawn(read_events(stdout, message_tx));
         let mut stderr_task = tokio::spawn(pump_stderr(stderr, stderr_reader_tail));
 
         tokio::spawn(async move {
-            let outcome = if timeout.is_zero() {
-                tokio::select! {
-                    status = tree.wait() => RunOutcome::Completed(status),
-                    () = cancellation.cancelled() => RunOutcome::Cancelled,
-                }
-            } else {
-                tokio::select! {
-                    status = tree.wait() => RunOutcome::Completed(status),
-                    () = cancellation.cancelled() => RunOutcome::Cancelled,
-                    () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
+            let completion = async {
+                let status = tree.wait().await;
+                // The direct process can exit while a tool descendant still
+                // owns the output pipes. Reap/stop the owned tree before
+                // joining the event reader so descendants cannot outlive the
+                // configured cancellation and timeout policy.
+                stop_process_tree(&mut tree).await;
+                let state = join_events(&mut events_task).await;
+                (status, state)
+            };
+            let outcome = {
+                tokio::pin!(completion);
+                if timeout.is_zero() {
+                    tokio::select! {
+                        completed = &mut completion => RunOutcome::Completed(completed),
+                        () = cancellation.cancelled() => RunOutcome::Cancelled,
+                    }
+                } else {
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        RunOutcome::TimedOut
+                    } else {
+                        tokio::select! {
+                            completed = &mut completion => RunOutcome::Completed(completed),
+                            () = cancellation.cancelled() => RunOutcome::Cancelled,
+                            () = tokio::time::sleep(remaining) => RunOutcome::TimedOut,
+                        }
+                    }
                 }
             };
 
-            let (run_end, exit) = match outcome {
-                RunOutcome::Completed(status) => (RunEnd::Completed, status),
+            let (run_end, exit, state) = match outcome {
+                RunOutcome::Completed(completed) => (RunEnd::Completed, completed.0, completed.1),
                 RunOutcome::Cancelled => {
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-                    (RunEnd::Cancelled, Ok(success_exit_status()))
+                    stop_process_tree(&mut tree).await;
+                    let state = join_events(&mut events_task).await;
+                    (RunEnd::Cancelled, Ok(success_exit_status()), state)
                 }
                 RunOutcome::TimedOut => {
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-                    (RunEnd::DeadlineExceeded, Ok(success_exit_status()))
+                    stop_process_tree(&mut tree).await;
+                    let state = join_events(&mut events_task).await;
+                    (RunEnd::DeadlineExceeded, Ok(success_exit_status()), state)
                 }
             };
 
-            let state = join_events(&mut events_task).await;
             if tokio::time::timeout(KILL_GRACE, &mut stderr_task)
                 .await
                 .is_err()
@@ -311,7 +340,10 @@ impl Backend for DevecoBackend {
                 status = "aborted".to_string();
                 error = "execution cancelled".to_string();
             } else if status == "completed" {
-                if let Some(exit_error) = exit_error(exit.as_ref()) {
+                if !state.terminal_seen {
+                    status = "failed".to_string();
+                    error = "deveco stream ended without a terminal step_finish event".to_string();
+                } else if let Some(exit_error) = exit_error(exit.as_ref()) {
                     status = "failed".to_string();
                     error = format!("deveco exited with error: {exit_error}");
                 }
@@ -356,7 +388,7 @@ enum RunEnd {
 }
 
 enum RunOutcome {
-    Completed(io::Result<ExitStatus>),
+    Completed((io::Result<ExitStatus>, DevecoEventResult)),
     Cancelled,
     TimedOut,
 }
@@ -368,6 +400,7 @@ struct DevecoEventResult {
     output: String,
     session_id: String,
     usage: TokenUsage,
+    terminal_seen: bool,
 }
 
 async fn read_events(stdout: ChildStdout, messages: mpsc::Sender<Message>) -> DevecoEventResult {
@@ -431,6 +464,7 @@ async fn read_events(stdout: ChildStdout, messages: mpsc::Sender<Message>) -> De
                 state.error = error;
             }
             "step_finish" => {
+                state.terminal_seen = true;
                 if let Some(tokens) = event.part.tokens {
                     state.usage.input_tokens += tokens.input;
                     state.usage.output_tokens += tokens.output;
@@ -556,6 +590,64 @@ fn format_duration(timeout: Duration) -> String {
     format!("{}s", timeout.as_secs_f64())
 }
 
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
+}
+
+fn apply_sanitized_environment(command: &mut Command, configured: &BTreeMap<String, String>) {
+    command.env_clear();
+    for (key, value) in std::env::vars_os() {
+        if !key
+            .to_string_lossy()
+            .get(..6)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("CORDY_"))
+        {
+            command.env(key, value);
+        }
+    }
+    command.envs(configured);
+}
+
+#[cfg(not(windows))]
+fn resolve_deveco_executable(command_path: &str) -> PathBuf {
+    PathBuf::from(command_path)
+}
+
+#[cfg(windows)]
+fn resolve_deveco_executable(command_path: &str) -> PathBuf {
+    let path = Path::new(command_path);
+    let is_cmd = path
+        .extension()
+        .map(|extension| extension.to_string_lossy())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("cmd"));
+    if !is_cmd {
+        return path.to_path_buf();
+    }
+    let scope = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("node_modules")
+        .join("@deveco");
+    let candidates = [
+        scope.join("deveco-code").join("bin").join("deveco.exe"),
+        scope
+            .join("deveco-code-windows-x64")
+            .join("bin")
+            .join("deveco.exe"),
+        scope
+            .join("deveco-code-windows-x64-baseline")
+            .join("bin")
+            .join("deveco.exe"),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
 fn success_exit_status() -> ExitStatus {
     #[cfg(unix)]
     {
@@ -566,6 +658,21 @@ fn success_exit_status() -> ExitStatus {
     {
         use std::os::windows::process::ExitStatusExt;
         ExitStatus::from_raw(0)
+    }
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
     }
 }
 
@@ -797,6 +904,58 @@ printf '%s\n' '{"type":"step_finish","sessionID":"ses_fake","part":{"tokens":{"i
         assert_eq!(result.output, "ok");
         assert_eq!(result.session_id, "ses_fake");
         assert_eq!(result.usage["deveco/GLM-5.1"].input_tokens, 7);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execute_stops_descendants_before_draining_stream() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+printf '%s\n' '{"type":"step_finish","sessionID":"ses-descendant"}'
+sleep 60 &
+exit 0
+"#,
+        );
+        let session = backend
+            .execute(
+                "run",
+                ExecOptions {
+                    timeout: Duration::from_secs(5),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute fake DevEco: {error}"));
+        let result = tokio::time::timeout(Duration::from_secs(3), session.result)
+            .await
+            .unwrap_or_else(|error| panic!("descendant kept DevEco stream open: {error}"))
+            .unwrap_or_else(|error| panic!("receive result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "ses-descendant");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execute_requires_terminal_step_finish_event() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+printf '%s\n' '{"type":"step_start","sessionID":"ses-incomplete"}'
+printf '%s\n' '{"type":"text","sessionID":"ses-incomplete","part":{"text":"partial"}}'
+"#,
+        );
+        let session = backend
+            .execute("run", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute fake DevEco: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("receive result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert_eq!(
+            result.error,
+            "deveco stream ended without a terminal step_finish event"
+        );
     }
 
     #[cfg(unix)]
