@@ -2080,6 +2080,13 @@ async fn thread(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::{Method, Request};
+    use cordy_auth::pat_cache::PatCache;
+    use cordy_db::models::Member;
+    use sqlx::PgPool;
+    use tower::ServiceExt as _;
+
     #[test]
     fn route_set_is_complete() {
         let _ = router();
@@ -2092,5 +2099,273 @@ mod tests {
         h.insert("x-actor-source", "task_token".parse().unwrap());
         h.insert("x-agent-id", Uuid::nil().to_string().parse().unwrap());
         assert_eq!(actor(&h, u), ("agent", Uuid::nil()));
+    }
+
+    fn draft_restore_context(workspace_id: Uuid, user_id: Uuid) -> WorkspaceContext {
+        WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: Member {
+                id: Uuid::now_v7(),
+                workspace_id,
+                user_id,
+                role: "member".to_string(),
+                created_at: Utc::now(),
+            },
+        }
+    }
+
+    async fn draft_restore_request(
+        pool: &PgPool,
+        context: WorkspaceContext,
+        user_id: Uuid,
+        method: Method,
+        uri: String,
+    ) -> Response {
+        router()
+            .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
+            .layer(Extension(context))
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .header("x-user-id", user_id.to_string())
+                    .body(Body::empty())
+                    .expect("draft restore request"),
+            )
+            .await
+            .expect("draft restore response")
+    }
+
+    async fn wait_for_blocked_session_delete(pool: &PgPool) {
+        for _ in 0..500 {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
+                 WHERE pid <> pg_backend_pid() AND state = 'active' AND wait_event_type = 'Lock' \
+                   AND query LIKE '%SELECT id FROM chat_session%' \
+                   AND query LIKE '%FOR UPDATE%')",
+            )
+            .fetch_one(pool)
+            .await
+            .expect("observe session delete lock");
+            if waiting {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("session delete never waited for the draft writer's session lock");
+    }
+
+    #[tokio::test]
+    async fn production_draft_restore_routes_enforce_creator_and_idempotent_consume() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for draft restore HTTP contract");
+        let pool = PgPool::connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('draft restore HTTP', $1) RETURNING id",
+        )
+        .bind(format!("draft-restore-http-{}", Uuid::now_v7().simple()))
+        .fetch_one(&pool)
+        .await
+        .expect("create workspace");
+        let creator_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO \"user\" (name, email) VALUES ('draft restore creator', $1) RETURNING id",
+        )
+        .bind(format!("draft-restore-creator-{workspace_id}@example.test"))
+        .fetch_one(&pool)
+        .await
+        .expect("create creator");
+        let other_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO \"user\" (name, email) VALUES ('draft restore other', $1) RETURNING id",
+        )
+        .bind(format!("draft-restore-other-{workspace_id}@example.test"))
+        .fetch_one(&pool)
+        .await
+        .expect("create other member");
+        for user_id in [creator_id, other_id] {
+            sqlx::query(
+                "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
+            )
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create member");
+        }
+        let runtime_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, visibility, owner_id) \
+             VALUES ($1, 'draft restore runtime', 'local', 'test', 'online', 'test', '{}'::jsonb, now(), 'private', $2) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(creator_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create runtime");
+        let agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode, runtime_id, visibility, max_concurrent_tasks, owner_id) \
+             VALUES ($1, 'draft restore agent', 'local', $2, 'private', 1, $3) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(runtime_id)
+        .bind(creator_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create agent");
+        let session_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO chat_session (workspace_id, agent_id, creator_id, title) \
+             VALUES ($1, $2, $3, 'draft restore') RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(agent_id)
+        .bind(creator_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create session");
+        let attachment_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO attachment (workspace_id, chat_session_id, uploader_type, uploader_id, filename, url, content_type, size_bytes) \
+             VALUES ($1, $2, 'member', $3, 'notes.txt', 'https://files.test/notes.txt', 'text/plain', 12) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(session_id)
+        .bind(creator_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create detached attachment");
+        let restore_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO chat_draft_restore (id, chat_session_id, task_id, content, attachment_ids) \
+             VALUES ($1, $2, $3, 'secret prompt', $4)",
+        )
+        .bind(restore_id)
+        .bind(session_id)
+        .bind(Uuid::now_v7())
+        .bind(vec![attachment_id])
+        .execute(&pool)
+        .await
+        .expect("create draft restore");
+
+        {
+            let base = format!("/api/chat/sessions/{session_id}/draft-restores");
+            let response = draft_restore_request(
+                &pool,
+                draft_restore_context(workspace_id, creator_id),
+                creator_id,
+                Method::GET,
+                base.clone(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let value: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("read list body"),
+            )
+            .expect("decode list body");
+            assert_eq!(value["restores"][0]["id"], restore_id.to_string());
+            assert_eq!(value["restores"][0]["content"], "secret prompt");
+            assert_eq!(
+                value["restores"][0]["attachments"][0]["id"],
+                attachment_id.to_string()
+            );
+
+            for method in [Method::GET, Method::DELETE] {
+                let uri = if method == Method::GET {
+                    base.clone()
+                } else {
+                    format!("{base}/{restore_id}")
+                };
+                let response = draft_restore_request(
+                    &pool,
+                    draft_restore_context(workspace_id, other_id),
+                    other_id,
+                    method,
+                    uri,
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            }
+            let count: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM chat_draft_restore WHERE id = $1")
+                    .bind(restore_id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("count protected restore");
+            assert_eq!(count, 1);
+
+            for _ in 0..2 {
+                let response = draft_restore_request(
+                    &pool,
+                    draft_restore_context(workspace_id, creator_id),
+                    creator_id,
+                    Method::DELETE,
+                    format!("{base}/{restore_id}"),
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::NO_CONTENT);
+            }
+            let count: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM chat_draft_restore WHERE id = $1")
+                    .bind(restore_id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("count consumed restore");
+            assert_eq!(count, 0);
+
+            let concurrent_restore = Uuid::now_v7();
+            let mut writer = pool.begin().await.expect("begin draft writer");
+            sqlx::query("SELECT id FROM chat_session WHERE id = $1 FOR UPDATE")
+                .bind(session_id)
+                .execute(&mut *writer)
+                .await
+                .expect("lock session as draft writer");
+            sqlx::query(
+                "INSERT INTO chat_draft_restore (id, chat_session_id, task_id, content, attachment_ids) \
+                 VALUES ($1, $2, $3, 'concurrent secret', '{}'::uuid[])",
+            )
+            .bind(concurrent_restore)
+            .bind(session_id)
+            .bind(Uuid::now_v7())
+            .execute(&mut *writer)
+            .await
+            .expect("stage concurrent restore");
+            let delete_pool = pool.clone();
+            let delete = tokio::spawn(async move {
+                draft_restore_request(
+                    &delete_pool,
+                    draft_restore_context(workspace_id, creator_id),
+                    creator_id,
+                    Method::DELETE,
+                    format!("/api/chat/sessions/{session_id}"),
+                )
+                .await
+                .status()
+            });
+            wait_for_blocked_session_delete(&pool).await;
+            writer.commit().await.expect("commit concurrent restore");
+            assert_eq!(
+                delete.await.expect("join session delete"),
+                StatusCode::NO_CONTENT
+            );
+            let count: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM chat_draft_restore WHERE id = $1")
+                    .bind(concurrent_restore)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("count restore after session delete");
+            assert_eq!(count, 0);
+        }
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        for user_id in [creator_id, other_id] {
+            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                .bind(user_id)
+                .execute(&pool)
+                .await
+                .expect("delete test user");
+        }
     }
 }

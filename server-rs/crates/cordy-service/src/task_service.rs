@@ -3575,7 +3575,7 @@ impl TaskService {
     /// cancelled chat task (#5219). Called from the daemon's cancel-ack and the
     /// sweeper fallback; the marker claim is atomic so concurrent callers
     /// cannot finalize twice. Outcome broadcasts as chat:cancel_finalized.
-    pub async fn finalize_deferred_cancelled_chat(&self, task_id: Uuid) {
+    pub async fn finalize_deferred_cancelled_chat(&self, task_id: Uuid) -> bool {
         let mut payload = cordy_protocol::ChatCancelFinalizedPayload {
             outcome: String::new(),
             chat_session_id: String::new(),
@@ -3723,14 +3723,16 @@ impl TaskService {
         .await;
         if let Err(err) = result {
             tracing::error!(task_id = %task_id, error = %err, "failed to finalize deferred cancelled chat");
-            return;
+            return false;
         }
         if !settled || payload.outcome.is_empty() {
-            return;
+            return false;
         }
         if let Some(task) = settled_task {
             self.broadcast_chat_cancel_finalized(&task, payload).await;
+            return true;
         }
+        false
     }
 
     async fn broadcast_chat_cancel_finalized(

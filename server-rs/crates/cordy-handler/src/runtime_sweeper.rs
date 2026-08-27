@@ -337,9 +337,10 @@ impl RuntimeTaskSweeper {
         .await
         {
             Ok(rows) => {
-                report.chats_finalized = rows.len();
                 for task in rows {
-                    self.tasks.finalize_deferred_cancelled_chat(task.id).await;
+                    if self.tasks.finalize_deferred_cancelled_chat(task.id).await {
+                        report.chats_finalized += 1;
+                    }
                 }
             }
             Err(error) => {
@@ -670,9 +671,15 @@ mod tests {
     #[tokio::test]
     async fn production_stale_sweep_filters_liveness_and_publishes_one_workspace_event() {
         let rows = RuntimeRows::required().await;
-        let dead = rows.runtime("dead", "online", Duration::from_secs(300)).await;
-        let alive = rows.runtime("alive", "online", Duration::from_secs(300)).await;
-        let fresh = rows.runtime("fresh", "online", Duration::from_secs(30)).await;
+        let dead = rows
+            .runtime("dead", "online", Duration::from_secs(300))
+            .await;
+        let alive = rows
+            .runtime("alive", "online", Duration::from_secs(300))
+            .await;
+        let fresh = rows
+            .runtime("fresh", "online", Duration::from_secs(30))
+            .await;
         let already_offline = rows
             .runtime("offline", "offline", Duration::from_secs(300))
             .await;
@@ -723,7 +730,10 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].workspace_id, rows.workspace_id.to_string());
         assert_eq!(events[0].event_type, cordy_protocol::EVENT_DAEMON_REGISTER);
-        assert_eq!(events[0].payload, serde_json::json!({"action": "stale_sweep"}));
+        assert_eq!(
+            events[0].payload,
+            serde_json::json!({"action": "stale_sweep"})
+        );
         drop(events);
         sqlx::query("UPDATE agent_runtime SET status = 'offline' WHERE id = $1")
             .bind(alive.id)
@@ -751,9 +761,7 @@ mod tests {
             DEFAULT_RECONNECT_GRACE,
         );
         assert_eq!(
-            unavailable_sweeper
-                .sweep_stale_runtimes(stale_before)
-                .await,
+            unavailable_sweeper.sweep_stale_runtimes(stale_before).await,
             1
         );
         assert_eq!(rows.status(unavailable.id).await, "offline");
@@ -765,7 +773,9 @@ mod tests {
             [unavailable.id.to_string()]
         );
 
-        let raced = rows.runtime("raced", "online", Duration::from_secs(300)).await;
+        let raced = rows
+            .runtime("raced", "online", Duration::from_secs(300))
+            .await;
         let race_forgotten = Arc::new(Mutex::new(Vec::new()));
         let race_bus = Arc::new(Bus::new());
         let race_sweeper = RuntimeTaskSweeper::new(
@@ -782,10 +792,7 @@ mod tests {
             None,
             DEFAULT_RECONNECT_GRACE,
         );
-        assert_eq!(
-            race_sweeper.sweep_stale_runtimes(stale_before).await,
-            0
-        );
+        assert_eq!(race_sweeper.sweep_stale_runtimes(stale_before).await, 0);
         assert_eq!(rows.status(raced.id).await, "offline");
         rows.cleanup().await;
     }
@@ -827,17 +834,22 @@ mod tests {
             .bind(format!("offline-recovery-{suffix}@example.test"))
             .fetch_one(&pool)
             .await?;
-            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
-                .bind(workspace_id)
-                .bind(user_id)
-                .execute(&pool)
-                .await?;
+            sqlx::query(
+                "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+            )
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
 
-            let old_runtime_id = Self::runtime(&pool, workspace_id, "old", "offline", "4 hours").await?;
+            let old_runtime_id =
+                Self::runtime(&pool, workspace_id, "old", "offline", "4 hours").await?;
             let grace_runtime_id =
                 Self::runtime(&pool, workspace_id, "grace", "offline", "10 minutes").await?;
-            let healthy_runtime_id = Self::runtime(&pool, workspace_id, "healthy", "online", "1 minute").await?;
-            let old_agent_id = Self::agent(&pool, workspace_id, user_id, old_runtime_id, "old").await?;
+            let healthy_runtime_id =
+                Self::runtime(&pool, workspace_id, "healthy", "online", "1 minute").await?;
+            let old_agent_id =
+                Self::agent(&pool, workspace_id, user_id, old_runtime_id, "old").await?;
             let grace_agent_id =
                 Self::agent(&pool, workspace_id, user_id, grace_runtime_id, "grace").await?;
             let healthy_agent_id =
@@ -846,9 +858,11 @@ mod tests {
             let mut next_number = 1;
             let mut active_task_ids = Vec::new();
             for status in ["dispatched", "running", "waiting_local_directory"] {
-                let issue_id = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+                let issue_id =
+                    Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
                 next_number += 1;
-                let wait_reason = (status == "waiting_local_directory").then_some("local directory busy");
+                let wait_reason =
+                    (status == "waiting_local_directory").then_some("local directory busy");
                 active_task_ids.push(
                     Self::task(
                         &pool,
@@ -865,7 +879,8 @@ mod tests {
                     .await?,
                 );
             }
-            let grace_issue = Self::issue(&pool, workspace_id, user_id, grace_agent_id, next_number).await?;
+            let grace_issue =
+                Self::issue(&pool, workspace_id, user_id, grace_agent_id, next_number).await?;
             next_number += 1;
             let grace_task_id = Self::task(
                 &pool,
@@ -881,7 +896,8 @@ mod tests {
             )
             .await?;
 
-            let offline_retry_issue = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+            let offline_retry_issue =
+                Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
             next_number += 1;
             let offline_parent = Self::task(
                 &pool,
@@ -910,7 +926,8 @@ mod tests {
             )
             .await?;
 
-            let healthy_retry_issue = Self::issue(&pool, workspace_id, user_id, healthy_agent_id, next_number).await?;
+            let healthy_retry_issue =
+                Self::issue(&pool, workspace_id, user_id, healthy_agent_id, next_number).await?;
             next_number += 1;
             let healthy_parent = Self::task(
                 &pool,
@@ -939,7 +956,8 @@ mod tests {
             )
             .await?;
 
-            let unrelated_retry_issue = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+            let unrelated_retry_issue =
+                Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
             let unrelated_parent = Self::task(
                 &pool,
                 old_agent_id,
@@ -1072,10 +1090,10 @@ mod tests {
             let task_id = new_v7();
             let active_at = (status == "dispatched" || status == "running")
                 .then_some(Utc::now() - chrono::Duration::minutes(1));
-            let started_at = (status == "running")
-                .then_some(Utc::now() - chrono::Duration::minutes(1));
-            let completed_at = (status == "failed")
-                .then_some(Utc::now() - chrono::Duration::minutes(1));
+            let started_at =
+                (status == "running").then_some(Utc::now() - chrono::Duration::minutes(1));
+            let completed_at =
+                (status == "failed").then_some(Utc::now() - chrono::Duration::minutes(1));
             let id: Uuid = sqlx::query_scalar(
                 "INSERT INTO agent_task_queue \
                  (id, agent_id, runtime_id, issue_id, status, priority, attempt, max_attempts, \
@@ -1113,10 +1131,12 @@ mod tests {
         }
 
         async fn status(&self, id: Uuid) -> anyhow::Result<String> {
-            Ok(sqlx::query_scalar("SELECT status FROM agent_task_queue WHERE id = $1")
-                .bind(id)
-                .fetch_one(&self.pool)
-                .await?)
+            Ok(
+                sqlx::query_scalar("SELECT status FROM agent_task_queue WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(&self.pool)
+                    .await?,
+            )
         }
     }
 
@@ -1629,11 +1649,13 @@ mod tests {
             .bind(format!("runtime-gc-{suffix}@example.test"))
             .fetch_one(&pool)
             .await?;
-            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
-                .bind(workspace_id)
-                .bind(user_id)
-                .execute(&pool)
-                .await?;
+            sqlx::query(
+                "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+            )
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
             let helper_runtime_id =
                 RecoveryRows::runtime(&pool, workspace_id, "gc-helper", "online", "1 minute")
                     .await?;
@@ -1708,10 +1730,11 @@ mod tests {
             let user_id = self.user_id;
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
-                    let _ = sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
+                    let _ =
+                        sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
+                            .bind(workspace_id)
+                            .execute(&pool)
+                            .await;
                     let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
                         .bind(workspace_id)
                         .execute(&pool)
@@ -2086,9 +2109,9 @@ mod tests {
 
     #[tokio::test]
     async fn production_runtime_gc_owner_lock_orders_enqueue_and_delete_safely() {
-        let rows = GcRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC owner lock contract");
+        let rows = GcRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for runtime GC owner lock contract",
+        );
         let result = async {
             let writer_runtime = rows.runtime("writer-wins", "offline", "8 days").await?;
             let writer_issue = rows.issue(640).await?;
@@ -2203,14 +2226,19 @@ mod tests {
                 "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
             )
             .bind("delegated sweeper contract user")
-            .bind(format!("delegated-sweeper-{}@example.test", workspace_id.simple()))
+            .bind(format!(
+                "delegated-sweeper-{}@example.test",
+                workspace_id.simple()
+            ))
             .fetch_one(&pool)
             .await?;
-            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
-                .bind(workspace_id)
-                .bind(user_id)
-                .execute(&pool)
-                .await?;
+            sqlx::query(
+                "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+            )
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
 
             let runtime_id = new_v7();
             sqlx::query(
@@ -2226,7 +2254,10 @@ mod tests {
             .await?;
             let coordinator_id = new_v7();
             let worker_id = new_v7();
-            for (id, name) in [(coordinator_id, "Delegated sweeper coordinator"), (worker_id, "Delegated sweeper worker")] {
+            for (id, name) in [
+                (coordinator_id, "Delegated sweeper coordinator"),
+                (worker_id, "Delegated sweeper worker"),
+            ] {
                 sqlx::query(
                     "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) \
                      VALUES ($1, $2, $3, 'local', 'idle', 4, $4, $5)",
@@ -2343,9 +2374,9 @@ mod tests {
 
     #[tokio::test]
     async fn production_run_once_replays_delegated_recovery_outbox() {
-        let rows = DelegatedSweeperRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for delegated sweeper contract");
+        let rows = DelegatedSweeperRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for delegated sweeper contract",
+        );
         let result = async {
             let bus = Arc::new(Bus::new());
             let events = Arc::new(Mutex::new(Vec::<Event>::new()));
@@ -2412,8 +2443,9 @@ mod tests {
         // commit, dropping the transaction rolls the partial fixture back;
         // callers only receive a fixture after all ids are durable.
         async fn required(status: &str, started: bool) -> anyhow::Result<Self> {
-            let url = std::env::var("DATABASE_URL")
-                .map_err(|_| anyhow::anyhow!("DATABASE_URL is required for chat finalize contracts"))?;
+            let url = std::env::var("DATABASE_URL").map_err(|_| {
+                anyhow::anyhow!("DATABASE_URL is required for chat finalize contracts")
+            })?;
             let pool = PgPool::connect(&url).await?;
             let workspace_id = new_v7();
             let user_id = new_v7();
@@ -2566,10 +2598,12 @@ mod tests {
         }
 
         async fn user_message_exists(&self) -> anyhow::Result<bool> {
-            Ok(sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM chat_message WHERE id = $1)")
-                .bind(self.user_message_id)
-                .fetch_one(&self.pool)
-                .await?)
+            Ok(
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM chat_message WHERE id = $1)")
+                    .bind(self.user_message_id)
+                    .fetch_one(&self.pool)
+                    .await?,
+            )
         }
 
         async fn assistant_contents(&self) -> anyhow::Result<Vec<String>> {
@@ -2582,19 +2616,21 @@ mod tests {
         }
 
         async fn restore_count(&self) -> anyhow::Result<i64> {
-            Ok(sqlx::query_scalar(
-                "SELECT count(*) FROM chat_draft_restore WHERE task_id = $1",
+            Ok(
+                sqlx::query_scalar("SELECT count(*) FROM chat_draft_restore WHERE task_id = $1")
+                    .bind(self.task_id)
+                    .fetch_one(&self.pool)
+                    .await?,
             )
-            .bind(self.task_id)
-            .fetch_one(&self.pool)
-            .await?)
         }
 
         async fn attachment_message_id(&self) -> anyhow::Result<Option<Uuid>> {
-            Ok(sqlx::query_scalar("SELECT chat_message_id FROM attachment WHERE id = $1")
-                .bind(self.attachment_id)
-                .fetch_one(&self.pool)
-                .await?)
+            Ok(
+                sqlx::query_scalar("SELECT chat_message_id FROM attachment WHERE id = $1")
+                    .bind(self.attachment_id)
+                    .fetch_one(&self.pool)
+                    .await?,
+            )
         }
 
         async fn insert_transcript(&self) -> anyhow::Result<()> {
@@ -2607,12 +2643,41 @@ mod tests {
             Ok(())
         }
 
-        async fn mark_channel_ingested(&self) -> anyhow::Result<()> {
+        async fn mark_channel_ingested_and_archive_unbind(&self) -> anyhow::Result<()> {
             sqlx::query("UPDATE chat_message SET channel_ingested = TRUE WHERE id = $1")
                 .bind(self.user_message_id)
                 .execute(&self.pool)
                 .await?;
+            sqlx::query(
+                "INSERT INTO channel_chat_session_binding \
+                 (chat_session_id, installation_id, channel_type, channel_chat_id, chat_type, config) \
+                 VALUES ($1, $2, 'feishu', $3, 'p2p', '{}'::jsonb)",
+            )
+            .bind(self.session_id)
+            .bind(Uuid::now_v7())
+            .bind(format!("oc_cancel_{}", self.session_id))
+            .execute(&self.pool)
+            .await?;
+            sqlx::query("UPDATE chat_session SET status = 'archived' WHERE id = $1")
+                .bind(self.session_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM channel_chat_session_binding WHERE chat_session_id = $1")
+                .bind(self.session_id)
+                .execute(&self.pool)
+                .await?;
             Ok(())
+        }
+
+        async fn is_archived_and_unbound(&self) -> anyhow::Result<bool> {
+            Ok(sqlx::query_scalar(
+                "SELECT status = 'archived' AND NOT EXISTS (\
+                    SELECT 1 FROM channel_chat_session_binding WHERE chat_session_id = $1\
+                 ) FROM chat_session WHERE id = $1",
+            )
+            .bind(self.session_id)
+            .fetch_one(&self.pool)
+            .await?)
         }
 
         async fn insert_second_expired_marker(&self) -> anyhow::Result<Uuid> {
@@ -2663,6 +2728,24 @@ mod tests {
             .collect()
     }
 
+    async fn wait_for_two_blocked_chat_finalizers(pool: &PgPool) -> anyhow::Result<()> {
+        for _ in 0..500 {
+            let blocked: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_stat_activity \
+                 WHERE pid <> pg_backend_pid() AND state = 'active' AND wait_event_type = 'Lock' \
+                   AND (query LIKE '%chat_finalize_deferred_at = NULL%' \
+                        OR query LIKE '%FOR UPDATE OF cs%')",
+            )
+            .fetch_one(pool)
+            .await?;
+            if blocked >= 2 {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        anyhow::bail!("ack and sweeper finalizers did not both reach a PostgreSQL lock barrier")
+    }
+
     #[tokio::test]
     async fn production_run_once_finalizes_deferred_chat_and_is_idempotent() -> anyhow::Result<()> {
         let rows = ChatFinalizeRows::required("running", true).await?;
@@ -2695,12 +2778,28 @@ mod tests {
             );
             anyhow::ensure!(!rows.marker_is_null().await?, "cancel did not arm marker");
             rows.backdate_marker(120.0).await?;
+            let noop_candidate = rows.insert_second_expired_marker().await?;
 
             let now = Utc::now();
             let sweeper = chat_finalize_sweeper(rows.pool.clone(), bus, tasks, now);
             let report = sweeper.run_once().await;
-            anyhow::ensure!(report.chats_finalized == 1, "chat finalize report = {report:?}");
-            anyhow::ensure!(!rows.user_message_exists().await?, "empty prompt was not deleted");
+            anyhow::ensure!(
+                report.chats_finalized == 1,
+                "chat finalize report = {report:?}"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, bool>(
+                    "SELECT chat_finalize_deferred_at IS NULL FROM agent_task_queue WHERE id = $1"
+                )
+                .bind(noop_candidate)
+                .fetch_one(&rows.pool)
+                .await?,
+                "no-op candidate marker was not claimed"
+            );
+            anyhow::ensure!(
+                !rows.user_message_exists().await?,
+                "empty prompt was not deleted"
+            );
             anyhow::ensure!(rows.marker_is_null().await?, "marker was not claimed");
             anyhow::ensure!(rows.restore_count().await? == 1, "restore row missing");
             anyhow::ensure!(
@@ -2708,15 +2807,48 @@ mod tests {
                 "attachment remained bound to deleted message"
             );
             let finalized = cancel_finalized_events(&events);
-            anyhow::ensure!(finalized.len() == 1, "finalized events = {}", finalized.len());
+            anyhow::ensure!(
+                finalized.len() == 1,
+                "finalized events = {}",
+                finalized.len()
+            );
+            anyhow::ensure!(
+                finalized[0].workspace_id == rows.workspace_id.to_string()
+                    && finalized[0].task_id == rows.task_id.to_string()
+                    && finalized[0].chat_session_id == rows.session_id.to_string()
+                    && finalized[0].actor_type == "system",
+                "finalized event workspace/task/session/actor scope mismatch"
+            );
             let payload = &finalized[0].payload;
+            let mut keys = payload
+                .as_object()
+                .map(|object| object.keys().map(String::as_str).collect::<Vec<_>>())
+                .unwrap_or_default();
+            keys.sort_unstable();
+            anyhow::ensure!(
+                keys == vec![
+                    "chat_session_id",
+                    "content",
+                    "created_at",
+                    "elapsed_ms",
+                    "initiator_user_id",
+                    "message_id",
+                    "message_kind",
+                    "outcome",
+                    "task_id",
+                ],
+                "finalized payload keys mismatch: {keys:?}"
+            );
             anyhow::ensure!(
                 payload.get("outcome").and_then(serde_json::Value::as_str)
                     == Some(cordy_protocol::CHAT_CANCEL_OUTCOME_RESTORED),
                 "unexpected finalized payload: {payload}"
             );
             anyhow::ensure!(
-                payload.get("content").and_then(serde_json::Value::as_str).unwrap_or("")
+                payload
+                    .get("content")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
                     .is_empty(),
                 "restore event leaked prompt content: {payload}"
             );
@@ -2726,9 +2858,18 @@ mod tests {
             );
 
             let second = sweeper.run_once().await;
-            anyhow::ensure!(second.chats_finalized == 0, "second sweep report = {second:?}");
-            anyhow::ensure!(rows.restore_count().await? == 1, "second sweep duplicated restore");
-            anyhow::ensure!(cancel_finalized_events(&events).len() == 1, "second sweep duplicated event");
+            anyhow::ensure!(
+                second.chats_finalized == 0,
+                "second sweep report = {second:?}"
+            );
+            anyhow::ensure!(
+                rows.restore_count().await? == 1,
+                "second sweep duplicated restore"
+            );
+            anyhow::ensure!(
+                cancel_finalized_events(&events).len() == 1,
+                "second sweep duplicated event"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -2760,7 +2901,10 @@ mod tests {
                     .is_some_and(|message| message.restore_to_input),
                 "not-started empty task did not restore synchronously"
             );
-            anyhow::ensure!(!empty.user_message_exists().await?, "sync restore kept input row");
+            anyhow::ensure!(
+                !empty.user_message_exists().await?,
+                "sync restore kept input row"
+            );
             anyhow::ensure!(empty.marker_is_null().await?, "sync restore armed marker");
             Ok::<(), anyhow::Error>(())
         }
@@ -2783,13 +2927,22 @@ mod tests {
                 )
                 .await
                 .map_err(|error| anyhow::anyhow!("cancel nonempty task: {error}"))?;
-            anyhow::ensure!(cancelled.cancelled_chat_message.is_none(), "nonempty task restored");
-            anyhow::ensure!(nonempty.user_message_exists().await?, "nonempty input was deleted");
+            anyhow::ensure!(
+                cancelled.cancelled_chat_message.is_none(),
+                "nonempty task restored"
+            );
+            anyhow::ensure!(
+                nonempty.user_message_exists().await?,
+                "nonempty input was deleted"
+            );
             anyhow::ensure!(
                 nonempty.assistant_contents().await? == vec!["Stopped.".to_string()],
                 "nonempty assistant outcome mismatch"
             );
-            anyhow::ensure!(nonempty.marker_is_null().await?, "nonempty task armed marker");
+            anyhow::ensure!(
+                nonempty.marker_is_null().await?,
+                "nonempty task armed marker"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -2811,7 +2964,10 @@ mod tests {
                 .await
                 .map_err(|error| anyhow::anyhow!("cancel deferred task: {error}"))?;
             anyhow::ensure!(!deferred.marker_is_null().await?, "deferred marker missing");
-            anyhow::ensure!(deferred.user_message_exists().await?, "deferred input was deleted");
+            anyhow::ensure!(
+                deferred.user_message_exists().await?,
+                "deferred input was deleted"
+            );
             let fresh = agent::list_chat_finalize_deferred_expired(
                 &deferred.pool,
                 Utc::now() - chrono::Duration::seconds(60),
@@ -2870,11 +3026,23 @@ mod tests {
                 .map_err(|error| anyhow::anyhow!("cancel task: {error}"))?;
             rows.backdate_marker(120.0).await?;
             rows.insert_transcript().await?;
-            tasks.finalize_deferred_cancelled_chat(rows.task_id).await;
-            tasks.finalize_deferred_cancelled_chat(rows.task_id).await;
+            anyhow::ensure!(
+                tasks.finalize_deferred_cancelled_chat(rows.task_id).await,
+                "first finalizer did not settle the task"
+            );
+            anyhow::ensure!(
+                !tasks.finalize_deferred_cancelled_chat(rows.task_id).await,
+                "second finalizer claimed an already-settled task"
+            );
             anyhow::ensure!(rows.marker_is_null().await?, "marker was not claimed");
-            anyhow::ensure!(rows.user_message_exists().await?, "late transcript deleted input");
-            anyhow::ensure!(rows.restore_count().await? == 0, "late transcript created restore");
+            anyhow::ensure!(
+                rows.user_message_exists().await?,
+                "late transcript deleted input"
+            );
+            anyhow::ensure!(
+                rows.restore_count().await? == 0,
+                "late transcript created restore"
+            );
             anyhow::ensure!(
                 rows.assistant_contents().await? == vec!["Stopped.".to_string()],
                 "late transcript outcome was not exactly one Stopped."
@@ -2896,7 +3064,11 @@ mod tests {
     async fn channel_ingested_and_missing_session_fail_closed() -> anyhow::Result<()> {
         let channel = ChatFinalizeRows::required("running", true).await?;
         let channel_result = async {
-            channel.mark_channel_ingested().await?;
+            channel.mark_channel_ingested_and_archive_unbind().await?;
+            anyhow::ensure!(
+                channel.is_archived_and_unbound().await?,
+                "channel fixture did not exercise archived/unbound state"
+            );
             channel.backdate_marker(120.0).await?;
             let bus = Arc::new(Bus::new());
             let events = Arc::new(Mutex::new(Vec::<Event>::new()));
@@ -2910,15 +3082,32 @@ mod tests {
                 });
             }
             let tasks = TaskService::new(channel.pool.clone(), bus);
-            tasks.finalize_deferred_cancelled_chat(channel.task_id).await;
-            anyhow::ensure!(channel.marker_is_null().await?, "channel marker not claimed");
-            anyhow::ensure!(channel.user_message_exists().await?, "channel input was deleted");
-            anyhow::ensure!(channel.restore_count().await? == 0, "channel input became restorable");
+            anyhow::ensure!(
+                tasks
+                    .finalize_deferred_cancelled_chat(channel.task_id)
+                    .await,
+                "channel finalizer did not settle the task"
+            );
+            anyhow::ensure!(
+                channel.marker_is_null().await?,
+                "channel marker not claimed"
+            );
+            anyhow::ensure!(
+                channel.user_message_exists().await?,
+                "channel input was deleted"
+            );
+            anyhow::ensure!(
+                channel.restore_count().await? == 0,
+                "channel input became restorable"
+            );
             anyhow::ensure!(
                 channel.assistant_contents().await? == vec!["Stopped.".to_string()],
                 "channel outcome did not stop"
             );
-            anyhow::ensure!(cancel_finalized_events(&events).len() == 1, "channel event missing");
+            anyhow::ensure!(
+                cancel_finalized_events(&events).len() == 1,
+                "channel event missing"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -2934,9 +3123,18 @@ mod tests {
                 .execute(&gone.pool)
                 .await?;
             let tasks = TaskService::new(gone.pool.clone(), Arc::new(Bus::new()));
-            tasks.finalize_deferred_cancelled_chat(gone.task_id).await;
-            anyhow::ensure!(gone.marker_is_null().await?, "missing-session marker not claimed");
-            anyhow::ensure!(gone.restore_count().await? == 0, "missing session got restore");
+            anyhow::ensure!(
+                !tasks.finalize_deferred_cancelled_chat(gone.task_id).await,
+                "missing-session finalization was counted as settled"
+            );
+            anyhow::ensure!(
+                gone.marker_is_null().await?,
+                "missing-session marker not claimed"
+            );
+            anyhow::ensure!(
+                gone.restore_count().await? == 0,
+                "missing session got restore"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -2947,7 +3145,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finalize_lock_waits_for_session_owner_and_positive_batch_is_bounded() -> anyhow::Result<()> {
+    async fn concurrent_ack_and_sweeper_claim_once_and_positive_batch_is_bounded(
+    ) -> anyhow::Result<()> {
         let rows = ChatFinalizeRows::required("cancelled", true).await?;
         let result = async {
             rows.backdate_marker(120.0).await?;
@@ -2958,33 +3157,60 @@ mod tests {
                 1,
             )
             .await?;
-            anyhow::ensure!(selected.len() <= 1, "positive batch returned {} rows", selected.len());
+            anyhow::ensure!(
+                selected.len() <= 1,
+                "positive batch returned {} rows",
+                selected.len()
+            );
             let all = agent::list_chat_finalize_deferred_expired(
                 &rows.pool,
                 Utc::now() - chrono::Duration::seconds(60),
                 100,
             )
             .await?;
-            anyhow::ensure!(all.iter().any(|task| task.id == rows.task_id), "primary marker missing");
-            anyhow::ensure!(all.iter().any(|task| task.id == second_id), "second marker missing");
+            anyhow::ensure!(
+                all.iter().any(|task| task.id == rows.task_id),
+                "primary marker missing"
+            );
+            anyhow::ensure!(
+                all.iter().any(|task| task.id == second_id),
+                "second marker missing"
+            );
 
             let mut lock_tx = rows.pool.begin().await?;
-            sqlx::query("SELECT id FROM chat_session WHERE id = $1 FOR UPDATE")
-                .bind(rows.session_id)
+            sqlx::query("SELECT id FROM agent_task_queue WHERE id = $1 FOR UPDATE")
+                .bind(rows.task_id)
                 .execute(&mut *lock_tx)
                 .await?;
             let tasks = Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new())));
             let task_id = rows.task_id;
-            let finalizer = tasks.clone();
-            let pending = tokio::spawn(async move {
-                finalizer.finalize_deferred_cancelled_chat(task_id).await;
-            });
-            tokio::time::sleep(Duration::from_millis(80)).await;
-            anyhow::ensure!(!rows.marker_is_null().await?, "finalizer bypassed session lock");
-            drop(lock_tx);
-            pending.await?;
-            anyhow::ensure!(rows.marker_is_null().await?, "finalizer did not claim after lock release");
-            anyhow::ensure!(rows.restore_count().await? == 1, "lock-wait finalizer missed restore");
+            let ack = {
+                let tasks = tasks.clone();
+                tokio::spawn(async move { tasks.finalize_deferred_cancelled_chat(task_id).await })
+            };
+            let sweeper = {
+                let tasks = tasks.clone();
+                tokio::spawn(async move { tasks.finalize_deferred_cancelled_chat(task_id).await })
+            };
+            wait_for_two_blocked_chat_finalizers(&rows.pool).await?;
+            anyhow::ensure!(
+                !rows.marker_is_null().await?,
+                "finalizer bypassed the task-row claim barrier"
+            );
+            lock_tx.commit().await?;
+            let outcomes = [ack.await?, sweeper.await?];
+            anyhow::ensure!(
+                outcomes.iter().filter(|settled| **settled).count() == 1,
+                "ack/sweeper outcomes were not exactly-once: {outcomes:?}"
+            );
+            anyhow::ensure!(
+                rows.marker_is_null().await?,
+                "winning finalizer did not commit the marker claim"
+            );
+            anyhow::ensure!(
+                rows.restore_count().await? == 1,
+                "ack/sweeper race did not commit exactly one restore"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;

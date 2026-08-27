@@ -2646,3 +2646,21 @@ lock order、transaction boundary、idempotence、cleanup 或 production wiring 
 base 为 `codex/cord-238-delegated-failure-recovery-contract-rust` 的 `e7b268b9`，当前 tip 为 `8782170f`；独立
 verifier/reviewer/fixer 已异步派发。exact compile、matched/executed counts、required PostgreSQL、server/Windows、取消/ack、
 session deletion race、failure cleanup 和完整 sweeper evidence 返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
+
+独立 review 在 exact tip `ac2c36b1` 发现 P0：sync 与 deferred finalizer 创建 transaction 后从未 commit，所有 restore/
+Stopped/marker 写入都会在函数返回时 rollback，deferred path 甚至可能为回滚结果发布成功事件。fixer commit `840261fe`
+为两个 finalizer 的 marker-only、missing row/session、restore、Stopped 全部成功/早退路径补 commit，且把两处被 `.ok()`
+吞掉的 input-delete error 恢复为 error/rollback；主 agent 已机械推送到 PR #575。
+
+后续 fixer follow-up 修正 report 语义：`finalize_deferred_cancelled_chat` 仅在 settlement commit 且有 outcome 时返回 true，
+`run_once` 只累计 true，不再把 selected/no-op/error candidates 全算作 `chats_finalized`。contract 同 tick 注入一个无 session
+候选并断言 marker 被清但 report 仍只计真实 restore；ack/sweeper 两个并发 finalizer 在真实 task row holder 后同时进入
+PostgreSQL lock wait，释放后严格一 true/一 false且只生成一个 restore。draft restore 证据穿过 production Router，覆盖 creator
+含 attachment fetch、non-creator GET/DELETE 403、两次 consume 204，以及真实 session DELETE 等待 concurrent writer commit
+后清除无 FK restore。channel fixture 现在实际创建 binding、archive session 再 unbind，并验证 immutable provenance；event
+同时精确约束 workspace/task/session/system actor 与 allowed payload keys。
+
+fixer 环境 `DATABASE_URL` unset，required PostgreSQL contracts 未执行；locked/offline no-run 仍在 discovery 前被 inherited
+#563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests）。fixed-stable rustfmt 对 fixer 触及的
+`chat_api.rs`/`runtime_sweeper.rs` PASS，`git diff --check` PASS；在 resolver 修复传播且有 migrated PostgreSQL 前不能把上述
+race/HTTP/commit evidence 登记为 executed PASS。
