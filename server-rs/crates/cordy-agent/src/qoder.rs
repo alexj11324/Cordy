@@ -105,6 +105,15 @@ static GROK_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = Laz
         ("--fork-session", BlockedArgMode::Standalone),
     ])
 });
+static MCODE_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+    BTreeMap::from([
+        ("acp", BlockedArgMode::Standalone),
+        ("login", BlockedArgMode::Standalone),
+        ("--region", BlockedArgMode::WithValue),
+        ("-h", BlockedArgMode::Standalone),
+        ("--help", BlockedArgMode::Standalone),
+    ])
+});
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -132,6 +141,8 @@ pub struct QoderConfig {
     pub launch_tail: Vec<String>,
     pub effort_process_arg: bool,
     pub explicit_authentication: bool,
+    pub use_system_prompt: bool,
+    pub require_load_capability: bool,
 }
 
 impl Default for QoderConfig {
@@ -153,6 +164,8 @@ impl Default for QoderConfig {
             launch_tail: Vec::new(),
             effort_process_arg: false,
             explicit_authentication: false,
+            use_system_prompt: true,
+            require_load_capability: false,
         }
     }
 }
@@ -208,6 +221,8 @@ impl TraecliBackend {
                 launch_tail: Vec::new(),
                 effort_process_arg: false,
                 explicit_authentication: false,
+                use_system_prompt: true,
+                require_load_capability: false,
             }),
         }
     }
@@ -262,6 +277,8 @@ impl KiroBackend {
                 launch_tail: Vec::new(),
                 effort_process_arg: false,
                 explicit_authentication: false,
+                use_system_prompt: true,
+                require_load_capability: false,
             }),
         }
     }
@@ -316,6 +333,8 @@ impl QwenpawBackend {
                 launch_tail: Vec::new(),
                 effort_process_arg: false,
                 explicit_authentication: false,
+                use_system_prompt: true,
+                require_load_capability: false,
             }),
         }
     }
@@ -416,6 +435,45 @@ impl Backend for GrokBackend {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct McodeConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct McodeBackend {
+    inner: QoderBackend,
+}
+
+impl McodeBackend {
+    pub fn new(config: McodeConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "mcode".to_string(),
+                provider: "mcode".to_string(),
+                launch_args: vec!["acp".to_string()],
+                resume_method: "session/load".to_string(),
+                model_selection: false,
+                reject_failed_load: true,
+                usage_model_unknown: true,
+                use_system_prompt: false,
+                require_load_capability: true,
+                ..QoderConfig::default()
+            }),
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for McodeBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
 pub fn build_qoder_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&QoderConfig::default(), options)
 }
@@ -483,6 +541,11 @@ pub fn build_grok_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&backend.inner.config, options)
 }
 
+pub fn build_mcode_args(options: &ExecOptions) -> Vec<String> {
+    let backend = McodeBackend::new(McodeConfig::default());
+    build_session_args(&backend.inner.config, options)
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
@@ -505,6 +568,7 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
         "kimi" => &KIMI_BLOCKED_ARGS,
         "qwenpaw" => &QWENPAW_BLOCKED_ARGS,
         "grok" => &GROK_BLOCKED_ARGS,
+        "mcode" => &MCODE_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
@@ -681,7 +745,9 @@ impl Backend for QoderBackend {
         let coding_project_meta = self.config.coding_project_meta.clone();
         let full_text_output = self.config.full_text_output;
         let usage_model_unknown = self.config.usage_model_unknown;
+        let use_system_prompt = self.config.use_system_prompt;
         let explicit_authentication = self.config.explicit_authentication;
+        let require_load_capability = self.config.require_load_capability;
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
@@ -718,8 +784,10 @@ impl Backend for QoderBackend {
                 coding_project_meta,
                 full_text_output,
                 usage_model_unknown,
+                use_system_prompt,
                 explicit_authentication,
                 have_api_key,
+                require_load_capability,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -851,8 +919,10 @@ async fn run_protocol(
     coding_project_meta: Option<String>,
     full_text_output: bool,
     usage_model_unknown: bool,
+    use_system_prompt: bool,
     explicit_authentication: bool,
     have_api_key: bool,
+    require_load_capability: bool,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -895,6 +965,23 @@ async fn run_protocol(
     } else {
         &options.cwd
     };
+    if require_load_capability
+        && !options.resume_session_id.is_empty()
+        && !initialize
+            .get("agentCapabilities")
+            .and_then(|capabilities| capabilities.get("loadSession"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return ProtocolOutcome {
+            status: "failed".to_string(),
+            error: format!(
+                "{provider} ACP does not support session loading; retry with a fresh session"
+            ),
+            resume_rejected: true,
+            ..ProtocolOutcome::default()
+        };
+    }
     let (session_result, mut session_id) = if options.resume_session_id.is_empty() {
         match client
             .request(
@@ -1008,7 +1095,7 @@ async fn run_protocol(
             ),
         }
     }
-    let user_text = if options.system_prompt.is_empty() {
+    let user_text = if !use_system_prompt || options.system_prompt.is_empty() {
         prompt
     } else {
         format!("{}\n\n---\n\n{}", options.system_prompt, prompt)
@@ -1102,18 +1189,17 @@ async fn run_protocol(
     if full_text_output {
         output.clone_from(&full_output);
     }
+    let (status, error) = match stop_reason {
+        "cancelled" => ("aborted", format!("{provider} cancelled the prompt")),
+        "max_turn_requests" if provider == "mcode" => (
+            "failed",
+            "mcode reached its maximum turn requests".to_string(),
+        ),
+        _ => ("completed", String::new()),
+    };
     ProtocolOutcome {
-        status: if stop_reason == "cancelled" {
-            "aborted"
-        } else {
-            "completed"
-        }
-        .to_string(),
-        error: if stop_reason == "cancelled" {
-            format!("{provider} cancelled the prompt")
-        } else {
-            String::new()
-        },
+        status: status.to_string(),
+        error,
         output,
         full_output,
         session_id,
@@ -1813,6 +1899,18 @@ mod tests {
     }
 
     #[test]
+    fn mcode_arguments_keep_acp_and_login_ui_owned() {
+        let args = build_mcode_args(&ExecOptions {
+            extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
+            custom_args: ["login", "--region", "eu", "--debug"]
+                .map(str::to_string)
+                .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(args, ["acp", "--verbose", "--debug"]);
+    }
+
+    #[test]
     fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
         let args = build_kiro_args(&ExecOptions {
             custom_args: [
@@ -2005,6 +2103,21 @@ mod tests {
         let backend = GrokBackend::new(GrokConfig {
             command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
             env: BTreeMap::from([("XAI_API_KEY".to_string(), "test-key".to_string())]),
+        });
+        (directory, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_mcode_backend(script: &str) -> (tempfile::TempDir, McodeBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("mcode");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake MCode: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake MCode: {error}"));
+        let backend = McodeBackend::new(McodeConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::new(),
         });
         (directory, backend)
     }
@@ -2345,6 +2458,79 @@ done
         assert_eq!(result.status, "failed");
         assert!(result.resume_rejected);
         assert!(result.session_id.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn mcode_executes_without_fake_model_or_system_prompt_support() {
+        let (_directory, backend) = fake_mcode_backend(
+            r#"#!/bin/sh
+test "$1" = acp && test -z "$2" || exit 60
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"loadSession":false}}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) exit 61 ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"mcode-1"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in *'system must not be sent'*) exit 62 ;; esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"max_turn_requests","usage":{"inputTokens":8,"outputTokens":3}}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "user prompt",
+                ExecOptions {
+                    model: "unsupported-model".to_string(),
+                    system_prompt: "system must not be sent".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute MCode: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("MCode result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("maximum turn requests"));
+        assert_eq!(result.session_id, "mcode-1");
+        assert_eq!(result.usage["unknown"].input_tokens, 8);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn mcode_rejects_resume_before_session_operation_when_unsupported() {
+        let (_directory, backend) = fake_mcode_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"loadSession":false}}}\n' "$id" ;;
+    *'"method":"session/'*) exit 63 ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "old-session".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute MCode resume: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("MCode resume result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert!(result.error.contains("does not support session loading"));
     }
 
     #[cfg(unix)]
