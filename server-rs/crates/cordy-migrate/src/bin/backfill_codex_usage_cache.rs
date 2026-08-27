@@ -11,6 +11,7 @@ use clap::Parser;
 use cordy_migrate::backfill::codex_usage::{self, Options};
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 const DEFAULT_DATABASE_URL: &str = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
 
@@ -56,7 +57,14 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     let options = options_from_args(&args, Utc::now())?;
-    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
+    let configured_db_url = std::env::var_os("DATABASE_URL")
+        .map(|value| {
+            value
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("DATABASE_URL must be valid UTF-8"))
+        })
+        .transpose()?;
+    let db_url = configured_database_url(configured_db_url.as_deref());
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(&db_url)
@@ -67,9 +75,15 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("ping database")?;
 
+    let cancellation = CancellationToken::new();
+    let run_future = codex_usage::run(&pool, options, &cancellation);
+    tokio::pin!(run_future);
     tokio::select! {
-        result = codex_usage::run(&pool, options) => result,
-        _ = shutdown_signal() => Err(anyhow::anyhow!("backfill interrupted by signal")),
+        result = &mut run_future => result,
+        _ = shutdown_signal() => {
+            cancellation.cancel();
+            run_future.await
+        },
     }
 }
 
@@ -98,6 +112,12 @@ fn options_from_args(args: &Args, now: DateTime<Utc>) -> anyhow::Result<Options>
     };
     codex_usage::validate_options(&options)?;
     Ok(options)
+}
+
+fn configured_database_url(value: Option<&str>) -> &str {
+    value
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_DATABASE_URL)
 }
 
 async fn shutdown_signal() {
@@ -166,7 +186,7 @@ fn parse_go_duration(value: &str) -> Result<Duration, String> {
         segments += 1;
     }
 
-    if segments == 0 || total_nanos > u64::MAX as u128 {
+    if segments == 0 || total_nanos > i64::MAX as u128 {
         return Err(format!("duration {value:?} overflows"));
     }
     Ok(Duration::from_nanos(total_nanos as u64))
@@ -217,7 +237,7 @@ fn decimal_nanos(value: &str, nanos_per_unit: u128) -> Result<u128, &'static str
 
 #[cfg(test)]
 mod tests {
-    use super::{options_from_args, parse_go_duration, Args};
+    use super::{configured_database_url, options_from_args, parse_go_duration, Args};
     use chrono::{TimeZone, Utc};
     use std::time::Duration;
 
@@ -268,5 +288,27 @@ mod tests {
             Duration::from_millis(500)
         );
         assert!(parse_go_duration("-1s").is_err());
+    }
+
+    #[test]
+    fn duration_parser_uses_go_int64_limit() {
+        assert_eq!(
+            parse_go_duration("2562047h47m16.854775807s").unwrap(),
+            Duration::from_nanos(i64::MAX as u64)
+        );
+        assert!(parse_go_duration("9223372037s").is_err());
+    }
+
+    #[test]
+    fn empty_database_url_uses_the_local_default() {
+        assert_eq!(configured_database_url(None), super::DEFAULT_DATABASE_URL);
+        assert_eq!(
+            configured_database_url(Some("")),
+            super::DEFAULT_DATABASE_URL
+        );
+        assert_eq!(
+            configured_database_url(Some("postgres://example")),
+            "postgres://example"
+        );
     }
 }

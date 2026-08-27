@@ -1245,8 +1245,10 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "futures-util",
  "sqlx",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
