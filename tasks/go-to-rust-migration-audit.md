@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote MCP production task chain 已交付；当前选定 plugin-hook MCP 完整 task-local 链 | 接通 server invoker、fail-soft startup/merge 和 task lifetime，再继续其余 daemon 能力 | 依赖 AUDIT-001 Rust daemon 产物及 #545/#546 effective config/broker 路径，可执行 | PR #542..#546/当前切片；§5.2、§6.2、§29..§34 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP production task chain 已交付 | 异步收口 V/R/F，同时选择下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#547，可执行 | PR #542..#547；§5.2、§6.2、§29..§34 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -857,6 +857,10 @@ reader。缺失、坏 metadata 仍走既有 mtime fallback；unknown kind 保留
   metadata 并直接调用 override，没有直接跑
   `read_gc_meta -> unknown dispatch -> local_directory override` 生产决策链，不能支撑
   删除安全声明。该 finding 已交给独立 fixer；尚无修复 SHA 或重新验证结果。
+- verifier 在同一 head 如实记录：`git diff --check` 通过；fixed-stable rustfmt 因
+  `gc.rs` import ordering 失败；两个 exact filter 均在编译期失败，因为共享类型已改名为
+  `GCMetaKind`，测试仍有 7 处 `GcMetaKind`（E0433）。因此没有测试体执行，daemon
+  locked/offline no-run 与 disk-usage 验证也被阻断；这些编译/格式问题已交独立 fixer。
 
 ## 32. AUDIT-005 执行缺口：runtime MCP production merge
 
@@ -891,6 +895,9 @@ override，继续使用 provider 原生 inheritance；存在配置时，合并�
   plan→execenv/options 数据流、日志安全和 Ponytail 均核对正确，但现有 tests 只分别覆盖
   merge helper 与预填字段传播，未直接执行 production adapter 新调用点。finding 已交
   独立 fixer；尚无 fix SHA 或重新验证结果。
+- verifier 在同一 head 通过 provider adapter rustfmt 与 `git diff --check`，并从 source
+  确认 assembly 到 production adapter 的调用；runtime MCP exact filter 与 daemon no-run
+  均被堆叠基线 #544 的 `GcMetaKind` E0433 阻断，测试体执行数为 0，不能记录为通过。
 
 ## 33. AUDIT-005 执行缺口：Remote MCP broker production wiring
 
@@ -923,10 +930,12 @@ daemon claim wire 删除重复 stand-in，直接复用 `cordy-remotemcp::{Connec
   filtering、credential refresh/revocation、limits、merge 与 drop cancellation。
 - Go 是否可下线：否；plugin-hook MCP 尚未进入 Rust production task path，AUDIT-005
   其余生命周期与最终 AUDIT-001..010 门仍未收口。
-- 异步状态：独立 verification 与 reviewer 尚未返回，fixer 尚未派发。主 agent 只实际
-  运行并通过 `git diff --check b2430a64..926d8819`；未把编译、测试、rustfmt、静态检查
-  或真实外部 MCP 验证记录为通过。PR 明确堆叠在 Ready PR #545，并保留 #544/#545
-  reviewer P1 未修复状态。
+- 异步状态：verifier 在 head `263ace6b` 通过 `cargo check -p cordy-remotemcp`、
+  `git diff --check` 并保持 worktree clean；fixed-stable rustfmt 在
+  `provider_adapter.rs`/`remote_mcp_broker.rs` 失败。daemon production exact、broker group
+  与 no-run 均被堆叠基线 #544 的 7 处 `GcMetaKind` E0433 阻断，执行数为 0；真实外部
+  HTTPS/credential smoke 未运行。verifier 还确认现有测试没有独立的 limit-focused case，
+  因而不能支撑 PR 对 limits 的直接覆盖声明。问题已排入独立 fixer；reviewer 异步进行中。
 
 ## 34. AUDIT-005 执行缺口：plugin-hook MCP production wiring
 
@@ -945,6 +954,19 @@ daemon claim wire 删除重复 stand-in，直接复用 `cordy-remotemcp::{Connec
   `Client::invoke_agent_plugin_hook` 和 task lifetime，不需要第二个 server、client、parser、
   registry 或 runner。
 
-本切片必须作为一条完整契约交付：真实 invoker、fail-soft startup、overlay merge、provider
-execution/finalization lifetime 和 Drop shutdown。实现、Ready PR、verification、review 和
-fix 尚未产生，不能记录通过。
+Ready PR #547（`codex/cord-211-plugin-hook-mcp-production-wiring-rust`，gap commit
+`3c730a2e`，implementation commit `c267c22f`）把整条 task-local 契约一次接通：production
+adapter 构造真实 `Client::invoke_agent_plugin_hook` invoker，启动 loopback server，把 overlay
+合入已生效 MCP config，startup/merge 失败按 Go 语义 warning 后继续，并把 server set 持有到
+provider execution 与 environment finalization 结束；`Drop` 覆盖所有早退关闭路径。
+
+- 默认生产路径：Rust daemon assembly 的每个 claimed task 都进入
+  `ProductionProviderAdapter::run_task_inner`；有效 claim tool 会使用真实 daemon client，
+  没有 Stub、Noop 或 Fake 进入有效配置。签名 secret 仍只由 server/client 边界持有。
+- 直接检查：新增协议检查通过 overlay URL 实际 POST `tools/call`，证明 production-started
+  server 调用 invoker 并返回结果；另有 Drop 检查证明 listener token 随 owner 生命周期关闭。
+- Go 是否可下线：否；本契约已迁移，但 AUDIT-005 仍有其余 daemon 生命周期能力和最终
+  AUDIT-001..010 门。
+- 异步状态：verification 与 reviewer 已分别派发、尚未返回，fixer 尚无本 PR finding。
+  主 agent 只实际运行并通过 `git diff --check 263ace6b..c267c22f`；未把编译、测试、rustfmt、
+  静态检查或生产验证记录为通过。PR 明确堆叠在 Ready PR #546。
