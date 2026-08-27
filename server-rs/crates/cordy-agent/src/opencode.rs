@@ -26,9 +26,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
-};
+use crate::model::{Catalog, CatalogCache, Model, ModelThinking, ThinkingLevel};
 use crate::opencode_mcp::build_opencode_mcp_config_content;
 use crate::process::OwnedProcessTree;
 use crate::stderr::SharedDiagnosticBuffer;
@@ -88,9 +86,7 @@ impl OpencodeBackend {
         } else {
             runtime_scope
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return Catalog::default();
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -156,8 +152,8 @@ impl OpencodeBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        apply_sanitized_environment(&mut command, &self.config.env);
         let mut tree = OwnedProcessTree::spawn(&mut command).await.ok()?;
         let stdout = tree.child_mut().stdout.take()?;
         let mut reader = tokio::spawn(async move {
@@ -168,7 +164,7 @@ impl OpencodeBackend {
                 .await?;
             Ok::<_, io::Error>((bytes, output))
         });
-        let outcome = tokio::select! {
+        let completed = tokio::select! {
             status = tree.wait() => {
                 let _ = status;
                 true
@@ -176,9 +172,7 @@ impl OpencodeBackend {
             () = cancellation.cancelled() => false,
             () = tokio::time::sleep(timeout) => false,
         };
-        if !outcome {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        }
+        stop_process_tree(&mut tree).await;
         let output = tokio::time::timeout(KILL_GRACE, &mut reader)
             .await
             .ok()
@@ -189,7 +183,7 @@ impl OpencodeBackend {
         if !reader.is_finished() {
             reader.abort();
         }
-        if !outcome {
+        if !completed {
             return None;
         }
         output.map(|output| String::from_utf8_lossy(&output).into_owned())
@@ -238,8 +232,8 @@ impl Backend for OpencodeBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        apply_sanitized_environment(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd).env("PWD", &options.cwd);
         }
@@ -257,19 +251,19 @@ impl Backend for OpencodeBackend {
                 }
             })?;
         let Some(stdout) = tree.child_mut().stdout.take() else {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             return Err(AgentError::Protocol(
                 "OpenCode stdout pipe unavailable after spawn".to_string(),
             ));
         };
         let Some(stdin) = tree.child_mut().stdin.take() else {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             return Err(AgentError::Protocol(
                 "OpenCode stdin pipe unavailable after spawn".to_string(),
             ));
         };
         let Some(stderr) = tree.child_mut().stderr.take() else {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             return Err(AgentError::Protocol(
                 "OpenCode stderr pipe unavailable after spawn".to_string(),
             ));
@@ -291,32 +285,52 @@ impl Backend for OpencodeBackend {
         let mut writer_task = tokio::spawn(write_prompt(stdin, prompt));
 
         tokio::spawn(async move {
-            let outcome = if timeout.is_zero() {
-                tokio::select! {
-                    status = tree.wait() => RunOutcome::Completed(status),
-                    () = cancellation.cancelled() => RunOutcome::Cancelled,
-                }
-            } else {
-                tokio::select! {
-                    status = tree.wait() => RunOutcome::Completed(status),
-                    () = cancellation.cancelled() => RunOutcome::Cancelled,
-                    () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
+            let completion = async {
+                let status = tree.wait().await;
+                // The direct process can exit while a tool descendant still
+                // owns the output pipes. Reap/stop the owned tree before
+                // joining the event reader so descendants cannot outlive the
+                // configured cancellation and timeout policy.
+                stop_process_tree(&mut tree).await;
+                let state = join_events(&mut events_task).await;
+                (status, state)
+            };
+            let outcome = {
+                tokio::pin!(completion);
+                if timeout.is_zero() {
+                    tokio::select! {
+                        completed = &mut completion => RunOutcome::Completed(completed),
+                        () = cancellation.cancelled() => RunOutcome::Cancelled,
+                    }
+                } else {
+                    let remaining = timeout.saturating_sub(started.elapsed());
+                    if remaining.is_zero() {
+                        RunOutcome::TimedOut
+                    } else {
+                        tokio::select! {
+                            completed = &mut completion => RunOutcome::Completed(completed),
+                            () = cancellation.cancelled() => RunOutcome::Cancelled,
+                            () = tokio::time::sleep(remaining) => RunOutcome::TimedOut,
+                        }
+                    }
                 }
             };
 
-            let (run_end, exit) = match outcome {
-                RunOutcome::Completed(status) => (RunEnd::Completed, status),
+            let (run_end, exit, state) = match outcome {
+                RunOutcome::Completed(completed) => (RunEnd::Completed, completed.0, completed.1),
                 RunOutcome::Cancelled => {
                     writer_task.abort();
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                    stop_process_tree(&mut tree).await;
                     events_stop.cancel();
-                    (RunEnd::Cancelled, Ok(success_exit_status()))
+                    let state = join_events(&mut events_task).await;
+                    (RunEnd::Cancelled, Ok(success_exit_status()), state)
                 }
                 RunOutcome::TimedOut => {
                     writer_task.abort();
-                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                    stop_process_tree(&mut tree).await;
                     events_stop.cancel();
-                    (RunEnd::DeadlineExceeded, Ok(success_exit_status()))
+                    let state = join_events(&mut events_task).await;
+                    (RunEnd::DeadlineExceeded, Ok(success_exit_status()), state)
                 }
             };
 
@@ -333,7 +347,6 @@ impl Backend for OpencodeBackend {
                     ))
                 }
             };
-            let state = join_events(&mut events_task).await;
             if tokio::time::timeout(KILL_GRACE, &mut stderr_task)
                 .await
                 .is_err()
@@ -353,12 +366,13 @@ impl Backend for OpencodeBackend {
             } else if matches!(run_end, RunEnd::Cancelled) {
                 status = "aborted".to_string();
                 error = "execution cancelled".to_string();
-            } else if let Some(exit_error) = exit_error(exit.as_ref()) {
-                if status == "completed" {
+            } else if status == "completed" {
+                if !state.saw_terminal_signal {
+                    status = "failed".to_string();
+                    error = "opencode stream ended without a terminal step_finish event".to_string();
+                } else if let Some(exit_error) = exit_error(exit.as_ref()) {
                     status = "failed".to_string();
                     error = format!("opencode exited with error: {exit_error}");
-                } else if state.no_terminal_signal {
-                    error = format!("{error}; opencode exited with error: {exit_error}");
                 }
             }
             if let Some(write_error) = write_error
@@ -413,12 +427,22 @@ impl Backend for OpencodeBackend {
 fn resolve_opencode_command(path: &str) -> String {
     #[cfg(windows)]
     {
-        if !path.to_ascii_lowercase().ends_with(".cmd") {
-            return path.to_string();
-        }
+        // Command::new performs its own Windows PATH lookup, but we need the
+        // resolved path first so the default bare `opencode` name can reach
+        // the npm-installed `opencode.cmd` shim and then its native sibling.
         let shim = locate_opencode_shim(path);
+        let resolved = shim
+            .as_deref()
+            .unwrap_or_else(|| Path::new(path))
+            .to_path_buf();
+        let is_cmd = resolved
+            .extension()
+            .is_some_and(|extension| extension.to_string_lossy().eq_ignore_ascii_case("cmd"));
+        if !is_cmd {
+            return resolved.to_string_lossy().into_owned();
+        }
         let Some(prefix) = shim.as_deref().and_then(Path::parent) else {
-            return path.to_string();
+            return resolved.to_string_lossy().into_owned();
         };
         for package in opencode_windows_package_candidates() {
             let candidate = prefix
@@ -432,7 +456,9 @@ fn resolve_opencode_command(path: &str) -> String {
                 return candidate.to_string_lossy().into_owned();
             }
         }
+        return resolved.to_string_lossy().into_owned();
     }
+    #[cfg(not(windows))]
     path.to_string()
 }
 
@@ -442,10 +468,35 @@ fn locate_opencode_shim(path: &str) -> Option<std::path::PathBuf> {
     if candidate.is_absolute() || candidate.components().count() > 1 {
         return candidate.is_file().then(|| candidate.to_path_buf());
     }
+    let mut names = vec![candidate.to_path_buf()];
+    if candidate.extension().is_none() {
+        let extensions = std::env::var_os("PATHEXT")
+            .map(|value| {
+                value
+                    .to_string_lossy()
+                    .split(';')
+                    .filter(|extension| !extension.is_empty())
+                    .map(std::borrow::ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| {
+                vec![
+                    ".COM".to_string(),
+                    ".EXE".to_string(),
+                    ".BAT".to_string(),
+                    ".CMD".to_string(),
+                ]
+            });
+        for extension in extensions {
+            let mut name = candidate.as_os_str().to_os_string();
+            name.push(extension);
+            names.push(std::path::PathBuf::from(name));
+        }
+    }
     std::env::var_os("PATH")
         .into_iter()
         .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
-        .map(|directory| directory.join(candidate))
+        .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
         .find(|candidate| candidate.is_file())
 }
 
@@ -478,7 +529,7 @@ enum RunEnd {
 }
 
 enum RunOutcome {
-    Completed(io::Result<ExitStatus>),
+    Completed((io::Result<ExitStatus>, OpencodeEventResult)),
     Cancelled,
     TimedOut,
 }
@@ -769,6 +820,42 @@ fn success_exit_status() -> ExitStatus {
         use std::os::windows::process::ExitStatusExt;
         ExitStatus::from_raw(0)
     }
+}
+
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
+}
+
+fn apply_sanitized_environment(command: &mut Command, configured: &BTreeMap<String, String>) {
+    command.env_clear();
+    for (key, value) in std::env::vars_os() {
+        if !key
+            .to_string_lossy()
+            .get(..6)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("CORDY_"))
+        {
+            command.env(key, value);
+        }
+    }
+    command.envs(configured);
 }
 
 #[derive(Debug, Deserialize)]
@@ -1208,6 +1295,66 @@ sleep 10
             .unwrap_or_else(|error| panic!("receive result: {error}"));
         assert_eq!(result.status, "timeout");
         assert!(result.error.contains("timed out"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn direct_exit_cleans_descendants_before_draining_stream() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"text","sessionID":"ses-descendant","part":{"text":"done"}}'
+printf '%s\n' '{"type":"step_finish","sessionID":"ses-descendant","part":{"reason":"stop"}}'
+sleep 60 &
+exit 0
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    timeout: Duration::from_secs(5),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute OpenCode with descendant: {error}"));
+        let Session { result, .. } = session;
+        let result = tokio::time::timeout(Duration::from_secs(2), result)
+            .await
+            .unwrap_or_else(|_| panic!("OpenCode result waited for an unowned descendant"))
+            .unwrap_or_else(|error| panic!("receive result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "ses-descendant");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execution_requires_terminal_step_finish_event() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"text","sessionID":"ses-incomplete","part":{"text":"partial"}}'
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    timeout: Duration::from_secs(5),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute incomplete OpenCode: {error}"));
+        let Session { result, .. } = session;
+        let result = result
+            .await
+            .unwrap_or_else(|error| panic!("receive result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result
+            .error
+            .contains("without a terminal step_finish event"));
     }
 
     #[cfg(unix)]

@@ -28,6 +28,7 @@ pub use contract::{
 pub use deveco::{build_deveco_args, DevecoBackend, DevecoConfig};
 pub use dsh::{build_dsh_args, DshBackend, DshConfig};
 pub use model::{Catalog, CatalogCache, Model, ModelServiceTier, ModelThinking, ThinkingLevel};
+pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
 pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qwen::{QwenBackend, QwenConfig};
