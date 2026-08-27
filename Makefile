@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down rust-migrate-up rust-migrate-down go-migrate-up go-migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build rust-build go-build test migrate-up migrate-down rust-migrate-up rust-migrate-down go-migrate-up go-migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -43,7 +43,10 @@ endef
 # The Rust HTTP server is the default source entrypoint. Keep the build commit
 # in the process environment so metrics retain the same release metadata as
 # the legacy Go command during the staged migration.
-RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
+# The development server does not consume CORDY_BUILD_DATE; omitting it keeps
+# Cargo from rebuilding cordy-server on every invocation just because the clock
+# changed. Release builds stamp their artifacts separately in rust-build.
+RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
 RUST_MIGRATE_CMD = ./scripts/run-rust-server.sh run --locked -p cordy-migrate --
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
@@ -293,27 +296,38 @@ rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
 	CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" ./scripts/run-rust-cli.sh $(CORDY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
+	cd server-rs && CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
 GO_VERSION ?= unknown
-# Windows will not execute an extensionless binary, so a source build there has
-# to name its outputs the way the target platform expects — otherwise the CLI
-# builds fine and then fails to re-exec itself as a daemon (#7255). GOOS reaches
-# a build two ways: as an environment variable (`GOOS=windows make build`) and
-# as a Make variable (`make build GOOS=windows`). The top-level `export` sends
-# both forms to the recipe, so `go build` honors both and the suffix has to as
-# well; `$(GOOS)` covers the Make-variable form, which a parse-time
-# `go env GOOS` cannot see. Target-specific so only `build` pays for the probe:
-# a global assignment runs `go env` on every target — `export` expands even a
-# recursive one — which prints `go: Command not found` on frontend-only
-# checkouts with no Go toolchain installed.
-build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
-build: GO_VERSION = $(shell go env GOVERSION 2>/dev/null || echo unknown)
-build: ## Build the server, CLI, and migrate binaries into server/bin
+RUST_BUILD_GO_VERSION ?= unknown
+RUST_EXE ?= $(if $(filter Windows_NT,$(OS)),.exe,)
+# Keep Cargo's output and the paths copied below in lockstep. This deliberately
+# overrides an inherited CARGO_TARGET_DIR for the aggregate build; callers can
+# choose another location through RUST_TARGET_DIR instead.
+RUST_TARGET_DIR ?= $(CURDIR)/server-rs/target
+
+build: rust-build ## Build the Rust server, CLI, and migrate binaries into server/bin
+
+rust-build: ## Build native Rust server, CLI, and migrate binaries into server/bin
+	@mkdir -p server/bin
+	cd server-rs && CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate
+	cp "$(RUST_TARGET_DIR)/release/cordy-server$(RUST_EXE)" "server/bin/server$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/cordy$(RUST_EXE)" "server/bin/cordy$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/cordy-migrate$(RUST_EXE)" "server/bin/migrate$(RUST_EXE)"
+
+# Windows will not execute an extensionless binary, so the legacy Go fallback
+# keeps naming its outputs for the target platform. GOOS reaches a build two
+# ways: as an environment variable (`GOOS=windows make go-build`) and as a Make
+# variable (`make go-build GOOS=windows`). The top-level `export` sends both
+# forms to the recipe, and `$(GOOS)` covers the Make-variable form that a
+# parse-time `go env GOOS` cannot see. This target remains for cross-platform
+# Go packaging until the Rust release targets are migrated.
+go-build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
+go-build: ## Build the legacy Go server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server$(EXE) ./cmd/server
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/cordy$(EXE) ./cmd/cordy
 	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
