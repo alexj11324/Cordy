@@ -13,6 +13,8 @@ use tokio_util::sync::CancellationToken;
 pub enum AgentError {
     #[error("agent executable not found: {0}")]
     ExecutableNotFound(String),
+    #[error("unsupported agent runtime: {0}")]
+    UnsupportedRuntime(String),
     #[error("invalid agent configuration: {0}")]
     InvalidConfig(String),
     #[error("agent protocol error: {0}")]

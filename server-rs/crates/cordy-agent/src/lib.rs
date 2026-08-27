@@ -61,3 +61,4 @@ pub use qoder::{
     QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 pub use qwen::{QwenBackend, QwenConfig};
+pub use registry::{build_backend, BackendConfig};
