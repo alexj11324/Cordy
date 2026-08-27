@@ -2112,3 +2112,10 @@ production scheduler、SQL、依赖、文件边界或新增 runtime seam：
 
 非 Draft Ready PR #569 已创建，base 是 #568 branch，Ready SHA `be2bc21d`；独立 verifier/reviewer 已异步派发，
 fixer 尚无本 PR finding。PR可在异步结果期间保持Ready，主线不等待。
+
+独立 verifier 在 exact HEAD `b24d14bbd16424426bdabc02e4c4904898d3e977` 上确认 clean worktree、base ancestry、
+range/worktree diff和 Cargo.lock hash不变通过；direct heartbeat rustfmt通过。继承自 #563 的非法 `hyper-util/runtime`
+feature 令 locked/offline metadata、handler no-run、server/Windows build和两个 exact heartbeat tests全部 exit 101，
+每个 exact 均 matched/executed/passed/failed 0/0/0/0，不能记为通过。环境无 `DATABASE_URL`、psql或pg_isready；required
+fixture静态确认缺配置会失败而非skip，但真实 coalesce、status-race、row-lock shutdown和cleanup均未执行。#567 stale
+lock/rustfmt与#568 scheduler rustfmt仍为继承问题；本切片无 direct formatting finding。review仍在进行，PR保持Ready。
