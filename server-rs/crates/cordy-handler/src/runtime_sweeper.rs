@@ -1771,6 +1771,28 @@ mod tests {
         anyhow::bail!("backend {pid} never waited for the runtime row lock")
     }
 
+    async fn wait_for_blocked_task_detach(pool: &PgPool) -> anyhow::Result<()> {
+        for _ in 0..500 {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (\
+                    SELECT 1 FROM pg_stat_activity \
+                    WHERE pid <> pg_backend_pid() \
+                      AND state = 'active' \
+                      AND wait_event_type = 'Lock' \
+                      AND query LIKE '%UPDATE agent_task_queue%' \
+                      AND query LIKE '%completed_at IS NOT NULL%'\
+                )",
+            )
+            .fetch_one(pool)
+            .await?;
+            if waiting {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        anyhow::bail!("runtime GC never reached the blocked terminal-task detach")
+    }
+
     #[tokio::test]
     async fn production_runtime_gc_preserves_terminal_history_and_deduplicates_workspace_event() {
         let rows = GcRows::required()
@@ -1957,6 +1979,13 @@ mod tests {
             .await
             .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC guards");
         let result = async {
+            let blocked_before = runtime::count_stale_offline_runtimes_blocked_by_tasks(
+                &rows.pool,
+                Utc::now() - chrono::Duration::days(7),
+                GC_BLOCKED_LIMIT,
+            )
+            .await?
+            .unwrap_or_default();
             for (offset, status) in [
                 "queued",
                 "dispatched",
@@ -2006,6 +2035,9 @@ mod tests {
                 );
             }
 
+            let bounded_runtime = rows
+                .runtime("bounded-candidate", "offline", "100 years")
+                .await?;
             let bounded_candidates = runtime::list_stale_offline_runtime_gc_candidates(
                 &rows.pool,
                 Utc::now() - chrono::Duration::days(7),
@@ -2013,9 +2045,8 @@ mod tests {
             )
             .await?;
             anyhow::ensure!(
-                bounded_candidates.len() <= 1,
-                "GC candidate query returned {} rows for max_per_tick=1",
-                bounded_candidates.len()
+                bounded_candidates == vec![Some(bounded_runtime)],
+                "GC candidate query did not return the oldest known candidate at max_per_tick=1: {bounded_candidates:?}"
             );
 
             let active_runtime = rows.runtime("guard-active-agent", "offline", "8 days").await?;
@@ -2075,7 +2106,10 @@ mod tests {
             )
             .await?
             .unwrap_or_default();
-            anyhow::ensure!(blocked_count >= 5, "blocked runtime gauge observed {blocked_count}, want all five statuses");
+            anyhow::ensure!(
+                blocked_count >= blocked_before + 5,
+                "blocked runtime gauge grew from {blocked_before} to {blocked_count}, want all five fixture statuses"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -2086,9 +2120,9 @@ mod tests {
 
     #[tokio::test]
     async fn production_runtime_gc_owner_lock_orders_enqueue_and_delete_safely() {
-        let rows = GcRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC owner lock contract");
+        let rows = GcRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for runtime GC owner lock contract",
+        );
         let result = async {
             let writer_runtime = rows.runtime("writer-wins", "offline", "8 days").await?;
             let writer_issue = rows.issue(640).await?;
@@ -2148,20 +2182,54 @@ mod tests {
                 "writer task was detached or deleted despite blocking GC"
             );
 
-            let delete_runtime = rows.runtime("delete-wins", "offline", "8 days").await?;
-            let delete_issue = rows.issue(641).await?;
+            let delete_runtime = rows.runtime("gc-wins-race", "offline", "8 days").await?;
+            let terminal_issue = rows.issue(641).await?;
+            let terminal_task = rows
+                .task(delete_runtime, terminal_issue, "completed")
+                .await?;
+            mark_task_terminal(&rows.pool, terminal_task, "completed").await?;
+
+            // Hold the terminal task row so GC stops after acquiring the runtime owner lock.
+            // The enqueue must then wait behind GC; without gc_runtime's FOR UPDATE it would
+            // commit here and this assertion would fail.
+            let mut task_holder = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM agent_task_queue WHERE id = $1 FOR UPDATE")
+                .bind(terminal_task)
+                .fetch_one(&mut *task_holder)
+                .await?;
+            let stale_before = Utc::now() - chrono::Duration::days(7);
+            let gc_handle = tokio::spawn(async move {
+                sweeper.gc_runtime(delete_runtime, stale_before).await
+            });
+            wait_for_blocked_task_detach(&rows.pool).await?;
+
+            let delete_issue = rows.issue(642).await?;
+            let mut writer = rows.pool.acquire().await?;
+            let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                .fetch_one(&mut *writer)
+                .await?;
+            let agent_id = rows.helper_agent_id;
+            let writer_handle = tokio::spawn(async move {
+                sqlx::query_scalar::<_, Uuid>(
+                    "INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority) \
+                     SELECT $1, $2, $3, 'queued', 0 \
+                     WHERE lock_task_owner_rows($1, $3, $2) RETURNING id",
+                )
+                .bind(agent_id)
+                .bind(delete_runtime)
+                .bind(delete_issue)
+                .fetch_optional(&mut *writer)
+                .await
+            });
+            wait_for_lock_wait(&rows.pool, writer_pid).await?;
+            task_holder.commit().await?;
             anyhow::ensure!(
-                sweeper
-                    .gc_runtime(delete_runtime, Utc::now() - chrono::Duration::days(7))
-                    .await?
-                    .is_some(),
-                "drained runtime was not deleted"
+                gc_handle.await??.is_some(),
+                "GC did not win the owner-lock race"
             );
             anyhow::ensure!(
-                owner_fenced_enqueue(&rows.pool, rows.helper_agent_id, delete_runtime, delete_issue)
-                    .await?
-                    .is_none(),
-                "owner-fenced enqueue created a task for a deleted runtime"
+                writer_handle.await??.is_none(),
+                "owner-fenced enqueue committed after GC had acquired the runtime owner lock"
             );
             anyhow::ensure!(
                 sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE runtime_id = $1")
@@ -2177,5 +2245,89 @@ mod tests {
         let cleanup = rows.cleanup().await;
         result.expect("runtime GC owner-lock contract failed");
         cleanup.expect("runtime GC owner-lock fixture cleanup failed");
+    }
+
+    #[tokio::test]
+    async fn production_runtime_gc_timeout_rolls_back_and_isolates_next_candidate() {
+        let rows = GcRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for runtime GC timeout contract",
+        );
+        let result = async {
+            let blocked_runtime = rows
+                .runtime("timeout-blocked", "offline", "100 years")
+                .await?;
+            let blocked_chat: Uuid = sqlx::query_scalar(
+                "INSERT INTO chat_session (workspace_id, agent_id, creator_id, runtime_id) \
+                 VALUES ($1, $2, $3, $4) RETURNING id",
+            )
+            .bind(rows.workspace_id)
+            .bind(rows.helper_agent_id)
+            .bind(rows.user_id)
+            .bind(blocked_runtime)
+            .fetch_one(&rows.pool)
+            .await?;
+            let next_runtime = rows.runtime("timeout-next", "offline", "99 years").await?;
+
+            // The runtime delete must apply chat_session's ON DELETE SET NULL. Holding that
+            // row injects a delete-stage stall so the production operation budget cancels the
+            // transaction; the next candidate must still run.
+            let mut chat_holder = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM chat_session WHERE id = $1 FOR UPDATE")
+                .bind(blocked_chat)
+                .fetch_one(&mut *chat_holder)
+                .await?;
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: false,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    pool: None,
+                }),
+                Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
+                Arc::new(Bus::new()),
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            );
+            let deleted = sweeper
+                .gc_with_budget(Utc::now() - chrono::Duration::days(7))
+                .await;
+            chat_holder.commit().await?;
+
+            anyhow::ensure!(
+                deleted >= 1,
+                "candidate timeout starved the following candidate"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(next_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 0,
+                "candidate after the timed-out candidate was not collected"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(blocked_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1
+                    && sqlx::query_scalar::<_, i64>(
+                        "SELECT count(*) FROM chat_session WHERE id = $1 AND runtime_id = $2"
+                    )
+                    .bind(blocked_chat)
+                    .bind(blocked_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                        == 1,
+                "timed-out delete did not roll back its runtime/chat transaction"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("runtime GC timeout/isolation contract failed");
+        cleanup.expect("runtime GC timeout fixture cleanup failed");
     }
 }

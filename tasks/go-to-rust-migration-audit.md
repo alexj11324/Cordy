@@ -2335,6 +2335,21 @@ active agent/online/fresh runtime 排除、bounded candidate 与 blocked gauge�
 `cb70bb98`）；独立 verifier/reviewer 已异步派发，fixer 待 finding 返回后异步交付。exact compile、matched/executed
 counts、required DB、server/Windows 和 timeout/rollback 证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
 
+独立 review 在 reviewed tip `85c3e2fa` 指出原 owner-lock test 的 delete-wins 半段是“先 GC、后 enqueue”的顺序执行，
+删除 `gc_runtime` 自己的 runtime `FOR UPDATE` 仍可能全绿；bounded candidate 的 `len <= 1` 允许零行，blocked gauge
+的全局 `>= 5` 也可能由 ambient 数据满足，且没有 delete-stage failure、rollback、operation timeout 与 candidate isolation
+的直接证据。fixer follow-up 保持 production path 不变，只加强真实 PostgreSQL contract：锁住 terminal task 使 GC 已持有
+runtime owner lock 后停在 detach，再启动 owner-fenced enqueue 并要求其真实进入 lock wait；释放后 GC 必须先删除，writer
+必须返回空，因而删除 GC 行锁会确定性使测试失败。另以锁住 `chat_session` 行阻塞 runtime delete 的 `ON DELETE SET NULL`，
+让真实 5 秒 candidate budget 取消该 transaction，并断言 runtime/chat 引用完整回滚、下一候选仍被删除；bounded query
+现在必须返回已知最旧候选，blocked gauge 以 fixture 前后增量证明五种状态。
+
+fixer 环境没有 `DATABASE_URL`，因此上述 required PostgreSQL tests 未执行，不能登记 PASS；locked/offline compile 在 test
+discovery 前被继承的 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests）。fixed-stable whole-workspace
+rustfmt 也仍被 stacked 历史文件及本文件早先 hunks 阻断；fixer 新增/触及 hunks 以同一 rustfmt 临时副本核对，
+`git diff --check` PASS。删除失败、race、rollback、timeout 的 production DB evidence 仍须在有 migrated PostgreSQL 且上游 resolver/
+format blocker 已传播的 verifier 环境精确重跑后，才可把本项改为 verified 或退休 Go。
+
 ## 61. AUDIT-002 已登记执行缺口：delegated failure recovery durable outbox contract
 
 本项在开始编码前登记，选择 runtime sweeper 中 delegated failure recovery 的完整业务能力：终态 delegated task 生成平台
