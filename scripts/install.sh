@@ -47,6 +47,17 @@ fail()  { printf "${BOLD}${RED}✗ %s${RESET}\n" "$*" >&2; exit 1; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+sha256_file() {
+  local path="$1"
+  if command_exists sha256sum; then
+    sha256sum "$path" | awk '{print tolower($1)}'
+  elif command_exists shasum; then
+    shasum -a 256 "$path" | awk '{print tolower($1)}'
+  else
+    fail "Neither sha256sum nor shasum is available; refusing to install an unverified CLI."
+  fi
+}
+
 running_in_ssh_session() {
   [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_CLIENT:-}" ] || [ -n "${SSH_TTY:-}" ]
 }
@@ -164,6 +175,33 @@ install_cli_binary() {
   if ! curl -fsSL "$url" -o "$tmp_dir/cordy.tar.gz"; then
     rm -rf "$tmp_dir"
     fail "Failed to download CLI binary."
+  fi
+
+  local checksum_file="$tmp_dir/checksums.txt"
+  local asset_name="cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
+  if ! curl -fsSL "https://github.com/cordy-ai/cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
+    rm -rf "$tmp_dir"
+    fail "Failed to download the CLI checksum manifest; refusing to install an unverified binary."
+  fi
+  local expected_checksum
+  if ! expected_checksum=$(awk -v asset="$asset_name" '
+    $2 == asset || $2 == "*" asset {
+      count++
+      checksum=tolower($1)
+    }
+    END {
+      if (count != 1 || length(checksum) != 64 || checksum !~ /^[[:xdigit:]]+$/) exit 1
+      print checksum
+    }
+  ' "$checksum_file"); then
+    rm -rf "$tmp_dir"
+    fail "CLI checksum manifest has no unique valid entry for ${asset_name}."
+  fi
+  local actual_checksum
+  actual_checksum=$(sha256_file "$tmp_dir/cordy.tar.gz")
+  if [ "$actual_checksum" != "$expected_checksum" ]; then
+    rm -rf "$tmp_dir"
+    fail "CLI checksum verification failed for ${asset_name}."
   fi
 
   tar -xzf "$tmp_dir/cordy.tar.gz" -C "$tmp_dir" cordy

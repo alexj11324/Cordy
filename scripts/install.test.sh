@@ -28,11 +28,16 @@ if [[ "$*" == *"-sI"* ]]; then
 fi
 
 out=""
+url=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o)
       out="$2"
       shift 2
+      ;;
+    http*)
+      url="$1"
+      shift
       ;;
     *)
       shift
@@ -44,7 +49,13 @@ if [[ -z "$out" ]]; then
   echo "stub curl expected -o" >&2
   exit 2
 fi
-cp "$CORDY_TEST_ARCHIVE" "$out"
+if [[ "$url" == */checksums.txt ]]; then
+  asset="$(cat "$CORDY_TEST_ASSET_FILE")"
+  sha256sum "$CORDY_TEST_ARCHIVE" | awk -v asset="$asset" '{print $1 "  " asset}' >"$out"
+else
+  printf '%s' "${url##*/}" >"$CORDY_TEST_ASSET_FILE"
+  cp "$CORDY_TEST_ARCHIVE" "$out"
+fi
 STUB
   chmod +x "$stub_bin/curl"
 }
@@ -56,6 +67,7 @@ _run_installer() {
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
     CORDY_BIN_DIR="$tmp/install-bin" \
     CORDY_TEST_ARCHIVE="$tmp/cordy.tar.gz" \
+    CORDY_TEST_ASSET_FILE="$tmp/release-asset" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true

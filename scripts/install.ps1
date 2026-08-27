@@ -277,7 +277,9 @@ function Install-CliBinary {
         Write-Fail "Failed to download CLI binary: $_"
     }
 
-    # Verify SHA256 checksum
+    # Verify SHA256 checksum. A missing, malformed, or unavailable manifest is
+    # fatal: the release workflow publishes one for every CLI archive, and
+    # installing without it would silently remove the download integrity gate.
     $checksumUrl = "https://github.com/cordy-ai/cordy/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
@@ -289,25 +291,26 @@ function Install-CliBinary {
         $zipFile = Join-Path $tmpDir "cordy.zip"
         $actualHash = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash.ToLower()
         $releaseAsset = "cordy-cli-$version-windows-$arch.zip"
-        $legacyAsset = "cordy_windows_$arch.zip"
-        $expectedLine = ($checksumContent -split "`r?`n") |
-            Where-Object {
-                $_ -match [regex]::Escape($releaseAsset) -or
-                $_ -match [regex]::Escape($legacyAsset)
-            } |
-            Select-Object -First 1
-        if ($expectedLine) {
-            $expectedHash = ($expectedLine -split "\s+")[0].ToLower()
-            if ($actualHash -ne $expectedHash) {
-                Remove-Item $tmpDir -Recurse -Force
-                Write-Fail "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
+        $expectedHashes = @(
+            $checksumContent -split "`r?`n" | ForEach-Object {
+                if ($_ -match '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?<name>\S+)\s*$' -and $Matches.name -eq $releaseAsset) {
+                    $Matches.hash.ToLowerInvariant()
+                }
             }
-            Write-Ok "Checksum verified"
-        } else {
-            Write-Warn "Could not find checksum entry for $releaseAsset — skipping verification."
+        )
+        if ($expectedHashes.Count -ne 1) {
+            Remove-Item $tmpDir -Recurse -Force
+            Write-Fail "Checksum manifest has no unique valid entry for $releaseAsset."
         }
+        $expectedHash = $expectedHashes[0]
+        if ($actualHash -ne $expectedHash) {
+            Remove-Item $tmpDir -Recurse -Force
+            Write-Fail "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
+        }
+        Write-Ok "Checksum verified"
     } catch {
-        Write-Warn "Could not download checksums.txt — skipping verification."
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Fail "Could not verify the CLI checksum: $_"
     }
 
     Expand-Archive -Path (Join-Path $tmpDir "cordy.zip") -DestinationPath $tmpDir -Force
