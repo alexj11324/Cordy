@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery 与 private task temp production chain 已交付；当前切片迁移 wakeup 环境代理契约 | 接通 environment proxy selection、HTTP CONNECT 与真实 authenticated WS control；异步收口 #558/#559/#561/#562 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#562，可执行 | PR #542..#550/#558..#562；§5.2、§6.2、§29..§37、§45..§50 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | Ready PR | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付 | 异步收口 #558/#559/#561/#562/#563 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#563，可执行 | PR #542..#550/#558..#563；§5.2、§6.2、§29..§37、§45..§50 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1729,4 +1729,8 @@ error 并继续既有 bounded retry/fallback，不能 silently direct 绕过 ope
   reviewer 只读审查，finding 交 existing independent fixer。依赖 #562 branch
   `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。主 agent 只运行并通过 `git diff --check`；Cargo
   resolution、Cargo.lock、rustfmt、compile、tests、real CONNECT/TLS/control/fallback 与平台检查均尚未由
-  verifier 执行或记为通过。Ready PR 尚待 push/create。
+  verifier 执行或记为通过。
+- Ready PR #563：branch `codex/cord-227-daemon-wakeup-env-proxy-rust`，gap commit `2c0d0577`，
+  implementation `544a603a`，initial delivery ledger `9cafc275`；base 是 Ready #562 branch
+  `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。PR 为非 Draft Ready；verification/reviewer 待异步
+  派发，fixer 尚无本 PR finding。
