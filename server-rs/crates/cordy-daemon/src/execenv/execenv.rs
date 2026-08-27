@@ -950,6 +950,12 @@ pub fn reuse(params: ReuseParams) -> Option<Environment> {
         }
         if let Err(err) = super::context::cleanup_sidecars(&env.root_dir) {
             tracing::warn!(error = %format!("{err:#}"), "execenv: roll back prior sidecars on reuse failed");
+            // A failed rollback leaves the previous task's managed files in
+            // place. Do not let the refresh path mistake one of those files
+            // for a repository-owned collision (especially reasonix.toml),
+            // because its stale policy would override the current user
+            // configuration. The caller will fall back to a fresh prepare.
+            return None;
         }
     }
 
