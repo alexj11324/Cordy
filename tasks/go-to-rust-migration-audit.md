@@ -1140,3 +1140,8 @@ Homebrew 和 multi-arch backend image 都依赖同一 verify job。
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 YAML、Cargo、migration、tests、release build 或 RustSec 记为
   通过。PR 明确堆叠在 Ready PR #550。
+- reviewer 在 head `e3131a69` 返回一个 P1 和一个 P2：release `verify` 显式 permissions
+  未授予 RustSec action 所需的 `checks: write`，有 advisory/warning 时可能因 Check API 403
+  异常阻断发布；runbook 把全部 container assets 说成 Rust binary 过宽，web image 仍是
+  Next.js/Node。两项已交独立 fixer；其余 Go toolchain 退出、migration/tests/全部 production
+  binary gate、downstream dependency、tag-scoped fail-closed bypass 与 Ponytail 核对无 finding。
