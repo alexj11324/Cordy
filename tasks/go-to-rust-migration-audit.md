@@ -2921,32 +2921,38 @@ worktree、直接 touched-file rustfmt 和 base-range diff-check 均 PASS。lock
 ## 70. [ ] AUDIT-008 handler/service RFC3339Nano helper centralization（T-54E）
 
 本项在开始修改 handler/service 时间输出前登记。Go 的 `server/internal/handler/comment.go` 游标、
-`server/internal/handler/daemon.go` task message payload，以及 `server/internal/service/task.go` 的 chat/issue 通知
-使用 `time.RFC3339Nano`；Rust 已迁移的 `cordy-handler::timefmt::rfc3339_nano` 与
-`cordy-service::task_notify::rfc3339_nano` 却各自调用 chrono `AutoSi`，会把 `.123400000` 输出成 `.123` 而不是 Go 的
-`.1234`。这会让 API header、task message payload、chat/issue event 和 autopilot timestamp 产生可观察的字符串差异。
+`server/internal/handler/chat.go` 的 chat/transcript 游标与输出时间、`server/internal/handler/daemon.go` task message
+payload，以及 `server/internal/service/task.go` 的 chat/issue 通知和 deferred cancel-finalized payload，明确使用
+`time.RFC3339Nano`；Rust 这些已迁移路径此前分散调用本地 `AutoSi` 或固定九位纳秒格式，`.123400000` 可能变成 `.123`
+或 `.123400000`，而不是 Go 的 `.1234`。这会让 API cursor/header、task message、chat/issue event 和取消完成 payload
+产生可观察的字符串差异。相反，Go 的 comment unresolved `created_at`/`updated_at`/`resolved_at` 与 agent `archived_at`
+是 seconds-only `TimestampToString` 路径，不能被本项误改为 Nano。
 
-范围只把已有 handler/service 的 RFC3339Nano 生产调用切到 T-54D 已验证的 `cordy-util::rfc3339_nano`，删除两份
-`AutoSi` 本地 helper 和重复测试，保留现有 endpoint、JSON 字段、header 名称、事件 payload、排序/游标、配置、数据库和
-错误语义；不扩展到 seconds-only `rfc3339`、第三方 provider 时间、数据库时间类型或新的时间服务。
+范围只把上述已有 handler/service RFC3339Nano 生产调用切到 T-54D 已验证的 `cordy-util::rfc3339_nano`，并保留上述
+seconds-only 字段使用现有 `rfc3339`；删除两份 `AutoSi` 本地 Nano helper，保留现有 endpoint、JSON 字段、header 名称、
+事件 payload、排序/游标、配置、数据库和错误语义；不扩展到其他 seconds-only/第三方 provider 时间、数据库时间类型或新的
+时间服务。
 
-- 默认生产路径：handler 的 comment cursor/task message 与 service 的 task notification/autopilot 仍由现有 server assembly
-  调用，仅共享 formatter 实现改变；没有新增入口或 fallback。
+- 默认生产路径：handler 的 comment/chat cursor、transcript/task message 与 service 的 task notification、autopilot、
+  deferred cancel-finalized payload 仍由现有 server assembly 调用，仅共享 formatter 实现改变；comment unresolved 和 agent
+  archived 等 seconds-only 字段继续走现有 `rfc3339`，没有新增入口或 fallback。
 - Go 是否可下线：不能。该切片只统一已迁移调用的时间字符串精度；其余 handler/analytics/daemon 时间字段、旧数据读取、
   真实 API/event smoke 及 AUDIT-001..010 总退出仍未完成。
 - owner：主 agent 负责最小 helper centralization、生产调用和 Ready PR；独立 verifier/reviewer/fixer 异步负责 exact Rust
   验证、Go/Rust timestamp review 和回归修复。
 
-实现 commit `93a45a58` 将 handler comment cursor/task-message payload 与 service task notification、issue/agent maps、autopilot
-schedule key 的全部 RFC3339Nano 调用切到 T-54D 已验证的 `cordy-util::rfc3339_nano`，删除 handler/service 两份 `AutoSi`
-helper；daemon task-message fixture 改为 `.123400Z` 并断言 Go-compatible `.1234Z`。seconds-only formatter、JSON/header/event
-字段、排序、配置、数据库和错误语义未改变。主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、
-API 或长编译命令；Ready PR #583 以 `codex/cord-247-realtime-time-wire`（base SHA `fe5bb6d4`）为 base，当前 tip 为 `fe119a90`。
-异步 verifier/reviewer/fixer 结果待回写；在 exact compile、matched/executed、API/event smoke 和跨语言 timestamp 证据返回前，
-本项不能声称 AUDIT-008 已完成或删除 Go。
+实现 commit `93a45a58` 先将 handler comment cursor/task-message payload 与 service task notification、issue/agent maps、
+autopilot schedule key 的共享 Nano 调用切到 T-54D helper，并删除 handler/service 两份本地 Nano helper；随后 fixer commit
+`6b0b0d82` 根据跨语言 review 补齐 `chat_api` 的 chat/transcript cursor 与输出时间、`task_service` deferred cancel-finalized
+payload，并将 comment unresolved 三字段和 agent `archived_at` 恢复为 seconds-only `rfc3339`。daemon task-message fixture
+使用 `.123400Z` 并断言 Go-compatible `.1234Z`；chat history 覆盖同秒不同 fractional cursor，cancel payload 断言序列化值，
+seconds-only 字段覆盖小数秒省略。JSON/header/event 字段、排序、配置、数据库和错误语义未改变。
 
-实现 commit `93a45a58` 将 handler comment cursor/task-message payload 与 service task notification、issue/agent maps、autopilot
-schedule key 的全部 RFC3339Nano 调用切到 T-54D 已验证的 `cordy-util::rfc3339_nano`，删除 handler/service 两份 `AutoSi`
-helper；daemon task-message fixture 改为 `.123400Z` 并断言 Go-compatible `.1234Z`。seconds-only formatter、JSON/header/event
-字段、排序、配置、数据库和错误语义未改变。主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、
-API 或长编译命令；Ready PR #583 待创建，异步 verifier/reviewer/fixer 结果待回写。
+主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、API 或长编译命令；Ready PR #583 当前
+base 为 `codex/cord-247-realtime-time-wire`（base SHA `fe5bb6d4`），已推送 fixer tip `0ad4d584`。fixer 随后删除了
+两个仅为测试证据增加的单用途 wrapper 和 pseudo-mapping 测试（净删 75 行），生产调用改为直接使用共享 helper；其
+fixed-stable rustfmt 与 `git diff --check` 均 PASS。reviewer 在前一 exact tip 确认 3 个 P1 已关闭、无 P0/P1/P2 或
+安全/config/fallback finding；P3 已按 Ponytail 收缩，最终 exact-tip review 待回写。verifier 的 exact compile/测试仍在继承 #563 `hyper-util 0.1.20`
+缺少 `runtime` feature 的 resolver 错误前置阻断（exit 101，matched/executed 为 0）；fixed-stable rustfmt 与 fixer 的
+`git diff --check` PASS，直接 API/event smoke、DB、真实 daemon/Redis、release/cross-platform smoke 未执行。在这些证据
+返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
