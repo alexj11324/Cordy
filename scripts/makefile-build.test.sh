@@ -115,18 +115,34 @@ probe_count() {
 
 # The default release build is the native Rust artifact path. It must not
 # probe or invoke the legacy Go toolchain; that remains explicit as go-build.
+rust_target_dir="$(pwd)/server-rs/target"
 for target in build rust-build; do
   rust_build_output="$(make -n "$target")"
+  grep -Fq -- "CARGO_TARGET_DIR=\"${rust_target_dir}\"" <<<"$rust_build_output" ||
+    fail "$target: expected an explicit Cargo target directory, got:\n$rust_build_output"
   grep -Fq -- "cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate" <<<"$rust_build_output" ||
     fail "$target: expected the Rust release build, got:\n$rust_build_output"
   for artifact in cordy-server cordy cordy-migrate; do
-    grep -Fq -- "cp server-rs/target/release/${artifact}" <<<"$rust_build_output" ||
+    grep -Fq -- "cp \"${rust_target_dir}/release/${artifact}" <<<"$rust_build_output" ||
       fail "$target: expected Rust artifact ${artifact} to be copied, got:\n$rust_build_output"
   done
   if grep -Eq -- '(^|[[:space:];])go[[:space:]]+build([[:space:]]|$)' <<<"$rust_build_output"; then
     fail "$target: unexpectedly resolved to the legacy Go build:\n$rust_build_output"
   fi
 done
+
+custom_target_dir="$probe_dir/custom-target"
+custom_rust_build_output="$(CARGO_TARGET_DIR="$custom_target_dir" make -n rust-build)"
+grep -Fq -- "CARGO_TARGET_DIR=\"${rust_target_dir}\"" <<<"$custom_rust_build_output" ||
+  fail "rust-build: expected to force the declared target directory when CARGO_TARGET_DIR is inherited, got:\n$custom_rust_build_output"
+if grep -Fq -- "$custom_target_dir" <<<"$custom_rust_build_output"; then
+  fail "rust-build: unexpectedly copied from inherited CARGO_TARGET_DIR:\n$custom_rust_build_output"
+fi
+
+server_output="$(make -n server)"
+if grep -Fq -- 'CORDY_BUILD_DATE=' <<<"$server_output"; then
+  fail "server: unexpectedly stamps an unused build timestamp on every development start:\n$server_output"
+fi
 
 PATH="$probe_dir:$PATH" make -n build >/dev/null
 [ "$(probe_count)" = 0 ] ||

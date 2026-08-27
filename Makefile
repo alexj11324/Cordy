@@ -43,7 +43,10 @@ endef
 # The Rust HTTP server is the default source entrypoint. Keep the build commit
 # in the process environment so metrics retain the same release metadata as
 # the legacy Go command during the staged migration.
-RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
+# The development server does not consume CORDY_BUILD_DATE; omitting it keeps
+# Cargo from rebuilding cordy-server on every invocation just because the clock
+# changed. Release builds stamp their artifacts separately in rust-build.
+RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
 RUST_MIGRATE_CMD = ./scripts/run-rust-server.sh run --locked -p cordy-migrate --
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
@@ -293,7 +296,7 @@ rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
 	CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" ./scripts/run-rust-cli.sh $(CORDY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
+	cd server-rs && CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -302,15 +305,19 @@ RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unk
 GO_VERSION ?= unknown
 RUST_BUILD_GO_VERSION ?= unknown
 RUST_EXE ?= $(if $(filter Windows_NT,$(OS)),.exe,)
+# Keep Cargo's output and the paths copied below in lockstep. This deliberately
+# overrides an inherited CARGO_TARGET_DIR for the aggregate build; callers can
+# choose another location through RUST_TARGET_DIR instead.
+RUST_TARGET_DIR ?= $(CURDIR)/server-rs/target
 
 build: rust-build ## Build the Rust server, CLI, and migrate binaries into server/bin
 
 rust-build: ## Build native Rust server, CLI, and migrate binaries into server/bin
 	@mkdir -p server/bin
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate
-	cp server-rs/target/release/cordy-server$(RUST_EXE) server/bin/server$(RUST_EXE)
-	cp server-rs/target/release/cordy$(RUST_EXE) server/bin/cordy$(RUST_EXE)
-	cp server-rs/target/release/cordy-migrate$(RUST_EXE) server/bin/migrate$(RUST_EXE)
+	cd server-rs && CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate
+	cp "$(RUST_TARGET_DIR)/release/cordy-server$(RUST_EXE)" "server/bin/server$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/cordy$(RUST_EXE)" "server/bin/cordy$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/cordy-migrate$(RUST_EXE)" "server/bin/migrate$(RUST_EXE)"
 
 # Windows will not execute an extensionless binary, so the legacy Go fallback
 # keeps naming its outputs for the target platform. GOOS reaches a build two
