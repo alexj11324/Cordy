@@ -27,9 +27,7 @@ use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 use crate::mcp::managed_object;
-use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
-};
+use crate::model::{Catalog, CatalogCache, Model, ModelThinking, ThinkingLevel};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::{finalize_stream, AgentLineReader, AssistantTurn, RunEnd, TerminalState};
@@ -99,9 +97,7 @@ impl ClaudeBackend {
         } else {
             runtime_scope
         };
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
-            return static_catalog(None);
-        };
+        let key = discovery_cache_key(scope, &self.config.command);
         if let Some(catalog) = cache.get(&key) {
             return catalog;
         }
@@ -432,6 +428,21 @@ fn windows_chromium_fallback_executable() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
 async fn run_claude(
     mut tree: OwnedProcessTree,
     stdin: SharedStdin,
@@ -460,7 +471,11 @@ async fn run_claude(
     let end = {
         let completion = async {
             let exit = tree.wait().await;
-            let stream = (&mut stdout_task).await;
+            // The direct Claude process can exit while a descendant still
+            // owns stdout. Reap/stop the owned tree before joining the stream
+            // so descendants cannot outlive the run's timeout policy.
+            stop_process_tree(&mut tree).await;
+            let stream = join_stream(&mut stdout_task).await;
             let write = (&mut prompt_task).await;
             (exit, stream, write)
         };
@@ -471,10 +486,15 @@ async fn run_claude(
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
             }
         } else {
-            tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
-                () = cancellation.cancelled() => RunOutcome::Cancelled,
-                () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                RunOutcome::TimedOut
+            } else {
+                tokio::select! {
+                    completed = &mut completion => RunOutcome::Completed(completed),
+                    () = cancellation.cancelled() => RunOutcome::Cancelled,
+                    () = tokio::time::sleep(remaining) => RunOutcome::TimedOut,
+                }
             }
         }
     };
@@ -484,23 +504,29 @@ async fn run_claude(
             (RunEnd::Completed, Some(exit), stream, write)
         }
         RunOutcome::Cancelled => {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
             close_stdin(&stdin).await;
+            stop_process_tree(&mut tree).await;
+            prompt_task.abort();
+            let stream = join_stream(&mut stdout_task).await;
+            let write = (&mut prompt_task).await;
             (
                 RunEnd::Cancelled,
                 None,
-                (&mut stdout_task).await,
-                (&mut prompt_task).await,
+                stream,
+                write,
             )
         }
         RunOutcome::TimedOut => {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
             close_stdin(&stdin).await;
+            stop_process_tree(&mut tree).await;
+            prompt_task.abort();
+            let stream = join_stream(&mut stdout_task).await;
+            let write = (&mut prompt_task).await;
             (
                 RunEnd::DeadlineExceeded,
                 None,
-                (&mut stdout_task).await,
-                (&mut prompt_task).await,
+                stream,
+                write,
             )
         }
     };
@@ -513,7 +539,7 @@ async fn run_claude(
         stderr_task.abort();
     }
     let stderr = stderr_tail.tail();
-    let mut state = stream.unwrap_or_else(join_failure_state);
+    let mut state = stream;
     let write_error = write_error(write);
     let exit_error = exit
         .as_ref()
@@ -692,10 +718,10 @@ fn handle_assistant(
                     },
                 );
             }
-            "thinking" if !block.text.is_empty() => send_message(
+            "thinking" if !block.thinking.is_empty() => send_message(
                 messages,
                 Message {
-                    content: block.text,
+                    content: block.thinking,
                     ..empty_message(MessageType::Thinking)
                 },
             ),
@@ -934,6 +960,8 @@ struct ClaudeBlock {
     #[serde(default)]
     text: String,
     #[serde(default)]
+    thinking: String,
+    #[serde(default)]
     id: String,
     #[serde(default)]
     name: String,
@@ -1046,13 +1074,7 @@ async fn pump_stderr(mut stderr: ChildStderr, tail: SharedDiagnosticBuffer) {
 }
 
 enum RunOutcome {
-    Completed(
-        (
-            io::Result<ExitStatus>,
-            Result<ClaudeStreamState, JoinError>,
-            Result<io::Result<()>, JoinError>,
-        ),
-    ),
+    Completed((io::Result<ExitStatus>, ClaudeStreamState, Result<io::Result<()>, JoinError>)),
     Cancelled,
     TimedOut,
 }
@@ -1083,6 +1105,23 @@ fn join_failure_state(error: JoinError) -> ClaudeStreamState {
     }
 }
 
+async fn join_stream(task: &mut JoinHandle<ClaudeStreamState>) -> ClaudeStreamState {
+    match tokio::time::timeout(KILL_GRACE, &mut *task).await {
+        Ok(Ok(state)) => state,
+        Ok(Err(error)) => join_failure_state(error),
+        Err(_) => {
+            task.abort();
+            ClaudeStreamState {
+                terminal: TerminalState {
+                    scan_error: "Claude stdout reader did not terminate".to_string(),
+                    ..TerminalState::default()
+                },
+                ..ClaudeStreamState::default()
+            }
+        }
+    }
+}
+
 fn prompt_input(prompt: &str) -> Result<Vec<u8>, AgentError> {
     let mut payload = serde_json::to_vec(&serde_json::json!({
         "type": "user",
@@ -1102,6 +1141,13 @@ fn command_path(command: &RuntimeCommand) -> String {
     } else {
         command.path.clone()
     }
+}
+
+fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
+    if command.path.is_empty() && command.prefix.is_empty() {
+        return scope.to_string();
+    }
+    format!("{}:{}", scope, command.cache_key())
 }
 
 fn configure_child_environment(command: &mut Command, extra: &BTreeMap<String, String>) {
@@ -1140,6 +1186,9 @@ fn log_blocked(source: &str, flags: &[String]) {
 }
 
 fn root_sudo_preflight(env: &BTreeMap<String, String>) -> Result<(), AgentError> {
+    #[cfg(not(unix))]
+    let _ = env;
+
     #[cfg(unix)]
     {
         let sandbox = env
@@ -1316,33 +1365,32 @@ async fn capture_help(
         .kill_on_drop(false);
     configure_child_environment(&mut command, env);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
-    let stdout = tree
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("Claude help stdout pipe unavailable"))?;
-    let stderr = tree
-        .child_mut()
-        .stderr
-        .take()
-        .ok_or_else(|| io::Error::other("Claude help stderr pipe unavailable"))?;
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(io::Error::other("Claude help stdout pipe unavailable"));
+    };
+    let Some(stderr) = tree.child_mut().stderr.take() else {
+        stop_process_tree(&mut tree).await;
+        return Err(io::Error::other("Claude help stderr pipe unavailable"));
+    };
     let mut stdout_task = tokio::spawn(read_limited(stdout, DISCOVERY_OUTPUT_MAX));
     let mut stderr_task = tokio::spawn(read_limited(stderr, DISCOVERY_OUTPUT_MAX));
     let status = tokio::select! {
         result = tree.wait() => result?,
         () = cancellation.cancelled() => {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             stdout_task.abort();
             stderr_task.abort();
             return Ok(None);
         }
         () = tokio::time::sleep(timeout) => {
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+            stop_process_tree(&mut tree).await;
             stdout_task.abort();
             stderr_task.abort();
             return Ok(None);
         }
     };
+    stop_process_tree(&mut tree).await;
     let stdout = join_reader(&mut stdout_task).await?;
     let stderr = join_reader(&mut stderr_task).await?;
     if !status.success() {
@@ -1468,6 +1516,26 @@ mod tests {
             value["response"]["response"]["updatedInput"]["run_in_background"],
             false
         );
+    }
+
+    #[test]
+    fn thinking_blocks_use_the_thinking_payload() {
+        let (messages, mut received) = mpsc::channel(4);
+        let mut usage = BTreeMap::new();
+        let turn = handle_assistant(
+            serde_json::json!({
+                "model": "claude-opus-5",
+                "content": [{"type": "thinking", "thinking": "internal reasoning"}]
+            }),
+            &messages,
+            &mut usage,
+        );
+        assert!(turn.understood);
+        let message = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("receive thinking message: {error}"));
+        assert_eq!(message.message_type, MessageType::Thinking);
+        assert_eq!(message.content, "internal reasoning");
     }
 
     #[test]
@@ -1640,6 +1708,37 @@ printf '%s\n' '{"type":"result","session_id":"ses-1","result":"hello","is_error"
         assert_eq!(result.output, "hello");
         assert_eq!(result.session_id, "ses-1");
         assert_eq!(result.usage["claude-opus-5"].output_tokens, 2);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn direct_exit_cleans_descendants_before_draining_stream() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+printf '%s\n' '{"type":"system","session_id":"ses-descendant"}'
+printf '%s\n' '{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"text","text":"done"}]}}'
+printf '%s\n' '{"type":"result","session_id":"ses-descendant","result":"done","is_error":false}'
+sleep 60 &
+exit 0
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    timeout: Duration::from_secs(5),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Claude with descendant: {error}"));
+        let Session { result, .. } = session;
+        let result = tokio::time::timeout(Duration::from_secs(2), result)
+            .await
+            .unwrap_or_else(|_| panic!("Claude result waited for an unowned descendant"))
+            .unwrap_or_else(|error| panic!("receive result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "ses-descendant");
     }
 
     #[cfg(unix)]
