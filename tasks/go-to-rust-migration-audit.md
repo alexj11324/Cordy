@@ -198,7 +198,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 已登记高风险 Go 回归映射索引 | 建立 API/DB/provider/daemon/security/backfill/CLI 分层映射，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | §6.2、§63 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
@@ -280,7 +280,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 #### 阶段五：最终兼容与退休门
 
-53. `[~]` `T-53 / §63` AUDIT-007 Go 测试契约映射（已登记，待提交映射索引）
+53. `[~]` `T-53 / §63` AUDIT-007 Go 测试契约映射（PR #576 Ready，待异步退出证据）
 54. `[ ]` `T-54` AUDIT-008 wire/schema/ID 兼容性
 55. `[~]` `T-55` AUDIT-009 运维与文档切换
 56. `[ ]` `T-56` AUDIT-010 Go 源码退休
@@ -2686,3 +2686,13 @@ contract/production entry；仅有 route parity、类型能编译或 Rust 文件
 索引的首批落点是 #565..#575 与既有 #518..#563：它们按业务契约记录了 Go 来源、Rust 入口、默认生产状态和 Go 下线条件，
 但 Ready PR 的存在不等于测试通过。AUDIT-007 的退出证据是所有高风险行都有可执行 Rust contract 或明确不适用理由，并能
 回链到 AUDIT-002..006/008 的具体 PR、命令和异步 verifier/reviewer/fixer 结果；主 agent 不运行长测试，也不代做缺陷修复。
+
+实现 commit `a5e65aa2` 只更新本台账：新增八个风险域映射行，分别回链代表性 Go 测试来源、Rust contract/production entry、
+当前覆盖状态与下一步退出动作；明确 route parity 不等于行为等价、Ready PR 不等于测试通过、测试 helper 不等于生产缺口，
+并把 wire/schema/time/UUID/ULID/Redis/event envelope 交给 AUDIT-008。没有新增生产代码、依赖、测试框架、Stub/Noop/Fake 或
+默认入口。
+
+主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、provider、daemon 或 release 命令。非 Draft
+Ready PR #576 已创建，base 为 `codex/cord-239-chat-finalize-contract-rust` 的 `840261fe`，当前 tip 为 `a5e65aa2`；独立
+verifier/reviewer/fixer 已异步派发。索引引用的各 Ready PR 仍须分别记录 exact command、matched/executed、环境限制和异步
+finding；AUDIT-007 未完成前不能声称全部 Go 回归已映射或删除 Go。
