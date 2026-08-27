@@ -42,7 +42,7 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   await pipeline(nodeStream, createWriteStream(dest));
 }
 
-// Fetch goreleaser's published checksums.txt and parse it into a
+// Fetch the release workflow's published checksums.txt and parse it into a
 // filename → sha256 lookup. Format is `<hex>  <filename>` per line.
 async function fetchChecksums(): Promise<Map<string, string>> {
   const url = `${GITHUB_LATEST_BASE}/checksums.txt`;

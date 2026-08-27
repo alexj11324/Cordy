@@ -176,11 +176,11 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm 入口已切到 Rust | 收口 release/install/systemd、兼容产物、启动与回滚演练 | PR #523；详见 §11 | 主 agent；Volta 异步 review/fix |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm 入口已切到 Rust；CLI release 资产链已由本切片改为 Rust | 收口 Desktop 内嵌 CLI、install/systemd、兼容产物、启动与回滚演练 | PR #523/#527（待建）；详见 §11、§15 | 主 agent；Volta 异步 review/fix |
 | AUDIT-002 | 待办 | 仅有 route parity 和局部包测试 | 建立并执行 API/WS/事务/错误/CLI/daemon 的成功与失败 smoke 矩阵 | §5、§6.2 | 主 agent；缺陷交 Volta |
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；Volta 异步 review/fix |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；Volta 异步 review/fix |
-| AUDIT-003C | 进行中 | squad avatar 读写正在接入既有 avatar capability | 提交/验证 squad list/get/create/update 的私有对象 URL 契约 | 当前 worktree；详见 §14 | 主 agent；Volta 异步 review/fix |
+| AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；Volta 异步 review/fix |
 | AUDIT-003D | 待办 | handler 与 daemon 存在并发任务配置 | 对齐默认值、范围、调用边界并保留单一契约证据 | §6.2 | 主 agent；缺陷交 Volta |
 | AUDIT-004 | 待办 | provider Rust wiring 已存在 | 完成各 integration 的真实配置、正/负路径、重试、media、shutdown 矩阵 | §5.3、§6.2 | 主 agent；Volta 异步 review/fix |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；Volta 异步 review/fix |
@@ -203,8 +203,8 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 ##### AUDIT-001：Rust 默认生产入口切换
 
 - 范围：Makefile 的 server/cordy/build/migrate/test/dev/check、scripts/check.sh、scripts/dev.sh、Dockerfile、docker/entrypoint.sh、Helm backend、systemd/install/release 入口。
-- 现状证据：Makefile、Dockerfile、scripts 和 Helm 当前仍直接调用 server/cmd/server、server/cmd/cordy、server/cmd/migrate 的 Go 命令；Rust 只有独立 rust-cli/build-rust-cli 入口。
-- 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；保留兼容的 binary/entrypoint 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
+- 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；本切片前 `.goreleaser.yml` 和 release workflow 仍用 Go CLI，Desktop packaging 仍从 Go 源码嵌入 CLI。
+- 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；Rust release 保留兼容的 binary/asset 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
 - 退出证据：新鲜 worktree 的 build/check、镜像启动 health/ready、migrate up/down/status、CLI --help/version、回滚演练均以 Rust 产物为准。
 - owner：主 agent 迁移/接线；Volta 异步 review/fix。
 
@@ -334,7 +334,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - Rust 入口：`Makefile` 的 `server`、`cli`/`cordy`、`build`、`test`、`migrate-up/down`，以及 `scripts/dev.sh`、`scripts/check.sh`；统一通过 `server-rs` 的 `cordy-server`、`cordy`、`cordy-migrate`。
 - 容器入口：`Dockerfile` 不再构建 Go runtime binary，改为构建 Rust server、CLI、migration runner 和三个 Rust backfill，并继续提供 `server`/`cordy`/`migrate` 兼容产物名；`docker/entrypoint.sh` 无需改名即可继续执行迁移后启动。
 - CI/Helm：部署构建与迁移验证改用 Rust，并新增生产镜像构建门；Helm 的 backend 注释改为 Rust 入口事实。
-- 生产路径状态：本切片覆盖本地默认入口、自托管镜像和 CI 部署验证；`.goreleaser.yml`、release workflow、安装器仍是 Go CLI 发布链路，故 AUDIT-001 尚未整体完成。
+- 生产路径状态：PR #523 覆盖本地默认入口、自托管镜像和 CI 部署验证；PR #527 将 CLI release workflow 和 Homebrew formula 输入改为 Rust。Desktop 内嵌 CLI、install/systemd 全链路和回滚目标仍未整体闭合，故 AUDIT-001 尚未完成。
 - Go 是否可下线：否。Go compatibility build/test、CLI release/install、回滚目标和剩余 leaf contract 仍在清单中。
 - 验证状态：shell 语法、`git diff --check`、Makefile entrypoint/build contract 已通过；Helm 未执行（审计环境无 `helm`），Docker 构建和 Rust workspace 编译继续按本切片记录，不以环境缺失冒充通过。
 
@@ -402,3 +402,29 @@ profile 能力和管理端口边界：
   `cargo test --offline -p cordy-handler --lib` 未通过，但只暴露了依赖图中既有的
   `cordy-daemon` 7 个编译错误和 `cordy-slack` 1 个 exhaustiveness 错误，未出现
   squad/avatar 本切片错误。Volta 的 review/fix 继续异步，不作为提交或 PR 前置条件。
+
+## 15. AUDIT-001 执行更新：Rust CLI release assets
+
+后续切片 `codex/cord-192-release-install-rust` 将 CLI 的发布构建从 GoReleaser
+切到 Rust，同时保留现有安装器和自更新器已经使用的资产契约：
+
+- Go 能力：原 `.goreleaser.yml` 和 release workflow 构建 `cordy` CLI，生成
+  versioned/legacy archive、checksums 和 Homebrew formula；这些发布输入现在由
+  Rust CLI 构建矩阵提供。
+- Rust 入口：`.github/workflows/release.yml` 的 `rust-cli-build` 在 Linux、
+  macOS、Windows 的 amd64/arm64 runner 上执行 `cargo build --locked --release
+  -p cordy-cli`，分别生成 `cordy-cli-<version>-<os>-<arch>` 与
+  `cordy_<os>_<arch>` 资产；`release` job 生成 `checksums.txt`、GitHub Release
+  资产，并用同一份校验值更新 Homebrew formula。
+- 生产路径状态：CLI GitHub Release 和 Homebrew 输入已改为 Rust；
+  `scripts/install.sh`、`scripts/install.ps1` 的资产名与校验逻辑无需变更，仍能
+  消费这两种 Rust archive。Desktop packaging 目前仍在 `bundle-cli.mjs` 中从
+  Go 源码生成内嵌 CLI，install/systemd 与回滚演练仍是 AUDIT-001 下一动作。
+- Go 是否可下线：否。release verify 仍保留 Go compatibility test 和
+  `govulncheck`，Desktop 内嵌 CLI、剩余发布入口和最终全仓 Go 退休门槛未完成。
+- 验证状态：release workflow YAML、Homebrew shell 片段和 `bash -n
+  scripts/install.sh` 已通过；本地未模拟 GitHub 多平台 runner、Homebrew tap API
+  或真实 tag release。`bash scripts/install.test.sh` 在当前环境因 `/tmp` 生成的
+  brew stub `Permission denied` 失败，未修改安装器。Rust CLI 构建会经过现有
+  daemon 依赖图，当前本地基线仍有 `cordy-daemon` 7 个编译错误，已交 Volta 异步
+  处理，不把它们伪报为 release 绿灯。
