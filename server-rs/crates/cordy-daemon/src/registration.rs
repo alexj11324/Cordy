@@ -147,6 +147,14 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
 
+    /// Performs the cheap availability half of a discovery tick. `None`
+    /// preserves the legacy behavior for sources that do not expose a
+    /// separate availability probe; production provider registration returns
+    /// `Some` and the service then gates version probes on live missing state.
+    async fn refresh_builtin_availability(&self, _ctx: Ctx) -> anyhow::Result<Option<bool>> {
+        Ok(None)
+    }
+
     /// Releases provider-owned launch state when workspace membership is
     /// removed. A later re-add must not revive stale custom profile commands
     /// if its first profile fetch fails.
@@ -457,6 +465,28 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<BuiltinRefreshOutcome> {
+        let gained_hint = if reason == BuiltinRefreshReason::Discovery {
+            let gained = self
+                .source
+                .refresh_builtin_availability(ctx.child())
+                .await?
+                .unwrap_or(false);
+
+            // Go's discovery loop checks the live availability set before it
+            // enters the expensive convergence half. This also avoids probing
+            // an empty workspace set, while preserving the additive health
+            // state even when no workspace currently needs registration.
+            if let Some((agents, _)) = self.source.health_snapshot() {
+                let available = agents.into_iter().collect::<BTreeSet<_>>();
+                if !registry.any_workspace_missing_builtin(&available) {
+                    self.builtin_retry.lock().unwrap().reset_backoff();
+                    return Ok(BuiltinRefreshOutcome::default());
+                }
+            }
+            gained
+        } else {
+            false
+        };
         let demotion_generation = registry.demotion_generation();
         let Some(round) = self
             .source
@@ -479,7 +509,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .builtin_retry
                 .lock()
                 .unwrap()
-                .should_attempt(round.gained_providers(), now);
+                .should_attempt(gained_hint || round.gained_providers(), now);
         if !discovery_allowed {
             return Ok(BuiltinRefreshOutcome::default());
         }
