@@ -199,7 +199,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已登记 `cordy-util::Ulid` 的 Go-compatible Crockford wire serialization | 继续完成 JSON/时间/Redis/DB/event/旧数据兼容证据；先收口 T-54 的 UUID/ULID wrapper，再按独立 wire contract 切片推进 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2、§64 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已将 `cordy-util::Ulid` 切到 Go-compatible Crockford wire serialization，并创建 Ready PR #577 | 收口 #577 异步 V/R/F；继续完成 JSON/时间/Redis/DB/event/旧数据兼容证据，按独立 wire contract 切片推进 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | PR #577；§6.2、§64 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
@@ -2717,3 +2717,11 @@ Base32。该差异会影响事件 ID、Redis envelope 和任何复用 wrapper �
 - owner：主 agent 负责最小实现、生产可复用类型和 Ready PR；独立 verifier/reviewer/fixer 异步负责编译/contract
   验证、兼容性审查和缺陷修复。实现 commit、验证命令/结果、异步 finding 和 PR 会在本节追加；在此之前不得声称
   全部 wire 兼容已通过。
+
+实现 commit `874d7493` 更新既有 `cordy-util::Ulid` serde wrapper 与锁文件：复用 workspace 已有 `ulid` crate，把内部
+`uuid::Uuid` 的 16 bytes 编为 26 字符 Crockford Base32，并从该 wire value 还原 UUID；删除旧 UUID-hyphenated TODO。
+contract tests 覆盖固定 Go 向量 `01ARZ3NDEKTSV4RRFFQ69G5FAV`、round-trip、canonical 字符集/长度和旧 UUID wire 拒绝。
+主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB 或长编译命令；非 Draft Ready PR #577 已创建，
+base 为 `codex/cord-240-test-contract-matrix-rust` 的 `1486e6e3`，当前实现提交为 `874d7493`。异步 verifier/reviewer/fixer
+结果待回写；在 exact compile、matched/executed、跨语言 event/Redis/旧数据读取和生产路径证据返回前，本项不能声称
+AUDIT-008 已完成或删除 Go。
