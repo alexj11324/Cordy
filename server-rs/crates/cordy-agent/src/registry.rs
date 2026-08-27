@@ -276,6 +276,41 @@ pub fn model_selection_supported(id: &str) -> bool {
         .is_none_or(|provider| provider.model_selection_supported)
 }
 
+/// Filters a custom runtime profile's fixed argv prefix with the same
+/// provider-owned protocol policy used by task launches. Unknown families
+/// are returned unchanged here; the daemon must reject them before publishing
+/// a profile, while this function stays a total helper for discovery callers.
+pub fn filter_launch_prefix_for_provider(provider_id: &str, prefix: &[String]) -> Vec<String> {
+    let family = protocol_family(provider_id).unwrap_or(provider_id);
+    match family {
+        "antigravity" => {
+            crate::command::filter_launch_prefix(prefix, &crate::antigravity::BLOCKED_ARGS).args
+        }
+        "codebuddy" => {
+            crate::command::filter_launch_prefix(prefix, &crate::codebuddy::BLOCKED_ARGS).args
+        }
+        "codex" => crate::command::filter_launch_prefix(prefix, &crate::codex::BLOCKED_ARGS).args,
+        "cursor" => crate::command::filter_launch_prefix(prefix, &crate::cursor::BLOCKED_ARGS).args,
+        "deveco" => crate::command::filter_launch_prefix(prefix, &crate::deveco::BLOCKED_ARGS).args,
+        "openclaw" => {
+            crate::command::filter_launch_prefix(prefix, &crate::openclaw::BLOCKED_ARGS).args
+        }
+        "opencode" => {
+            crate::command::filter_launch_prefix(prefix, &crate::opencode::BLOCKED_ARGS).args
+        }
+        "pi" => crate::command::filter_launch_prefix(prefix, &crate::pi::pi_blocked_args()).args,
+        "qwen" => crate::command::filter_launch_prefix(prefix, &crate::qwen::BLOCKED_ARGS).args,
+        "qoder" | "qoderclicn" | "traecli" | "kiro" | "kimi" | "qwenpaw" | "grok" | "mcode"
+        | "dim" | "reasonix" => {
+            crate::command::filter_launch_prefix(prefix, crate::qoder::blocked_args(family)).args
+        }
+        // DSH has no protocol-critical fixed-argument blocklist in the Go
+        // implementation; the profile selector is an identity token.
+        "dsh" => prefix.to_vec(),
+        _ => prefix.to_vec(),
+    }
+}
+
 /// Constructs a real backend for the provider families already implemented in
 /// this crate. Registry metadata alone is not enough: unsupported families
 /// fail before a task can pretend to execute.
@@ -504,5 +539,32 @@ mod tests {
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
             ));
         }
+    }
+
+    #[test]
+    fn launch_prefix_filter_uses_the_provider_policy_and_preserves_positionals() {
+        let prefix = vec![
+            "start".to_string(),
+            "--output-format".to_string(),
+            "text".to_string(),
+            "--model".to_string(),
+            "untrusted-model".to_string(),
+            "q36".to_string(),
+        ];
+        assert_eq!(
+            filter_launch_prefix_for_provider("qwen", &prefix),
+            vec!["start", "q36"]
+        );
+        assert_eq!(
+            filter_launch_prefix_for_provider("unknown", &prefix),
+            prefix
+        );
+    }
+
+    #[test]
+    fn builtin_runtime_identity_can_filter_but_is_not_a_profile_provider() {
+        let prefix = vec!["--mode".to_string(), "unsafe".to_string()];
+        assert!(filter_launch_prefix_for_provider("omp", &prefix).is_empty());
+        assert!(provider("omp").is_none());
     }
 }
