@@ -23,9 +23,8 @@
 //! Go ties the upstream call to `request.Context()`; under hyper a dropped
 //! handler future cancels in-flight work, giving equivalent semantics.
 //!
-//! S9-integration: entry points are wired by the daemon-runner lane.
-
-#![allow(dead_code)]
+//! The production provider adapter starts one set per claimed task and owns it
+//! through provider execution and environment finalization.
 
 use std::str::FromStr as _;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -48,7 +47,12 @@ pub(crate) const REMOTE_MCP_MAX_CONCURRENCY: usize = 8;
 /// `remoteMCPCredentialResolver`: resolves fresh credentials just-in-time;
 /// returns ordered header pairs.
 pub(crate) type RemoteMCPCredentialResolver = Arc<
-    dyn Fn(&crate::repocache::Ctx, &str) -> anyhow::Result<Vec<(String, String)>> + Send + Sync,
+    dyn Fn(
+            crate::repocache::Ctx,
+            String,
+        ) -> BoxFuture<'static, anyhow::Result<Vec<(String, String)>>>
+        + Send
+        + Sync,
 >;
 
 /// Transport seam standing in for the pinned HTTPS client (tests inject a
@@ -169,7 +173,12 @@ pub(crate) async fn start_task_remote_mcp_brokers(
         let mut headers = empty_headers;
         if !connection.credential_header.is_empty() {
             match &resolve_credential {
-                Some(resolver) => match resolver(setup_ctx, &connection.contribution_id) {
+                Some(resolver) => match resolver(
+                    setup_ctx.child(),
+                    connection.contribution_id.clone(),
+                )
+                .await
+                {
                     Ok(resolved) => headers = resolved,
                     Err(resolve_err) => {
                         let message = format!(
@@ -545,7 +554,7 @@ async fn run_proxy_body(
     let mut credential_headers = proxy.credential_headers.clone();
     if !proxy.connection.credential_header.is_empty() {
         if let Some(resolver) = &proxy.resolve_credential {
-            match resolver(&proxy.ctx, &proxy.connection.contribution_id) {
+            match resolver(proxy.ctx.child(), proxy.connection.contribution_id.clone()).await {
                 Ok(resolved) => credential_headers = resolved,
                 Err(_) => {
                     return Err(ProxyFailure {
@@ -1281,8 +1290,8 @@ mod tests {
         }];
         let mut state = proxy_state(endpoint, approved, Vec::new());
         state.connection.credential_header = "Authorization".into();
-        state.resolve_credential = Some(Arc::new(|_ctx: &crate::repocache::Ctx, _id: &str| {
-            Err(anyhow!("revoked"))
+        state.resolve_credential = Some(Arc::new(|_ctx, _id| {
+            Box::pin(async { Err(anyhow!("revoked")) })
         }));
         let response = serve_proxy_request(&state, post_request("/capability", json!({
             "jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"allowed","arguments":{}}

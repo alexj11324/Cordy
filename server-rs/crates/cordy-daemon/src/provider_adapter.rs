@@ -40,6 +40,10 @@ use crate::local_directory::{
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
+use crate::remote_mcp_broker::{
+    merge_task_remote_mcp_config, start_task_remote_mcp_brokers,
+    RemoteMCPCredentialResolver,
+};
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
 use crate::skill_cache::{
@@ -324,6 +328,7 @@ impl ProductionProviderAdapter {
             path: provider_path(),
             ..ProviderExecutionInputs::default()
         };
+        let client = runtime.client();
         if let Some(agent) = task.agent.as_ref() {
             inputs.cursor_mcp_auth_source = agent
                 .custom_env
@@ -346,6 +351,73 @@ impl ProductionProviderAdapter {
                 }
             }
         }
+        let credential_resolver: RemoteMCPCredentialResolver = {
+            let client = Arc::clone(&client);
+            let daemon_token = task.remote_mcp_daemon_token.clone();
+            let task_id = task.id.clone();
+            Arc::new(move |resolve_ctx, contribution_id| {
+                let client = Arc::clone(&client);
+                let daemon_token = daemon_token.clone();
+                let task_id = task_id.clone();
+                Box::pin(async move {
+                    client
+                        .resolve_remote_mcp_credential(
+                            &resolve_ctx,
+                            &daemon_token,
+                            &task_id,
+                            &contribution_id,
+                        )
+                        .await
+                })
+            })
+        };
+        let remote_mcp = match start_task_remote_mcp_brokers(
+            &ctx,
+            &ctx,
+            &task.id,
+            &target.provider,
+            &task.remote_mcp_connections,
+            Some(credential_resolver),
+        )
+        .await
+        {
+            Ok(startup) => startup,
+            Err(error) => {
+                return failed(
+                    error.context("prepare Remote MCP broker"),
+                    None,
+                )
+            }
+        };
+        for diagnostic in &remote_mcp.diagnostics {
+            tracing::warn!(task = %task.id, reason = %diagnostic, "Remote MCP degraded");
+        }
+        if let Some(error) = remote_mcp.error {
+            return failed(error.context("prepare Remote MCP broker"), None);
+        }
+        if let Some(overlay) = remote_mcp.config {
+            let base = inputs
+                .effective_mcp_config
+                .as_ref()
+                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .map(Value::to_string)
+                .unwrap_or_default();
+            let merged = match merge_task_remote_mcp_config(&base, &overlay.to_string())
+                .and_then(|raw| serde_json::from_str(&raw).map_err(anyhow::Error::new))
+            {
+                Ok(merged) => merged,
+                Err(error) => {
+                    return failed(
+                        error.context("merge Remote MCP broker configuration"),
+                        None,
+                    )
+                }
+            };
+            inputs.effective_mcp_config = Some(merged);
+        }
+        // Own every loopback broker until provider execution and environment
+        // finalization finish. Drop closes all listeners on every return path.
+        let _remote_mcp_brokers = remote_mcp.set;
         if let Some(assignment) = &assignment {
             if assignment.uses_worktree() {
                 inputs.local_worktree = Some(LocalWorktreeParams {
@@ -356,7 +428,6 @@ impl ProductionProviderAdapter {
                 inputs.local_work_dir = assignment.abs_path.clone();
             }
         }
-        let client = runtime.client();
         let prepare_lease = PrepareLeaseExtender::start(
             ctx.clone(),
             Arc::clone(&client),
@@ -1561,6 +1632,66 @@ mod tests {
     use super::*;
     use crate::types::SkillFileData;
     use cordy_agent::TokenUsage;
+
+    #[tokio::test]
+    async fn production_task_rejects_required_remote_mcp_for_incompatible_provider() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = Arc::new(Config {
+            server_base_url: "http://server.invalid".to_string(),
+            daemon_id: "daemon-1".to_string(),
+            workspaces_root: temp.path().to_string_lossy().into_owned(),
+            ..Config::default()
+        });
+        let adapter = ProductionProviderAdapter::new(config);
+        let launches = Arc::new(RuntimeLaunchRegistry::default());
+        let target = RuntimeExecutionTarget {
+            provider: "deveco".to_string(),
+            profile_id: String::new(),
+        };
+        launches.replace_builtins(
+            "workspace-1",
+            vec![RuntimeLaunchSpec {
+                target: target.clone(),
+                display_name: "Deveco".to_string(),
+                command_path: "/bin/false".to_string(),
+                fixed_args: Vec::new(),
+                version: "1".to_string(),
+            }],
+        );
+        let runtime = ProviderRuntimeContext::new(
+            Arc::new(Client::new("http://server.invalid")),
+            launches,
+            crate::activity::DaemonActivity::new(),
+            Arc::new(crate::repo_state::DaemonRepoState::new()),
+            Arc::new(crate::health::RepoCheckoutRegistry::default()),
+        );
+        let task = Task {
+            id: "task-1".to_string(),
+            agent_id: "agent-1".to_string(),
+            runtime_id: "runtime-1".to_string(),
+            workspace_id: "workspace-1".to_string(),
+            agent: Some(crate::types::AgentData::default()),
+            remote_mcp_connections: vec![cordy_remotemcp::Connection {
+                contribution_id: "connection-1".to_string(),
+                contribution_key: "required-tools".to_string(),
+                failure_policy: "required".to_string(),
+                ..cordy_remotemcp::Connection::default()
+            }],
+            ..Task::default()
+        };
+
+        let outcome = adapter
+            .run_task_inner(Ctx::new(), task, target, 0, runtime)
+            .await;
+        let failure = outcome.failure.expect("required broker failure");
+        assert!(
+            failure.message.contains(
+                "Remote MCP required-tools is incompatible with provider deveco"
+            ),
+            "{}",
+            failure.message
+        );
+    }
 
     #[test]
     fn skill_bundle_timeout_matches_size_budget() {

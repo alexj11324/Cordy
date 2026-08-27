@@ -20,75 +20,15 @@
 //! - `TaskResult` → [`TaskResult`]
 //! - `PluginHookTool` → [`PluginHookTool`]
 //!
-//! S9-integration: Go imports `pkg/remotemcp` (`remotemcp.Connection`,
-//! `remotemcp.Tool`) and `internal/runtimeapps`. The cordy-daemon crate does
-//! not depend on cordy-remotemcp, so [`RemoteMcpConnection`] /
-//! [`RemoteMcpTool`] mirror those wire shapes byte-for-byte here; swap to
-//! `cordy_remotemcp::types::{Connection, Tool}` when the dependency lands.
-//! `ConnectedAppData` aliases the execenv ConnectedApp stand-in, which already
-//! mirrors internal/runtimeapps.
+//! Remote MCP claim fields reuse the shared `cordy-remotemcp` wire types;
+//! `ConnectedAppData` aliases the execenv ConnectedApp shape.
 
 use serde::{Deserialize, Serialize};
 
 use crate::execenv::execenv::ConnectedApp;
 
-/// S9-integration stand-in for `remotemcp.Tool` (server/pkg/remotemcp/types.go:
-/// 10–17). One remote MCP tool pinned by an administrator; SchemaDigest freezes
-/// the exact approved input schema.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RemoteMcpTool {
-    #[serde(rename = "name")]
-    pub name: String,
-    #[serde(rename = "description", skip_serializing_if = "String::is_empty")]
-    pub description: String,
-    #[serde(rename = "input_schema")]
-    pub input_schema: serde_json::Value,
-    #[serde(rename = "schema_digest")]
-    pub schema_digest: String,
-    #[serde(rename = "risk", skip_serializing_if = "String::is_empty")]
-    pub risk: String,
-}
-
-/// S9-integration stand-in for `remotemcp.Connection`
-/// (server/pkg/remotemcp/types.go:23–40). Claim-time, task-scoped connection
-/// metadata; credentials are intentionally absent and resolved just-in-time by
-/// the daemon broker.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct RemoteMcpConnection {
-    #[serde(rename = "installation_id")]
-    pub installation_id: String,
-    #[serde(rename = "contribution_id")]
-    pub contribution_id: String,
-    #[serde(rename = "contribution_key")]
-    pub contribution_key: String,
-    #[serde(rename = "config_id")]
-    pub config_id: String,
-    #[serde(rename = "config_revision")]
-    pub config_revision: i64,
-    #[serde(rename = "endpoint")]
-    pub endpoint: String,
-    #[serde(rename = "public_config", skip_serializing_if = "Option::is_none")]
-    pub public_config: Option<serde_json::Value>,
-    #[serde(rename = "transport")]
-    pub transport: String,
-    #[serde(rename = "protocol_versions")]
-    pub protocol_versions: Vec<String>,
-    #[serde(
-        rename = "endpoint_allowed_hosts",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub endpoint_allowed_hosts: Vec<String>,
-    #[serde(rename = "credential_header", skip_serializing_if = "String::is_empty")]
-    pub credential_header: String,
-    #[serde(rename = "approved_tools")]
-    pub approved_tools: Vec<RemoteMcpTool>,
-    #[serde(rename = "tool_schema_digest")]
-    pub tool_schema_digest: String,
-    #[serde(rename = "failure_policy")]
-    pub failure_policy: String,
-}
+pub type RemoteMcpTool = cordy_remotemcp::Tool;
+pub type RemoteMcpConnection = cordy_remotemcp::Connection;
 
 /// AgentEntry describes a single available agent CLI (types.go:11–22).
 #[derive(Debug, Clone, Default, PartialEq)]
