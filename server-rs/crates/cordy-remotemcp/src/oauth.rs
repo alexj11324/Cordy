@@ -378,7 +378,9 @@ async fn request_oauth_token(
     if !registration.client_secret.is_empty()
         && registration.token_endpoint_auth_method == "client_secret_basic"
     {
-        let credentials = format!("{}:{}", registration.client_id, registration.client_secret);
+        let client_id = form_encode_component(&registration.client_id);
+        let client_secret = form_encode_component(&registration.client_secret);
+        let credentials = format!("{client_id}:{client_secret}");
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         let value = format!("Basic {encoded}");
         request.headers_mut().insert(
@@ -434,6 +436,10 @@ fn has_userinfo(raw: &str) -> bool {
     rest[..authority_end].contains('@')
 }
 
+fn form_encode_component(value: &str) -> String {
+    form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
 async fn probe_resource_metadata_url(endpoint: &Url) -> Option<String> {
     let body = serde_json::json!({
         "jsonrpc": "2.0",
@@ -480,9 +486,18 @@ fn protected_resource_metadata_url(resource: &Url) -> Url {
 
 fn authorization_metadata_urls(issuer: &Url) -> [Url; 2] {
     let path = issuer.path().trim_end_matches('/');
+    let mut oidc = issuer.clone();
+    let oidc_path = if path.is_empty() {
+        "/.well-known/openid-configuration".to_string()
+    } else {
+        format!("{path}/.well-known/openid-configuration")
+    };
+    oidc.set_path(&oidc_path);
+    oidc.set_query(None);
+    oidc.set_fragment(None);
     [
         well_known_url(issuer, "oauth-authorization-server", path),
-        well_known_url(issuer, "openid-configuration", path),
+        oidc,
     ]
 }
 
@@ -513,7 +528,7 @@ fn json_request(
         .method(method)
         .uri(endpoint.as_str())
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::ACCEPT, "application/json")
+        .header(header::ACCEPT, "application/json, text/event-stream")
         .body(Full::new(Bytes::from(body)))
         .map_err(|error| Error::InvalidUri(error.to_string()))
 }
@@ -637,8 +652,24 @@ mod tests {
         );
         assert_eq!(
             candidates[1].as_str(),
-            "https://login.example.com/.well-known/openid-configuration/tenant"
+            "https://login.example.com/tenant/.well-known/openid-configuration"
         );
+    }
+
+    #[test]
+    fn json_probe_accepts_json_and_sse() {
+        let endpoint = Url::parse("https://api.example.com/mcp").unwrap();
+        let request = json_request(Method::POST, &endpoint, Vec::new()).unwrap();
+        assert_eq!(
+            request.headers().get(header::ACCEPT).unwrap(),
+            "application/json, text/event-stream"
+        );
+    }
+
+    #[test]
+    fn basic_auth_components_use_form_encoding() {
+        assert_eq!(form_encode_component("client+id"), "client%2Bid");
+        assert_eq!(form_encode_component("secret value%"), "secret+value%25");
     }
 
     #[tokio::test]
