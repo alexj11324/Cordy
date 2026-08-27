@@ -1528,10 +1528,10 @@ fn dir_is_empty(dir: &str) -> anyhow::Result<bool> {
 /// wrapper. Zero means "inherit whatever the user's global openclaw.json
 /// already configures".
 ///
-/// Deviation vs Go: the public Go type masks Token in MarshalJSON and
-/// Display. This stand-in serializes plainly (the isolation helper protocol
-/// requires the real token over stdin anyway) and masks only in Display.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Public formatting and serialization mask the bearer token like Go's
+/// MarshalJSON/Stringer contract. The private preparation wire restores the
+/// raw token only while writing to the local helper stdin.
+#[derive(Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct OpenclawGatewayPin {
     #[serde(rename = "host", skip_serializing_if = "String::is_empty")]
@@ -1552,6 +1552,41 @@ impl OpenclawGatewayPin {
     /// IsZero reports whether every field is zero, i.e. there is nothing to pin.
     pub fn is_zero(&self) -> bool {
         *self == OpenclawGatewayPin::default()
+    }
+}
+
+impl std::fmt::Debug for OpenclawGatewayPin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenclawGatewayPin")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("token", &if self.token.is_empty() { "" } else { "***" })
+            .field("tls", &self.tls)
+            .finish()
+    }
+}
+
+impl Serialize for OpenclawGatewayPin {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        let mut state = serializer.serialize_struct("OpenclawGatewayPin", 4)?;
+        if !self.host.is_empty() {
+            state.serialize_field("host", &self.host)?;
+        }
+        if self.port != 0 {
+            state.serialize_field("port", &self.port)?;
+        }
+        if !self.token.is_empty() {
+            state.serialize_field("token", "***")?;
+        }
+        if self.tls {
+            state.serialize_field("tls", &true)?;
+        }
+        state.end()
     }
 }
 
