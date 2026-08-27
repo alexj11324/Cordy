@@ -582,6 +582,7 @@ async fn run_codex_attempts(
             attempt = Some(match backend.execute_once(&prompt, options.clone()).await {
                 Ok(attempt) => attempt,
                 Err(error) => {
+                    drop(messages);
                     let _ = result_tx.send(ExecutionResult {
                         status: "failed".to_string(),
                         error: error.to_string(),
@@ -629,6 +630,12 @@ async fn run_codex_attempts(
         let result = match attempt_result.await {
             Ok(result) => result,
             Err(_) => {
+                for held_message in held {
+                    if messages.send(held_message).await.is_err() {
+                        return;
+                    }
+                }
+                drop(messages);
                 let _ = result_tx.send(ExecutionResult {
                     status: "failed".to_string(),
                     error: "codex attempt closed without result".to_string(),
@@ -644,6 +651,7 @@ async fn run_codex_attempts(
                     return;
                 }
             }
+            drop(messages);
             let _ = result_tx.send(result);
             return;
         }
@@ -657,10 +665,21 @@ async fn run_codex_attempts(
                         return;
                     }
                 }
+                drop(messages);
                 let _ = result_tx.send(result);
                 return;
             }
             () = &mut retry => {}
+        }
+        if cancellation.is_cancelled() {
+            for held_message in held {
+                if messages.send(held_message).await.is_err() {
+                    return;
+                }
+            }
+            drop(messages);
+            let _ = result_tx.send(result);
+            return;
         }
     }
 }
@@ -722,7 +741,13 @@ async fn run_codex(
         ),
     };
     let cleanup_confirmed = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-    let initialize_retry_safe = cleanup_confirmed && is_initialize_timeout(&result.error);
+    let initialize_retry_safe = cleanup_confirmed
+        && !result.semantic_observed
+        && is_initialize_timeout(&result.error);
+    if is_initialize_timeout(&result.error) && !cleanup_confirmed {
+        result.error
+            .push_str("; retry suppressed: process cleanup/reap not confirmed");
+    }
     let _ = retry_tx.send(initialize_retry_safe);
 
     if tokio::time::timeout(KILL_GRACE, &mut stderr_task)
@@ -779,6 +804,7 @@ struct ProtocolOutcome {
     session_id: String,
     usage: BTreeMap<String, TokenUsage>,
     resume_rejected: bool,
+    semantic_observed: bool,
 }
 
 impl ProtocolOutcome {
@@ -819,10 +845,15 @@ async fn run_protocol(
         )
         .await
     {
-        return ProtocolOutcome::failed(error);
+        let mut result = ProtocolOutcome::failed(error);
+        result.semantic_observed = client.state.semantic_observed;
+        return result;
     }
     if let Err(error) = client.notify("initialized").await {
-        return ProtocolOutcome::failed(format!("codex initialized notification failed: {error}"));
+        let mut result =
+            ProtocolOutcome::failed(format!("codex initialized notification failed: {error}"));
+        result.semantic_observed = client.state.semantic_observed;
+        return result;
     }
 
     let cwd = if options.cwd.is_empty() {
@@ -938,6 +969,7 @@ async fn run_protocol(
         session_id,
         usage,
         resume_rejected,
+        semantic_observed: state.semantic_observed,
         ..ProtocolOutcome::default()
     };
     if !state.turn_error.is_empty() {
@@ -1236,6 +1268,7 @@ where
     }
 
     fn handle_notification(&mut self, method: &str, params: Option<&Value>) {
+        self.state.semantic_observed = true;
         let params = params.cloned().unwrap_or(Value::Null);
         if method == "codex/event" || method.starts_with("codex/event/") {
             self.state.legacy = true;
@@ -1519,6 +1552,7 @@ struct CodexState {
     turn_error: String,
     usage: TokenUsage,
     completed_turns: BTreeSet<String>,
+    semantic_observed: bool,
 }
 
 impl CodexState {
@@ -1944,6 +1978,16 @@ mod tests {
             "codex app-server handshake timeout: thread/start did not respond"
         ));
         assert!(!is_initialize_timeout("codex app-server stream ended"));
+    }
+
+    #[test]
+    fn initialize_notifications_block_a_retry() {
+        let (io, _peer) = tokio::io::duplex(1024);
+        let (reader, writer) = tokio::io::split(io);
+        let (message_tx, _message_rx) = mpsc::channel(1);
+        let mut client = CodexClient::new(BufReader::new(reader), writer, message_tx);
+        client.handle_notification("codex/status", Some(&serde_json::json!({})));
+        assert!(client.state.semantic_observed);
     }
 
     #[tokio::test]
