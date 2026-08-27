@@ -1298,7 +1298,7 @@ impl Client {
     /// one request. First unmatched-route 404 permanently switches to the
     /// legacy per-issue endpoint; other batch failures propagate so a transient
     /// server problem cannot amplify request volume.
-    pub(crate) async fn get_issue_gc_checks(
+    pub async fn get_issue_gc_checks(
         &self,
         ctx: &crate::repocache::Ctx,
         workspace_id: &str,

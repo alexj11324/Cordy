@@ -725,7 +725,7 @@ fn home_dir() -> anyhow::Result<String> {
 }
 
 /// `ArtifactPatternsFromEnv`.
-pub(crate) fn artifact_patterns_from_env() -> Vec<String> {
+pub fn artifact_patterns_from_env() -> Vec<String> {
     patterns_from_env(
         "CORDY_GC_ARTIFACT_PATTERNS",
         &default_gc_artifact_patterns(),

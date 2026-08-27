@@ -49,7 +49,7 @@ pub(crate) const DISK_USAGE_KIND_UNKNOWN: &str = "unknown";
 
 /// `TaskDiskUsage`: one task workdir's footprint on disk.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct TaskDiskUsage {
+pub struct TaskDiskUsage {
     #[serde(rename = "workspace_id")]
     pub workspace_id: String,
     #[serde(rename = "workspace_short")]
@@ -76,7 +76,7 @@ pub(crate) struct TaskDiskUsage {
 
 /// `WorkspaceDiskUsage`: per-workspace footprint across all tasks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct WorkspaceDiskUsage {
+pub struct WorkspaceDiskUsage {
     #[serde(rename = "workspace_id")]
     pub workspace_id: String,
     #[serde(rename = "workspace_short")]
@@ -97,7 +97,7 @@ pub(crate) struct WorkspaceDiskUsage {
 /// `DiskUsageReport`: full result of a single scan. Total* fields always
 /// reflect the entire scan, never the post-`--top` truncated view.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct DiskUsageReport {
+pub struct DiskUsageReport {
     #[serde(rename = "workspaces_root")]
     pub workspaces_root: String,
     #[serde(rename = "generated_at")]
@@ -131,14 +131,14 @@ pub(crate) struct DiskUsageReport {
 /// `DiskUsageRoot`: a workspaces root plus the profile it was derived from
 /// ("" = default root).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct DiskUsageRoot {
+pub struct DiskUsageRoot {
     pub profile: String,
     pub root: String,
 }
 
 /// `RootDiskUsage`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct RootDiskUsage {
+pub struct RootDiskUsage {
     #[serde(default)]
     pub profile: String,
     pub report: DiskUsageReport,
@@ -147,7 +147,7 @@ pub(crate) struct RootDiskUsage {
 /// `AggregateDiskUsageReport`: result of scanning several roots in one pass;
 /// grand totals across every root's FULL scan.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct AggregateDiskUsageReport {
+pub struct AggregateDiskUsageReport {
     #[serde(rename = "generated_at")]
     pub generated_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "artifact_patterns")]
@@ -209,7 +209,7 @@ fn repo_cache_size(repos_root: &str) -> (i64, usize) {
 /// `ScanDiskUsageRoots` (diskusage.go:112): scans every root in order and
 /// returns the combined report. A missing root yields an empty per-root report
 /// (not an error); a genuinely unreadable root aborts the whole scan.
-pub(crate) fn scan_disk_usage_roots(
+pub fn scan_disk_usage_roots(
     roots: &[DiskUsageRoot],
     artifact_patterns: &[String],
 ) -> anyhow::Result<AggregateDiskUsageReport> {
@@ -246,7 +246,7 @@ pub(crate) fn scan_disk_usage_roots(
 /// what the GC would actually reclaim (.git counts toward the total but not
 /// artifacts). Missing roots return an empty report, not an error. Purely
 /// local: parent_status stays empty until resolve_parent_statuses runs.
-pub(crate) fn scan_disk_usage(
+pub fn scan_disk_usage(
     workspaces_root: &str,
     artifact_patterns: &[String],
 ) -> anyhow::Result<DiskUsageReport> {
@@ -510,7 +510,7 @@ fn absolute(path: &Path) -> anyhow::Result<PathBuf> {
 /// issue-kind task via batch fetches. Best-effort: a failed workspace leaves
 /// its tasks unresolved and its error returned while other workspaces still
 /// fill in.
-pub(crate) async fn resolve_parent_statuses<F>(
+pub async fn resolve_parent_statuses<F>(
     ctx: &crate::repocache::Ctx,
     report: &mut DiskUsageReport,
     fetch: F,
