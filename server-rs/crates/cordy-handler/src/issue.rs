@@ -6632,6 +6632,10 @@ impl From<&IssueLabel> for LabelResponse {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+    use cordy_auth::pat_cache::PatCache;
+    use http_body_util::BodyExt as _;
+    use sqlx::postgres::PgPoolOptions;
+    use tower::ServiceExt as _;
 
     #[test]
     fn table_fingerprint_is_stable_for_the_same_query() {
@@ -7036,5 +7040,105 @@ mod tests {
         assert_eq!(table_cursor(&request, &fingerprint).unwrap(), (25, 25));
         request.group_key = Some("status:done".into());
         assert!(table_cursor(&request, &fingerprint).is_err());
+    }
+
+    #[tokio::test]
+    async fn production_create_route_returns_duplicate_contract_and_top_positions() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue create HTTP contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let slug = format!("issue-create-http-{}", Uuid::now_v7().simple());
+        let workspace_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('issue create HTTP', $1) RETURNING id",
+        )
+        .bind(slug)
+        .fetch_one(&pool)
+        .await
+        .expect("create workspace");
+        let user_id = Uuid::now_v7();
+        let context = WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: cordy_db::models::Member {
+                created_at: Utc::now(),
+                id: Uuid::now_v7(),
+                role: "member".into(),
+                user_id,
+                workspace_id,
+            },
+        };
+        let app = router()
+            .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
+            .layer(Extension(context));
+
+        async fn post(
+            app: &Router,
+            body: Value,
+        ) -> (StatusCode, Value) {
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(axum::http::Method::POST)
+                        .uri("/api/issues")
+                        .header(axum::http::header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(body.to_string()))
+                        .expect("create request"),
+                )
+                .await
+                .expect("create response");
+            let status = response.status();
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("response body")
+                .to_bytes();
+            (status, serde_json::from_slice(&bytes).expect("JSON body"))
+        }
+
+        let (status, first) = post(
+            &app,
+            json!({"title": "  HTTP\tDuplicate  ", "status": "todo"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(first["position"], -1.0);
+
+        let (status, duplicate) = post(
+            &app,
+            json!({"title": "http duplicate", "status": "todo"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(duplicate["code"], "active_duplicate_issue");
+        assert_eq!(duplicate["error"], "an active duplicate issue already exists");
+        assert_eq!(duplicate["issue"]["id"], first["id"]);
+
+        let (status, allowed) = post(
+            &app,
+            json!({
+                "title": "http duplicate",
+                "status": "todo",
+                "allow_duplicate": true,
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(allowed["position"], -2.0);
+
+        sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete issues");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
     }
 }
