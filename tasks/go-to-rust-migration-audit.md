@@ -2906,9 +2906,12 @@ heartbeat 使用 `chrono::SecondsFormat::AutoSi`。`AutoSi` 只输出 0/3/6/9 �
 - owner：主 agent 负责最小 helper、生产调用和 Ready PR；独立 verifier/reviewer/fixer 异步负责 exact Rust 验证、跨语言
   timestamp review 和回归修复。
 
-实现 commit `e790d261` 增加 `cordy-util::rfc3339_nano`，用 chrono 的九位纳秒格式再去除所有尾随零，覆盖 Go 的 0/4/9
+实现 commit `78c1bc41` 增加 `cordy-util::rfc3339_nano`，用 chrono 的九位纳秒格式再去除所有尾随零，覆盖 Go 的 0/4/9
 位 fractional vectors；`Envelope::new`、`RedisRelay::heartbeat_once` 与 `ShardedStreamRelay::heartbeat_once` 三个 realtime
 生产调用已切换到该 helper。Redis keys、payload、TTL、relay assembly 和错误语义未改变。主 agent 仅执行 `git diff --check`
 （PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；Ready PR #582 以 `codex/cord-246-realtime-envelope-contract`
-（base SHA `0d3606ef`）为 base，当前 tip 为 `28b4fd91`。异步 verifier/reviewer/fixer 结果待回写；在 exact compile、matched/executed、
-跨语言 timestamp 和真实生产 smoke 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
+（base SHA `e4f92ada`）为 base，当前 tip 为 `1cfc8ab9`。独立 fixer 的格式提交为 `1cfc8ab9`，fixed-stable rustfmt 与
+`git diff --check` PASS；verifier 的 locked/offline metadata/check/clippy/test/build 均在继承 #563 `hyper-util` runtime
+resolver 错误前置阻断（exit 101，matched/executed 为 0），真实 Redis/daemon/release/cross-platform smoke 未执行。reviewer
+无 P0/P1/P2/P3 finding。在 exact compile、matched/executed、跨语言 timestamp 和真实生产 smoke 证据返回前，本项不能声称
+AUDIT-008 已完成或删除 Go。
