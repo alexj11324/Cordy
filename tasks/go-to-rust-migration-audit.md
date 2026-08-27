@@ -205,7 +205,9 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
 立即提交、推送并创建 Ready PR，同时回写本表。verification/review/fix 可以
-并行运行；主 agent 只从依赖已满足的项继续选择，不需要等待异步结果。
+并行运行；主 agent 只从依赖已满足的项继续选择，不需要等待异步结果。切片大小
+按完整生产能力/完整契约及其退出条件决定，不按行数决定；禁止仅为补测试、allow、
+说明或制造小 PR 而拆开同一能力。
 
 ### 6.2 任务范围与退出证据
 
@@ -1266,6 +1268,16 @@ implementation commit `d607e429`）已经完整删除 required merge gate 的 Go
   `git diff --check`，未把 YAML、job graph、path-filter 或 contract scripts 记为通过。
 - 已知继承问题：#551 的 migrate bin 选择、#552/#553 review/verification finding 仍在 fixer
   队列，本 PR 不声称这些堆叠问题已解决。
+- reviewer 在 head `b480e4ad` 返回一个 P1、两个 P2：仍公开支持的 Go compatibility/rollback
+  targets 在源代码删除前失去唯一 build/test/sqlc drift/vulnerability gate；所谓 Rust deployment
+  contract 仍运行混合脚本并条件性使用 runner ambient Go；workflow 当前只有 manual trigger，
+  所以宣称保留的 PR path-filter skip 分支不可达。finding 已交独立 fixer，必须由其决定保留受控
+  legacy gate 或先完整退役 compatibility 边界，主 agent 不代修。
+- verifier 在同一 head 通过 diff、Psych YAML、job graph、静态 Go command absence、shell syntax、
+  Makefile contract 和正常 changed/unchanged/failure 矩阵；Helm 因本机无 binary 未执行。新增
+  fail-closed finding：classifier success 但 backend output 缺失/非法时 aggregate 把它当 no-change
+  返回成功。另精确复现 #551 ambiguous migrate command 与 #544 七处 E0433；均已交 fixer，不能
+  记录为通过。
 
 ## 42. AUDIT-006 执行缺口：Rust migration operator lifecycle
 
@@ -1278,7 +1290,7 @@ implementation commit `d607e429`）已经完整删除 required merge gate 的 Go
 - `status` 仅检查版本记录，没有复用 migration lock；它可能在另一个 runner 正在逐条执行时返回
   瞬时结果，且当前 runbook 未定义 busy/timeout/interrupted 的非零退出与恢复步骤。
 - 本切片在现有 `main.rs`/`runner.rs` 内完成：生产 CLI 的明确 up/down/status contract、统一
-  SIGINT/SIGTERM cancellation token、可配置且有默认值的 advisory-lock timeout、status 与写操作
+  SIGINT/SIGTERM 取消边界、可配置且有默认值的 advisory-lock timeout、status 与写操作
   共享锁边界，以及最小运维文档。复用现有 tokio/sqlx/tokio-util，不新增 crate、框架或兼容层。
 - 退出证据：并发 runner 串行；锁超时、信号取消和 pending migration 都 fail nonzero；成功
   up/down/status 保持现有 production entry 与输出；取消或失败后 session lock 可由后继 runner

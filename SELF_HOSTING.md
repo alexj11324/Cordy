@@ -462,6 +462,33 @@ If the selected GHCR tag has not been published yet, fall back to `make selfhost
 
 > **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** That's migration `103`'s fail-closed guard: it requires `task_usage_hourly` to be seeded before the legacy daily rollups are dropped. As of MUL-2957 `migrate up` runs that backfill automatically right before applying `103`, so the upgrade completes in a single invocation. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run `backfill_task_usage_hourly` manually first, then re-run the upgrade. Full instructions in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
 
+## Migration recovery
+
+The Rust migration runner serializes `up`, `down`, and `status` with the same
+PostgreSQL advisory lock. It waits at most five minutes by default, so a stuck
+or overlapping rollout fails instead of waiting forever. Override that bound
+with `CORDY_MIGRATION_LOCK_TIMEOUT_SECONDS` or `--lock-timeout-seconds`; the CLI
+flag wins. Zero is rejected.
+
+Check a Compose deployment without changing the schema:
+
+```bash
+docker compose -f docker-compose.selfhost.yml exec backend \
+  ./migrate status --lock-timeout-seconds 30
+```
+
+For Kubernetes, run the same binary in the backend pod:
+
+```bash
+kubectl -n cordy exec deploy/cordy-backend -- \
+  ./migrate status --lock-timeout-seconds 30
+```
+
+A pending migration, lock timeout, database error, SIGINT, or SIGTERM exits
+nonzero. After an interrupted runner has exited, its PostgreSQL session releases
+the advisory lock; run `status` again and then `up`. Do not use `down` as an
+automatic retry—the rollback command intentionally changes the schema.
+
 ---
 
 ## Manual Docker Compose Setup
