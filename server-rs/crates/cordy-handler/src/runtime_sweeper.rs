@@ -495,6 +495,7 @@ mod tests {
     use cordy_db::dbid::new_v7;
     use cordy_db::models::AgentRuntime;
     use cordy_events::Event;
+    use uuid::Uuid;
 
     struct FixedClock(DateTime<Utc>);
 
@@ -787,5 +788,497 @@ mod tests {
         );
         assert_eq!(rows.status(raced.id).await, "offline");
         rows.cleanup().await;
+    }
+
+    struct RecoveryRows {
+        pool: PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        old_agent_id: Uuid,
+        grace_agent_id: Uuid,
+        old_runtime_id: Uuid,
+        grace_runtime_id: Uuid,
+        healthy_runtime_id: Uuid,
+        active_task_ids: Vec<Uuid>,
+        grace_task_id: Uuid,
+        offline_retry_id: Uuid,
+        healthy_retry_id: Uuid,
+        unrelated_retry_id: Uuid,
+    }
+
+    impl RecoveryRows {
+        async fn required() -> anyhow::Result<Self> {
+            let url = std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL is required for offline task recovery contracts");
+            let pool = PgPool::connect(&url).await?;
+            let workspace_id = new_v7();
+            sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind("Rust offline task recovery contract")
+                .bind(format!("rust-recovery-{workspace_id}"))
+                .execute(&pool)
+                .await?;
+            let suffix = workspace_id.simple().to_string();
+            let user_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
+            )
+            .bind("offline recovery contract user")
+            .bind(format!("offline-recovery-{suffix}@example.test"))
+            .fetch_one(&pool)
+            .await?;
+            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
+                .bind(workspace_id)
+                .bind(user_id)
+                .execute(&pool)
+                .await?;
+
+            let old_runtime_id = Self::runtime(&pool, workspace_id, "old", "offline", "4 hours").await?;
+            let grace_runtime_id =
+                Self::runtime(&pool, workspace_id, "grace", "offline", "10 minutes").await?;
+            let healthy_runtime_id = Self::runtime(&pool, workspace_id, "healthy", "online", "1 minute").await?;
+            let old_agent_id = Self::agent(&pool, workspace_id, user_id, old_runtime_id, "old").await?;
+            let grace_agent_id =
+                Self::agent(&pool, workspace_id, user_id, grace_runtime_id, "grace").await?;
+            let healthy_agent_id =
+                Self::agent(&pool, workspace_id, user_id, healthy_runtime_id, "healthy").await?;
+
+            let mut next_number = 1;
+            let mut active_task_ids = Vec::new();
+            for status in ["dispatched", "running", "waiting_local_directory"] {
+                let issue_id = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+                next_number += 1;
+                let wait_reason = (status == "waiting_local_directory").then_some("local directory busy");
+                active_task_ids.push(
+                    Self::task(
+                        &pool,
+                        old_agent_id,
+                        old_runtime_id,
+                        issue_id,
+                        status,
+                        None,
+                        None,
+                        None,
+                        wait_reason,
+                        None,
+                    )
+                    .await?,
+                );
+            }
+            let grace_issue = Self::issue(&pool, workspace_id, user_id, grace_agent_id, next_number).await?;
+            next_number += 1;
+            let grace_task_id = Self::task(
+                &pool,
+                grace_agent_id,
+                grace_runtime_id,
+                grace_issue,
+                "running",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+
+            let offline_retry_issue = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+            next_number += 1;
+            let offline_parent = Self::task(
+                &pool,
+                old_agent_id,
+                old_runtime_id,
+                offline_retry_issue,
+                "failed",
+                None,
+                None,
+                Some("runtime_offline"),
+                None,
+                None,
+            )
+            .await?;
+            let offline_retry_id = Self::task(
+                &pool,
+                old_agent_id,
+                old_runtime_id,
+                offline_retry_issue,
+                "deferred",
+                Some(offline_parent),
+                Some(offline_parent),
+                None,
+                None,
+                Some(Utc::now() - chrono::Duration::hours(4)),
+            )
+            .await?;
+
+            let healthy_retry_issue = Self::issue(&pool, workspace_id, user_id, healthy_agent_id, next_number).await?;
+            next_number += 1;
+            let healthy_parent = Self::task(
+                &pool,
+                healthy_agent_id,
+                healthy_runtime_id,
+                healthy_retry_issue,
+                "failed",
+                None,
+                None,
+                Some("runtime_offline"),
+                None,
+                None,
+            )
+            .await?;
+            let healthy_retry_id = Self::task(
+                &pool,
+                healthy_agent_id,
+                healthy_runtime_id,
+                healthy_retry_issue,
+                "deferred",
+                Some(healthy_parent),
+                Some(healthy_parent),
+                None,
+                None,
+                Some(Utc::now() - chrono::Duration::hours(4)),
+            )
+            .await?;
+
+            let unrelated_retry_issue = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+            let unrelated_parent = Self::task(
+                &pool,
+                old_agent_id,
+                old_runtime_id,
+                unrelated_retry_issue,
+                "failed",
+                None,
+                None,
+                Some("provider_auth"),
+                None,
+                None,
+            )
+            .await?;
+            let unrelated_retry_id = Self::task(
+                &pool,
+                old_agent_id,
+                old_runtime_id,
+                unrelated_retry_issue,
+                "deferred",
+                Some(unrelated_parent),
+                Some(unrelated_parent),
+                None,
+                None,
+                Some(Utc::now() - chrono::Duration::hours(4)),
+            )
+            .await?;
+
+            Ok(Self {
+                pool,
+                workspace_id,
+                user_id,
+                old_agent_id,
+                grace_agent_id,
+                old_runtime_id,
+                grace_runtime_id,
+                healthy_runtime_id,
+                active_task_ids,
+                grace_task_id,
+                offline_retry_id,
+                healthy_retry_id,
+                unrelated_retry_id,
+            })
+        }
+
+        async fn runtime(
+            pool: &PgPool,
+            workspace_id: Uuid,
+            suffix: &str,
+            status: &str,
+            age: &str,
+        ) -> anyhow::Result<Uuid> {
+            let id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent_runtime \
+                 (id, workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) \
+                 VALUES ($1, $2, $3, $4, 'local', $5, $6, now() - $7::interval)",
+            )
+            .bind(id)
+            .bind(workspace_id)
+            .bind(format!("recovery-{suffix}-{id}"))
+            .bind(format!("Recovery {suffix}"))
+            .bind(format!("recovery-{suffix}"))
+            .bind(status)
+            .bind(age)
+            .execute(pool)
+            .await?;
+            Ok(id)
+        }
+
+        async fn agent(
+            pool: &PgPool,
+            workspace_id: Uuid,
+            owner_id: Uuid,
+            runtime_id: Uuid,
+            suffix: &str,
+        ) -> anyhow::Result<Uuid> {
+            let id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent \
+                 (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) \
+                 VALUES ($1, $2, $3, 'local', 'working', 6, $4, $5)",
+            )
+            .bind(id)
+            .bind(workspace_id)
+            .bind(format!("Recovery agent {suffix}"))
+            .bind(owner_id)
+            .bind(runtime_id)
+            .execute(pool)
+            .await?;
+            Ok(id)
+        }
+
+        async fn issue(
+            pool: &PgPool,
+            workspace_id: Uuid,
+            creator_id: Uuid,
+            assignee_id: Uuid,
+            number: i32,
+        ) -> anyhow::Result<Uuid> {
+            let id: Uuid = sqlx::query_scalar(
+                "INSERT INTO issue \
+                 (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                 VALUES ($1, $2, $3, 'in_progress', 'none', 'member', $4, 'agent', $5, $6, -1) RETURNING id",
+            )
+            .bind(new_v7())
+            .bind(workspace_id)
+            .bind(format!("Recovery issue {number}"))
+            .bind(creator_id)
+            .bind(assignee_id)
+            .bind(number)
+            .fetch_one(pool)
+            .await?;
+            Ok(id)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        async fn task(
+            pool: &PgPool,
+            agent_id: Uuid,
+            runtime_id: Uuid,
+            issue_id: Uuid,
+            status: &str,
+            parent_task_id: Option<Uuid>,
+            retry_of_task_id: Option<Uuid>,
+            failure_reason: Option<&str>,
+            wait_reason: Option<&str>,
+            fire_at: Option<chrono::DateTime<Utc>>,
+        ) -> anyhow::Result<Uuid> {
+            let task_id = new_v7();
+            let active_at = (status == "dispatched" || status == "running")
+                .then_some(Utc::now() - chrono::Duration::minutes(1));
+            let started_at = (status == "running")
+                .then_some(Utc::now() - chrono::Duration::minutes(1));
+            let completed_at = (status == "failed")
+                .then_some(Utc::now() - chrono::Duration::minutes(1));
+            let id: Uuid = sqlx::query_scalar(
+                "INSERT INTO agent_task_queue \
+                 (id, agent_id, runtime_id, issue_id, status, priority, attempt, max_attempts, \
+                  dispatched_at, started_at, completed_at, fire_at, parent_task_id, retry_of_task_id, failure_reason, wait_reason) \
+                 VALUES ($1, $2, $3, $4, $5, 0, 1, 1, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
+            )
+            .bind(task_id)
+            .bind(agent_id)
+            .bind(runtime_id)
+            .bind(issue_id)
+            .bind(status)
+            .bind(active_at)
+            .bind(started_at)
+            .bind(completed_at)
+            .bind(fire_at)
+            .bind(parent_task_id)
+            .bind(retry_of_task_id)
+            .bind(failure_reason)
+            .bind(wait_reason)
+            .fetch_one(pool)
+            .await?;
+            Ok(id)
+        }
+
+        async fn cleanup(&self) -> anyhow::Result<()> {
+            sqlx::query("DELETE FROM workspace WHERE id = $1")
+                .bind(self.workspace_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                .bind(self.user_id)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn status(&self, id: Uuid) -> anyhow::Result<String> {
+            Ok(sqlx::query_scalar("SELECT status FROM agent_task_queue WHERE id = $1")
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await?)
+        }
+    }
+
+    impl Drop for RecoveryRows {
+        fn drop(&mut self) {
+            let pool = self.pool.clone();
+            let workspace_id = self.workspace_id;
+            let user_id = self.user_id;
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
+                        .bind(workspace_id)
+                        .execute(&pool)
+                        .await;
+                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+                        .bind(user_id)
+                        .execute(&pool)
+                        .await;
+                });
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn production_offline_task_recovery_and_reconnect_retry_contract() {
+        let rows = RecoveryRows::required()
+            .await
+            .expect("DATABASE_URL and migrated PostgreSQL are required for recovery contract");
+        let result = async {
+            let mut lock = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM agent_task_queue WHERE id = $1 FOR UPDATE")
+                .bind(rows.active_task_ids[0])
+                .fetch_one(&mut *lock)
+                .await?;
+            let selected = runtime::fail_tasks_for_offline_runtimes(
+                &rows.pool,
+                Utc::now() - chrono::Duration::hours(3),
+                1,
+            )
+            .await?;
+            anyhow::ensure!(selected.len() == 1, "offline failure batch returned {} rows", selected.len());
+            anyhow::ensure!(
+                rows.active_task_ids.contains(&selected[0].id),
+                "offline failure query selected an unrelated task"
+            );
+            anyhow::ensure!(
+                selected[0].id != rows.active_task_ids[0],
+                "FOR UPDATE SKIP LOCKED selected the held task"
+            );
+            lock.commit().await?;
+            sqlx::query(
+                "UPDATE agent_task_queue SET status = 'running', dispatched_at = now(), started_at = now(), \
+                 completed_at = NULL, error = NULL, failure_reason = NULL, wait_reason = NULL WHERE id = $1",
+            )
+            .bind(selected[0].id)
+            .execute(&rows.pool)
+            .await?;
+
+            let bus = Arc::new(Bus::new());
+            let failed_events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let failed_events = failed_events.clone();
+                bus.subscribe(cordy_protocol::EVENT_TASK_FAILED, move |event| {
+                    failed_events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let issue_events = Arc::new(Mutex::new(Vec::<Event>::new()));
+            {
+                let issue_events = issue_events.clone();
+                bus.subscribe(cordy_protocol::EVENT_ISSUE_UPDATED, move |event| {
+                    issue_events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .push(event.clone());
+                });
+            }
+            let tasks = Arc::new(TaskService::new(rows.pool.clone(), bus.clone()));
+            let liveness = Arc::new(TestLiveness {
+                available: false,
+                alive: HashSet::new(),
+                forgotten: Arc::new(Mutex::new(Vec::new())),
+                race_id: None,
+                pool: None,
+            });
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                liveness,
+                tasks,
+                bus,
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            )
+            .with_clock(Arc::new(FixedClock(Utc::now())));
+            let report = sweeper.run_once().await;
+            anyhow::ensure!(
+                report.tasks_failed == rows.active_task_ids.len() + 1,
+                "tasks_failed report = {}, want {}",
+                report.tasks_failed,
+                rows.active_task_ids.len() + 1
+            );
+            for task_id in &rows.active_task_ids {
+                anyhow::ensure!(rows.status(*task_id).await? == "failed", "active task did not fail");
+                let (error, reason, completed, wait_reason): (Option<String>, Option<String>, Option<chrono::DateTime<Utc>>, Option<String>) = sqlx::query_as(
+                    "SELECT error, failure_reason, completed_at, wait_reason FROM agent_task_queue WHERE id = $1",
+                )
+                .bind(task_id)
+                .fetch_one(&rows.pool)
+                .await?;
+                anyhow::ensure!(error.as_deref() == Some("runtime went offline"), "offline error = {error:?}");
+                anyhow::ensure!(reason.as_deref() == Some("runtime_offline"), "offline reason = {reason:?}");
+                anyhow::ensure!(completed.is_some(), "offline task has no completion timestamp");
+                anyhow::ensure!(wait_reason.is_none(), "offline waiter retained wait reason");
+            }
+            anyhow::ensure!(rows.status(rows.grace_task_id).await? == "running", "task inside reconnect grace was failed");
+            anyhow::ensure!(rows.status(rows.offline_retry_id).await? == "failed", "expired offline retry was not terminalized");
+            anyhow::ensure!(rows.status(rows.healthy_retry_id).await? == "deferred", "healthy runtime retry was expired");
+            anyhow::ensure!(rows.status(rows.unrelated_retry_id).await? == "deferred", "unrelated retry lineage was expired");
+            let retry_reason: Option<String> = sqlx::query_scalar(
+                "SELECT failure_reason FROM agent_task_queue WHERE id = $1",
+            )
+            .bind(rows.offline_retry_id)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(
+                retry_reason.as_deref() == Some("runtime_reconnect_timeout"),
+                "retry failure reason = {retry_reason:?}"
+            );
+            let old_status: String = sqlx::query_scalar("SELECT status FROM agent WHERE id = $1")
+                .bind(rows.old_agent_id)
+                .fetch_one(&rows.pool)
+                .await?;
+            let grace_status: String = sqlx::query_scalar("SELECT status FROM agent WHERE id = $1")
+                .bind(rows.grace_agent_id)
+                .fetch_one(&rows.pool)
+                .await?;
+            anyhow::ensure!(old_status == "idle", "old agent status = {old_status}");
+            anyhow::ensure!(grace_status == "working", "grace agent status = {grace_status}");
+            let failed_events = failed_events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            anyhow::ensure!(
+                failed_events.len() == rows.active_task_ids.len() + 1,
+                "task failure events = {}, want {}",
+                failed_events.len(),
+                rows.active_task_ids.len() + 1
+            );
+            for event in failed_events.iter() {
+                anyhow::ensure!(event.workspace_id == rows.workspace_id.to_string(), "failure event workspace mismatch");
+                anyhow::ensure!(event.payload["failure_reason"].is_string(), "failure event omitted reason");
+            }
+            drop(failed_events);
+            anyhow::ensure!(
+                issue_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).len()
+                    >= rows.active_task_ids.len() + 1,
+                "terminal failures did not reconcile issue events"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("offline task recovery contract failed");
+        cleanup.expect("offline task recovery fixture cleanup failed");
     }
 }
