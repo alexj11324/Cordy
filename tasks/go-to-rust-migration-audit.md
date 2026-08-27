@@ -494,11 +494,11 @@ AUDIT-002 已完成。
 
 | 契约 | Go 来源 | Rust 入口 | 当前可执行证据 | 生产/Go 状态 |
 | --- | --- | --- | --- | --- |
-| CLI 顶层命令树 | `server/cmd/cordy/main.go` 及各 `cmd_*.go` | `cordy-cli::Cli` / `Command` | `top_level_and_daemon_commands_match_go_contract` 对账完整命令集合 | Rust CLI 已接线；默认发布已切 Rust；Go 仍保留作兼容验证 |
+| CLI 顶层命令树 | `server/cmd/cordy/main.go` 及各 `cmd_*.go` | `cordy-cli::Cli` / `Command` | `top_level_and_daemon_commands_match_go_contract_except_completion_gap` 对账 Go 完整集合，并固定当前唯一缺口：隐藏但可调用的 `completion` 尚未迁移 | Rust CLI 除 `completion` 外已接线；该缺口迁移前不得宣称命令树完整；Go 仍保留作兼容验证 |
 | CLI 成功输出与失败退出码 | `server/internal/cli/errors.go`、`server/cmd/cordy/main.go` | `cordy-cli/src/main.rs`、`error.rs` | `http_exit_codes_match_go_contract` 与既有 validation message 测试；stdout/stderr 真实 artifact smoke 待执行 | Rust 入口已接线；需在可运行 artifact 上执行 smoke；Go 不可删 |
 | daemon profile health/control | `server/internal/daemon` 与 Go CLI daemon commands | `cordy-daemon::control_client`、`production_stack`、`cordy-cli` daemon commands | Rust daemon control parser/health tests；真实进程 smoke 待环境可用后执行 | Rust 内部已接线；默认发布已切 Rust；Go 不可删 |
 
-本切片的退出条件是：命令树无缺口、错误码/输出契约测试可执行、daemon
+本切片的退出条件是：命令树除已登记的 `completion` 缺口外无其他缺口、错误码/输出契约测试可执行、daemon
 health/control 的成功和失败路径有记录，并把剩余 API/WS/事务/worker 项目继续
 留在本 ID 的下一动作中。验证失败只记录为基线或环境问题并交独立 fix agent，
 不由主 agent 在本切片自行修复。

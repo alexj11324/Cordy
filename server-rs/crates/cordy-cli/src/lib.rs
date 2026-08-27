@@ -16871,19 +16871,20 @@ mod tests {
     }
 
     #[test]
-    fn top_level_and_daemon_commands_match_go_contract() {
+    fn top_level_and_daemon_commands_match_go_contract_except_completion_gap() {
         let command = Cli::command();
         let mut top_level = command
             .get_subcommands()
             .map(|subcommand| subcommand.get_name())
             .collect::<Vec<_>>();
         top_level.sort_unstable();
-        let expected = [
+        let expected_go = [
             "agent",
             "attachment",
             "auth",
             "autopilot",
             "chat",
+            "completion",
             "config",
             "daemon",
             "issue",
@@ -16901,7 +16902,13 @@ mod tests {
             "version",
             "workspace",
         ];
-        assert_eq!(top_level, expected);
+        let missing = expected_go
+            .iter()
+            .copied()
+            .filter(|name| !top_level.contains(name))
+            .collect::<Vec<_>>();
+        assert_eq!(missing, ["completion"]);
+        assert!(top_level.iter().all(|name| expected_go.contains(name)));
 
         let mut daemon = command
             .find_subcommand("daemon")
