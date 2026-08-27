@@ -21,15 +21,14 @@ mod ulid_string {
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(v: &uuid::Uuid, s: S) -> Result<S::Ok, S::Error> {
-        // TODO(S2): switch to Crockford base32 via the `ulid` crate once ids
-        // are generated natively; UUIDv7 hyphenated form is accepted by the
-        // frontend today but must be re-audited before cutover.
-        s.serialize_str(&v.to_string())
+        let encoded = ulid::Ulid::from_bytes(*v.as_bytes()).to_string();
+        s.serialize_str(&encoded)
     }
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<uuid::Uuid, D::Error> {
         let s = String::deserialize(d)?;
-        uuid::Uuid::parse_str(&s).map_err(serde::de::Error::custom)
+        let value = ulid::Ulid::from_string(&s).map_err(serde::de::Error::custom)?;
+        Ok(uuid::Uuid::from_bytes(value.to_bytes()))
     }
 }
 
@@ -119,12 +118,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ulid_roundtrips_as_string() {
+    fn ulid_serializes_as_crockford_wire_value() {
         let id = Ulid(uuid::Uuid::now_v7());
         let json = serde_json::to_string(&id).unwrap();
-        assert!(json.starts_with('"'));
+        let wire = json.trim_matches('"');
+        assert_eq!(wire.len(), 26);
+        assert!(wire.bytes().all(|byte| {
+            matches!(
+                byte,
+                b'0'..=b'9'
+                    | b'A'..=b'H'
+                    | b'J'..=b'K'
+                    | b'M'..=b'N'
+                    | b'P'..=b'T'
+                    | b'V'..=b'Z'
+            )
+        }));
         let back: Ulid = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
+    }
+
+    #[test]
+    fn ulid_matches_go_crockford_vector() {
+        const VECTOR: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+        let value = ulid::Ulid::from_string(VECTOR).unwrap();
+        let id = Ulid(uuid::Uuid::from_bytes(value.to_bytes()));
+
+        assert_eq!(serde_json::to_string(&id).unwrap(), format!("\"{VECTOR}\""));
+        assert_eq!(serde_json::from_str::<Ulid>(&format!("\"{VECTOR}\"")).unwrap(), id);
+    }
+
+    #[test]
+    fn ulid_rejects_uuid_hyphenated_wire_value() {
+        let uuid_wire = format!("\"{}\"", uuid::Uuid::nil());
+        assert!(serde_json::from_str::<Ulid>(&uuid_wire).is_err());
     }
 
     #[test]
