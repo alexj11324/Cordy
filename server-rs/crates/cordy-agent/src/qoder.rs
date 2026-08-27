@@ -14,13 +14,16 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::acp::{AcpClient, AcpError, AcpNotification};
+use crate::acp::{
+    default_permission_decision, AcpClient, AcpError, AcpNotification, AcpPermissionDecision,
+};
 use crate::acp_mcp::{
     build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpServer,
 };
 use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
+    COST_USD_TICKS_PER_USD,
 };
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
 use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
@@ -124,6 +127,18 @@ static DIM_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = Lazy
         ("-h", BlockedArgMode::Standalone),
     ])
 });
+static REASONIX_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("acp", BlockedArgMode::Standalone),
+            ("--model", BlockedArgMode::WithValue),
+            ("--profile", BlockedArgMode::WithValue),
+            ("--planner", BlockedArgMode::WithValue),
+            ("--sandbox-network", BlockedArgMode::WithValue),
+            ("--sandbox-bash", BlockedArgMode::WithValue),
+            ("--workspace-only", BlockedArgMode::Standalone),
+        ])
+    });
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -422,6 +437,67 @@ impl Backend for KimiBackend {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct ReasonixConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReasonixBackend {
+    inner: QoderBackend,
+}
+
+impl ReasonixBackend {
+    pub fn new(config: ReasonixConfig) -> Self {
+        let launch_args = [
+            "acp",
+            "--profile",
+            "balanced",
+            "--planner",
+            "auto",
+            "--sandbox-network",
+            "auto",
+            "--sandbox-bash",
+            "auto",
+            "--workspace-only",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "reasonix".to_string(),
+                provider: "reasonix".to_string(),
+                discovery_args: launch_args.clone(),
+                launch_args,
+                reject_failed_load: true,
+                use_system_prompt: false,
+                ..QoderConfig::default()
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for ReasonixBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct GrokConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
@@ -648,6 +724,11 @@ pub fn build_dim_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&backend.inner.config, options)
 }
 
+pub fn build_reasonix_args(options: &ExecOptions) -> Vec<String> {
+    let backend = ReasonixBackend::new(ReasonixConfig::default());
+    build_session_args(&backend.inner.config, options)
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
@@ -672,6 +753,7 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
         "grok" => &GROK_BLOCKED_ARGS,
         "mcode" => &MCODE_BLOCKED_ARGS,
         "dim" => &DIM_BLOCKED_ARGS,
+        "reasonix" => &REASONIX_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
@@ -697,6 +779,24 @@ async fn discover_models(
     let prefix = filter_launch_prefix(&config.command.prefix, blocked);
     let mut argv = prefix.args;
     argv.extend(config.discovery_args.clone());
+    let isolated_state = if config.provider == "reasonix" {
+        match tempfile::Builder::new()
+            .prefix("cordy-reasonix-discovery-state-")
+            .tempdir()
+        {
+            Ok(directory) => Some(directory),
+            Err(error) => {
+                tracing::debug!(
+                    provider = "reasonix",
+                    error = %error,
+                    "ACP model discovery state isolation failed"
+                );
+                return Catalog::default();
+            }
+        }
+    } else {
+        None
+    };
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -705,6 +805,9 @@ async fn discover_models(
         .stderr(Stdio::null())
         .envs(&config.env)
         .kill_on_drop(false);
+    if let Some(directory) = isolated_state.as_ref() {
+        command.env("REASONIX_STATE_HOME", directory.path());
+    }
     let mut tree = match OwnedProcessTree::spawn(&mut command).await {
         Ok(tree) => tree,
         Err(error) => {
@@ -783,7 +886,7 @@ async fn discover_models(
             }
         }
         let mut models = parse_acp_session_models(&session, &config.provider);
-        if config.provider == "dim" {
+        if matches!(config.provider.as_str(), "dim" | "reasonix") {
             annotate_acp_effort(&mut models, &session);
         }
         Catalog {
@@ -1069,6 +1172,12 @@ async fn run_protocol(
         Ok(result) => result,
         Err(error) => return ProtocolOutcome::failed(format!("{provider} initialize failed: {error}")),
     };
+    if provider == "reasonix" && reasonix_capability_versions(&initialize) != (1, 1) {
+        tracing::warn!(
+            provider = "reasonix",
+            "ACP status capabilities are unavailable or incompatible; usage and cost may be incomplete"
+        );
+    }
     if explicit_authentication {
         let method = match select_grok_auth_method(&initialize, have_api_key) {
             Ok(method) => method,
@@ -1147,7 +1256,11 @@ async fn run_protocol(
                 (result, session_id)
             }
             Err(error) => {
-                return ProtocolOutcome::failed(format!("{provider} session/new failed: {error}"))
+                return ProtocolOutcome::failed(if provider == "reasonix" {
+                    reasonix_session_new_error(&error)
+                } else {
+                    format!("{provider} session/new failed: {error}")
+                })
             }
         }
     } else {
@@ -1193,13 +1306,18 @@ async fn run_protocol(
             }
             Err(error) => {
                 let rejected = reject_failed_load && error.is_session_not_found();
+                if provider == "reasonix" && is_reasonix_lease_conflict(&error) {
+                    return ProtocolOutcome::failed(format!(
+                        "reasonix session is already in use; close the other Reasonix window or process first: {error}"
+                    ));
+                }
                 return protocol_failure(&provider, &resume_method, error, String::new(), rejected);
             }
         }
     };
     let mut effective_model = if usage_model_unknown || !model_selection {
         "unknown".to_string()
-    } else if provider == "kimi" {
+    } else if matches!(provider.as_str(), "kimi" | "reasonix") {
         options.model.clone()
     } else if options.model.is_empty() {
         extract_current_model(&session_result)
@@ -1300,10 +1418,10 @@ async fn run_protocol(
             ),
         }
     }
-    if provider == "dim" && !options.thinking_level.is_empty() {
+    if matches!(provider.as_str(), "dim" | "reasonix") && !options.thinking_level.is_empty() {
         apply_acp_effort(
             &mut client,
-            "dim",
+            &provider,
             &session_result,
             &session_id,
             &options.thinking_level,
@@ -1318,7 +1436,8 @@ async fn run_protocol(
     };
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
-        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "dim"),
+        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "dim" | "reasonix"),
+        reasonix_dialect: provider == "reasonix",
         ..NotificationState::default()
     };
     let prompt_blocks = serde_json::json!([{"type":"text","text":user_text}]);
@@ -1331,11 +1450,34 @@ async fn run_protocol(
     } else {
         serde_json::json!({"sessionId":session_id,"prompt":prompt_blocks})
     };
-    let prompt_result = client
-        .request("session/prompt", prompt_params, |notification| {
-            handle_notification(notification, &messages, &mut state)
-        })
-        .await;
+    let mut blocked_question = String::new();
+    let mut missing_permission_metadata = false;
+    if provider == "reasonix" {
+        state.streaming_current_turn = true;
+    }
+    let prompt_result = if provider == "reasonix" {
+        client
+            .request_with_permission(
+                "session/prompt",
+                prompt_params,
+                |notification| handle_notification(notification, &messages, &mut state),
+                |params| {
+                    let decision = reasonix_permission_decision(params);
+                    if let Some(question) = decision.question {
+                        blocked_question = question;
+                    }
+                    missing_permission_metadata |= decision.metadata_missing;
+                    decision.decision
+                },
+            )
+            .await
+    } else {
+        client
+            .request("session/prompt", prompt_params, |notification| {
+                handle_notification(notification, &messages, &mut state)
+            })
+            .await
+    };
     let prompt_result = match prompt_result {
         Ok(result) => result,
         Err(error) => {
@@ -1368,6 +1510,15 @@ async fn run_protocol(
                     ..ProtocolOutcome::default()
                 };
             }
+            if provider == "reasonix" && !blocked_question.is_empty() {
+                return ProtocolOutcome {
+                    status: "failed".to_string(),
+                    error: blocked_question,
+                    session_id,
+                    resume_rejected: rejected,
+                    ..ProtocolOutcome::default()
+                };
+            }
             let rejected = rejected
                 || (provider == "kiro"
                     && !options.resume_session_id.is_empty()
@@ -1375,13 +1526,37 @@ async fn run_protocol(
             return protocol_failure(&provider, "session/prompt", error, session_id, rejected);
         }
     };
-    if let Err(error) = client
-        .drain_notifications(NOTIFICATION_QUIET, NOTIFICATION_DRAIN_MAX, |notification| {
-            handle_notification(notification, &messages, &mut state)
-        })
-        .await
-    {
+    let drain = if provider == "reasonix" {
+        client
+            .drain_notifications_with_permission(
+                NOTIFICATION_QUIET,
+                NOTIFICATION_DRAIN_MAX,
+                |notification| handle_notification(notification, &messages, &mut state),
+                |params| {
+                    let decision = reasonix_permission_decision(params);
+                    if let Some(question) = decision.question {
+                        blocked_question = question;
+                    }
+                    missing_permission_metadata |= decision.metadata_missing;
+                    decision.decision
+                },
+            )
+            .await
+    } else {
+        client
+            .drain_notifications(NOTIFICATION_QUIET, NOTIFICATION_DRAIN_MAX, |notification| {
+                handle_notification(notification, &messages, &mut state)
+            })
+            .await
+    };
+    if let Err(error) = drain {
         tracing::debug!(provider = %provider, error = %error, "ACP post-response notification drain ended early");
+    }
+    if missing_permission_metadata {
+        tracing::warn!(
+            provider = "reasonix",
+            "permission request omitted trusted metadata; protected-decision detection may be degraded"
+        );
     }
     if close_session && !session_id.is_empty() {
         if let Err(error) = client
@@ -1408,7 +1583,13 @@ async fn run_protocol(
             parse_usage(prompt_meta.and_then(|meta| meta.get("usage"))),
         ),
     );
-    let turn_usage = merge_usage(state.usage, prompt_usage);
+    let mut turn_usage = merge_usage(state.usage, prompt_usage);
+    if provider == "reasonix" && turn_usage == TokenUsage::default() {
+        turn_usage = state.reasonix_usage;
+    }
+    if provider == "reasonix" && options.model.is_empty() && !state.reasonix_model.is_empty() {
+        effective_model.clone_from(&state.reasonix_model);
+    }
     if provider == "grok" && effective_model == "unknown" {
         if let Some(model) = prompt_meta
             .and_then(|meta| meta.get("modelId"))
@@ -1426,14 +1607,31 @@ async fn run_protocol(
     if full_text_output {
         output.clone_from(&full_output);
     }
-    let (status, error) = match stop_reason {
+    let strict_stop_reason = provider == "reasonix";
+    let (mut status, mut error) = match stop_reason {
         "cancelled" => ("aborted", format!("{provider} cancelled the prompt")),
         "max_turn_requests" if provider == "mcode" => (
             "failed",
             "mcode reached its maximum turn requests".to_string(),
         ),
-        _ => ("completed", String::new()),
+        "end_turn" | "" if !strict_stop_reason => ("completed", String::new()),
+        "end_turn" => ("completed", String::new()),
+        "error" => (
+            "failed",
+            format!("{provider} ended the prompt with stopReason=error"),
+        ),
+        unsupported => (
+            "failed",
+            format!("{provider} returned unsupported stopReason {unsupported:?}"),
+        ),
     };
+    if provider == "reasonix"
+        && !blocked_question.is_empty()
+        && matches!(status, "completed" | "failed")
+    {
+        status = "failed";
+        error = blocked_question;
+    }
     ProtocolOutcome {
         status: status.to_string(),
         error,
@@ -1489,6 +1687,11 @@ struct NotificationState {
     last_finishing_status: String,
     kiro_dialect: bool,
     extended_tool_names: bool,
+    reasonix_dialect: bool,
+    streaming_current_turn: bool,
+    reasonix_sequence: u64,
+    reasonix_usage: TokenUsage,
+    reasonix_model: String,
 }
 
 #[derive(Default)]
@@ -1532,6 +1735,13 @@ fn handle_notification(
     messages: &mpsc::Sender<Message>,
     state: &mut NotificationState,
 ) {
+    if state.reasonix_dialect {
+        if state.streaming_current_turn {
+            observe_reasonix_status(&notification, state);
+        } else {
+            return;
+        }
+    }
     if !matches!(
         notification.method.as_str(),
         "session/update" | "session/notification"
@@ -1562,6 +1772,73 @@ fn handle_notification(
         }
         _ => {}
     }
+}
+
+fn observe_reasonix_status(notification: &AcpNotification, state: &mut NotificationState) {
+    if notification.method != "_reasonix.io/session/status_update"
+        || integer(&notification.params, &["schemaVersion"]) != 1
+    {
+        return;
+    }
+    let Some(sequence) = notification.params.get("sequence").and_then(Value::as_u64) else {
+        return;
+    };
+    if sequence < state.reasonix_sequence {
+        return;
+    }
+    let Some(status) = notification.params.get("status") else {
+        return;
+    };
+    let turn = status
+        .get("usage")
+        .and_then(|usage| usage.get("turn"))
+        .unwrap_or(&Value::Null);
+    let prompt = integer(turn, &["promptTokens"]);
+    let cache_read = integer(turn, &["cacheHitTokens"]);
+    let cache_miss = integer(turn, &["cacheMissTokens"]);
+    let input = if cache_miss > 0 {
+        cache_miss
+    } else {
+        prompt
+            .checked_sub(cache_read)
+            .filter(|value| *value >= 0)
+            .unwrap_or(prompt)
+    };
+    let cost_usd_ticks = turn
+        .get("estimatedCost")
+        .and_then(Value::as_f64)
+        .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        .filter(|cost| {
+            *cost <= i64::MAX as f64 / COST_USD_TICKS_PER_USD as f64
+                && is_reasonix_usd_currency(
+                    turn.get("currency")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                )
+        })
+        .map(|cost| (cost * COST_USD_TICKS_PER_USD as f64).round() as i64)
+        .unwrap_or(0);
+    state.reasonix_sequence = sequence;
+    state.reasonix_usage = TokenUsage {
+        input_tokens: input,
+        output_tokens: integer(turn, &["completionTokens"]),
+        cache_read_tokens: cache_read,
+        cache_write_tokens: 0,
+        cost_usd_ticks,
+    };
+    state.reasonix_model = status
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+}
+
+fn is_reasonix_usd_currency(currency: &str) -> bool {
+    matches!(
+        currency.trim().to_ascii_uppercase().as_str(),
+        "USD" | "$" | "US$"
+    )
 }
 
 fn normalize_update(update: &Value) -> (String, &Value) {
@@ -2088,6 +2365,143 @@ async fn apply_acp_effort<R, W>(
     }
 }
 
+fn reasonix_capability_versions(value: &Value) -> (i64, i64) {
+    let meta = value
+        .get("agentCapabilities")
+        .and_then(|capabilities| capabilities.get("_meta"));
+    let version = |key: &str| {
+        meta.and_then(|meta| meta.get(key))
+            .and_then(|capability| capability.get("schemaVersion"))
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+    };
+    (
+        version("_reasonix.io/session/status"),
+        version("_reasonix.io/session/status_update"),
+    )
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ReasonixPermissionDecision {
+    decision: AcpPermissionDecision,
+    question: Option<String>,
+    metadata_missing: bool,
+}
+
+fn reasonix_permission_decision(params: Option<&Value>) -> ReasonixPermissionDecision {
+    let tool_call = params.and_then(|params| params.get("toolCall"));
+    let options = params
+        .and_then(|params| params.get("options"))
+        .and_then(Value::as_array);
+    let reject_once = options.into_iter().flatten().find_map(|option| {
+        option
+            .get("kind")
+            .and_then(Value::as_str)
+            .filter(|kind| kind.trim().eq_ignore_ascii_case("reject_once"))
+            .and_then(|_| option.get("optionId").and_then(Value::as_str))
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+    });
+    let is_question = tool_call
+        .and_then(|tool| tool.get("toolCallId"))
+        .and_then(Value::as_str)
+        .is_some_and(|id| id.starts_with("ask-"))
+        || options.into_iter().flatten().any(|option| {
+            option
+                .get("optionId")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id.ends_with(":cancel"))
+        });
+    if is_question {
+        let mut reason = "Reasonix requested interactive user input, which is unavailable in an unattended Cordy task".to_string();
+        if let Some(title) = tool_call
+            .and_then(|tool| tool.get("title"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+        {
+            reason.push_str(": ");
+            reason.push_str(&clip_reasonix_permission_title(title));
+        }
+        return ReasonixPermissionDecision {
+            decision: reject_once.map_or_else(
+                || AcpPermissionDecision::Reject(reason.clone()),
+                AcpPermissionDecision::Select,
+            ),
+            question: Some(reason),
+            metadata_missing: false,
+        };
+    }
+    let metadata = tool_call
+        .and_then(|tool| tool.get("_meta"))
+        .and_then(|meta| meta.get("reasonix.io"));
+    let tool = metadata
+        .and_then(|meta| meta.get("tool"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let fresh = metadata
+        .and_then(|meta| meta.get("fresh"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let protected = matches!(
+        tool,
+        "exit_plan_mode"
+            | "remember"
+            | "forget"
+            | "sandbox_escape"
+            | "config_write"
+            | "plan_mode_read_only_command"
+    );
+    let decision = if fresh || protected {
+        reject_once.map_or_else(
+            || {
+                AcpPermissionDecision::Reject(
+                    "Reasonix requested a protected decision that requires fresh human approval"
+                        .to_string(),
+                )
+            },
+            AcpPermissionDecision::Select,
+        )
+    } else {
+        default_permission_decision(params)
+    };
+    ReasonixPermissionDecision {
+        decision,
+        question: None,
+        metadata_missing: tool.is_empty(),
+    }
+}
+
+fn clip_reasonix_permission_title(title: &str) -> String {
+    let mut chars = title.chars();
+    let clipped: String = chars.by_ref().take(240).collect();
+    if chars.next().is_some() {
+        format!("{clipped}…")
+    } else {
+        clipped
+    }
+}
+
+fn is_reasonix_lease_conflict(error: &AcpError) -> bool {
+    error.rpc_details().is_some_and(|(_, code, message, data)| {
+        let text = format!("{message} {data}").to_ascii_lowercase();
+        code == -32600 && text.contains(" in use") && text.contains("close the other reasonix")
+    })
+}
+
+fn reasonix_session_new_error(error: &AcpError) -> String {
+    let text = error.to_string().to_ascii_lowercase();
+    let suffix = if text.contains("not configured") || text.contains("no default_model configured")
+    {
+        "; run `reasonix setup` in the runtime owner's environment and retry"
+    } else {
+        ""
+    };
+    format!("reasonix session/new failed: {error}{suffix}")
+}
+
 fn annotate_acp_effort(models: &mut [crate::model::Model], session: &Value) {
     let Some(option) = parse_acp_effort_option(session).filter(|option| !option.choices.is_empty())
     else {
@@ -2400,6 +2814,118 @@ mod tests {
     }
 
     #[test]
+    fn reasonix_arguments_keep_sandbox_and_profile_owned() {
+        let args = build_reasonix_args(&ExecOptions {
+            custom_args: [
+                "acp",
+                "--profile",
+                "unsafe",
+                "--sandbox-network",
+                "off",
+                "--workspace-only",
+                "--debug",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(
+            &args[..10],
+            [
+                "acp",
+                "--profile",
+                "balanced",
+                "--planner",
+                "auto",
+                "--sandbox-network",
+                "auto",
+                "--sandbox-bash",
+                "auto",
+                "--workspace-only",
+            ]
+        );
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert!(!args.iter().any(|arg| arg == "unsafe" || arg == "off"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
+    }
+
+    #[test]
+    fn reasonix_permission_policy_rejects_questions_and_fresh_decisions() {
+        let question = serde_json::json!({
+            "toolCall":{"toolCallId":"ask-1","title":"Choose a deployment"},
+            "options":[{"optionId":"ask-1:cancel","kind":"reject_once"}]
+        });
+        let decision = reasonix_permission_decision(Some(&question));
+        assert_eq!(
+            decision.decision,
+            AcpPermissionDecision::Select("ask-1:cancel".to_string())
+        );
+        assert!(decision
+            .question
+            .as_deref()
+            .is_some_and(|question| question.contains("Choose a deployment")));
+        assert!(!decision.metadata_missing);
+
+        let fresh = serde_json::json!({
+            "toolCall":{"toolCallId":"tool-1","_meta":{"reasonix.io":{"tool":"terminal","fresh":true}}},
+            "options":[
+                {"optionId":"allow","kind":"allow_once"},
+                {"optionId":"reject","kind":"reject_once"}
+            ]
+        });
+        assert_eq!(
+            reasonix_permission_decision(Some(&fresh)).decision,
+            AcpPermissionDecision::Select("reject".to_string())
+        );
+    }
+
+    #[test]
+    fn reasonix_status_uses_newest_sequence_and_authoritative_cost() {
+        let (messages, _receiver) = mpsc::channel(1);
+        let mut state = NotificationState {
+            reasonix_dialect: true,
+            streaming_current_turn: true,
+            ..NotificationState::default()
+        };
+        handle_notification(
+            AcpNotification {
+                method: "_reasonix.io/session/status_update".to_string(),
+                params: serde_json::json!({
+                    "schemaVersion":1,
+                    "sequence":2,
+                    "status":{"model":"deepseek-v4","usage":{"turn":{
+                        "promptTokens":120,
+                        "completionTokens":30,
+                        "cacheHitTokens":100,
+                        "cacheMissTokens":20,
+                        "estimatedCost":0.125,
+                        "currency":"USD"
+                    }}}
+                }),
+            },
+            &messages,
+            &mut state,
+        );
+        handle_notification(
+            AcpNotification {
+                method: "_reasonix.io/session/status_update".to_string(),
+                params: serde_json::json!({
+                    "schemaVersion":1,
+                    "sequence":1,
+                    "status":{"model":"stale","usage":{"turn":{"promptTokens":1}}}
+                }),
+            },
+            &messages,
+            &mut state,
+        );
+        assert_eq!(state.reasonix_model, "deepseek-v4");
+        assert_eq!(state.reasonix_usage.input_tokens, 20);
+        assert_eq!(state.reasonix_usage.output_tokens, 30);
+        assert_eq!(state.reasonix_usage.cache_read_tokens, 100);
+        assert_eq!(state.reasonix_usage.cost_usd_ticks, 1_250_000_000);
+    }
+
+    #[test]
     fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
         let args = build_kiro_args(&ExecOptions {
             custom_args: [
@@ -2628,6 +3154,27 @@ mod tests {
             )]),
         });
         backend.inner.config.held_retry_delay = Duration::from_millis(1);
+        (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_reasonix_backend(
+        script: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf, ReasonixBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("reasonix");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Reasonix: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Reasonix: {error}"));
+        let backend = ReasonixBackend::new(ReasonixConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "REASONIX_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
+        });
         (directory, requests, backend)
     }
 
@@ -3153,6 +3700,62 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read old Dim requests: {error}"));
         assert!(!requests.contains("session/new"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reasonix_applies_effort_blocks_questions_and_reports_status_usage() {
+        let (_directory, requests, backend) = fake_reasonix_backend(
+            r#"#!/bin/sh
+test "$1 $2 $3 $4 $5 $6 $7 $8 $9 ${10}" = "acp --profile balanced --planner auto --sandbox-network auto --sandbox-bash auto --workspace-only" || exit 80
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$REASONIX_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"_meta":{"_reasonix.io/session/status":{"schemaVersion":1},"_reasonix.io/session/status_update":{"schemaVersion":1}}}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"reasonix-1","models":{"currentModelId":"deepseek-v4"},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"auto","options":[{"value":"auto"},{"value":"high"}]}]}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*)
+      case "$line" in *'"configId":"effort"'*'"value":"high"'*) ;; *) exit 81 ;; esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"effort","currentValue":"high"}]}}\n' "$id"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in *'system must not be sent'*) exit 82 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-1","title":"Choose deployment"},"options":[{"optionId":"ask-1:cancel","kind":"reject_once"}]}}'
+      IFS= read -r permission
+      case "$permission" in *'"optionId":"ask-1:cancel"'*) ;; *) exit 83 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"_reasonix.io/session/status_update","params":{"schemaVersion":1,"sequence":1,"status":{"model":"deepseek-v4","usage":{"turn":{"promptTokens":50,"completionTokens":4,"cacheHitTokens":40,"cacheMissTokens":10,"estimatedCost":0.01,"currency":"USD"}}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"partial"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"error"}}\n' "$id"
+      ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    thinking_level: "high".to_string(),
+                    system_prompt: "system must not be sent".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Reasonix: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Reasonix result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("Choose deployment"));
+        assert_eq!(result.output, "partial");
+        assert_eq!(result.session_id, "reasonix-1");
+        assert_eq!(result.usage["deepseek-v4"].input_tokens, 10);
+        assert_eq!(result.usage["deepseek-v4"].cost_usd_ticks, 100_000_000);
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Reasonix requests: {error}"));
+        assert!(requests.contains(r#""configId":"effort","value":"high""#));
+        assert!(!requests.contains("system must not be sent"));
     }
 
     #[cfg(unix)]

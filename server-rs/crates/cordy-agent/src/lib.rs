@@ -55,6 +55,6 @@ pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qoder::{
     DimBackend, DimConfig, GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend,
     KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig, QwenpawBackend,
-    QwenpawConfig, TraecliBackend, TraecliConfig,
+    QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 pub use qwen::{QwenBackend, QwenConfig};
