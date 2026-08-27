@@ -737,6 +737,9 @@ pub struct TaskCancelAck {
     /// Set when the cancelled run additionally FAILED to persist its work.
     pub error_message: String,
     pub failure_reason: String,
+    /// The adapter withheld a Codex session whose rollout never became
+    /// durable. The cancelled terminal path must clear the pinned pointer too.
+    pub session_rollout_missing: bool,
     /// A provider session abandoned by a fresh retry. Cancellation is a
     /// terminal delivery too, so it must retire the same pointer as the
     /// complete/fail callbacks.
@@ -784,6 +787,9 @@ impl Client {
         }
         if !ack.failure_reason.is_empty() {
             body.insert("failure_reason".into(), json!(ack.failure_reason));
+        }
+        if ack.session_rollout_missing {
+            body.insert("session_rollout_missing".into(), json!(true));
         }
         if !ack.retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(ack.retired_session_id));

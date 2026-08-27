@@ -10,14 +10,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use cordy_db::dbid::new_v7;
 use cordy_db::models::{Agent, AgentTaskQueue, ChatMessage};
 use cordy_db::queries::agent::{
     cancel_pending_tasks_by_issue_and_agent, complete_agent_task, create_retry_task,
-    fail_agent_task, get_agent_task,
+    fail_agent_task, get_agent_task, mark_cancelled_task_session_rollout_missing,
 };
 use cordy_db::queries::attachment::{
     bind_chat_attachments_to_message, count_unbound_chat_attachments_for_task,
@@ -70,46 +69,75 @@ fn retryable_reason(reason: &str) -> bool {
 }
 
 impl TaskService {
-    /// Records a session abandoned by a run whose terminal callback became a
-    /// cancel acknowledgement. The task row and chat pointer move together;
-    /// the exact id/runtime match prevents a late ack from clearing a newer
-    /// session installed by another turn.
-    pub async fn retire_cancelled_task_session(
+    /// Records missing/retired session state from a cancel acknowledgement in
+    /// the same chat-session-first transaction. Exact id/runtime clears keep a
+    /// late acknowledgement from erasing a newer turn's pointer.
+    pub async fn acknowledge_cancelled_session_state(
         &self,
         task_id: Uuid,
+        session_rollout_missing: bool,
         retired_session_id: &str,
-    ) -> Result<(), TaskServiceError> {
-        if retired_session_id.is_empty() {
-            return Ok(());
+    ) -> Result<bool, TaskServiceError> {
+        if !session_rollout_missing && retired_session_id.is_empty() {
+            return Ok(false);
         }
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         lock_chat_session_for_task_write(&mut tx, task_id).await?;
-        let row = sqlx::query(
-            r#"UPDATE agent_task_queue
+        let Some(task) = get_agent_task(&mut *tx, task_id)
+            .await
+            .map_err(downcast_sqlx)?
+        else {
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
+            return Ok(false);
+        };
+        if task.status != "cancelled" {
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
+            return Ok(false);
+        }
+        let mut recorded = false;
+        if session_rollout_missing {
+            recorded |= mark_cancelled_task_session_rollout_missing(&mut *tx, task_id)
+                .await
+                .map_err(downcast_sqlx)?
+                != 0;
+        }
+        if !retired_session_id.is_empty() {
+            recorded |= sqlx::query(
+                r#"UPDATE agent_task_queue
 SET retired_session_id = COALESCE(retired_session_id, $2)
-WHERE id = $1 AND status = 'cancelled'
-RETURNING chat_session_id, runtime_id, retired_session_id"#,
-        )
-        .bind(task_id)
-        .bind(retired_session_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(TaskServiceError::Sql)?;
-        if let Some(row) = row {
-            let chat_session_id: Option<Uuid> = row
-                .try_get("chat_session_id")
-                .map_err(TaskServiceError::Sql)?;
-            let runtime_id: Option<Uuid> =
-                row.try_get("runtime_id").map_err(TaskServiceError::Sql)?;
-            let retired: Option<String> = row
-                .try_get("retired_session_id")
-                .map_err(TaskServiceError::Sql)?;
-            if let (Some(chat_session_id), Some(retired)) = (chat_session_id, retired) {
+WHERE id = $1 AND status = 'cancelled'"#,
+            )
+            .bind(task_id)
+            .bind(retired_session_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(TaskServiceError::Sql)?
+            .rows_affected()
+                != 0;
+        }
+        if let Some(chat_session_id) = task.chat_session_id {
+            if session_rollout_missing {
+                if let Some(session_id) = task.session_id.as_deref().filter(|id| !id.is_empty()) {
+                    clear_chat_session_session_if_matches(
+                        &mut *tx,
+                        chat_session_id,
+                        Some(session_id),
+                        task.runtime_id,
+                    )
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "clear missing-rollout chat session resume pointer: {error}"
+                        ))
+                    })?;
+                }
+            }
+            if !retired_session_id.is_empty() {
                 clear_chat_session_session_if_matches(
                     &mut *tx,
                     chat_session_id,
-                    Some(&retired),
-                    runtime_id,
+                    Some(retired_session_id),
+                    task.runtime_id,
                 )
                 .await
                 .map_err(|error| {
@@ -119,7 +147,8 @@ RETURNING chat_session_id, runtime_id, retired_session_id"#,
                 })?;
             }
         }
-        tx.commit().await.map_err(TaskServiceError::Sql)
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+        Ok(recorded)
     }
 
     /// Marks a task completed inside one transaction: status CAS, chat
@@ -141,6 +170,14 @@ RETURNING chat_session_id, runtime_id, retired_session_id"#,
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         // chat_session → agent_task_queue is the repo-wide lock order.
         lock_chat_session_for_task_write(&mut tx, task_id).await?;
+        let missing_session = if session_rollout_missing {
+            get_agent_task(&mut *tx, task_id)
+                .await
+                .map_err(downcast_sqlx)?
+                .and_then(|task| task.session_id)
+        } else {
+            None
+        };
 
         let t = complete_agent_task(
             &mut *tx,
@@ -184,6 +221,20 @@ RETURNING chat_session_id, runtime_id, retired_session_id"#,
             .map_err(|e| {
                 TaskServiceError::Internal(format!("update chat session resume pointer: {e}"))
             })?;
+            if let Some(missing_session) = missing_session.as_deref().filter(|id| !id.is_empty()) {
+                clear_chat_session_session_if_matches(
+                    &mut *tx,
+                    chat_session_id,
+                    Some(missing_session),
+                    t.runtime_id,
+                )
+                .await
+                .map_err(|e| {
+                    TaskServiceError::Internal(format!(
+                        "clear missing-rollout chat session resume pointer: {e}"
+                    ))
+                })?;
+            }
             // A turn that recovered by abandoning its session still retires it
             // here; runs after the update so a real new id wins first (GH #6066).
             if !retired_session_id.is_empty() {
@@ -380,6 +431,14 @@ RETURNING chat_session_id, runtime_id, retired_session_id"#,
         let mut retried: Option<AgentTaskQueue> = None;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         lock_chat_session_for_task_write(&mut tx, task_id).await?;
+        let missing_session = if session_rollout_missing {
+            get_agent_task(&mut *tx, task_id)
+                .await
+                .map_err(downcast_sqlx)?
+                .and_then(|task| task.session_id)
+        } else {
+            None
+        };
 
         let t = fail_agent_task(
             &mut *tx,
@@ -401,6 +460,20 @@ RETURNING chat_session_id, runtime_id, retired_session_id"#,
         };
 
         if let Some(chat_session_id) = t.chat_session_id {
+            if let Some(missing_session) = missing_session.as_deref().filter(|id| !id.is_empty()) {
+                clear_chat_session_session_if_matches(
+                    &mut *tx,
+                    chat_session_id,
+                    Some(missing_session),
+                    t.runtime_id,
+                )
+                .await
+                .map_err(|e| {
+                    TaskServiceError::Internal(format!(
+                        "clear missing-rollout chat session resume pointer: {e}"
+                    ))
+                })?;
+            }
             // Keep resume-unsafe sessions observable on the task row but out
             // of the chat-level resume pointer; clear matched exactly so a
             // concurrent turn's newer pointer survives (GH #6066).

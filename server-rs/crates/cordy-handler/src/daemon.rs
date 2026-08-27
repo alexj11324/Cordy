@@ -3034,6 +3034,8 @@ struct CancelAckBody {
     error_message: String,
     #[serde(default, rename = "failure_reason")]
     failure_reason: String,
+    #[serde(default, rename = "session_rollout_missing")]
+    session_rollout_missing: bool,
     #[serde(default, rename = "retired_session_id")]
     retired_session_id: String,
 }
@@ -3061,6 +3063,26 @@ async fn ack_task_cancelled(
     let retired_session_id = sanitize(req.retired_session_id.trim());
 
     let mut delivered = false;
+    if req.session_rollout_missing || !retired_session_id.is_empty() {
+        match state
+            .tasks
+            .acknowledge_cancelled_session_state(
+                task.id,
+                req.session_rollout_missing,
+                &retired_session_id,
+            )
+            .await
+        {
+            Ok(recorded) => delivered |= recorded,
+            Err(e) => {
+                tracing::error!(error = %e, task_id = %task_id, "cancel ack: record missing session rollout failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to record missing session rollout",
+                );
+            }
+        }
+    }
     if !durable.is_empty() {
         if let Err(e) =
             agent::set_agent_task_durable_work_dir(&state.pool, Some(durable.as_str()), task.id)
@@ -3100,20 +3122,6 @@ async fn ack_task_cancelled(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to record task error",
-            );
-        }
-        delivered = true;
-    }
-    if !retired_session_id.is_empty() {
-        if let Err(e) = state
-            .tasks
-            .retire_cancelled_task_session(task.id, &retired_session_id)
-            .await
-        {
-            tracing::error!(error = %e, task_id = %task_id, "cancel ack: retire session failed");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to retire cancelled task session",
             );
         }
         delivered = true;
