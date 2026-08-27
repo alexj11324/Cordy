@@ -26,7 +26,10 @@ use cordy_protocol::{
     EVENT_DAEMON_TASK_AVAILABLE, EVENT_DAEMON_WORKSPACES_CHANGED,
 };
 
-use crate::client::{Client, RequestError, BATCH_CLAIM_REQUEST_TIMEOUT};
+use crate::client::{
+    is_runtime_not_found_anyhow, is_transient_error, Client, RequestError,
+    BATCH_CLAIM_REQUEST_TIMEOUT,
+};
 use crate::repocache::{CancelCause, Ctx};
 use crate::runtime_set::RuntimeSet;
 use crate::types::Task;
@@ -596,18 +599,23 @@ impl DaemonControl {
                         self.emit(ControlEvent::HeartbeatAck(ack));
                         failures = 0;
                     }
-                    Err(err) if request_status(&err) == Some(404) => {
+                    Err(err) if is_runtime_not_found_anyhow(&err) => {
                         self.emit(ControlEvent::RuntimeGone {
                             runtime_id: runtime_id.clone(),
                         });
                         failures = 0;
                     }
-                    Err(err) => {
+                    Err(_) if ctx.err().is_some() => return,
+                    Err(err) if is_transient_error(&err) => {
                         failures = failures.saturating_add(1);
                         tracing::warn!(runtime_id = %runtime_id, error = %err, "heartbeat failed");
                         if failures == 2 {
                             self.client.close_idle_connections();
                         }
+                    }
+                    Err(err) => {
+                        failures = 0;
+                        tracing::warn!(runtime_id = %runtime_id, error = %err, "heartbeat rejected without retryable transport failure");
                     }
                 }
             } else {
@@ -1056,11 +1064,7 @@ mod tests {
         stream.read_exact(&mut body).await.unwrap();
     }
 
-    async fn write_control_response(
-        stream: &mut tokio::net::TcpStream,
-        status: &str,
-        body: &str,
-    ) {
+    async fn write_control_response(stream: &mut tokio::net::TcpStream, status: &str, body: &str) {
         stream
             .write_all(
                 format!(
@@ -1074,32 +1078,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_heartbeat_retires_http_pool_after_two_failures_and_resets_on_success() {
+    async fn production_heartbeat_classifies_failures_before_retiring_http_pool() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
+        let (hanging_tx, hanging_rx) = tokio::sync::oneshot::channel();
         let server = tokio::spawn(async move {
             let ack = r#"{"runtime_id":"runtime-1","status":"ok"}"#;
 
             let (mut first_pool, _) = listener.accept().await.unwrap();
-            for _ in 0..2 {
+            for (status, body) in [
+                ("500 Internal Server Error", "{}"),
+                ("200 OK", ack),
+                ("500 Internal Server Error", "{}"),
+                ("401 Unauthorized", "{}"),
+                ("500 Internal Server Error", "{}"),
+                ("404 Not Found", r#"{"error":"route not found"}"#),
+                ("500 Internal Server Error", "{}"),
+                ("408 Request Timeout", "{}"),
+            ] {
                 read_control_request(&mut first_pool).await;
-                write_control_response(&mut first_pool, "500 Internal Server Error", "{}")
-                    .await;
+                write_control_response(&mut first_pool, status, body).await;
             }
 
             let (mut second_pool, _) = listener.accept().await.unwrap();
             read_control_request(&mut second_pool).await;
+            write_control_response(
+                &mut second_pool,
+                "404 Not Found",
+                r#"{"error":"runtime not found"}"#,
+            )
+            .await;
+            read_control_request(&mut second_pool).await;
             write_control_response(&mut second_pool, "200 OK", ack).await;
-            for _ in 0..2 {
-                read_control_request(&mut second_pool).await;
-                write_control_response(&mut second_pool, "500 Internal Server Error", "{}")
-                    .await;
-            }
-
-            let (mut third_pool, _) = listener.accept().await.unwrap();
-            read_control_request(&mut third_pool).await;
-            write_control_response(&mut third_pool, "200 OK", ack).await;
-            3usize
+            read_control_request(&mut second_pool).await;
+            write_control_response(&mut second_pool, "500 Internal Server Error", "{}").await;
+            read_control_request(&mut second_pool).await;
+            hanging_tx.send(()).unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            2usize
         });
 
         let client = Arc::new(Client::new(format!("http://{address}")));
@@ -1120,15 +1136,19 @@ mod tests {
                 .await;
         });
 
-        for _ in 0..2 {
-            assert!(matches!(
-                next_event(&mut events_rx).await,
-                ControlEvent::HeartbeatAck(ack) if ack.runtime_id == "runtime-1"
-            ));
-        }
+        assert!(
+            matches!(next_event(&mut events_rx).await, ControlEvent::HeartbeatAck(ack) if ack.runtime_id == "runtime-1")
+        );
+        assert!(
+            matches!(next_event(&mut events_rx).await, ControlEvent::RuntimeGone { runtime_id } if runtime_id == "runtime-1")
+        );
+        assert!(
+            matches!(next_event(&mut events_rx).await, ControlEvent::HeartbeatAck(ack) if ack.runtime_id == "runtime-1")
+        );
+        hanging_rx.await.unwrap();
         ctx.cancel_with(CancelCause::Cancelled);
         heartbeat.await.unwrap();
-        assert_eq!(server.await.unwrap(), 3);
+        assert_eq!(server.await.unwrap(), 2);
     }
 
     #[tokio::test]
