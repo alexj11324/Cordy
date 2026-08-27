@@ -2228,6 +2228,12 @@ base 是 `codex/cord-234-runtime-sweeper-contract-rust` 的 `78b04074`，当前 
 compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
 验证或删除 Go，PR 保持 Ready。
 
+独立 verifier 在 exact tip `cce8b6b1` 发现 fixed-stable rustfmt 对 `runtime_sweeper.rs` 的 inherited #570 与本切片
+hunks 均失败；fixer follow-up 只对该既有文件执行 fixed-stable mechanical format，未改 production 行为或扩大测试。
+格式后的单文件 `rustfmt --check` 与 `git diff --check` PASS。locked/offline exact no-run 仍在 test discovery 前被 inherited
+#563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests）；fixer 环境 `DATABASE_URL` unset，
+required PostgreSQL contract 未执行，不能登记为 PASS。上游 resolver 修复传播且有 migrated PostgreSQL 后仍须精确重跑。
+
 ## 59. AUDIT-002 已登记执行缺口：stale dispatched/running and queued task cleanup contract
 
 本项在开始编码前登记，选择 runtime sweeper 中另一条完整任务清理能力；它与 §58 的 offline/reconnect terminal path

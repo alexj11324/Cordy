@@ -670,9 +670,15 @@ mod tests {
     #[tokio::test]
     async fn production_stale_sweep_filters_liveness_and_publishes_one_workspace_event() {
         let rows = RuntimeRows::required().await;
-        let dead = rows.runtime("dead", "online", Duration::from_secs(300)).await;
-        let alive = rows.runtime("alive", "online", Duration::from_secs(300)).await;
-        let fresh = rows.runtime("fresh", "online", Duration::from_secs(30)).await;
+        let dead = rows
+            .runtime("dead", "online", Duration::from_secs(300))
+            .await;
+        let alive = rows
+            .runtime("alive", "online", Duration::from_secs(300))
+            .await;
+        let fresh = rows
+            .runtime("fresh", "online", Duration::from_secs(30))
+            .await;
         let already_offline = rows
             .runtime("offline", "offline", Duration::from_secs(300))
             .await;
@@ -723,7 +729,10 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].workspace_id, rows.workspace_id.to_string());
         assert_eq!(events[0].event_type, cordy_protocol::EVENT_DAEMON_REGISTER);
-        assert_eq!(events[0].payload, serde_json::json!({"action": "stale_sweep"}));
+        assert_eq!(
+            events[0].payload,
+            serde_json::json!({"action": "stale_sweep"})
+        );
         drop(events);
         sqlx::query("UPDATE agent_runtime SET status = 'offline' WHERE id = $1")
             .bind(alive.id)
@@ -751,9 +760,7 @@ mod tests {
             DEFAULT_RECONNECT_GRACE,
         );
         assert_eq!(
-            unavailable_sweeper
-                .sweep_stale_runtimes(stale_before)
-                .await,
+            unavailable_sweeper.sweep_stale_runtimes(stale_before).await,
             1
         );
         assert_eq!(rows.status(unavailable.id).await, "offline");
@@ -765,7 +772,9 @@ mod tests {
             [unavailable.id.to_string()]
         );
 
-        let raced = rows.runtime("raced", "online", Duration::from_secs(300)).await;
+        let raced = rows
+            .runtime("raced", "online", Duration::from_secs(300))
+            .await;
         let race_forgotten = Arc::new(Mutex::new(Vec::new()));
         let race_bus = Arc::new(Bus::new());
         let race_sweeper = RuntimeTaskSweeper::new(
@@ -782,10 +791,7 @@ mod tests {
             None,
             DEFAULT_RECONNECT_GRACE,
         );
-        assert_eq!(
-            race_sweeper.sweep_stale_runtimes(stale_before).await,
-            0
-        );
+        assert_eq!(race_sweeper.sweep_stale_runtimes(stale_before).await, 0);
         assert_eq!(rows.status(raced.id).await, "offline");
         rows.cleanup().await;
     }
@@ -826,17 +832,22 @@ mod tests {
             .bind(format!("offline-recovery-{suffix}@example.test"))
             .fetch_one(&pool)
             .await?;
-            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
-                .bind(workspace_id)
-                .bind(user_id)
-                .execute(&pool)
-                .await?;
+            sqlx::query(
+                "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+            )
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
 
-            let old_runtime_id = Self::runtime(&pool, workspace_id, "old", "offline", "4 hours").await?;
+            let old_runtime_id =
+                Self::runtime(&pool, workspace_id, "old", "offline", "4 hours").await?;
             let grace_runtime_id =
                 Self::runtime(&pool, workspace_id, "grace", "offline", "10 minutes").await?;
-            let healthy_runtime_id = Self::runtime(&pool, workspace_id, "healthy", "online", "1 minute").await?;
-            let old_agent_id = Self::agent(&pool, workspace_id, user_id, old_runtime_id, "old").await?;
+            let healthy_runtime_id =
+                Self::runtime(&pool, workspace_id, "healthy", "online", "1 minute").await?;
+            let old_agent_id =
+                Self::agent(&pool, workspace_id, user_id, old_runtime_id, "old").await?;
             let grace_agent_id =
                 Self::agent(&pool, workspace_id, user_id, grace_runtime_id, "grace").await?;
             let healthy_agent_id =
@@ -845,9 +856,11 @@ mod tests {
             let mut next_number = 1;
             let mut active_task_ids = Vec::new();
             for status in ["dispatched", "running", "waiting_local_directory"] {
-                let issue_id = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+                let issue_id =
+                    Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
                 next_number += 1;
-                let wait_reason = (status == "waiting_local_directory").then_some("local directory busy");
+                let wait_reason =
+                    (status == "waiting_local_directory").then_some("local directory busy");
                 active_task_ids.push(
                     Self::task(
                         &pool,
@@ -864,7 +877,8 @@ mod tests {
                     .await?,
                 );
             }
-            let grace_issue = Self::issue(&pool, workspace_id, user_id, grace_agent_id, next_number).await?;
+            let grace_issue =
+                Self::issue(&pool, workspace_id, user_id, grace_agent_id, next_number).await?;
             next_number += 1;
             let grace_task_id = Self::task(
                 &pool,
@@ -880,7 +894,8 @@ mod tests {
             )
             .await?;
 
-            let offline_retry_issue = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+            let offline_retry_issue =
+                Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
             next_number += 1;
             let offline_parent = Self::task(
                 &pool,
@@ -909,7 +924,8 @@ mod tests {
             )
             .await?;
 
-            let healthy_retry_issue = Self::issue(&pool, workspace_id, user_id, healthy_agent_id, next_number).await?;
+            let healthy_retry_issue =
+                Self::issue(&pool, workspace_id, user_id, healthy_agent_id, next_number).await?;
             next_number += 1;
             let healthy_parent = Self::task(
                 &pool,
@@ -938,7 +954,8 @@ mod tests {
             )
             .await?;
 
-            let unrelated_retry_issue = Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
+            let unrelated_retry_issue =
+                Self::issue(&pool, workspace_id, user_id, old_agent_id, next_number).await?;
             let unrelated_parent = Self::task(
                 &pool,
                 old_agent_id,
@@ -1070,10 +1087,10 @@ mod tests {
             let task_id = new_v7();
             let active_at = (status == "dispatched" || status == "running")
                 .then_some(Utc::now() - chrono::Duration::minutes(1));
-            let started_at = (status == "running")
-                .then_some(Utc::now() - chrono::Duration::minutes(1));
-            let completed_at = (status == "failed")
-                .then_some(Utc::now() - chrono::Duration::minutes(1));
+            let started_at =
+                (status == "running").then_some(Utc::now() - chrono::Duration::minutes(1));
+            let completed_at =
+                (status == "failed").then_some(Utc::now() - chrono::Duration::minutes(1));
             let id: Uuid = sqlx::query_scalar(
                 "INSERT INTO agent_task_queue \
                  (id, agent_id, runtime_id, issue_id, status, priority, attempt, max_attempts, \
@@ -1111,10 +1128,12 @@ mod tests {
         }
 
         async fn status(&self, id: Uuid) -> anyhow::Result<String> {
-            Ok(sqlx::query_scalar("SELECT status FROM agent_task_queue WHERE id = $1")
-                .bind(id)
-                .fetch_one(&self.pool)
-                .await?)
+            Ok(
+                sqlx::query_scalar("SELECT status FROM agent_task_queue WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(&self.pool)
+                    .await?,
+            )
         }
     }
 
