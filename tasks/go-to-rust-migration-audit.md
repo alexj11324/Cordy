@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control 与 auto-update production chain 已交付；当前切片迁移 poisoned-session retry/retirement/terminal contract | 完成当次 fresh retry、usage 合并、旧 session 永久退休和全部 terminal classification 的 Rust production chain | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550，可执行 | PR #542..#550；§5.2、§6.2、§29..§37、§45 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update 与 poisoned-session production chain 已交付 | 异步收口 #558 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558，可执行 | PR #542..#550/#558；§5.2、§6.2、§29..§37、§45 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1412,5 +1412,16 @@ runner、session registry 或测试专用 production seam。
   只修改该真实 adapter 和已有共享类型，不引入 Stub、Noop 或 Fake 的有效生产选择。
 - Go 是否可下线：本 poisoned-session 能力收口后不再依赖 Go daemon；AUDIT-005 其余 task/repo/
   reconcile 生命周期、异步结果和最终 AUDIT-001..010 门仍需完成。
-- 异步状态：尚未实现，verification/reviewer 尚未派发；所有编译、测试、production smoke 由独立
-  verifier 在 Ready PR 后执行，finding 交独立 fixer。
+- Ready PR #558（`codex/cord-222-poisoned-session-lifecycle-rust`，gap commit `ceaa62ae`，
+  implementation commit `232a4afe`）已把当次 fresh retry、tool replay gate、跨 attempt transcript
+  sequence/session pin、usage merge、authoritative result、全部 terminal classification 和旧 session
+  retirement 作为同一条 production task execution 能力交付。实现只修改既有 provider adapter 与
+  已移植 classifier；没有新 runner、factory、registry、依赖或兼容分流。
+- 默认生产路径：`TaskExecutionOrchestrator -> DaemonProductionServices -> ProductionProviderAdapter`
+  保持唯一真实路径；accepted launch 构造的同一 real backend 最多执行一次 cold retry。有效生产配置
+  不会选择 Stub、Noop 或 Fake。
+- Go 是否可下线：本 poisoned-session 能力在异步证据收口后不再需要 Go daemon；Go compatibility
+  source 和全仓 AUDIT-001..010 退休门仍未完成，当前不能删除全部 Go。
+- 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 仅实际运行并通过
+  `git diff --check 2833e418..232a4afe`；未把 compile、tests、rustfmt、locked/offline 或 production
+  smoke 记为通过。PR 明确堆叠在 Ready #557，继承 #556 lock 与 #557 format/lock finding。
