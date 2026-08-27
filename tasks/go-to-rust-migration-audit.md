@@ -861,6 +861,18 @@ reader。缺失、坏 metadata 仍走既有 mtime fallback；unknown kind 保留
   `gc.rs` import ordering 失败；两个 exact filter 均在编译期失败，因为共享类型已改名为
   `GCMetaKind`，测试仍有 7 处 `GcMetaKind`（E0433）。因此没有测试体执行，daemon
   locked/offline no-run 与 disk-usage 验证也被阻断；这些编译/格式问题已交独立 fixer。
+- Verification/reviewer/fixer：reviewed head 的 fixed stable rustfmt 因 import ordering
+  失败，且共享类型已导入为 `GCMetaKind`，7 个旧 `GcMetaKind` call site 导致 E0433；
+  两条精确测试均在编译阶段退出（0 tests）。原 unknown/local 测试还手造 meta、直接
+  调 override 且 artifact TTL 为零，未证明 production reader/dispatch 链。fixer 统一
+  类型名与格式，并用真实 unknown + `local_directory` `.gc_meta.json`、已超过非零
+  orphan TTL 的目录和非零 artifact TTL 调用 `should_clean_task_dir`，结果严格为
+  `CleanManagedArtifacts`，不会整目录 `Clean`/`Orphan`。
+- 修复验证：精确 unknown/local production-chain 测试通过（1 passed、0 failed、
+  441 filtered），共享 GC meta roundtrip/legacy/unknown 测试通过（1 passed、0 failed、
+  441 filtered），`cargo test --offline --locked -p cordy-daemon --no-run` 通过；targeted
+  fixed stable rustfmt 与 `git diff --check` 通过。仅有仓库既有 agent/openclaw unused
+  import warnings，无本切片编译 warning。
 
 ## 32. AUDIT-005 执行缺口：runtime MCP production merge
 
