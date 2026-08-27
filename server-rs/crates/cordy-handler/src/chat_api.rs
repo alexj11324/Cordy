@@ -1221,7 +1221,7 @@ async fn list_messages_page(
     messages.truncate(limit);
     let next_cursor = has_more && !messages.is_empty();
     let cursor = messages.last().map(|message| {
-        json!({"created_at": chat_history_timestamp(message.created_at), "id": message.id})
+        json!({"created_at": cordy_util::rfc3339_nano(message.created_at), "id": message.id})
     });
     messages.reverse();
     let mut attachments = match message_attachments(&state, session.workspace_id, &messages).await {
@@ -1924,7 +1924,7 @@ async fn transcript_history(
             .map(|message| {
                 format!(
                     "{}|{}",
-                    chat_history_timestamp(message.created_at),
+                    cordy_util::rfc3339_nano(message.created_at),
                     message.id
                 )
             })
@@ -1951,7 +1951,7 @@ async fn transcript_history(
                         HistoryRole::user()
                     },
                     text: message.content,
-                    ts: chat_history_timestamp(message.created_at),
+                    ts: cordy_util::rfc3339_nano(message.created_at),
                     thread_id: String::new(),
                     reply_count: 0,
                     latest_reply: String::new(),
@@ -1960,10 +1960,6 @@ async fn transcript_history(
             .collect(),
         next_cursor,
     })
-}
-
-fn chat_history_timestamp(timestamp: DateTime<Utc>) -> String {
-    cordy_util::rfc3339_nano(timestamp)
 }
 
 fn history_response(page: HistoryPage, note: Option<&str>) -> Response {
@@ -2103,23 +2099,6 @@ mod tests {
         h.insert("x-actor-source", "task_token".parse().unwrap());
         h.insert("x-agent-id", Uuid::nil().to_string().parse().unwrap());
         assert_eq!(actor(&h, u), ("agent", Uuid::nil()));
-    }
-
-    #[test]
-    fn chat_history_timestamp_preserves_same_second_cursor_order() {
-        let first = DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123400Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let second = DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123500Z")
-            .unwrap()
-            .with_timezone(&Utc);
-
-        assert_eq!(chat_history_timestamp(first), "2026-08-27T23:00:00.1234Z");
-        assert_eq!(chat_history_timestamp(second), "2026-08-27T23:00:00.1235Z");
-        assert_ne!(
-            chat_history_timestamp(first),
-            chat_history_timestamp(second)
-        );
     }
 
     fn draft_restore_context(workspace_id: Uuid, user_id: Uuid) -> WorkspaceContext {

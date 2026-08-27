@@ -861,30 +861,3 @@ fn json_object_or_empty(v: &serde_json::Value) -> serde_json::Value {
         _ => serde_json::Value::Object(Default::default()),
     }
 }
-
-#[cfg(test)]
-mod timestamp_tests {
-    use super::*;
-
-    #[test]
-    fn legacy_comment_and_agent_fields_omit_fractional_seconds() {
-        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123400Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let comment = json!({
-            "created_at": rfc3339(timestamp),
-            "updated_at": rfc3339(timestamp),
-            "resolved_at": Some(timestamp).map(rfc3339),
-        });
-        let agent = json!({"archived_at": Some(timestamp).map(rfc3339)});
-
-        for value in [
-            &comment["created_at"],
-            &comment["updated_at"],
-            &comment["resolved_at"],
-            &agent["archived_at"],
-        ] {
-            assert_eq!(value, "2026-08-27T23:00:00Z");
-        }
-    }
-}

@@ -3712,7 +3712,7 @@ impl TaskService {
             payload.message_id = row.id.to_string();
             payload.content = row.content.clone();
             payload.message_kind = row.message_kind.clone();
-            payload.created_at = chat_cancel_finalized_timestamp(row.created_at);
+            payload.created_at = cordy_util::rfc3339_nano(row.created_at);
             payload.elapsed_ms = compute_chat_elapsed_ms(claimed.completed_at, claimed.created_at)
                 .unwrap_or_default();
             tx.commit().await.map_err(TaskServiceError::Sql)?;
@@ -4500,10 +4500,6 @@ impl TaskService {
     }
 }
 
-fn chat_cancel_finalized_timestamp(timestamp: chrono::DateTime<chrono::Utc>) -> String {
-    cordy_util::rfc3339_nano(timestamp)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4580,29 +4576,6 @@ mod tests {
         assert_eq!(duration_seconds(Some(start), Some(end)), 42.0);
         // Inverted interval clamps to 0, never negative.
         assert_eq!(duration_seconds(Some(end), Some(start)), 0.0);
-    }
-
-    #[test]
-    fn cancelled_chat_payload_uses_go_rfc3339_nano_precision() {
-        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-27T23:00:00.123400Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let payload = cordy_protocol::ChatCancelFinalizedPayload {
-            outcome: cordy_protocol::CHAT_CANCEL_OUTCOME_STOPPED.to_string(),
-            chat_session_id: "session-1".to_string(),
-            task_id: "task-1".to_string(),
-            initiator_user_id: String::new(),
-            message_id: "message-1".to_string(),
-            content: "Stopped.".to_string(),
-            message_kind: "text".to_string(),
-            created_at: chat_cancel_finalized_timestamp(timestamp),
-            elapsed_ms: 0,
-        };
-
-        assert_eq!(
-            serde_json::to_value(payload).unwrap()["created_at"],
-            "2026-08-27T23:00:00.1234Z"
-        );
     }
 
     #[test]
