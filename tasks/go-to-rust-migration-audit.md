@@ -1061,3 +1061,15 @@ consumer、task wakeup、reconcile、heartbeat lifecycle 与 root cancellation�
 - 异步状态：verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 仅运行并通过
   `git diff --check`，未把编译、测试、rustfmt 或 socket 行为记为通过。PR 堆叠在 Ready
   PR #548；#544 fix 尚待传播。
+- verifier 在 head `582d5c50` 的 diff/clean 检查通过，但 control lifecycle fixed-stable
+  rustfmt 失败并有 unused `SinkExt`；new exact、manager real-WebSocket exact、wsrpc group
+  与 daemon no-run 均被未传播的 #544 7 处 E0433 阻断，实际 0 tests。reviewer 同时指出
+  原检查从 wakeup channel 手工接收后直接 `claim_tasks`，没有让真实 poller 消费 hint；
+  HTTP heartbeat fixture 路径恒 503 但无计数，60s cadence 通常不执行，无法证明 owner/cancel。
+- fixer 传播 #544 后让真实 `TaskExecutionOrchestrator` 消费 consumer 的同一 wakeup channel；
+  fixture 在 WS attach/task hint 后观察真实 poller 发出的 WS-first `tasks.claim`，不再手工 claim。
+  HTTP fixture 改用真实 `/api/daemon/heartbeat` 路径、25ms cadence 与原子计数，并断言至少
+  执行一次及 root cancel/join 后不再请求；同时兼容 WS heartbeat 与 RPC frame 交错并保持
+  socket 到取消。production exact 1/1（446 filtered）、manager real-WebSocket exact 1/1、
+  daemon locked/offline no-run、fixed-stable rustfmt 与 `git diff --check` 均通过；仅保留既有
+  agent/openclaw unused-import warnings。

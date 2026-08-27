@@ -153,18 +153,53 @@ pub(crate) async fn run_daemon_control<H: DaemonControlLifecycle>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
 
-    use futures_util::{SinkExt, StreamExt};
+    use futures_util::StreamExt;
     use serde_json::json;
 
     use super::*;
     use crate::repocache::CancelCause;
+    use crate::task_execution::{
+        DaemonTaskExecutionHost, TaskExecutionConfig, TaskExecutionOrchestrator, TaskRunOutcome,
+    };
+    use crate::types::{RuntimeExecutionTarget, Task, TaskResult};
 
     #[derive(Default)]
     struct RecordingLifecycle {
         calls: Mutex<Vec<String>>,
+    }
+
+    struct RecordingTaskHost;
+
+    #[async_trait::async_trait]
+    impl DaemonTaskExecutionHost for RecordingTaskHost {
+        fn execution_target_for_runtime(
+            &self,
+            _runtime_id: &str,
+        ) -> Option<RuntimeExecutionTarget> {
+            Some(RuntimeExecutionTarget {
+                provider: "codex".into(),
+                profile_id: String::new(),
+            })
+        }
+
+        async fn cancel_repository_maintenance(&self) {}
+
+        async fn run_task(
+            &self,
+            _ctx: Ctx,
+            _task: Task,
+            _target: RuntimeExecutionTarget,
+            _slot: usize,
+        ) -> TaskRunOutcome {
+            TaskRunOutcome {
+                result: TaskResult::default(),
+                failure: None,
+            }
+        }
     }
 
     #[async_trait::async_trait]
@@ -202,80 +237,105 @@ mod tests {
 
     #[tokio::test]
     async fn real_control_owner_routes_websocket_and_claim_rpc_until_cancelled() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
+        let (claim_tx, mut claim_rx) = mpsc::unbounded_channel();
+        let heartbeat_calls = Arc::new(AtomicUsize::new(0));
         let app = axum::Router::new()
             .route(
                 "/api/daemon/ws",
-                axum::routing::get(
-                    |headers: axum::http::HeaderMap,
-                     ws: axum::extract::WebSocketUpgrade| async move {
-                        assert_eq!(headers["authorization"], "Bearer token");
-                        assert!(headers["x-client-capabilities"]
-                            .to_str()
-                            .unwrap()
-                            .contains("rpc-v1"));
-                        ws.on_upgrade(|mut socket| async move {
-                            let heartbeat = socket.next().await.unwrap().unwrap();
-                            let heartbeat: cordy_protocol::Message =
-                                serde_json::from_slice(heartbeat.into_data().as_ref()).unwrap();
-                            assert_eq!(heartbeat.r#type, cordy_protocol::EVENT_DAEMON_HEARTBEAT);
-                            for message in [
-                                cordy_protocol::Message {
-                                    r#type: cordy_protocol::EVENT_DAEMON_HEARTBEAT_ACK.to_string(),
-                                    payload: json!({
-                                        "runtime_id": "runtime-1",
-                                        "status": "ok",
-                                        "server_capabilities": ["rpc-v1"]
-                                    }),
-                                },
-                                cordy_protocol::Message {
-                                    r#type: cordy_protocol::EVENT_DAEMON_TASK_AVAILABLE.to_string(),
-                                    payload: json!({
-                                        "runtime_id": "runtime-1",
-                                        "task_id": "task-1"
-                                    }),
-                                },
-                            ] {
+                axum::routing::get({
+                    let claim_tx = claim_tx.clone();
+                    move |headers: axum::http::HeaderMap, ws: axum::extract::WebSocketUpgrade| {
+                        let claim_tx = claim_tx.clone();
+                        async move {
+                            assert_eq!(headers["authorization"], "Bearer token");
+                            assert!(headers["x-client-capabilities"]
+                                .to_str()
+                                .unwrap()
+                                .contains("rpc-v1"));
+                            ws.on_upgrade(move |mut socket| async move {
+                                let heartbeat = socket.next().await.unwrap().unwrap();
+                                let heartbeat: cordy_protocol::Message =
+                                    serde_json::from_slice(heartbeat.into_data().as_ref()).unwrap();
+                                assert_eq!(
+                                    heartbeat.r#type,
+                                    cordy_protocol::EVENT_DAEMON_HEARTBEAT
+                                );
+                                for message in [
+                                    cordy_protocol::Message {
+                                        r#type: cordy_protocol::EVENT_DAEMON_HEARTBEAT_ACK
+                                            .to_string(),
+                                        payload: json!({
+                                            "runtime_id": "runtime-1",
+                                            "status": "ok",
+                                            "server_capabilities": ["rpc-v1"]
+                                        }),
+                                    },
+                                    cordy_protocol::Message {
+                                        r#type: cordy_protocol::EVENT_DAEMON_TASK_AVAILABLE
+                                            .to_string(),
+                                        payload: json!({
+                                            "runtime_id": "runtime-1",
+                                            "task_id": "task-1"
+                                        }),
+                                    },
+                                ] {
+                                    socket
+                                        .send(axum::extract::ws::Message::Text(
+                                            serde_json::to_string(&message).unwrap().into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
+                                let rpc = loop {
+                                    let frame = socket.next().await.unwrap().unwrap();
+                                    let message: cordy_protocol::Message =
+                                        serde_json::from_slice(frame.into_data().as_ref()).unwrap();
+                                    if message.r#type == cordy_protocol::EVENT_DAEMON_RPC_REQUEST {
+                                        break message;
+                                    }
+                                    assert_eq!(
+                                        message.r#type,
+                                        cordy_protocol::EVENT_DAEMON_HEARTBEAT
+                                    );
+                                };
+                                assert_eq!(rpc.r#type, cordy_protocol::EVENT_DAEMON_RPC_REQUEST);
+                                assert_eq!(rpc.payload["method"], "tasks.claim");
+                                claim_tx.send(()).unwrap();
                                 socket
                                     .send(axum::extract::ws::Message::Text(
-                                        serde_json::to_string(&message).unwrap().into(),
+                                        serde_json::to_string(&cordy_protocol::Message {
+                                            r#type: cordy_protocol::EVENT_DAEMON_RPC_RESPONSE
+                                                .to_string(),
+                                            payload: json!({
+                                                "request_id": rpc.payload["request_id"],
+                                                "status": 200,
+                                                "body": {"tasks": []}
+                                            }),
+                                        })
+                                        .unwrap()
+                                        .into(),
                                     ))
                                     .await
                                     .unwrap();
-                            }
-                            let rpc = socket.next().await.unwrap().unwrap();
-                            let rpc: cordy_protocol::Message =
-                                serde_json::from_slice(rpc.into_data().as_ref()).unwrap();
-                            assert_eq!(rpc.r#type, cordy_protocol::EVENT_DAEMON_RPC_REQUEST);
-                            assert_eq!(rpc.payload["method"], "tasks.claim");
-                            socket
-                                .send(axum::extract::ws::Message::Text(
-                                    serde_json::to_string(&cordy_protocol::Message {
-                                        r#type: cordy_protocol::EVENT_DAEMON_RPC_RESPONSE
-                                            .to_string(),
-                                        payload: json!({
-                                            "request_id": rpc.payload["request_id"],
-                                            "status": 200,
-                                            "body": {"tasks": []}
-                                        }),
-                                    })
-                                    .unwrap()
-                                    .into(),
-                                ))
-                                .await
-                                .unwrap();
-                            let _ = socket.next().await;
-                        })
-                    },
-                ),
+                                while socket.next().await.is_some() {}
+                            })
+                        }
+                    }
+                }),
             )
             .route(
-                "/api/daemon/runtimes/{runtime_id}/heartbeat",
-                axum::routing::post(|| async {
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE
+                "/api/daemon/heartbeat",
+                axum::routing::post({
+                    let heartbeat_calls = Arc::clone(&heartbeat_calls);
+                    move || {
+                        let heartbeat_calls = Arc::clone(&heartbeat_calls);
+                        async move {
+                            heartbeat_calls.fetch_add(1, Ordering::SeqCst);
+                            axum::http::StatusCode::SERVICE_UNAVAILABLE
+                        }
+                    }
                 }),
             );
         let server_stop = tokio_util::sync::CancellationToken::new();
@@ -291,21 +351,21 @@ mod tests {
         client.set_token("token");
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let control = DaemonControl::new(
-            client,
+            Arc::clone(&client),
             format!("http://{address}"),
             "daemon-1",
-            Duration::from_secs(60),
+            Duration::from_millis(25),
             events_tx,
         );
         control.set_runtime_ids(["runtime-1".to_string()]);
         let lifecycle = Arc::new(RecordingLifecycle::default());
-        let (wakeup_tx, mut wakeup_rx) = mpsc::channel(4);
+        let (wakeup_tx, wakeup_rx) = mpsc::channel(4);
         let reconcile = Arc::new(ReconcileBroadcaster::new());
         let reconcile_snapshot = reconcile.notify();
         let consumer = Arc::new(ControlEventConsumer::new(
             Arc::clone(&lifecycle),
             wakeup_tx,
-            reconcile,
+            Arc::clone(&reconcile),
             Arc::new(WorkspaceChangeSignal::new()),
         ));
         let ctx = Ctx::new();
@@ -316,23 +376,6 @@ mod tests {
             events_rx,
         ));
 
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), wakeup_rx.recv())
-                .await
-                .unwrap()
-                .unwrap()
-                .runtime_id,
-            ""
-        );
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(2), wakeup_rx.recv())
-                .await
-                .unwrap()
-                .unwrap()
-                .runtime_id,
-            "runtime-1"
-        );
-        assert!(reconcile_snapshot.is_closed());
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 if lifecycle
@@ -348,17 +391,57 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(control
-            .claim_tasks(&ctx, &["runtime-1".to_string()], 1)
+        assert!(reconcile_snapshot.is_closed());
+        let orchestrator = Arc::new(
+            TaskExecutionOrchestrator::new(
+                TaskExecutionConfig {
+                    max_concurrent_tasks: 1,
+                    poll_interval: Duration::from_secs(30),
+                    cancel_poll_interval: Duration::from_secs(30),
+                    workspaces_root: "/tmp/cordy-control-test".into(),
+                    daemon_id: "daemon-1".into(),
+                },
+                client,
+                Arc::clone(&control),
+                Arc::new(RecordingTaskHost),
+                Arc::clone(&reconcile),
+                crate::activity::DaemonActivity::new(),
+            )
+            .unwrap(),
+        );
+        let poller = tokio::spawn({
+            let orchestrator = Arc::clone(&orchestrator);
+            let poller_ctx = ctx.child();
+            async move { orchestrator.run(poller_ctx, wakeup_rx).await }
+        });
+        tokio::time::timeout(Duration::from_secs(2), claim_rx.recv())
             .await
-            .unwrap()
-            .is_empty());
+            .expect("task hint did not wake the real poller")
+            .expect("claim observer closed");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while heartbeat_calls.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("HTTP heartbeat supervisor did not run");
 
         ctx.cancel_with(CancelCause::Shutdown);
         tokio::time::timeout(Duration::from_secs(2), running)
             .await
             .expect("control owner ignored cancellation")
             .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), poller)
+            .await
+            .expect("task poller ignored cancellation")
+            .unwrap();
+        let heartbeat_calls_after_cancel = heartbeat_calls.load(Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(75)).await;
+        assert_eq!(
+            heartbeat_calls.load(Ordering::SeqCst),
+            heartbeat_calls_after_cancel,
+            "HTTP heartbeat continued after root cancellation"
+        );
         server_stop.cancel();
         tokio::time::timeout(Duration::from_secs(2), server)
             .await
