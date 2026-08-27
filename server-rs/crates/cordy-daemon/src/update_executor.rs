@@ -97,7 +97,6 @@ pub struct UpdateExecutor {
     executable: PathBuf,
     install_method: InstallMethod,
     metadata_client: reqwest::Client,
-    download_client: reqwest::Client,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,13 +136,15 @@ impl UpdateExecutor {
             .unwrap_or(InstallMethod::Direct);
 
         let metadata_client = http_client(METADATA_TIMEOUT)?;
-        let download_client = http_client(DOWNLOAD_TIMEOUT)?;
         Ok(Self {
             executable: resolved,
             install_method,
             metadata_client,
-            download_client,
         })
+    }
+
+    pub fn uses_homebrew(&self) -> bool {
+        matches!(&self.install_method, InstallMethod::Homebrew { .. })
     }
 
     pub fn restart_target_binary(&self) -> &Path {
@@ -154,6 +155,22 @@ impl UpdateExecutor {
     }
 
     pub async fn update(&self, target_version: &str) -> anyhow::Result<String> {
+        self.update_with_timeout(target_version, DOWNLOAD_TIMEOUT)
+            .await
+    }
+
+    pub async fn update_with_timeout(
+        &self,
+        target_version: &str,
+        download_timeout: Duration,
+    ) -> anyhow::Result<String> {
+        if download_timeout.is_zero() {
+            return Err(UpdateExecutorError::new(
+                UpdateFailureKind::Download,
+                "download timeout must be greater than zero",
+            )
+            .into());
+        }
         if !is_release_version(target_version) {
             return Err(UpdateExecutorError::new(
                 UpdateFailureKind::InvalidVersion,
@@ -162,17 +179,31 @@ impl UpdateExecutor {
             .into());
         }
         match &self.install_method {
-            InstallMethod::Homebrew { .. } => {
-                self.update_homebrew().await.map_err(anyhow::Error::from)
-            }
+            InstallMethod::Homebrew { .. } => self
+                .run_homebrew_update()
+                .await
+                .map_err(anyhow::Error::from),
             InstallMethod::Direct => self
-                .update_direct(target_version)
+                .update_direct(target_version, download_timeout)
                 .await
                 .map_err(anyhow::Error::from),
         }
     }
 
-    async fn update_homebrew(&self) -> Result<String> {
+    pub async fn update_homebrew(&self) -> anyhow::Result<String> {
+        if !self.uses_homebrew() {
+            return Err(UpdateExecutorError::new(
+                UpdateFailureKind::Homebrew,
+                "current executable is not installed via Homebrew",
+            )
+            .into());
+        }
+        self.run_homebrew_update()
+            .await
+            .map_err(anyhow::Error::from)
+    }
+
+    async fn run_homebrew_update(&self) -> Result<String> {
         let mut command = tokio::process::Command::new("brew");
         command
             .args(["upgrade", "cordy-ai/tap/cordy"])
@@ -203,7 +234,11 @@ impl UpdateExecutor {
         Ok("Homebrew upgraded cordy-ai/tap/cordy".to_string())
     }
 
-    async fn update_direct(&self, target_version: &str) -> Result<String> {
+    async fn update_direct(
+        &self,
+        target_version: &str,
+        download_timeout: Duration,
+    ) -> Result<String> {
         let tag = normalize_release_tag(target_version);
         let endpoint = format!("https://api.github.com/repos/cordy-ai/cordy/releases/tags/{tag}");
         let response = self
@@ -258,9 +293,10 @@ impl UpdateExecutor {
                 )
             })?;
 
-        let manifest_bytes = self.fetch_asset(manifest, 2 * 1024 * 1024).await?;
+        let download_client = http_client(download_timeout)?;
+        let manifest_bytes = Self::fetch_asset(&download_client, manifest, 2 * 1024 * 1024).await?;
         let expected = checksum_for_asset(&manifest_bytes, &asset.name)?;
-        let archive = self.fetch_asset(asset, MAX_ARCHIVE_BYTES).await?;
+        let archive = Self::fetch_asset(&download_client, asset, MAX_ARCHIVE_BYTES).await?;
         verify_checksum(&archive, &expected, &asset.name)?;
         let binary = extract_binary(&archive)?;
         install_binary(&self.executable, &binary)?;
@@ -271,10 +307,13 @@ impl UpdateExecutor {
         ))
     }
 
-    async fn fetch_asset(&self, asset: &ReleaseAsset, limit: usize) -> Result<Vec<u8>> {
+    async fn fetch_asset(
+        client: &reqwest::Client,
+        asset: &ReleaseAsset,
+        limit: usize,
+    ) -> Result<Vec<u8>> {
         validate_download_url(&asset.download_url)?;
-        let response = self
-            .download_client
+        let response = client
             .get(&asset.download_url)
             .send()
             .await

@@ -162,7 +162,7 @@ fn github_release_request(client: &reqwest::Client) -> reqwest::RequestBuilder {
         .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT)
 }
 
-async fn fetch_latest_release() -> anyhow::Result<Option<GitHubRelease>> {
+pub async fn fetch_latest_release() -> anyhow::Result<Option<GitHubRelease>> {
     let client = github_release_client()?;
     let response = github_release_request(&client)
         .header("Accept", "application/vnd.github+json")

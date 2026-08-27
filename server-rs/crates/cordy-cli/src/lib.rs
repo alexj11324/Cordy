@@ -113,6 +113,16 @@ enum Command {
     Squad(SquadArgs),
     #[command(about = "Control the local agent runtime daemon")]
     Daemon(DaemonArgs),
+    #[command(about = "Update cordy to the latest version")]
+    Update {
+        #[arg(
+            long,
+            value_parser = parse_cli_duration,
+            default_value = "120s",
+            help = "Maximum time to wait for the release archive download"
+        )]
+        download_timeout: Duration,
+    },
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
@@ -2992,6 +3002,7 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Stop,
         }) => run_daemon_stop(cli, environment).await,
+        Command::Update { download_timeout } => run_update(*download_timeout).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3466,6 +3477,94 @@ async fn run_with_input<R: Read>(
         }) => run_runtime_profile_unset_path(cli, environment, profile_id),
         Command::Version { output } => run_version(*output),
     }
+}
+
+fn update_error(stderr: String, message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(OutputError {
+        output: RunOutput {
+            stdout: String::new(),
+            stderr,
+        },
+        message: message.into(),
+        silent: false,
+    })
+}
+
+fn validate_update_timeout(timeout: Duration) -> Result<()> {
+    if timeout.is_zero() {
+        bail!("download timeout must be greater than zero");
+    }
+    Ok(())
+}
+
+async fn run_update(download_timeout: Duration) -> Result<RunOutput> {
+    validate_update_timeout(download_timeout)?;
+
+    let mut stderr = format!(
+        "Current version: {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\n"
+    );
+    let latest = match cordy_daemon::auto_update::fetch_latest_release().await {
+        Ok(release) => release,
+        Err(error) => {
+            let _ = writeln!(stderr, "Warning: could not check latest version: {error}");
+            None
+        }
+    };
+
+    if let Some(release) = latest.as_ref() {
+        let latest_version = release.tag_name.trim().trim_start_matches('v');
+        let current_version = CLIENT_VERSION.trim().trim_start_matches('v');
+        if !latest_version.is_empty() && current_version == latest_version {
+            stderr.push_str("Already up to date.\n");
+            return Ok(RunOutput {
+                stdout: String::new(),
+                stderr,
+            });
+        }
+        let _ = writeln!(stderr, "Latest version:  {}\n", release.tag_name);
+    }
+
+    let executor = cordy_daemon::update_executor::UpdateExecutor::detect()
+        .await
+        .map_err(|error| update_error(stderr.clone(), format!("detect install: {error}")))?;
+
+    if executor.uses_homebrew() {
+        stderr.push_str("Updating via Homebrew...\n");
+        executor.update_homebrew().await.map_err(|error| {
+            update_error(
+                stderr.clone(),
+                format!(
+                    "brew upgrade failed: {error}\nYou can try manually: brew upgrade cordy-ai/tap/cordy"
+                ),
+            )
+        })?;
+        stderr.push_str("Update complete.\n");
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr,
+        });
+    }
+
+    let Some(release) = latest else {
+        return Err(update_error(
+            stderr,
+            "could not determine latest version; check https://github.com/cordy-ai/cordy/releases/latest",
+        ));
+    };
+    let target_version = release.tag_name.as_str();
+    let _ = writeln!(
+        stderr,
+        "Downloading {target_version} from GitHub Releases..."
+    );
+    let output = executor
+        .update_with_timeout(target_version, download_timeout)
+        .await
+        .map_err(|error| update_error(stderr.clone(), format!("update failed: {error}")))?;
+    let _ = writeln!(stderr, "{output}\nUpdate complete.");
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr,
+    })
 }
 
 fn run_version(output: VersionOutput) -> Result<RunOutput> {
@@ -26464,6 +26563,35 @@ mod tests {
 
         let error = new_api_client(&cli, &environment).expect_err("must fail closed");
         assert!(error.to_string().contains("task-scoped mat_ token"));
+    }
+
+    #[test]
+    fn update_command_accepts_download_timeout() {
+        let cli = Cli::try_parse_from(["cordy", "update", "--download-timeout", "15s"])
+            .expect("update CLI");
+        match cli.command {
+            Command::Update { download_timeout } => {
+                assert_eq!(download_timeout, Duration::from_secs(15));
+            }
+            _ => panic!("expected update command"),
+        }
+
+        let cli = Cli::try_parse_from(["cordy", "update"]).expect("default update CLI");
+        match cli.command {
+            Command::Update { download_timeout } => {
+                assert_eq!(download_timeout, Duration::from_secs(120));
+            }
+            _ => panic!("expected update command"),
+        }
+    }
+
+    #[test]
+    fn update_rejects_zero_download_timeout() {
+        let error = validate_update_timeout(Duration::ZERO).expect_err("zero timeout");
+        assert_eq!(
+            error.to_string(),
+            "download timeout must be greater than zero"
+        );
     }
 
     #[test]
