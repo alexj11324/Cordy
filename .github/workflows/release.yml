@@ -403,7 +403,7 @@ jobs:
           - os: ubuntu-latest
             target: linux
             arch: x64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: linux
             arch: arm64
           - os: windows-latest
@@ -425,9 +425,9 @@ jobs:
         if: matrix.target == 'linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
-      - name: Install Linux ARM64 linker
-        if: matrix.target == 'linux' && matrix.arch == 'arm64'
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Install musl toolchain (Linux)
+        if: matrix.target == 'linux'
+        run: sudo apt-get install -y musl-tools
 
       - name: Setup MSVC linker (Windows)
         if: matrix.target == 'win'
@@ -444,9 +444,13 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           if [[ "${{ matrix.target }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-            rustup target add aarch64-unknown-linux-gnu
+            rustup target add aarch64-unknown-linux-musl
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
           elif [[ "${{ matrix.target }}" == "linux" ]]; then
-            rustup target add x86_64-unknown-linux-gnu
+            rustup target add x86_64-unknown-linux-musl
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
           elif [[ "${{ matrix.arch }}" == "arm64" ]]; then
             rustup target add aarch64-pc-windows-msvc
           else
@@ -476,8 +480,4 @@ jobs:
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          # The Rust desktop bundler cross-compiles the Linux ARM64 CLI with
-          # the linker installed above. Windows uses the MSVC environment
-          # configured for the target architecture in this job.
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always

@@ -37,8 +37,12 @@ const RUST_TARGETS = {
     arm64: "aarch64-apple-darwin",
   },
   linux: {
-    x64: "x86_64-unknown-linux-gnu",
-    arm64: "aarch64-unknown-linux-gnu",
+    // Keep the bundled CLI independent of the glibc version on the build
+    // runner. The Electron host remains platform-specific, but this child
+    // binary can run on older supported Linux distributions when statically
+    // linked against musl.
+    x64: "x86_64-unknown-linux-musl",
+    arm64: "aarch64-unknown-linux-musl",
   },
   win32: {
     x64: "x86_64-pc-windows-msvc",
