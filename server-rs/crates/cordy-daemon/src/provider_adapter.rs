@@ -331,6 +331,20 @@ impl ProductionProviderAdapter {
                 .and_then(|env| env.get("CURSOR_MCP_AUTH_SOURCE"))
                 .cloned()
                 .unwrap_or_default();
+            if let Some(agent_mcp_config) = agent.mcp_config.as_ref() {
+                match crate::runtime_mcp::merge_runtime_and_agent_mcp_config(
+                    &target.provider,
+                    agent_mcp_config,
+                ) {
+                    Ok(effective) => inputs.effective_mcp_config = effective,
+                    Err(error) => tracing::warn!(
+                        task = %task.id,
+                        provider = %target.provider,
+                        %error,
+                        "mcp_config: runtime merge failed; using agent configuration only"
+                    ),
+                }
+            }
         }
         if let Some(assignment) = &assignment {
             if assignment.uses_worktree() {
