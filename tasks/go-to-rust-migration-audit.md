@@ -1882,3 +1882,13 @@ exit 1。`cargo metadata --locked --offline`、handler no-run、Rust server/Wind
 fixture 即使 harness 可启动也会明确 self-return，不能凭进程 exit 0 误报 contract PASS。production router、事务
 commit 后 publish 只有静态确认。direct rustfmt failure 与继承 resolver blocker 已交独立 fixer；review 仍异步，
 PR 保持 Ready，原始失败记录不得删除。
+
+独立 reviewer 锚定 implementation HEAD `3e8fff848d9cb9929502fb8309a1058205b28e47` 完成只读审查：无 P0，
+有 3 个 P1 与 3 个 P2。P1：optional DB tests 缺/坏 `DATABASE_URL` 时成功 return，会产生零执行假绿；create
+writer-first 由测试自己的 shared holder 阻塞，删除 production create lock 仍可通过，batch 也没有 race；Rust
+`issue_status::resolve` 吞掉 storage error，导致 DB 故障被错误映射成 400/409 而 Go 返回 500。P2：reorder 的
+malformed UUID/category/foreign/built-in/archived/cross-category status/error JSON 与 Go 不兼容且只测 omission；catalog
+update 无返回行当前 404 而 Go concurrent guard 是 409，且新测试未调用 update；多数 catalog case 直接调用私有
+handler，绕过 production router/middleware/extractor，TestFlags 也未断言真实 key/default。reviewer 确认唯一
+production mount 复用同一 HandlerState/pool/bus/service/query、无 Stub/Noop/Fake/alternate path，单文件无新依赖方向
+成立，但 635 行测试证据强度不足，不能支持完整契约或 Go 下线声明。全部 finding 已交独立 fixer，PR 保持 Ready。
