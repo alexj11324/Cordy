@@ -1386,6 +1386,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "backtrace",
  "chrono",
  "cordy-analytics",
  "cordy-auth",

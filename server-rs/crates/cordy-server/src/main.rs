@@ -643,6 +643,10 @@ async fn main() -> anyhow::Result<()> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await;
+    // The profiling listener is independent of application draining. Close it
+    // as soon as the main listener stops so shutdown cannot admit a new long
+    // CPU capture while the rest of the server is winding down.
+    profiling_runtime.shutdown().await;
     // Match Go's shutdown ordering: drain every in-flight HTTP handler before
     // stopping maintenance workers. Channel adapters are producers and must
     // drain while realtime fanout is still accepting their final events.
@@ -798,7 +802,6 @@ async fn main() -> anyhow::Result<()> {
     if let Some(metrics_runtime) = metrics_runtime {
         metrics_runtime.shutdown().await;
     }
-    profiling_runtime.shutdown().await;
     serve_result?;
     Ok(())
 }

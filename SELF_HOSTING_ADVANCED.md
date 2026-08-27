@@ -590,6 +590,10 @@ listener `127.0.0.1:6060`:
 go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
 ```
 
+The `seconds` value defaults to 30 and is capped at 60 seconds; malformed or
+non-positive values use the default. The profile payload is gzip-compressed,
+as expected by `go tool pprof`.
+
 The `/debug/pprof/`, `/debug/pprof/cmdline`, and `/debug/pprof/symbol`
 endpoints are available on that listener as well. The public API port does not
 serve `/debug/pprof/`. The listener address is not configurable and is never

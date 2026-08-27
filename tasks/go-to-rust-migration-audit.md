@@ -312,7 +312,9 @@ profile 能力和管理端口边界：
 
 - Rust 入口：`cordy-server::profiling::serve` 在固定的
   `127.0.0.1:6060` 独立 listener 上提供 `/debug/pprof/`、`cmdline`、`profile`
-  和 `symbol`；CPU profile 使用 pprof protobuf，并保持 gzip 响应格式。
+  和 `symbol`；CPU profile 使用 pprof protobuf，并返回 gzip-compressed
+  payload（不声明额外的 HTTP `Content-Encoding`）。profile 时长默认 30 秒、
+  上限 60 秒。
 - 生产路径状态：Rust server 在主 API listener 启动后无条件启动该 loopback
   listener；它没有挂到公开 API router，heap 与 runtime trace 尚未宣称可用。
 - Go 是否可下线：否。Go `internal/profiling` 的 heap/trace 等未闭合能力、logger、avatar
