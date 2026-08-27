@@ -5,6 +5,7 @@ node_modules
 # Build outputs
 .next
 dist
+server-rs/target
 server/bin
 server/tmp
 
