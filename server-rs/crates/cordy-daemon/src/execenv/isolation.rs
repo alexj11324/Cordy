@@ -6,8 +6,7 @@
 //! - preparationWaitDelay          → PREPARATION_WAIT_DELAY
 //! - preparationRequest            → PreparationRequest
 //! - preparationPrepareParams /
-//!   preparationReuseParams        → (folded: the gateway token is carried
-//!   plainly on the wire structs; see note)
+//!   preparationReuseParams        → PreparationWireParams / ReuseWireParams
 //! - preparationResponse           → PreparationResponse
 //! - preparationErrorKindOpenclawCLITimeout → PREPARATION_ERROR_KIND_OPENCLAW_CLI_TIMEOUT
 //! - preparationErrorKind          → preparation_error_kind
@@ -29,9 +28,8 @@
 //! - WaitDelay semantics: cancellation terminates the platform process-tree
 //!   boundary before awaiting the child and pipe readers.
 //!
-//! NOTE: the parent-side entry points (prepare_isolated / reuse_isolated) are
-//! wired into the task launcher in a later slice; until then this module is
-//! exercised by its unit tests only, hence `allow(dead_code)`.
+//! NOTE: the parent-side entry points remain to be wired into the task
+//! launcher; the helper itself now executes both Prepare and Reuse.
 #![allow(dead_code)]
 
 use std::process::Stdio;
@@ -41,7 +39,7 @@ use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
-use super::execenv::{Environment, PrepareParams};
+use super::execenv::{Environment, PrepareParams, ReuseParams};
 
 /// Selection flag for the private execution-environment helper mode in the
 /// cordy binary. The daemon runs Prepare/Reuse in that subprocess so a blocked
@@ -77,24 +75,11 @@ pub(crate) struct PreparationWireParams {
     pub params: PrepareParams,
 }
 
-// S9-integration: ReuseParams is defined by the Reuse port (execenv.go's
-// second half); the helper protocol needs the wire shape now. Mirrors Go's
-// `type preparationReuseParams struct { *ReuseParams; OpenclawGateway ... }`.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct ReuseParamsPlaceholder {
-    #[serde(rename = "WorkspacesRoot", default)]
-    pub workspaces_root: String,
-    #[serde(rename = "WorkspaceId", default)]
-    pub workspace_id: String,
-    #[serde(rename = "TaskId", default)]
-    pub task_id: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReuseWireParams {
     #[serde(flatten)]
-    pub params: ReuseParamsPlaceholder,
+    pub params: ReuseParams,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -160,15 +145,16 @@ pub(crate) async fn prepare_isolated(
             reuse: None,
         },
     )
-    .await
+    .await?
+    .ok_or_else(|| anyhow!("execenv: preparation helper returned no environment"))
 }
 
 /// reuse_isolated executes Reuse under the same killable-helper contract.
 pub(crate) async fn reuse_isolated(
     ctx: &crate::repocache::Ctx,
     command: &[String],
-    params: ReuseParamsPlaceholder,
-) -> anyhow::Result<Environment> {
+    params: ReuseParams,
+) -> anyhow::Result<Option<Environment>> {
     run_preparation_process(
         ctx,
         command,
@@ -185,7 +171,7 @@ async fn run_preparation_process(
     ctx: &crate::repocache::Ctx,
     command: &[String],
     request: PreparationRequest,
-) -> anyhow::Result<Environment> {
+) -> anyhow::Result<Option<Environment>> {
     if command.is_empty() || command[0].trim().is_empty() {
         bail!("execenv: preparation helper command is empty");
     }
@@ -321,9 +307,7 @@ async fn run_preparation_process(
             &response.error_kind,
         ));
     }
-    response
-        .environment
-        .ok_or_else(|| anyhow!("execenv: preparation helper returned no environment"))
+    Ok(response.environment)
 }
 
 /// stop_process_group kills the helper and any CLI it spawned. After SIGKILL
@@ -463,9 +447,9 @@ pub(crate) fn decode_preparation_request<R: std::io::Read>(
 /// parent can preserve them; malformed protocol input/output is returned as a
 /// process error because the parent cannot safely interpret the result.
 ///
-/// The prepare/reuse bodies are wired to the real implementations; the reuse
-/// arm lands with the Reuse port (same file family) and fails closed until
-/// then, exactly like the Go helper would on an unknown action.
+/// The prepare/reuse bodies are wired to the real implementations. A missing
+/// reused environment is represented as an empty response, matching Go's
+/// `Reuse` nil result so the caller can fall back to a fresh prepare.
 pub async fn run_preparation_helper<I, O>(input: I, output: &mut O) -> anyhow::Result<()>
 where
     I: std::io::Read,
@@ -497,13 +481,7 @@ where
             if request.prepare.is_some() {
                 bail!("invalid reuse request");
             }
-            // Reuse is ported alongside the daemon's session-reuse wiring;
-            // until that slice lands the helper fails closed loudly instead of
-            // returning a fabricated environment.
-            let err: anyhow::Error = anyhow!("execenv: reuse not yet ported in this build")
-                .context(format!("{:#}", wire.params.task_id));
-            response.error = format!("{err:#}");
-            response.error_kind = preparation_error_kind(&err).to_string();
+            response.environment = super::execenv::reuse(wire.params);
         }
         other => bail!("unknown preparation action {other:?}"),
     }
