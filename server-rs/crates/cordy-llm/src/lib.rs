@@ -16,13 +16,77 @@ pub const DEFAULT_MAX_RETRIES: u32 = 2;
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// A validated transport retry budget.
+///
+/// Keeping the value private makes the unset-versus-explicit-zero distinction
+/// part of [`Config`] rather than something callers can accidentally erase by
+/// constructing an invalid value directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryOverride {
+    value: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum RetryConfigError {
+    #[error("llm: max retries must not be negative, got {0} (use 0 to disable retries)")]
+    Negative(i64),
+    #[error("llm: max retries must fit in an unsigned 32-bit integer, got {0}")]
+    TooLarge(i64),
+}
+
+/// Builds an explicit retry override. `retries(0)` disables transport retries;
+/// a negative value is rejected instead of being silently corrected.
+pub fn retries(value: i64) -> Result<RetryOverride, RetryConfigError> {
+    if value < 0 {
+        return Err(RetryConfigError::Negative(value));
+    }
+    let value = u32::try_from(value).map_err(|_| RetryConfigError::TooLarge(value))?;
+    Ok(RetryOverride { value })
+}
+
+impl RetryOverride {
+    pub fn value(self) -> u32 {
+        self.value
+    }
+}
+
+/// Identifies where the effective retry budget came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RetrySource {
+    #[default]
+    Default,
+    Config,
+}
+
+impl RetrySource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Config => "config",
+        }
+    }
+}
+
+/// The effective transport retry policy used by a client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RetryBudget {
+    pub max_retries: u32,
+    pub source: RetrySource,
+    pub request_timeout: Duration,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub api_key: String,
     pub base_url: String,
     pub default_model: String,
-    /// `None` uses [`DEFAULT_MAX_RETRIES`]; `Some(0)` disables retries.
-    pub max_retries: Option<u32>,
+    /// `None` uses [`DEFAULT_MAX_RETRIES`]; `Some(retries(0)?)` disables
+    /// retries while preserving that it was explicitly configured.
+    pub max_retries: Option<RetryOverride>,
+    /// Replaces the default request transport. This is primarily a test seam,
+    /// but also preserves callers' ability to supply a configured reqwest
+    /// client with custom proxies, certificates, or timeouts.
+    pub http_client: Option<reqwest::Client>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,14 +116,21 @@ pub struct Client {
     api_key: String,
     endpoint: String,
     default_model: String,
-    max_retries: u32,
+    retry: RetryBudget,
     enabled: bool,
 }
 
 impl Client {
     pub fn new(config: Config) -> Self {
-        let api_key = config.api_key.trim().to_owned();
-        let configured_base_url = config.base_url.trim();
+        let Config {
+            api_key: configured_api_key,
+            base_url: configured_base_url,
+            default_model: configured_default_model,
+            max_retries,
+            http_client,
+        } = config;
+        let api_key = configured_api_key.trim().to_owned();
+        let configured_base_url = configured_base_url.trim();
         let enabled = !api_key.is_empty() || !configured_base_url.is_empty();
         let base_url = if configured_base_url.is_empty() {
             DEFAULT_BASE_URL
@@ -76,13 +147,24 @@ impl Client {
         // still consuming the body, so the streaming client deliberately has
         // no total timeout; the caller owns that lifetime and can cancel the
         // future or response when its ChatStream context equivalent expires.
-        let stream_client = reqwest::Client::builder().build().ok();
+        let stream_client = http_client.or_else(|| reqwest::Client::builder().build().ok());
         let transport = stream_client
             .clone()
             .map(|client| Arc::new(ReqwestTransport(client)) as Arc<dyn Transport>);
-        let default_model = match config.default_model.trim() {
+        let default_model = match configured_default_model.trim() {
             "" => FALLBACK_MODEL.to_owned(),
             model => model.to_owned(),
+        };
+        let retry = RetryBudget {
+            max_retries: max_retries
+                .map(RetryOverride::value)
+                .unwrap_or(DEFAULT_MAX_RETRIES),
+            source: if max_retries.is_some() {
+                RetrySource::Config
+            } else {
+                RetrySource::Default
+            },
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
         };
         Self {
             transport,
@@ -90,7 +172,7 @@ impl Client {
             api_key,
             endpoint,
             default_model,
-            max_retries: config.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
+            retry,
             enabled,
         }
     }
@@ -104,7 +186,11 @@ impl Client {
     }
 
     pub fn max_retries(&self) -> u32 {
-        self.max_retries
+        self.retry.max_retries
+    }
+
+    pub fn retry_budget(&self) -> RetryBudget {
+        self.retry
     }
 
     /// Sends a raw OpenAI-compatible chat completion request and returns the
@@ -171,7 +257,7 @@ impl Client {
         // The retry budget applies only until the upstream returns a
         // successful response. Once headers are returned, the response body
         // belongs to the caller and cannot be replayed safely here.
-        for attempt in 0..=self.max_retries {
+        for attempt in 0..=self.retry.max_retries {
             let mut builder = http.post(&self.endpoint).json(request);
             if !self.api_key.is_empty() {
                 builder = builder.header(header::AUTHORIZATION, format!("Bearer {}", self.api_key));
@@ -184,7 +270,7 @@ impl Client {
                     let retry_after = retry_after(response.headers());
                     let should_retry = retry_directive(response.headers())
                         .unwrap_or_else(|| retryable_status(status));
-                    if attempt == self.max_retries || !should_retry {
+                    if attempt == self.retry.max_retries || !should_retry {
                         return Err(Error::Upstream(status));
                     }
                     // Drop the failed response before waiting and opening the
@@ -193,7 +279,7 @@ impl Client {
                     tokio::time::sleep(retry_after.unwrap_or_else(|| retry_delay(attempt))).await;
                 }
                 Err(error) => {
-                    if attempt == self.max_retries || !retryable_error(&error) {
+                    if attempt == self.retry.max_retries || !retryable_error(&error) {
                         return Err(Error::Request(error));
                     }
                     tokio::time::sleep(retry_delay(attempt)).await;
@@ -412,7 +498,7 @@ impl Client {
     ) -> Result<TransportResponse, Error> {
         let transport = self.transport.as_ref().ok_or(Error::ClientUnavailable)?;
 
-        for attempt in 0..=self.max_retries {
+        for attempt in 0..=self.retry.max_retries {
             match transport.post(&self.endpoint, &self.api_key, request).await {
                 Ok(response) if response.status.is_success() => return Ok(response),
                 Ok(response) => {
@@ -422,13 +508,13 @@ impl Client {
                         .unwrap_or_else(|| retryable_status(status));
                     // Never retain or expose the response body: gateways can
                     // echo private prompts or sensitive diagnostics there.
-                    if attempt == self.max_retries || !should_retry {
+                    if attempt == self.retry.max_retries || !should_retry {
                         return Ok(response);
                     }
                     tokio::time::sleep(retry_after.unwrap_or_else(|| retry_delay(attempt))).await;
                 }
                 Err(error) => {
-                    if attempt == self.max_retries || !retryable_error(&error) {
+                    if attempt == self.retry.max_retries || !retryable_error(&error) {
                         return Err(Error::Request(error));
                     }
                     tokio::time::sleep(retry_delay(attempt)).await;
@@ -678,6 +764,10 @@ mod tests {
         }
     }
 
+    fn retry_override(value: u32) -> RetryOverride {
+        retries(i64::from(value)).expect("test retry budget is valid")
+    }
+
     #[tokio::test]
     async fn disabled_client_makes_zero_outbound_requests() {
         let transport = Arc::new(RecordingTransport::default());
@@ -709,7 +799,8 @@ mod tests {
             api_key: "test-key".into(),
             base_url: "https://gateway.example/v1".into(),
             default_model: "configured-model".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
+            http_client: None,
         });
         client.transport = Some(transport.clone());
         let result = client.generate_text("", "system", "private opening").await;
@@ -745,7 +836,8 @@ mod tests {
             api_key: "test-key".into(),
             base_url: "https://gateway.example/v1".into(),
             default_model: "configured-model".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
+            http_client: None,
         });
         client.transport = Some(transport.clone());
 
@@ -779,7 +871,8 @@ mod tests {
             api_key: "test-key".into(),
             base_url: "https://gateway.example/v1".into(),
             default_model: "configured-model".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
+            http_client: None,
         });
         client.transport = Some(transport.clone());
 
@@ -808,7 +901,7 @@ mod tests {
         let mut client = Client::new(Config {
             api_key: "test-key".into(),
             base_url: "https://gateway.example/v1".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
             ..Config::default()
         });
         client.transport = Some(transport.clone());
@@ -887,7 +980,8 @@ mod tests {
             api_key: "test-key".into(),
             base_url: format!("http://{address}"),
             default_model: "stream-model".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
+            http_client: None,
         });
         let response = client
             .chat_stream(serde_json::json!({
@@ -907,6 +1001,49 @@ mod tests {
         assert!(body
             .windows(b"data: [DONE]".len())
             .any(|window| window == b"data: [DONE]"));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn configured_http_client_replaces_default_transport() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = socket.read(&mut request).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let _ = socket
+                .write_all(
+                    concat!(
+                        "HTTP/1.1 200 OK\r\n",
+                        "Content-Type: application/json\r\n",
+                        "\r\n",
+                        "{\"choices\":[{\"message\":{\"content\":\"late\"}}]}"
+                    )
+                    .as_bytes(),
+                )
+                .await;
+        });
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(10))
+            .build()
+            .unwrap();
+        let client = Client::new(Config {
+            api_key: "test-key".into(),
+            base_url: format!("http://{address}"),
+            max_retries: Some(retry_override(0)),
+            http_client: Some(http_client),
+            ..Config::default()
+        });
+
+        let error = client
+            .chat(serde_json::json!({
+                "messages": [{"role": "user", "content": "hi"}]
+            }))
+            .await
+            .expect_err("the injected ten-millisecond client must time out");
+        assert!(matches!(error, Error::Request(error) if error.is_timeout()));
         server.await.unwrap();
     }
 
@@ -962,7 +1099,8 @@ mod tests {
             api_key: "test-key".into(),
             base_url: format!("http://{address}"),
             default_model: "stream-model".into(),
-            max_retries: Some(1),
+            max_retries: Some(retry_override(1)),
+            http_client: None,
         });
         let response = client
             .chat_stream(serde_json::json!({
@@ -982,13 +1120,45 @@ mod tests {
         let client = Client::new(Config::default());
         assert_eq!(client.default_model(), FALLBACK_MODEL);
         assert_eq!(client.max_retries(), DEFAULT_MAX_RETRIES);
+        assert_eq!(
+            client.retry_budget(),
+            RetryBudget {
+                max_retries: DEFAULT_MAX_RETRIES,
+                source: RetrySource::Default,
+                request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            }
+        );
+    }
+
+    #[test]
+    fn retries_validate_values_and_preserve_explicit_zero() {
+        assert_eq!(retries(-1), Err(RetryConfigError::Negative(-1)));
+        assert_eq!(
+            retries(i64::from(u32::MAX) + 1),
+            Err(RetryConfigError::TooLarge(i64::from(u32::MAX) + 1))
+        );
+
+        let zero = retries(0).expect("zero is a valid explicit override");
+        assert_eq!(zero.value(), 0);
+        let client = Client::new(Config {
+            max_retries: Some(zero),
+            ..Config::default()
+        });
+        assert_eq!(
+            client.retry_budget(),
+            RetryBudget {
+                max_retries: 0,
+                source: RetrySource::Config,
+                request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            }
+        );
     }
 
     #[tokio::test]
     async fn malformed_config_never_falls_back_to_openai() {
         let client = Client::new(Config {
             base_url: "not a URL".into(),
-            max_retries: Some(0),
+            max_retries: Some(retry_override(0)),
             ..Config::default()
         });
         assert!(client.enabled());

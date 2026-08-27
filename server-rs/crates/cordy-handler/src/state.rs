@@ -632,36 +632,36 @@ impl HandlerState {
         }
     }
 
-    /// Wires the internal OpenAI-compatible assist layer. Invalid retry
-    /// budgets fail startup rather than silently selecting another policy.
-    pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
+    /// Wires the internal OpenAI-compatible assist layer from the already
+    /// resolved server configuration. Keeping this on the loaded config is
+    /// important because `cordy.toml` values must not be silently ignored when
+    /// the corresponding environment override is absent.
+    pub fn with_llm_config(self, config: &cordy_config::LlmConfig) -> anyhow::Result<Self> {
         const MAX_RETRIES: u32 = 5;
-        let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
-        let max_retries = if raw_retries.trim().is_empty() {
-            None
-        } else {
-            let parsed = raw_retries.trim().parse::<u32>().map_err(|_| {
-                anyhow::anyhow!(
-                    "CORDY_LLM_MAX_RETRIES must be an integer from 0 to {MAX_RETRIES}, got {:?}",
-                    raw_retries.trim()
-                )
-            })?;
-            anyhow::ensure!(
-                parsed <= MAX_RETRIES,
-                "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
-            );
-            Some(parsed)
+        let max_retries = match config.max_retries {
+            None => None,
+            Some(parsed) => {
+                anyhow::ensure!(
+                    parsed <= MAX_RETRIES,
+                    "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
+                );
+                Some(cordy_llm::retries(i64::from(parsed))?)
+            }
         };
         let client = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
-            api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
-            base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
-            default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
+            api_key: config.api_key.clone().unwrap_or_default(),
+            base_url: config.base_url.clone().unwrap_or_default(),
+            default_model: config.default_model.clone().unwrap_or_default(),
             max_retries,
+            http_client: None,
         }));
         self.llm.replace(client.clone());
+        let retry_budget = client.retry_budget();
         tracing::info!(
             enabled = client.enabled(),
-            max_retries = client.max_retries(),
+            max_retries = retry_budget.max_retries,
+            retry_source = retry_budget.source.as_str(),
+            request_timeout = ?retry_budget.request_timeout,
             default_model = client.default_model(),
             "llm assist policy"
         );
@@ -1120,5 +1120,36 @@ mod tests {
 
         assert!(state.plugin_events.is_none());
         assert!(runtime.is_none());
+    }
+
+    #[tokio::test]
+    async fn llm_wiring_uses_resolved_config_and_preserves_explicit_zero() {
+        let config = cordy_config::LlmConfig {
+            api_key: Some(" configured-key ".into()),
+            base_url: Some(" http://llm.test/v1 ".into()),
+            default_model: Some(" configured-model ".into()),
+            max_retries: Some(0),
+        };
+
+        let state = test_state().with_llm_config(&config).unwrap();
+        let client = state.llm.client();
+        assert!(client.enabled());
+        assert_eq!(client.default_model(), "configured-model");
+        assert_eq!(client.max_retries(), 0);
+        assert_eq!(client.retry_budget().source, cordy_llm::RetrySource::Config);
+    }
+
+    #[tokio::test]
+    async fn llm_wiring_rejects_retry_budget_above_server_limit() {
+        let config = cordy_config::LlmConfig {
+            max_retries: Some(6),
+            ..Default::default()
+        };
+
+        let result = test_state().with_llm_config(&config);
+        assert!(matches!(
+            result,
+            Err(error) if error.to_string().contains("at most 5")
+        ));
     }
 }

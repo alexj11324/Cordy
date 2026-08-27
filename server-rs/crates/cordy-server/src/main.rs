@@ -296,7 +296,7 @@ async fn build_production_router(
     )
     .with_plugins_from_env()
     .with_slack_history_from_env()
-    .with_llm_from_env()?
+    .with_llm_config(&cfg.llm)?
     .with_integrations(cfg.integrations.clone())
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
