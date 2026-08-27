@@ -38,7 +38,7 @@ const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
-static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
         ("--acp", BlockedArgMode::Standalone),
         ("acp", BlockedArgMode::Standalone),
@@ -744,7 +744,7 @@ fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String
     args
 }
 
-fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMode> {
+pub(crate) fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMode> {
     match provider {
         "traecli" => &TRAECLI_BLOCKED_ARGS,
         "kiro" => &KIRO_BLOCKED_ARGS,

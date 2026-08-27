@@ -35,7 +35,7 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 const DISCOVERY_OUTPUT_MAX: u64 = 4 * 1024 * 1024;
 
-static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
         ("--format", BlockedArgMode::WithValue),
         ("--dir", BlockedArgMode::WithValue),

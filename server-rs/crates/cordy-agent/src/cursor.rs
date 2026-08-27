@@ -34,7 +34,7 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 
 type SharedStdin = Arc<Mutex<Option<ChildStdin>>>;
 
-static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
         ("-p", BlockedArgMode::Standalone),
         ("--output-format", BlockedArgMode::WithValue),

@@ -497,7 +497,7 @@ pub fn build_pi_args(session_path: &str, options: &ExecOptions) -> Vec<String> {
     args
 }
 
-fn pi_blocked_args() -> BTreeMap<&'static str, BlockedArgMode> {
+pub(crate) fn pi_blocked_args() -> BTreeMap<&'static str, BlockedArgMode> {
     BTreeMap::from([
         ("-p", BlockedArgMode::Standalone),
         ("--print", BlockedArgMode::Standalone),

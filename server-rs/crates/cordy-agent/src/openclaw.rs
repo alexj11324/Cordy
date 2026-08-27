@@ -45,7 +45,7 @@ static VERSION_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap_or_else(|error| panic!("invalid OpenClaw version regex: {error}"))
 });
 
-static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
         ("--local", BlockedArgMode::Standalone),
         ("--json", BlockedArgMode::Standalone),
