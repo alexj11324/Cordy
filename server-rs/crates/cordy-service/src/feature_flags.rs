@@ -1,15 +1,45 @@
 //! Feature-flag evaluation and key vocabulary — port of
 //! `server/pkg/featureflag` and `server/internal/featureflags/keys.go`.
 //!
-//! The Rust call sites mostly need a boolean seam, but the source also keeps
-//! the Go rule-file contract (allow/deny targeting, percent rollouts, custom
-//! attributes, and variants) so a self-hosted deployment does not silently
-//! lose targeting behavior during the server migration.
+//! The service keeps the provider contract separate from the boolean
+//! [`FlagSource`] seam used by existing business services. That preserves the
+//! current call sites while retaining Go's targeting, variants, diagnostics,
+//! and provider-chain semantics for new callers.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
 
-/// Per-request attributes used by targeted rules.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+use serde::Deserialize;
+
+/// Minimal evaluation seam used by current business services.
+pub trait FlagSource: Send + Sync {
+    fn is_enabled(&self, key: &str, default: bool) -> bool;
+}
+
+/// Why a provider returned a decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reason {
+    Static,
+    Percent,
+    Override,
+    Default,
+    Error,
+}
+
+/// Structured result of a feature-flag evaluation.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Decision {
+    pub key: String,
+    pub enabled: bool,
+    pub variant: String,
+    pub reason: Reason,
+    pub source: String,
+}
+
+/// Request attributes used by allow/deny rules and deterministic rollouts.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EvalContext {
     pub user_id: String,
     pub workspace_id: String,
@@ -17,236 +47,484 @@ pub struct EvalContext {
 }
 
 impl EvalContext {
+    /// Looks up a targeting attribute using Go's dedicated-field precedence.
     pub fn lookup(&self, name: &str) -> Option<&str> {
         match name {
-            "user_id" => (!self.user_id.is_empty()).then_some(self.user_id.as_str()),
-            "workspace_id" => (!self.workspace_id.is_empty()).then_some(self.workspace_id.as_str()),
-            _ => self
-                .attributes
-                .get(name)
-                .map(String::as_str)
-                .filter(|value| !value.is_empty()),
+            "user_id" => non_empty(&self.user_id),
+            "workspace_id" => non_empty(&self.workspace_id),
+            _ => self.attributes.get(name).and_then(|value| non_empty(value)),
         }
     }
 }
 
-/// The context-aware result of evaluating a flag.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FlagDecision {
-    pub enabled: bool,
-    pub variant: String,
-}
-
-fn bool_variant(enabled: bool) -> String {
-    if enabled {
-        "on".to_string()
-    } else {
-        "off".to_string()
-    }
-}
-
-/// Evaluation seam — the boolean method remains source-compatible with the
-/// existing Rust call sites, while targeted callers can use the context-aware
-/// defaults below.
-pub trait FlagSource: Send + Sync {
-    fn is_enabled(&self, key: &str, default: bool) -> bool;
-
-    fn decision_with_context(
-        &self,
-        key: &str,
-        default: bool,
-        _context: &EvalContext,
-    ) -> FlagDecision {
-        let enabled = self.is_enabled(key, default);
-        FlagDecision {
-            enabled,
-            variant: bool_variant(enabled),
-        }
-    }
-
-    fn is_enabled_with_context(&self, key: &str, default: bool, context: &EvalContext) -> bool {
-        self.decision_with_context(key, default, context).enabled
-    }
-
-    fn variant_with_context(&self, key: &str, default: bool, context: &EvalContext) -> String {
-        self.decision_with_context(key, default, context).variant
-    }
-}
-
-/// A startup-loaded YAML rule set with live `FF_<KEY>` environment overrides.
-/// The environment layer wins over the file layer, matching Go's provider
-/// chain and preserving emergency kill switches.
-#[derive(Debug, Default)]
-pub struct ConfiguredFlags {
-    rules: HashMap<String, Rule>,
-}
-
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+/// A static rule loaded from source-controlled configuration or constructed
+/// by an embedding application.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rule {
-    #[serde(default)]
     pub default: bool,
-    #[serde(default)]
     pub variant: String,
-    #[serde(default)]
     pub allow: Vec<String>,
-    #[serde(default)]
     pub allow_by: String,
-    #[serde(default)]
     pub deny: Vec<String>,
-    #[serde(default)]
     pub deny_by: String,
-    #[serde(default)]
     pub percent: Option<PercentRollout>,
 }
 
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PercentRollout {
-    #[serde(default)]
     pub percent: i32,
-    #[serde(default)]
     pub by: String,
 }
 
-impl ConfiguredFlags {
-    pub fn from_env() -> Result<Self, anyhow::Error> {
-        let path = std::env::var("CORDY_FEATURE_FLAGS_FILE")
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        if path.is_empty() {
-            return Ok(Self::default());
-        }
-        let bytes = std::fs::read(&path)
-            .map_err(|error| anyhow::anyhow!("featureflag: read {path}: {error}"))?;
-        if String::from_utf8_lossy(&bytes).trim().is_empty() {
-            return Ok(Self::default());
-        }
-        let rules: HashMap<String, Rule> = serde_yaml::from_slice(&bytes)
-            .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
-        Ok(Self { rules })
-    }
+/// A provider knows whether it can evaluate a key. `None` means not found and
+/// allows a [`ChainProvider`] to fall through to the next source.
+pub trait Provider: Send + Sync {
+    fn lookup(&self, key: &str, context: &EvalContext) -> Option<Decision>;
+    fn name(&self) -> &str;
+}
 
-    fn env_name(key: &str) -> String {
-        let mut output = String::from("FF_");
-        let mut underscore = false;
-        for character in key.chars() {
-            if character.is_ascii_alphanumeric() {
-                output.push(character.to_ascii_uppercase());
-                underscore = false;
-            } else if !underscore {
-                output.push('_');
-                underscore = true;
-            }
-        }
-        output.trim_end_matches('_').to_string()
-    }
+/// Thread-safe in-memory rule provider.
+pub struct StaticProvider {
+    rules: RwLock<HashMap<String, Rule>>,
+}
 
-    fn env_decision(key: &str, raw: &str) -> bool {
-        Self::env_decision_with_context(key, raw, &EvalContext::default()).enabled
-    }
-
-    fn env_decision_with_context(key: &str, raw: &str, context: &EvalContext) -> FlagDecision {
-        let value = raw.trim();
-        match value.to_ascii_lowercase().as_str() {
-            "" | "false" | "off" | "0" | "no" => FlagDecision {
-                enabled: false,
-                variant: "off".to_string(),
-            },
-            "true" | "on" | "1" | "yes" => FlagDecision {
-                enabled: true,
-                variant: "on".to_string(),
-            },
-            _ if value.ends_with('%') => {
-                let Some(percent) = value[..value.len() - 1]
-                    .trim()
-                    .parse::<i32>()
-                    .ok()
-                    .filter(|percent| (0..=100).contains(percent))
-                else {
-                    return FlagDecision {
-                        enabled: false,
-                        variant: "off".to_string(),
-                    };
-                };
-                let identifier = context.lookup("user_id").unwrap_or_default();
-                let enabled = in_percent(key, identifier, percent);
-                FlagDecision {
-                    enabled,
-                    variant: bool_variant(enabled),
-                }
-            }
-            _ => FlagDecision {
-                enabled: true,
-                variant: value.to_string(),
-            },
-        }
-    }
-
-    fn rule_decision(&self, key: &str, default: bool, context: &EvalContext) -> FlagDecision {
-        let Some(rule) = self.rules.get(key) else {
-            return FlagDecision {
-                enabled: default,
-                variant: bool_variant(default),
-            };
-        };
-
-        let deny_by = if rule.deny_by.is_empty() {
-            "user_id"
-        } else {
-            rule.deny_by.as_str()
-        };
-        if rule
-            .deny
-            .iter()
-            .any(|value| context.lookup(deny_by) == Some(value.as_str()))
-        {
-            return decision_for_rule(rule, false);
-        }
-
-        let allow_by = if rule.allow_by.is_empty() {
-            "user_id"
-        } else {
-            rule.allow_by.as_str()
-        };
-        if rule
-            .allow
-            .iter()
-            .any(|value| context.lookup(allow_by) == Some(value.as_str()))
-        {
-            return decision_for_rule(rule, true);
-        }
-
-        if let Some(percent) = rule.percent.as_ref() {
-            let by = if percent.by.is_empty() {
-                "user_id"
-            } else {
-                percent.by.as_str()
-            };
-            let enabled = in_percent(key, context.lookup(by).unwrap_or_default(), percent.percent);
-            return decision_for_rule(rule, enabled);
-        }
-        decision_for_rule(rule, rule.default)
+impl Default for StaticProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-fn decision_for_rule(rule: &Rule, enabled: bool) -> FlagDecision {
-    FlagDecision {
+impl StaticProvider {
+    pub fn new() -> Self {
+        Self {
+            rules: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub fn set(&self, key: impl Into<String>, rule: Rule) {
+        let mut rules = match self.rules.write() {
+            Ok(rules) => rules,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        rules.insert(key.into(), rule);
+    }
+
+    /// Atomically replaces the complete rule set.
+    pub fn load_rules(&self, rules: HashMap<String, Rule>) {
+        let mut current = match self.rules.write() {
+            Ok(rules) => rules,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *current = rules;
+    }
+
+    pub fn keys(&self) -> Vec<String> {
+        let rules = match self.rules.read() {
+            Ok(rules) => rules,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let mut keys = rules.keys().cloned().collect::<Vec<_>>();
+        keys.sort_unstable();
+        keys
+    }
+
+    fn rule(&self, key: &str) -> Option<Rule> {
+        let rules = match self.rules.read() {
+            Ok(rules) => rules,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        rules.get(key).cloned()
+    }
+}
+
+impl Provider for StaticProvider {
+    fn lookup(&self, key: &str, context: &EvalContext) -> Option<Decision> {
+        self.rule(key)
+            .map(|rule| evaluate_rule(key, &rule, context))
+    }
+
+    fn name(&self) -> &str {
+        "static"
+    }
+}
+
+/// Environment provider used for emergency overrides and local development.
+#[derive(Clone)]
+pub struct EnvProvider {
+    prefix: String,
+    lookup: Arc<EnvLookup>,
+}
+
+type EnvLookup = dyn Fn(&str) -> Option<String> + Send + Sync;
+
+impl EnvProvider {
+    pub fn new(prefix: impl Into<String>) -> Self {
+        Self {
+            prefix: prefix.into(),
+            lookup: Arc::new(|name| std::env::var(name).ok()),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_lookup<F>(prefix: impl Into<String>, lookup: F) -> Self
+    where
+        F: Fn(&str) -> Option<String> + Send + Sync + 'static,
+    {
+        Self {
+            prefix: prefix.into(),
+            lookup: Arc::new(lookup),
+        }
+    }
+}
+
+impl Provider for EnvProvider {
+    fn lookup(&self, key: &str, context: &EvalContext) -> Option<Decision> {
+        let env_name = format!("{}{}", self.prefix, flag_key_to_env(key));
+        let raw = (self.lookup)(&env_name)?;
+        Some(env_decision(key, &raw, context))
+    }
+
+    fn name(&self) -> &str {
+        "env"
+    }
+}
+
+/// Ordered provider composition. The first provider that knows a key wins.
+pub struct ChainProvider {
+    providers: Vec<Arc<dyn Provider>>,
+}
+
+impl ChainProvider {
+    pub fn new(providers: impl IntoIterator<Item = Arc<dyn Provider>>) -> Self {
+        Self {
+            providers: providers.into_iter().collect(),
+        }
+    }
+
+    pub fn providers(&self) -> Vec<Arc<dyn Provider>> {
+        self.providers.clone()
+    }
+}
+
+impl Provider for ChainProvider {
+    fn lookup(&self, key: &str, context: &EvalContext) -> Option<Decision> {
+        self.providers
+            .iter()
+            .find_map(|provider| provider.lookup(key, context))
+    }
+
+    fn name(&self) -> &str {
+        "chain"
+    }
+}
+
+/// Framework-level toggle router. `None` is the Rust equivalent of Go's nil
+/// `*Service`: every unknown flag returns the supplied default.
+pub struct FeatureFlagService {
+    provider: Option<Arc<dyn Provider>>,
+}
+
+impl Default for FeatureFlagService {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl FeatureFlagService {
+    pub fn new(provider: Option<Arc<dyn Provider>>) -> Self {
+        Self { provider }
+    }
+
+    pub fn provider(&self) -> Option<Arc<dyn Provider>> {
+        self.provider.clone()
+    }
+
+    pub fn is_enabled(&self, key: &str, default: bool) -> bool {
+        self.is_enabled_with_context(key, default, &EvalContext::default())
+    }
+
+    pub fn is_enabled_with_context(&self, key: &str, default: bool, context: &EvalContext) -> bool {
+        self.decision_with_context(key, default, context).enabled
+    }
+
+    pub fn variant(&self, key: &str, default: &str) -> String {
+        self.variant_with_context(key, default, &EvalContext::default())
+    }
+
+    pub fn variant_with_context(&self, key: &str, default: &str, context: &EvalContext) -> String {
+        self.provider
+            .as_ref()
+            .and_then(|provider| provider.lookup(key, context))
+            .map(|mut decision| {
+                decision.key = key.to_string();
+                decision.variant
+            })
+            .unwrap_or_else(|| default.to_string())
+    }
+
+    pub fn decision(&self, key: &str, default: bool) -> Decision {
+        self.decision_with_context(key, default, &EvalContext::default())
+    }
+
+    pub fn decision_with_context(
+        &self,
+        key: &str,
+        default: bool,
+        context: &EvalContext,
+    ) -> Decision {
+        let Some(provider) = self.provider.as_ref() else {
+            return default_decision(key, bool_to_variant(default), default);
+        };
+        let Some(mut decision) = provider.lookup(key, context) else {
+            return default_decision(key, bool_to_variant(default), default);
+        };
+        decision.key = key.to_string();
+        if decision.reason == Reason::Error {
+            tracing::warn!(key, source = %decision.source, "feature flag provider returned an error decision");
+        }
+        decision
+    }
+
+    /// Builds the production provider chain: `FF_*` overrides YAML rules.
+    pub fn from_env() -> anyhow::Result<Self> {
+        let env_provider: Arc<dyn Provider> = Arc::new(EnvProvider::new(ENV_OVERRIDE_PREFIX));
+        let path = std::env::var(ENV_FLAG_FILE)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let mut providers = vec![env_provider];
+        let mut loaded_count = 0;
+        if !path.is_empty() {
+            let rules = load_rules_from_yaml_file(&path)?;
+            loaded_count = rules.len();
+            let static_provider = Arc::new(StaticProvider::new());
+            static_provider.load_rules(rules);
+            providers.push(static_provider);
+        }
+        tracing::info!(
+            file = %path,
+            rules = loaded_count,
+            env_prefix = ENV_OVERRIDE_PREFIX,
+            "feature flags initialised"
+        );
+        Ok(Self::new(Some(Arc::new(ChainProvider::new(providers)))))
+    }
+
+    #[cfg(test)]
+    fn env_name(key: &str) -> String {
+        flag_key_to_env(key)
+    }
+
+    #[cfg(test)]
+    fn env_decision_for_test(key: &str, raw: &str) -> bool {
+        env_decision(key, raw, &EvalContext::default()).enabled
+    }
+}
+
+impl FlagSource for FeatureFlagService {
+    fn is_enabled(&self, key: &str, default: bool) -> bool {
+        FeatureFlagService::is_enabled(self, key, default)
+    }
+}
+
+/// Kept as a source-compatible name for the earlier boolean-only port.
+pub type ConfiguredFlags = FeatureFlagService;
+
+const ENV_FLAG_FILE: &str = "CORDY_FEATURE_FLAGS_FILE";
+const ENV_OVERRIDE_PREFIX: &str = "FF_";
+
+#[derive(Debug, Deserialize)]
+struct RuleConfig {
+    #[serde(default)]
+    default: Option<bool>,
+    #[serde(default)]
+    variant: String,
+    #[serde(default)]
+    allow: Vec<String>,
+    #[serde(default)]
+    allow_by: String,
+    #[serde(default)]
+    deny: Vec<String>,
+    #[serde(default)]
+    deny_by: String,
+    #[serde(default)]
+    percent: Option<PercentConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PercentConfig {
+    #[serde(default)]
+    percent: i32,
+    #[serde(default)]
+    by: String,
+}
+
+impl RuleConfig {
+    fn into_rule(self) -> Rule {
+        Rule {
+            default: self.default.unwrap_or(false),
+            variant: self.variant,
+            allow: self.allow,
+            allow_by: self.allow_by,
+            deny: self.deny,
+            deny_by: self.deny_by,
+            percent: self.percent.map(|percent| PercentRollout {
+                percent: percent.percent,
+                by: percent.by,
+            }),
+        }
+    }
+}
+
+pub fn load_rules_from_yaml_file(path: impl AsRef<Path>) -> anyhow::Result<HashMap<String, Rule>> {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path)
+        .map_err(|error| anyhow::anyhow!("featureflag: read {}: {error}", path.display()))?;
+    parse_rules_yaml(&bytes)
+}
+
+fn parse_rules_yaml(bytes: &[u8]) -> anyhow::Result<HashMap<String, Rule>> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Ok(HashMap::new());
+    }
+    let raw: HashMap<String, RuleConfig> = serde_yaml::from_slice(bytes)
+        .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
+    Ok(raw
+        .into_iter()
+        .map(|(key, config)| (key, config.into_rule()))
+        .collect())
+}
+
+fn evaluate_rule(key: &str, rule: &Rule, context: &EvalContext) -> Decision {
+    let deny_by = if rule.deny_by.is_empty() {
+        "user_id"
+    } else {
+        &rule.deny_by
+    };
+    if !rule.deny.is_empty()
+        && context
+            .lookup(deny_by)
+            .is_some_and(|value| rule.deny.iter().any(|candidate| candidate == value))
+    {
+        return decision_from_rule(key, rule, false, Reason::Static);
+    }
+
+    let allow_by = if rule.allow_by.is_empty() {
+        "user_id"
+    } else {
+        &rule.allow_by
+    };
+    if !rule.allow.is_empty()
+        && context
+            .lookup(allow_by)
+            .is_some_and(|value| rule.allow.iter().any(|candidate| candidate == value))
+    {
+        return decision_from_rule(key, rule, true, Reason::Static);
+    }
+
+    if let Some(percent) = &rule.percent {
+        let by = if percent.by.is_empty() {
+            "user_id"
+        } else {
+            &percent.by
+        };
+        let identifier = context.lookup(by).unwrap_or_default();
+        return decision_from_rule(
+            key,
+            rule,
+            in_percent(key, identifier, percent.percent),
+            Reason::Percent,
+        );
+    }
+
+    decision_from_rule(key, rule, rule.default, Reason::Static)
+}
+
+fn decision_from_rule(key: &str, rule: &Rule, enabled: bool, reason: Reason) -> Decision {
+    Decision {
+        key: key.to_string(),
         enabled,
         variant: if enabled && !rule.variant.is_empty() {
             rule.variant.clone()
         } else {
-            bool_variant(enabled)
+            bool_to_variant(enabled)
         },
+        reason,
+        source: "static".to_string(),
     }
 }
 
-fn in_percent(key: &str, identifier: &str, percent: i32) -> bool {
-    if percent <= 0 {
-        return false;
+fn env_decision(key: &str, raw: &str, context: &EvalContext) -> Decision {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Decision {
+            key: key.to_string(),
+            enabled: false,
+            variant: "off".to_string(),
+            reason: Reason::Static,
+            source: "env".to_string(),
+        };
     }
-    if percent >= 100 {
-        return true;
+
+    if let Some(percent_text) = trimmed.strip_suffix('%') {
+        let Ok(percent) = percent_text.trim().parse::<i32>() else {
+            return error_decision(key);
+        };
+        if !(0..=100).contains(&percent) {
+            return error_decision(key);
+        }
+        let identifier = context.lookup("user_id").unwrap_or_default();
+        let enabled = in_percent(key, identifier, percent);
+        return Decision {
+            key: key.to_string(),
+            enabled,
+            variant: bool_to_variant(enabled),
+            reason: Reason::Percent,
+            source: "env".to_string(),
+        };
     }
+
+    let lowered = trimmed.to_ascii_lowercase();
+    let (enabled, variant) = match lowered.as_str() {
+        "true" | "on" | "1" | "yes" => (true, "on".to_string()),
+        "false" | "off" | "0" | "no" => (false, "off".to_string()),
+        _ => (true, trimmed.to_string()),
+    };
+    Decision {
+        key: key.to_string(),
+        enabled,
+        variant,
+        reason: Reason::Static,
+        source: "env".to_string(),
+    }
+}
+
+fn error_decision(key: &str) -> Decision {
+    Decision {
+        key: key.to_string(),
+        enabled: false,
+        variant: "off".to_string(),
+        reason: Reason::Error,
+        source: "env".to_string(),
+    }
+}
+
+fn flag_key_to_env(key: &str) -> String {
+    let mut output = String::with_capacity(key.len());
+    let mut underscore = false;
+    for character in key.chars() {
+        if character.is_ascii_alphanumeric() {
+            output.push(character.to_ascii_uppercase());
+            underscore = false;
+        } else if !underscore {
+            output.push('_');
+            underscore = true;
+        }
+    }
+    output.trim_matches('_').to_string()
+}
+
+fn bucket_for(key: &str, identifier: &str) -> u32 {
     let mut hash = 2_166_136_261_u32;
     for byte in key
         .bytes()
@@ -256,60 +534,44 @@ fn in_percent(key: &str, identifier: &str, percent: i32) -> bool {
         hash ^= u32::from(byte);
         hash = hash.wrapping_mul(16_777_619);
     }
-    hash % 100 < percent as u32
+    hash % 100
 }
 
-impl FlagSource for ConfiguredFlags {
-    fn is_enabled(&self, key: &str, default: bool) -> bool {
-        if let Ok(value) = std::env::var(Self::env_name(key)) {
-            return Self::env_decision(key, &value);
-        }
-        self.rule_decision(key, default, &EvalContext::default())
-            .enabled
-    }
-
-    fn decision_with_context(
-        &self,
-        key: &str,
-        default: bool,
-        context: &EvalContext,
-    ) -> FlagDecision {
-        if let Ok(value) = std::env::var(Self::env_name(key)) {
-            return Self::env_decision_with_context(key, &value, context);
-        }
-        self.rule_decision(key, default, context)
+fn in_percent(key: &str, identifier: &str, percent: i32) -> bool {
+    match percent {
+        value if value <= 0 => false,
+        value if value >= 100 => true,
+        value => bucket_for(key, identifier) < value as u32,
     }
 }
 
-impl<T: FlagSource + ?Sized> FlagSource for &T {
-    fn is_enabled(&self, key: &str, default: bool) -> bool {
-        (**self).is_enabled(key, default)
-    }
+fn non_empty(value: &str) -> Option<&str> {
+    (!value.is_empty()).then_some(value)
+}
 
-    fn decision_with_context(
-        &self,
-        key: &str,
-        default: bool,
-        context: &EvalContext,
-    ) -> FlagDecision {
-        (**self).decision_with_context(key, default, context)
+fn bool_to_variant(enabled: bool) -> String {
+    if enabled {
+        "on".to_string()
+    } else {
+        "off".to_string()
+    }
+}
+
+fn default_decision(key: &str, variant: String, enabled: bool) -> Decision {
+    Decision {
+        key: key.to_string(),
+        enabled,
+        variant,
+        reason: Reason::Default,
+        source: "default".to_string(),
     }
 }
 
 pub const BILLING_WORKSPACE_SUBSCRIPTIONS: &str = "billing_workspace_subscriptions";
 pub const COMPOSIO_MCP_APPS: &str = "composio_mcp_apps";
 pub const PLUGINS_V1: &str = "plugins_v1";
-
-/// Gates CREATING a custom issue status (MUL-6243) — a rollout gate, not a
-/// behavior switch, deliberately one-way. Readers ship unconditionally (the
-/// built-in keys behave identically); gating creation means a custom value
-/// cannot come into existence until the whole fleet can read it. Once a
-/// workspace has custom statuses, turning this off does NOT make existing
-/// ones safe for an older binary.
 pub const CUSTOM_ISSUE_STATUSES: &str = "custom_issue_statuses";
 
-// No longer release flags — kept publishing as permanently enabled so older
-// desktop clients that still gate on these config decisions fail open:
 pub const AGENT_BUILDER_COMPAT: &str = "agents_agent_builder";
 pub const AGENT_SKILL_TOGGLES_COMPAT: &str = "agents_skill_toggles";
 pub const RESOURCE_LABELS_COMPAT: &str = "settings_resource_labels";
@@ -318,8 +580,6 @@ const FRONTEND_PUBLIC_FLAGS: &[&str] = &[
     BILLING_WORKSPACE_SUBSCRIPTIONS,
     COMPOSIO_MCP_APPS,
     PLUGINS_V1,
-    // The settings UI needs this to decide whether to offer status creation
-    // at all; without it the tab would show a "New status" button that 403s.
     CUSTOM_ISSUE_STATUSES,
 ];
 
@@ -335,19 +595,12 @@ pub fn plugins_v1_enabled(flags: &dyn FlagSource) -> bool {
     flags.is_enabled(PLUGINS_V1, false)
 }
 
-/// Reports whether creating custom issue statuses is allowed. Default false:
-/// a fleet mid-rollout must not be able to mint a status value its older pods
-/// cannot interpret.
 pub fn custom_issue_statuses_enabled(flags: &dyn FlagSource) -> bool {
     flags.is_enabled(CUSTOM_ISSUE_STATUSES, false)
 }
 
-/// Evaluates every flag the frontend may see, plus the three compat keys
-/// forced to true.
-pub fn evaluate_frontend_public_flags(
-    flags: &dyn FlagSource,
-) -> std::collections::HashMap<String, bool> {
-    let mut out = std::collections::HashMap::with_capacity(FRONTEND_PUBLIC_FLAGS.len() + 3);
+pub fn evaluate_frontend_public_flags(flags: &dyn FlagSource) -> HashMap<String, bool> {
+    let mut out = HashMap::with_capacity(FRONTEND_PUBLIC_FLAGS.len() + 3);
     for key in FRONTEND_PUBLIC_FLAGS {
         out.insert((*key).to_string(), flags.is_enabled(key, false));
     }
@@ -361,123 +614,178 @@ pub fn evaluate_frontend_public_flags(
 mod tests {
     use super::*;
 
-    struct FakeFlags {
-        enabled: Vec<&'static str>,
-    }
-
-    impl FakeFlags {
-        fn new(enabled: &'static [&'static str]) -> Self {
-            Self {
-                enabled: enabled.to_vec(),
-            }
+    fn context(user_id: &str) -> EvalContext {
+        EvalContext {
+            user_id: user_id.to_string(),
+            ..EvalContext::default()
         }
     }
 
-    impl FlagSource for FakeFlags {
-        fn is_enabled(&self, key: &str, _default: bool) -> bool {
-            self.enabled.contains(&key)
-        }
+    fn provider<P: Provider + 'static>(provider: P) -> Arc<dyn Provider> {
+        Arc::new(provider)
     }
 
     #[test]
-    fn disabled_by_default() {
-        let flags = FakeFlags::new(&[]);
-        assert!(!billing_workspace_subscriptions_enabled(&flags));
-        assert!(!composio_mcp_apps_enabled(&flags));
-        assert!(!plugins_v1_enabled(&flags));
-        // Rollout gate fails closed mid-fleet.
-        assert!(!custom_issue_statuses_enabled(&flags));
-    }
-
-    #[test]
-    fn enabled_keys_evaluate_true() {
-        let flags = FakeFlags::new(&[COMPOSIO_MCP_APPS, CUSTOM_ISSUE_STATUSES]);
-        assert!(composio_mcp_apps_enabled(&flags));
-        assert!(custom_issue_statuses_enabled(&flags));
-        assert!(!plugins_v1_enabled(&flags));
-    }
-
-    #[test]
-    fn frontend_map_includes_public_plus_forced_compat() {
-        let flags = FakeFlags::new(&[PLUGINS_V1]);
-        let map = evaluate_frontend_public_flags(&flags);
-        assert_eq!(map.len(), 7);
-        assert!(map[PLUGINS_V1]);
-        assert!(!map[BILLING_WORKSPACE_SUBSCRIPTIONS]);
-        assert!(!map[CUSTOM_ISSUE_STATUSES]);
-        // Compat keys are permanently true regardless of source state.
-        assert!(map[AGENT_BUILDER_COMPAT]);
-        assert!(map[AGENT_SKILL_TOGGLES_COMPAT]);
-        assert!(map[RESOURCE_LABELS_COMPAT]);
-    }
-
-    #[test]
-    fn configured_flags_project_boolean_env_values() {
-        assert!(ConfiguredFlags::env_decision("flag", "yes"));
-        assert!(ConfiguredFlags::env_decision("flag", "experiment-v2"));
-        assert!(!ConfiguredFlags::env_decision("flag", "off"));
-        assert!(!ConfiguredFlags::env_decision("flag", "invalid%"));
-        assert_eq!(
-            ConfiguredFlags::env_name("checkout.new-payment"),
-            "FF_CHECKOUT_NEW_PAYMENT"
-        );
-    }
-
-    #[test]
-    fn configured_flags_apply_targeting_and_variants() {
-        let mut rules = HashMap::new();
-        rules.insert(
-            "targeted".to_string(),
+    fn static_provider_enforces_deny_before_allow_and_percent() {
+        let static_provider = StaticProvider::new();
+        static_provider.set(
+            "experiment",
             Rule {
                 default: false,
                 variant: "experiment-v2".to_string(),
                 allow: vec!["internal".to_string()],
-                allow_by: "plan".to_string(),
-                deny: vec!["blocked".to_string()],
-                deny_by: "workspace_id".to_string(),
-                percent: None,
-            },
-        );
-        let flags = ConfiguredFlags { rules };
-
-        let enabled = EvalContext {
-            attributes: HashMap::from([(String::from("plan"), String::from("internal"))]),
-            ..EvalContext::default()
-        };
-        let decision = flags.decision_with_context("targeted", false, &enabled);
-        assert_eq!(decision.variant, "experiment-v2");
-        assert!(decision.enabled);
-
-        let denied = EvalContext {
-            workspace_id: "blocked".to_string(),
-            attributes: HashMap::from([(String::from("plan"), String::from("internal"))]),
-            ..EvalContext::default()
-        };
-        let decision = flags.decision_with_context("targeted", false, &denied);
-        assert_eq!(decision.variant, "off");
-        assert!(!decision.enabled);
-    }
-
-    #[test]
-    fn configured_flags_percent_rollout_uses_key_and_identifier() {
-        let mut rules = HashMap::new();
-        rules.insert(
-            "workspace-rollout".to_string(),
-            Rule {
+                deny: vec!["banned".to_string()],
                 percent: Some(PercentRollout {
                     percent: 100,
-                    by: "workspace_id".to_string(),
+                    by: String::new(),
                 }),
                 ..Rule::default()
             },
         );
-        let flags = ConfiguredFlags { rules };
-        let context = EvalContext {
-            workspace_id: "workspace-1".to_string(),
-            ..EvalContext::default()
-        };
-        let decision = flags.decision_with_context("workspace-rollout", false, &context);
-        assert!(decision.enabled);
+
+        let denied = static_provider
+            .lookup("experiment", &context("banned"))
+            .expect("known flag");
+        assert!(!denied.enabled);
+        assert_eq!(denied.variant, "off");
+
+        let allowed = static_provider
+            .lookup("experiment", &context("internal"))
+            .expect("known flag");
+        assert!(allowed.enabled);
+        assert_eq!(allowed.variant, "experiment-v2");
+    }
+
+    #[test]
+    fn percent_rollout_uses_stable_cross_language_fnv_bucket() {
+        assert_eq!(bucket_for("billing_new_invoice", "user-42"), 97);
+        assert_eq!(bucket_for("feature_a", "user-1"), 50);
+        assert_eq!(bucket_for("flag", "é"), 53);
+        assert_eq!(bucket_for("flag", "🦄"), 82);
+        assert!(in_percent("feature_a", "user-1", 51));
+        assert!(!in_percent("feature_a", "user-1", 50));
+    }
+
+    #[test]
+    fn env_provider_distinguishes_missing_empty_and_variant_values() {
+        let values = Arc::new(std::sync::Mutex::new(HashMap::from([
+            ("FF_EMPTY".to_string(), "".to_string()),
+            ("FF_VARIANT".to_string(), "experiment-v2".to_string()),
+        ])));
+        let lookup_values = Arc::clone(&values);
+        let env = EnvProvider::with_lookup("FF_", move |name| {
+            lookup_values
+                .lock()
+                .ok()
+                .and_then(|values| values.get(name).cloned())
+        });
+        let empty = env.lookup("empty", &EvalContext::default()).expect("set");
+        assert!(!empty.enabled);
+        assert_eq!(empty.variant, "off");
+        let variant = env.lookup("variant", &EvalContext::default()).expect("set");
+        assert!(variant.enabled);
+        assert_eq!(variant.variant, "experiment-v2");
+        assert!(env.lookup("missing", &EvalContext::default()).is_none());
+    }
+
+    #[test]
+    fn malformed_env_percent_is_an_error_decision() {
+        let env = EnvProvider::with_lookup("FF_", |name| {
+            (name == "FF_DEMO").then(|| "150%".to_string())
+        });
+        let decision = env
+            .lookup("demo", &EvalContext::default())
+            .expect("malformed values still match");
+        assert_eq!(decision.reason, Reason::Error);
+        assert!(!decision.enabled);
+    }
+
+    #[test]
+    fn provider_chain_gives_env_override_precedence() {
+        let static_provider = StaticProvider::new();
+        static_provider.set(
+            "kill_switch",
+            Rule {
+                default: true,
+                ..Rule::default()
+            },
+        );
+        let env = EnvProvider::with_lookup("FF_", |name| {
+            (name == "FF_KILL_SWITCH").then(|| "false".to_string())
+        });
+        let service = FeatureFlagService::new(Some(provider(ChainProvider::new([
+            provider(env),
+            provider(static_provider),
+        ]))));
+        assert!(!service.is_enabled("kill_switch", true));
+        assert_eq!(service.decision("kill_switch", true).source, "env");
+    }
+
+    #[test]
+    fn yaml_loader_preserves_full_rule_shape_and_empty_file() {
+        let yaml = br#"
+checkout_algo:
+  default: false
+  variant: experiment-v2
+  allow: [user-internal]
+  allow_by: user_id
+  deny: [banned-tenant]
+  deny_by: workspace_id
+  percent:
+    percent: 25
+    by: user_id
+"#;
+        let rules = parse_rules_yaml(yaml).expect("valid YAML");
+        let rule = rules.get("checkout_algo").expect("rule");
+        assert_eq!(rule.variant, "experiment-v2");
+        assert_eq!(rule.allow, ["user-internal"]);
+        assert_eq!(rule.deny_by, "workspace_id");
+        assert_eq!(rule.percent.as_ref().map(|value| value.percent), Some(25));
+        assert!(parse_rules_yaml(b" \n\t").expect("empty YAML").is_empty());
+    }
+
+    #[test]
+    fn service_returns_variant_and_default_decisions() {
+        let static_provider = StaticProvider::new();
+        static_provider.set(
+            "checkout_algo",
+            Rule {
+                default: true,
+                variant: "experiment-v2".to_string(),
+                ..Rule::default()
+            },
+        );
+        let service = FeatureFlagService::new(Some(provider(static_provider)));
+        assert_eq!(service.variant("checkout_algo", "control"), "experiment-v2");
+        assert_eq!(service.variant("unknown", "control"), "control");
+        let decision = service.decision("unknown", true);
+        assert_eq!(decision.reason, Reason::Default);
         assert_eq!(decision.variant, "on");
+    }
+
+    #[test]
+    fn frontend_public_flags_keep_compatibility_keys_enabled() {
+        let service = FeatureFlagService::default();
+        let flags = evaluate_frontend_public_flags(&service);
+        assert_eq!(flags.len(), 7);
+        assert!(flags[AGENT_BUILDER_COMPAT]);
+        assert!(flags[AGENT_SKILL_TOGGLES_COMPAT]);
+        assert!(flags[RESOURCE_LABELS_COMPAT]);
+    }
+
+    #[test]
+    fn env_key_normalization_matches_go() {
+        assert_eq!(
+            FeatureFlagService::env_name("checkout.newPayment"),
+            "CHECKOUT_NEWPAYMENT"
+        );
+        assert!(FeatureFlagService::env_decision_for_test("flag", "yes"));
+        assert!(FeatureFlagService::env_decision_for_test(
+            "flag",
+            "experiment-v2"
+        ));
+        assert!(!FeatureFlagService::env_decision_for_test(
+            "flag", "invalid%"
+        ));
     }
 }

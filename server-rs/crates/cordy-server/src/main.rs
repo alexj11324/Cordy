@@ -256,7 +256,7 @@ async fn build_production_router(
     attachment_frame_ancestors: Vec<String>,
     vcs: VcsWebhookConfig,
 ) -> anyhow::Result<ProductionApp> {
-    let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
+    let feature_flags = Arc::new(cordy_service::feature_flags::FeatureFlagService::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
     let attachment_download =
         cordy_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
