@@ -276,6 +276,23 @@ pub fn model_selection_supported(id: &str) -> bool {
         .is_none_or(|provider| provider.model_selection_supported)
 }
 
+fn qoder_config(runtime_id: &str, config: BackendConfig) -> QoderConfig {
+    QoderConfig {
+        command: config.command,
+        env: config.env,
+        default_command: if runtime_id == "qoderclicn" {
+            "qoderclicn".to_string()
+        } else {
+            "qodercli".to_string()
+        },
+        // Qoder and Qoder CN share the transport implementation but not the
+        // provider identity. Keep their discovery caches and provider-specific
+        // behavior scoped to the runtime that was requested.
+        provider: runtime_id.to_string(),
+        ..QoderConfig::default()
+    }
+}
+
 /// Constructs a real backend for the provider families already implemented in
 /// this crate. Registry metadata alone is not enough: unsupported families
 /// fail before a task can pretend to execute.
@@ -364,16 +381,9 @@ pub fn build_backend(
             command: config.command,
             env: config.env,
         }))),
-        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(QoderConfig {
-            command: config.command,
-            env: config.env,
-            default_command: if runtime_id == "qoderclicn" {
-                "qoderclicn".to_string()
-            } else {
-                "qodercli".to_string()
-            },
-            ..QoderConfig::default()
-        }))),
+        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(qoder_config(
+            runtime_id, config,
+        )))),
         "traecli" => Ok(Arc::new(TraecliBackend::new(TraecliConfig {
             command: config.command,
             env: config.env,
@@ -504,5 +514,30 @@ mod tests {
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
             ));
         }
+    }
+
+    #[test]
+    fn factory_preserves_qoder_runtime_identity() {
+        let qoder = qoder_config("qoder", backend_config());
+        assert_eq!(qoder.provider, "qoder");
+        assert_eq!(qoder.default_command, "qodercli");
+
+        let qoderclicn = qoder_config("qoderclicn", backend_config());
+        assert_eq!(qoderclicn.provider, "qoderclicn");
+        assert_eq!(qoderclicn.default_command, "qoderclicn");
+    }
+
+    #[test]
+    fn backend_config_debug_does_not_render_secret_values() {
+        let mut config = backend_config();
+        config.command.prefix = vec!["--api-key".to_string(), "launch-secret".to_string()];
+        config
+            .env
+            .insert("API_KEY".to_string(), "environment-secret".to_string());
+
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains("launch-secret"));
+        assert!(!rendered.contains("environment-secret"));
+        assert!(rendered.contains("environment_variable_count: 1"));
     }
 }
