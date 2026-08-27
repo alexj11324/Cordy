@@ -191,13 +191,13 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
 | AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
-| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | Rust server 入口已由 AUDIT-001 交付，可执行 | PR #524；详见 §12 | 主 agent；独立 V/R/F subagent |
+| AUDIT-003A | 进行中 | CPU/cmdline/symbol pprof 已接入 Rust；当前切片收口 heap/trace 的明确 Rust 运维替代 | 接入 production process RSS/virtual memory/thread/fd metrics，显式退休不适用于 Rust 的 Go heap/runtime-trace wire contract并给出运维路径 | Rust server/metrics 入口已由 AUDIT-001 交付，可执行 | PR #524/当前切片；详见 §12、§43 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control 与 auto-update production chain 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550，可执行 | PR #542..#550；§5.2、§6.2、§29..§37 | 主 agent；独立 V/R/F subagent |
-| AUDIT-006 | Ready PR | 三个 backfill 业务能力及 Rust Makefile/image 产物已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步验证真实 PostgreSQL 并发/超时/信号/恢复，finding 交 fixer；再核对剩余发布入口 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
+| AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
@@ -1308,3 +1308,28 @@ implementation commit `0adcc450`）已把上述 CLI、锁、取消、status 与 
   `git diff --check`，未把 compile、CLI、PostgreSQL 并发、signal 或 recovery 记为通过。
 - PR 堆叠在 Ready #554；已知 #551 migrate invocation、#544 compile baseline 与 #552..#554
   findings 均保持诚实记录，未在本切片顺手代修。
+- 发布入口核对确认 release backend image 由同一 Dockerfile 构建并复制三个 Rust backfill，
+  `verify` 也用 `cordy-migrate --bins` 构建它们；这些是服务端数据库运维程序，不属于终端用户
+  CLI/Homebrew archive。Ponytail 因此不新增第二套可下载 backfill bundle/checksum 契约。
+- reviewer 在 head `d6deeb1b` 返回两个 P1、三个 P2：真实 Docker/Kubernetes PID 1 shell 未向
+  migrate child 转发 SIGINT/SIGTERM；timeout 无合理运维上限；fresh DB status 返回裸
+  undefined-table；Helm 约 300 秒 startup budget 与默认 300 秒 lock wait 冲突；高风险锁/取消
+  逻辑缺直接并发/恢复证据。全部已交独立 fixer，主 agent 不代修。
+
+## 43. AUDIT-003A 执行缺口：Rust process profiling replacement contract
+
+当前切片选择 `AUDIT-003A` 的完整运维诊断契约，而不是伪造 Go heap/runtime trace 格式：
+
+- Go `net/http/pprof` 的 index 隐式提供 Go allocator heap profile，并提供 Go runtime scheduler
+  trace；Rust production listener 当前只有 CPU/cmdline/symbol，`trace` 返回 501，`heap` 404，
+  metrics registry 的注释也明确承认未接 process collector。
+- 已使用的 `prometheus` 依赖原生提供 Linux `ProcessCollector`，可在生产 `/metrics` 暴露 RSS、
+  virtual memory、CPU、threads 与 file descriptors。复用它比替换全局 allocator、引入 jemalloc
+  profiling 或生成格式看似兼容但没有 allocation stacks 的假 pprof 更小也更真实。
+- 本切片将 process collector 接到现有自定义 registry；loopback profiling router 对 Go-only
+  heap/trace endpoints 返回稳定 fail-closed retirement response，index 只列真实支持的 CPU
+  contract；self-host runbook 给出 memory trend、CPU profile 和 structured tracing 的明确
+  Rust 运维替代，不宣称 byte-level pprof heap/runtime-trace equivalence。
+- 退出证据：真实 Rust server `/metrics` 包含 process resident/virtual memory/thread/fd metrics，
+  public API 仍不暴露 profiling；heap/trace 不会返回 200 或伪 profile；CPU pprof 与日志关联路径
+  保持可用。编译、route/metrics/production listener 验证交独立 verifier，finding 交 fixer。
