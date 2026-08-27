@@ -325,7 +325,7 @@ async fn update(
             publish(&state, &context, "updated");
             Json(IssueStatusResponse::from(status)).into_response()
         }
-        Ok(None) => error_response(StatusCode::NOT_FOUND, "issue status not found"),
+        Ok(None) => error_response(StatusCode::CONFLICT, "status is no longer editable"),
         Err(error) if unique_violation(&error) => error_response(
             StatusCode::CONFLICT,
             "a status with this name already exists",
@@ -475,7 +475,9 @@ mod tests {
     struct TestFlags(bool);
 
     impl FlagSource for TestFlags {
-        fn is_enabled(&self, _key: &str, _default: bool) -> bool {
+        fn is_enabled(&self, key: &str, default: bool) -> bool {
+            assert_eq!(key, cordy_service::feature_flags::CUSTOM_ISSUE_STATUSES);
+            assert!(!default, "custom status rollout must fail closed");
             self.0
         }
     }
@@ -533,13 +535,14 @@ mod tests {
         body(response).await
     }
 
-    async fn test_pool() -> Option<sqlx::PgPool> {
-        let url = std::env::var("DATABASE_URL").ok()?;
+    async fn test_pool() -> sqlx::PgPool {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue-status production contract tests");
         PgPoolOptions::new()
             .max_connections(4)
             .connect(&url)
             .await
-            .ok()
+            .expect("connect issue-status production contract database")
     }
 
     async fn create_workspace(pool: &sqlx::PgPool) -> Uuid {
@@ -569,6 +572,33 @@ mod tests {
             .execute(pool)
             .await
             .expect("delete workspace");
+    }
+
+    async fn wait_for_shared_catalog_lock(pool: &sqlx::PgPool, workspace_id: Uuid) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let acquired: bool = sqlx::query_scalar(
+                    "SELECT pg_try_advisory_lock(hashtextextended($1::uuid::text || ':issue_status', 0))",
+                )
+                .bind(workspace_id)
+                .fetch_one(pool)
+                .await
+                .expect("probe catalog lock");
+                if !acquired {
+                    return;
+                }
+                sqlx::query(
+                    "SELECT pg_advisory_unlock(hashtextextended($1::uuid::text || ':issue_status', 0))",
+                )
+                .bind(workspace_id)
+                .execute(pool)
+                .await
+                .expect("release catalog lock probe");
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("production create did not acquire the shared catalog lock");
     }
 
     #[test]
@@ -626,10 +656,7 @@ mod tests {
 
     #[tokio::test]
     async fn production_catalog_contract_is_atomic_and_emits_only_committed_changes() {
-        let Some(pool) = test_pool().await else {
-            eprintln!("skipping: DATABASE_URL not set or unreachable");
-            return;
-        };
+        let pool = test_pool().await;
         let workspace_id = create_workspace(&pool).await;
         let state = state(pool.clone(), true);
         let events = Arc::new(Mutex::new(Vec::<cordy_events::Event>::new()));
@@ -728,13 +755,12 @@ mod tests {
         );
 
         // A partial order is rejected without writing positions or emitting.
-        let positions_before: Vec<(Uuid, f64)> = sqlx::query_as(
-            "SELECT id, position FROM issue_status WHERE id = ANY($1) ORDER BY id",
-        )
-        .bind(vec![first_id, second_id])
-        .fetch_all(&pool)
-        .await
-        .expect("positions before rejected reorder");
+        let positions_before: Vec<(Uuid, f64)> =
+            sqlx::query_as("SELECT id, position FROM issue_status WHERE id = ANY($1) ORDER BY id")
+                .bind(vec![first_id, second_id])
+                .fetch_all(&pool)
+                .await
+                .expect("positions before rejected reorder");
         let (status, rejected) = body(
             reorder(
                 State(state.clone()),
@@ -752,13 +778,12 @@ mod tests {
             rejected,
             json!({"error": "ids must name every active custom status in the category"})
         );
-        let positions_after: Vec<(Uuid, f64)> = sqlx::query_as(
-            "SELECT id, position FROM issue_status WHERE id = ANY($1) ORDER BY id",
-        )
-        .bind(vec![first_id, second_id])
-        .fetch_all(&pool)
-        .await
-        .expect("positions after rejected reorder");
+        let positions_after: Vec<(Uuid, f64)> =
+            sqlx::query_as("SELECT id, position FROM issue_status WHERE id = ANY($1) ORDER BY id")
+                .bind(vec![first_id, second_id])
+                .fetch_all(&pool)
+                .await
+                .expect("positions after rejected reorder");
         assert_eq!(positions_after, positions_before);
         assert_eq!(events.lock().expect("event log").len(), 2);
 
@@ -809,7 +834,10 @@ mod tests {
             .iter()
             .map(|event| {
                 assert_eq!(event.workspace_id, workspace_id.to_string());
-                event.payload["action"].as_str().expect("action").to_string()
+                event.payload["action"]
+                    .as_str()
+                    .expect("action")
+                    .to_string()
             })
             .collect();
         assert_eq!(actions, ["created", "created", "reordered", "archived"]);
@@ -844,10 +872,7 @@ mod tests {
 
     #[tokio::test]
     async fn issue_create_and_archive_race_has_only_the_two_go_outcomes() {
-        let Some(pool) = test_pool().await else {
-            eprintln!("skipping: DATABASE_URL not set or unreachable");
-            return;
-        };
+        let pool = test_pool().await;
         let workspace_id = create_workspace(&pool).await;
         issue_status::ensure(&pool, workspace_id)
             .await
@@ -913,10 +938,21 @@ mod tests {
         // The later archive retires only future use; the committed issue keeps
         // its custom key and therefore its category behavior.
         let issue_first = insert_status("issue_first", "Issue First").await;
-        let mut shared = pool.begin().await.expect("shared lock transaction");
-        status_q::lock_issue_status_catalog_shared(&mut *shared, workspace_id)
+        let mut row_blocker = pool.begin().await.expect("workspace row blocker");
+        sqlx::query("SELECT id FROM workspace WHERE id = $1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_one(&mut *row_blocker)
             .await
-            .expect("shared catalog lock");
+            .expect("lock workspace row");
+        let create_state = state.clone();
+        let create_params = issue_params("commits before archive", "issue_first");
+        let pending_create = tokio::spawn(async move {
+            create_state
+                .issues
+                .create(create_params, IssueCreateOpts::default())
+                .await
+        });
+        wait_for_shared_catalog_lock(&pool, workspace_id).await;
         let archive_state = state.clone();
         let archive_admin = admin.clone();
         let archive_id = issue_first.id;
@@ -929,36 +965,28 @@ mod tests {
             .await
         });
 
-        let created = state
-            .issues
-            .create(
-                issue_params("commits before archive", "issue_first"),
-                IssueCreateOpts::default(),
-            )
-            .await
-            .expect("issue create wins")
-            .issue
-            .expect("created issue");
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(100), &mut pending_archive)
                 .await
                 .is_err(),
-            "archive must wait for every shared catalog holder"
+            "archive must wait for the production create's shared catalog lock"
         );
-        shared.commit().await.expect("release shared lock");
+        row_blocker.commit().await.expect("release workspace row");
+        let created = pending_create
+            .await
+            .expect("create task")
+            .expect("issue create wins")
+            .issue
+            .expect("created issue");
         assert_eq!(
-            pending_archive
-                .await
-                .expect("archive task")
-                .status(),
+            pending_archive.await.expect("archive task").status(),
             StatusCode::OK
         );
-        let persisted_status: String =
-            sqlx::query_scalar("SELECT status FROM issue WHERE id = $1")
-                .bind(created.id)
-                .fetch_one(&pool)
-                .await
-                .expect("persisted issue");
+        let persisted_status: String = sqlx::query_scalar("SELECT status FROM issue WHERE id = $1")
+            .bind(created.id)
+            .fetch_one(&pool)
+            .await
+            .expect("persisted issue");
         assert_eq!(persisted_status, "issue_first");
         assert_eq!(
             issue_status::effective(&pool, workspace_id, &persisted_status).await,
@@ -1077,12 +1105,11 @@ mod tests {
                 .status(),
             StatusCode::OK
         );
-        let persisted_status: String =
-            sqlx::query_scalar("SELECT status FROM issue WHERE id = $1")
-                .bind(created.id)
-                .fetch_one(&pool)
-                .await
-                .expect("updated issue status");
+        let persisted_status: String = sqlx::query_scalar("SELECT status FROM issue WHERE id = $1")
+            .bind(created.id)
+            .fetch_one(&pool)
+            .await
+            .expect("updated issue status");
         assert_eq!(persisted_status, "update_before_archive");
 
         let batch_target = insert_status("batch_target", "Batch Target").await;

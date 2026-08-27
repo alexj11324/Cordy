@@ -189,11 +189,16 @@ impl IssueService {
             lock_issue_status_catalog_shared(&mut *tx, p.workspace_id)
                 .await
                 .map_err(|e| ic_err("lock issue status catalog", e))?;
-            if issue_status::resolve(&mut *tx, p.workspace_id, &p.status)
-                .await
-                .is_err()
-            {
-                return Err(IssueCreateError::StatusUnavailable);
+            match issue_status::resolve(&mut *tx, p.workspace_id, &p.status).await {
+                Ok(_) => {}
+                Err(issue_status::ResolveError::Unknown(_)) => {
+                    return Err(IssueCreateError::StatusUnavailable);
+                }
+                Err(issue_status::ResolveError::Database(error)) => {
+                    return Err(IssueCreateError::Internal(format!(
+                        "resolve issue status: {error}"
+                    )));
+                }
             }
         }
 

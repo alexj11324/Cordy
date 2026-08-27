@@ -1894,6 +1894,25 @@ update 无返回行当前 404 而 Go concurrent guard 是 409，且新测试未�
 handler，绕过 production router/middleware/extractor，TestFlags 也未断言真实 key/default。reviewer 确认唯一
 production mount 复用同一 HandlerState/pool/bus/service/query、无 Stub/Noop/Fake/alternate path，单文件无新依赖方向
 成立，但 635 行测试证据强度不足，不能支持完整契约或 Go 下线声明。全部 finding 已交独立 fixer，PR 保持 Ready。
+
+independent fixer 传播 #560..#564 已验证的 Cargo/resolver 修复后，按最小根因收口本切片：
+
+- `issue_status::resolve` 现在以 typed error 区分 unknown/archived 与 storage failure；真实 issue create、single update、
+  transactional recheck 与 batch preflight 只把前者映射为既有 4xx，后者记录并返回 500，不再把 DB 故障伪装成
+  invalid status。新增无 DB server 依赖的 directed test 直接证明 storage error 保留。
+- DB contract fixture 缺少或无法连接 `DATABASE_URL` 时现在明确 panic；不得再以成功 self-return 冒充真实 DB
+  contract PASS。TestFlags 直接断言 production key `custom_issue_statuses` 与 fail-closed default。update statement 因
+  concurrent archive/guard 返回空行时按 Go wire contract 返回 409 `status is no longer editable`。
+- create-wins race 不再由 test 自己持有 shared advisory lock：真实 `IssueService::create` 先在 production path 获取
+  shared lock，再被 workspace row lock 确定性暂停；独立连接以 `pg_try_advisory_lock` 观察该真实 acquisition 后才
+  启动 archive。batch 仍只有 production route happy-path、reorder 仍未补全 reviewer 列出的 malformed/foreign/
+  built-in/archived/cross-category wire matrix，因此台账不再声称这些未执行项已具备直接证据，Go 下线门未满足。
+- fixer verification：historical rustfmt exit 1、resolver exit 101/0 tests 与 DB case 未执行记录保留；传播后
+  `cargo check --locked --offline -p cordy-handler -p cordy-service --tests` PASS；exact write-policy 1/1 PASS
+  （385 filtered）、exact storage-error 1/1 PASS（168 filtered）、color exact 1/1 PASS（385 filtered）；fixed-stable
+  rustfmt 与 `git diff --check` PASS。当前环境无 `DATABASE_URL`，exact production catalog test 确实运行 1 项并
+  FAIL（0 passed，385 filtered，明确 `DATABASE_URL is required`），所以新的 real-DB race/reorder/catalog 行为没有
+  被本 fixer 环境验证，不能记为通过或支持 Go 退休。
 - independent fixer 将 #560..#563 的 lock/resolver 修复依次传播到本分支，并最小复用现有
   `client::is_transient_error`：仅 transport/5xx/408/429 累计 streak；永久 4xx 重置，root cancellation
   立即退出；新增 anyhow error-chain predicate 只在 404 body 含 `runtime not found` 时发 `RuntimeGone`。
