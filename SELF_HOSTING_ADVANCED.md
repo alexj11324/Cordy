@@ -647,3 +647,31 @@ selected. Before rolling back across a schema change, confirm the older backend
 supports the current schema or restore the matching database backup.
 
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
+
+### Linux systemd lifecycle
+
+On a Linux host with systemd, opt in while installing the self-host stack:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | \
+  bash -s -- --with-server --systemd
+```
+
+The installer generates `~/.config/systemd/user/cordy-selfhost.service` with
+the exact installation directory and Docker executable, validates the same
+Compose file before startup, enables user lingering, and enables the service.
+It does not introduce a second configuration or deployment path: the unit runs
+the same pinned Rust backend/web images and `.env` used by the installer.
+
+```bash
+systemctl --user status cordy-selfhost.service
+systemctl --user restart cordy-selfhost.service
+journalctl --user -u cordy-selfhost.service
+```
+
+Re-run the installer to upgrade or roll back; it updates `.env` and recreates
+the services before refreshing the same unit. `install.sh --stop` disables the
+unit and then runs Compose down, so the stack stays stopped after reboot. The
+explicit `--systemd` option fails on macOS, Windows, or Linux sessions without
+a working systemd user manager instead of claiming persistence it cannot
+provide.

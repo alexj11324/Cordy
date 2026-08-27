@@ -531,6 +531,65 @@ test_with_server_pins_selected_release_images() {
   fi
 }
 
+test_with_server_systemd_owns_compose_lifecycle() {
+  local tmp unit
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  : >"$tmp/systemctl.log"
+  : >"$tmp/loginctl.log"
+
+  cat >"$tmp/stub-bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CORDY_TEST_SYSTEMCTL_LOG"
+exit 0
+STUB
+  cat >"$tmp/stub-bin/loginctl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CORDY_TEST_LOGINCTL_LOG"
+exit 0
+STUB
+  chmod +x "$tmp/stub-bin/systemctl" "$tmp/stub-bin/loginctl"
+
+  if ! env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    USER="cordy-test" \
+    CORDY_INSTALL_DIR="$tmp/server" \
+    CORDY_SELFHOST_REF="v0.3.2" \
+    CORDY_TEST_CURL_LOG="$tmp/curl.log" \
+    CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    CORDY_TEST_LOGINCTL_LOG="$tmp/loginctl.log" \
+    bash "$ROOT_DIR/scripts/install.sh" --with-server --systemd \
+    >"$tmp/systemd-install.out" 2>"$tmp/systemd-install.err"; then
+    cat "$tmp/systemd-install.out" >&2 || true
+    cat "$tmp/systemd-install.err" >&2 || true
+    return 1
+  fi
+
+  unit="$tmp/.config/systemd/user/cordy-selfhost.service"
+  [ -f "$unit" ] || { echo "expected generated systemd user unit" >&2; return 1; }
+  grep -Fq "WorkingDirectory=\"$tmp/server\"" "$unit" || return 1
+  grep -Fq "ExecStart=\"$tmp/stub-bin/docker\" compose -f docker-compose.selfhost.yml up -d --remove-orphans" "$unit" || return 1
+  grep -Fq -- '--user enable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1
+  grep -Fq 'enable-linger cordy-test' "$tmp/loginctl.log" || return 1
+
+  if ! env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    CORDY_INSTALL_DIR="$tmp/server" \
+    CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    bash "$ROOT_DIR/scripts/install.sh" --stop \
+    >"$tmp/systemd-stop.out" 2>"$tmp/systemd-stop.err"; then
+    cat "$tmp/systemd-stop.out" >&2 || true
+    cat "$tmp/systemd-stop.err" >&2 || true
+    return 1
+  fi
+  grep -Fq -- '--user disable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1
+}
+
 test_brew_install_failure_falls_back_to_release_binary
 test_brew_tap_failure_falls_back_to_release_binary
 test_remote_ssh_install_prints_token_login_hint
@@ -538,4 +597,5 @@ test_local_install_does_not_print_token_login_hint
 test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
 test_with_server_pins_selected_release_images
+test_with_server_systemd_owns_compose_lifecycle
 echo "install.sh tests passed"

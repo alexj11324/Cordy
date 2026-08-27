@@ -23,6 +23,7 @@ BREW_PACKAGE="cordy-ai/tap/cordy"
 # the summary so the health check and the printed URLs cannot diverge.
 SELFHOST_BACKEND_PORT=""
 SELFHOST_FRONTEND_PORT=""
+INSTALL_SYSTEMD=false
 
 # Colors (disabled when not a terminal)
 if [ -t 1 ] || [ -t 2 ]; then
@@ -260,6 +261,60 @@ pin_selfhost_image_tag() {
   ok "Pinned backend and web images to $image_tag"
 }
 
+systemd_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//%/%%}"
+  printf '"%s"' "$value"
+}
+
+install_selfhost_systemd() {
+  [ "$OS" = "linux" ] || fail "--systemd is supported only on Linux."
+  command_exists systemctl || fail "--systemd requires systemctl."
+  command_exists loginctl || fail "--systemd requires loginctl to enable user lingering."
+  systemctl --user show-environment >/dev/null 2>&1 ||
+    fail "No systemd user manager is available. Enable systemd for this login and retry."
+
+  local account docker_path unit_dir unit_path install_dir_q docker_q
+  account="${USER:-$(id -un)}"
+  docker_path="$(command -v docker)"
+  unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  unit_path="$unit_dir/cordy-selfhost.service"
+  install_dir_q="$(systemd_quote "$INSTALL_DIR")"
+  docker_q="$(systemd_quote "$docker_path")"
+
+  loginctl enable-linger "$account" ||
+    fail "Could not enable systemd lingering for '$account'. Run 'sudo loginctl enable-linger $account' and retry."
+
+  mkdir -p "$unit_dir"
+  {
+    printf '%s\n' '[Unit]'
+    printf '%s\n' 'Description=Cordy self-hosted Rust services'
+    printf '%s\n' 'Wants=network-online.target'
+    printf '%s\n' 'After=network-online.target'
+    printf '\n%s\n' '[Service]'
+    printf '%s\n' 'Type=oneshot'
+    printf '%s\n' 'RemainAfterExit=yes'
+    printf 'WorkingDirectory=%s\n' "$install_dir_q"
+    printf 'ExecStartPre=%s compose -f docker-compose.selfhost.yml config --quiet\n' "$docker_q"
+    printf 'ExecStart=%s compose -f docker-compose.selfhost.yml up -d --remove-orphans\n' "$docker_q"
+    printf 'ExecStop=%s compose -f docker-compose.selfhost.yml down\n' "$docker_q"
+    printf '%s\n' 'Restart=on-failure'
+    printf '%s\n' 'RestartSec=10s'
+    printf '%s\n' 'TimeoutStartSec=5min'
+    printf '%s\n' 'TimeoutStopSec=2min'
+    printf '\n%s\n' '[Install]'
+    printf '%s\n' 'WantedBy=default.target'
+  } >"$unit_path"
+  chmod 0644 "$unit_path"
+
+  systemctl --user daemon-reload || fail "Could not reload the systemd user manager."
+  systemctl --user enable --now cordy-selfhost.service ||
+    fail "Could not enable and start cordy-selfhost.service."
+  ok "Enabled cordy-selfhost.service for boot and login-independent operation"
+}
+
 pull_official_selfhost_images() {
   if docker compose -f docker-compose.selfhost.yml pull; then
     return
@@ -481,6 +536,9 @@ run_with_server() {
   check_docker
   setup_server
   install_cli
+  if [ "$INSTALL_SYSTEMD" = true ]; then
+    install_selfhost_systemd
+  fi
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
@@ -509,6 +567,15 @@ run_with_server() {
 run_stop() {
   printf "\n"
   info "Stopping Cordy services..."
+
+  local unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cordy-selfhost.service"
+  if [ -f "$unit_path" ] && command_exists systemctl; then
+    if systemctl --user disable --now cordy-selfhost.service; then
+      ok "Systemd service stopped and disabled"
+    else
+      warn "Could not stop cordy-selfhost.service; falling back to Docker Compose"
+    fi
+  fi
 
   if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
@@ -539,12 +606,14 @@ main() {
     case "$1" in
       --with-server) mode="with-server" ;;
       --local)       mode="with-server" ;;  # backwards compat alias
+      --systemd)     INSTALL_SYSTEMD=true ;;
       --stop)        mode="stop" ;;
       --help|-h)
-        echo "Usage: install.sh [--with-server | --stop]"
+        echo "Usage: install.sh [--with-server [--systemd] | --stop]"
         echo ""
         echo "  (default)       Install / upgrade the Cordy CLI"
         echo "  --with-server   Install CLI + provision a self-host server (Docker)"
+        echo "  --systemd       With --with-server, enable the Linux user service"
         echo "  --stop          Stop a self-hosted installation"
         echo ""
         echo "Environment variables:"
@@ -563,6 +632,10 @@ main() {
     esac
     shift
   done
+
+  if [ "$INSTALL_SYSTEMD" = true ] && [ "$mode" != "with-server" ]; then
+    fail "--systemd requires --with-server."
+  fi
 
   case "$mode" in
     default)     run_default ;;

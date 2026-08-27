@@ -1174,6 +1174,13 @@ implementation commit `593cbc0d`）已把 Unix/Windows installer、Git ref check
 - 异步状态：独立 verification/reviewer 待派发，fixer 尚无本 PR finding。主 agent 只运行并
   通过 `git diff --check`；未把 Bash/PowerShell、Docker、registry 或 rollback 行为记为通过。
   PR 明确堆叠在 Ready PR #551。
+- reviewer 在 head `6b7eceed` 返回三个 P1、两个 P2：pull 失败会在失败前污染 checkout 与
+  `.env`；无显式 ref 会覆盖既有 pinned/custom tag；ref 在 Git mutation 后才按宽泛 Docker
+  syntax 校验而非严格 release/main；新增证据未覆盖 PowerShell、实际双镜像选择和失败恢复；
+  PowerShell 重写 `.env` 未固定 PS5-compatible UTF-8。finding 已交独立 fixer。reviewer 对
+  Compose 单一 selector/ambient precedence、pull-before-up、DB rollback 警告、Go 声明与
+  Ponytail 方向无其他 finding；其 Bash 尝试因 sandbox tmp noexec 失败，pwsh 不可用，均不能
+  记录为测试通过。
 
 ## 40. AUDIT-001 执行缺口：self-host Rust Compose systemd lifecycle
 
