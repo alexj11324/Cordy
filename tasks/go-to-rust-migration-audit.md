@@ -1499,6 +1499,12 @@ provider-specific runner。
   no-run 均在编译前被继承的 #556/#557 Cargo.lock 缺 `procfs`/`procfs-core`/chrono 变更阻断（exit 101）；
   两个 exact 新测试同样未到 discovery，实际 0+0，不能记录通过。verifier 静态确认唯一 production
   chain 已接入，worktree/Cargo.lock 前后 clean/unchanged；runtime smoke 未执行。
-- reviewer 尚在异步审查；fixer 已排队接收 complete/fail exact-match chat-pointer 缺口、上述格式/
-  lock/test 阻断及后续 review finding。主 agent 未运行或伪报 compile/tests/rustfmt/production smoke；
-  PR 继续继承 #558 findings 及更早 #556/#557 lock/format 基线记录并保持 Ready。
+- reviewer（exact code HEAD `f36e24c2`）报告：P1 complete/fail missing 只清 task row、未 exact-match
+  清已 pin chat pointer；P1 server cancellation 会让 drain 合成空-session result，fresh retry cancel 因而
+  不产生 missing flag，且 cancel-ack 仍需承接 #558 的 `retired_session_id`；P2 现有 drain/helper/JSON
+  测试尚未直接覆盖 production retry、terminal callback 与 DB transaction。Ponytail review 认为六个
+  production 文件均属必要 wire/transaction 链，问题是缺失行为/证据而非过度抽象。
+- fixer 已排队合并上述 review、known gap、格式及 inherited lock/test 阻断；要求在既有锁序事务中
+  exact-match 清 current/retired pointer，并补 complete/fail/cancel、newer-pointer 与 fresh-retry cancel
+  present/missing 证据。主 agent 未运行或伪报 compile/tests/rustfmt/production smoke；PR 继续继承 #558
+  findings 及更早 #556/#557 lock/format 基线记录并保持 Ready。
