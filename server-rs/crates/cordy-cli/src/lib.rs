@@ -225,6 +225,11 @@ enum DaemonCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(
+        hide = true,
+        about = "Probe locally configured runtimes for the Desktop app"
+    )]
+    ProbeRuntimes,
     #[command(about = "Show daemon logs")]
     Logs {
         #[arg(short = 'f', long, help = "Follow log output")]
@@ -3077,6 +3082,9 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Status { output },
         }) => run_daemon_status(cli, environment, *output).await,
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::ProbeRuntimes,
+        }) => run_daemon_probe_runtimes(environment),
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Logs { follow, lines },
         }) => run_daemon_logs(cli, environment, *lines, *follow),
@@ -5941,6 +5949,38 @@ fn health_port_for_profile(profile: &str) -> u32 {
         DEFAULT_DAEMON_HEALTH_PORT
     } else {
         DEFAULT_DAEMON_HEALTH_PORT + 1 + profile.bytes().map(u32::from).sum::<u32>() % 1_000
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct DaemonRuntimeProbe {
+    probe_result: &'static str,
+    runtime_count: usize,
+    provider_summary: BTreeMap<String, usize>,
+}
+
+// ponytail: reuse the daemon's existing local probe and keep this command as a
+// thin JSON adapter; a second config/probe implementation would only drift.
+fn run_daemon_probe_runtimes(environment: &Environment) -> Result<RunOutput> {
+    require_human_local_command(environment, "daemon probe-runtimes")?;
+    let probe = daemon_runtime_probe_from_agents(cordy_daemon::agents_probe::probe_agent_clis());
+    Ok(RunOutput {
+        stdout: format!("{}\n", serde_json::to_string(&probe)?),
+        stderr: String::new(),
+    })
+}
+
+fn daemon_runtime_probe_from_agents(
+    agents: BTreeMap<String, cordy_daemon::types::AgentEntry>,
+) -> DaemonRuntimeProbe {
+    let mut provider_summary = BTreeMap::new();
+    for provider in agents.keys() {
+        *provider_summary.entry(provider.clone()).or_insert(0) += 1;
+    }
+    DaemonRuntimeProbe {
+        probe_result: "success",
+        runtime_count: agents.len(),
+        provider_summary,
     }
 }
 
@@ -17068,6 +17108,41 @@ mod tests {
         assert!(disk_usage_needs_parent_status(false, OutputFormat::Json));
         assert!(disk_usage_needs_parent_status(true, OutputFormat::Json));
         assert!(!disk_usage_needs_parent_status(true, OutputFormat::Table));
+    }
+
+    #[test]
+    fn daemon_probe_runtimes_parser_and_summary_match_go_contract() {
+        let cli =
+            Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "probe-runtimes"])
+                .expect("daemon probe-runtimes CLI");
+        assert!(matches!(
+            cli.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::ProbeRuntimes
+            })
+        ));
+
+        let probe = daemon_runtime_probe_from_agents(BTreeMap::from([
+            ("claude".into(), cordy_daemon::types::AgentEntry::default()),
+            ("codex".into(), cordy_daemon::types::AgentEntry::default()),
+        ]));
+        assert_eq!(probe.probe_result, "success");
+        assert_eq!(probe.runtime_count, 2);
+        assert_eq!(probe.provider_summary.get("codex"), Some(&1));
+    }
+
+    #[test]
+    fn daemon_probe_runtimes_fails_closed_in_task_context() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-test");
+
+        let error = run_daemon_probe_runtimes(&environment)
+            .expect_err("probe-runtimes must be unavailable to daemon tasks");
+        assert!(error
+            .to_string()
+            .contains("not available inside a daemon-managed task"));
     }
 
     #[test]

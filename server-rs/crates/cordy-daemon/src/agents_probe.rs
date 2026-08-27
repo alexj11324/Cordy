@@ -222,7 +222,7 @@ fn agent_entry(path: &str, cmd: &str, model_env: &str) -> AgentEntry {
 /// `probeAgentCLIs`: discovers which built-in agent CLIs are installed on this
 /// machine and returns one AgentEntry per provider that resolved. Pure
 /// discovery — no version detection and no minimum-version gate.
-pub(crate) fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
+pub fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     let mut agents: BTreeMap<String, AgentEntry> = BTreeMap::new();
 
     fn add(agents: &mut BTreeMap<String, AgentEntry>, key: &str, outcome: ProbeOutcome) {
