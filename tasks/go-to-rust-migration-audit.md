@@ -1439,13 +1439,17 @@ runner、session registry 或测试专用 production seam。
   resume pointer，并让下一次 claim 明确注入 continuity-loss 提示。
 - Rust 已有 `execenv::codex_home::codex_resume_rollout_present`、`TaskResult.session_rollout_missing`、
   Client complete/fail payload、handler/service/DB 清理链与 claim response 字段，但 production
-  `drain_session` 当前对所有 provider 立即 pin，`ProviderAdapter` 也从不检查 rollout 或设置该字段；
-  这条已存在的端到端 wire 因唯一 producer 缺失而不可达。
+  `drain_session` 当前对所有 provider 立即 pin，`ProviderAdapter` 也从不检查 rollout 或设置该字段。
+  继续追踪 every-terminal 路径后还确认 server-side cancellation 改走 `cancel-ack`，该 payload/handler
+  当前同样不携带 missing 信号；若不在 cancelled CAS 下清 task 和 exact-match chat pointer，已 pin 的
+  不可恢复 session 仍会越过 terminal gate。两处必须作为同一 continuity 契约收口。
 
 本切片必须复用现有 rollout finder、task-owned cancellation、transcript drain、terminal result 和
 Client/service wire：Codex mid-flight pin 等待 rollout 且不阻塞 transcript；waiter 不越过 task owner；
-terminal gate 有界等待并在最后时刻复查；非 Codex、空 session、正常 rollout 不改变现有行为。不得
-新增 session store、watcher service、filesystem index、后台 supervisor 或 provider-specific runner。
+terminal gate 有界等待并在最后时刻复查；complete/fail/cancel-ack 均保留 missing 信号并在同一
+cancelled transaction 中 exact-match 清 chat pointer；非 Codex、空 session、正常 rollout 不改变现有
+行为。不得新增 session store、watcher service、filesystem index、后台 supervisor 或
+provider-specific runner。
 
 - 退出证据：真实 production adapter 对 delayed rollout 会在出现后 pin；missing rollout 在运行结束
   前从不 pin，terminal session id 被 withheld 且所有 success/failure callback 均携带 missing flag；
