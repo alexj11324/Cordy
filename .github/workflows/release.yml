@@ -15,6 +15,22 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: cordy
+          POSTGRES_USER: cordy
+          POSTGRES_PASSWORD: cordy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
@@ -45,34 +61,45 @@ jobs:
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          # Deliberately independent from the minimum patch in server/go.mod:
-          # releases follow the newest 1.26 patch available to setup-go.
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
+          workspaces: server-rs -> target
 
-      - name: Record Go toolchain
-        run: go version
+      - name: Apply database migrations with the Rust runner
+        working-directory: server-rs
+        run: cargo run --locked -p cordy-migrate -- up
 
-      - name: Verify Go test wrapper
-        run: bash scripts/test-go.test.sh
+      - name: Run Rust workspace tests
+        working-directory: server-rs
+        run: cargo test --workspace --all-targets --locked
 
-      - name: Run tests
-        run: bash scripts/test-go.sh --race
+      - name: Build production Rust binaries
+        working-directory: server-rs
+        env:
+          CORDY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
+          CORDY_BUILD_COMMIT: ${{ github.sha }}
+          CORDY_BUILD_DATE: ${{ github.run_started_at }}
+        run: cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
 
-      - name: Scan Go vulnerabilities
+      - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
         # override to this exact tag. See .github/RELEASING.md.
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != github.ref_name }}
-        working-directory: server
-        run: go tool govulncheck ./...
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: server-rs
 
       - name: Record emergency vulnerability-scan bypass
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
-        run: echo "::warning::govulncheck was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
+        run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
   rust-cli-build:
     name: Build Rust CLI (${{ matrix.os }}-${{ matrix.arch }})
