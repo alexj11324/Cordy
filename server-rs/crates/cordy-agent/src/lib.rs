@@ -10,6 +10,7 @@ pub mod contract;
 pub mod dsh;
 pub mod mcp;
 pub mod model;
+pub mod pi;
 pub mod process;
 pub mod qwen;
 pub mod registry;
@@ -23,5 +24,6 @@ pub use contract::{
 };
 pub use dsh::{build_dsh_args, DshBackend, DshConfig};
 pub use model::{Catalog, CatalogCache, Model, ModelServiceTier, ModelThinking, ThinkingLevel};
+pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qwen::{QwenBackend, QwenConfig};
