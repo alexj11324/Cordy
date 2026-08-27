@@ -1929,4 +1929,21 @@ allocator、mock transaction 或 test-only production seam；用可证伪的真�
 - Go 是否可下线：本契约和异步 finding 收口后，Go issueguard/issueposition 回归不再是 Rust production 的依赖；
   AUDIT-002 其余能力与 AUDIT-001..010 仍未完成。
 - owner：主 agent 只迁移完整契约与 Ready PR；独立 verifier/reviewer/fixer 异步。branch
-  `codex/cord-230-issue-create-admission-order-rust`，依赖 Ready #565 branch at `5c81b6d5`；编码尚未开始。
+  `codex/cord-230-issue-create-admission-order-rust`，依赖 Ready #565 branch at `5c81b6d5`。
+
+实现 commit `44d533ab` 只修改两个既有 production module 内的 `cfg(test)`，没有新增文件、依赖、repository、
+allocator 或生产 seam：
+
+- `IssueService::create` 真实 transaction checks 覆盖连续列顶 position、显式负 minimum、status 列隔离、Unicode
+  whitespace/case duplicate、typed existing row、allow_duplicate、done effective-category 放行、custom active category
+  阻塞，以及 workspace/project/parent identity 隔离；
+- 可证伪并发 case 先锁住 create 必经的 workspace counter row，让第一个 production create 在取得 duplicate
+  advisory lock 后停住、第二个同 identity create 排队；释放后断言一个成功、一个 typed duplicate 且数据库只有
+  一行，删除 production advisory lock 会让两个 lookup 都越过并最终插入；
+- recent-autopilot guard 用真实 agent/autopilot/issue/run rows 验证 origin/project/title/window/active-run 查询、空 title/
+  无 ID/非正 window no-op 和过期窗口；真实 issue POST router 验证 201、409 `active_duplicate_issue` wire payload、
+  existing issue identity、allow_duplicate 与返回 position。
+
+所有 DB contract 都要求 `DATABASE_URL` 并在缺失/坏连接时直接失败，不成功 self-return；fixture 使用唯一 workspace
+并在正常路径显式清理。主 agent 只执行 `git diff --check`（PASS），没有运行 cargo/rustfmt/test。独立 verifier/
+reviewer 尚未派发，fixer 尚无 finding；Ready PR 待 push/create，不能据此声称已验证或删除 Go。
