@@ -21,13 +21,21 @@
 - worktree、分支、提交、推送和 Ready PR；
 - 机械性编译、测试、契约检查和结果记录。
 
-Volta subagent 异步负责：
+review agent（当前为 Linnaeus）异步负责：
 
 - review；
-- 缺陷、安全问题、测试失败和回归修复；
+- 只输出 findings，不修改或提交代码。
+
+独立的 fix agent 负责：
+
+- 根据 review findings 修复缺陷、安全问题和回归；
+- 修复机械验证发现的编译或测试失败；
 - 必要时直接提交修复。
 
-review/fix 派发后不等待、不轮询，也不把其结果作为下一块迁移或 Ready PR 的前置条件。主 agent 不在主线自行处理 review 意见或修复任务。
+review 与 fix 必须由两个不同的 subagent 承担。受平台单 subagent 并发限制时，
+先让 review agent 完成并关闭，再创建新的 fix agent；主 agent 继续迁移，不等待、
+不轮询，也不把任何异步结果作为下一块迁移或 Ready PR 的前置条件。主 agent
+不在主线自行处理 review 意见或修复任务。
 
 ## 2. Ponytail 约束
 
@@ -176,19 +184,19 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- |
-| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust | 收口 install/systemd、兼容产物、启动与回滚演练 | PR #523/#527/当前切片；详见 §11、§15、§16 | 主 agent；Volta 异步 review/fix |
-| AUDIT-002 | 待办 | 仅有 route parity 和局部包测试 | 建立并执行 API/WS/事务/错误/CLI/daemon 的成功与失败 smoke 矩阵 | §5、§6.2 | 主 agent；缺陷交 Volta |
-| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；Volta 异步 review/fix |
-| AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；Volta 异步 review/fix |
-| AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；Volta 异步 review/fix |
-| AUDIT-003D | 待办 | handler 与 daemon 存在并发任务配置 | 对齐默认值、范围、调用边界并保留单一契约证据 | §6.2 | 主 agent；缺陷交 Volta |
-| AUDIT-004 | 待办 | provider Rust wiring 已存在 | 完成各 integration 的真实配置、正/负路径、重试、media、shutdown 矩阵 | §5.3、§6.2 | 主 agent；Volta 异步 review/fix |
-| AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；Volta 异步 review/fix |
-| AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；Volta 异步 review/fix |
-| AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 Volta |
-| AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | §6.2 | 主 agent；缺陷交 Volta |
-| AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | PR #523/#524/#525；§6.2 | 主 agent；Volta 异步 review/fix |
-| AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | §6.2、§10 | 主 agent；Volta 异步 review/fix |
+| AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链和 Desktop 内嵌 CLI 已切到 Rust | 收口 install/systemd、兼容产物、启动与回滚演练 | PR #523/#527/当前切片；详见 §11、§15、§16 | 主 agent；review/fix subagent |
+| AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | §5、§6.2、§18 | 主 agent；Linnaeus review；独立 fix agent |
+| AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；review/fix subagent |
+| AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
+| AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
+| AUDIT-003D | 待办 | handler 与 daemon 存在并发任务配置 | 对齐默认值、范围、调用边界并保留单一契约证据 | §6.2 | 主 agent；缺陷交 review/fix subagent |
+| AUDIT-004 | 待办 | provider Rust wiring 已存在 | 完成各 integration 的真实配置、正/负路径、重试、media、shutdown 矩阵 | §5.3、§6.2 | 主 agent；review/fix subagent |
+| AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
+| AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
+| AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | §6.2 | 主 agent；测试缺陷交 review/fix subagent |
+| AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | §6.2 | 主 agent；缺陷交 review/fix subagent |
+| AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | PR #523/#524/#525；§6.2 | 主 agent；review/fix subagent |
+| AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | §6.2、§10 | 主 agent；review/fix subagent |
 
 执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
 立即提交、推送并创建 Ready PR，同时回写本表。review/fix 和长时间验证可以
@@ -213,7 +221,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 范围：route parity 之外的认证、权限、事务、错误码/JSON、WS、realtime、background worker、CLI 退出码、daemon control/health。
 - 交付：按业务能力建立可执行矩阵；每项标记 Go contract、Rust entry、生产是否切换、Go 是否可删。
 - 退出证据：关键 API/WS/CLI/daemon smoke 在 Rust 默认产物上通过，并有失败路径和回滚记录。
-- owner：主 agent 负责迁移与机械验证；缺陷交给 Volta。
+- owner：主 agent 负责迁移与机械验证；review 与 fix 交给两个独立 subagent。
 
 ##### AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
 
@@ -311,7 +319,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 1. 为完整 Go 能力或生产契约建立独立 branch/worktree；
 2. 主 agent 只迁移和接线；
-3. 立即把 review/fix 派给 Volta，继续下一块，不等待；
+3. 立即把 review/fix 派给当前 subagent，继续下一块，不等待；
 4. 机械验证完成后立即提交、推送并创建 Ready PR；
 5. PR body 必须写明 Go 能力、Rust 入口、生产是否切换、Go 是否可下线、验证结果和异步 subagent 状态；
 6. 在本清单中更新证据，不用旧文档 checkbox 代替当前状态。
@@ -477,3 +485,28 @@ Go CLI 的生产边界，并沿用 `server-rs` 现有 `cordy-cli` 入口：
   检查已通过；未执行真实发布、Homebrew API、Kubernetes/systemd 或跨平台
   installer smoke。此前 `bash scripts/install.test.sh` 的环境权限失败和
   PowerShell/Helm 工具缺失仍按前述记录保留。
+
+## 18. AUDIT-002 执行更新：CLI 与 daemon control smoke 矩阵
+
+当前切片 `codex/cord-195-cli-daemon-smoke` 先收口不依赖外部服务即可验证的
+CLI/daemon 生产契约；它不是把 807 个 Go 测试逐个改写，也不宣称整个
+AUDIT-002 已完成。
+
+| 契约 | Go 来源 | Rust 入口 | 当前可执行证据 | 生产/Go 状态 |
+| --- | --- | --- | --- | --- |
+| CLI 顶层命令树 | `server/cmd/cordy/main.go` 及各 `cmd_*.go` | `cordy-cli::Cli` / `Command` | `top_level_and_daemon_commands_match_go_contract` 对账完整命令集合 | Rust CLI 已接线；默认发布已切 Rust；Go 仍保留作兼容验证 |
+| CLI 成功输出与失败退出码 | `server/internal/cli/errors.go`、`server/cmd/cordy/main.go` | `cordy-cli/src/main.rs`、`error.rs` | `http_exit_codes_match_go_contract` 与既有 validation message 测试；stdout/stderr 真实 artifact smoke 待执行 | Rust 入口已接线；需在可运行 artifact 上执行 smoke；Go 不可删 |
+| daemon profile health/control | `server/internal/daemon` 与 Go CLI daemon commands | `cordy-daemon::control_client`、`production_stack`、`cordy-cli` daemon commands | Rust daemon control parser/health tests；真实进程 smoke 待环境可用后执行 | Rust 内部已接线；默认发布已切 Rust；Go 不可删 |
+
+本切片的退出条件是：命令树无缺口、错误码/输出契约测试可执行、daemon
+health/control 的成功和失败路径有记录，并把剩余 API/WS/事务/worker 项目继续
+留在本 ID 的下一动作中。验证失败只记录为基线或环境问题并交独立 fix agent，
+不由主 agent 在本切片自行修复。
+
+- 验证状态：Go root 与 Rust 测试清单的静态集合对账、默认 Makefile Rust 入口、
+  Cargo metadata、触及 Rust 文件的 `rustfmt` 与 `git diff --check` 通过；定向
+  `cargo test --locked -p cordy-cli --lib match_go_contract` 在运行本切片测试前，
+  被已登记的 `cordy-daemon` `hermes.rs`/`openclaw.rs` 7 个编译错误阻断，不能
+  记录为测试通过。Linnaeus 只执行 review（submission
+  `01a043b2-de54-7850-9828-03d77f3304aa`）；其结束并关闭后，由新的 fix agent
+  接手这 7 个错误，主迁移不等待。

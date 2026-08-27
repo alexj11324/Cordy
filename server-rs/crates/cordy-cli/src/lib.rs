@@ -16806,7 +16806,7 @@ mod tests {
     use axum::http::HeaderMap;
     use axum::routing::{delete as delete_route, get, patch, post, put};
     use axum::{Json, Router};
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
     use std::fs;
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
@@ -16868,6 +16868,60 @@ mod tests {
             self.sleeps.push(duration);
             Box::pin(std::future::ready(()))
         }
+    }
+
+    #[test]
+    fn top_level_and_daemon_commands_match_go_contract() {
+        let command = Cli::command();
+        let mut top_level = command
+            .get_subcommands()
+            .map(|subcommand| subcommand.get_name())
+            .collect::<Vec<_>>();
+        top_level.sort_unstable();
+        let expected = [
+            "agent",
+            "attachment",
+            "auth",
+            "autopilot",
+            "chat",
+            "config",
+            "daemon",
+            "issue",
+            "label",
+            "login",
+            "project",
+            "property",
+            "repo",
+            "runtime",
+            "setup",
+            "skill",
+            "squad",
+            "update",
+            "user",
+            "version",
+            "workspace",
+        ];
+        assert_eq!(top_level, expected);
+
+        let mut daemon = command
+            .find_subcommand("daemon")
+            .expect("daemon command")
+            .get_subcommands()
+            .map(|subcommand| subcommand.get_name())
+            .collect::<Vec<_>>();
+        daemon.sort_unstable();
+        assert_eq!(
+            daemon,
+            [
+                "disk-usage",
+                "logs",
+                "probe-runtimes",
+                "restart",
+                "start",
+                "status",
+                "stop",
+            ]
+        );
     }
 
     #[test]
