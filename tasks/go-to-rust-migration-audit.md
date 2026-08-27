@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568与heartbeat worker #569 Ready | 异步收口 #565..#569 V/R/F，同时继续下一项完整 background-worker 契约 | 复用唯一 Rust production assemblies；#569 堆叠在 Ready #568 | PR #565..#569；§5、§6.2、§18、§52..§56 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568与heartbeat #569 Ready；runtime sweeper stale-runtime 契约实施中 | 异步收口 #565..#569 V/R/F，同时收口 stale runtime liveness/offline 广播 | 复用唯一 Rust `RuntimeTaskSweeper` 与 production liveness/Bus；当前切片基于 #569 | PR #565..#569；§5、§6.2、§18、§52..§57 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2090,7 +2090,7 @@ module 内直接执行真实 `agent_runtime` PostgreSQL rows、`PassthroughHeart
 - Go 是否可下线：本契约及异步 finding 收口后，Go heartbeat batching worker 回归可退出；runtime sweeper、其他 workers与
   AUDIT-001..010 总退出门仍未完成。
 - owner：主 agent 迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
-  `codex/cord-233-heartbeat-worker-contract-rust`，基于 #568 branch at `3d448d16`。
+`codex/cord-233-heartbeat-worker-contract-rust`，基于 #568 branch at `3d448d16`。
 
 实现 commit `35fbba80` 只在既有 `heartbeat_scheduler.rs` 的 `cfg(test)` 内增加 212 行真实 DB contract，没有修改
 production scheduler、SQL、依赖、文件边界或新增 runtime seam：
@@ -2112,3 +2112,45 @@ production scheduler、SQL、依赖、文件边界或新增 runtime seam：
 
 非 Draft Ready PR #569 已创建，base 是 #568 branch，Ready SHA `be2bc21d`；独立 verifier/reviewer 已异步派发，
 fixer 尚无本 PR finding。PR可在异步结果期间保持Ready，主线不等待。
+
+## 57. AUDIT-002 执行缺口：runtime sweeper stale-liveness/offline contract
+
+当前切片继续台账既定的 background-worker smoke，选择 runtime sweeper 中一个完整、可独立验收的生产行为面：
+
+- Go `sweepStaleRuntimes` 每轮从 `agent_runtime` 找出超过 150 秒未 heartbeat 的 online candidates；Redis liveness 可用且
+  报告存活时必须保留 online，Redis 不可用/超时则 fail-open 到 DB stale 判定；确认 offline 后清理 liveness key，并按唯一
+  workspace 发布 `daemon.register` 的 `stale_sweep` 事件。
+- Rust `RuntimeTaskSweeper::sweep_stale_runtimes` 已接入唯一 `run_once`/`run_full_once` production worker，并由
+  `cordy-server` 在真实 pool、Redis-or-DB liveness 与 shared Bus 上启动；但当前只有常量/clock unit test，没有真实
+  `agent_runtime` rows、liveness filtering、DB race/offline transition、forget 和 broadcast evidence，不能据此退休 Go。
+
+本切片必须复用现有 `RuntimeTaskSweeper`、`LivenessStore`、runtime SQL、`Bus` 和 `cordy-server` wiring，不新增 sweeper、
+queue、liveness service、mock production router 或 alternate event path。required `DATABASE_URL` 缺失/坏连接必须失败，
+fixture 使用唯一 workspace/runtime rows并在 failure path 可清理。contract 至少覆盖 stale dead→offline、stale alive→保留、
+liveness unavailable→DB fallback、online/race update 不误广播、liveness forget以及同 workspace 单事件；删除 stale cutoff、
+liveness gate、DB status guard、forget或Bus publish任一环节应使测试失败。
+
+- 默认生产路径：Rust `RuntimeTaskSweeper::run_full_once` 是唯一 server sweeper，使用同一 production liveness store、TaskService
+  与 Bus；有效配置不选择 Stub/Noop/Fake。测试中的 liveness double 只用于明确的 unavailable/alive 判定分支。
+- Go 是否可下线：本 stale-runtime contract 和异步 finding 收口后，Go stale runtime sweep 回归可退出；offline task failure、
+  reconnect retry、stale/queued task cleanup、delegated recovery、chat finalize、runtime GC 与 AUDIT-001..010 总门仍未完成。
+- owner：主 agent 迁移完整契约和 Ready PR；独立 verifier/reviewer/fixer 异步。branch
+  `codex/cord-234-runtime-sweeper-contract-rust`，基于 #569 branch at `b24d14bb`。
+
+实现 commit `07fce06c` 只在既有 `runtime_sweeper.rs` 的 `cfg(test)` 内增加 256 行真实 DB contract，没有修改
+production sweeper、runtime SQL、依赖、Bus 或 liveness seam：
+
+- 用唯一 workspace 和多条真实 `agent_runtime` rows 证明 150 秒 stale cutoff：dead stale row 变 offline，alive stale row
+  由 liveness gate 保持 online，fresh/已 offline row不受影响；确认 offline 的 row 触发一次该 workspace 的
+  `EVENT_DAEMON_REGISTER`/`{"action":"stale_sweep"}`，并调用 liveness `forget`。
+- liveness unavailable 分支直接验证回退到 DB stale 判定；另由 liveness double 在 candidate 查询后把 row 改 offline，证明
+  online→offline TOCTOU 时 conditional UPDATE 返回空、不广播且不虚报 sweep count。
+- 测试直接调用 production `RuntimeTaskSweeper::sweep_stale_runtimes`（该函数由唯一 `run_once`/`run_full_once` worker 调用），
+  不新建 mock router、alternate event path 或 production fake；测试 liveness double 仅表达真实 Redis alive/unavailable/race
+  三个外部状态。
+- required `DATABASE_URL` 缺失/坏 PostgreSQL 直接失败；正常路径显式删除唯一 workspace，Drop 仅 best-effort cleanup，不把
+  panic cleanup扩大声明为failure-safe。
+
+主 agent 只执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试或 DB 命令；production server 的唯一
+`RuntimeTaskSweeper::start`/shared liveness/Bus wiring已静态定位。exact compile、matched/executed counts、真实 DB/liveness
+行为、server/Windows build与失败清理由独立 verifier执行。当前不能声称 stale-runtime contract 已验证或删除 Go。
