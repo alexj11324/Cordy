@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::Query;
-use axum::http::{header, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::{header, HeaderName, HeaderValue, StatusCode};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Router;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use pprof::protos::Message;
@@ -22,7 +22,7 @@ const PROFILE_FREQUENCY_HZ: i32 = 100;
 
 #[derive(Debug, Deserialize)]
 struct ProfileQuery {
-    seconds: Option<u64>,
+    seconds: Option<String>,
 }
 
 pub fn router() -> Router {
@@ -39,26 +39,46 @@ pub async fn serve() -> anyhow::Result<()> {
 }
 
 async fn index() -> impl IntoResponse {
-    "<html><head><title>pprof</title></head><body>\
+    let mut response = Html(
+        "<html><head><title>pprof</title></head><body>\
         <a href=\"/debug/pprof/profile\">profile</a><br>\
         <a href=\"/debug/pprof/cmdline\">cmdline</a>\
-    </body></html>"
+    </body></html>",
+    )
+    .into_response();
+    set_nosniff(&mut response);
+    response
 }
 
 async fn cmdline() -> Response {
-    let body = std::env::args_os()
-        .map(|argument| argument.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("\0");
-    (
-        [(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"))],
-        body,
+    let mut body = Vec::new();
+    for (index, argument) in std::env::args_os().enumerate() {
+        if index > 0 {
+            body.push(0);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            body.extend_from_slice(argument.as_os_str().as_bytes());
+        }
+        #[cfg(not(unix))]
+        body.extend_from_slice(argument.to_string_lossy().as_bytes());
+    }
+
+    let mut response = (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        )],
+        Body::from(body),
     )
-        .into_response()
+        .into_response();
+    set_nosniff(&mut response);
+    response
 }
 
 async fn profile(Query(query): Query<ProfileQuery>) -> Response {
-    let seconds = profile_seconds(query.seconds);
+    let seconds = profile_seconds(query.seconds.as_deref());
     let lock = profile_lock();
     // ponytail: one global profile at a time; pprof itself is process-global,
     // so concurrent captures cannot provide independent samples.
@@ -73,8 +93,8 @@ async fn profile(Query(query): Query<ProfileQuery>) -> Response {
         Ok(guard) => guard,
         Err(error) => {
             return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                &format!("start CPU profiler: {error}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Could not enable CPU profiling: {error}"),
             )
         }
     };
@@ -124,21 +144,44 @@ async fn profile(Query(query): Query<ProfileQuery>) -> Response {
         }
     };
 
-    (
+    let mut response = (
         [
             (
                 header::CONTENT_TYPE,
                 HeaderValue::from_static("application/octet-stream"),
             ),
-            (header::CONTENT_ENCODING, HeaderValue::from_static("gzip")),
+            (
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_static("attachment; filename=\"profile\""),
+            ),
         ],
         Body::from(body),
     )
-        .into_response()
+        .into_response();
+    set_nosniff(&mut response);
+    response
 }
 
 fn error_response(status: StatusCode, message: &str) -> Response {
-    (status, Json(serde_json::json!({"error": message}))).into_response()
+    let mut response = (status, format!("{message}\n")).into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    set_nosniff(&mut response);
+    response.headers_mut().insert(
+        HeaderName::from_static("x-go-pprof"),
+        HeaderValue::from_static("1"),
+    );
+    response.headers_mut().remove(header::CONTENT_DISPOSITION);
+    response
+}
+
+fn set_nosniff(response: &mut Response) {
+    response.headers_mut().insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
 }
 
 fn profile_lock() -> &'static tokio::sync::Mutex<()> {
@@ -153,13 +196,21 @@ mod tests {
     #[test]
     fn profile_seconds_defaults_for_missing_and_zero() {
         assert_eq!(profile_seconds(None), DEFAULT_PROFILE_SECONDS);
-        assert_eq!(profile_seconds(Some(0)), DEFAULT_PROFILE_SECONDS);
-        assert_eq!(profile_seconds(Some(7)), 7);
+        assert_eq!(profile_seconds(Some("")), DEFAULT_PROFILE_SECONDS);
+        assert_eq!(profile_seconds(Some("0")), DEFAULT_PROFILE_SECONDS);
+        assert_eq!(profile_seconds(Some("-1")), DEFAULT_PROFILE_SECONDS);
+        assert_eq!(
+            profile_seconds(Some("not-a-number")),
+            DEFAULT_PROFILE_SECONDS
+        );
+        assert_eq!(profile_seconds(Some("7")), 7);
     }
 }
 
-fn profile_seconds(seconds: Option<u64>) -> u64 {
+fn profile_seconds(seconds: Option<&str>) -> u64 {
     seconds
+        .and_then(|seconds| seconds.parse::<i64>().ok())
         .filter(|seconds| *seconds > 0)
+        .map(|seconds| seconds as u64)
         .unwrap_or(DEFAULT_PROFILE_SECONDS)
 }
