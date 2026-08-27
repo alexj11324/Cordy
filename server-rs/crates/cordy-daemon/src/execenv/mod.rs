@@ -23,6 +23,7 @@ pub mod git;
 pub mod hermes;
 pub mod isolation;
 pub mod local_worktree;
+pub mod openclaw;
 pub mod reasonix;
 pub mod reclaimable;
 pub mod runtime_config_kind;

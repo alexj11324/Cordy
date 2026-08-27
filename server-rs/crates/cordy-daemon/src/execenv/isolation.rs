@@ -22,9 +22,8 @@
 //!
 //! Deviations:
 //! - Go's DisallowUnknownFields is approximated with serde deny_unknown_fields.
-//! - The OpenclawGateway token-masking dance exists in Go because the public
-//!   type's MarshalJSON redacts Token. Our stand-in type serializes plainly
-//!   already, so the private view types collapse into the request structs.
+//! - The preparation wire restores the raw OpenclawGateway token only for the
+//!   trusted local stdin pipe; public serialization and diagnostics mask it.
 //! - slog logger dropped (tracing).
 //! - WaitDelay semantics: cancellation terminates the platform process-tree
 //!   boundary before awaiting the child and pipe readers.
@@ -68,13 +67,48 @@ pub(crate) struct PreparationRequest {
     pub reuse: Option<ReuseWireParams>,
 }
 
-// The helper-protocol views carry the gateway pin plainly over this trusted
-// local stdin pipe (Go's preparationOpenclawGatewayPin rationale).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// The helper-protocol view carries the gateway pin plainly over this trusted
+// local stdin pipe (Go's preparationOpenclawGatewayPin rationale). Its custom
+// serializer starts with PrepareParams' masked public serialization and then
+// overwrites only the private wire field with the raw value.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PreparationWireParams {
     #[serde(flatten)]
     pub params: PrepareParams,
+}
+
+impl Serialize for PreparationWireParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut value = serde_json::to_value(&self.params).map_err(serde::ser::Error::custom)?;
+        if let serde_json::Value::Object(fields) = &mut value {
+            fields.insert(
+                "OpenclawGateway".into(),
+                raw_gateway_value(&self.params.openclaw_gateway),
+            );
+        }
+        value.serialize(serializer)
+    }
+}
+
+fn raw_gateway_value(pin: &super::execenv::OpenclawGatewayPin) -> serde_json::Value {
+    let mut fields = serde_json::Map::new();
+    if !pin.host.is_empty() {
+        fields.insert("host".into(), serde_json::Value::String(pin.host.clone()));
+    }
+    if pin.port != 0 {
+        fields.insert("port".into(), serde_json::Value::Number(pin.port.into()));
+    }
+    if !pin.token.is_empty() {
+        fields.insert("token".into(), serde_json::Value::String(pin.token.clone()));
+    }
+    if pin.tls {
+        fields.insert("tls".into(), serde_json::Value::Bool(true));
+    }
+    serde_json::Value::Object(fields)
 }
 
 // S9-integration: ReuseParams is defined by the Reuse port (execenv.go's
