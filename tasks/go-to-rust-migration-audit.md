@@ -2334,3 +2334,43 @@ active agent/online/fresh runtime 排除、bounded candidate 与 blocked gauge�
 已创建，base 是 `codex/cord-236-stale-task-cleanup-contract-rust` 的 `b335afa4`，当前 Ready tip `85c3e2fa`（实现
 `cb70bb98`）；独立 verifier/reviewer 已异步派发，fixer 待 finding 返回后异步交付。exact compile、matched/executed
 counts、required DB、server/Windows 和 timeout/rollback 证据返回前，本契约不能声称已验证或删除 Go，PR 保持 Ready。
+
+## 61. AUDIT-002 已登记执行缺口：delegated failure recovery durable outbox contract
+
+本项在开始编码前登记，选择 runtime sweeper 中 delegated failure recovery 的完整业务能力：终态 delegated task 生成平台
+恢复信号、持久化 comment outbox、coordinator dispatch/merge、崩溃后 bounded replay、用户取消/手动 rerun 语义、三次未
+送达后的 exhaustion，以及禁止 recovery task 自递归唤醒。它与 runtime GC、queued cleanup 的状态机和事务边界不同，不能
+用一个“comment 存在”断言代替整条恢复契约：
+
+- Go `TaskService.RecoverPendingDelegatedFailures` 与 `runtime_sweeper.go` 负责每 tick bounded replay；`ensure...` 只为
+  eligible final delegated failure 创建一个 system `progress_update` comment，comment 创建成功但 dispatch 失败时必须能
+  由 sweeper 再次发现并补发，不能重复 comment/task。
+- coordinator 有 queued/pending、dispatched、running 三种覆盖语义：pending task 合并最新 signal 并保留旧 coalesced
+  comment；dispatched task 只登记 planned-but-undelivered，completion reconcile 再创建 successor；running task 必须创建
+  独立 successor。retry-pending、autopilot、backlog/done/cancelled source issue、archived/unbound/self source agent、普通
+  failure 和 recovery task 本身都必须 fail closed，不得形成循环。
+- recovery task 的用户取消与 manual rerun 必须区分：显式用户取消会把 comment 记入 `delivered_comment_ids` 并结束 obligation；
+  manual rerun 保持信号可 replay。最多三次 undelivered coordinator attempts 后，原 recovery tasks 不再新增，创建一次可见
+  exhaustion system comment 和 action-required inbox，并保持后续 sweep 幂等。
+- Rust production implementation 已存在于 `cordy-service::task_recovery` 的
+  `ensure_delegated_failure_recovery_comment`、`dispatch_delegated_failure_recovery`、
+  `recover_pending_delegated_failures`，并由 `TaskService::handle_failed_tasks` 与唯一
+  `RuntimeTaskSweeper::run_once` 接线；但当前没有真实 PostgreSQL contract 覆盖上述 outbox、lineage、dispatch race、
+  exhaustion、side effects 和生产 sweeper wiring，因此 Go recovery service 仍不能退休。
+
+本切片必须复用既有 `TaskService`、`cordy-db` production SQL、shared `Bus`、issue/agent/task/comment/inbox models 和
+`RuntimeTaskSweeper::run_once`，不新增 recovery service、fake DB、alternate dispatcher 或测试框架。required `DATABASE_URL`
+缺失/坏连接必须失败而不能 self-skip；fixture 使用唯一 workspace/user/member/同 runtime 的 coordinator+worker agent、
+source/worker issue 与 task lineage，正常和 failure path 确定性清理。contract 至少覆盖：final failure comment/content redaction
+和 issue/event side effect、committed-comment/no-task replay、duplicate/idempotent replay、pending merge、dispatched planned
+follow-up、running successor、retry/autopilot/source guard、user-cancel acknowledgement、manual rerun replay、三次 exhaustion
+comment/inbox 与 no-fourth-task、bounded `max_per_tick`/error aggregation、recovery self-recursion guard，以及真实 sweeper
+`run_once` stage；删除任一 lineage/status/attempt predicate、transaction lock、coverage check、event/inbox assertion 或
+production wiring 应使测试失败。
+
+- 默认生产路径：Rust `RuntimeTaskSweeper::run_full_once` 的 `run_once` stage 调用真实 `TaskService` recovery；有效配置不选择
+  Stub/Noop/Fake。
+- Go 是否可下线：本 delegated failure recovery durable-outbox contract 与异步 finding 收口后，Go recovery service/sweeper
+  逻辑可退休；chat finalize、其他 background workers 与 AUDIT-001..010 总退出门仍未完成。
+- owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
+  `codex/cord-237-runtime-gc-contract-rust`，独立 worktree，编号待创建后回写。
