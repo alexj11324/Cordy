@@ -1595,10 +1595,8 @@ mod tests {
         );
         assert!(start_media_reconciler(&state, None, None).is_none());
 
-        let root = std::env::temp_dir().join(format!(
-            "cordy-channel-media-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("cordy-channel-media-{}", uuid::Uuid::new_v4()));
         let _temp = TempStorageDir(root.clone());
         let storage = Arc::new(ChannelStorage {
             inner: Arc::new(

@@ -761,5 +761,10 @@ commit `0e6d5ec1`）直接执行 `ChannelRuntime::start` 使用的 production me
 - Go 是否可下线：否。主线 provider boot 与 media lifecycle 切片已交付，但独立
   verification 尚需实际执行 supervisor/lease 矩阵，并记录真实外部凭证 smoke 或
   明确环境限制和回滚策略；AUDIT-001..010 最终门仍未完成。
-- 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查记录
-  为通过；fixer 尚未派发。PR 堆叠在 GHSnapshot PR #540。
+- Verification/fixer：reviewed head 的 fixed stable rustfmt 因新测试 temp-dir
+  expression reflow 失败；server 精确测试均被堆叠 base 的 Telegram `base64`
+  E0432/E0433 阻断（0 tests）。fixer 原样传播已验证的 SecretBox fixture
+  `62e7f3d5` 并应用 stable rustfmt 后，media lifecycle 精确测试通过（1 passed、
+  0 failed、27 filtered），Telegram production configure 精确测试通过（1 passed、
+  0 failed、27 filtered），`git diff --check` 通过。channel-engine supervisor 矩阵
+  10/10 通过；Redis filter 匹配 0 tests，源码中没有该名称测试，因此不伪报为覆盖。
