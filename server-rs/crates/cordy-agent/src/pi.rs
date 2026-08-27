@@ -133,10 +133,17 @@ impl PiBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> io::Result<Vec<Model>> {
-        let rpc_timeout = timeout.min(PI_RPC_DISCOVERY_TIMEOUT);
-        let rpc = self
-            .discover_pi_models_rpc(cancellation.clone(), rpc_timeout)
-            .await;
+        let started = Instant::now();
+        let rpc_timeout = remaining_timeout(timeout, started).min(PI_RPC_DISCOVERY_TIMEOUT);
+        let rpc = if rpc_timeout.is_zero() {
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Pi RPC model discovery timed out",
+            ))
+        } else {
+            self.discover_pi_models_rpc(cancellation.clone(), rpc_timeout)
+                .await
+        };
         if cancellation.is_cancelled() {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
@@ -146,7 +153,19 @@ impl PiBackend {
         if let Some(models) = rpc.ok().filter(|models| !models.is_empty()) {
             return Ok(models);
         }
-        let table_timeout = timeout.min(PI_TABLE_DISCOVERY_TIMEOUT);
+        if cancellation.is_cancelled() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Pi model discovery cancelled",
+            ));
+        }
+        let table_timeout = remaining_timeout(timeout, started).min(PI_TABLE_DISCOVERY_TIMEOUT);
+        if table_timeout.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Pi model table discovery timed out",
+            ));
+        }
         self.discover_pi_models_table(cancellation, table_timeout)
             .await
     }
@@ -156,7 +175,7 @@ impl PiBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> io::Result<Vec<Model>> {
-        let mut command = self.discovery_command(&PI_DISCOVERY_RPC_PREFIX);
+        let mut command = self.discovery_command(&PI_DISCOVERY_RPC_PREFIX, true);
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -250,7 +269,7 @@ impl PiBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> io::Result<Vec<Model>> {
-        let mut command = self.discovery_command(&["--list-models"]);
+        let mut command = self.discovery_command(&["--list-models"], true);
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -308,7 +327,7 @@ impl PiBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> io::Result<Vec<Model>> {
-        let mut command = self.discovery_command(&["models", "--json"]);
+        let mut command = self.discovery_command(&["models", "--json"], false);
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -340,8 +359,7 @@ impl PiBackend {
         Ok(parse_omp_models(&output))
     }
 
-    fn discovery_command(&self, invocation: &[&str]) -> Command {
-        let mut command = Command::new(self.command_path());
+    fn discovery_command(&self, invocation: &[&str], pi_launcher: bool) -> Command {
         let invocation = invocation
             .iter()
             .map(|value| (*value).to_string())
@@ -349,6 +367,16 @@ impl PiBackend {
         let prefix = filter_launch_prefix(&self.config.command.prefix, &pi_blocked_args());
         let mut args = prefix.args;
         args.extend(invocation);
+        let mode = if !pi_launcher {
+            PiInvocation::Passthrough
+        } else if args.windows(2).any(|pair| pair == ["--mode", "rpc"]) {
+            PiInvocation::RpcDiscovery
+        } else {
+            PiInvocation::TableDiscovery
+        };
+        let args = args.into_iter().map(std::ffi::OsString::from).collect();
+        let (program, args) = platform_pi_invocation(self.command_path(), args, mode);
+        let mut command = Command::new(program);
         command
             .args(args)
             .envs(&self.config.env)
@@ -386,7 +414,8 @@ impl Backend for PiBackend {
             .map(std::ffi::OsString::from)
             .collect();
         argv.extend(build_pi_args_native(&session_path, &options));
-        let mut command = Command::new(&command_path);
+        let (program, argv) = platform_pi_invocation(&command_path, argv, PiInvocation::Execute);
+        let mut command = Command::new(program);
         command
             .args(argv)
             .stdin(Stdio::piped())
@@ -582,6 +611,107 @@ fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
         return scope.to_string();
     }
     format!("{}:{}", scope, command.cache_key())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PiInvocation {
+    Execute,
+    RpcDiscovery,
+    TableDiscovery,
+    Passthrough,
+}
+
+fn remaining_timeout(timeout: Duration, started: Instant) -> Duration {
+    timeout.saturating_sub(started.elapsed())
+}
+
+#[cfg(not(windows))]
+fn platform_pi_invocation(
+    command_path: &str,
+    args: Vec<std::ffi::OsString>,
+    _invocation: PiInvocation,
+) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    (std::ffi::OsString::from(command_path), args)
+}
+
+#[cfg(windows)]
+fn platform_pi_invocation(
+    command_path: &str,
+    args: Vec<std::ffi::OsString>,
+    invocation: PiInvocation,
+) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    if matches!(invocation, PiInvocation::Passthrough) {
+        return (std::ffi::OsString::from(command_path), args);
+    }
+    let path = Path::new(command_path);
+    let is_batch_launcher = path
+        .extension()
+        .map(|extension| extension.to_string_lossy())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+        });
+    if !is_batch_launcher {
+        return (std::ffi::OsString::from(command_path), args);
+    }
+    let ps1 = path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("pi.ps1");
+    if !ps1.is_file() {
+        return (std::ffi::OsString::from(command_path), args);
+    }
+    let Some(power_shell) = find_power_shell() else {
+        return (std::ffi::OsString::from(command_path), args);
+    };
+
+    let mut rewritten = Vec::with_capacity(args.len() + 5);
+    rewritten.extend([
+        std::ffi::OsString::from("-NoProfile"),
+        std::ffi::OsString::from("-ExecutionPolicy"),
+        std::ffi::OsString::from("Bypass"),
+    ]);
+    match invocation {
+        PiInvocation::RpcDiscovery => {
+            let quoted = ps1.to_string_lossy().replace('\'', "''");
+            rewritten.push(std::ffi::OsString::from("-Command"));
+            rewritten.push(std::ffi::OsString::from(format!("& '{quoted}' @args")));
+        }
+        PiInvocation::Execute | PiInvocation::TableDiscovery => {
+            rewritten.push(std::ffi::OsString::from("-File"));
+            rewritten.push(ps1.as_os_str().to_owned());
+        }
+        PiInvocation::Passthrough => unreachable!("passthrough was returned above"),
+    }
+    rewritten.extend(args);
+    tracing::info!(
+        powershell = %power_shell.display(),
+        ps1 = %ps1.display(),
+        original = command_path,
+        rpc = matches!(invocation, PiInvocation::RpcDiscovery),
+        "routing Pi through PowerShell to preserve Windows launcher argument boundaries"
+    );
+    (power_shell.into_os_string(), rewritten)
+}
+
+#[cfg(windows)]
+fn find_power_shell() -> Option<PathBuf> {
+    for name in ["pwsh.exe", "powershell.exe"] {
+        if let Some(path) = std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|directory| directory.join(name))
+                .find(|candidate| candidate.is_file())
+        }) {
+            return Some(path);
+        }
+    }
+    let root =
+        std::env::var_os("SystemRoot").unwrap_or_else(|| std::ffi::OsString::from(r"C:\Windows"));
+    let candidate = PathBuf::from(root)
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    candidate.is_file().then_some(candidate)
 }
 
 fn pi_blocked_args() -> BTreeMap<&'static str, BlockedArgMode> {
@@ -1011,12 +1141,17 @@ enum PiCompletionOutcome {
 
 async fn stop_process_tree(tree: &mut OwnedProcessTree) {
     let _ = tree.terminate();
-    if tree.wait_tree_gone(PI_TERMINATE_GRACE).await {
-        return;
+    if tokio::time::timeout(PI_TERMINATE_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(PI_KILL_GRACE, tree.wait()).await;
     }
-    let _ = tree.kill();
-    let _ = tree.wait_tree_gone(PI_KILL_GRACE).await;
-    let _ = tree.wait().await;
+    if !tree.wait_tree_gone(PI_TERMINATE_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(PI_KILL_GRACE).await;
+    }
 }
 
 fn join_failure_state(error: JoinError) -> PiStreamState {
@@ -1671,6 +1806,33 @@ cat > /dev/null
             .iter()
             .any(|level| level.value == "max"));
         assert_eq!(catalog.models[0].label, "anthropic/claude-sonnet");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pi_discovery_uses_one_timeout_budget_across_rpc_and_table() {
+        let (_directory, backend) = fake_backend(
+            r##"#!/bin/sh
+case "$1" in
+  --mode|--list-models) sleep 60 ;;
+esac
+"##,
+            "pi",
+        );
+        let started = Instant::now();
+        let catalog = tokio::time::timeout(
+            Duration::from_secs(3),
+            backend.discover_models_for_runtime(
+                "pi",
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_millis(100),
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("Pi discovery exceeded its caller timeout: {error}"));
+        assert!(catalog.models.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
