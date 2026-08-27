@@ -1358,10 +1358,12 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        app_url, channel_secret_box, configure_wecom_security, lease_backend_settings,
-        LeaseBackendSettings,
+        app_url, channel_secret_box, configure_telegram, configure_wecom_security,
+        lease_backend_settings, ChannelRouter, ChannelServices, LeaseBackendSettings, RouterConfig,
     };
+    use base64::Engine as _;
     use cordy_lark::client::ApiClient as _;
+    use std::sync::Arc;
 
     #[test]
     fn lark_runtime_requires_a_valid_secret_and_uses_the_real_client() {
@@ -1439,6 +1441,78 @@ mod tests {
 
         let client = cordy_slack::client::SlackClient::new("xoxb-test");
         assert_eq!(client.api_url(), cordy_slack::client::DEFAULT_API_URL);
+    }
+
+    #[tokio::test]
+    async fn telegram_production_configuration_registers_only_with_a_valid_secret() {
+        const KEY_ENV: &str = "CORDY_TELEGRAM_SECRET_KEY";
+        let original = std::env::var_os(KEY_ENV);
+        let state = cordy_handler::HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let services = Arc::new(ChannelServices {
+            pool: state.pool.clone(),
+            issues: state.issues.clone(),
+            tasks: state.tasks.clone(),
+        });
+        let router = Arc::new(ChannelRouter::new(
+            services.clone(),
+            services.clone(),
+            services,
+            RouterConfig::default(),
+        ));
+        let registry = Arc::new(cordy_channel::Registry::new());
+        let cfg = cordy_config::Config::default();
+        let configure = || {
+            configure_telegram(
+                &state,
+                &cfg,
+                &router,
+                None,
+                &registry,
+                &state.channel_cancel,
+                &state.channel_tasks,
+            )
+        };
+
+        std::env::remove_var(KEY_ENV);
+        configure();
+        assert!(registry.types().is_empty());
+
+        std::env::set_var(KEY_ENV, "not-base64");
+        configure();
+        assert!(registry.types().is_empty());
+
+        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        let secret_box = channel_secret_box(KEY_ENV).unwrap().unwrap();
+        let encrypted = base64::engine::general_purpose::STANDARD
+            .encode(secret_box.seal(b"123456:test-token").unwrap());
+        configure();
+        let telegram = cordy_channel::Type(cordy_telegram::TYPE_TELEGRAM.to_string());
+        assert_eq!(registry.types(), vec![telegram.clone()]);
+        let channel = registry
+            .build(cordy_channel::Config {
+                r#type: telegram.clone(),
+                raw: serde_json::json!({
+                    "app_id": "123456",
+                    "bot_username": "cordy_test_bot",
+                    "bot_token_encrypted": encrypted,
+                }),
+                id: None,
+                handler: None,
+                generation: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(channel.r#type(), telegram);
+        assert_eq!(cordy_telegram::DEFAULT_API_BASE, "https://api.telegram.org");
+
+        match original {
+            Some(value) => std::env::set_var(KEY_ENV, value),
+            None => std::env::remove_var(KEY_ENV),
+        }
     }
 
     #[test]
