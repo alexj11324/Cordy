@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health` uptime 与 provider refresh 逐 workspace 重试切片已交付 | 继续 execution、GC、MCP 等真实调用链；异步收口当前切片 V/R/F | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | PR #542/#543；§5.2、§6.2、§29、§30 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health` uptime 与 provider refresh 重试已交付；当前选定 GC metadata 重复 wire seam | 先统一 execenv writer/GC reader 和 unknown-kind 安全降级，再继续 MCP 等调用链 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | PR #542/#543；§5.2、§6.2、§29..§31 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -820,3 +820,19 @@ ws-1 成功应用新版本后只跳过 ws-1，尚未应用的 ws-2 仍需要 ref
   MCP、真实进程 smoke 和最终 `AUDIT-001..010` 仍未退出。
 - 异步状态：verification 与 reviewer 已派发但尚未返回；fixer 尚未派发。主 agent
   只确认 `git diff --check` 无错误，不记录为编译或测试通过。PR 堆叠在 #542。
+
+## 31. AUDIT-005 执行缺口：GC metadata single wire contract
+
+当前切片选择 `AUDIT-005` 的 GC production 调用链。编码前确认的真实差异：
+
+- task completion 已用共享 `execenv::execenv::GcMeta` / `write_gc_meta` 写
+  `.gc_meta.json`，但 production `gc_loop` 仍保留一套标为 S9 integration stand-in
+  的本地 `GcMeta`、`GcMetaKind` 和 reader；writer/reader 可以独立漂移。
+- Go `execenv.GCMetaKind` 是字符串；未知 future kind 会保留 metadata，并由 GC 按
+  mtime 降级后继续应用 `local_directory` 保护。共享 Rust enum 当前拒绝未知字符串；
+  若直接换用它，reader 会把文件当成无 metadata，绕过该保护并可能整目录清理。
+- GC 的真实 `DaemonCoreHost`、client checks、activity reservations、repo cache 和
+  production owner 均已接线；不需要新 host、loop 或 registry。
+
+本切片先让共享 metadata wire 保留 unknown kind，再让 GC 直接读取共享类型并删除
+重复 stand-in。实现、Ready PR、verification、review 和 fix 尚未产生，不能记录通过。
