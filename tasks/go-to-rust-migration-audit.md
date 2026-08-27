@@ -1771,7 +1771,9 @@ cache、legacy endpoint state 或 runtime registry。
 
 - 退出证据：同一 production `Client` 在 eviction 前复用 keepalive，eviction 后下一请求建立新 TCP
   connection；正在执行的请求不因 swap 被取消；production heartbeat 仅在第二个连续 transient failure 后
-  触发 swap，success/404/WS freshness 重置 streak；后续 heartbeat 可恢复且 auth/identity headers 不回归。
+  触发 swap，success、明确 `runtime not found` 的 404 与 WS freshness 重置 streak；普通永久 4xx 和 parent
+  cancellation 不累计 failure。后续 heartbeat 可恢复；auth/identity headers 与非 HTTP client state 由静态
+  centralized builder/唯一 production assembly 核对，不冒充本 socket test 的动态覆盖。
 - 默认生产路径：Rust CLI daemon assembly 只构造这一 `Client` 并注入唯一 `DaemonControl`；没有 Stub、
   Noop、Fake 或 test-only production selector。Go 是否可下线：本 stale-pool recovery 经异步证据收口后
   不再需要 Go daemon；AUDIT-005 其余生命周期和最终 AUDIT-001..010 门仍未完成。
@@ -1813,6 +1815,17 @@ cache、legacy endpoint state 或 runtime registry。
   宽于直接测试；须把静态 wiring 与实际运行证据分开。reviewer 同时确认 pool swap lifetime、全部集中 request
   builder、独一 production `Arc<Client>` 和两文件最小抽象方向成立，未发现 Stub/Noop/Fake/alternate path。
   finding 已排入同一 independent fixer，PR 继续 Ready，未把该能力标记为已验证或可删除 Go。
+- independent fixer 将 #560..#563 的 lock/resolver 修复依次传播到本分支，并最小复用现有
+  `client::is_transient_error`：仅 transport/5xx/408/429 累计 streak；永久 4xx 重置，root cancellation
+  立即退出；新增 anyhow error-chain predicate 只在 404 body 含 `runtime not found` 时发 `RuntimeGone`。
+  production heartbeat socket test 现以确定序列直接覆盖 500、401、普通 404、runtime-not-found 404、408、
+  pool retirement 和 cancellation；原有 pool lifetime test 继续证明 in-flight request 不被 swap 取消。
+- fixer verification：historical exact HEAD 的 rustfmt exit 1 与 resolver exit 101/0 tests 保留；传播后
+  `cargo check --locked --offline -p cordy-daemon --tests` PASS；exact production classification test 1/1 PASS
+  （472 filtered）；exact in-flight pool lifetime test 1/1 PASS（472 filtered）；`manager::tests::` 10/10 PASS
+  （463 filtered）；fixed-stable `client.rs`/`manager.rs` rustfmt 与 `git diff --check` PASS。loopback tests 需
+  sandbox 外 bind 权限；其余输出只有堆叠基线 warnings。尚未执行 Windows build 或外部 NAT/LB smoke，
+  因此 Go 退休仍等待整个 AUDIT-005 门，而非由本切片单独宣称完成。
   `codex/cord-226-private-task-temp-rust` at `1bf5cccd`。PR 为非 Draft Ready；verification/reviewer 待异步
   派发，fixer 尚无本 PR finding。
 - fixer（基于 review ledger HEAD `9c4227c4`）：Cargo 正常解析并提交完整新增依赖图；复用已批准的

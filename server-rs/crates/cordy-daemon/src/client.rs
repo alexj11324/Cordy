@@ -134,6 +134,12 @@ pub(crate) fn is_runtime_not_found_error(err: &ClientError) -> bool {
     )
 }
 
+pub(crate) fn is_runtime_not_found_anyhow(err: &anyhow::Error) -> bool {
+    request_error(err).is_some_and(|req| {
+        req.status_code == 404 && req.body.to_lowercase().contains("runtime not found")
+    })
+}
+
 /// `isBatchClaimUnsupported` (client.go:288): a 404 from the batch claim
 /// endpoint — the server predates the route and the daemon must fall back to
 /// the legacy per-runtime claim.
