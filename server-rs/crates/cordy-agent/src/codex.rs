@@ -350,7 +350,11 @@ async fn run_protocol(
         let mut resume_params = serde_json::json!({
             "threadId": options.resume_session_id.clone(),
             "cwd": cwd,
-            "model": null,
+            "model": if options.model.is_empty() {
+                Value::Null
+            } else {
+                Value::String(options.model.clone())
+            },
             "developerInstructions": null,
         });
         apply_reasoning_effort(&mut resume_params, &options.thinking_level, false);
@@ -391,7 +395,7 @@ async fn run_protocol(
     } else {
         options.model.clone()
     };
-    if !options.thread_name.trim().is_empty() {
+    if !resumed && !options.thread_name.trim().is_empty() {
         let _ = client
             .request(
                 "thread/name/set",
@@ -774,7 +778,11 @@ where
                 self.send(status_message("running", &self.state.thread_id));
             }
             "agent_message" => {
-                if let Some(text) = event.get("message").and_then(Value::as_str) {
+                if let Some(text) = event
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.is_empty())
+                {
                     self.state.last_agent_message = text.to_string();
                     self.send(message(MessageType::Text, text));
                 }
@@ -952,31 +960,45 @@ where
             ("item/started", "mcpToolCall") => self.send(tool_message(
                 MessageType::ToolUse,
                 item_id,
-                item.get("tool").and_then(Value::as_str).unwrap_or("mcp_tool"),
+                mcp_tool_name(item),
                 mcp_input(item),
                 String::new(),
             )),
             ("item/completed", "mcpToolCall") => {
-                let status = item.get("status").and_then(Value::as_str).unwrap_or("completed");
+                let mut status = item
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if status.is_empty() {
+                    status = "completed";
+                }
                 let error = item
                     .get("error")
                     .and_then(|value| value.get("message"))
                     .and_then(Value::as_str)
                     .unwrap_or_default();
-                let output = if error.is_empty() {
-                    status.to_string()
-                } else {
-                    format!("{status}\nerror: {}", sanitize_diagnostic(error))
-                };
+                let mut segments = vec![normalize_status(status)];
+                let duration_ms = number(item, &["durationMs", "duration_ms"]);
+                if duration_ms > 0 {
+                    segments.push(format!("duration: {duration_ms} ms"));
+                }
+                if !error.is_empty() {
+                    segments.push(format!("error: {}", sanitize_diagnostic(error)));
+                }
+                let output = segments.join("\n");
                 self.send(tool_message_with_status(
                     item_id,
-                    item.get("tool").and_then(Value::as_str).unwrap_or("mcp_tool"),
+                    mcp_tool_name(item),
                     output,
                     normalize_status(status),
                 ));
             }
             (_, "agentMessage") if method == "item/completed" => {
-                if let Some(text) = item.get("text").and_then(Value::as_str) {
+                if let Some(text) = item
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.is_empty())
+                {
                     self.state.last_agent_message = text.to_string();
                     self.send(message(MessageType::Text, text));
                     if item.get("phase").and_then(Value::as_str) == Some("final_answer") {
@@ -1066,10 +1088,16 @@ impl CodexState {
             ),
             cost_usd_ticks: number(usage, &["cost_usd_ticks"]),
         };
-        self.usage.input_tokens = self.usage.input_tokens.max(parsed.input_tokens);
-        self.usage.output_tokens = self.usage.output_tokens.max(parsed.output_tokens);
-        self.usage.cache_read_tokens = self.usage.cache_read_tokens.max(parsed.cache_read_tokens);
-        self.usage.cache_write_tokens = self.usage.cache_write_tokens.max(parsed.cache_write_tokens);
+        self.usage.input_tokens = self.usage.input_tokens.saturating_add(parsed.input_tokens);
+        self.usage.output_tokens = self.usage.output_tokens.saturating_add(parsed.output_tokens);
+        self.usage.cache_read_tokens = self
+            .usage
+            .cache_read_tokens
+            .saturating_add(parsed.cache_read_tokens);
+        self.usage.cache_write_tokens = self
+            .usage
+            .cache_write_tokens
+            .saturating_add(parsed.cache_write_tokens);
         self.usage.cost_usd_ticks = self.usage.cost_usd_ticks.max(parsed.cost_usd_ticks);
     }
 }
@@ -1098,14 +1126,26 @@ fn number(object: &Map<String, Value>, keys: &[&str]) -> i64 {
             continue;
         };
         if let Some(value) = value.as_i64() {
-            return value;
+            if value != 0 {
+                return value;
+            }
+            continue;
         }
         if let Some(value) = value.as_u64() {
-            return value.try_into().unwrap_or(i64::MAX);
+            if value != 0 {
+                return value.try_into().unwrap_or(i64::MAX);
+            }
+            continue;
         }
         if let Some(value) = value.as_f64() {
-            if value.is_finite() && value > 0.0 {
-                return value.min(i64::MAX as f64) as i64;
+            if value.is_finite() && value != 0.0 {
+                if value >= i64::MAX as f64 {
+                    return i64::MAX;
+                }
+                if value <= i64::MIN as f64 {
+                    return i64::MIN;
+                }
+                return value as i64;
             }
         }
     }
@@ -1256,8 +1296,15 @@ fn redact_value(value: &Value) -> Value {
 
 fn mcp_input(item: &Map<String, Value>) -> BTreeMap<String, Value> {
     let mut input = BTreeMap::new();
-    if let Some(server) = item.get("server") {
-        input.insert("server".to_string(), redact_value(server));
+    if let Some(server) = item
+        .get("server")
+        .and_then(Value::as_str)
+        .filter(|server| !server.trim().is_empty())
+    {
+        input.insert(
+            "server".to_string(),
+            redact_value(&Value::String(server.to_string())),
+        );
     }
     if let Some(arguments) = item.get("arguments") {
         input.insert("arguments".to_string(), redact_value(arguments));
@@ -1265,28 +1312,51 @@ fn mcp_input(item: &Map<String, Value>) -> BTreeMap<String, Value> {
     input
 }
 
+fn mcp_tool_name(item: &Map<String, Value>) -> &str {
+    item.get("tool")
+        .and_then(Value::as_str)
+        .filter(|tool| !tool.trim().is_empty())
+        .unwrap_or("mcp_tool")
+}
+
 fn normalize_legacy_changes(value: Option<&Value>) -> Vec<Value> {
     let Some(object) = value.and_then(Value::as_object) else {
         return Vec::new();
     };
+    let mut paths: Vec<&String> = object.keys().collect();
+    paths.sort();
     let mut changes = Vec::new();
-    for (path, value) in object {
+    for path in paths {
+        let value = &object[path];
         let Some(change) = value.as_object() else {
             continue;
         };
         let mut normalized = Map::new();
-        normalized.insert("path".to_string(), Value::String(path.clone()));
+        normalized.insert("path".to_string(), Value::String(path.to_string()));
         if let Some(kind) = change.get("type").and_then(Value::as_str) {
-            normalized.insert("kind".to_string(), Value::String(kind.to_string()));
+            if !kind.is_empty() {
+                normalized.insert("kind".to_string(), Value::String(kind.to_string()));
+            }
         }
-        if let Some(diff) = change.get("unified_diff").and_then(Value::as_str) {
+        if let Some(diff) = change
+            .get("unified_diff")
+            .and_then(Value::as_str)
+            .filter(|diff| !diff.is_empty())
+        {
             normalized.insert("diff".to_string(), Value::String(diff.to_string()));
         }
-        if let Some(content) = change.get("content") {
-            normalized.insert("content".to_string(), content.clone());
+        if let Some(content) = change.get("content").and_then(Value::as_str) {
+            normalized.insert("content".to_string(), Value::String(content.to_string()));
         }
-        if let Some(move_path) = change.get("move_path") {
-            normalized.insert("move_path".to_string(), move_path.clone());
+        if let Some(move_path) = change
+            .get("move_path")
+            .and_then(Value::as_str)
+            .filter(|move_path| !move_path.is_empty())
+        {
+            normalized.insert(
+                "move_path".to_string(),
+                Value::String(move_path.to_string()),
+            );
         }
         changes.push(Value::Object(normalized));
     }
@@ -1302,45 +1372,82 @@ fn normalize_raw_changes(value: Option<&Value>) -> Vec<Value> {
         .filter_map(|value| {
             let object = value.as_object()?;
             let mut normalized = Map::new();
-            if let Some(path) = object.get("path") {
-                normalized.insert("path".to_string(), path.clone());
+            if let Some(path) = object
+                .get("path")
+                .and_then(Value::as_str)
+                .filter(|path| !path.is_empty())
+            {
+                normalized.insert("path".to_string(), Value::String(path.to_string()));
             }
             let (kind, move_path) = match object.get("kind") {
                 Some(Value::Object(kind)) => (
                     kind.get("type").and_then(Value::as_str),
-                    kind.get("move_path"),
+                    kind.get("move_path")
+                        .and_then(Value::as_str)
+                        .filter(|path| !path.is_empty()),
                 ),
                 Some(Value::String(kind)) => (Some(kind.as_str()), None),
                 _ => (None, None),
             };
-            if let Some(kind) = kind {
+            if let Some(kind) = kind.filter(|kind| !kind.is_empty()) {
                 normalized.insert("kind".to_string(), Value::String(kind.to_string()));
             }
             if let Some(move_path) = move_path {
-                normalized.insert("move_path".to_string(), move_path.clone());
+                normalized.insert(
+                    "move_path".to_string(),
+                    Value::String(move_path.to_string()),
+                );
             }
-            if let Some(diff) = object.get("diff") {
-                if matches!(kind, Some("add" | "delete")) {
-                    normalized.insert("content".to_string(), diff.clone());
-                } else {
-                    normalized.insert("diff".to_string(), diff.clone());
+            let diff = object.get("diff").and_then(Value::as_str);
+            if matches!(kind, Some("add" | "delete")) {
+                if let Some(diff) = diff {
+                    normalized.insert("content".to_string(), Value::String(diff.to_string()));
+                } else if let Some(content) = object.get("content").and_then(Value::as_str) {
+                    normalized.insert(
+                        "content".to_string(),
+                        Value::String(content.to_string()),
+                    );
                 }
-            } else if let Some(content) = object.get("content") {
-                normalized.insert("content".to_string(), content.clone());
+            } else if let Some(diff) = diff.filter(|diff| !diff.is_empty()) {
+                normalized.insert(
+                    "diff".to_string(),
+                    Value::String(strip_moved_to_suffix(diff, move_path.unwrap_or_default())),
+                );
+            } else if let Some(content) = object.get("content").and_then(Value::as_str) {
+                normalized.insert(
+                    "content".to_string(),
+                    Value::String(content.to_string()),
+                );
             }
             (!normalized.is_empty()).then_some(Value::Object(normalized))
         })
         .collect()
 }
 
+fn strip_moved_to_suffix(diff: &str, move_path: &str) -> String {
+    if move_path.is_empty() {
+        return diff.to_string();
+    }
+    diff.strip_suffix(&format!("\n\nMoved to: {move_path}"))
+        .unwrap_or(diff)
+        .to_string()
+}
+
 fn patch_input(changes: Vec<Value>) -> BTreeMap<String, Value> {
     if changes.is_empty() {
         return BTreeMap::new();
     }
-    let safe = redact_value(&Value::Array(changes));
-    let mut input = BTreeMap::from([("changes".to_string(), safe)]);
-    let bytes = serde_json::to_vec(&input).map_or(0, |value| value.len());
-    if bytes > PATCH_INPUT_MAX_BYTES {
+    let original_bytes = patch_body_bytes(&changes);
+    let mut input = BTreeMap::from([(
+        "changes".to_string(),
+        redact_value(&Value::Array(changes)),
+    )]);
+    let body_bytes = input
+        .get("changes")
+        .and_then(Value::as_array)
+        .map(|changes| patch_body_bytes(changes))
+        .unwrap_or_default();
+    if body_bytes > PATCH_INPUT_MAX_BYTES {
         if let Some(Value::Array(changes)) = input.get_mut("changes") {
             let mut remaining = PATCH_INPUT_MAX_BYTES;
             for change in changes {
@@ -1351,9 +1458,16 @@ fn patch_input(changes: Vec<Value>) -> BTreeMap<String, Value> {
                     let Some(body) = object.get(key).and_then(Value::as_str) else {
                         continue;
                     };
+                    if body.is_empty() {
+                        continue;
+                    }
                     let kept = truncate_utf8(body, remaining);
                     remaining = remaining.saturating_sub(kept.len());
-                    object.insert(key.to_string(), Value::String(kept));
+                    if kept.is_empty() {
+                        object.remove(key);
+                    } else {
+                        object.insert(key.to_string(), Value::String(kept));
+                    }
                     if remaining == 0 {
                         object.insert("truncated".to_string(), Value::Bool(true));
                     }
@@ -1361,8 +1475,20 @@ fn patch_input(changes: Vec<Value>) -> BTreeMap<String, Value> {
             }
         }
         input.insert("truncated".to_string(), Value::Bool(true));
+        input.insert("original_bytes".to_string(), Value::from(original_bytes));
     }
     input
+}
+
+fn patch_body_bytes(changes: &[Value]) -> usize {
+    changes
+        .iter()
+        .filter_map(Value::as_object)
+        .flat_map(|change| ["diff", "content"].into_iter().map(move |key| change.get(key)))
+        .filter_map(|value| value.and_then(Value::as_str))
+        .filter(|body| !body.is_empty())
+        .map(str::len)
+        .sum()
 }
 
 fn truncate_utf8(value: &str, max_bytes: usize) -> String {
@@ -1433,6 +1559,70 @@ mod tests {
         let resumed = codex_turn_input("prompt", true, true, "NOTICE: ");
         assert_eq!(fresh[0]["text"], "NOTICE: prompt");
         assert_eq!(resumed[0]["text"], "prompt");
+    }
+
+    #[test]
+    fn patch_shapes_are_stable_and_bounded_like_go() {
+        let legacy = serde_json::json!({
+            "z.go": {"type": "update", "unified_diff": "diff", "content": 7},
+            "a.go": {"type": "add", "content": ""},
+            "ignored": "not-a-change"
+        });
+        let changes = normalize_legacy_changes(Some(&legacy));
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0]["path"], "a.go");
+        assert_eq!(changes[0]["content"], "");
+        assert_eq!(changes[1]["path"], "z.go");
+        assert!(changes[1].get("content").is_none());
+
+        let raw = serde_json::json!([
+            {"path": "old.go", "kind": {"type": "update", "move_path": "new.go"},
+             "diff": "@@\n+y\n\n\nMoved to: new.go"},
+            {"path": 3, "kind": {"type": "add"}, "diff": ""}
+        ]);
+        let raw_changes = normalize_raw_changes(Some(&raw));
+        assert_eq!(raw_changes[0]["diff"], "@@\n+y");
+        assert_eq!(raw_changes[0]["move_path"], "new.go");
+        assert!(raw_changes[1].get("path").is_none());
+        assert_eq!(raw_changes[1]["content"], "");
+
+        let body = "x".repeat(PATCH_INPUT_MAX_BYTES + 4);
+        let input = patch_input(vec![serde_json::json!({
+            "path": "large.txt",
+            "kind": "add",
+            "content": body
+        })]);
+        assert_eq!(input["truncated"], true);
+        assert_eq!(input["original_bytes"], PATCH_INPUT_MAX_BYTES + 4);
+        let kept = input["changes"][0]["content"].as_str().unwrap();
+        assert_eq!(kept.len(), PATCH_INPUT_MAX_BYTES);
+    }
+
+    #[test]
+    fn usage_accumulates_nonzero_aliases_and_redacts_mcp_input() {
+        let mut state = CodexState::default();
+        state.merge_usage(Some(&serde_json::json!({
+            "usage": {
+                "input_tokens": 0,
+                "prompt_tokens": 5,
+                "cached_input_tokens": 2,
+                "output_tokens": 3
+            }
+        })));
+        state.merge_usage(Some(&serde_json::json!({
+            "usage": {"input_tokens": 7, "output_tokens": 4}
+        })));
+        assert_eq!(state.usage.input_tokens, 10);
+        assert_eq!(state.usage.output_tokens, 7);
+        assert_eq!(state.usage.cache_read_tokens, 2);
+
+        let item = serde_json::json!({
+            "server": "",
+            "arguments": {"api_token": "secret"}
+        });
+        let input = mcp_input(item.as_object().unwrap());
+        assert!(!input.contains_key("server"));
+        assert_eq!(input["arguments"]["api_token"], "[REDACTED]");
     }
 
     #[tokio::test]
