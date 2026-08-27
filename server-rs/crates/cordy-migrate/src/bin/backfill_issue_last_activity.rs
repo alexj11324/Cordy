@@ -8,6 +8,7 @@ use anyhow::Context as _;
 use clap::Parser;
 use cordy_migrate::backfill::issue_activity::{self, Options};
 use sqlx::postgres::PgPoolOptions;
+use std::ffi::OsString;
 use std::time::Duration;
 
 const DEFAULT_DATABASE_URL: &str = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
@@ -48,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     };
     issue_activity::validate_options(options)?;
 
-    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
+    let db_url = configured_database_url(std::env::var_os("DATABASE_URL"))?;
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(&db_url)
@@ -62,6 +63,16 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         result = issue_activity::run(&pool, options) => result,
         _ = shutdown_signal() => Err(anyhow::anyhow!("backfill interrupted by signal")),
+    }
+}
+
+fn configured_database_url(value: Option<OsString>) -> anyhow::Result<String> {
+    match value {
+        None => Ok(DEFAULT_DATABASE_URL.to_string()),
+        Some(value) if value.is_empty() => Ok(DEFAULT_DATABASE_URL.to_string()),
+        Some(value) => value
+            .into_string()
+            .map_err(|_| anyhow::anyhow!("DATABASE_URL must be valid UTF-8")),
     }
 }
 
@@ -182,6 +193,32 @@ fn decimal_nanos(value: &str, nanos_per_unit: u128) -> Result<u128, &'static str
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
+    use super::{configured_database_url, DEFAULT_DATABASE_URL};
+
+    #[test]
+    fn database_url_falls_back_only_for_missing_or_empty_values() {
+        assert_eq!(configured_database_url(None).unwrap(), DEFAULT_DATABASE_URL);
+        assert_eq!(
+            configured_database_url(Some(OsString::new())).unwrap(),
+            DEFAULT_DATABASE_URL
+        );
+        assert_eq!(
+            configured_database_url(Some(OsString::from("postgres://db/cordy"))).unwrap(),
+            "postgres://db/cordy"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_url_rejects_non_utf8_values() {
+        use std::os::unix::ffi::OsStringExt as _;
+
+        let error = configured_database_url(Some(OsString::from_vec(vec![0xff]))).unwrap_err();
+        assert_eq!(error.to_string(), "DATABASE_URL must be valid UTF-8");
+    }
+
     #[test]
     fn duration_parser_accepts_go_compounds() {
         use super::parse_go_duration;

@@ -2735,11 +2735,12 @@ AUDIT-008 已完成或删除 Go。
 两种受支持调用方式。
 
 范围只更新这份既有 backfill runbook：保留 migration 前置条件、批次/中断/重试和完成判据，改为仓库根目录下的 Rust
-binary/`cargo run --locked` 入口，并明确 `DATABASE_URL` 与参数保持不变。无需新增脚本、发布资产、服务或第二套 backfill
+binary/仓库既有 `scripts/run-rust.sh` 入口，并明确 `DATABASE_URL` 的安全边界和参数兼容。无需新增脚本、发布资产、服务或第二套 backfill
 实现；Docker/Makefile/release 的产物接线由 AUDIT-001/006 保持唯一来源。
 
-- 默认生产路径：operator 优先执行已构建的 `server-rs/target/release/backfill_issue_last_activity`；源码路径只作为
-  `cargo run --locked -p cordy-migrate --bin backfill_issue_last_activity` 的开发/恢复入口。
+- 默认生产路径：host package 使用 `server/bin/backfill_issue_last_activity`，backend container 使用
+  `/app/backfill_issue_last_activity`；`server-rs/target/release` 仅是本地构建输出。源码开发/恢复入口统一为
+  `./scripts/run-rust.sh run --locked -p cordy-migrate --bin backfill_issue_last_activity --`，不会绕过 Rust workspace 配置。
 - Go 是否可下线：该 README 不再要求 Go toolchain，但 Go backfill source、其余 install/systemd/release/rollback 文档、
   新鲜产物验证和 AUDIT-001..010 总退出仍未完成。
 - owner：主 agent 负责最小文档切换和 Ready PR；独立 verifier/reviewer/fixer 异步核对命令、参数、发布路径和回归，
@@ -2750,6 +2751,16 @@ Cargo 源码入口，保留既有 `DATABASE_URL`、参数、批次、中断/重�
 （PASS），未运行 cargo、backfill、PostgreSQL、Docker 或 release 命令；非 Draft Ready PR #578 已创建，base 为
 `codex/cord-241-ulid-wire-contract-rust` 的 `979205c8`。异步 verifier/reviewer/fixer 结果待回写；文档切换不能替代
 真实产物/运维验证，也不能据此删除 Go。
+
+独立 reviewer 发现该实现把本地 `server-rs/target/release` 误称为正常部署路径，源码命令用根目录
+`cargo --manifest-path` 绕过 `server-rs/.cargo/config.toml`，且“`DATABASE_URL` 保持不变”没有核对 Rust 的空值/非 UTF-8
+边界。fixer follow-up 改为 host package `server/bin/backfill_issue_last_activity`、container
+`/app/backfill_issue_last_activity` 和唯一 workspace wrapper；Rust binary 现在通过 `var_os` 对 unset/空值使用本地默认，
+对非 UTF-8 fail-closed，并为 missing/empty/configured/non-UTF-8 增加直接单元向量。该修复只对齐入口和配置边界，真实
+package/container/PostgreSQL backfill smoke 仍未执行，不能据此扩大 Ready 声明。fixer 的 fixed-stable
+`rustfmt --edition 2021 --check`、`bash -n scripts/run-rust.sh`、入口静态断言和 `git diff --check` PASS；locked/offline
+精确 `database_url_` test 在 discovery 前仍被 inherited #563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断
+（exit 101，实际 0 tests），因此新增向量不能登记为 executed PASS。
 
 独立 reviewer 在 exact `d3a37ed0` 发现 upstream `ulid::Ulid::from_string` 会接受首字符 `8..Z` 并截断 130-bit
 Crockford overflow，同时 repo-wide 只有 wrapper 定义/单元测试、没有 production caller。fixer follow-up 在 serde 入口先

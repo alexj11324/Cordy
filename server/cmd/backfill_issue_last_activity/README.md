@@ -5,23 +5,31 @@ backend has been upgraded to maintain `issue.last_activity_at`.
 Running it while an older writer is still live can make that writer's later
 changes invisible to the activity clock.
 
-From the repository root, use the Rust production binary:
+Packaged deployments use the Rust binary at the path supplied by that package:
 
 ```bash
-./server-rs/target/release/backfill_issue_last_activity
+# Host package
+server/bin/backfill_issue_last_activity
+
+# Backend container
+/app/backfill_issue_last_activity
 ```
 
-When the release binary is not available, run the same production entry from
-the Rust workspace:
+`server-rs/target/release` is a local build-output directory, not the normal
+operator deployment path. When a packaged binary is not available, run the
+same production entry from the repository root through the Rust workspace
+wrapper:
 
 ```bash
-cargo run --locked --manifest-path server-rs/Cargo.toml \
+./scripts/run-rust.sh run --locked \
   -p cordy-migrate --bin backfill_issue_last_activity --
 ```
 
-Both forms read `DATABASE_URL` and accept the flags below. They execute the
-same Rust implementation; the source form is for development or operator
-recovery, while the built binary is the normal deployment path.
+All forms read `DATABASE_URL` and accept the flags below. An unset or explicitly
+empty `DATABASE_URL` uses the local-development default; production operators
+must set it. A non-UTF-8 value is rejected before connecting. The source form
+is for development or operator recovery, while the packaged binaries are the
+normal deployment paths.
 
 The command uses bounded transactions, an id keyset watermark, `SKIP LOCKED`,
 a delay between batches, and a session advisory lock. It is safe to interrupt
