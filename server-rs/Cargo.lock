@@ -908,6 +908,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "cordy-daemon",
  "dirs",
  "reqwest",
  "serde",
@@ -915,6 +916,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-util",
  "url",
 ]
 

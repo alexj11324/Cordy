@@ -6,6 +6,7 @@
 
 mod api;
 pub mod config;
+mod daemon;
 pub mod error;
 
 use anyhow::{bail, Context, Result};
@@ -20,6 +21,7 @@ use std::fmt::Write;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::{form_urlencoded, Url};
 
@@ -141,6 +143,8 @@ struct DaemonArgs {
 
 #[derive(Debug, Subcommand)]
 enum DaemonCommand {
+    #[command(about = "Start the production daemon")]
+    Start(DaemonStartArgs),
     #[command(about = "Stop the running daemon")]
     Stop,
     #[command(about = "Show daemon status")]
@@ -160,6 +164,48 @@ enum DaemonCommand {
         )]
         lines: i64,
     },
+}
+
+#[derive(Debug, Args)]
+struct DaemonStartArgs {
+    /// Run the daemon in the current process. Without this flag the command
+    /// launches a foreground child through the lifecycle owner.
+    #[arg(long)]
+    foreground: bool,
+    #[arg(long)]
+    daemon_id: Option<String>,
+    #[arg(long)]
+    device_name: Option<String>,
+    #[arg(long)]
+    runtime_name: Option<String>,
+    #[arg(long)]
+    workspaces_root: Option<String>,
+    #[arg(long, value_parser = parse_cli_duration)]
+    poll_interval: Option<Duration>,
+    #[arg(long, value_parser = parse_cli_duration)]
+    heartbeat_interval: Option<Duration>,
+    #[arg(long, value_parser = parse_cli_duration)]
+    agent_timeout: Option<Duration>,
+    #[arg(long, value_parser = parse_cli_duration)]
+    codex_semantic_inactivity_timeout: Option<Duration>,
+    #[arg(long, value_parser = parse_cli_duration)]
+    codex_handshake_timeout: Option<Duration>,
+    #[arg(long)]
+    max_concurrent_tasks: Option<i64>,
+    /// The requested port must equal the profile-derived port. The resolved
+    /// value is forwarded by the canonical foreground argument builder.
+    #[arg(long)]
+    health_port: Option<u16>,
+    #[arg(long = "no-auto-update")]
+    disable_auto_update: bool,
+    #[arg(long, value_parser = parse_cli_duration)]
+    auto_update_interval: Option<Duration>,
+    #[arg(long = "no-auto-reload")]
+    disable_auto_reload: bool,
+}
+
+fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
+    cordy_daemon::helpers::parse_go_duration(value).map_err(|error| error.to_string())
 }
 
 #[derive(Debug, Args)]
@@ -2935,6 +2981,9 @@ async fn run_with_input<R: Read>(
                 },
         }) => run_squad_activity(cli, environment, issue_id, outcome, reason, *output).await,
         Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Start(args),
+        }) => run_daemon_start(cli, environment, args).await,
+        Command::Daemon(DaemonArgs {
             command: DaemonCommand::Status { output },
         }) => run_daemon_status(cli, environment, *output).await,
         Command::Daemon(DaemonArgs {
@@ -5387,6 +5436,106 @@ async fn run_squad_activity(
 }
 
 const DEFAULT_DAEMON_HEALTH_PORT: u32 = 19_514;
+
+async fn run_daemon_start(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonStartArgs,
+) -> Result<RunOutput> {
+    let launch_flags = config::DaemonLaunchFlags {
+        server_url: cli.server_url.clone(),
+        daemon_id: args.daemon_id.clone(),
+        device_name: args.device_name.clone(),
+        runtime_name: args.runtime_name.clone(),
+        workspaces_root: args.workspaces_root.clone(),
+        poll_interval: args.poll_interval,
+        heartbeat_interval: args.heartbeat_interval,
+        agent_timeout: args.agent_timeout,
+        codex_semantic_inactivity_timeout: args.codex_semantic_inactivity_timeout,
+        codex_handshake_timeout: args.codex_handshake_timeout,
+        max_concurrent_tasks: args.max_concurrent_tasks,
+        disable_auto_update: args.disable_auto_update,
+        auto_update_check_interval: args.auto_update_interval,
+        disable_auto_reload: args.disable_auto_reload,
+    };
+    let start = daemon::DaemonStartAssembly::load(&cli.profile, &launch_flags, environment)
+        .context("load daemon start profile")?;
+    if let Some(health_port) = args.health_port {
+        anyhow::ensure!(
+            i32::from(health_port) == start.launch.health_port,
+            "--health-port must match the profile-derived daemon health port ({})",
+            start.launch.health_port
+        );
+    }
+
+    if !args.foreground {
+        let executable = std::env::current_exe().context("resolve cordy executable")?;
+        let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
+            start.lifecycle_options(executable, CLIENT_VERSION),
+            &start.profile_input,
+        )
+        .context("assemble background daemon lifecycle")?;
+        let outcome = lifecycle.start().await.context("start daemon")?;
+        return Ok(RunOutput {
+            stdout: format_daemon_start_outcome(outcome)?,
+            stderr: String::new(),
+        });
+    }
+
+    let options = start.bootstrap_options();
+    let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
+    cordy_daemon::assembly::run_production_daemon(options, move |context| {
+        start.production_assembly_with_local_catalog(&context, CLIENT_VERSION, checkout_registry)
+    })
+    .await
+    .context("run foreground daemon")?;
+
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+    })
+}
+
+fn format_daemon_start_outcome(
+    outcome: cordy_daemon::process_control::DaemonStartOutcome,
+) -> Result<String> {
+    match outcome {
+        cordy_daemon::process_control::DaemonStartOutcome::AlreadyRunning(snapshot) => Ok(format!(
+            "daemon already running (pid {})\n",
+            snapshot.response.pid
+        )),
+        cordy_daemon::process_control::DaemonStartOutcome::Launch(startup) => match startup {
+            cordy_daemon::process_control::BackgroundStartupOutcome::Ready { pid, .. } => {
+                Ok(format!("daemon started (pid {pid})\n"))
+            }
+            cordy_daemon::process_control::BackgroundStartupOutcome::Exited {
+                pid,
+                status,
+                logs,
+            } => {
+                let evidence = logs.failure_evidence(8);
+                let detail = evidence
+                    .structured_lines
+                    .into_iter()
+                    .chain(evidence.crash_lines)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                if detail.is_empty() {
+                    bail!("daemon child exited before readiness (pid {pid}, status {status})")
+                }
+                bail!("daemon child exited before readiness (pid {pid}, status {status}): {detail}")
+            }
+            cordy_daemon::process_control::BackgroundStartupOutcome::TimedOut {
+                pid,
+                last_status,
+                ..
+            } => {
+                let status = last_status.unwrap_or_else(|| "unknown".to_string());
+                bail!("daemon timed out before readiness (pid {pid}, status {status})")
+            }
+        },
+    }
+}
 
 trait DaemonStopOps {
     fn probe(
@@ -15156,6 +15305,40 @@ mod tests {
             self.sleeps.push(duration);
             Box::pin(std::future::ready(()))
         }
+    }
+
+    #[test]
+    fn daemon_start_parser_preserves_launch_flags_and_zero_timeout() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "daemon",
+            "start",
+            "--foreground",
+            "--daemon-id",
+            "daemon-1",
+            "--poll-interval",
+            "3s",
+            "--agent-timeout",
+            "0s",
+            "--health-port",
+            "19710",
+            "--no-auto-update",
+        ])
+        .expect("foreground daemon command");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Start(args),
+        }) = cli.command
+        else {
+            panic!("expected daemon start command");
+        };
+        assert!(args.foreground);
+        assert_eq!(args.daemon_id.as_deref(), Some("daemon-1"));
+        assert_eq!(args.poll_interval, Some(Duration::from_secs(3)));
+        assert_eq!(args.agent_timeout, Some(Duration::ZERO));
+        assert_eq!(args.health_port, Some(19710));
+        assert!(args.disable_auto_update);
     }
 
     #[test]
