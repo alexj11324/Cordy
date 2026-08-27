@@ -1525,3 +1525,14 @@ provider-specific runner。
   cordy-handler --lib`、changed-file fixed-stable rustfmt 与 `git diff --check` 通过。首次 handler no-run
   在下载新 lock edge 后因 ENOSPC 失败；仅清理本 worktree Cargo 生成物后 check 重跑通过，历史保留。
   真实 Postgres transaction smoke 仍未执行，不能记为通过。
+- #559 fixer 在传播上述 lock/lifecycle 修复时合并 durability finding：drain 现在保留每个 attempt
+  从真实 status frame 观察到的 session id，server cancellation 合成 terminal result 时不再丢失它，
+  因此 fresh retry cancel 仍执行 rollout present/missing gate。cancel ack 将 missing 与 retired state
+  一次送入同一个 chat-session-first transaction；complete/fail 则在 terminal CAS 前读取 midflight
+  pinned session。三条路径都只用 session id + runtime id exact match 清 current/retired pointer，
+  concurrent newer pointer 保持不变。
+- 合并后 `cargo check --locked --offline -p cordy-handler --lib`、changed-file fixed-stable rustfmt、
+  `git diff --check` 与 locked/offline metadata 通过。由于全仓共享磁盘在 check 后仅余 26 MiB，清理
+  本 worktree 生成物后也仅 727 MiB，不足以重新链接 daemon/handler test binaries；#559 两个 exact
+  仍保留 verifier 的 0-test 历史，不能改记为通过。真实 Postgres complete/fail/cancel/newer-pointer
+  transaction smoke 同样未执行，作为剩余验证 blocker 交接。
