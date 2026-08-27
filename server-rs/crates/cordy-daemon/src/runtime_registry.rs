@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::health::HealthWorkspace;
 use crate::runtime_set::RuntimeSet;
-use crate::types::Runtime;
+use crate::types::{Runtime, RuntimeExecutionTarget};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceRuntimeState {
@@ -181,6 +181,21 @@ impl RuntimeRegistry {
             .runtimes
             .get(runtime_id)
             .map(|runtime| runtime.provider.clone())
+    }
+
+    /// Returns the complete identity selected by the accepted registration
+    /// row. Custom profile IDs cannot be reconstructed from a provider string
+    /// after claim, so the task path must carry both values together.
+    pub fn execution_target_for_runtime(&self, runtime_id: &str) -> Option<RuntimeExecutionTarget> {
+        self.state
+            .read()
+            .unwrap()
+            .runtimes
+            .get(runtime_id)
+            .map(|runtime| RuntimeExecutionTarget {
+                provider: runtime.provider.clone(),
+                profile_id: runtime.profile_id.clone(),
+            })
     }
 
     pub fn workspace_for_runtime(&self, runtime_id: &str) -> Option<String> {
@@ -387,6 +402,13 @@ mod tests {
         assert_eq!(
             registry.provider_for_runtime("profile-runtime").as_deref(),
             Some("codex")
+        );
+        assert_eq!(
+            registry.execution_target_for_runtime("profile-runtime"),
+            Some(RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: "profile-1".to_string(),
+            })
         );
     }
 

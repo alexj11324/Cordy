@@ -39,6 +39,7 @@ pub mod poisoned;
 pub mod process_control;
 pub mod production_stack;
 pub mod production_services;
+pub mod provider_adapter;
 pub mod provider_registration;
 pub mod registration;
 pub mod reconcile;

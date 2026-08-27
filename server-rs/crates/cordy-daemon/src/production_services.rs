@@ -5,11 +5,12 @@
 //! registration ordering, runtime-gone recovery, profile refresh, and the
 //! reconcile lifecycle remain daemon responsibilities.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use cordy_agent::{BackendConfig, RuntimeCommand};
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -28,6 +29,7 @@ use crate::health::{
     REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
+use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     enqueue_repo_warmup, BuiltinRefreshReason, RepoWarmupRequest, RuntimeRegistrationService,
@@ -37,7 +39,7 @@ use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
-use crate::types::{RepoData, Task};
+use crate::types::{RepoData, RuntimeExecutionTarget, Task};
 use crate::wakeup::jitter_duration;
 
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
@@ -45,10 +47,7 @@ const REPO_WARMUP_CONCURRENCY: usize = 2;
 const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[async_trait::async_trait]
-pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
-    // Provider execution needs the complete daemon-owned context and keeps
-    // this trait boundary explicit instead of hiding it in an untyped bag.
-    #[allow(clippy::too_many_arguments)]
+pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
     async fn handle_non_update_heartbeat_actions(
         &self,
         ctx: Ctx,
@@ -57,40 +56,124 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         ack: DaemonHeartbeatAckPayload,
     );
 
-    #[allow(clippy::too_many_arguments)]
     async fn run_task(
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
-        activity: Arc<DaemonActivity>,
-        repo_state: Arc<DaemonRepoState>,
-        checkout_registry: Arc<RepoCheckoutRegistry>,
+        runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome;
 
     fn health_snapshot(&self) -> HealthResponse;
 }
 
-pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
+/// Shared owners for one provider task execution.
+///
+/// These values are deliberately bundled so a production adapter cannot
+/// accidentally combine a client from one daemon instance with repository or
+/// launch state from another. The launch registry is the same registry fed by
+/// [`ProviderRegistrationSource`](crate::provider_registration::ProviderRegistrationSource)
+/// and therefore contains only accepted workspace registration state.
+#[derive(Clone)]
+pub struct ProviderRuntimeContext {
+    client: Arc<Client>,
+    launch_registry: Arc<RuntimeLaunchRegistry>,
+    activity: Arc<DaemonActivity>,
+    repo_state: Arc<DaemonRepoState>,
+    checkout_registry: Arc<RepoCheckoutRegistry>,
+}
+
+impl ProviderRuntimeContext {
+    pub(crate) fn new(
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
+        activity: Arc<DaemonActivity>,
+        repo_state: Arc<DaemonRepoState>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> Self {
+        Self {
+            client,
+            launch_registry,
+            activity,
+            repo_state,
+            checkout_registry,
+        }
+    }
+
+    pub fn client(&self) -> Arc<Client> {
+        Arc::clone(&self.client)
+    }
+
+    pub fn launch_registry(&self) -> Arc<RuntimeLaunchRegistry> {
+        Arc::clone(&self.launch_registry)
+    }
+
+    /// Converts one accepted launch into the provider crate's command
+    /// contract. The caller supplies only task-scoped environment values;
+    /// command path and fixed arguments always come from the workspace
+    /// registration state, never from task payload or process environment.
+    pub fn backend_config(
+        &self,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+        env: BTreeMap<String, String>,
+    ) -> anyhow::Result<BackendConfig> {
+        let launch = self
+            .launch_registry
+            .resolve(workspace_id, target)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no accepted launch registered for workspace {workspace_id:?} and provider {}",
+                    target.provider
+                )
+            })?;
+        anyhow::ensure!(
+            !launch.command_path.trim().is_empty(),
+            "accepted launch for provider {} has no executable path",
+            target.provider
+        );
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
+            env,
+        })
+    }
+
+    pub fn activity(&self) -> Arc<DaemonActivity> {
+        Arc::clone(&self.activity)
+    }
+
+    pub fn repo_state(&self) -> Arc<DaemonRepoState> {
+        Arc::clone(&self.repo_state)
+    }
+
+    pub fn checkout_registry(&self) -> Arc<RepoCheckoutRegistry> {
+        Arc::clone(&self.checkout_registry)
+    }
+}
+
+pub struct DaemonProductionServices<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> {
     config: Arc<Config>,
     client: Arc<Client>,
     provider: Arc<P>,
-    registration: RuntimeRegistrationService<P>,
+    registration: RuntimeRegistrationService<R>,
     repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
+    launch_registry: Arc<RuntimeLaunchRegistry>,
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     repo_warmup_rx: Mutex<Option<mpsc::Receiver<RepoWarmupRequest>>>,
 }
 
-impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionServices<P, R> {
     pub fn new(
         config: Arc<Config>,
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
         provider: Arc<P>,
+        registration_source: Arc<R>,
     ) -> Self {
         let repo_state = Arc::new(DaemonRepoState::new());
         let (repo_warmups, repo_warmup_rx) = mpsc::channel(REPO_WARMUP_QUEUE_CAPACITY);
@@ -100,7 +183,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
                 Arc::clone(&client),
                 Arc::clone(&repo_state),
                 repo_warmups.clone(),
-                Arc::clone(&provider),
+                registration_source,
             ),
             config,
             client,
@@ -108,6 +191,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             repo_cache,
             repo_state,
             checkout_registry,
+            launch_registry,
             repo_warmups,
             repo_warmup_rx: Mutex::new(Some(repo_warmup_rx)),
         }
@@ -398,7 +482,9 @@ fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckou
 }
 
 #[async_trait::async_trait]
-impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
+    for DaemonProductionServices<P, R>
+{
     async fn handle_runtime_gone(
         &self,
         ctx: Ctx,
@@ -446,7 +532,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome {
@@ -458,11 +544,15 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
             .run_task(
                 ctx,
                 task,
-                provider,
+                target,
                 slot,
-                activity,
-                Arc::clone(&self.repo_state),
-                Arc::clone(&self.checkout_registry),
+                ProviderRuntimeContext::new(
+                    Arc::clone(&self.client),
+                    Arc::clone(&self.launch_registry),
+                    activity,
+                    Arc::clone(&self.repo_state),
+                    Arc::clone(&self.checkout_registry),
+                ),
             )
             .await
     }
@@ -476,7 +566,9 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
 }
 
 #[async_trait::async_trait]
-impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeServices
+    for DaemonProductionServices<P, R>
+{
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
         self.registration
             .sync_once(ctx, &registry, false, None)
