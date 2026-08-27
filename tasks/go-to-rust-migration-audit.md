@@ -845,13 +845,18 @@ reader。缺失、坏 metadata 仍走既有 mtime fallback；unknown kind 保留
   registry 或 dependency。
 - Go 是否可下线：否；AUDIT-005 仍有 reconcile/execution/MCP/local-skills/update 等
   生命周期缺口，且最终 AUDIT-001..010 门尚未收口。
-- 异步状态：独立 verification 与 reviewer 尚未返回，fixer 尚未派发。主 agent 只实际
-  运行并通过 `git diff --check c1683ce3..8a5db875`；未把编译、测试、rustfmt、静态检查
-  或生产验证记录为通过。PR 明确堆叠在 Ready PR #543。
-- reviewer 在 head `15e4ec28` 返回一个 P1：实现行为本身核对正确，但新增测试只手造
-  metadata 并直接调用 override，没有直接跑
-  `read_gc_meta -> unknown dispatch -> local_directory override` 生产决策链，不能支撑
-  删除安全声明。该 finding 已交给独立 fixer；尚无修复 SHA 或重新验证结果。
+- Verification/reviewer/fixer：reviewed head 的 fixed stable rustfmt 因 import ordering
+  失败，且共享类型已导入为 `GCMetaKind`，7 个旧 `GcMetaKind` call site 导致 E0433；
+  两条精确测试均在编译阶段退出（0 tests）。原 unknown/local 测试还手造 meta、直接
+  调 override 且 artifact TTL 为零，未证明 production reader/dispatch 链。fixer 统一
+  类型名与格式，并用真实 unknown + `local_directory` `.gc_meta.json`、已超过非零
+  orphan TTL 的目录和非零 artifact TTL 调用 `should_clean_task_dir`，结果严格为
+  `CleanManagedArtifacts`，不会整目录 `Clean`/`Orphan`。
+- 修复验证：精确 unknown/local production-chain 测试通过（1 passed、0 failed、
+  441 filtered），共享 GC meta roundtrip/legacy/unknown 测试通过（1 passed、0 failed、
+  441 filtered），`cargo test --offline --locked -p cordy-daemon --no-run` 通过；targeted
+  fixed stable rustfmt 与 `git diff --check` 通过。仅有仓库既有 agent/openclaw unused
+  import warnings，无本切片编译 warning。
 
 ## 32. AUDIT-005 执行缺口：runtime MCP production merge
 
@@ -880,5 +885,4 @@ override，继续使用 provider 原生 inheritance；存在配置时，合并�
   task path，AUDIT-005 其余生命周期和最终 AUDIT-001..010 门也未收口。
 - 异步状态：独立 verification 与 reviewer 尚未返回，fixer 尚未派发。主 agent 只实际
   运行并通过 `git diff --check 15e4ec28..1c340cde`；未把编译、测试、rustfmt、静态检查
-  或生产验证记录为通过。PR 明确堆叠在 Ready PR #544，并如实保留 #544 的 reviewer
-  P1 未修复状态。
+  或生产验证记录为通过。PR 明确堆叠在 Ready PR #544。
