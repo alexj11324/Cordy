@@ -156,6 +156,7 @@ static HERMES_SESSION_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
 pub struct QoderConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
     pub default_command: String,
     pub provider: String,
     pub launch_args: Vec<String>,
@@ -185,6 +186,7 @@ impl Default for QoderConfig {
         Self {
             command: RuntimeCommand::default(),
             env: BTreeMap::new(),
+            builtin_runtime: false,
             default_command: "qodercli".to_string(),
             provider: "qoder".to_string(),
             launch_args: vec!["--yolo".to_string(), "--acp".to_string()],
@@ -248,6 +250,7 @@ impl QoderBackend {
 pub struct HermesConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -261,6 +264,7 @@ impl HermesBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: config.builtin_runtime,
                 default_command: "hermes".to_string(),
                 provider: "hermes".to_string(),
                 launch_args: vec!["acp".to_string()],
@@ -320,6 +324,7 @@ impl TraecliBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "traecli".to_string(),
                 provider: "traecli".to_string(),
                 launch_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
@@ -382,6 +387,7 @@ impl KiroBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "kiro-cli".to_string(),
                 provider: "kiro".to_string(),
                 launch_args: ["acp", "--trust-all-tools"].map(str::to_string).to_vec(),
@@ -444,6 +450,7 @@ impl QwenpawBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "qwenpaw".to_string(),
                 provider: "qwenpaw".to_string(),
                 launch_args: vec!["acp".to_string()],
@@ -1126,6 +1133,7 @@ impl Backend for QoderBackend {
         let retry_held_session = self.config.retry_held_session;
         let held_retry_attempts = self.config.held_retry_attempts;
         let held_retry_delay = self.config.held_retry_delay;
+        let builtin_runtime = self.config.builtin_runtime;
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
@@ -1172,6 +1180,7 @@ impl Backend for QoderBackend {
                 retry_held_session,
                 held_retry_attempts,
                 held_retry_delay,
+                builtin_runtime,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -1313,6 +1322,7 @@ async fn run_protocol(
     retry_held_session: bool,
     held_retry_attempts: u8,
     held_retry_delay: Duration,
+    builtin_runtime: bool,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -1367,8 +1377,11 @@ async fn run_protocol(
             ));
         }
     }
-    let mcp_servers =
-        filter_acp_mcp_servers(mcp_servers, parse_acp_mcp_capabilities(&initialize), false);
+    let mcp_servers = filter_acp_mcp_servers(
+        mcp_servers,
+        parse_acp_mcp_capabilities(&initialize),
+        provider == "hermes" && builtin_runtime,
+    );
     let cwd = if options.cwd.is_empty() {
         "."
     } else {
@@ -1391,11 +1404,19 @@ async fn run_protocol(
             ..ProtocolOutcome::default()
         };
     }
+    let mut resume_landed = true;
     let (session_result, mut session_id) = if options.resume_session_id.is_empty() {
         match client
             .request(
                 "session/new",
-                session_params(cwd, None, mcp_servers, coding_project_meta.as_deref()),
+                session_params(
+                    cwd,
+                    None,
+                    mcp_servers,
+                    coding_project_meta.as_deref(),
+                    (provider == "hermes" && !options.model.is_empty())
+                        .then_some(options.model.as_str()),
+                ),
                 |_| {},
             )
             .await
@@ -1428,6 +1449,7 @@ async fn run_protocol(
                         Some(&options.resume_session_id),
                         mcp_servers.clone(),
                         coding_project_meta.as_deref(),
+                        None,
                     ),
                     |_| {},
                 )
@@ -1450,12 +1472,20 @@ async fn run_protocol(
         };
         match loaded {
             Ok(result) => {
-                let returned = extract_session_id(&result);
-                let session_id = if returned.is_empty() {
-                    options.resume_session_id.clone()
+                let (session_id, landed) = if provider == "hermes" {
+                    extract_hermes_resume_session(&result, &options.resume_session_id)
                 } else {
-                    returned
+                    let returned = extract_session_id(&result);
+                    (
+                        if returned.is_empty() {
+                            options.resume_session_id.clone()
+                        } else {
+                            returned
+                        },
+                        true,
+                    )
                 };
+                resume_landed = landed;
                 (result, session_id)
             }
             Err(error) => {
@@ -1510,7 +1540,10 @@ async fn run_protocol(
             };
         }
     }
-    if model_selection && !options.model.is_empty() {
+    let model_already_current = provider == "hermes"
+        && !options.model.is_empty()
+        && extract_current_model(&session_result) == options.model;
+    if model_selection && !options.model.is_empty() && !model_already_current {
         if let Err(error) = client
             .request(
                 "session/set_model",
@@ -1583,14 +1616,31 @@ async fn run_protocol(
         )
         .await;
     }
-    let user_text = if !use_system_prompt || options.system_prompt.is_empty() {
+    let user_text = if provider == "hermes"
+        && options.resume_expected
+        && !resume_landed
+        && !options.resume_continuity_notice.is_empty()
+    {
+        format!("{}{}", options.resume_continuity_notice, prompt)
+    } else if !use_system_prompt || options.system_prompt.is_empty() {
         prompt
     } else {
         format!("{}\n\n---\n\n{}", options.system_prompt, prompt)
     };
+    if provider == "hermes" {
+        let mut running = message(MessageType::Status, "");
+        running.status = "running".to_string();
+        running.session_id = session_id.clone();
+        send(&messages, running);
+    }
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
-        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "dim" | "reasonix"),
+        hermes_dialect: provider == "hermes",
+        hermes_builtin_runtime: provider == "hermes" && builtin_runtime,
+        extended_tool_names: matches!(
+            provider.as_str(),
+            "hermes" | "kiro" | "kimi" | "dim" | "reasonix"
+        ),
         reasonix_dialect: provider == "reasonix",
         ..NotificationState::default()
     };
@@ -1768,6 +1818,7 @@ async fn run_protocol(
             "failed",
             "mcode reached its maximum turn requests".to_string(),
         ),
+        "refusal" if provider == "hermes" => ("completed", String::new()),
         "end_turn" | "" if !strict_stop_reason => ("completed", String::new()),
         "end_turn" => ("completed", String::new()),
         "error" => (
@@ -1779,6 +1830,13 @@ async fn run_protocol(
             format!("{provider} returned unsupported stopReason {unsupported:?}"),
         ),
     };
+    let resume_lost = provider == "hermes"
+        && hermes_resume_session_lost(&options.resume_session_id, stop_reason, state.activity);
+    if resume_lost {
+        status = "failed";
+        error = HERMES_RESUME_LOST_ERROR.to_string();
+        session_id.clear();
+    }
     if provider == "reasonix"
         && !blocked_question.is_empty()
         && matches!(status, "completed" | "failed")
@@ -1793,7 +1851,7 @@ async fn run_protocol(
         full_output,
         session_id,
         usage,
-        resume_rejected: false,
+        resume_rejected: resume_lost,
     }
 }
 
@@ -1802,10 +1860,14 @@ fn session_params(
     session_id: Option<&str>,
     mcp_servers: Vec<AcpMcpServer>,
     coding_project_meta: Option<&str>,
+    model: Option<&str>,
 ) -> Value {
     let mut params = serde_json::json!({"cwd":cwd,"mcpServers":mcp_servers});
     if let Some(session_id) = session_id {
         params["sessionId"] = Value::String(session_id.to_string());
+    }
+    if let Some(model) = model.filter(|model| !model.is_empty()) {
+        params["model"] = Value::String(model.to_string());
     }
     if cwd != "." {
         if let Some(key) = coding_project_meta {
@@ -1838,8 +1900,11 @@ struct NotificationState {
     deliverable: Deliverable,
     tools: HashMap<String, PendingTool>,
     usage: TokenUsage,
+    activity: u64,
     last_finishing_status: String,
     kiro_dialect: bool,
+    hermes_dialect: bool,
+    hermes_builtin_runtime: bool,
     extended_tool_names: bool,
     reasonix_dialect: bool,
     streaming_current_turn: bool,
@@ -1852,6 +1917,7 @@ struct NotificationState {
 struct PendingTool {
     name: String,
     input: BTreeMap<String, Value>,
+    deferred_text: String,
     emitted: bool,
     finishing: bool,
 }
@@ -1909,17 +1975,30 @@ fn handle_notification(
     match kind.as_str() {
         "agentmessagechunk" => {
             if let Some(text) = content_text(data) {
+                state.activity = state.activity.saturating_add(1);
                 state.deliverable.text(text);
                 send(messages, message(MessageType::Text, text));
             }
         }
         "agentthoughtchunk" => {
             if let Some(text) = content_text(data) {
+                state.activity = state.activity.saturating_add(1);
                 send(messages, message(MessageType::Thinking, text));
             }
         }
-        "toolcall" => handle_tool_start(data, messages, state),
-        "toolcallupdate" => handle_tool_update(data, messages, state),
+        "toolcall" => {
+            state.activity = state.activity.saturating_add(1);
+            handle_tool_start(data, messages, state);
+        }
+        "toolcallupdate" => {
+            if matches!(
+                data.get("status").and_then(Value::as_str),
+                Some("completed" | "failed")
+            ) {
+                state.activity = state.activity.saturating_add(1);
+            }
+            handle_tool_update(data, messages, state);
+        }
         "usageupdate" | "turnend" => {
             let update = parse_usage(data.get("usage").or(Some(data)));
             state.usage = merge_usage(state.usage, update);
@@ -2038,6 +2117,38 @@ fn handle_tool_start(
     if id.is_empty() {
         return;
     }
+    if state.hermes_dialect {
+        let name = hermes_tool_name(data);
+        let input = tool_input(data);
+        let deferred_text = if !state.hermes_builtin_runtime && input.is_empty() {
+            hermes_tool_call_text(data)
+        } else {
+            String::new()
+        };
+        let mut invocation = input.clone();
+        if state.hermes_builtin_runtime && input.is_empty() {
+            let rendered = hermes_tool_call_text(data);
+            if name == "terminal" && rendered.trim_start().starts_with("$ ") {
+                invocation = parse_hermes_tool_input(&rendered);
+            }
+        }
+        state.deliverable.tool_boundary();
+        let emitted = state.hermes_builtin_runtime || !invocation.is_empty();
+        if emitted {
+            send(messages, tool_use(&id, &name, invocation.clone()));
+        }
+        state.tools.insert(
+            id,
+            PendingTool {
+                name,
+                input: invocation,
+                deferred_text,
+                emitted,
+                finishing: false,
+            },
+        );
+        return;
+    }
     let name = tool_name(data, state.extended_tool_names);
     let input = tool_input(data);
     let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
@@ -2051,6 +2162,7 @@ fn handle_tool_start(
         PendingTool {
             name,
             input,
+            deferred_text: String::new(),
             emitted,
             finishing,
         },
@@ -2076,18 +2188,31 @@ fn handle_tool_update(
     if id.is_empty() {
         return;
     }
-    let pending = match state.tools.remove(id) {
+    let mut pending = match state.tools.remove(id) {
         Some(pending) => pending,
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
-                name: tool_name(data, state.extended_tool_names),
+                name: if state.hermes_dialect {
+                    hermes_tool_name(data)
+                } else {
+                    tool_name(data, state.extended_tool_names)
+                },
                 input: tool_input(data),
+                deferred_text: String::new(),
                 emitted: false,
                 finishing: false,
             }
         }
     };
+    if state.hermes_dialect && !pending.emitted {
+        let update_input = tool_input(data);
+        if !update_input.is_empty() {
+            pending.input = update_input;
+        } else if pending.input.is_empty() && !pending.deferred_text.is_empty() {
+            pending.input = parse_hermes_tool_input(&pending.deferred_text);
+        }
+    }
     let finishing = state.kiro_dialect
         && (pending.finishing || is_finishing_tool(&pending.name, &pending.input));
     if !pending.emitted {
@@ -2098,6 +2223,12 @@ fn handle_tool_update(
         .find_map(|key| data.get(*key))
         .map(render_value)
         .or_else(|| content_text(data).map(str::to_string))
+        .or_else(|| {
+            state
+                .hermes_dialect
+                .then(|| hermes_tool_call_text(data))
+                .filter(|text| !text.is_empty())
+        })
         .unwrap_or_default();
     let mut result = message(MessageType::ToolResult, "");
     result.call_id = id.to_string();
@@ -2144,6 +2275,102 @@ fn tool_name(data: &Value, extended_names: bool) -> String {
         "todo" | "todo write" | "todo list" | "todo_list" => "todo_write".to_string(),
         _ => name.to_ascii_lowercase().replace(' ', "_"),
     }
+}
+
+fn hermes_tool_name(data: &Value) -> String {
+    let title = data
+        .get("title")
+        .or_else(|| data.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if title.eq_ignore_ascii_case("execute code") {
+        return "execute_code".to_string();
+    }
+    if let Some((prefix, _)) = title.split_once(':') {
+        return match prefix.trim().to_ascii_lowercase().as_str() {
+            "terminal" => "terminal".to_string(),
+            "read" => "read_file".to_string(),
+            "write" => "write_file".to_string(),
+            value if value.starts_with("patch") => "patch".to_string(),
+            "search" => "search_files".to_string(),
+            "web search" => "web_search".to_string(),
+            "extract" => "web_extract".to_string(),
+            "delegate" => "delegate_task".to_string(),
+            "analyze image" => "vision_analyze".to_string(),
+            value => value.to_string(),
+        };
+    }
+    match data
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "read" => "read_file".to_string(),
+        "edit" => "write_file".to_string(),
+        "execute" => "terminal".to_string(),
+        "search" => "search_files".to_string(),
+        "fetch" => "web_search".to_string(),
+        "think" => "thinking".to_string(),
+        _ if !title.is_empty() => title.to_string(),
+        kind => kind.to_string(),
+    }
+}
+
+fn hermes_tool_call_text(data: &Value) -> String {
+    let Some(blocks) = data.get("content").and_then(Value::as_array) else {
+        return String::new();
+    };
+    let mut pieces = Vec::new();
+    for block in blocks {
+        match block
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            "content" => {
+                if let Some(text) = block
+                    .get("content")
+                    .and_then(|content| content.get("text"))
+                    .and_then(Value::as_str)
+                {
+                    if !text.is_empty() {
+                        pieces.push(text.to_string());
+                    }
+                }
+            }
+            "diff" => {
+                let path = block
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    let old_len = block
+                        .get("oldText")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len);
+                    let new_len = block
+                        .get("newText")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len);
+                    pieces.push(if old_len == 0 {
+                        format!("--- {path}\n+++ {path}\n(new file, {new_len} bytes)")
+                    } else {
+                        format!("--- {path}\n+++ {path}\n(edited: {old_len} → {new_len} bytes)")
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    pieces.join("\n")
+}
+
+fn parse_hermes_tool_input(text: &str) -> BTreeMap<String, Value> {
+    serde_json::from_str(text)
+        .unwrap_or_else(|_| BTreeMap::from([("text".to_string(), Value::String(text.to_string()))]))
 }
 
 fn is_finishing_tool(name: &str, input: &BTreeMap<String, Value>) -> bool {
@@ -2298,6 +2525,35 @@ fn extract_session_id(value: &Value) -> String {
         .to_string()
 }
 
+fn extract_hermes_resume_session(value: &Value, requested: &str) -> (String, bool) {
+    let returned = extract_session_id(value);
+    let provenance = value
+        .get("_meta")
+        .and_then(|meta| meta.get("hermes"))
+        .and_then(|hermes| hermes.get("sessionProvenance"))
+        .and_then(|provenance| provenance.get("acpSessionId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let actual = if !returned.is_empty() {
+        returned
+    } else if !provenance.is_empty() {
+        provenance.to_string()
+    } else {
+        requested.to_string()
+    };
+    let landed = actual == requested;
+    (actual, landed)
+}
+
+const HERMES_RESUME_LOST_ERROR: &str =
+    "hermes could not restore the resumed session; it refused the turn without running the agent";
+
+fn hermes_resume_session_lost(resume_session_id: &str, stop_reason: &str, activity: u64) -> bool {
+    !resume_session_id.is_empty() && stop_reason == "refusal" && activity == 0
+}
+
 fn extract_current_model(value: &Value) -> String {
     value
         .get("models")
@@ -2307,6 +2563,7 @@ fn extract_current_model(value: &Value) -> String {
                 .or_else(|| models.get("current_model_id"))
         })
         .or_else(|| value.get("currentModelId"))
+        .or_else(|| value.get("current_model_id"))
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim()
@@ -3228,6 +3485,86 @@ mod tests {
         let (output, full) = deliverable.finish();
         assert_eq!(output, "Final answer.");
         assert_eq!(full, "I will inspect.Final answer.");
+    }
+
+    #[test]
+    fn custom_hermes_defers_terminal_content_until_completion() {
+        let (messages, mut received) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "title": "terminal: $ echo wrong",
+                "content": [{"type":"content","content":{"type":"text","text":"$ echo wrong"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        assert!(received.try_recv().is_err());
+        assert!(state
+            .tools
+            .get("tool-1")
+            .is_some_and(|tool| tool.input.is_empty() && !tool.deferred_text.is_empty()));
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "status": "completed",
+                "rawInput": {"command":"echo right"}
+            }),
+            &messages,
+            &mut state,
+        );
+        let tool = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("custom Hermes tool use: {error}"));
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert_eq!(tool.tool, "terminal");
+        assert_eq!(
+            tool.input.get("command").and_then(Value::as_str),
+            Some("echo right")
+        );
+    }
+
+    #[test]
+    fn hermes_session_helpers_preserve_resume_and_model_contracts() {
+        let (session_id, landed) = extract_hermes_resume_session(
+            &serde_json::json!({
+                "_meta": {"hermes": {"sessionProvenance": {"acpSessionId": "actual"}}}
+            }),
+            "requested",
+        );
+        assert_eq!(session_id, "actual");
+        assert!(!landed);
+        assert!(hermes_resume_session_lost("requested", "refusal", 0));
+        assert!(!hermes_resume_session_lost("requested", "refusal", 1));
+        assert_eq!(
+            extract_current_model(&serde_json::json!({"current_model_id":"nous:model"})),
+            "nous:model"
+        );
+        let params = session_params(".", None, Vec::new(), None, Some("nous:model"));
+        assert_eq!(params["model"], "nous:model");
+    }
+
+    #[test]
+    fn hermes_tool_parser_covers_named_tools_and_text_fallback() {
+        assert_eq!(
+            hermes_tool_name(&serde_json::json!({"title":"Read: src/main.rs"})),
+            "read_file"
+        );
+        assert_eq!(
+            hermes_tool_name(&serde_json::json!({"kind":"execute"})),
+            "terminal"
+        );
+        let parsed = parse_hermes_tool_input("not-json");
+        assert_eq!(parsed.get("text").and_then(Value::as_str), Some("not-json"));
+        assert!(hermes_tool_call_text(&serde_json::json!({
+            "content": [{"type":"diff","path":"src/main.rs","oldText":"old","newText":"new"}]
+        }))
+        .contains("edited: 3 → 3 bytes"));
     }
 
     #[cfg(unix)]

@@ -235,6 +235,7 @@ pub const BUILTIN_RUNTIMES: &[BuiltinRuntimeDescriptor] = &[BuiltinRuntimeDescri
 pub struct BackendConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
 }
 
 impl std::fmt::Debug for BackendConfig {
@@ -305,7 +306,11 @@ pub async fn discover_models(
 ) -> Result<Catalog, AgentError> {
     let family = protocol_family(runtime_id)
         .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
-    let BackendConfig { command, env } = config;
+    let BackendConfig {
+        command,
+        env,
+        builtin_runtime,
+    } = config;
     match family {
         "antigravity" => Ok(AntigravityBackend::new(AntigravityConfig {
             command,
@@ -383,7 +388,11 @@ pub async fn discover_models(
         "grok" => Ok(GrokBackend::new(GrokConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),
-        "hermes" => Ok(HermesBackend::new(HermesConfig { command, env })
+        "hermes" => Ok(HermesBackend::new(HermesConfig {
+            command,
+            env,
+            builtin_runtime,
+        })
             .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
             .await),
         "dim" => Ok(DimBackend::new(DimConfig { command, env })
@@ -488,6 +497,7 @@ pub fn build_backend(
         "hermes" => Ok(Arc::new(HermesBackend::new(HermesConfig {
             command: config.command,
             env: config.env,
+            builtin_runtime: config.builtin_runtime,
         }))),
         "mcode" => Ok(Arc::new(McodeBackend::new(McodeConfig {
             command: config.command,

@@ -136,6 +136,7 @@ impl ProductionProviderAdapter {
                             launch.fixed_args.clone(),
                         ),
                         env: BTreeMap::new(),
+                        builtin_runtime: target.profile_id.is_empty(),
                     },
                     &self.model_cache,
                     ctx.token().clone(),
@@ -840,6 +841,7 @@ async fn handle_model_list(
             let config = cordy_agent::BackendConfig {
                 command: cordy_agent::RuntimeCommand::new(launch.command_path, launch.fixed_args),
                 env: BTreeMap::new(),
+                builtin_runtime: target.profile_id.is_empty(),
             };
             match cordy_agent::registry::discover_models(
                 &target.provider,
