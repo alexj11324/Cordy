@@ -1540,3 +1540,12 @@ Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer�
   通过 `git diff --check 0a4c4258..c6ee2f10`；Cargo.lock/resolution、rustfmt、compile、tests、Linux release
   pprof decode、Tokio console client、public isolation、shutdown、Docker/non-Linux build 与 overhead 尚未
   记为通过。PR 保持非 Draft Ready，不等待异步收口。
+- verification（exact HEAD `47897fca`）：两个 diff check 和直接触及的 main/profiling fixed-stable
+  rustfmt 通过；Cargo.lock 前后 SHA256 均为
+  `a40395d7b03895b86d2e8fdc717d492edf28ad94f667f7ed7555271880cb2dc4` 且 worktree clean。但 lock
+  不含新增 `console-subscriber`/jemalloc graph，full `cargo metadata --locked --offline` 在解析阶段以
+  `no matching package named console-subscriber found` exit 101；server no-run、heap exact test 和 Windows
+  check 同样在 discovery/compile 前 exit 101，heap exact 实际 0 tests，不能记为通过。Linux release、
+  live heap gzip/pprof decode、public isolation、Tokio console client、shutdown、Docker build 与 overhead
+  全部未执行。静态检查只能确认 allocator/route/fixed-loopback wiring 存在，不能替代 runtime evidence；
+  完整 lock 及后续暴露问题已排给 independent fixer，修后必须重跑上述验证。
