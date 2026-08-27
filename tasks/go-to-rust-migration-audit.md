@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570 与 offline-task/reconnect-retry #571 Ready；§59 已登记 stale/queued cleanup 契约 | 收口 #565..#571 的异步 V/R/F 结果，同时交付 §59 完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#571 堆叠在 #570；§59 先登记后实现，依赖 #571 branch | PR #565..#571；§5、§6.2、§18、§52..§59 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569、stale sweeper #570、offline-task/reconnect-retry #571 与 stale/queued cleanup #572 Ready | 收口 #565..#572 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#572 堆叠在 #571；#572 verifier/reviewer 已派发，主线不等待 | PR #565..#572；§5、§6.2、§18、§52..§59 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2259,3 +2259,24 @@ lineage predicate、batch cap、apply-time guard 或 production `run_once` wirin
   chat finalize、runtime GC、其他 background workers 与 AUDIT-001..010 总退出门仍未完成。
 - owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
   `codex/cord-235-offline-task-recovery-contract-rust`，独立 worktree，编号待创建后回写。
+
+实现 commit `480105aa` 只在既有 `runtime_sweeper.rs` 的 `cfg(test)` 内增加真实 PostgreSQL cleanup contract，没有修改
+production stages、SQL、TaskService、Bus 或新增 worker seam：
+
+- 唯一 fixture 将既有 rows 置为 terminal 后创建 fresh runtime、stale-but-alive runtime、过期/有效 prepare lease 的
+  dispatched rows、长时间 running row、fresh-runtime running row、`waiting_local_directory` row，以及两个普通 queued
+  rows 和一个 `runtime_offline` parent queued retry。真实 `RuntimeTaskSweeper::run_once` 证明 stale dispatched/running
+  只在 timeout/liveness gate 允许时失败，lease/fresh running/waiter 保留；queued rows 以 `queued_expired` 终止，retry
+  lineage 保留。
+- 在生产 SQL 调用前持有一个 queued row 的 PostgreSQL `FOR UPDATE` 锁，以 `max_per_tick=1` 直接证明 `SKIP LOCKED` 和
+  bounded batch，再恢复该 row 后通过完整 `run_once` 让真实 `TaskService::handle_failed_tasks` 收口四个终止任务。
+- 订阅 shared Bus 并断言每个 workspace-scoped task failure 的 `timeout`/`queued_expired` reason/error，另验证 task issue
+  与 agent 状态副作用；liveness double 只报告 stale runtime alive，验证 stale DB heartbeat 不被误判为 daemon 死亡。
+- required `DATABASE_URL` 缺失/坏连接直接失败；契约使用唯一 UUID fixture，正常和失败返回路径显式删除 workspace/user，
+  Drop 仅作为 best-effort 兜底，不把环境缺失写成通过。
+
+主 agent 仅执行 staged `git diff --check`（PASS），没有运行 cargo、rustfmt、测试或 DB 命令。非 Draft Ready PR #572 已创建，
+base 是 `codex/cord-235-offline-task-recovery-contract-rust` 的 `cce8b6b1`，当前 branch
+`codex/cord-236-stale-task-cleanup-contract-rust`，Ready SHA `480105aa`。独立 verifier/reviewer 已异步派发；在 exact
+compile、matched/executed counts、required DB、production server/Windows 和 failure cleanup 证据返回前，本契约不能声称已
+验证或删除 Go，PR 保持 Ready。
