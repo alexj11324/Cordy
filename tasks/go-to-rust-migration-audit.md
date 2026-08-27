@@ -2815,3 +2815,12 @@ Crockford wire shape、dedup、payload、Redis 和错误语义。移除这些 cr
   旧数据读取及 AUDIT-001..010 总退出证据仍未完成，不能删除 Go。
 - owner：主 agent 负责最小生产调用迁移、依赖锁文件、机械检查、提交/推送和 Ready PR；独立 verifier/reviewer/fixer 异步
   负责生成向量、调用覆盖、编译和回归 finding。
+
+实现 commit `e7eeac1f` 在 `cordy-util` 增加薄的 `Ulid::new`/`new_ulid` 生成入口，并把 `cordy-realtime` 的
+`RedisRelay`、`ShardedStreamRelay`、`SwitchableRelayBroadcaster`、`MirroredRelay` 以及 daemon notifier 的所有直接
+`ulid::Ulid::new().to_string()` 调用切到该入口；同时移除 realtime/daemon 的重复直接 `ulid` 依赖，保留现有 `String`
+API、payload、dedup、Redis 和 relay wiring。docs commit `840ef87b` 将本仓库规则明确为 Rust 迁移默认只做 Rust
+验证，Go 测试不作为门禁，且由独立 verifier 承担 cargo format/check/test/build。主 agent 仅执行 `git diff --check`
+（PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；Ready PR #580 将以
+`codex/cord-243-daemon-event-id-ulid`（base SHA `1bf33aca`）为 base 创建。异步 verifier/reviewer/fixer 结果待回写；在 exact compile、
+matched/executed、跨语言 event/Redis/旧数据读取和真实生产 smoke 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
