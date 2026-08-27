@@ -526,6 +526,7 @@ impl Service {
                 user_id: user_id.to_string(),
                 toolkits: None,
                 connected_accounts: Some(serde_json::Value::Object(connected_accounts)),
+                ..Default::default()
             })
             .await
             .map_err(|e| anyhow!("composio: create session: {e}"))?;
@@ -768,6 +769,7 @@ impl crate::dispatch::SessionSpawner for Service {
                 user_id,
                 toolkits: Some(serde_json::json!({"enable": toolkits_enable})),
                 connected_accounts: Some(serde_json::to_value(pinned)?),
+                ..Default::default()
             })
             .await
             .map_err(|error| anyhow!("composio: create session: {error}"))?;
@@ -1023,6 +1025,7 @@ mod tests {
                     r#type: "http".into(),
                     url: "https://mcp.test/sess".into(),
                 },
+                ..Default::default()
             })
         }
         fn mcp_auth_headers(&self) -> Vec<(String, String)> {
