@@ -931,3 +931,15 @@ daemon claim wire 删除重复 stand-in，直接复用 `cordy-remotemcp::{Connec
 - 异步状态：独立 verification 与 reviewer 尚未返回，fixer 尚未派发。主 agent 只实际
   运行并通过 `git diff --check b2430a64..926d8819`；未把编译、测试、rustfmt、静态检查
   或真实外部 MCP 验证记录为通过。PR 明确堆叠在 Ready PR #545。
+
+独立 review/verification 后续 finding 已由 fixer 收口：reviewed head `263ace6b` 的
+daemon exact tests/`--no-run` 最初均被堆叠分支遗留的 7 处 `GcMetaKind` E0433 阻断，
+实际 0 tests；`cordy-remotemcp` 独立 check 通过，fixed-stable rustfmt 在
+`provider_adapter.rs`/`remote_mcp_broker.rs` 失败，且没有直接 limits 检查。fixer 先传播
+#544 的 `1dcc92db`，随后让 merge helper 对 scalar root/scalar `mcpServers` 返回错误而非
+panic；直接覆盖 task call/concurrency/body 三个限额；并让 production adapter 的真实
+`Client` credential resolver 与 startup→effective overlay→`ProviderExecutionPlan`→set
+lifetime bridge 可由同一窄生产 helper 验证。验证结果：merge exact 1/1、limits exact
+1/1；production bridge 在受限 sandbox 首次因 loopback bind EPERM 0/1，允许本地 bind 后
+重跑 1/1；fixed-stable rustfmt 与 `git diff --check` 通过。没有外部 Remote MCP 凭证，
+故仍不把真实 public-HTTPS external smoke 记为已执行。

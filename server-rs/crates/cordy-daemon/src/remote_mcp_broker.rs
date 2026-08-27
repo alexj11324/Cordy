@@ -106,7 +106,7 @@ impl RemoteMCPBrokerSet {
         });
     }
 
-    fn push(&mut self, token: CancellationToken) {
+    pub(crate) fn push(&mut self, token: CancellationToken) {
         self.shutdown_tokens.push(token);
     }
 }
@@ -173,30 +173,27 @@ pub(crate) async fn start_task_remote_mcp_brokers(
         let mut headers = empty_headers;
         if !connection.credential_header.is_empty() {
             match &resolve_credential {
-                Some(resolver) => match resolver(
-                    setup_ctx.child(),
-                    connection.contribution_id.clone(),
-                )
-                .await
-                {
-                    Ok(resolved) => headers = resolved,
-                    Err(resolve_err) => {
-                        let message = format!(
-                            "Remote MCP {} credential is unavailable",
-                            connection.contribution_key
-                        );
-                        match degrade(message.clone(), &mut diagnostics) {
-                            None => continue,
-                            Some(_) => {
-                                return finish_err(
-                                    set,
-                                    diagnostics,
-                                    anyhow!("{message}: {resolve_err}"),
-                                )
+                Some(resolver) => {
+                    match resolver(setup_ctx.child(), connection.contribution_id.clone()).await {
+                        Ok(resolved) => headers = resolved,
+                        Err(resolve_err) => {
+                            let message = format!(
+                                "Remote MCP {} credential is unavailable",
+                                connection.contribution_key
+                            );
+                            match degrade(message.clone(), &mut diagnostics) {
+                                None => continue,
+                                Some(_) => {
+                                    return finish_err(
+                                        set,
+                                        diagnostics,
+                                        anyhow!("{message}: {resolve_err}"),
+                                    )
+                                }
                             }
                         }
                     }
-                },
+                }
                 None => {
                     let message = format!(
                         "Remote MCP {} credential resolver is unavailable",
@@ -803,22 +800,36 @@ pub(crate) fn merge_task_remote_mcp_config(base: &str, overlay: &str) -> anyhow:
         return Ok(base.to_string());
     }
     let overlay_document: Value = serde_json::from_str(overlay).map_err(|err| anyhow!("{err}"))?;
+    let overlay_document = overlay_document
+        .as_object()
+        .ok_or_else(|| anyhow!("Remote MCP overlay must be an object"))?;
     let empty_map = Map::new();
-    let overlay_servers = overlay_document
-        .get("mcpServers")
-        .and_then(Value::as_object)
-        .unwrap_or(&empty_map);
+    let overlay_servers = match overlay_document.get("mcpServers") {
+        None | Some(Value::Null) => &empty_map,
+        Some(Value::Object(servers)) => servers,
+        Some(_) => return Err(anyhow!("Remote MCP overlay mcpServers must be an object")),
+    };
 
     let trimmed = base.trim();
     let mut base_document = json!({"mcpServers": {}});
     if !trimmed.is_empty() && trimmed != "null" {
         base_document = serde_json::from_str(trimmed).map_err(|err| anyhow!("{err}"))?;
-        if base_document.get("mcpServers").is_none() {
-            base_document["mcpServers"] = json!({});
-        }
     }
+    let base_document = base_document
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("Remote MCP base config must be an object"))?;
+    let base_servers = match base_document.entry("mcpServers") {
+        serde_json::map::Entry::Vacant(entry) => entry.insert(json!({})),
+        serde_json::map::Entry::Occupied(mut entry) if entry.get().is_null() => {
+            entry.insert(json!({}));
+            entry.into_mut()
+        }
+        serde_json::map::Entry::Occupied(entry) => entry.into_mut(),
+    }
+    .as_object_mut()
+    .ok_or_else(|| anyhow!("Remote MCP base mcpServers must be an object"))?;
     for (name, server) in overlay_servers {
-        base_document["mcpServers"][name] = server.clone();
+        base_servers.insert(name.clone(), server.clone());
     }
     Ok(serde_json::to_string(&base_document)?)
 }
@@ -864,6 +875,12 @@ mod tests {
             merge_task_remote_mcp_config(r#"{"mcpServers":{}}"#, "").unwrap(),
             r#"{"mcpServers":{}}"#
         );
+        assert!(merge_task_remote_mcp_config("42", r#"{"mcpServers":{}}"#).is_err());
+        assert!(merge_task_remote_mcp_config(
+            r#"{"mcpServers":42}"#,
+            r#"{"mcpServers":{"plugin":{}}}"#,
+        )
+        .is_err());
     }
 
     #[test]
@@ -1140,6 +1157,67 @@ mod tests {
             .header("Host", "localhost")
             .body(Body::from(body.to_string()))
             .unwrap()
+    }
+
+    async fn response_text(response: Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(response.into_body(), REMOTE_MCP_MAX_REQUEST_BYTES + 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn proxy_enforces_task_call_concurrency_and_body_limits() {
+        let endpoint = url::Url::parse("http://127.0.0.1:1/").unwrap();
+
+        let call_limited = proxy_state(endpoint.clone(), Vec::new(), Vec::new());
+        call_limited
+            .calls
+            .store(REMOTE_MCP_MAX_CALLS, Ordering::SeqCst);
+        let text = response_text(
+            serve_proxy_request(
+                &call_limited,
+                post_request(
+                    "/capability",
+                    json!({"jsonrpc":"2.0","id":1,"method":"ping"}),
+                ),
+            )
+            .await,
+        )
+        .await;
+        assert!(text.contains("task call limit exceeded"), "{text}");
+
+        let concurrency_limited = proxy_state(endpoint.clone(), Vec::new(), Vec::new());
+        let _all_permits = concurrency_limited
+            .semaphore
+            .clone()
+            .acquire_many_owned(REMOTE_MCP_MAX_CONCURRENCY as u32)
+            .await
+            .unwrap();
+        let text = response_text(
+            serve_proxy_request(
+                &concurrency_limited,
+                post_request(
+                    "/capability",
+                    json!({"jsonrpc":"2.0","id":2,"method":"ping"}),
+                ),
+            )
+            .await,
+        )
+        .await;
+        assert!(text.contains("concurrency limit exceeded"), "{text}");
+
+        let body_limited = proxy_state(endpoint, Vec::new(), Vec::new());
+        let request = Request::builder()
+            .method(http::Method::POST)
+            .uri("/capability")
+            .body(Body::from(vec![b' '; REMOTE_MCP_MAX_REQUEST_BYTES + 1]))
+            .unwrap();
+        let text = response_text(serve_proxy_request(&body_limited, request).await).await;
+        assert!(text.contains("request is invalid"), "{text}");
     }
 
     #[tokio::test]
