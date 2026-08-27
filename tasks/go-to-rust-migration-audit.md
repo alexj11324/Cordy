@@ -1791,6 +1791,8 @@ cache、legacy endpoint state 或 runtime registry。
   registry、Stub、Noop 或 Fake。唯一 Rust production assembly 仍构造这一 `Client` 并注入同一
   `DaemonControl`，现有第二次 failure 调用点现在执行真实 pool retirement。
 - 主 agent 只运行并通过 `git diff --check`；rustfmt、Cargo resolution/lock、compile、exact tests、完整 daemon
-  tests、production runtime smoke 与平台检查尚未由 independent verifier 执行，不能记录为通过。Ready PR
-  尚未创建；Go 本 stale-pool recovery 只有在异步证据收口后可退休，AUDIT-005 其他缺口和最终
-  AUDIT-001..010 仍未完成。
+  tests、production runtime smoke 与平台检查尚未由 independent verifier 执行，不能记录为通过。Ready
+  PR #564（branch `codex/cord-228-daemon-http-pool-recovery-rust`；gap `616a7d64`、implementation
+  `762be14d`、initial delivery ledger `5710efde`）堆叠在 Ready #563 branch at `2180ded8`，保持非 Draft；
+  Go 本 stale-pool recovery 只有在异步证据收口后可退休，AUDIT-005 其他缺口和最终 AUDIT-001..010
+  仍未完成。
