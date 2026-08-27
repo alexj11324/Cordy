@@ -612,9 +612,12 @@ trends between captures, enable the private metrics listener and graph:
 - `process_open_fds`
 
 Go runtime traces are not a Rust wire contract, so the legacy
-`/debug/pprof/trace` URL returns `410 Gone`. The Rust server instead exports live
-Tokio task, resource, and operation diagnostics over the fixed loopback-only
-console endpoint `127.0.0.1:6669`. Install the official client and connect from
+`/debug/pprof/trace` URL returns `410 Gone`. The Rust server can instead export
+live Tokio task, resource, and operation diagnostics over the fixed
+loopback-only console endpoint `127.0.0.1:6669`. This aggregation is disabled by
+default; set `CORDY_TOKIO_CONSOLE=1` and restart the backend for a bounded
+diagnostic session. Completed data is retained for 60 seconds and the event
+buffer is capped at 1024 entries. Install the official client and connect from
 the same host or container network namespace:
 
 ```bash
@@ -648,9 +651,13 @@ installed client in the backend container's network namespace without
 publishing the management port:
 
 ```bash
+console_bin="$(command -v tokio-console)"
+test -x "$console_bin"
 backend_id="$(docker compose -f docker-compose.selfhost.yml ps -q backend)"
-sudo nsenter --target "$(docker inspect --format '{{.State.Pid}}' "$backend_id")" \
-  --net tokio-console http://127.0.0.1:6669
+backend_pid="$(docker inspect --format '{{.State.Pid}}' "$backend_id")"
+test "$backend_pid" -gt 1
+sudo nsenter --target "$backend_pid" --net \
+  "$console_bin" http://127.0.0.1:6669
 ```
 
 ## Upgrading
