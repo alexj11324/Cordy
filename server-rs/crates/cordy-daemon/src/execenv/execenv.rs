@@ -453,7 +453,7 @@ pub struct SkillFileContextForEnv {
 // shape now. Field names mirror the Go json tags byte-for-byte.
 /// Per-run external app capability (internal/runtimeapps/connected_app.go).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "snake_case", default)]
 pub struct ConnectedApp {
     pub provider: String,
     pub server_name: String,

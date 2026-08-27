@@ -103,7 +103,19 @@ impl fmt::Debug for BoundProviderExecution {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("BoundProviderExecution")
-            .field("options", &self.options)
+            // ExecOptions contains provider arguments and MCP configuration;
+            // keep this diagnostic summary structural so a task log cannot
+            // expose either of them.
+            .field("has_cwd", &!self.options.cwd.is_empty())
+            .field("has_model", &!self.options.model.is_empty())
+            .field("has_system_prompt", &!self.options.system_prompt.is_empty())
+            .field(
+                "has_resume_session",
+                &!self.options.resume_session_id.is_empty(),
+            )
+            .field("extra_arg_count", &self.options.extra_args.len())
+            .field("custom_arg_count", &self.options.custom_args.len())
+            .field("has_mcp_config", &self.options.mcp_config.is_some())
             .field("child_env", &self.child_env)
             .finish()
     }
@@ -764,6 +776,20 @@ mod tests {
             prepare.codex_custom_args,
             vec!["--sandbox", "workspace-write", "--agent-flag", "secret-arg"]
         );
+    }
+
+    #[test]
+    fn connected_apps_keep_go_wire_field_names() {
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        let prepare_json = serde_json::to_value(plan.prepare_params()).unwrap();
+        let connected_app = &prepare_json["Task"]["ConnectedApps"][0];
+
+        assert_eq!(connected_app["provider"], "composio");
+        assert_eq!(connected_app["server_name"], "composio");
+        assert_eq!(connected_app["toolkit_slug"], "notion");
+        assert_eq!(connected_app["toolkit_name"], "Notion");
+        assert!(connected_app.get("serverName").is_none());
+        assert!(connected_app.get("toolkitSlug").is_none());
     }
 
     #[test]
