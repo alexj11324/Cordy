@@ -1854,3 +1854,19 @@ cache、legacy endpoint state 或 runtime registry。
 - #561 尚未执行真实 server loopback deregister failure→next-round retry、完整 CLI daemon foreground smoke 与
   多 workspace 高延迟 probe wall-clock smoke；因此这些外部/时序证据不记为 PASS，Ready 声明仅覆盖上述已执行
   单元与 compile contract。
+- #562 independent fixer（基于 review ledger `1bf5cccd`，依赖传播 commits `50af728a`/`83468e0b`）：
+  non-Windows `CORDY_AGENT_TEMP_BASE` 的 UTF-8 value 先 `trim`，空白视为 unset，带空格 absolute value 使用
+  trim 后路径；non-Unicode value 在 allocation 前以含变量名的明确错误 fail-closed，删除与 production
+  `to_str` 冲突的 false-accept contract。三个重复 test-local restore 实现合并为一个 guard，并由 execenv 与
+  adapter test 共享同一环境锁。新增唯一 `ProductionProviderAdapter::run_task_inner` Kiro loopback 测试：
+  server start handler 先写 sentinel，真实 child 才能启动；child 捕获并证明 `TMPDIR`/`TMP`/`TEMP` 三值一致且
+  覆盖恶意 custom env；success 与 server start failure 两条退出路径均断言 configured temp base 无残留。
+- #562 fixer verification：`cargo metadata --locked --offline --format-version 1 --no-deps` PASS；
+  `CARGO_INCREMENTAL=0 cargo check --locked --offline -p cordy-daemon --tests` PASS；task-temp allocation 4/4
+  PASS，execution-plan authoritative rebind exact 1/1 PASS，production adapter lifecycle exact 1/1 PASS；后者
+  sandbox 首次因 loopback bind `EPERM` 0/1 FAIL，非沙箱重跑后 PASS。首次 direct test 迭代还分别暴露并修正
+  missing agent id/name/identity、非 `mat_` token 与 `/tmp` noexec fixture（改由 `/bin/sh` 执行），最终使用真实
+  production validation/backend path PASS。fixed-stable 三个 #562 文件 rustfmt 与 `git diff --check` PASS。
+- #562 未执行 Windows runtime smoke、process cancellation/forced-kill cleanup 或完整 daemon foreground smoke；
+  direct adapter 证据覆盖 success 与 StartTask failure，但不把未执行的 build/launch/cancel/failure 全矩阵记为
+  PASS。
