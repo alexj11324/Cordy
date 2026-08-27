@@ -707,7 +707,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
     }
 
     async fn heartbeat_once(&self) {
-        let stamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true);
+        let stamp = cordy_util::rfc3339_nano(chrono::Utc::now());
         let mut conn = self.write_conn_handle();
         let result = redis::cmd("SET")
             .arg(heartbeat_key(&self.node_id))

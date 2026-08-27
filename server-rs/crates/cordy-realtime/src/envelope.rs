@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::broadcaster::{DaemonRuntimeDeliverer, SCOPE_DAEMON_RUNTIME, SCOPE_USER};
@@ -111,7 +111,7 @@ impl Envelope {
             scope: scope_type.to_string(),
             scope_id: scope_id.to_string(),
             node_id: node_id.to_string(),
-            created_at: Utc::now().to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            created_at: cordy_util::rfc3339_nano(Utc::now()),
             payload_json: String::from_utf8_lossy(frame).to_string(),
             ..Default::default()
         };

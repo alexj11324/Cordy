@@ -22,6 +22,26 @@ pub fn new_ulid() -> String {
     ulid::Ulid::new().to_string()
 }
 
+/// Formats a UTC timestamp with Go `time.RFC3339Nano` semantics.
+///
+/// Chrono's nanosecond formatter always emits nine fractional digits. Go
+/// emits the same precision but trims every trailing zero, including the
+/// entire fractional part for whole-second values.
+pub fn rfc3339_nano(timestamp: chrono::DateTime<chrono::Utc>) -> String {
+    let rendered = timestamp.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+    let Some((prefix, fraction_and_zone)) = rendered.split_once('.') else {
+        return rendered;
+    };
+    let fraction = fraction_and_zone
+        .trim_end_matches('Z')
+        .trim_end_matches('0');
+    if fraction.is_empty() {
+        format!("{prefix}Z")
+    } else {
+        format!("{prefix}.{fraction}Z")
+    }
+}
+
 mod ulid_string {
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -163,6 +183,39 @@ mod tests {
         assert_eq!(wire.len(), 26);
         let parsed = ulid::Ulid::from_string(&wire).unwrap();
         assert_eq!(parsed.to_string(), wire);
+    }
+
+    #[test]
+    fn rfc3339_nano_matches_go_fractional_precision() {
+        let four_digits = chrono::DateTime::parse_from_rfc3339(
+            "2026-08-27T23:00:00.123400Z",
+        )
+        .unwrap()
+        .to_utc();
+        assert_eq!(
+            rfc3339_nano(four_digits),
+            "2026-08-27T23:00:00.1234Z"
+        );
+
+        let nine_digits = chrono::DateTime::parse_from_rfc3339(
+            "2026-08-27T23:00:00.123456789Z",
+        )
+        .unwrap()
+        .to_utc();
+        assert_eq!(
+            rfc3339_nano(nine_digits),
+            "2026-08-27T23:00:00.123456789Z"
+        );
+
+        let whole_second = chrono::DateTime::parse_from_rfc3339(
+            "2026-08-27T23:00:00Z",
+        )
+        .unwrap()
+        .to_utc();
+        assert_eq!(
+            rfc3339_nano(whole_second),
+            "2026-08-27T23:00:00Z"
+        );
     }
 
     #[test]
