@@ -27,6 +27,13 @@ if [[ -z "$cargo_command" ]]; then
   fi
 fi
 
+# The wrapper changes directory below. Resolve caller-relative overrides before
+# that change so a valid CARGO_BIN/CARGO_HOME does not become unresolvable.
+case "$cargo_command" in
+  /*|[A-Za-z]:[\\/]*) ;;
+  */*) cargo_command="$PWD/$cargo_command" ;;
+esac
+
 if [[ "$cargo_command" == */* ]]; then
   if [[ ! -x "$cargo_command" ]]; then
     echo "run-rust.sh: CARGO_BIN is not executable: $cargo_command" >&2

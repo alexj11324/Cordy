@@ -88,6 +88,17 @@ for target in build rust-build; do
   fi
 done
 
+# run-rust.sh invokes Cargo from server-rs, while the copy recipes run from
+# the repository root. A relative override must be normalized once so Cargo
+# and the copy step address the same release artifacts.
+relative_target="tmp/rust-target"
+absolute_target="$ROOT_DIR/$relative_target"
+relative_target_output="$(make -n RUST_TARGET_DIR="$relative_target" rust-build)"
+grep -Fq -- "CARGO_TARGET_DIR=\"$absolute_target\"" <<<"$relative_target_output" ||
+  fail "rust-build: relative RUST_TARGET_DIR was not normalized for Cargo:\n$relative_target_output"
+grep -Fq -- "cp \"$absolute_target/release/cordy-server" <<<"$relative_target_output" ||
+  fail "rust-build: relative RUST_TARGET_DIR was not normalized for artifact copies:\n$relative_target_output"
+
 # The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
 # what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
 require_outputs() {
@@ -100,11 +111,24 @@ $output"
   done
 }
 
-# A `go` shim that records every invocation, so the assertions below can tell
+# A temporary runner also verifies that caller-relative Cargo overrides remain
+# usable after run-rust.sh changes directory into server-rs.
+# A `go` shim records every invocation, so the assertions below can tell
 # "the Makefile probed the toolchain" from "the Makefile did not" without
 # depending on how the host PATH is laid out.
-probe_dir="$(mktemp -d)"
+probe_dir="$(mktemp -d "$ROOT_DIR/.makefile-build-test.XXXXXX")"
 trap 'rm -rf "$probe_dir"' EXIT
+cat >"$probe_dir/cargo" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$probe_dir/cargo"
+relative_probe_dir="${probe_dir#"$ROOT_DIR/"}"
+CARGO_BIN="$relative_probe_dir/cargo" ./scripts/run-rust.sh --version >/dev/null ||
+  fail "run-rust.sh: caller-relative CARGO_BIN did not survive the workspace cd"
+env -u CARGO_BIN CARGO_HOME="$relative_probe_dir" ./scripts/run-rust.sh --version >/dev/null ||
+  fail "run-rust.sh: caller-relative CARGO_HOME did not survive the workspace cd"
+
 real_go="$(command -v go || true)"
 cat >"$probe_dir/go" <<EOF
 #!/usr/bin/env bash

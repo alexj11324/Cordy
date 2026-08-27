@@ -262,7 +262,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | source inventory | 通过 | Go 1,445/807 tests/638 non-test；Rust 527 source + 5 external test files |
 | route parity | 通过 | 424 contract、424 Rust、missing 0、extra 0 |
 | cargo fmt --all -- --check | 未通过 | 基线 Rust 多文件已有 rustfmt diff；审计分支未修改实现 |
-| cargo test --workspace --all-targets --locked | 未通过 | cordy-daemon hermes.rs/openclaw.rs 有 7 个编译错误；交给异步 fix 队列 |
+| cargo test --workspace --all-targets --locked | 未通过 | cordy-daemon hermes.rs/openclaw.rs 有 7 个编译错误；已由独立修复 PR #522 跟踪，未并入本切片 |
 | go build ./... | 未执行 | 审计环境 shell 没有 go 命令（zsh: command not found: go），不是把它误报为通过 |
 | old migration doc reconciliation | 完成 | 旧 S7/S8/S9/S10 checkbox 与当前 Rust source/route/assembly 不完全一致，已降级为历史记录 |
 
@@ -287,10 +287,10 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 - 新增/迁移的 Go 能力：无；本 PR 是独立的全局盘点与执行控制面。
 - Rust 入口：记录并核对 cordy-server、cordy-cli、cordy-migrate、cordy-daemon 及 backfill bins。
-- 生产路径是否已切换：否；审计证明默认 Makefile/Docker/release 仍是 Go，切换列为 AUDIT-001。
+- 生产路径是否已切换：部分；本切片已切换本地默认入口和自托管镜像，发布/安装器、回滚目标等仍未切换，故全局迁移未完成。
 - Go 代码是否可以下线：否。
 - 当前验证：route parity 通过；Rust fmt/test 有基线失败；Go build 因环境无 go 未执行，详见第 8 节。
-- 异步 subagent：Volta 继续处理既有 PR #518/#519/#520 的 review/fix；其结果不阻断本审计文档或后续迁移。
+- 异步 review/fix：PR #518/#519/#520 的结果不阻断本审计文档或后续迁移；daemon 的 7 个基线编译错误由独立 PR #522 跟踪。
 
 结束条件仍是：全项目完成 Go→Rust、默认生产路径和发布链路切换、生产验证通过，并删除全部 Go 源文件；在此之前不得结束 goal。
 

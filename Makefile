@@ -304,7 +304,11 @@ DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 # depend on a Go toolchain. Release automation may pass a value when it has one.
 RUST_BUILD_GO_VERSION ?= unknown
 RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
+# run-rust.sh changes into server-rs before invoking Cargo, while the copy
+# recipes run from the repository root. Keep both sides on the same path even
+# when callers pass a relative target directory.
 RUST_TARGET_DIR ?= $(CURDIR)/server-rs/target
+override RUST_TARGET_DIR := $(abspath $(or $(strip $(RUST_TARGET_DIR)),$(CURDIR)/server-rs/target))
 RUST_EXE ?= $(if $(filter Windows_NT,$(OS)),.exe,)
 
 build: rust-build ## Build Rust server, CLI, migration, and backfill binaries into server/bin
