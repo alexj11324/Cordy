@@ -670,9 +670,10 @@ outbound 和 shutdown wiring，不增加生产抽象：
 - Go 是否可下线：否。Telegram production selection 已有直接 Rust Registry 证据，
   但真实外部凭证 smoke、其余 AUDIT-004 provider 与最终 AUDIT-001..010 门未完成。
 - 验证状态：`cordy-telegram --lib` 43 通过、1 个明确依赖外网的测试 ignored；固定
-  stable rustfmt 与 `git diff --check` 通过。新增 server production configure
-  测试已启动完整依赖编译/链接，当前尚未返回结果，因此不记录为通过；长编译不阻塞
-  Ready PR 或后续主线迁移。
+  stable rustfmt 与 `git diff --check` 通过。独立 fix 使用 SecretBox wire fixture
+  取代未声明的 server `base64` 直接依赖后，server production configure 定向测试
+  实际运行 1/1 通过；缺失/非法 key 不注册、有效 key 经 production factory 解密并
+  构造 Telegram channel 的声明已有可执行证据。
 
 ## 25. AUDIT-004 执行更新：Composio production configuration contract
 
@@ -736,5 +737,9 @@ commit `be02f618`）收口 GHSnapshot 非法凭证会终止 Rust server 的生�
   选择 Stub、Noop 或 Fake，而是让 Manager 保持 inert。
 - Go 是否可下线：否。非法凭证降级差异已迁移；真实 GitHub App/GraphQL smoke、
   channel-engine/lease/media 完整生命周期和 AUDIT-001..010 最终门仍未完成。
-- 异步状态：verification 与 reviewer 尚未返回，未把编译、测试或格式检查记录为
-  通过；fixer 尚未派发。PR 堆叠在 VCS PR #539。
+- Verification/fixer：fixed stable rustfmt 与 PR-range/worktree `git diff --check`
+  通过。`cordy-ghsnapshot` 精确 missing-env 测试首次因 ENOSPC 在编译阶段退出（0
+  tests），协调清理后重跑通过（1 passed、0 failed、23 filtered）。server 精确
+  invalid-credentials 测试和 no-run 最初均被堆叠 base 的 Telegram `base64`
+  E0432/E0433 阻断（0 tests）；fixer 原样传播已验证的 SecretBox wire fixture
+  `62e7f3d5` 后，server 精确测试通过（1 passed、0 failed、26 filtered）。
