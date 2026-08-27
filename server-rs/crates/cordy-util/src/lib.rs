@@ -17,16 +17,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Ulid(#[serde(with = "ulid_string")] pub uuid::Uuid);
 
-impl Ulid {
-    /// Generates a ULID using the Rust crate's cryptographically random source.
-    pub fn new() -> Self {
-        Self(uuid::Uuid::from_bytes(ulid::Ulid::new().to_bytes()))
-    }
-}
-
 /// Generates a canonical uppercase 26-character ULID string.
 pub fn new_ulid() -> String {
-    Ulid::new().to_string()
+    ulid::Ulid::new().to_string()
 }
 
 mod ulid_string {
@@ -168,7 +161,8 @@ mod tests {
     fn generated_ulid_is_canonical_wire_value() {
         let wire = new_ulid();
         assert_eq!(wire.len(), 26);
-        assert_eq!(ulid::Ulid::from_string(&wire).unwrap().to_string(), wire);
+        let parsed = ulid::Ulid::from_string(&wire).unwrap();
+        assert_eq!(parsed.to_string(), wire);
     }
 
     #[test]

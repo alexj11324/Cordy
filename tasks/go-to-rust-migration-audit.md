@@ -2804,7 +2804,7 @@ daemon notifier 中新增了真实 `ulid::Ulid::new().to_string()` caller；但 
 多个 relay/broadcaster 文件中直接调用 `ulid`，daemon notifier 也保留独立直接依赖。这样同一 Go ULID wire contract 由多处
 入口维护，后续很容易再次分叉。当前仓库已有 `cordy-util` crate，适合承载唯一的 Rust ULID 生成入口。
 
-范围只新增 `cordy_util::Ulid::new`/`new_ulid` 的薄封装，并将 `cordy-realtime` 的 Redis/sharded/mirrored/switchable
+范围只新增 `cordy_util::new_ulid` 的薄封装，并将 `cordy-realtime` 的 Redis/sharded/mirrored/switchable
 relay 以及 `cordy-daemon::notifier` 的生产 node/event ID 调用切换到该入口；保留现有 `String` API、26 字符 canonical
 Crockford wire shape、dedup、payload、Redis 和错误语义。移除这些 crate 对 `ulid` 的重复直接依赖；不新增 ID service、
 全局状态、随机生成器或第二套 wire type。
@@ -2816,7 +2816,7 @@ Crockford wire shape、dedup、payload、Redis 和错误语义。移除这些 cr
 - owner：主 agent 负责最小生产调用迁移、依赖锁文件、机械检查、提交/推送和 Ready PR；独立 verifier/reviewer/fixer 异步
   负责生成向量、调用覆盖、编译和回归 finding。
 
-实现 commit `e7eeac1f` 在 `cordy-util` 增加薄的 `Ulid::new`/`new_ulid` 生成入口，并把 `cordy-realtime` 的
+实现 commit `e7eeac1f` 在 `cordy-util` 增加薄的 `new_ulid` 生成入口，并把 `cordy-realtime` 的
 `RedisRelay`、`ShardedStreamRelay`、`SwitchableRelayBroadcaster`、`MirroredRelay` 以及 daemon notifier 的所有直接
 `ulid::Ulid::new().to_string()` 调用切到该入口；同时移除 realtime/daemon 的重复直接 `ulid` 依赖，保留现有 `String`
 API、payload、dedup、Redis 和 relay wiring。docs commit `840ef87b` 将本仓库规则明确为 Rust 迁移默认只做 Rust
@@ -2824,3 +2824,9 @@ API、payload、dedup、Redis 和 relay wiring。docs commit `840ef87b` 将本�
 （PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；Ready PR #580 将以
 `codex/cord-243-daemon-event-id-ulid`（base SHA `1bf33aca`）为 base 创建。异步 verifier/reviewer/fixer 结果待回写；在 exact compile、
 matched/executed、跨语言 event/Redis/旧数据读取和真实生产 smoke 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
+
+独立 reviewer 在 exact `970af5b6` 发现 P0：`new_ulid()` 调用 `Ulid::new().to_string()`，但 UUID-backed wrapper 没有
+`Display`/`ToString`，代码在 workspace resolver 恢复后必然 E0599。fixer 保留既有 serde wrapper API，只让唯一薄入口直接
+返回 `ulid::Ulid::new().to_string()`，并删除无用的 `Ulid::new`，没有扩张 typed wrapper surface。fixed-stable rustfmt 与
+`git diff --check` PASS；locked/offline exact `generated_ulid_is_canonical_wire_value` 仍在 discovery 前被 inherited #563
+`hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests），不能登记为 executed PASS。
