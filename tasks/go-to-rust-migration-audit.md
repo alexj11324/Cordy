@@ -1557,3 +1557,23 @@ Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer�
   404/conflict/shutdown/musl/non-Linux；runbook 的 `sudo nsenter ... tokio-console` 通常找不到用户
   `~/.cargo/bin`。Ponytail 未发现多余 factory/registry/file；问题是 lifecycle、blocking boundary、默认
   成本和直接证据。全部 finding 已交 independent fixer，当前不声明该切片已完成 AUDIT-003A 退出。
+- fixer（基于 review ledger HEAD `9c4227c4`）：Cargo 正常解析并提交完整新增依赖图；复用已批准的
+  #536 SecretBox fixture 与 #544 `GCMetaKind` 修复解除两个堆叠编译阻断。Tokio console 现在仅在
+  `CORDY_TOKIO_CONSOLE=1` 时启用，固定 loopback socket 在继续启动前完成 bind，冲突 fail-closed；
+  `ConsoleLayer::build` 返回的 server 与现有 profiling cancellation/runtime 一起显式 serve、cancel、join，
+  retention 固定 60 秒、event buffer 固定 1024，Compose 显式传递开关。heap capture 的 profiler lock、
+  tempfile、dump、parse、gzip 全部在 `spawn_blocking` 内执行；runbook 解析 console client 绝对路径并验证
+  backend PID。
+- fixer verification：`cargo metadata --locked --offline --format-version 1 --no-deps` PASS；
+  `CARGO_INCREMENTAL=0 cargo check --locked --offline -p cordy-server --bin cordy-server` PASS；
+  `CARGO_INCREMENTAL=0 cargo check --locked --offline -p cordy-server --tests` PASS；从 `server-rs`（确保读取
+  production `.cargo/config.toml` 的 `tokio_unstable`）以
+  `CARGO_INCREMENTAL=0 cargo test --locked --offline -p cordy-server --bin cordy-server
+  'profiling::tests::' -- --nocapture` 运行 8/8 PASS（含 opt-in、occupied bind、cancel join、真实 heap gzip
+  与 pprof protobuf decode、private router/legacy trace）。首次 test no-run 在共享磁盘仅余 2.8 MiB 时
+  ENOSPC，清理本 worktree target 后 no-run PASS；首次 loopback test 在 sandbox bind 处失败，非沙箱重跑
+  PASS；从仓库外层运行 console test 因未读取嵌套 Cargo config 而正确拒绝缺少 `tokio_unstable` 的产物，
+  从 `server-rs` 重建后 PASS。fixed-stable main/profiling rustfmt、`git diff --check` PASS。
+- 未执行：external `tokio-console` client task/resource/operation 观察、release/Docker/non-Linux/musl build、
+  public production router live 404、SIGTERM production process smoke 与负载 CPU/RSS overhead。默认聚合已关闭
+  并给出容量上界，但这些 smoke/开销项仍不得记为通过，AUDIT-003A 保持部分完成。
