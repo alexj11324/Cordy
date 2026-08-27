@@ -2949,10 +2949,12 @@ payload，并将 comment unresolved 三字段和 agent `archived_at` 恢复为 s
 seconds-only 字段覆盖小数秒省略。JSON/header/event 字段、排序、配置、数据库和错误语义未改变。
 
 主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、API 或长编译命令；Ready PR #583 当前
-base 为 `codex/cord-247-realtime-time-wire`（base SHA `fe5bb6d4`），已推送 fixer tip `0ad4d584`。fixer 随后删除了
-两个仅为测试证据增加的单用途 wrapper 和 pseudo-mapping 测试（净删 75 行），生产调用改为直接使用共享 helper；其
-fixed-stable rustfmt 与 `git diff --check` 均 PASS。reviewer 在前一 exact tip 确认 3 个 P1 已关闭、无 P0/P1/P2 或
-安全/config/fallback finding；P3 已按 Ponytail 收缩，最终 exact-tip review 待回写。verifier 的 exact compile/测试仍在继承 #563 `hyper-util 0.1.20`
-缺少 `runtime` feature 的 resolver 错误前置阻断（exit 101，matched/executed 为 0）；fixed-stable rustfmt 与 fixer 的
-`git diff --check` PASS，直接 API/event smoke、DB、真实 daemon/Redis、release/cross-platform smoke 未执行。在这些证据
-返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
+base 为 `codex/cord-247-realtime-time-wire`（base SHA `fe5bb6d4`），生产/fixer tip 为 `0ad4d584`，台账 tip 为
+`2e8940d0`。fixer 随后删除了两个仅为测试证据增加的单用途 wrapper 和 pseudo-mapping 测试（净删 75 行），生产调用
+改为直接使用共享 helper；fixed-stable rustfmt 与 `git diff --check` 均 PASS。reviewer 在 exact `0ad4d584` 确认 3 个
+P1 已关闭，且无剩余 P0/P1/P2/P3、security、config 或 Ponytail finding。verifier 在 exact `2e8940d0` 确认 base ancestry、
+clean worktree、base-range `git diff --check` 和 Cargo.lock 不变；六个直接 timestamp 文件的 fixed-stable rustfmt PASS，
+将 `daemon.rs` 纳入时仅因 PR 范围外继承行 3122 的格式漂移 FAIL。locked/offline metadata、相关 check/test-no-run 及三个
+精确测试命令均在 discovery 前被继承 #563 `hyper-util 0.1.20` 缺少 `runtime` feature 阻断（exit 101，matched/executed
+均为 0；不能登记为编译或测试通过）。直接 API/event smoke、DB、真实 daemon/Redis、release/cross-platform smoke 未执行。
+在这些证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
