@@ -101,6 +101,11 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
         ctx: Ctx,
         workspace_id: &str,
     ) -> anyhow::Result<RegistrationPayload>;
+
+    /// Publishes provider-owned launch state only after the corresponding
+    /// server response has been accepted into the authoritative registry.
+    /// Failed register calls never invoke this hook.
+    fn registration_applied(&self, _workspace_id: &str) {}
 }
 
 #[async_trait::async_trait]
@@ -117,6 +122,11 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
         ctx: Ctx,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
+
+    /// Drops provider-owned launch state after workspace membership is no
+    /// longer authoritative. Implementations without launch state can keep
+    /// the default no-op.
+    fn workspace_removed(&self, _workspace_id: &str) {}
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -204,6 +214,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         }
 
         for workspace_id in tracked.difference(&api_ids) {
+            self.source.workspace_removed(workspace_id);
             registry.remove_workspace(workspace_id);
             self.repo_state.remove_workspace(workspace_id);
             tracing::info!(%workspace_id, "stopped watching workspace");
@@ -354,6 +365,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 workspace.name.clone(),
                 Vec::new(),
             )?;
+            round.registration_applied(&workspace.id);
             self.deregister_dropped(&ctx, &delta.dropped).await?;
             tracing::info!(
                 workspace_id = %workspace.id,
@@ -405,6 +417,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 workspace.name.clone(),
                 response.runtimes,
             )?;
+            round.registration_applied(&workspace.id);
             self.deregister_dropped(&ctx, &delta.dropped).await?;
         }
         self.repo_state
@@ -468,6 +481,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             // vanished executable while preserving custom-profile runtimes.
             let delta =
                 registry.apply_builtin_registration(&workspace.id, &workspace.name, Vec::new())?;
+            round.registration_applied(&workspace.id);
             self.deregister_dropped(&ctx, &delta.dropped).await?;
             return Ok(());
         }
@@ -497,6 +511,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             &workspace.name,
             response.runtimes,
         )?;
+        round.registration_applied(&workspace.id);
         self.deregister_dropped(&ctx, &delta.dropped).await?;
         Ok(())
     }
