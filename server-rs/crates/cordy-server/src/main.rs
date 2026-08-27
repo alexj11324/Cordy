@@ -1,8 +1,7 @@
 //! Cordy HTTP server — Rust replacement for `server/cmd/server`.
 //!
-//! This is the S1 vertical slice from the migration plan: config loading,
-//! pg pool, and health endpoints. Routes are ported domain-by-domain in
-//! later steps (475 routes total, see tasks/go-to-rust-migration.md).
+//! Production migration status and remaining Go retirement gates are tracked in
+//! `tasks/go-to-rust-migration-audit.md`.
 
 use axum::Router;
 use std::net::SocketAddr;

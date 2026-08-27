@@ -1,8 +1,8 @@
 //! Daemon manager (port of server/internal/daemon + internal/daemonws).
 //!
 //! Module map mirrors the Go package layout one-to-one; each module header
-//! records the Go source file it ports. S9 lanes own disjoint files — see
-//! tasks/go-to-rust-migration.md for the lane split.
+//! records the Go source file it ports. Current migration status is tracked in
+//! tasks/go-to-rust-migration-audit.md.
 //!
 //! Slices:
 //! - W  (daemonws): hub.rs, notifier.rs
