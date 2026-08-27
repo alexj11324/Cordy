@@ -11,18 +11,27 @@ pub mod error;
 
 use anyhow::{bail, Context, Result};
 use api::{http_timeout, ApiClient, HttpError, NetworkError};
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Response};
+use axum::routing::get;
+use axum::Router;
 use chrono::{DateTime, FixedOffset};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
+use rand::RngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
 use std::fs;
 use std::io::Read;
+use std::net::{Ipv4Addr, UdpSocket};
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::net::TcpListener;
+use tokio::sync::oneshot;
 use url::{form_urlencoded, Url};
 
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
@@ -143,6 +152,11 @@ struct LoginArgs {
         default_missing_value = LOGIN_TOKEN_PROMPT
     )]
     token: Option<String>,
+    #[arg(
+        long,
+        help = "Host/IP the OAuth callback URL points at when the browser can reach this CLI directly"
+    )]
+    callback_host: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -8268,6 +8282,264 @@ fn resolve_login_server_url(cli: &Cli, environment: &Environment) -> Result<Stri
     Ok(DEFAULT_CLOUD_SERVER_URL.to_owned())
 }
 
+fn resolve_login_app_url(cli: &Cli, environment: &Environment) -> Result<String> {
+    for key in ["CORDY_APP_URL", "FRONTEND_ORIGIN"] {
+        if let Some(value) = environment.trimmed(key) {
+            return Ok(value.trim_end_matches('/').to_owned());
+        }
+    }
+
+    let config = environment.load_config(&cli.profile)?;
+    if !config.app_url.trim().is_empty() {
+        return Ok(config.app_url.trim().trim_end_matches('/').to_owned());
+    }
+    bail!("No app URL configured. Run 'cordy setup' first.");
+}
+
+#[derive(Clone)]
+struct BrowserCallbackState {
+    expected_state: String,
+    token_sender: Arc<Mutex<Option<oneshot::Sender<String>>>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrowserCallbackQuery {
+    token: Option<String>,
+    state: Option<String>,
+}
+
+const CALLBACK_SUCCESS_HTML: &str = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><title>Cordy</title><p>Authentication successful. You can close this window.</p>";
+
+async fn handle_browser_callback(
+    State(callback): State<BrowserCallbackState>,
+    Query(query): Query<BrowserCallbackQuery>,
+) -> Response {
+    let Some(token) = query.token.filter(|token| !token.is_empty()) else {
+        return (StatusCode::BAD_REQUEST, "missing token").into_response();
+    };
+    if query.state.as_deref() != Some(callback.expected_state.as_str()) {
+        return (StatusCode::BAD_REQUEST, "invalid state parameter").into_response();
+    }
+
+    let sender = match callback.token_sender.lock() {
+        Ok(mut sender) => sender.take(),
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "callback unavailable").into_response();
+        }
+    };
+    let Some(sender) = sender else {
+        return (StatusCode::CONFLICT, "authentication already completed").into_response();
+    };
+    let _ = sender.send(token);
+    Html(CALLBACK_SUCCESS_HTML).into_response()
+}
+
+fn url_private_ipv4(raw_url: &str) -> Option<Ipv4Addr> {
+    let url = Url::parse(raw_url).ok()?;
+    let address = url.host_str()?.parse::<Ipv4Addr>().ok()?;
+    let [first, second, ..] = address.octets();
+    (first == 10
+        || (first == 172 && (16..=31).contains(&second))
+        || (first == 192 && second == 168))
+        .then_some(address)
+}
+
+fn detect_outbound_ipv4(server_url: &str) -> Option<Ipv4Addr> {
+    let url = Url::parse(server_url).ok()?;
+    let host = url.host_str()?;
+    let port = url.port_or_known_default()?;
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket.connect((host, port)).ok()?;
+    match socket.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(address) => Some(address),
+        std::net::IpAddr::V6(_) => None,
+    }
+}
+
+fn resolve_callback_binding(
+    flag_host: Option<&str>,
+    server_url: &str,
+    app_url: &str,
+) -> (String, String) {
+    if let Some(host) = flag_host.map(str::trim).filter(|host| !host.is_empty()) {
+        return (host.to_owned(), "0.0.0.0".to_owned());
+    }
+
+    let Some(app_address) = url_private_ipv4(app_url) else {
+        return ("localhost".to_owned(), "127.0.0.1".to_owned());
+    };
+    match detect_outbound_ipv4(server_url) {
+        Some(cli_address) if cli_address == app_address => {
+            ("localhost".to_owned(), "127.0.0.1".to_owned())
+        }
+        Some(cli_address) => (cli_address.to_string(), "0.0.0.0".to_owned()),
+        None => (app_address.to_string(), "0.0.0.0".to_owned()),
+    }
+}
+
+fn open_browser(url: &str) -> std::io::Result<()> {
+    let (program, args) = match std::env::consts::OS {
+        "macos" => ("open", vec![url]),
+        "linux" => ("xdg-open", vec![url]),
+        "windows" => ("rundll32", vec!["url.dll,FileProtocolHandler", url]),
+        os => return Err(std::io::Error::other(format!("unsupported platform: {os}"))),
+    };
+    std::process::Command::new(program)
+        .args(args)
+        .spawn()
+        .map(|_| ())
+}
+
+fn running_in_ssh_session(environment: &Environment) -> bool {
+    ["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"]
+        .iter()
+        .any(|key| environment.trimmed(key).is_some())
+}
+
+fn browser_login_instructions(
+    login_url: &str,
+    callback_host: &str,
+    port: u16,
+    remote_ssh: bool,
+) -> String {
+    let mut output = format!("If the browser didn't open, visit:\n  {login_url}\n");
+    if remote_ssh && matches!(callback_host, "localhost" | "127.0.0.1") {
+        let _ = writeln!(
+            output,
+            "\nRemote SSH session detected. Before opening that URL on your local computer, forward the callback port in another terminal:\n  ssh -L {port}:127.0.0.1:{port} <user>@<remote-host>\nThen open the URL above in your local browser."
+        );
+    }
+    output.push_str("\nWaiting for authentication...\n");
+    output
+}
+
+async fn run_login_browser(
+    cli: &Cli,
+    environment: &Environment,
+    flag_host: Option<&str>,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "login")?;
+    let server_url = resolve_login_server_url(cli, environment)?;
+    let app_url = resolve_login_app_url(cli, environment)?;
+    let (callback_host, bind_host) = resolve_callback_binding(flag_host, &server_url, &app_url);
+    let listener = TcpListener::bind(format!("{bind_host}:0"))
+        .await
+        .context("could not start the local login callback server")?;
+    let port = listener.local_addr()?.port();
+    let callback_url = format!("http://{callback_host}:{port}/callback");
+
+    let mut state_bytes = [0_u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut state_bytes);
+    let state = hex::encode(state_bytes);
+    let mut query = form_urlencoded::Serializer::new(String::new());
+    query.append_pair("cli_callback", &callback_url);
+    query.append_pair("cli_state", &state);
+    let login_url = format!("{app_url}/login?{query}");
+
+    let (token_sender, token_receiver) = oneshot::channel();
+    let callback_state = BrowserCallbackState {
+        expected_state: state,
+        token_sender: Arc::new(Mutex::new(Some(token_sender))),
+    };
+    let app = Router::new()
+        .route("/callback", get(handle_browser_callback))
+        .with_state(callback_state);
+    let (shutdown_sender, shutdown_receiver) = oneshot::channel();
+    let (server_error_sender, mut server_error_receiver) = oneshot::channel();
+    let server_task = tokio::spawn(async move {
+        if let Err(error) = axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_receiver.await;
+            })
+            .await
+        {
+            let _ = server_error_sender.send(error.to_string());
+        }
+    });
+
+    eprintln!("Opening browser to authenticate...");
+    if open_browser(&login_url).is_err() {
+        eprintln!("Could not open browser automatically.");
+    }
+    eprint!(
+        "{}",
+        browser_login_instructions(
+            &login_url,
+            &callback_host,
+            port,
+            running_in_ssh_session(environment)
+        )
+    );
+
+    let token_result = tokio::time::timeout(Duration::from_secs(5 * 60), async {
+        tokio::select! {
+            token = token_receiver => token.map_err(|_| anyhow::anyhow!("callback channel closed")),
+            error = &mut server_error_receiver => {
+                let error = error.unwrap_or_else(|_| "callback server stopped unexpectedly".into());
+                Err(anyhow::anyhow!("local server error: {error}"))
+            }
+        }
+    })
+    .await;
+    let _ = shutdown_sender.send(());
+    if let Err(error) = server_task.await {
+        return Err(anyhow::anyhow!("local server task failed: {error}"));
+    }
+    let jwt_token =
+        token_result.map_err(|_| anyhow::anyhow!("timed out waiting for authentication"))??;
+
+    let client = ApiClient::new(
+        server_url.clone(),
+        String::new(),
+        jwt_token,
+        String::new(),
+        String::new(),
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
+        CLIENT_VERSION,
+    )?;
+    let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_owned());
+    let pat_name = format!("CLI ({hostname})");
+    let pat_response: Value = client
+        .post_json(
+            "/api/tokens",
+            &serde_json::json!({"name": pat_name, "expires_in_days": 90}),
+        )
+        .await
+        .context(
+            "Sign-in did not complete: the server could not issue an access token for the CLI",
+        )?;
+    let pat_token = pat_response
+        .get("token")
+        .and_then(Value::as_str)
+        .filter(|token| !token.is_empty())
+        .context("Sign-in did not complete: server returned an empty CLI token")?;
+    validate_login_token_prefix(pat_token)?;
+
+    let pat_client = ApiClient::new(
+        server_url.clone(),
+        String::new(),
+        pat_token.to_owned(),
+        String::new(),
+        String::new(),
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
+        CLIENT_VERSION,
+    )?;
+    let user = pat_client
+        .get_json::<AuthUser>("/api/me")
+        .await
+        .context("Sign-in did not complete: the server did not accept the new credential")?;
+    environment
+        .save_profile_credentials_with_app_url(&cli.profile, &server_url, Some(&app_url), pat_token)
+        .context("failed to save config")?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!(
+            "Authenticated as {} ({})\nToken saved to config.\n",
+            user.name, user.email
+        ),
+    })
+}
+
 async fn run_login_token<R: Read>(
     cli: &Cli,
     environment: &Environment,
@@ -8276,9 +8548,7 @@ async fn run_login_token<R: Read>(
 ) -> Result<RunOutput> {
     require_human_local_command(environment, "login")?;
     let Some(raw_token) = args.token.as_deref() else {
-        bail!(
-            "browser login is not yet available in the Rust CLI; use `cordy login --token <token>`"
-        );
+        return run_login_browser(cli, environment, args.callback_host.as_deref()).await;
     };
 
     let token = if raw_token == LOGIN_TOKEN_PROMPT || raw_token.trim().is_empty() {
@@ -26600,5 +26870,55 @@ mod tests {
             normalize_api_base_url("wss://api.cordy.ai/ws?old=1#fragment").expect("URL"),
             "https://api.cordy.ai"
         );
+    }
+
+    #[test]
+    fn browser_callback_binding_uses_explicit_host_and_loopback_defaults() {
+        assert_eq!(
+            resolve_callback_binding(
+                Some("10.0.0.5"),
+                "https://api.internal.example",
+                "https://app.internal.example"
+            ),
+            ("10.0.0.5".into(), "0.0.0.0".into())
+        );
+        assert_eq!(
+            resolve_callback_binding(None, "https://api.cordy.ai", "https://app.cordy.ai"),
+            ("localhost".into(), "127.0.0.1".into())
+        );
+        assert_eq!(
+            url_private_ipv4("http://192.168.1.10:3000"),
+            Some(Ipv4Addr::new(192, 168, 1, 10))
+        );
+        assert_eq!(url_private_ipv4("http://203.0.113.10:3000"), None);
+    }
+
+    #[tokio::test]
+    async fn browser_callback_rejects_bad_state_and_delivers_valid_token() {
+        let (sender, receiver) = oneshot::channel();
+        let callback = BrowserCallbackState {
+            expected_state: "state-1".into(),
+            token_sender: Arc::new(Mutex::new(Some(sender))),
+        };
+        let response = handle_browser_callback(
+            State(callback.clone()),
+            Query(BrowserCallbackQuery {
+                token: Some("jwt-secret".into()),
+                state: Some("wrong".into()),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response = handle_browser_callback(
+            State(callback),
+            Query(BrowserCallbackQuery {
+                token: Some("jwt-secret".into()),
+                state: Some("state-1".into()),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(receiver.await.expect("callback token"), "jwt-secret");
     }
 }

@@ -22,6 +22,8 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_DAEMON_PORT",
     "CORDY_WORKSPACE_ID",
     "CORDY_SERVER_URL",
+    "CORDY_APP_URL",
+    "FRONTEND_ORIGIN",
     "CORDY_HTTP_TIMEOUT",
     "CORDY_DEBUG",
     "CORDY_REPO_CHECKOUT_MODE",
@@ -38,6 +40,9 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_DAEMON_AUTO_UPDATE",
     "CORDY_DAEMON_AUTO_UPDATE_INTERVAL",
     "CORDY_DAEMON_AUTO_RELOAD",
+    "SSH_CONNECTION",
+    "SSH_CLIENT",
+    "SSH_TTY",
     "CORDY_QUICK_CREATE_TASK_ID",
     "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
     TASK_CONFIG_ROOT_ENV,
@@ -218,6 +223,16 @@ impl Environment {
         server_url: &str,
         token: &str,
     ) -> Result<()> {
+        self.save_profile_credentials_with_app_url(profile, server_url, None, token)
+    }
+
+    pub fn save_profile_credentials_with_app_url(
+        &self,
+        profile: &str,
+        server_url: &str,
+        app_url: Option<&str>,
+        token: &str,
+    ) -> Result<()> {
         let path = self.config_path(profile)?;
         let directory = path.parent().context("resolve CLI config directory")?;
         ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
@@ -237,6 +252,9 @@ impl Environment {
             .as_object_mut()
             .context("parse CLI config: expected a JSON object")?;
         object.insert("server_url".into(), Value::String(server_url.into()));
+        if let Some(app_url) = app_url {
+            object.insert("app_url".into(), Value::String(app_url.into()));
+        }
         object.insert("workspace_id".into(), Value::String(String::new()));
         object.insert("token".into(), Value::String(token.into()));
         write_json_atomically(&path, &document)

@@ -910,6 +910,7 @@ dependencies = [
  "clap",
  "cordy-daemon",
  "dirs",
+ "rand 0.8.7",
  "reqwest",
  "serde",
  "serde_json",
