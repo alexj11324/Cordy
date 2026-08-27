@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569与stale sweeper #570 Ready | 异步收口 #565..#570 V/R/F，同时继续下一项完整 background-worker 契约 | 复用唯一 Rust production assemblies；#570 堆叠在 Ready #569 | PR #565..#570；§5、§6.2、§18、§52..§57 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569 与 stale sweeper #570 Ready | 收口 #565..#570 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#570 堆叠在 Ready #569；#570 verifier/reviewer 已回报，finding 已交 fixer | PR #565..#570；§5、§6.2、§18、§52..§57 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2155,5 +2155,21 @@ production sweeper、runtime SQL、依赖、Bus 或 liveness seam：
 `RuntimeTaskSweeper::start`/shared liveness/Bus wiring已静态定位。exact compile、matched/executed counts、真实 DB/liveness
 行为、server/Windows build与失败清理由独立 verifier执行。当前不能声称 stale-runtime contract 已验证或删除 Go。
 
-非 Draft Ready PR #570 已创建，base 是 #569 branch，Ready SHA `d5eeaf4b`；独立 verifier/reviewer 已异步派发，
-fixer 尚无本 PR finding。PR 可在异步结果期间保持 Ready，主线不等待。
+非 Draft Ready PR #570 已创建，base 是 #569 branch，当前 Ready SHA `7258dccabaf839af8dc1a38cd8b06c803a064627`；PR
+可在异步验证、review、fix 期间保持 Ready，主线不等待。
+
+独立 verifier 在 exact HEAD `7258dccabaf839af8dc1a38cd8b06c803a064627` 上确认 worktree、祖先关系、range diff-check
+和 `Cargo.lock` 未变化检查通过；直接对新增 `runtime_sweeper.rs` 执行 stable rustfmt check 失败，报告了测试行的调用包裹、事件
+payload 断言、unavailable sweep 断言、raced fixture 和最终 race 断言等格式差异。继承自 #563 的非法
+`hyper-util 0.1.20` `runtime` feature 使 locked/offline metadata、handler no-run、server/Windows build 和 exact
+runtime-sweeper filter 均 exit 101；exact filter 在 harness 前 `matched=0, executed=0, ignored=0, passed=0, failed=0`。
+环境没有 `DATABASE_URL`、`pg_isready` 或 `psql`，required PostgreSQL fixture 因而未执行；不能把 DB、liveness、事件、forget、
+server/Windows 或 cleanup 行为写成通过。verifier 静态确认唯一 server sweeper assembly 仍使用真实 pool/liveness/TaskService/Bus，
+但没有运行时证据。
+
+独立 reviewer 在同一 exact HEAD 报告无 P0、2 个 P1、3 个 P2：DB contract 直接调用私有
+`sweep_stale_runtimes`，没有锁住真实 `run_once`/server worker 边界；TOCTOU double 直接把候选改成 offline 而不是刷新
+`last_seen_at`，且未订阅 race Bus/保留 forget recorder，不能证明 heartbeat race 下不广播/不 forget；只有一条 dead row，
+同 workspace 单事件去重不可证伪；unavailable 与 configured-store error 未分开且 unavailable 分支按 Go 语义不应 forget；
+`Drop` 异步清理不是确定性的 failure-path cleanup。reviewer 确认 production assembly 使用真实 shared state，未发现有效生产路径
+误选 Stub/Noop/Fake。上述 verification/review finding 已交独立 fixer；在修复并重新验证前，本契约不能声称已验证或删除 Go。
