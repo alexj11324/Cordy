@@ -65,22 +65,26 @@ async fn main() -> anyhow::Result<()> {
         })
         .transpose()?;
     let db_url = configured_database_url(configured_db_url.as_deref());
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&db_url)
-        .await
-        .context("connect to database")?;
-    sqlx::query("SELECT 1")
-        .execute(&pool)
-        .await
-        .context("ping database")?;
-
     let cancellation = CancellationToken::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+    let pool = PgPoolOptions::new().max_connections(2).connect(&db_url);
+    let pool = tokio::select! {
+        result = pool => result.context("connect to database")?,
+        _ = &mut shutdown => anyhow::bail!("backfill interrupted by signal"),
+    };
+    tokio::select! {
+        result = sqlx::query("SELECT 1").execute(&pool) => {
+            result.context("ping database")?;
+        }
+        _ = &mut shutdown => anyhow::bail!("backfill interrupted by signal"),
+    }
+
     let run_future = codex_usage::run(&pool, options, &cancellation);
     tokio::pin!(run_future);
     tokio::select! {
         result = &mut run_future => result,
-        _ = shutdown_signal() => {
+        _ = &mut shutdown => {
             cancellation.cancel();
             run_future.await
         },
