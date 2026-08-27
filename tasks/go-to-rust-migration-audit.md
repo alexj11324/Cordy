@@ -1643,3 +1643,22 @@ probe 必须继续走既有 registration service。
 - 未执行：external `tokio-console` client task/resource/operation 观察、release/Docker/non-Linux/musl build、
   public production router live 404、SIGTERM production process smoke 与负载 CPU/RSS overhead。默认聚合已关闭
   并给出容量上界，但这些 smoke/开销项仍不得记为通过，AUDIT-003A 保持部分完成。
+- #561 independent fixer（基于 review ledger `93d38c16`，上游依赖传播 commit `fdbaef0b`）：统一 registration
+  publication 的 barrier→workspace serial 锁序；busy demotion 改为原子 try-barrier 后 defer，不再等待期间冻结
+  新 claim；workspace deregister 失败记录 pending 并在后续 round best-effort 重试且不中断其余 workspace。
+  server 接受的 runtime 尚未进入 authoritative registry 前先在同一 admission critical section 发布对应 launch
+  spec，消除 registry 可见而 launch 尚不可解的 claim 窗口。`LocalProviderCatalog` 以启动时 accepted `AgentEntry`
+  与 fresh discovery 合并，fresh path 优先、discovery miss 保留为 unavailable/self-heal 候选；probe 使用
+  `buffer_unordered(8)`，空 version 复用 last-known。production health 直接读取 registration source 的最新
+  unavailable/demotable reason，填充 `skipped_agents`。
+- #561 fixer verification：继承 blocker 修复后
+  `CARGO_INCREMENTAL=0 cargo check --locked --offline -p cordy-daemon --tests -p cordy-cli` PASS；原 verifier
+  指定的 provider/registry/registration 7 条 exact tests 全部 1/1 PASS；新增
+  `accepted_provider_survives_discovery_miss_and_fresh_path_wins` 与
+  `nonblocking_claim_barrier_defers_without_pausing_busy_daemon` 各 1/1 PASS；registration/provider registration
+  聚焦组 14/14 PASS。fixed-stable 六个相关文件 rustfmt check 与 `git diff --check` PASS。历史保留：reviewed
+  head 的 metadata/no-run/exact tests 均因继承 #560 lock inconsistency 以 101/0-test 失败，三文件 rustfmt FAIL；
+  blocker 传播后已进入真实编译/执行。
+- #561 尚未执行真实 server loopback deregister failure→next-round retry、完整 CLI daemon foreground smoke 与
+  多 workspace 高延迟 probe wall-clock smoke；因此这些外部/时序证据不记为 PASS，Ready 声明仅覆盖上述已执行
+  单元与 compile contract。

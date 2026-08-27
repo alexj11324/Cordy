@@ -11,13 +11,16 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
+use futures_util::{stream, StreamExt};
+
+use crate::agents_refresh::RuntimeVerdict;
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
-use crate::agents_refresh::RuntimeVerdict;
 use crate::registration::{
     BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound, RuntimeRegistrationSource,
 };
 use crate::repocache::Ctx;
+use crate::types::AgentEntry;
 use crate::types::RuntimeExecutionTarget;
 use cordy_agent::version::VersionError;
 use cordy_agent::{build_backend, check_provider_minimum, extract_version_line};
@@ -105,6 +108,8 @@ pub struct LocalProviderCatalog {
     version_probe_timeout: Duration,
     not_executable_confirm_window: Duration,
     not_executable_since: Mutex<HashMap<String, Instant>>,
+    accepted_agents: BTreeMap<String, AgentEntry>,
+    last_versions: Mutex<HashMap<String, String>>,
 }
 
 impl Default for LocalProviderCatalog {
@@ -119,13 +124,32 @@ impl LocalProviderCatalog {
     const VERSION_PROBE_RETRY_DELAY: Duration = Duration::from_millis(500);
     const VERSION_PROBE_RETRY_WINDOW: Duration = Duration::from_secs(1);
     const VERSION_PROBE_ATTEMPTS: usize = 2;
+    const MAX_CONCURRENT_PROBES: usize = 8;
 
     pub fn new() -> Self {
         Self {
             version_probe_timeout: Self::DEFAULT_VERSION_PROBE_TIMEOUT,
             not_executable_confirm_window: Self::DEFAULT_NOT_EXECUTABLE_CONFIRM_WINDOW,
             not_executable_since: Mutex::new(HashMap::new()),
+            accepted_agents: BTreeMap::new(),
+            last_versions: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn from_agents(accepted_agents: BTreeMap<String, AgentEntry>) -> Self {
+        Self {
+            accepted_agents,
+            ..Self::new()
+        }
+    }
+
+    fn merge_discovery(
+        &self,
+        discovered: BTreeMap<String, AgentEntry>,
+    ) -> BTreeMap<String, AgentEntry> {
+        let mut agents = self.accepted_agents.clone();
+        agents.extend(discovered);
+        agents
     }
 
     /// Test/embedding seam for the bounded `--version` process probe. The
@@ -144,6 +168,8 @@ impl LocalProviderCatalog {
             version_probe_timeout: timeout,
             not_executable_confirm_window: confirm_window,
             not_executable_since: Mutex::new(HashMap::new()),
+            accepted_agents: BTreeMap::new(),
+            last_versions: Mutex::new(HashMap::new()),
         }
     }
 
@@ -354,14 +380,14 @@ fn exec_format_repair(exec_path: &str) -> Option<crate::client::Repair> {
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_string)
-        .or_else(|| root.file_name().map(|name| name.to_string_lossy().into_owned()))?;
+        .or_else(|| {
+            root.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })?;
     let root = root.to_string_lossy();
     #[cfg(windows)]
     let (command, shell) = (
-        format!(
-            "Set-Location '{}'\n{script}",
-            root.replace('\'', "''")
-        ),
+        format!("Set-Location '{}'\n{script}", root.replace('\'', "''")),
         "powershell",
     );
     #[cfg(not(windows))]
@@ -383,8 +409,9 @@ impl ProviderCatalog for LocalProviderCatalog {
         ctx: Ctx,
         _reason: ProviderProbeReason,
     ) -> anyhow::Result<ProviderProbeResult> {
-        let agents = crate::agents_probe::probe_agent_clis();
+        let agents = self.merge_discovery(crate::agents_probe::probe_agent_clis());
         let mut result = ProviderProbeResult::default();
+        let mut candidates = Vec::new();
         for (provider, entry) in agents {
             if !Self::supports_backend(&provider) {
                 tracing::debug!(%provider, "provider CLI discovered without a Rust backend; withholding registration");
@@ -395,17 +422,41 @@ impl ProviderCatalog for LocalProviderCatalog {
                 continue;
             };
             let fixed_args = Self::fixed_args(&provider);
-            match self
-                .probe_builtin(
-                    &ctx.child(),
-                    &provider,
-                    display_name,
-                    &entry.path,
-                    &fixed_args,
-                )
-                .await
-            {
-                Ok(runtime) => result.detected.push(runtime),
+            let command_path = if crate::config::agent_executable_present(&entry.path) {
+                entry.path
+            } else if !entry.command.trim().is_empty() {
+                crate::config::resolve_agent_executable_path(&entry.command).unwrap_or(entry.path)
+            } else {
+                entry.path
+            };
+            candidates.push((provider, display_name.to_string(), command_path, fixed_args));
+        }
+        let outcomes = stream::iter(candidates)
+            .map(|(provider, display_name, command_path, fixed_args)| {
+                let ctx = ctx.child();
+                async move {
+                    let outcome = self
+                        .probe_builtin(&ctx, &provider, &display_name, &command_path, &fixed_args)
+                        .await;
+                    (provider, outcome)
+                }
+            })
+            .buffer_unordered(Self::MAX_CONCURRENT_PROBES)
+            .collect::<Vec<_>>()
+            .await;
+        for (provider, outcome) in outcomes {
+            match outcome {
+                Ok(mut runtime) => {
+                    let mut versions = self.last_versions.lock().unwrap();
+                    if runtime.version.trim().is_empty() {
+                        if let Some(version) = versions.get(&provider) {
+                            runtime.version = version.clone();
+                        }
+                    } else {
+                        versions.insert(provider.clone(), runtime.version.clone());
+                    }
+                    result.detected.push(runtime);
+                }
                 Err(ProbeFailure::Unavailable(reason)) => {
                     tracing::debug!(%provider, %reason, "provider version probe unavailable; preserving accepted runtime");
                     result.unavailable.insert(provider, reason);
@@ -522,11 +573,7 @@ impl RuntimeLaunchRegistry {
         state.profiles.remove(workspace_id);
     }
 
-    fn builtin_refresh_needed(
-        &self,
-        workspace_id: &str,
-        incoming: &[RuntimeLaunchSpec],
-    ) -> bool {
+    fn builtin_refresh_needed(&self, workspace_id: &str, incoming: &[RuntimeLaunchSpec]) -> bool {
         self.builtin_refresh_needed_preserving(workspace_id, incoming, &BTreeSet::new())
     }
 
@@ -546,7 +593,9 @@ impl RuntimeLaunchRegistry {
             .count()
             != incoming.len()
             || incoming.iter().any(|spec| {
-                current.get(&spec.target.provider).is_none_or(|saved| saved != spec)
+                current
+                    .get(&spec.target.provider)
+                    .is_none_or(|saved| saved != spec)
             })
     }
 
@@ -577,6 +626,7 @@ pub struct ProviderRegistrationSource<C: ProviderCatalog> {
     client: Arc<Client>,
     catalog: Arc<C>,
     launches: Arc<RuntimeLaunchRegistry>,
+    skipped_agents: Mutex<BTreeMap<String, String>>,
 }
 
 impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
@@ -591,6 +641,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             client,
             catalog,
             launches,
+            skipped_agents: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -601,6 +652,14 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         sampled_after_demotion_seq: u64,
     ) -> anyhow::Result<BuiltinSnapshot> {
         let probe = self.catalog.probe_builtins(ctx, reason).await?;
+        let mut skipped = probe.unavailable.clone();
+        skipped.extend(
+            probe
+                .demotable
+                .iter()
+                .map(|(provider, verdict)| (provider.clone(), verdict.reason.clone())),
+        );
+        *self.skipped_agents.lock().unwrap() = skipped;
         let mut detected = probe.detected;
         detected.sort_by(|left, right| left.provider.cmp(&right.provider));
         let mut payload = Vec::with_capacity(detected.len());
@@ -816,14 +875,13 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
             .filter(|runtime| !runtime.profile_id.is_empty())
             .map(|runtime| runtime.profile_id.clone())
             .collect();
-        self.launches
-            .replace_workspace_profiles(
-                workspace_id,
-                specs
-                    .into_iter()
-                    .filter(|spec| accepted_profiles.contains(&spec.target.profile_id))
-                    .collect(),
-            );
+        self.launches.replace_workspace_profiles(
+            workspace_id,
+            specs
+                .into_iter()
+                .filter(|spec| accepted_profiles.contains(&spec.target.profile_id))
+                .collect(),
+        );
     }
 }
 
@@ -884,6 +942,10 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
 
     fn workspace_removed(&self, workspace_id: &str) {
         self.launches.remove_workspace(workspace_id);
+    }
+
+    fn skipped_agents_snapshot(&self) -> BTreeMap<String, String> {
+        self.skipped_agents.lock().unwrap().clone()
     }
 }
 
@@ -1131,15 +1193,39 @@ mod tests {
 
     #[test]
     fn not_executable_requires_two_sightings_even_with_zero_window() {
-        let catalog = LocalProviderCatalog::with_probe_windows(
-            Duration::from_secs(1),
-            Duration::ZERO,
-        );
+        let catalog =
+            LocalProviderCatalog::with_probe_windows(Duration::from_secs(1), Duration::ZERO);
         let now = Instant::now();
         assert!(!catalog.confirm_not_executable("codex", now));
         assert!(catalog.confirm_not_executable("codex", now));
         catalog.clear_not_executable("codex");
         assert!(!catalog.confirm_not_executable("codex", now));
+    }
+
+    #[test]
+    fn accepted_provider_survives_discovery_miss_and_fresh_path_wins() {
+        let accepted = AgentEntry {
+            path: "/old/codex".to_string(),
+            command: "codex".to_string(),
+            model: String::new(),
+        };
+        let catalog = LocalProviderCatalog::from_agents(BTreeMap::from([(
+            "codex".to_string(),
+            accepted.clone(),
+        )]));
+
+        assert_eq!(catalog.merge_discovery(BTreeMap::new())["codex"], accepted);
+
+        let fresh = AgentEntry {
+            path: "/new/codex".to_string(),
+            command: "codex".to_string(),
+            model: String::new(),
+        };
+        assert_eq!(
+            catalog.merge_discovery(BTreeMap::from([("codex".to_string(), fresh.clone())]))
+                ["codex"],
+            fresh
+        );
     }
 
     #[test]

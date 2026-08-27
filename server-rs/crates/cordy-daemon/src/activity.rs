@@ -76,6 +76,12 @@ impl DaemonActivity {
         true
     }
 
+    pub(crate) fn try_claim_barrier(self: &Arc<Self>) -> Option<ClaimBarrierGuard> {
+        self.try_set_claim_barrier().then(|| ClaimBarrierGuard {
+            activity: Arc::clone(self),
+        })
+    }
+
     pub(crate) fn release_claim_barrier(&self) {
         self.state.lock().unwrap().pause_claims = false;
         self.activity_changed.notify_waiters();
@@ -425,6 +431,21 @@ mod tests {
         assert!(activity.try_enter_claim().is_none());
         activity.release_claim_barrier();
         assert!(activity.try_enter_claim().is_some());
+    }
+
+    #[test]
+    fn nonblocking_claim_barrier_defers_without_pausing_busy_daemon() {
+        let activity = DaemonActivity::new();
+        let claim = activity.try_enter_claim().unwrap();
+
+        assert!(activity.try_claim_barrier().is_none());
+        assert!(!activity.claims_paused());
+
+        drop(claim);
+        let barrier = activity.try_claim_barrier().unwrap();
+        assert!(activity.claims_paused());
+        drop(barrier);
+        assert!(!activity.claims_paused());
     }
 
     #[tokio::test]
