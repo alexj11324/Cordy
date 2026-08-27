@@ -97,7 +97,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | daemon、daemonws | cordy-daemon | cordy-daemon::run_production_daemon、cordy-cli daemon | Rust CLI 内部已接线，默认发布仍 Go | 生产 stack 存在，但有 43 条 S9-integration 标记、28 个文件受 dead_code allow 影响；需按能力验证，不做机械清标 |
 | local/S3/CloudFront storage | handler::attachment_storage、cloudfront、attachment | cordy-server main 注入 attachment storage | 否 | 主存储能力已落地/接线；Squad avatar 返回仍有 signer 缺口，归 AUDIT-003 |
 | CLI bins（cordy、migrate、3 backfill） | cordy-cli、cordy-migrate 及 3 个 Rust backfill bin | Rust bin 可独立运行 | 否，Makefile/Docker/release 仍产出 Go | Rust bin 已存在；构建产物、命令行为、安装/发布和 Docker packaging 未闭环 |
-| pprof、logger | Go internal/profiling、internal/logger | Rust 只有 tracing 初始化证据 | 否 | Rust 未找到 Go pprof listener；LOG_LEVEL、TTY/color、RequestAttrs 等 logger 契约未证明等价 |
+| pprof、logger | Go internal/profiling、internal/logger | cordy-server::profiling 已接入 loopback CPU pprof；logger 仍只有 tracing 初始化证据 | 否 | CPU/cmdline/symbol 已有 Rust listener；heap/trace 和 LOG_LEVEL、TTY/color、RequestAttrs 等 logger 契约仍未证明等价 |
 | Go tests（807 文件） | Rust inline tests + 5 个外部 integration test 文件 | CI 同时运行两套 | CI 验证不等于生产切换 | 不能机械改写 807 个文件；需按业务契约建立覆盖矩阵，见 AUDIT-007 |
 
 ### 4.3 Go leaf package 对账
@@ -120,7 +120,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | internal/issueguard、issueposition、issuestatus | cordy-service/handler 对应模块 | 已落地；需行为 contract smoke |
 | internal/logger | cordy-server/cordy-daemon tracing 初始化 | 可能是吸收式迁移；LOG_LEVEL、属性和输出格式待证明 |
 | internal/migrations | cordy-migrate runner/hooks | 已落地；默认入口仍 Go |
-| internal/profiling | 未发现 Rust pprof 等价实现 | 明确未完成，见 AUDIT-003 |
+| internal/profiling | cordy-server::profiling | CPU/cmdline/symbol 已迁移并由 Rust server 启动；heap/trace 仍未闭合，见 AUDIT-003 |
 | internal/runtimeapps、selfexec、util | cordy-service、cordy-daemon::update_executor、cordy-util/daemon | 已吸收式落地；不拆重复小 PR，按调用路径验证 |
 | internal/taskusagebackfill | cordy-migrate::backfill::task_usage | 已落地为 Rust bin/hook；发布 packaging 未闭环 |
 | internal/testutil | Rust 各 crate 测试辅助 | 非生产能力，纳入测试矩阵，不单独制造业务 PR |
@@ -184,7 +184,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 
 #### AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
 
-- pprof：Go internal/profiling 在 127.0.0.1:6060 提供 /debug/pprof/；Rust server 未发现等价 listener。必须迁移或明确替代并更新运维文档。
+- pprof：Rust `cordy-server::profiling` 已在 127.0.0.1:6060 启动独立 listener，迁移 CPU profile、index、cmdline 和 symbol；heap/trace 尚未等价，必须继续迁移或明确替代并保持运维文档诚实。
 - logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 行为需要与 Rust tracing 对账；Rust 当前证据主要是 RUST_LOG/tracing subscriber。
 - Squad avatar：Rust squad.rs 的 SquadResponse 直接返回 raw avatar_url，并注明 HandlerState 尚未携带 Go object-store signer；Go squadToResponse 会调用 resolveAvatarURLPtr。必须补完整的私有对象 URL/签名契约或证明当前存储策略等价。
 - agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust handler 有 inline 1..50，但 daemon config 有独立默认值。必须确认这是两个不同边界还是迁移遗漏，形成单一 contract 证据。
@@ -304,3 +304,21 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 生产路径状态：本切片覆盖本地默认入口、自托管镜像和 CI 部署验证；`.goreleaser.yml`、release workflow、安装器仍是 Go CLI 发布链路，故 AUDIT-001 尚未整体完成。
 - Go 是否可下线：否。Go compatibility build/test、CLI release/install、回滚目标和剩余 leaf contract 仍在清单中。
 - 验证状态：shell 语法、`git diff --check`、Makefile entrypoint/build contract 已通过；Helm 未执行（审计环境无 `helm`），Docker 构建和 Rust workspace 编译继续按本切片记录，不以环境缺失冒充通过。
+
+## 12. AUDIT-003 执行更新：Rust CPU pprof
+
+后续切片 `codex/cord-189-pprof-rust` 收口了 `internal/profiling` 的 CPU
+profile 能力和管理端口边界：
+
+- Rust 入口：`cordy-server::profiling::serve` 在固定的
+  `127.0.0.1:6060` 独立 listener 上提供 `/debug/pprof/`、`cmdline`、`profile`
+  和 `symbol`；CPU profile 使用 pprof protobuf，并保持 gzip 响应格式。
+- 生产路径状态：Rust server 在主 API listener 启动后无条件启动该 loopback
+  listener；它没有挂到公开 API router，heap 与 runtime trace 尚未宣称可用。
+- Go 是否可下线：否。Go `internal/profiling` 的 heap/trace 等未闭合能力、logger、avatar
+  和 concurrency 仍在 AUDIT-003；其余 Go 源码退休门槛也未满足。
+- 文档状态：`SELF_HOSTING_ADVANCED.md` 已改为 Rust CPU profile 命令，并明确记录
+  heap/trace 的当前限制，避免把未实现能力写成生产承诺。
+- 验证状态：Cargo metadata、锁文件一致性、Rustfmt（触及文件）和 `git diff --check`
+  通过；workspace check 仍被基线 `cordy-slack` 1 个 exhaustiveness 错误及
+  `cordy-daemon` 7 个既有编译错误阻断，已交给 Volta 异步处理。

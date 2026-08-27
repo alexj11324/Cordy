@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 mod channel_runtime;
+mod profiling;
 mod realtime_runtime;
 
 struct ProductionApp {
@@ -48,6 +49,30 @@ impl MetricsRuntime {
     async fn shutdown(self) {
         if !self.shutdown_with_timeout(Duration::from_secs(3)).await {
             tracing::warn!("metrics server did not exit within shutdown timeout");
+        }
+    }
+
+    async fn shutdown_with_timeout(self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let mut task = self.task;
+        if tokio::time::timeout(timeout, &mut task).await.is_ok() {
+            return true;
+        }
+        task.abort();
+        let _ = task.await;
+        false
+    }
+}
+
+struct ProfilingRuntime {
+    shutdown: tokio_util::sync::CancellationToken,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ProfilingRuntime {
+    async fn shutdown(self) {
+        if !self.shutdown_with_timeout(Duration::from_secs(3)).await {
+            tracing::warn!("pprof server did not exit within shutdown timeout");
         }
     }
 
@@ -583,6 +608,17 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
+    let profiling_shutdown = tokio_util::sync::CancellationToken::new();
+    let profiling_serve_shutdown = profiling_shutdown.clone();
+    let profiling_task = tokio::spawn(async move {
+        if let Err(error) = profiling::serve(profiling_serve_shutdown).await {
+            tracing::error!(%error, "pprof server stopped");
+        }
+    });
+    let profiling_runtime = ProfilingRuntime {
+        shutdown: profiling_shutdown,
+        task: profiling_task,
+    };
     let ProductionApp {
         router,
         root_cancel,
@@ -762,6 +798,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(metrics_runtime) = metrics_runtime {
         metrics_runtime.shutdown().await;
     }
+    profiling_runtime.shutdown().await;
     serve_result?;
     Ok(())
 }

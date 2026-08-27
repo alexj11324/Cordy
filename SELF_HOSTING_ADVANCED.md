@@ -581,22 +581,25 @@ networking, allowlists, NetworkPolicy, or proxy authentication. If you bind
 trusted network, for example a host-local mapping such as
 `127.0.0.1:9090:9090`.
 
-## Go Runtime Profiling
+## Runtime CPU Profiling
 
-The backend exposes all standard Go pprof routes on the fixed loopback-only
-management listener `127.0.0.1:6060`, including CPU, heap, allocs, goroutine,
-block, mutex, threadcreate, symbol, and trace profiles:
+The Rust backend exposes CPU pprof on the fixed loopback-only management
+listener `127.0.0.1:6060`:
 
 ```bash
 go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
-go tool pprof http://127.0.0.1:6060/debug/pprof/heap
 ```
 
-The public API port does not serve `/debug/pprof/`. The listener address is not
-configurable and is never bound to a container or host network interface.
-Profiles can reveal process internals and some captures add CPU or memory
-pressure, so access should remain limited to operators on the same host or in
-the same container network namespace.
+The `/debug/pprof/`, `/debug/pprof/cmdline`, and `/debug/pprof/symbol`
+endpoints are available on that listener as well. The public API port does not
+serve `/debug/pprof/`. The listener address is not configurable and is never
+bound to a container or host network interface. Profiles can reveal process
+internals and captures add CPU pressure, so access should remain limited to
+operators on the same host or in the same container network namespace.
+
+Heap and runtime-trace profiles are not available from the Rust production
+entry yet; do not treat `/debug/pprof/heap` or `/debug/pprof/trace` as supported
+operations until the migration audit closes those contracts.
 
 A loopback listener inside a container belongs to that container's network
 namespace and is not reachable directly from the host. With the Compose stack,
@@ -604,9 +607,9 @@ capture the profile inside the backend container and copy it out:
 
 ```bash
 docker compose -f docker-compose.selfhost.yml exec backend \
-  wget -qO /tmp/heap.pprof http://127.0.0.1:6060/debug/pprof/heap
-docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pprof ./heap.pprof
-go tool pprof ./heap.pprof
+  wget -qO /tmp/cpu.pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+docker compose -f docker-compose.selfhost.yml cp backend:/tmp/cpu.pprof ./cpu.pprof
+go tool pprof ./cpu.pprof
 ```
 
 ## Upgrading
