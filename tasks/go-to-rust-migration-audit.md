@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session 与 Codex session rollout durability production chain 已交付 Ready PR | 异步收口 #558/#559 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558/#559，可执行 | PR #542..#550/#558/#559；§5.2、§6.2、§29..§37、§45..§46 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session 与 Codex session rollout durability production chain 已交付 Ready PR；当前切片迁移 confirmed provider demotion/recovery 完整链 | 先交付 probe verdict→claim barrier→registry/launch removal→offline reason→late-response hold/recovery；异步收口既有 V/R/F | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550/#558..#560，可执行 | PR #542..#550/#558..#560；§5.2、§6.2、§29..§37、§45..§48 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -1557,3 +1557,42 @@ Docker build 和开销观察全部交独立 verifier，finding 交独立 fixer�
   404/conflict/shutdown/musl/non-Linux；runbook 的 `sudo nsenter ... tokio-console` 通常找不到用户
   `~/.cargo/bin`。Ponytail 未发现多余 factory/registry/file；问题是 lifecycle、blocking boundary、默认
   成本和直接证据。全部 finding 已交 independent fixer，当前不声明该切片已完成 AUDIT-003A 退出。
+
+## 48. AUDIT-005 执行缺口：confirmed provider demotion and recovery lifecycle
+
+当前切片选择 `AUDIT-005` registration/reconcile 的完整 machine-provider 生命周期，而不是只接一个
+demotion helper：
+
+- Go `detectBuiltinRuntimes` 将 built-in probe 分成三类：可用、暂时无法读取版本、已确认低于最低
+  版本或 OS 拒绝执行。暂时失败必须保留已注册 runtime；只有 confirmed verdict 才能下线。not-
+  executable 必须跨 confirmation window 再现，并携带稳定 `not_executable` code、detail 与可识别 npm
+  package 的 postinstall repair command。
+- Go `demoteUnusableRuntimes` 在 claim barrier 下原子移除所有 workspace 的 condemned built-in
+  runtime 与 launch/version state，再按 workspace registration lock 重检仍未跟踪的 ID，向真实
+  `/api/daemon/deregister` 发送 per-runtime offline reasons；custom-profile runtime 永不被该路径移除。
+- Go 以 seq-stamped provider hold 拒绝 demotion 前已发出、demotion 后才返回的 register response；
+  被拒绝的 revived row 必须再次带原原因下线。后续 probe 确认恢复时，只能清除不晚于该 probe
+  sample 的 hold，避免旧 probe 覆盖较新的 demotion；恢复后由既有 converge/register 路径重新上线。
+- Rust 已有真实 `LocalProviderCatalog -> ProviderRegistrationSource -> RuntimeRegistrationService ->
+  RuntimeRegistry/RuntimeLaunchRegistry -> Client` 生产链，也已有 claim barrier、workspace serial、
+  `RuntimeOfflineReason` wire type 和 `agents_refresh::partition_demotable_runtimes`，但 production catalog
+  只把全部失败静默省略，registration 又把省略一律当 authoritative removal。现有 demotion
+  partition/`RevivedRuntimes` 仅在孤立模块测试中使用，生产调用方为零；offline reasons 永远以空 map
+  发送，且没有 late-response hold 或 recovery ordering。
+
+本切片必须复用上述真实 production objects，把 probe verdict、transient preservation、confirmed
+demotion、claim/workspace ordering、structured deregister、late response rejection 与 generation-safe
+recovery 接成同一闭环。不得新增第二个 catalog、registry、supervisor、background loop、client 或测试
+专用 production seam；custom-profile、runtime-gone、profile refresh、version refresh 与 startup shared
+probe 必须继续走既有 registration service。
+
+- 退出证据：暂时 probe failure 不删除 runtime/launch；below-minimum 和跨窗口 not-executable 在无
+  active claim/task 后从 authoritative runtime set 消失并向 server 发送准确原因；custom profile 保留；
+  demotion 前 in-flight response 不能复活 provider，若 server 已 upsert 则被再次下线；新 probe 不可
+  清较新 hold；真实恢复 probe 能清旧 hold并重新注册；deregister 前 recheck 不会击落更新的 row。
+- 默认生产路径：Rust CLI 构造的唯一 `LocalProviderCatalog` 与 `DaemonProductionServices` 直接使用该
+  契约；缺失/非法/不支持 provider 继续 fail-closed，不选择 Stub、Noop 或 Fake。
+- Go 是否可下线：本 provider demotion/recovery 能力在异步证据收口后不再需要 Go daemon；
+  AUDIT-005 其余生命周期、全仓 Go compatibility source 和最终 AUDIT-001..010 门仍未完成。
+- 当前状态：缺口已在编码前登记；实现、Ready PR、verification、review 与 fix 尚未开始。主 agent
+  尚未运行 Cargo、compile、tests、rustfmt 或 production smoke，也未把任何验证记为通过。
