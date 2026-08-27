@@ -818,5 +818,8 @@ ws-1 成功应用新版本后只跳过 ws-1，尚未应用的 ws-2 仍需要 ref
   修改该 owner 调用的 `refresh_builtins_once`；不新增 Stub、Noop 或 Fake。
 - Go 是否可下线：否；daemon execution、GC、repo cache、local skills、auto update、
   MCP、真实进程 smoke 和最终 `AUDIT-001..010` 仍未退出。
-- 异步状态：verification 与 reviewer 已派发但尚未返回；fixer 尚未派发。主 agent
-  只确认 `git diff --check` 无错误，不记录为编译或测试通过。PR 堆叠在 #542。
+- Verification/fixer：首次使用 stale shared target 的精确测试匹配 0 tests（440
+  filtered），不计为通过；scoped clean 后同一 provider-refresh regression 实际通过
+  （1 passed、0 failed、440 filtered），locked/offline daemon no-run 通过，worktree
+  diff clean。fixed stable rustfmt 发现 helper/closure reflow，fixer 仅应用该机械格式
+  修复；修复后 targeted stable rustfmt 与 `git diff --check` 通过。PR 堆叠在 #542。

@@ -315,18 +315,16 @@ impl RuntimeLaunchRegistry {
         state.profiles.remove(workspace_id);
     }
 
-    fn builtin_refresh_needed(
-        &self,
-        workspace_id: &str,
-        incoming: &[RuntimeLaunchSpec],
-    ) -> bool {
+    fn builtin_refresh_needed(&self, workspace_id: &str, incoming: &[RuntimeLaunchSpec]) -> bool {
         let state = self.state.read().unwrap();
         let Some(current) = state.builtins.get(workspace_id) else {
             return true;
         };
         current.len() != incoming.len()
             || incoming.iter().any(|spec| {
-                current.get(&spec.target.provider).is_none_or(|saved| saved != spec)
+                current
+                    .get(&spec.target.provider)
+                    .is_none_or(|saved| saved != spec)
             })
     }
 
