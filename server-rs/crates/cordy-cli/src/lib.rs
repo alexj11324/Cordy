@@ -94,6 +94,8 @@ enum Command {
     Auth(AuthArgs),
     #[command(about = "Log in to Cordy")]
     Login(LoginArgs),
+    #[command(about = "Configure Cordy and start the local daemon")]
+    Setup(SetupArgs),
     #[command(about = "Manage configuration for cordy")]
     Config(ConfigArgs),
     #[command(about = "Work with your user account")]
@@ -160,6 +162,51 @@ struct LoginArgs {
 }
 
 #[derive(Debug, Args)]
+struct SetupArgs {
+    #[arg(
+        long,
+        help = "Host/IP the OAuth callback URL points at when the browser can reach this CLI directly"
+    )]
+    callback_host: Option<String>,
+    #[command(subcommand)]
+    command: Option<SetupCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum SetupCommand {
+    #[command(about = "Configure the CLI for Cordy Cloud")]
+    Cloud {
+        #[arg(
+            long = "callback-host",
+            help = "Host/IP the OAuth callback URL points at when the browser can reach this CLI directly"
+        )]
+        cloud_callback_host: Option<String>,
+    },
+    #[command(about = "Configure the CLI for a self-hosted Cordy server")]
+    SelfHost(SetupSelfHostArgs),
+}
+
+#[derive(Debug, Args)]
+struct SetupSelfHostArgs {
+    #[arg(
+        long = "server-url",
+        help = "Backend server URL (e.g. https://api.internal.co)"
+    )]
+    self_host_server_url: Option<String>,
+    #[arg(long, help = "Frontend app URL (e.g. https://app.internal.co)")]
+    app_url: Option<String>,
+    #[arg(long, value_name = "PORT", help = "Backend port for a local server")]
+    port: Option<u16>,
+    #[arg(long, value_name = "PORT", help = "Frontend port for a local server")]
+    frontend_port: Option<u16>,
+    #[arg(
+        long,
+        help = "Host/IP the OAuth callback URL points at when the browser can reach this CLI directly"
+    )]
+    self_host_callback_host: Option<String>,
+}
+
+#[derive(Debug, Args)]
 struct DaemonArgs {
     #[command(subcommand)]
     command: DaemonCommand,
@@ -192,7 +239,7 @@ enum DaemonCommand {
     },
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Default, Args)]
 struct DaemonStartArgs {
     /// Run the daemon in the current process. Without this flag the command
     /// launches a foreground child through the lifecycle owner.
@@ -3196,6 +3243,7 @@ async fn run_with_input<R: Read>(
             command: AuthCommand::Logout,
         }) => run_auth_logout(cli, environment),
         Command::Login(args) => run_login_token(cli, environment, args, input).await,
+        Command::Setup(args) => run_setup(cli, environment, args, input).await,
         Command::Config(ConfigArgs { command: None }) => {
             run_config_show(cli, environment, OutputFormat::Table)
         }
@@ -8679,6 +8727,345 @@ async fn run_login_token<R: Read>(
             user.name, user.email
         ),
     })
+}
+
+const DEFAULT_CLOUD_APP_URL: &str = "https://cordy.ai";
+
+async fn run_setup<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SetupArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    match &args.command {
+        None => run_setup_cloud(cli, environment, args.callback_host.as_deref(), input).await,
+        Some(SetupCommand::Cloud {
+            cloud_callback_host,
+        }) => {
+            run_setup_cloud(
+                cli,
+                environment,
+                cloud_callback_host
+                    .as_deref()
+                    .or(args.callback_host.as_deref()),
+                input,
+            )
+            .await
+        }
+        Some(SetupCommand::SelfHost(self_host_args)) => {
+            run_setup_self_host(
+                cli,
+                environment,
+                self_host_args,
+                self_host_args
+                    .self_host_callback_host
+                    .as_deref()
+                    .or(args.callback_host.as_deref()),
+                input,
+            )
+            .await
+        }
+    }
+}
+
+fn format_setup_url_change(old_value: &str, new_value: &str) -> String {
+    if !new_value.is_empty() && new_value != old_value {
+        format!("{old_value}  ->  {new_value}")
+    } else {
+        old_value.to_owned()
+    }
+}
+
+fn setup_config_location(environment: &Environment, profile: &str) -> String {
+    let Ok(path) = environment.config_path(profile) else {
+        return String::new();
+    };
+    let mut output = String::new();
+    if !profile.is_empty() {
+        let _ = writeln!(output, "  profile:    {profile}");
+    }
+    let _ = writeln!(output, "  config:     {}", path.display());
+    output
+}
+
+fn confirm_setup_overwrite<R: Read>(
+    environment: &Environment,
+    profile: &str,
+    new_server_url: &str,
+    new_app_url: &str,
+    input: &mut R,
+) -> Result<(bool, String)> {
+    let config = environment.load_config(profile).unwrap_or_default();
+    if config.server_url.is_empty() {
+        return Ok((true, String::new()));
+    }
+
+    let mut output = String::new();
+    output.push_str("Current configuration:\n");
+    let _ = writeln!(
+        output,
+        "  server_url: {}",
+        format_setup_url_change(&config.server_url, new_server_url)
+    );
+    let _ = writeln!(
+        output,
+        "  app_url:    {}",
+        format_setup_url_change(&config.app_url, new_app_url)
+    );
+    if !config.workspace_id.is_empty() {
+        let _ = writeln!(output, "  workspace:  {}", config.workspace_id);
+    }
+    output.push_str("\nThis will reset your configuration. Continue? [y/N] ");
+
+    let answer = read_setup_input_line(input)?;
+    let answer = answer.trim();
+    if matches!(answer.to_ascii_lowercase().as_str(), "y" | "yes") {
+        Ok((true, output))
+    } else {
+        output.push_str("Aborted.\n");
+        Ok((false, output))
+    }
+}
+
+async fn run_setup_cloud<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    callback_host: Option<&str>,
+    input: &mut R,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "setup")?;
+    let server_url = DEFAULT_CLOUD_SERVER_URL;
+    let app_url = DEFAULT_CLOUD_APP_URL;
+    let (proceed, mut stderr) =
+        confirm_setup_overwrite(environment, &cli.profile, server_url, app_url, input)?;
+    if !proceed {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr,
+        });
+    }
+
+    environment
+        .save_profile_credentials_with_app_url(&cli.profile, server_url, Some(app_url), "")
+        .context("save config")?;
+    stderr.push_str("Configured for Cordy Cloud (https://cordy.ai).\n");
+    let _ = writeln!(stderr, "  server_url: {server_url}");
+    let _ = writeln!(stderr, "  app_url:    {app_url}");
+    stderr.push_str(&setup_config_location(environment, &cli.profile));
+    stderr.push('\n');
+
+    let login = run_login_browser(cli, environment, callback_host).await?;
+    stderr.push_str(&login.stderr);
+    let daemon = run_daemon_after_setup(cli, environment)
+        .await
+        .context("start or restart daemon")?;
+    stderr.push_str(&daemon.stderr);
+    stderr.push_str("\n✓ Setup complete! Your machine is now connected to Cordy.\n");
+    Ok(RunOutput {
+        stdout: daemon.stdout,
+        stderr,
+    })
+}
+
+async fn run_setup_self_host<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SetupSelfHostArgs,
+    callback_host: Option<&str>,
+    input: &mut R,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "setup")?;
+    let existing = environment.load_config(&cli.profile).unwrap_or_default();
+    let (server_url, user_provided_server_url) =
+        resolve_setup_self_host_server_url(cli, environment, args, &existing)?;
+    let mut app_url = resolve_setup_self_host_app_url(environment, args, &existing);
+    let frontend_port = args.frontend_port.unwrap_or(3000);
+
+    let mut stderr = String::new();
+    if app_url.is_empty() {
+        if user_provided_server_url && !server_host_is_local(&server_url) {
+            let (entered, prompt) = prompt_setup_app_url(&server_url, input)?;
+            stderr.push_str(&prompt);
+            if entered.is_empty() {
+                bail!("--app-url is required when --server-url points at a remote host (e.g. --app-url https://app.internal.co)")
+            }
+            app_url = entered;
+        } else {
+            app_url = format!("http://localhost:{frontend_port}");
+        }
+    }
+
+    let (proceed, confirmation) =
+        confirm_setup_overwrite(environment, &cli.profile, &server_url, &app_url, input)?;
+    stderr.push_str(&confirmation);
+    if !proceed {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr,
+        });
+    }
+
+    if !probe_setup_server(&server_url).await {
+        stderr.push_str(&format!(
+            "\n⚠ Server at {server_url} is not reachable.\n  Your existing configuration was left unchanged.\n  Verify the URL, then re-run 'cordy setup self-host' once it's reachable.\n"
+        ));
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr,
+        });
+    }
+
+    environment
+        .save_profile_credentials_with_app_url(&cli.profile, &server_url, Some(&app_url), "")
+        .context("save config")?;
+    stderr.push_str("Configured for self-hosted server.\n");
+    let _ = writeln!(stderr, "  server_url: {server_url}");
+    let _ = writeln!(stderr, "  app_url:    {app_url}");
+    stderr.push_str(&setup_config_location(environment, &cli.profile));
+    stderr.push('\n');
+
+    let login = run_login_browser(cli, environment, callback_host).await?;
+    stderr.push_str(&login.stderr);
+    let daemon = run_daemon_after_setup(cli, environment)
+        .await
+        .context("start or restart daemon")?;
+    stderr.push_str(&daemon.stderr);
+    stderr.push_str("\n✓ Setup complete! Your machine is now connected to Cordy.\n");
+    Ok(RunOutput {
+        stdout: daemon.stdout,
+        stderr,
+    })
+}
+
+fn resolve_setup_self_host_server_url(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SetupSelfHostArgs,
+    existing: &config::CliConfig,
+) -> Result<(String, bool)> {
+    if let Some(raw) = args
+        .self_host_server_url
+        .as_deref()
+        .or(cli.server_url.as_deref())
+        .or_else(|| environment.trimmed("CORDY_SERVER_URL"))
+    {
+        return Ok((normalize_api_base_url(raw)?, true));
+    }
+    if args.port.is_none() && !existing.server_url.trim().is_empty() {
+        return Ok((normalize_api_base_url(existing.server_url.trim())?, true));
+    }
+    Ok((
+        format!("http://localhost:{}", args.port.unwrap_or(8080)),
+        false,
+    ))
+}
+
+fn resolve_setup_self_host_app_url(
+    environment: &Environment,
+    args: &SetupSelfHostArgs,
+    existing: &config::CliConfig,
+) -> String {
+    args.app_url
+        .as_deref()
+        .or_else(|| environment.trimmed("CORDY_APP_URL"))
+        .or_else(|| {
+            (args.frontend_port.is_none() && !existing.app_url.trim().is_empty())
+                .then_some(existing.app_url.trim())
+        })
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+fn server_host_is_local(server_url: &str) -> bool {
+    let Ok(url) = Url::parse(server_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn prompt_setup_app_url<R: Read>(server_url: &str, input: &mut R) -> Result<(String, String)> {
+    let mut output = format!(
+        "No --app-url provided, and --server-url ({server_url}) is remote.\nEnter the frontend app URL (e.g. https://app.internal.co): "
+    );
+    let entered = read_setup_input_line(input)?
+        .trim()
+        .trim_end_matches('/')
+        .to_owned();
+    if entered.is_empty() {
+        output.push('\n');
+    }
+    Ok((entered, output))
+}
+
+fn read_setup_input_line<R: Read>(input: &mut R) -> Result<String> {
+    let mut bytes = Vec::new();
+    let mut byte = [0_u8; 1];
+    loop {
+        match input.read(&mut byte) {
+            Ok(0) => break,
+            Ok(_) if byte[0] == b'\n' => break,
+            Ok(_) if byte[0] != b'\r' => bytes.push(byte[0]),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error).context("read setup input"),
+        }
+    }
+    String::from_utf8(bytes).context("setup input is not valid UTF-8")
+}
+
+async fn probe_setup_server(server_url: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    else {
+        return false;
+    };
+    client
+        .get(format!("{}/health", server_url.trim_end_matches('/')))
+        .send()
+        .await
+        .is_ok_and(|response| response.status() == reqwest::StatusCode::OK)
+}
+
+fn daemon_active_task_count(health: &Value) -> i64 {
+    health
+        .get("active_task_count")
+        .and_then(|value| value.as_i64().or_else(|| value.as_f64().map(|n| n as i64)))
+        .unwrap_or_default()
+}
+
+async fn run_daemon_after_setup(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    let health = probe_daemon_health(health_port_for_profile(&cli.profile)).await;
+    let args = DaemonStartArgs::default();
+    if daemon_health_is_alive(&health) {
+        let active_tasks = daemon_active_task_count(&health);
+        if active_tasks > 0 {
+            let task_label = if active_tasks == 1 { "task" } else { "tasks" };
+            let restart_command = if cli.profile.is_empty() {
+                "cordy daemon restart".to_owned()
+            } else {
+                format!("cordy daemon restart --profile {}", cli.profile)
+            };
+            bail!("daemon has {active_tasks} active {task_label}; setup saved the new configuration but left the running daemon unchanged to avoid cancelling work. Wait for the active work to finish, then run '{restart_command}' to apply the new configuration")
+        }
+        let mut output = run_daemon_restart(cli, environment, &args).await?;
+        output.stderr = format!(
+            "\nRestarting daemon to apply the new configuration...\n{}",
+            output.stderr
+        );
+        return Ok(output);
+    }
+
+    let mut output = run_daemon_start(cli, environment, &args).await?;
+    output.stderr = format!("\nStarting daemon...\n{}", output.stderr);
+    Ok(output)
 }
 
 async fn run_auth_status(
@@ -15819,6 +16206,88 @@ mod tests {
         assert!(args.foreground);
         assert_eq!(args.daemon_id.as_deref(), Some("daemon-1"));
         assert_eq!(args.agent_timeout, Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn setup_parser_supports_default_cloud_and_self_host_modes() {
+        let cloud = Cli::try_parse_from(["cordy", "setup", "--callback-host", "10.0.0.5"])
+            .expect("default cloud setup CLI");
+        assert!(matches!(
+            cloud.command,
+            Command::Setup(SetupArgs {
+                callback_host: Some(host),
+                command: None,
+            }) if host == "10.0.0.5"
+        ));
+
+        let self_host = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "setup",
+            "self-host",
+            "--server-url",
+            "https://api.internal.example",
+            "--app-url",
+            "https://app.internal.example",
+            "--port",
+            "9090",
+            "--frontend-port",
+            "4000",
+            "--callback-host",
+            "10.0.0.5",
+        ])
+        .expect("self-host setup CLI");
+        let Command::Setup(SetupArgs {
+            command: Some(SetupCommand::SelfHost(args)),
+            ..
+        }) = self_host.command
+        else {
+            panic!("expected self-host setup command");
+        };
+        assert_eq!(
+            args.self_host_server_url.as_deref(),
+            Some("https://api.internal.example")
+        );
+        assert_eq!(
+            args.app_url.as_deref(),
+            Some("https://app.internal.example")
+        );
+        assert_eq!(args.port, Some(9090));
+        assert_eq!(args.frontend_port, Some(4000));
+        assert_eq!(args.self_host_callback_host.as_deref(), Some("10.0.0.5"));
+    }
+
+    #[test]
+    fn setup_self_host_resolvers_preserve_existing_remote_urls() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "https://env.example");
+        environment.set("CORDY_APP_URL", "https://app.env.example/");
+        let cli =
+            Cli::try_parse_from(["cordy", "setup", "self-host"]).expect("self-host setup CLI");
+        let Command::Setup(SetupArgs {
+            command: Some(SetupCommand::SelfHost(args)),
+            ..
+        }) = &cli.command
+        else {
+            panic!("expected self-host setup command");
+        };
+        let existing = config::CliConfig {
+            server_url: "https://existing.example".into(),
+            app_url: "https://app.existing.example/".into(),
+            ..config::CliConfig::default()
+        };
+        let (server_url, user_provided) =
+            resolve_setup_self_host_server_url(&cli, &environment, args, &existing)
+                .expect("resolve server URL");
+        assert_eq!(server_url, "https://env.example");
+        assert!(user_provided);
+        assert_eq!(
+            resolve_setup_self_host_app_url(&environment, args, &existing),
+            "https://app.env.example"
+        );
     }
 
     #[test]
