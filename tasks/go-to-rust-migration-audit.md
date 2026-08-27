@@ -201,6 +201,39 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-009 | 进行中 | 文档跟随实际切换；整体完成依赖 AUDIT-001 | 默认入口、pprof、logger 和 installer 文档已有部分更新 | 对齐 systemd/release/rollback 及剩余运维文档 | Open、Ready：#523..#525/#529 |
 | AUDIT-010 | 阻塞 | AUDIT-001..009 全部完成且生产验证通过 | 尚无 Go 目录可删除 | 做全仓引用审计并删除全部 Go 源文件 | 最终门；§10 |
 
+### 6.1.1 人类可读的主线清单
+
+下面是给人看的“按依赖推进”视图。它不替代上面的唯一执行台账：
+
+- `[ ]` = 尚未完成；`[~]` = 已开始但退出证据未齐；`[x]` = 所有退出 checkbox 都有可复现证据。
+- 顺序是推荐的主线顺序，不是把不存在依赖的工作强行串行化；同一阶段里标注“可并行”的项目可以异步推进。
+- 创建 Ready PR 不等于打勾；只有对应 ID 的全部退出证据满足后才能打勾。PR 的 review/fix、编译和长测试可以在后台继续，不改变主线选择。
+
+1. `[~]` **AUDIT-001 — Rust 默认生产入口**（Makefile、Docker、CI、Helm、CLI、installer/systemd 和回滚）
+   - `[ ]` 默认构建/启动/health/ready 使用 Rust
+   - `[ ]` install/systemd、兼容产物和回滚演练完成
+2. `[~]` **AUDIT-006 — migration/backfill 发布闭环**（依赖 AUDIT-001 的 Rust 产物）
+   - `[ ]` migrate up/down/status、锁、取消/恢复和三个 backfill 的 image/release packaging 完成
+3. `[~]` **AUDIT-003A..003D — 剩余 leaf contract**（可并行）
+   - `[ ]` pprof heap/trace 或替代方案
+   - `[ ]` logger 时间布局
+   - `[ ]` avatar 对象存储读写
+   - `[ ]` agent/daemon concurrency 生命周期
+4. `[~]` **AUDIT-004 — integrations 生产矩阵**（可并行；依赖 channel runtime 已接线）
+   - `[ ]` Telegram、Composio、VCS、GitHub snapshot 等 provider 的正/负向 smoke 和 fail-closed 证据
+5. `[~]` **AUDIT-002 — API/WS/daemon 行为 smoke**（可按契约分片；与 003/004 有交叉但不重复实现）
+   - `[ ]` 认证、权限、事务、错误 JSON、WS/realtime、background worker 和 CLI/daemon smoke
+6. `[ ]` **AUDIT-005 — daemon 完整能力验收**（依赖相关 leaf/provider 契约证据）
+   - `[ ]` control/health、registration/reconcile、execution、GC、MCP、update 和 shutdown 生命周期
+7. `[ ]` **AUDIT-007 — Go 测试契约映射**（可并行建立索引）
+   - `[ ]` 高风险 Go 回归均映射到 Rust 可执行测试或记录不适用理由
+8. `[ ]` **AUDIT-008 — wire/schema/ID 兼容性**（可并行）
+   - `[ ]` JSON、时间、UUID/ULID、Redis、DB nullable/enum、error/event golden vectors
+9. `[~]` **AUDIT-009 — 运维与文档切换**（跟随 001 的实际产物）
+   - `[ ]` install/systemd/release/rollback/pprof/metrics 文档与已验证 Rust 入口一致
+10. `[ ]` **AUDIT-010 — Go 源码退休**（严格依赖 AUDIT-001..009 全部 `[x]`）
+    - `[ ]` 全仓引用审计、生产 build/deploy smoke、回滚演练通过后删除全部 Go source
+
 执行规则：一次只从依赖已满足的“下一动作”选择一个不重叠的主线业务切片；
 切片完成后立即提交、推送、创建 Ready PR，并回写本表的交付证据，但任务仍保持
 “进行中”。只有 §6.2 对应 ID 的全部退出 checkbox 都有可复现证据并打勾后，
