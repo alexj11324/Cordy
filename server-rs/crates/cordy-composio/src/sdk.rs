@@ -102,9 +102,9 @@ pub fn parse_api_error(status: u16, body: &[u8]) -> ApiError {
         #[serde(default)]
         status: i64,
         #[serde(default, rename = "request_id")]
-        _request_id: String,
+        request_id: String,
         #[serde(default, rename = "suggested_fix")]
-        _suggested_fix: String,
+        suggested_fix: String,
         #[serde(default)]
         errors: Vec<String>,
     }
@@ -116,6 +116,8 @@ pub fn parse_api_error(status: u16, body: &[u8]) -> ApiError {
     out.code = wire.error.code;
     out.slug = wire.error.slug;
     out.status = wire.error.status;
+    out.request_id = wire.error.request_id;
+    out.suggested_fix = wire.error.suggested_fix;
     out.errors = wire.error.errors;
     out
 }
@@ -1073,6 +1075,16 @@ mod tests {
         assert!(e.is_unauthorized());
         let e = parse_api_error(429, b"");
         assert!(e.is_rate_limited());
+    }
+
+    #[test]
+    fn api_error_preserves_request_metadata() {
+        let body = br#"{"error":{"message":"invalid","request_id":"req_123","suggested_fix":"check the auth config"}}"#;
+        let e = parse_api_error(422, body);
+
+        assert_eq!(e.request_id, "req_123");
+        assert_eq!(e.suggested_fix, "check the auth config");
+        assert_eq!(e.raw_body, body);
     }
 
     #[test]
