@@ -418,10 +418,12 @@ impl ConfiguredFlags {
         keys
     }
 
+    #[cfg(test)]
     fn env_name(key: &str) -> String {
         format!("FF_{}", flag_key_to_env(key))
     }
 
+    #[cfg(test)]
     fn env_decision(key: &str, raw: &str) -> bool {
         decision_from_env(key, raw, &EvalContext::default()).enabled
     }
