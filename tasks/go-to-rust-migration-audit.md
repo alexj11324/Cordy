@@ -936,6 +936,11 @@ daemon claim wire 删除重复 stand-in，直接复用 `cordy-remotemcp::{Connec
   与 no-run 均被堆叠基线 #544 的 7 处 `GcMetaKind` E0433 阻断，执行数为 0；真实外部
   HTTPS/credential smoke 未运行。verifier 还确认现有测试没有独立的 limit-focused case，
   因而不能支撑 PR 对 limits 的直接覆盖声明。问题已排入独立 fixer；reviewer 异步进行中。
+- reviewer 在同一 head 返回两个 P1：其一，合法 JSON scalar root 或非 object
+  `mcpServers` 会在 overlay helper 的 `IndexMut` 处 panic，而不是返回 merge error；其二，
+  production check 只走 incompatible-provider 的启动前失败，没有直接覆盖有效 secure
+  connection 的 credential/discovery、overlay 进入 plan 和 cleanup。两项均已交独立 fixer；
+  reviewer 其余核对（wire alias、required/optional、安全 gate、生命周期与 Ponytail）无 finding。
 
 ## 34. AUDIT-005 执行缺口：plugin-hook MCP production wiring
 
