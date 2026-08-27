@@ -199,7 +199,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579 | 收口 #577/#579 异步 V/R/F；继续完成真实 event/Redis field 的 golden/round-trip 与 JSON/时间/DB/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577/#579；§6.2、§64、§66 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579 | 收口 #577/#579 异步 V/R/F；T-54B 将 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`；继续完成真实 event/Redis field 的 golden/round-trip 与 JSON/时间/DB/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577/#579/#580；§6.2、§64、§66、§67 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578 | 收口 #578 异步 V/R/F；继续对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
@@ -283,8 +283,9 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 53. `[~]` `T-53 / §63` AUDIT-007 Go 测试契约映射（PR #576 Ready，待异步退出证据）
 54. `[~]` `T-54 / §64` AUDIT-008 UUID/ULID utility wire serialization（PR #577，待异步退出证据）
 55. `[~]` `T-54A / §66` AUDIT-008 daemon event ID generator cutover（PR #579 Ready，待异步退出证据）
-56. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
-57. `[ ]` `T-56` AUDIT-010 Go 源码退休
+56. `[~]` `T-54B / §67` AUDIT-008 realtime/daemon ULID generator centralization（下一条 Rust 生产迁移切片）
+57. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
+58. `[ ]` `T-56` AUDIT-010 Go 源码退休
 
 每一步都按同一个交付门执行：登记缺口 → 实现完整业务契约 → 接入唯一 Rust 生产入口 →
 运行机械检查 → 提交/推送 → 创建 Ready PR → 记录异步 V/R/F → 收齐退出证据后才把该步改为 `[x]`。
@@ -2766,21 +2767,20 @@ canonical max `7ZZ...` vectors。台账据实降格为 utility-only prerequisite
 event ID；Rust `server-rs/crates/cordy-daemon/src/notifier.rs::new_event_id` 当前自行复制 timestamp/random/Crockford
 编码。两者 wire 形状相同但实现分叉，Rust 入口没有复用 workspace 已有 ULID 实现，后续修复容易产生跨进程兼容漂移。
 
-范围只替换该 daemon notifier 的 ID 生成实现：复用 workspace 已有 `cordy_util::Ulid::new().to_string()`，删除手写编码和不再需要
+范围只替换该 daemon notifier 的 ID 生成实现：复用 workspace 已有 `ulid::Ulid::new().to_string()`，删除手写编码和不再需要
 的时间导入；保留现有 `String` API、事件 payload、Redis/本地 fanout、dedup 和错误语义。既有 notifier contract test 继续验证
 26 字符 canonical Crockford、唯一性和所有 wakeup 事件路径；不新增 ID service、wrapper、生成器或测试框架。
 
 - 默认生产路径：`cordy-daemon::RelayNotifier` 的 task-available、runtime-profile、workspace-change 和 pending-work
-  事件统一经 `new_event_id` 使用 `cordy-util` wrapper 生成，并继续走现有 local hub/Redis relay 入口。
+  事件统一经 `new_event_id` 使用 workspace `ulid` crate 生成，并继续走现有 local hub/Redis relay 入口。
 - Go 是否可下线：该 daemon event ID 生成器已切到共享 Rust 依赖后，可标记此窄能力迁移；AUDIT-008 其余 event envelope/
   Redis 旧数据、AUDIT-002/005 生产验证和 AUDIT-001..010 总退出仍未完成，不能删除 Go。
 - owner：主 agent 负责生产入口迁移、机械检查、提交和 Ready PR；独立 verifier/reviewer/fixer 异步验证 ULID 向量、编译和
   Redis/event 兼容并处理 finding，结果追加到本节。
 
-实现 commit `f6a48f7e` 更新 `cordy-daemon` 的既有 `new_event_id` 生产 helper；fixer follow-up 把生成入口收口到 #577
-新增的 `cordy_util::Ulid::new().to_string()`，避免生产路径绕过共享 wire wrapper，并移除 daemon 对 `ulid` 的重复直接依赖。
-task-available、runtime-profile、workspace-change 和 pending-work 四类 public notifier 都由正向 relay 测试断言 canonical event ID；
-删除手写编码但保留所有 relay、dedup、payload 和错误语义。
+实现 commit `f6a48f7e` 更新 `cordy-daemon` 的既有 `new_event_id` 生产 helper：为 daemon 增加 workspace `ulid` 直接依赖，
+task-available、runtime-profile、workspace-change 和 pending-work 四类 public notifier 都经 `ulid::Ulid::new().to_string()`
+生成 canonical event ID；删除手写编码但保留所有 relay、dedup、payload 和错误语义。该切片没有引入新的 wrapper 或 ID service。
 主 agent 仅执行 `git diff --check`（PASS），未运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；非 Draft Ready PR #579
 已创建，base 为 `codex/cord-242-backfill-runbook-rust` 的 `39325098`。异步 verifier/reviewer/fixer 结果待回写，在
 exact compile、matched/executed 和真实 event/Redis 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
@@ -2796,3 +2796,22 @@ exact compile、matched/executed 和真实 event/Redis 证据返回前，本项�
 编码和无用时间导入已删除，锁文件只增加既有 `ulid` 的 daemon 直接依赖。Rust `Ulid::new()` 与 Go `ulid.Make()` 的
 canonical 26 字符 Crockford wire shape/唯一性契约一致，但同毫秒 entropy 单调性不同；当前 event ID 仅作 dedup key、不作
 排序，因此不扩大本切片声明。reviewer 唯一 P2 是本节重复标题，已在本提交删除重复段；fixer 尚无新增代码 finding。
+
+## 67. [~] AUDIT-008 realtime/daemon ULID generator centralization（T-54B）
+
+本项在开始编码前登记。#577 已把 `cordy-util::Ulid` 的 serde wire codec 对齐 Go 的 26 字符 Crockford ULID，#579 又在
+daemon notifier 中新增了真实 `ulid::Ulid::new().to_string()` caller；但 `cordy-realtime` 的 node/event ID 生产路径仍在
+多个 relay/broadcaster 文件中直接调用 `ulid`，daemon notifier 也保留独立直接依赖。这样同一 Go ULID wire contract 由多处
+入口维护，后续很容易再次分叉。当前仓库已有 `cordy-util` crate，适合承载唯一的 Rust ULID 生成入口。
+
+范围只新增 `cordy_util::Ulid::new`/`new_ulid` 的薄封装，并将 `cordy-realtime` 的 Redis/sharded/mirrored/switchable
+relay 以及 `cordy-daemon::notifier` 的生产 node/event ID 调用切换到该入口；保留现有 `String` API、26 字符 canonical
+Crockford wire shape、dedup、payload、Redis 和错误语义。移除这些 crate 对 `ulid` 的重复直接依赖；不新增 ID service、
+全局状态、随机生成器或第二套 wire type。
+
+- 默认生产路径：`RedisRelay`、`ShardedStreamRelay`、`MirroredRelay`、`SwitchableRelayBroadcaster` 和 daemon
+  `new_event_id` 都通过同一 `cordy_util::new_ulid()` 生成 node/event ID，server assembly 与 relay mode 不变。
+- Go 是否可下线：仅 ULID 生成实现分叉可标记为收口；旧 Go notifier/realtime、跨语言 event/Redis golden、真实 loopback、
+  旧数据读取及 AUDIT-001..010 总退出证据仍未完成，不能删除 Go。
+- owner：主 agent 负责最小生产调用迁移、依赖锁文件、机械检查、提交/推送和 Ready PR；独立 verifier/reviewer/fixer 异步
+  负责生成向量、调用覆盖、编译和回归 finding。
