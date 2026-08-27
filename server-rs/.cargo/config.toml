@@ -1,0 +1,3 @@
+[build]
+# Tokio emits task/resource/operation telemetry only with its instrumentation cfg.
+rustflags = ["--cfg", "tokio_unstable"]

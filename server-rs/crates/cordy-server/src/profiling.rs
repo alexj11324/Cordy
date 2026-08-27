@@ -1,8 +1,8 @@
-//! Loopback-only CPU profiling for the Rust server.
+//! Loopback-only profiling for the Rust server.
 //!
-//! This is the CPU-profile part of Go's `internal/profiling` contract. The
-//! listener stays separate from the public API and is intentionally fixed to
-//! the loopback address, matching the Go server's security boundary.
+//! CPU and Linux allocation profiles stay on the existing pprof listener.
+//! Tokio task/resource/operation telemetry is exported on a second fixed
+//! loopback address by the process tracing subscriber.
 
 use axum::{
     body::Body,
@@ -16,13 +16,15 @@ use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 pub const ADDR: &str = "127.0.0.1:6060";
+pub const TOKIO_CONSOLE_ADDR: &str = "127.0.0.1:6669";
 const DEFAULT_PROFILE_SECONDS: u64 = 30;
 const INDEX: &str = "<!doctype html><html><head><title>pprof</title></head><body>\
 <h1>pprof</h1><ul>\
 <li><a href=\"/debug/pprof/profile\">profile</a></li>\
+<li><a href=\"/debug/pprof/heap\">heap</a></li>\
 <li><a href=\"/debug/pprof/cmdline\">cmdline</a></li>\
 <li><a href=\"/debug/pprof/symbol\">symbol</a></li>\
-</ul><p>Rust process memory and thread diagnostics are exported by the private metrics listener.</p>\
+</ul><p>Async runtime diagnostics: tokio-console http://127.0.0.1:6669</p>\
 </body></html>\n";
 
 #[derive(Debug, Deserialize)]
@@ -47,8 +49,8 @@ fn router() -> Router {
         .route("/debug/pprof/cmdline", get(cmdline))
         .route("/debug/pprof/profile", get(profile))
         .route("/debug/pprof/symbol", get(symbol_get).post(symbol_post))
-        .route("/debug/pprof/heap", get(retired_heap_profile))
-        .route("/debug/pprof/trace", get(retired_runtime_trace))
+        .route("/debug/pprof/heap", get(heap_profile))
+        .route("/debug/pprof/trace", get(runtime_trace_replacement))
 }
 
 async fn redirect_to_index() -> Response {
@@ -114,17 +116,49 @@ async fn symbol_post(body: axum::body::Bytes) -> Response {
     }
 }
 
-async fn retired_heap_profile() -> Response {
+#[cfg(target_os = "linux")]
+async fn heap_profile() -> Response {
+    let Some(profiler) = jemalloc_pprof::PROF_CTL.as_ref() else {
+        return text_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "jemalloc heap profiling is unavailable\n",
+        );
+    };
+    let mut profiler = profiler.lock().await;
+    if !profiler.activated() {
+        return text_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "jemalloc heap profiling is not active\n",
+        );
+    }
+    match profiler.dump_pprof() {
+        Ok(profile) if !profile.is_empty() => binary_response(profile),
+        Ok(_) => text_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "heap profile capture returned no data\n",
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "heap profile capture failed");
+            text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "heap profile capture failed\n",
+            )
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn heap_profile() -> Response {
     text_response(
-        StatusCode::GONE,
-        "Go heap pprof is retired; use process_resident_memory_bytes and process_virtual_memory_bytes on the private metrics listener\n",
+        StatusCode::NOT_IMPLEMENTED,
+        "allocation-stack heap profiling is available only on Linux\n",
     )
 }
 
-async fn retired_runtime_trace() -> Response {
+async fn runtime_trace_replacement() -> Response {
     text_response(
         StatusCode::GONE,
-        "Go runtime trace is retired; use Rust CPU pprof and structured component/request logs\n",
+        "Go runtime trace is retired; use tokio-console http://127.0.0.1:6669 for Rust task/resource/operation diagnostics\n",
     )
 }
 
@@ -240,6 +274,7 @@ mod tests {
     #[test]
     fn uses_the_fixed_loopback_management_address() {
         assert_eq!(ADDR, "127.0.0.1:6060");
+        assert_eq!(TOKIO_CONSOLE_ADDR, "127.0.0.1:6669");
     }
 
     #[test]
@@ -275,29 +310,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn go_only_profiles_fail_closed_with_rust_replacements() {
-        for (path, replacement) in [
-            ("/debug/pprof/heap", "process_resident_memory_bytes"),
-            ("/debug/pprof/trace", "Rust CPU pprof"),
-        ] {
-            let response = router()
-                .oneshot(
-                    axum::http::Request::builder()
-                        .uri(path)
-                        .body(Body::empty())
-                        .unwrap_or_else(|_| unreachable!()),
-                )
-                .await
-                .unwrap_or_else(|_| unreachable!());
+    async fn legacy_runtime_trace_points_to_live_rust_diagnostics() {
+        let response = router()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/debug/pprof/trace")
+                    .body(Body::empty())
+                    .unwrap_or_else(|_| unreachable!()),
+            )
+            .await
+            .unwrap_or_else(|_| unreachable!());
 
-            assert_eq!(response.status(), StatusCode::GONE);
-            let body = response
-                .into_body()
-                .collect()
-                .await
-                .unwrap_or_else(|_| unreachable!())
-                .to_bytes();
-            assert!(String::from_utf8_lossy(&body).contains(replacement));
-        }
+        assert_eq!(response.status(), StatusCode::GONE);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .unwrap_or_else(|_| unreachable!())
+            .to_bytes();
+        assert!(String::from_utf8_lossy(&body).contains(TOKIO_CONSOLE_ADDR));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn heap_endpoint_returns_a_real_gzipped_pprof_profile() {
+        let response = router()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/debug/pprof/heap")
+                    .body(Body::empty())
+                    .unwrap_or_else(|_| unreachable!()),
+            )
+            .await
+            .unwrap_or_else(|_| unreachable!());
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_ENCODING),
+            Some(&HeaderValue::from_static("gzip"))
+        );
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .unwrap_or_else(|_| unreachable!())
+            .to_bytes();
+        assert!(body.starts_with(&[0x1f, 0x8b]));
     }
 }

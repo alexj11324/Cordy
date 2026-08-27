@@ -583,11 +583,13 @@ trusted network, for example a host-local mapping such as
 
 ## Runtime Profiling
 
-The Rust backend exposes CPU pprof on the fixed loopback-only management
-listener `127.0.0.1:6060`:
+The Rust backend exposes CPU pprof and, on Linux, allocation-stack heap pprof
+on the fixed loopback-only management listener `127.0.0.1:6060`:
 
 ```bash
 go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+curl -fsS http://127.0.0.1:6060/debug/pprof/heap -o heap.pb.gz
+go tool pprof heap.pb.gz
 ```
 
 The `/debug/pprof/`, `/debug/pprof/cmdline`, and `/debug/pprof/symbol`
@@ -597,20 +599,33 @@ bound to a container or host network interface. Profiles can reveal process
 internals and captures add CPU pressure, so access should remain limited to
 operators on the same host or in the same container network namespace.
 
-Go heap pprof and Go runtime scheduler traces are not meaningful wire contracts
-for the Rust runtime and are intentionally retired. Both legacy URLs return
-`410 Gone` instead of a plausible but incomplete profile. For memory diagnosis,
-enable the private metrics listener and graph these native process metrics:
+The Linux production binary uses jemalloc sampling for the heap endpoint. A
+capture is a real gzipped pprof protobuf containing allocation stacks, not a
+translation of process totals. Capturing requires a writable process temporary
+directory; capture errors fail with a non-2xx response. Non-Linux builds return
+`501 Not Implemented` because the allocator profiler is Linux-only. For memory
+trends between captures, enable the private metrics listener and graph:
 
 - `process_resident_memory_bytes`
 - `process_virtual_memory_bytes`
 - `process_threads`
 - `process_open_fds`
 
-Use the CPU pprof above to locate hot stacks, then correlate its capture window
-with structured logs by `component`, `request_id`, and `user_id`. This preserves
-the operator use cases without replacing the production allocator or exposing
-profiling on the public API port.
+Go runtime traces are not a Rust wire contract, so the legacy
+`/debug/pprof/trace` URL returns `410 Gone`. The Rust server instead exports live
+Tokio task, resource, and operation diagnostics over the fixed loopback-only
+console endpoint `127.0.0.1:6669`. Install the official client and connect from
+the same host or container network namespace:
+
+```bash
+cargo install --locked tokio-console
+tokio-console http://127.0.0.1:6669
+```
+
+The console reports task busy/scheduled/idle time, polls, synchronization and
+timer resources. Its bind address is fixed in the binary and cannot be changed
+to a public interface through environment configuration. Structured logs keep
+their existing LOG_LEVEL, timestamp, ANSI, component, request, and user fields.
 
 A loopback listener inside a container belongs to that container's network
 namespace and is not reachable directly from the host. With the Compose stack,
@@ -621,6 +636,21 @@ docker compose -f docker-compose.selfhost.yml exec backend \
   wget -qO /tmp/cpu.pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
 docker compose -f docker-compose.selfhost.yml cp backend:/tmp/cpu.pprof ./cpu.pprof
 go tool pprof ./cpu.pprof
+
+docker compose -f docker-compose.selfhost.yml exec backend \
+  wget -qO /tmp/heap.pb.gz http://127.0.0.1:6060/debug/pprof/heap
+docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pb.gz ./heap.pb.gz
+go tool pprof ./heap.pb.gz
+```
+
+For an interactive Tokio console session against Compose, run the locally
+installed client in the backend container's network namespace without
+publishing the management port:
+
+```bash
+backend_id="$(docker compose -f docker-compose.selfhost.yml ps -q backend)"
+sudo nsenter --target "$(docker inspect --format '{{.State.Pid}}' "$backend_id")" \
+  --net tokio-console http://127.0.0.1:6669
 ```
 
 ## Upgrading

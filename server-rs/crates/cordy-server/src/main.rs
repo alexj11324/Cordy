@@ -9,6 +9,16 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::prelude::*;
+
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(target_os = "linux")]
+#[allow(non_upper_case_globals)]
+#[export_name = "malloc_conf"]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 mod channel_runtime;
 mod profiling;
@@ -521,12 +531,19 @@ fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     let log_filter = tracing_subscriber::EnvFilter::try_new(cordy_util::logging::env_filter())
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"));
-    tracing_subscriber::fmt()
-        .with_env_filter(log_filter)
+    let console_addr: SocketAddr = profiling::TOKIO_CONSOLE_ADDR.parse()?;
+    let console_layer = console_subscriber::ConsoleLayer::builder()
+        .server_addr(console_addr)
+        .spawn();
+    let log_layer = tracing_subscriber::fmt::layer()
         .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
             cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
         ))
         .with_ansi(cordy_util::logging::stderr_is_terminal())
+        .with_filter(log_filter);
+    tracing_subscriber::registry()
+        .with(console_layer)
+        .with(log_layer)
         .init();
 
     let cfg = cordy_config::Config::load(Some(std::path::Path::new("cordy.toml")))?;

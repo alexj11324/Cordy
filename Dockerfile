@@ -9,6 +9,7 @@ WORKDIR /src/server-rs
 # embeds only the narrow Go-owned asset paths copied below; no Go toolchain or
 # Go runtime binary is part of the production image.
 COPY server-rs/Cargo.toml server-rs/Cargo.lock ./
+COPY server-rs/.cargo/ ./.cargo/
 COPY server-rs/.sqlx/ ./.sqlx/
 COPY server-rs/crates/ ./crates/
 
