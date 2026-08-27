@@ -2881,3 +2881,9 @@ RESP3 map，并增加真实 RESP3 top-level map vector；fixture 改为九个字
 断言，旧弱 harness 删除而不新增测试框架。fixed-stable rustfmt 与 `git diff --check` PASS；locked/offline `xread_parser_`
 精确 filter 仍在 discovery 前被 inherited #563 `hyper-util 0.1.20` 不存在 `runtime` feature 阻断（exit 101，实际 0 tests）。
 未执行真实 Redis/daemon smoke，不能把新增 direct contract 登记成 external loopback PASS。
+
+随后将本分支重放到 #580 当前 tip `8387d2c7`：注册、实现、台账和 fixer 的有效 commit 分别为 `c70b394f`、`7e4073ff`、
+`59bddde8` 和 `a21c6587`，当前 Ready PR #581 base 为 `codex/cord-245-realtime-ulid-wrapper`（`8387d2c7`）。重放未改变
+生产代码；fixer 已关闭上述 P1/P2/P3，修复后的 touched-file rustfmt 与 `git diff --check` 均 PASS。既有 locked/offline
+验证仍诚实记录为 inherited #563 resolver 在 discovery 前阻断、matched/executed 为 0，真实 Redis/daemon smoke 未执行；当前
+AUDIT-008 仍不能标记完成或删除 Go。
