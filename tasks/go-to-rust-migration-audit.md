@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569 与 stale sweeper #570 Ready | 收口 #565..#570 的异步 V/R/F 结果，同时继续下一项完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#570 堆叠在 Ready #569；#570 verifier/reviewer 已回报，finding 已交 fixer | PR #565..#570；§5、§6.2、§18、§52..§57 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix、issue-status #565、issue create #566、user WebSocket #567、scheduler #568、heartbeat #569 与 stale sweeper #570 Ready；§58 已登记下一项 offline-task/reconnect-retry 契约 | 收口 #565..#570 的异步 V/R/F 结果，同时交付 §58 完整 background-worker 契约；异步结果不阻塞主线 | 复用唯一 Rust production assemblies；#570 堆叠在 Ready #569；§58 先登记后实现，依赖 #570 branch | PR #565..#570；§5、§6.2、§18、§52..§58 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -2173,3 +2173,36 @@ server/Windows 或 cleanup 行为写成通过。verifier 静态确认唯一 serv
 同 workspace 单事件去重不可证伪；unavailable 与 configured-store error 未分开且 unavailable 分支按 Go 语义不应 forget；
 `Drop` 异步清理不是确定性的 failure-path cleanup。reviewer 确认 production assembly 使用真实 shared state，未发现有效生产路径
 误选 Stub/Noop/Fake。上述 verification/review finding 已交独立 fixer；在修复并重新验证前，本契约不能声称已验证或删除 Go。
+
+## 58. AUDIT-002 已登记执行缺口：offline task failure and reconnect-retry terminal contract
+
+本项在开始编码前登记，选择 runtime sweeper 中共享 reconnect-grace 的完整任务恢复能力，而不是只增加一个 SQL
+helper 或把整套 sweeper 混入同一 PR：
+
+- Go `sweepOfflineRuntimeTasks` 必须在 runtime 已 `offline` 且超过配置的 reconnect grace 后，按每 tick 上限把
+  `dispatched`、`running`、`waiting_local_directory` 任务原子地置为 `failed`，写入
+  `runtime_offline`、完成时间、错误和清空 wait reason；grace 内不能误杀，并交由 `TaskService.HandleFailedTasks`
+  统一广播、issue/agent reconcile 与 retry 副作用。
+- Go `sweepExpiredRuntimeReconnectRetries` 必须只处理 runtime_offline parent 产生的过期 `deferred` retry；健康且新鲜
+  的 runtime 重连时保留 retry，runtime 未在完整 grace 内恢复时写入 `runtime_reconnect_timeout` 的终态，避免 issue
+  永久卡住并使 runtime GC 可收敛。两个 stage 共享 bounded batch、`FOR UPDATE SKIP LOCKED` 和 reconnect-grace 顺序，
+  但不把 dispatched/running backstop、queued TTL、chat finalize 或 runtime GC 的不同语义伪装为本项完成。
+- Rust 唯一生产入口是 `RuntimeTaskSweeper::run_once` 的 offline-task stage 与 reconnect-retry stage，server 仍通过
+  唯一 `run_full_once` worker 调用；实现已存在但当前只有 SQL/常量，没有真实任务状态、grace、健康重连 race、terminal
+  failure side-effect 和 production run_once contract 证据。
+
+本切片必须复用既有 `RuntimeTaskSweeper::run_once`、`cordy-db` production SQL、`TaskService` 和 shared `Bus`，不新增
+task failure service、retry queue、fake DB 或 alternate sweeper。required `DATABASE_URL` 缺失/坏连接必须失败而不能
+self-skip；fixture 使用唯一 workspace/user/member/agent/runtime/issue/task lineage，并在正常和 failure path 确定性清理。
+contract 至少覆盖：grace 内保留与超 grace 后三种 active task 状态批量失败、batch cap/row lock 安全、runtime_offline
+retry 在健康 runtime 下保留、离线超 grace 后 `runtime_reconnect_timeout` 终止、parent lineage 过滤、terminal failure
+经真实 `TaskService` 触发 issue/agent/event 收口；删除 status predicate、grace gate、runtime freshness race、parent
+lineage、failure reason 或 production `run_once` wiring 任一环节应使测试失败。
+
+- 默认生产路径：Rust `RuntimeTaskSweeper::run_full_once` 是唯一 server sweeper，offline/reconnect stage 使用真实
+  `PgPool`、production `TaskService` 与 shared `Bus`；有效配置不选择 Stub/Noop/Fake。
+- Go 是否可下线：本 offline-task/reconnect-retry contract 与异步 finding 收口后，这两段 Go sweeper 逻辑可退休；
+  stale/queued task cleanup、delegated recovery、chat finalize、runtime GC、其余 background workers 与 AUDIT-001..010
+  总退出门仍未完成。
+- owner：主 agent 迁移完整契约、生产入口和 Ready PR；独立 verifier/reviewer/fixer 异步。计划 branch 基于
+  `codex/cord-234-runtime-sweeper-contract-rust`，独立 worktree，编号待创建后回写。
