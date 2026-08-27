@@ -1110,3 +1110,11 @@ auto-update module allow 与 “CLI crate 尚未落地”说明已删除。
   no-run 都被继承自 #544 的 7 处 `GcMetaKind` E0433 阻断，测试体实际执行数均为 0，不能记录
   为通过；verifier 静态确认 heartbeat 与 periodic update owner 共享同一个
   `Arc<DaemonCoreHost>`。格式、基线传播及 reviewer finding 已合并交给独立 fixer。
+- fixer 传播 #544 的最小编译修复后，production exact 实际执行 1/1 通过，并补齐 Desktop/busy
+  的 Go 精确错误文本及各分支 updating、claim barrier、restart target、root 未取消断言；
+  fixed-stable rustfmt 与 diff check 也已恢复。证据声明同步收窄：该 concrete production test
+  只证明 heartbeat owner 的失败路径与 barrier restore；成功 restart/root cancellation/barrier
+  hold 仍是 shared `AutoUpdateHost` algorithm evidence 加 production ownership 静态证据。真实
+  GitHub 下载、Homebrew mutation 与进程 restart 仍列外部 smoke，不能称为 concrete production
+  success gate。定向 production exact 1/1、auto-update algorithm group 15/15、update-executor
+  group 4/4 与 daemon no-run 均通过（仅既有 warning）。

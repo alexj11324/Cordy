@@ -650,9 +650,7 @@ mod tests {
                 },
             ))
         };
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server_stop = tokio_util::sync::CancellationToken::new();
         let stop = server_stop.clone();
@@ -684,7 +682,9 @@ mod tests {
             )
             .await;
         assert!(!desktop_activity.claims_paused());
+        assert!(!desktop.updating.load(Ordering::Acquire));
         assert!(desktop.scheduled_restart_binary().is_empty());
+        assert!(desktop_root.err().is_none());
 
         let busy_activity = DaemonActivity::new();
         let claim = busy_activity.try_enter_claim().unwrap();
@@ -706,6 +706,8 @@ mod tests {
         .await;
         assert!(!busy_activity.claims_paused());
         assert!(!busy.updating.load(Ordering::Acquire));
+        assert!(busy.scheduled_restart_binary().is_empty());
+        assert!(busy_root.err().is_none());
         drop(active_tasks);
 
         let invalid_activity = DaemonActivity::new();
@@ -738,7 +740,15 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(payloads("desktop")[0]["status"], "failed");
+        assert_eq!(
+            payloads("desktop")[0]["error"],
+            "CLI is managed by Cordy Desktop — update the Desktop app to upgrade the CLI"
+        );
         assert_eq!(payloads("busy")[0]["status"], "failed");
+        assert_eq!(
+            payloads("busy")[0]["error"],
+            "runtime update deferred because agent work is starting or still active; retry when the machine is idle"
+        );
         let invalid_payloads = payloads("invalid");
         assert_eq!(invalid_payloads[0]["status"], "running");
         assert_eq!(invalid_payloads[1]["status"], "failed");
