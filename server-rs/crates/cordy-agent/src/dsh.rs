@@ -141,6 +141,7 @@ impl Backend for DshBackend {
             .config
             .command
             .argv(&build_dsh_args_for_command(&self.config.command, "--stdio"));
+        let started = Instant::now();
         let mut command = Command::new(command_path);
         command
             .args(&argv)
@@ -192,25 +193,60 @@ impl Backend for DshBackend {
             reasoning_effort: options.thinking_level.clone(),
             mcp_servers,
         };
-        if let Err(error) = write_json_line(&mut stdin, &execute).await {
-            stop_process_tree(&mut tree).await;
-            return Err(AgentError::Process(error));
-        }
 
         let (message_tx, message_rx) = tokio::sync::mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let cancellation = options.cancellation.clone();
         let timeout = options.timeout;
-        let started = Instant::now();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
         let stderr_reader_tail = stderr_tail.clone();
 
         tokio::spawn(async move {
             let mut stderr_task = tokio::spawn(pump_stderr(stderr, stderr_reader_tail));
             let mut reader_task = tokio::spawn(read_frames(stdout, message_tx, request_id.clone()));
+            let initial_write = write_execute_frame(
+                &mut stdin,
+                &execute,
+                &cancellation,
+                remaining_timeout(timeout, started),
+            )
+            .await;
+            if !matches!(initial_write, InitialWriteOutcome::Sent) {
+                let (run_end, write_error) = match initial_write {
+                    InitialWriteOutcome::Sent => unreachable!("initial write was handled above"),
+                    InitialWriteOutcome::Cancelled => (RunEnd::Cancelled, None),
+                    InitialWriteOutcome::DeadlineExceeded => (RunEnd::DeadlineExceeded, None),
+                    InitialWriteOutcome::Failed(error) => (RunEnd::Completed, Some(error)),
+                };
+                stop_process_tree(&mut tree).await;
+                reader_task.abort();
+                if tokio::time::timeout(DSH_KILL_GRACE, &mut stderr_task)
+                    .await
+                    .is_err()
+                {
+                    stderr_task.abort();
+                }
+                let stderr = stderr_tail.tail();
+                let mut state = DshStreamState::default();
+                if let Some(error) = write_error {
+                    state.stream_error = format!("write dsh execute frame: {error}");
+                }
+                let result = finalize_result(
+                    run_end,
+                    timeout,
+                    None,
+                    None,
+                    state,
+                    &stderr,
+                    started.elapsed(),
+                );
+                let _ = result_tx.send(result);
+                return;
+            }
             let outcome = {
                 let completion = async {
                     let exit = tree.wait().await;
+                    stop_process_tree(&mut tree).await;
                     let stream = (&mut reader_task).await;
                     (exit, stream)
                 };
@@ -221,10 +257,16 @@ impl Backend for DshBackend {
                         () = cancellation.cancelled() => DshCompletionOutcome::Cancelled,
                     }
                 } else {
-                    tokio::select! {
-                        completed = &mut completion => DshCompletionOutcome::Completed(completed),
-                        () = cancellation.cancelled() => DshCompletionOutcome::Cancelled,
-                        () = tokio::time::sleep(timeout) => DshCompletionOutcome::DeadlineExceeded,
+                    match remaining_timeout(timeout, started) {
+                        None => DshCompletionOutcome::DeadlineExceeded,
+                        Some(duration) if duration.is_zero() => {
+                            DshCompletionOutcome::DeadlineExceeded
+                        }
+                        Some(duration) => tokio::select! {
+                            completed = &mut completion => DshCompletionOutcome::Completed(completed),
+                            () = cancellation.cancelled() => DshCompletionOutcome::Cancelled,
+                            () = tokio::time::sleep(duration) => DshCompletionOutcome::DeadlineExceeded,
+                        },
                     }
                 }
             };
@@ -234,17 +276,21 @@ impl Backend for DshBackend {
                     (RunEnd::Completed, completed.0, completed.1)
                 }
                 DshCompletionOutcome::Cancelled => {
-                    let _ = write_json_line(
-                        &mut stdin,
-                        &DshCancelCommand {
-                            v: DSH_PROTOCOL_VERSION,
-                            command_type: "cancel".to_string(),
-                            request_id: request_id.clone(),
-                        },
+                    let _ = tokio::time::timeout(
+                        DSH_CANCEL_GRACE,
+                        write_json_line(
+                            &mut stdin,
+                            &DshCancelCommand {
+                                v: DSH_PROTOCOL_VERSION,
+                                command_type: "cancel".to_string(),
+                                request_id: request_id.clone(),
+                            },
+                        ),
                     )
                     .await;
                     let graceful = tokio::time::timeout(DSH_CANCEL_GRACE, async {
                         let exit = tree.wait().await;
+                        stop_process_tree(&mut tree).await;
                         let stream = (&mut reader_task).await;
                         (exit, stream)
                     })
@@ -748,6 +794,41 @@ async fn write_json_line<W: AsyncWrite + Unpin, T: Serialize>(
     writer.flush().await
 }
 
+enum InitialWriteOutcome {
+    Sent,
+    Cancelled,
+    DeadlineExceeded,
+    Failed(io::Error),
+}
+
+async fn write_execute_frame<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    execute: &DshExecuteCommand,
+    cancellation: &CancellationToken,
+    timeout: Option<Duration>,
+) -> InitialWriteOutcome {
+    if matches!(timeout, Some(duration) if duration.is_zero()) {
+        return InitialWriteOutcome::DeadlineExceeded;
+    }
+    let write = write_json_line(writer, execute);
+    tokio::pin!(write);
+    match timeout {
+        None => tokio::select! {
+            result = &mut write => result.map_or_else(InitialWriteOutcome::Failed, |_| InitialWriteOutcome::Sent),
+            () = cancellation.cancelled() => InitialWriteOutcome::Cancelled,
+        },
+        Some(duration) => tokio::select! {
+            result = &mut write => result.map_or_else(InitialWriteOutcome::Failed, |_| InitialWriteOutcome::Sent),
+            () = cancellation.cancelled() => InitialWriteOutcome::Cancelled,
+            () = tokio::time::sleep(duration) => InitialWriteOutcome::DeadlineExceeded,
+        },
+    }
+}
+
+fn remaining_timeout(timeout: Duration, started: Instant) -> Option<Duration> {
+    (!timeout.is_zero()).then(|| timeout.saturating_sub(started.elapsed()))
+}
+
 async fn pump_stderr(mut stderr: ChildStderr, tail: SharedDiagnosticBuffer) {
     let mut buffer = [0_u8; 8192];
     loop {
@@ -872,12 +953,17 @@ enum DshCompletionOutcome {
 
 async fn stop_process_tree(tree: &mut OwnedProcessTree) {
     let _ = tree.terminate();
-    if tree.wait_tree_gone(DSH_TERMINATE_GRACE).await {
-        return;
+    if tokio::time::timeout(DSH_TERMINATE_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(DSH_KILL_GRACE, tree.wait()).await;
     }
-    let _ = tree.kill();
-    let _ = tree.wait_tree_gone(DSH_KILL_GRACE).await;
-    let _ = tree.wait().await;
+    if !tree.wait_tree_gone(DSH_TERMINATE_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(DSH_KILL_GRACE).await;
+    }
 }
 
 fn discovery_cache_key(scope: &str, command: &RuntimeCommand) -> String {
@@ -1170,6 +1256,36 @@ printf '%s\n' '{"v":1,"type":"result","status":"cancelled","session_id":"session
             .unwrap_or_else(|error| panic!("DSH cancellation result: {error}"));
         assert_eq!(result.status, "cancelled");
         assert_eq!(result.session_id, "session-cancel");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn initial_execute_write_observes_timeout_before_returning_session() {
+        let (_directory, backend) = fake_backend(
+            r##"#!/bin/sh
+sleep 60
+"##,
+        );
+        let session = tokio::time::timeout(
+            Duration::from_secs(3),
+            backend.execute(
+                &"x".repeat(1024 * 1024),
+                ExecOptions {
+                    timeout: Duration::from_millis(50),
+                    ..ExecOptions::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("initial DSH write blocked execute: {error}"))
+        .unwrap_or_else(|error| panic!("start DSH execute: {error}"));
+        let Session { result, .. } = session;
+        let result = tokio::time::timeout(Duration::from_secs(8), result)
+            .await
+            .unwrap_or_else(|error| panic!("initial DSH write cleanup exceeded bound: {error}"))
+            .unwrap_or_else(|error| panic!("receive DSH timeout result: {error}"));
+        assert_eq!(result.status, "timeout");
+        assert!(result.error.contains("timed out"));
     }
 
     #[cfg(unix)]
