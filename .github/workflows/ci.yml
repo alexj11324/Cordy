@@ -504,6 +504,8 @@ jobs:
             --build-arg COMMIT="$COMMIT" \
             --build-arg DATE="$DATE" \
             .
+
+  go-vulnerability-scan:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
