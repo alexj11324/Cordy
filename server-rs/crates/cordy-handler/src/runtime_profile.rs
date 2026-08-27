@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use cordy_agent::{is_supported_type, supported_types};
 use cordy_db::models::{Agent, AgentTaskQueue, Autopilot, RuntimeProfile};
 use cordy_db::queries::{
     agent, agent_invocation_target, autopilot, channel, chat, chat_pinned_agent, issue_label,
@@ -25,31 +26,6 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 
 const DEFAULT_VISIBILITY: &str = "workspace";
-const SUPPORTED_PROTOCOL_FAMILIES: &[&str] = &[
-    "claude",
-    "codebuddy",
-    "codex",
-    "copilot",
-    "opencode",
-    "deveco",
-    "openclaw",
-    "hermes",
-    "pi",
-    "cursor",
-    "kimi",
-    "reasonix",
-    "dsh",
-    "kiro",
-    "antigravity",
-    "qoder",
-    "qoderclicn",
-    "traecli",
-    "grok",
-    "qwen",
-    "qwenpaw",
-    "mcode",
-    "dim",
-];
 
 pub fn member_router() -> Router<HandlerState> {
     Router::new()
@@ -246,13 +222,11 @@ async fn create(
         return error_response(StatusCode::BAD_REQUEST, "display_name is required");
     }
     let protocol_family = request.protocol_family.trim();
-    if !SUPPORTED_PROTOCOL_FAMILIES.contains(&protocol_family) {
+    if !is_supported_type(protocol_family) {
+        let supported = supported_types().collect::<Vec<_>>().join(", ");
         return error_response(
             StatusCode::BAD_REQUEST,
-            &format!(
-                "unsupported protocol_family: must be one of {}",
-                SUPPORTED_PROTOCOL_FAMILIES.join(", ")
-            ),
+            &format!("unsupported protocol_family: must be one of {}", supported),
         );
     }
     let command_name = match validate_command_name(&request.command_name) {
@@ -690,9 +664,10 @@ mod tests {
 
     #[test]
     fn protocol_whitelist_matches_current_go_source_of_truth() {
-        assert!(SUPPORTED_PROTOCOL_FAMILIES.contains(&"codex"));
-        assert!(SUPPORTED_PROTOCOL_FAMILIES.contains(&"dim"));
-        assert!(!SUPPORTED_PROTOCOL_FAMILIES.contains(&"gemini"));
-        assert_eq!(SUPPORTED_PROTOCOL_FAMILIES.len(), 23);
+        let supported: Vec<_> = supported_types().collect();
+        assert!(supported.contains(&"codex"));
+        assert!(supported.contains(&"dim"));
+        assert!(!supported.contains(&"gemini"));
+        assert_eq!(supported.len(), 23);
     }
 }
