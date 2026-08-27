@@ -199,7 +199,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract | 收口 #577/#579/#580/#581 异步 V/R/F；T-54D 修正 realtime created_at/heartbeat 的 RFC3339Nano 精度；继续完成 JSON/时间/DB/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577/#579/#580/#581/#582；§6.2、§64、§66、§67、§68、§69 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract；T-54D 已把 realtime created_at/heartbeat 切到 Go-compatible RFC3339Nano，并创建 Ready PR #582 | 收口 #577/#579/#580/#581/#582 异步 V/R/F；继续完成 JSON/时间/DB/旧数据兼容证据 | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577/#579/#580/#581/#582；§6.2、§64、§66、§67、§68、§69 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578 | 收口 #578 异步 V/R/F；继续对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
@@ -285,7 +285,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 55. `[~]` `T-54A / §66` AUDIT-008 daemon event ID generator cutover（PR #579 Ready，待异步退出证据）
 56. `[~]` `T-54B / §67` AUDIT-008 realtime/daemon ULID generator centralization（Ready PR #580，待异步退出证据）
 57. `[~]` `T-54C / §68` AUDIT-008 Redis event envelope cross-language contract（Ready PR #581，待异步退出证据）
-58. `[ ]` `T-54D / §69` AUDIT-008 realtime RFC3339Nano timestamp wire compatibility（下一条 Rust 契约切片）
+58. `[~]` `T-54D / §69` AUDIT-008 realtime RFC3339Nano timestamp wire compatibility（Ready PR #582，待异步退出证据）
 59. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
 60. `[ ]` `T-56` AUDIT-010 Go 源码退休
 
@@ -2906,7 +2906,9 @@ heartbeat 使用 `chrono::SecondsFormat::AutoSi`。`AutoSi` 只输出 0/3/6/9 �
 - owner：主 agent 负责最小 helper、生产调用和 Ready PR；独立 verifier/reviewer/fixer 异步负责 exact Rust 验证、跨语言
   timestamp review 和回归修复。
 
-实现 commit `3664dcd0` 增加 `cordy-util::rfc3339_nano`，用 chrono 的九位纳秒格式再去除所有尾随零，覆盖 Go 的 0/4/9
+实现 commit `e790d261` 增加 `cordy-util::rfc3339_nano`，用 chrono 的九位纳秒格式再去除所有尾随零，覆盖 Go 的 0/4/9
 位 fractional vectors；`Envelope::new`、`RedisRelay::heartbeat_once` 与 `ShardedStreamRelay::heartbeat_once` 三个 realtime
 生产调用已切换到该 helper。Redis keys、payload、TTL、relay assembly 和错误语义未改变。主 agent 仅执行 `git diff --check`
-（PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；Ready PR 与异步 verifier/reviewer/fixer 结果待回写。
+（PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；Ready PR #582 以 `codex/cord-246-realtime-envelope-contract`
+（base SHA `0d3606ef`）为 base，当前 tip 为 `28b4fd91`。异步 verifier/reviewer/fixer 结果待回写；在 exact compile、matched/executed、
+跨语言 timestamp 和真实生产 smoke 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
