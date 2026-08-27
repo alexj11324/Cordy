@@ -133,6 +133,16 @@ pub struct Runtime {
     pub profile_id: String,
 }
 
+/// Immutable execution identity selected from the accepted registration row.
+/// Provider family and custom profile travel together: the latter owns the
+/// machine-specific executable and fixed launch prefix for custom runtimes,
+/// and cannot be reconstructed from a claimed task alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuntimeExecutionTarget {
+    pub provider: String,
+    pub profile_id: String,
+}
+
 /// RepoData holds repository information from the workspace (types.go:39–43).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RepoData {
