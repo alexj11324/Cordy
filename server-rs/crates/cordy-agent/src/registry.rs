@@ -379,9 +379,9 @@ pub async fn discover_models(
             .discover_models(cache, cancellation, timeout)
             .await),
         "qwen" | "qwenpaw" | "mcode" => Ok(Catalog::default()),
-        "codex" => Err(AgentError::UnsupportedRuntime(
-            "codex model discovery is not yet wired".to_string(),
-        )),
+        "codex" => Ok(CodexBackend::new(CodexConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
         _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
     }
 }
@@ -640,18 +640,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discovery_fails_closed_for_unwired_runtime() {
-        let error = discover_models(
+    async fn codex_discovery_uses_static_fallback_when_cli_is_unavailable() {
+        let catalog = discover_models(
             "codex",
-            BackendConfig::default(),
+            BackendConfig {
+                command: RuntimeCommand::new("/nonexistent/codex", Vec::new()),
+                ..BackendConfig::default()
+            },
             &CatalogCache::default(),
             tokio_util::sync::CancellationToken::new(),
             Duration::ZERO,
         )
         .await
-        .expect_err("codex discovery is intentionally not wired yet");
-        assert!(
-            matches!(error, AgentError::UnsupportedRuntime(message) if message.contains("codex"))
+        .expect("codex discovery should degrade to its static catalog");
+        assert_eq!(
+            catalog.models.first().map(|model| model.id.as_str()),
+            Some("gpt-5.6-sol")
         );
     }
 }
