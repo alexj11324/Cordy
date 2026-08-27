@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | daemon production stack 和 provider adapter 已存在；当前切片已选定 `/health` uptime wire 差异 | 先对齐 Go duration 文本，再按 reconcile、execution、GC、MCP 等真实调用链验收 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | §5.2、§6.2、§29 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | daemon production stack/provider adapter 已存在；`/health` uptime wire 切片已交付 | 继续按 reconcile、execution、GC、MCP 等真实调用链验收；异步收口当前切片 V/R/F | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | PR #542；§5.2、§6.2、§29 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -775,7 +775,16 @@ commit `0e6d5ec1`）直接执行 `ChannelRuntime::start` 使用的 production me
 - Desktop 的既有 `formatUptime` 按 Go 的 `h/m` wire 文本提取摘要；总秒数字符串会
   绕过该兼容路径。CLI 也直接显示此字段。
 
-本切片只迁移该 wire 差异：复用现有 production handler 和 `std::time::Duration`，
-不新增依赖、router、health 类型或测试专用生产抽象。实现、Ready PR、verification、
-review 和 fix 证据尚未产生，不能记录为通过。其余 daemon control/reconcile/execution/
-GC/MCP 退出缺口继续保留在 `AUDIT-005`。
+Ready PR #542（`codex/cord-206-daemon-health-uptime-contract-rust`，gap commit
+`a4568beb`，implementation commit `ca77dfa5`）只迁移该 wire 差异：复用现有
+production handler 和 `std::time::Duration`，不新增依赖、router、health 类型或测试
+专用生产抽象。私有 `format_uptime` 直接由 `health_handler` 调用，边界检查覆盖 0、
+秒、分钟和小时的 Go 文本。
+
+- 默认生产路径：Rust CLI/daemon 产物已由上游切换；本 PR 修改
+  `DaemonProductionStack::run` 实际启动的 `/health` handler。
+- Go 是否可下线：否；其余 daemon control/reconcile/execution/GC/MCP 与最终
+  `AUDIT-001..010` 退出缺口继续保留。
+- 异步状态：verification 与 reviewer 已派发但尚未返回；fixer 尚未派发。主 agent
+  只确认 `git diff --check` 无错误，不把它记录成编译、测试或生产验证通过。PR 堆叠
+  在 Ready PR #541；上游 #538 已记录的 Tokio-context 测试失败仍由其独立 fixer处理。
