@@ -741,7 +741,9 @@ pub fn parse_xread_response(raw: &redis::Value) -> XReadStreamBatch {
         let (Some(key), Some(entries)) = (pair.first(), pair.get(1)) else {
             continue;
         };
-        let key = bulk_str(key);
+        let Some(key) = bulk_str(key) else {
+            continue;
+        };
         let mut messages = Vec::new();
         if let redis::Value::Array(list) = entries {
             for msg in list {
@@ -751,14 +753,28 @@ pub fn parse_xread_response(raw: &redis::Value) -> XReadStreamBatch {
                 let (Some(id), Some(fields)) = (id_fields.first(), id_fields.get(1)) else {
                     continue;
                 };
+                let Some(id) = bulk_str(id) else {
+                    continue;
+                };
                 let mut kv = Vec::new();
-                if let redis::Value::Array(fv) = fields {
-                    let mut it = fv.iter();
-                    while let (Some(k), Some(v)) = (it.next(), it.next()) {
-                        kv.push((bulk_str(k), bulk_str(v)));
-                    }
+                let redis::Value::Array(fv) = fields else {
+                    continue;
+                };
+                if fv.is_empty() {
+                    continue;
                 }
-                messages.push((bulk_str(id), kv));
+                let mut it = fv.iter();
+                while let (Some(k), Some(v)) = (it.next(), it.next()) {
+                    let (Some(k), Some(v)) = (bulk_str(k), bulk_str(v)) else {
+                        kv.clear();
+                        break;
+                    };
+                    kv.push((k, v));
+                }
+                if kv.len() * 2 != fv.len() {
+                    continue;
+                }
+                messages.push((id, kv));
             }
         }
         out.push((key, messages));
@@ -766,10 +782,11 @@ pub fn parse_xread_response(raw: &redis::Value) -> XReadStreamBatch {
     out
 }
 
-fn bulk_str(v: &redis::Value) -> String {
+fn bulk_str(v: &redis::Value) -> Option<String> {
     match v {
-        redis::Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
-        _ => String::new(),
+        redis::Value::BulkString(b) => Some(String::from_utf8_lossy(b).to_string()),
+        redis::Value::SimpleString(s) => Some(s.clone()),
+        _ => None,
     }
 }
 
@@ -993,6 +1010,49 @@ mod tests {
 
         // Nil reply parses to no streams.
         assert!(parse_xread_response(&Value::Nil).is_empty());
+    }
+
+    #[test]
+    fn xread_parser_drops_malformed_entries_without_empty_ids() {
+        use redis::Value;
+
+        let raw = Value::Array(vec![Value::Array(vec![
+            Value::BulkString(b"ws:relay:shard:3".to_vec()),
+            Value::Array(vec![
+                // A non-string entry id cannot be an XMessage id.
+                Value::Array(vec![
+                    Value::Int(7),
+                    Value::Array(vec![
+                        Value::BulkString(b"payload_json".to_vec()),
+                        Value::BulkString(br#"{}"#.to_vec()),
+                    ]),
+                ]),
+                // An odd field/value list is not a Redis map.
+                Value::Array(vec![
+                    Value::BulkString(b"1701-0".to_vec()),
+                    Value::Array(vec![Value::BulkString(b"payload_json".to_vec())]),
+                ]),
+                // Simple strings are accepted just like go-redis string values.
+                Value::Array(vec![
+                    Value::SimpleString("1702-0".into()),
+                    Value::Array(vec![
+                        Value::SimpleString("payload_json".into()),
+                        Value::BulkString(br#"{"type":"fixture"}"#.to_vec()),
+                    ]),
+                ]),
+                // Empty field maps cannot produce a valid envelope.
+                Value::Array(vec![
+                    Value::BulkString(b"1703-0".to_vec()),
+                    Value::Array(vec![]),
+                ]),
+            ]),
+        ])]);
+
+        let parsed = parse_xread_response(&raw);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].1.len(), 1);
+        assert_eq!(parsed[0].1[0].0, "1702-0");
+        assert_eq!(parsed[0].1[0].1[0].0, "payload_json");
     }
 
     #[tokio::test]

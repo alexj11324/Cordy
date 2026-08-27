@@ -147,6 +147,7 @@ impl Envelope {
         let get = |name: &str| -> String {
             pairs
                 .iter()
+                .rev()
                 .find(|(k, _)| k == name)
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default()
@@ -329,6 +330,148 @@ mod tests {
         // Missing payload_json invalidates the entry (Go's validity check).
         let empty: Vec<(String, String)> = vec![];
         assert!(Envelope::from_field_pairs(&empty).is_none());
+        let empty_payload = vec![("payload_json".to_string(), String::new())];
+        assert!(Envelope::from_field_pairs(&empty_payload).is_none());
+
+        // Redis maps duplicate fields with the last value winning, matching
+        // go-redis' XMessage.Values behavior.
+        let duplicate = vec![
+            ("event_id".to_string(), "old".to_string()),
+            ("event_id".to_string(), "new".to_string()),
+            ("payload_json".to_string(), "{}".to_string()),
+        ];
+        assert_eq!(
+            Envelope::from_field_pairs(&duplicate).unwrap().event_id,
+            "new"
+        );
+    }
+
+    #[test]
+    fn go_envelope_fixture_roundtrips_without_field_drift() {
+        const GO_JSON: &str = r#"{"event_id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","event_type":"issue:updated","scope":"workspace","scope_id":"ws-1","workspace_id":"","actor_id":"member-7","created_at":"2026-08-27T23:00:00.123Z","node_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","payload_json":"{\"type\":\"issue:updated\",\"actor_id\":\"member-7\"}"}"#;
+        let envelope: Envelope = serde_json::from_str(GO_JSON).expect("Go envelope fixture");
+        assert_eq!(serde_json::to_string(&envelope).unwrap(), GO_JSON);
+
+        let pairs = envelope.redis_field_pairs();
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect();
+        assert_eq!(Envelope::from_field_pairs(&owned), Some(envelope));
+    }
+
+    #[tokio::test]
+    async fn go_envelope_fixture_routes_all_scopes_and_injects_event_id() {
+        use std::sync::Mutex;
+
+        #[derive(Default)]
+        struct RecordingHub {
+            scopes: Mutex<Vec<(String, String, String)>>,
+            users: Mutex<Vec<(String, String, String)>>,
+            globals: Mutex<Vec<String>>,
+        }
+
+        #[async_trait]
+        impl HubFanout for RecordingHub {
+            async fn fanout_all_dedup(&self, frame: &[u8], _: &str, event_id: &str) {
+                self.globals
+                    .lock()
+                    .unwrap()
+                    .push(format!("{event_id}:{}", String::from_utf8_lossy(frame)));
+            }
+
+            async fn fanout_user(
+                &self,
+                user_id: &str,
+                frame: &[u8],
+                _: &str,
+                event_id: &str,
+            ) {
+                self.users.lock().unwrap().push((
+                    user_id.to_string(),
+                    event_id.to_string(),
+                    String::from_utf8_lossy(frame).to_string(),
+                ));
+            }
+
+            async fn broadcast_to_scope_dedup(
+                &self,
+                scope_type: &str,
+                scope_id: &str,
+                frame: &[u8],
+                event_id: &str,
+            ) {
+                self.scopes.lock().unwrap().push((
+                    scope_type.to_string(),
+                    scope_id.to_string(),
+                    format!("{event_id}:{}", String::from_utf8_lossy(frame)),
+                ));
+            }
+        }
+
+        struct RecordingDaemon(Mutex<Vec<(String, String, String)>>);
+        impl DaemonRuntimeDeliverer for RecordingDaemon {
+            fn deliver_daemon_runtime(&self, scope_id: &str, frame: &[u8], event_id: &str) {
+                self.0.lock().unwrap().push((
+                    scope_id.to_string(),
+                    String::from_utf8_lossy(frame).to_string(),
+                    event_id.to_string(),
+                ));
+            }
+        }
+
+        fn fixture(scope: &str, scope_id: &str, workspace_id: &str) -> Envelope {
+            Envelope {
+                event_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".into(),
+                event_type: "issue:updated".into(),
+                scope: scope.into(),
+                scope_id: scope_id.into(),
+                workspace_id: workspace_id.into(),
+                actor_id: "member-7".into(),
+                created_at: "2026-08-27T23:00:00.123Z".into(),
+                node_id: "node-1".into(),
+                payload_json: r#"{"type":"issue:updated","actor_id":"member-7"}"#.into(),
+            }
+        }
+
+        let hub = Arc::new(RecordingHub::default());
+        let daemon = Arc::new(RecordingDaemon(Mutex::new(Vec::new())));
+        deliver_envelope(hub.clone(), Some(daemon.clone()), fixture("workspace", "ws-1", ""))
+            .await;
+        deliver_envelope(hub.clone(), Some(daemon.clone()), fixture(SCOPE_USER, "u-1", "ws-1"))
+            .await;
+        deliver_envelope(hub.clone(), Some(daemon.clone()), fixture("global", "all", ""))
+            .await;
+        deliver_envelope(
+            hub.clone(),
+            Some(daemon.clone()),
+            fixture(SCOPE_DAEMON_RUNTIME, "runtime-1", ""),
+        )
+        .await;
+
+        let scopes = hub.scopes.lock().unwrap();
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].0, "workspace");
+        assert!(scopes[0].2.contains("\"event_id\":\"01ARZ3NDEKTSV4RRFFQ69G5FAV\""));
+        drop(scopes);
+        assert_eq!(hub.users.lock().unwrap().len(), 1);
+        assert_eq!(hub.globals.lock().unwrap().len(), 1);
+        let daemon_events = daemon.0.lock().unwrap();
+        assert_eq!(daemon_events.len(), 1);
+        assert_eq!(daemon_events[0].0, "runtime-1");
+        assert!(daemon_events[0].1.contains("\"event_id\":\"01ARZ3NDEKTSV4RRFFQ69G5FAV\""));
+        drop(daemon_events);
+
+        deliver_envelope(
+            hub.clone(),
+            Some(daemon),
+            Envelope {
+                payload_json: String::new(),
+                ..fixture("workspace", "ws-ignored", "")
+            },
+        )
+        .await;
+        assert_eq!(hub.scopes.lock().unwrap().len(), 1);
     }
 
     #[test]
