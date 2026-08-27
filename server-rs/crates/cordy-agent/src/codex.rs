@@ -934,6 +934,7 @@ async fn run_protocol(
     let mut turn_params = serde_json::json!({"threadId": thread_id, "input": input});
     apply_reasoning_effort(&mut turn_params, &options.thinking_level, true);
     apply_service_tier(&mut turn_params, &options.service_tier);
+    client.notification_gate.arm();
     if let Err(error) = client
         .request("turn/start", turn_params, handshake_timeout)
         .await
@@ -1083,6 +1084,7 @@ struct CodexClient<R, W> {
     next_id: u64,
     state: CodexState,
     messages: mpsc::Sender<Message>,
+    notification_gate: CodexTurnNotificationGate,
 }
 
 impl<R, W> CodexClient<R, W>
@@ -1097,6 +1099,7 @@ where
             next_id: 1,
             state: CodexState::default(),
             messages,
+            notification_gate: CodexTurnNotificationGate::default(),
         }
     }
 
@@ -1343,6 +1346,9 @@ where
 
     fn handle_notification(&mut self, method: &str, params: Option<&Value>) {
         let params = params.cloned().unwrap_or(Value::Null);
+        if self.foreign_thread(&params) || !self.notification_gate.accept(method, &params) {
+            return;
+        }
         if method == "codex/event" || method.starts_with("codex/event/") {
             self.state.legacy = true;
             if let Some(message) = params.get("msg") {
@@ -1634,6 +1640,57 @@ where
     fn send(&mut self, value: Message) {
         self.note_activity(&describe_message_activity(&value));
         let _ = self.messages.try_send(value);
+    }
+}
+
+#[derive(Debug, Default)]
+struct CodexTurnNotificationGate {
+    armed: bool,
+    started: bool,
+    turn_id: String,
+}
+
+impl CodexTurnNotificationGate {
+    fn arm(&mut self) {
+        self.armed = true;
+        self.started = false;
+        self.turn_id.clear();
+    }
+
+    fn accept(&mut self, method: &str, params: &Value) -> bool {
+        if !self.armed {
+            return false;
+        }
+        if method == "codex/event" || method.starts_with("codex/event/") {
+            if nested_string(params, &["msg", "type"]) == Some("task_started") {
+                self.started = true;
+            }
+            return true;
+        }
+        // ponytail: accept untagged post-arm events for legacy Codex streams;
+        // tighten this only when every supported stream exposes a turn ID.
+        match method {
+            "turn/started" => {
+                self.started = true;
+                self.turn_id = nested_string(params, &["turn", "id"])
+                    .unwrap_or_default()
+                    .to_string();
+                true
+            }
+            "turn/completed" if self.started => self.accepts_turn(params),
+            "thread/status/changed" => !self.started || self.accepts_turn(params),
+            method if method.starts_with("item/") => {
+                !self.started || self.accepts_turn(params)
+            }
+            _ => true,
+        }
+    }
+
+    fn accepts_turn(&self, params: &Value) -> bool {
+        self.turn_id.is_empty()
+            || nested_string(params, &["turnId"])
+                .or_else(|| nested_string(params, &["turn", "id"]))
+                .map_or(true, |turn_id| turn_id.is_empty() || turn_id == self.turn_id)
     }
 }
 
@@ -2196,6 +2253,39 @@ mod tests {
         let resumed = codex_turn_input("prompt", true, true, "NOTICE: ");
         assert_eq!(fresh[0]["text"], "NOTICE: prompt");
         assert_eq!(resumed[0]["text"], "prompt");
+    }
+
+    #[test]
+    fn notification_gate_drops_resume_history_after_turn_boundary() {
+        let mut gate = CodexTurnNotificationGate::default();
+        let started = serde_json::json!({"turn":{"id":"turn-1"}});
+
+        assert!(!gate.accept("turn/started", &started));
+        gate.arm();
+        assert!(gate.accept("turn/started", &started));
+        assert!(gate.accept(
+            "item/started",
+            &serde_json::json!({"turnId":"turn-1","item":{"id":"item-1"}}),
+        ));
+        assert!(!gate.accept(
+            "item/completed",
+            &serde_json::json!({"turnId":"old-turn","item":{"id":"item-old"}}),
+        ));
+        assert!(gate.accept("error", &serde_json::json!({"message":"terminal"})));
+    }
+
+    #[test]
+    fn notification_gate_keeps_legacy_streams_compatible() {
+        let mut gate = CodexTurnNotificationGate::default();
+        gate.arm();
+        assert!(gate.accept(
+            "codex/event",
+            &serde_json::json!({"msg":{"type":"task_started"}}),
+        ));
+        assert!(gate.accept(
+            "codex/event",
+            &serde_json::json!({"msg":{"type":"agent_message"}}),
+        ));
     }
 
     #[test]
