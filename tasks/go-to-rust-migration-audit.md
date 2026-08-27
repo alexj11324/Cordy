@@ -2822,7 +2822,7 @@ Crockford wire shape、dedup、payload、Redis 和错误语义。移除这些 cr
 API、payload、dedup、Redis 和 relay wiring。docs commit `840ef87b` 将本仓库规则明确为 Rust 迁移默认只做 Rust
 验证，Go 测试不作为门禁，且由独立 verifier 承担 cargo format/check/test/build。主 agent 仅执行 `git diff --check`
 （PASS），没有运行 cargo、rustfmt、测试、Redis、daemon 或 release 命令；非 Draft Ready PR #580 已创建，以
-`codex/cord-243-daemon-event-id-ulid`（base SHA `1bf33aca`）为 base，当前 tip 为 `44318ea5`。独立 verifier/reviewer/fixer 已返回初步结果；在 exact compile、
+`codex/cord-243-daemon-event-id-ulid`（base SHA `1bf33aca`）为 base，当前 tip 为 `068400ee`。独立 verifier/reviewer/fixer 已返回结果；在 exact compile、
 matched/executed、跨语言 event/Redis/旧数据读取和真实生产 smoke 证据返回前，本项不能声称 AUDIT-008 已完成或删除 Go。
 
 独立 reviewer 在 exact `970af5b6` 发现 P0：`new_ulid()` 调用 `Ulid::new().to_string()`，但 UUID-backed wrapper 没有
@@ -2837,3 +2837,10 @@ matched/executed、跨语言 event/Redis/旧数据读取和真实生产 smoke �
 本 PR 的 `AGENTS.md` 规则改动属于全仓治理范围；该改动是用户明确要求写入 agents.md 的迁移规则，故保留并在 PR 中明示，
 没有伪装成 ULID 业务实现。历史 P0/P1/P2 均已在台账和 PR body 说明；AUDIT-008 仍受真实 compile、Redis/event 和生产 smoke
 证据缺口约束。
+
+独立 verifier 在最终 clean exact HEAD `068400ee` 确认 base `1bf33aca` 祖先关系、`git diff --check`（含 base range）和
+依赖静态接线通过；触及文件 fixed-stable rustfmt 通过，但全 workspace `cargo fmt --all -- --check` 因继承格式漂移 exit 1。
+locked/offline `cargo metadata`、`check`、`clippy`、`test --no-run`、debug/release build 以及三个精确 ULID test 均在
+discovery 前被继承 #563 的 `hyper-util 0.1.20` 缺少 `runtime` feature 阻断（exit 101；matched/executed 为 0），不能登记
+为编译或测试通过；Redis、daemon、release、跨平台 smoke 未执行，原因已记录。静态 inventory 确认 14 个生产 caller 全部
+经 `cordy_util::new_ulid`，util 内仅一处直接 `ulid::Ulid::new()`。
