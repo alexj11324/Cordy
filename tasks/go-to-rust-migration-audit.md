@@ -1508,3 +1508,20 @@ provider-specific runner。
   exact-match 清 current/retired pointer，并补 complete/fail/cancel、newer-pointer 与 fresh-retry cancel
   present/missing 证据。主 agent 未运行或伪报 compile/tests/rustfmt/production smoke；PR 继续继承 #558
   findings 及更早 #556/#557 lock/format 基线记录并保持 Ready。
+- verifier/reviewer 在 head `08a1f9ee` 发现：locked/offline 因缺少 `procfs`/`procfs-core`
+  lock edge 而 0-test；fresh retry 只清 resume option，未走 normal reuse refresh 重写 cold task
+  context；retry startup error、新 session authoritative result 与 terminal retirement 缺直接边界；
+  cancel-ack 也未携带/事务记录 `retired_session_id`，被 server cancellation 截断的恢复 turn 可留下
+  poisoned chat pointer。fixed-stable rustfmt 同时在 `provider_adapter.rs` 失败。
+- fixer 用 Cargo 工具链补全 optional lock edge，并最小传播 #544 的 7 处类型名编译修复；fresh retry
+  现在把 cold flags 投影回既有 `reuse` context/config refresh，再重新 bind provider options。启动
+  error 保留第一次 poisoned result，新 session 只保留自己的 id，poisoned output/error/Codex unsafe
+  timeout 都显式退休旧 id；ordinary connection-reset 归入已有 network bucket，不触发 fresh retry。
+  cancellation terminal path 将 retired id 穿过 daemon client、handler 和 chat-session-first transaction，
+  仅在 task 仍为 cancelled 时记录，并用 session id + runtime id exact match 清 chat pointer，晚到 ack
+  不会清除 newer pointer。
+- 修复后 `fresh_retry` group 4/4、poisoned terminal exact 1/1、cancel outcome 1/1、loopback client
+  payload exact 1/1、handler decode exact 1/1 均通过；`cargo check --locked --offline -p
+  cordy-handler --lib`、changed-file fixed-stable rustfmt 与 `git diff --check` 通过。首次 handler no-run
+  在下载新 lock edge 后因 ENOSPC 失败；仅清理本 worktree Cargo 生成物后 check 重跑通过，历史保留。
+  真实 Postgres transaction smoke 仍未执行，不能记为通过。
