@@ -1693,8 +1693,226 @@ fn provider_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::SkillFileData;
+    use crate::runtime_set::RuntimeSet;
+    use crate::types::{Runtime, SkillFileData};
     use cordy_agent::TokenUsage;
+    use cordy_protocol::{
+        DaemonHeartbeatPendingLocalSkillImport, DaemonHeartbeatPendingLocalSkills,
+    };
+
+    struct EnvRestore {
+        key: &'static str,
+        value: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match self.value.take() {
+                Some(value) => unsafe { std::env::set_var(self.key, value) },
+                None => unsafe { std::env::remove_var(self.key) },
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn production_heartbeat_lists_and_imports_local_skills_with_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let skill_dir = temp.path().join("skills/deploy");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: deploy\ndescription: ship it\n---\nbody\n",
+        )
+        .unwrap();
+        std::fs::write(skill_dir.join("run.sh"), "echo deploy\n").unwrap();
+
+        let _restore = EnvRestore {
+            key: "GROK_HOME",
+            value: std::env::var_os("GROK_HOME"),
+        };
+        unsafe { std::env::set_var("GROK_HOME", temp.path()) };
+
+        let (reports_tx, mut reports_rx) = tokio::sync::mpsc::unbounded_channel();
+        let attempts = Arc::new(std::sync::Mutex::new(HashMap::<String, usize>::new()));
+        let app = {
+            let attempts = Arc::clone(&attempts);
+            axum::Router::new().fallback(axum::routing::any(
+                move |request: axum::extract::Request| {
+                    let reports_tx = reports_tx.clone();
+                    let attempts = Arc::clone(&attempts);
+                    async move {
+                        let path = request.uri().path().to_string();
+                        let body = axum::body::to_bytes(request.into_body(), 1 << 20)
+                            .await
+                            .unwrap();
+                        let payload: Value = serde_json::from_slice(&body).unwrap();
+                        reports_tx.send((path.clone(), payload)).unwrap();
+                        let mut attempts = attempts.lock().unwrap();
+                        let attempt = attempts.entry(path.clone()).or_default();
+                        *attempt += 1;
+                        if path.ends_with("/local-skills/list-1/result") && *attempt == 1 {
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+                        } else {
+                            axum::http::StatusCode::NO_CONTENT
+                        }
+                    }
+                },
+            ))
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let config = Arc::new(Config {
+            server_base_url: format!("http://{address}"),
+            daemon_id: "daemon-1".to_string(),
+            workspaces_root: temp.path().to_string_lossy().into_owned(),
+            ..Config::default()
+        });
+        let adapter = ProductionProviderAdapter::new(config);
+        let registry = Arc::new(RuntimeRegistry::new(Arc::new(RuntimeSet::new())));
+        registry
+            .apply_registration(
+                "workspace-1",
+                "Workspace",
+                vec![Runtime {
+                    id: "runtime-1".to_string(),
+                    provider: "grok".to_string(),
+                    ..Runtime::default()
+                }],
+            )
+            .unwrap();
+        let client = Arc::new(Client::new(format!("http://{address}")));
+        let launches = Arc::new(RuntimeLaunchRegistry::default());
+
+        adapter
+            .handle_non_update_heartbeat_actions(
+                Ctx::new(),
+                Arc::clone(&registry),
+                "runtime-1".to_string(),
+                DaemonHeartbeatAckPayload {
+                    runtime_id: "runtime-1".to_string(),
+                    status: "ok".to_string(),
+                    pending_local_skills: Some(DaemonHeartbeatPendingLocalSkills {
+                        id: "list-1".to_string(),
+                    }),
+                    pending_local_skill_import: Some(DaemonHeartbeatPendingLocalSkillImport {
+                        id: "ignored-singular".to_string(),
+                        skill_key: "deploy".to_string(),
+                    }),
+                    pending_local_skill_imports: vec![
+                        DaemonHeartbeatPendingLocalSkillImport {
+                            id: "batch-1".to_string(),
+                            skill_key: "deploy".to_string(),
+                        },
+                        DaemonHeartbeatPendingLocalSkillImport {
+                            id: "batch-2".to_string(),
+                            skill_key: "deploy".to_string(),
+                        },
+                    ],
+                    server_capabilities: Vec::new(),
+                    runtime_gone: false,
+                    pending_update: None,
+                    pending_model_list: None,
+                },
+                Arc::clone(&client),
+                Arc::clone(&launches),
+            )
+            .await;
+        adapter
+            .handle_non_update_heartbeat_actions(
+                Ctx::new(),
+                Arc::clone(&registry),
+                "runtime-1".to_string(),
+                DaemonHeartbeatAckPayload {
+                    runtime_id: "runtime-1".to_string(),
+                    status: "ok".to_string(),
+                    pending_local_skill_import: Some(DaemonHeartbeatPendingLocalSkillImport {
+                        id: "singular-1".to_string(),
+                        skill_key: "deploy".to_string(),
+                    }),
+                    server_capabilities: Vec::new(),
+                    runtime_gone: false,
+                    pending_update: None,
+                    pending_model_list: None,
+                    pending_local_skills: None,
+                    pending_local_skill_imports: Vec::new(),
+                },
+                Arc::clone(&client),
+                Arc::clone(&launches),
+            )
+            .await;
+
+        let mut reports = Vec::new();
+        for _ in 0..5 {
+            reports.push(
+                tokio::time::timeout(Duration::from_secs(3), reports_rx.recv())
+                    .await
+                    .expect("local skill report timed out")
+                    .expect("report server stopped"),
+            );
+        }
+        assert_eq!(
+            attempts
+                .lock()
+                .unwrap()
+                .get("/api/daemon/runtimes/runtime-1/local-skills/list-1/result"),
+            Some(&2),
+            "a transient 500 must retry the list report"
+        );
+        assert!(reports.iter().all(|(path, _)| !path.contains("ignored-singular")));
+        let list = reports
+            .iter()
+            .find(|(path, _)| path.ends_with("/local-skills/list-1/result"))
+            .map(|(_, payload)| payload)
+            .unwrap();
+        assert_eq!(list["status"], "completed");
+        assert_eq!(list["supported"], true);
+        assert_eq!(list["skills"][0]["key"], "deploy");
+        for id in ["batch-1", "batch-2", "singular-1"] {
+            let (_, payload) = reports
+                .iter()
+                .find(|(path, _)| path.ends_with(&format!("/import/{id}/result")))
+                .unwrap();
+            assert_eq!(payload["status"], "completed");
+            assert_eq!(payload["skill"]["name"], "deploy");
+            assert_eq!(payload["skill"]["files"][0]["path"], "run.sh");
+        }
+
+        adapter
+            .handle_non_update_heartbeat_actions(
+                Ctx::new(),
+                registry,
+                "unknown-runtime".to_string(),
+                DaemonHeartbeatAckPayload {
+                    runtime_id: "unknown-runtime".to_string(),
+                    status: "ok".to_string(),
+                    pending_local_skills: Some(DaemonHeartbeatPendingLocalSkills {
+                        id: "must-not-report".to_string(),
+                    }),
+                    server_capabilities: Vec::new(),
+                    runtime_gone: false,
+                    pending_update: None,
+                    pending_model_list: None,
+                    pending_local_skill_import: None,
+                    pending_local_skill_imports: Vec::new(),
+                },
+                client,
+                launches,
+            )
+            .await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), reports_rx.recv())
+                .await
+                .is_err(),
+            "unknown runtimes must not execute heartbeat actions"
+        );
+        server.abort();
+    }
 
     #[tokio::test]
     async fn production_task_rejects_required_remote_mcp_for_incompatible_provider() {
