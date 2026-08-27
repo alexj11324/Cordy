@@ -278,7 +278,7 @@ fn managed_mcp(raw: Option<&Value>) -> anyhow::Result<(BTreeMap<String, Value>, 
     let object = value
         .as_object()
         .ok_or_else(|| anyhow!("mcp_config must be a JSON object"))?;
-    let servers = object
+    let servers: BTreeMap<String, Value> = object
         .get("mcpServers")
         .map(|servers| {
             if servers.is_null() {
@@ -286,7 +286,12 @@ fn managed_mcp(raw: Option<&Value>) -> anyhow::Result<(BTreeMap<String, Value>, 
             } else {
                 servers
                     .as_object()
-                    .cloned()
+                    .map(|object| {
+                        object
+                            .iter()
+                            .map(|(name, value)| (name.clone(), value.clone()))
+                            .collect::<BTreeMap<_, _>>()
+                    })
                     .ok_or_else(|| anyhow!("mcpServers must be a JSON object"))
             }
         })
@@ -634,7 +639,7 @@ fn atomic_json(path: &Path, value: &Value, mode: u32) -> anyhow::Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
     let data = serde_json::to_vec_pretty(value)?;
-    let temp = tempfile::NamedTempFile::new_in(parent)?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
