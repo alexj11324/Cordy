@@ -13,16 +13,18 @@ use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::acp::{AcpClient, AcpError, AcpNotification};
-use crate::acp_mcp::{
-    build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpServer,
+use crate::acp::{
+    ACP_NOTIFICATION_DRAIN_GRACE, ACP_NOTIFICATION_QUIET_TIME, AcpClient, AcpError, AcpNotification,
 };
-use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
+use crate::acp_mcp::{
+    AcpMcpServer, build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities,
+};
+use crate::command::{BlockedArgMode, RuntimeCommand, filter_custom_args, filter_launch_prefix};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 use crate::process::OwnedProcessTree;
-use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
+use crate::stderr::{DEFAULT_TAIL_BYTES, SharedDiagnosticBuffer, with_stderr};
 
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
@@ -286,7 +288,7 @@ async fn run_protocol(
                 (result, session_id)
             }
             Err(error) => {
-                return ProtocolOutcome::failed(format!("qoder session/new failed: {error}"))
+                return ProtocolOutcome::failed(format!("qoder session/new failed: {error}"));
             }
         }
     } else {
@@ -353,6 +355,17 @@ async fn run_protocol(
             return protocol_failure("session/prompt", error, session_id, rejected);
         }
     };
+    // A few ACP runtimes flush their final session/update notifications after
+    // resolving session/prompt. Keep reading briefly so trailing answer text,
+    // tool completions, and usage updates are not lost when the process is
+    // shut down immediately after the response.
+    let _ = client
+        .drain_notifications(
+            ACP_NOTIFICATION_QUIET_TIME,
+            ACP_NOTIFICATION_DRAIN_GRACE,
+            |notification| handle_notification(notification, &messages, &mut state),
+        )
+        .await;
     let stop_reason = prompt_result
         .get("stopReason")
         .and_then(Value::as_str)
@@ -458,13 +471,13 @@ fn handle_notification(
     match kind.as_str() {
         "agentmessagechunk" => {
             if let Some(text) = content_text(data) {
-                state.deliverable.text(text);
-                send(messages, message(MessageType::Text, text));
+                state.deliverable.text(&text);
+                send(messages, message(MessageType::Text, &text));
             }
         }
         "agentthoughtchunk" => {
             if let Some(text) = content_text(data) {
-                send(messages, message(MessageType::Thinking, text));
+                send(messages, message(MessageType::Thinking, &text));
             }
         }
         "toolcall" => handle_tool_start(data, messages, state),
@@ -500,11 +513,61 @@ fn normalize_kind(kind: &str) -> String {
         .collect()
 }
 
-fn content_text(data: &Value) -> Option<&str> {
-    data.get("content")?
-        .get("text")?
-        .as_str()
-        .filter(|text| !text.is_empty())
+fn content_text(data: &Value) -> Option<String> {
+    let content = data.get("content")?;
+    let rendered = render_content(content)?;
+    (!rendered.is_empty()).then_some(rendered)
+}
+
+fn render_content(content: &Value) -> Option<String> {
+    if let Some(text) = content.get("text").and_then(Value::as_str) {
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+    if let Some(blocks) = content.as_array() {
+        let pieces: Vec<String> = blocks.iter().filter_map(render_content_block).collect();
+        return (!pieces.is_empty()).then(|| pieces.join("\n"));
+    }
+    render_content_block(content)
+}
+
+fn render_content_block(block: &Value) -> Option<String> {
+    match block.get("type").and_then(Value::as_str) {
+        Some("text") => block
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string),
+        Some("content") => block.get("content").and_then(render_content),
+        Some("diff") => render_diff(block),
+        _ => None,
+    }
+}
+
+fn render_diff(block: &Value) -> Option<String> {
+    let path = block
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())?;
+    let old_text = block
+        .get("oldText")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let new_text = block
+        .get("newText")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if old_text.is_empty() {
+        Some(format!(
+            "--- {path}\n+++ {path}\n(new file, {} bytes)",
+            new_text.len()
+        ))
+    } else {
+        Some(format!(
+            "--- {path}\n+++ {path}\n(edited: {} → {} bytes)",
+            old_text.len(),
+            new_text.len()
+        ))
+    }
 }
 
 fn handle_tool_start(
@@ -556,25 +619,27 @@ fn handle_tool_update(
     if id.is_empty() {
         return;
     }
+    let completion_input = tool_input_option(data);
     let pending = match state.tools.remove(id) {
         Some(pending) => pending,
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
                 name: tool_name(data),
-                input: tool_input(data),
+                input: completion_input.clone().unwrap_or_default(),
                 emitted: false,
             }
         }
     };
     if !pending.emitted {
-        send(messages, tool_use(id, &pending.name, pending.input));
+        let input = completion_input.unwrap_or(pending.input);
+        send(messages, tool_use(id, &pending.name, input));
     }
     let output = ["rawOutput", "output"]
         .iter()
         .find_map(|key| data.get(*key))
         .map(render_value)
-        .or_else(|| content_text(data).map(str::to_string))
+        .or_else(|| content_text(data))
         .unwrap_or_default();
     let mut result = message(MessageType::ToolResult, "");
     result.call_id = id.to_string();
@@ -584,18 +649,20 @@ fn handle_tool_update(
 }
 
 fn tool_name(data: &Value) -> String {
-    data.get("name")
-        .or_else(|| data.get("title"))
-        .and_then(Value::as_str)
-        .unwrap_or("tool")
-        .split(':')
-        .next()
-        .unwrap_or("tool")
-        .trim()
-        .to_string()
+    normalize_tool_name(
+        data.get("title")
+            .and_then(Value::as_str)
+            .filter(|title| !title.trim().is_empty())
+            .or_else(|| data.get("name").and_then(Value::as_str))
+            .unwrap_or("tool"),
+    )
 }
 
 fn tool_input(data: &Value) -> BTreeMap<String, Value> {
+    tool_input_option(data).unwrap_or_default()
+}
+
+fn tool_input_option(data: &Value) -> Option<BTreeMap<String, Value>> {
     ["rawInput", "input", "parameters"]
         .iter()
         .find_map(|key| data.get(*key).and_then(Value::as_object))
@@ -605,7 +672,32 @@ fn tool_input(data: &Value) -> BTreeMap<String, Value> {
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect()
         })
-        .unwrap_or_default()
+}
+
+fn normalize_tool_name(raw: &str) -> String {
+    let title = raw.trim();
+    if title.is_empty() {
+        return "tool".to_string();
+    }
+    let title = title.split_once(':').map_or(title, |(name, _)| name.trim());
+    if title.is_empty() {
+        return "tool".to_string();
+    }
+    let lower = title.to_ascii_lowercase();
+    match lower.as_str() {
+        "read" | "read file" => "read_file".to_string(),
+        "write" | "write file" => "write_file".to_string(),
+        "edit" | "patch" => "edit_file".to_string(),
+        "shell" | "bash" | "terminal" | "run command" | "run shell command" => {
+            "terminal".to_string()
+        }
+        "search" | "grep" | "find" => "search_files".to_string(),
+        "glob" => "glob".to_string(),
+        "web search" => "web_search".to_string(),
+        "fetch" | "web fetch" => "web_fetch".to_string(),
+        "todo" | "todo write" => "todo_write".to_string(),
+        _ => lower.replace([' ', '-'], "_"),
+    }
 }
 
 fn render_value(value: &Value) -> String {
@@ -616,13 +708,36 @@ fn render_value(value: &Value) -> String {
 
 fn parse_usage(value: Option<&Value>) -> TokenUsage {
     let value = value.unwrap_or(&Value::Null);
+    let input_tokens = integer(value, &["inputTokens", "input_tokens"]);
+    let output_tokens = integer(value, &["outputTokens", "output_tokens"]);
+    let cache_read_tokens = integer(
+        value,
+        &[
+            "cachedReadTokens",
+            "cacheReadTokens",
+            "cachedInputTokens",
+            "cached_input_tokens",
+            "cache_read_tokens",
+            "cache_read_input_tokens",
+        ],
+    );
+    let total_tokens = integer(value, &["totalTokens", "total_tokens"]);
+    // Some ACP agents include cached input in inputTokens while also exposing
+    // it as cachedReadTokens. Only subtract it when totalTokens proves that
+    // inclusive shape; exclusive-bucket agents must remain unchanged.
+    let input_tokens = if total_tokens > 0
+        && cache_read_tokens > 0
+        && cache_read_tokens <= input_tokens
+        && total_tokens == input_tokens.saturating_add(output_tokens)
+    {
+        input_tokens - cache_read_tokens
+    } else {
+        input_tokens
+    };
     TokenUsage {
-        input_tokens: integer(value, &["inputTokens", "input_tokens"]),
-        output_tokens: integer(value, &["outputTokens", "output_tokens"]),
-        cache_read_tokens: integer(
-            value,
-            &["cachedReadTokens", "cacheReadTokens", "cache_read_tokens"],
-        ),
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
         cache_write_tokens: integer(
             value,
             &[
@@ -764,6 +879,93 @@ mod tests {
         assert_eq!(full, "I will inspect.Final answer.");
     }
 
+    #[test]
+    fn qoder_tool_names_are_stable_for_human_titles() {
+        for (title, expected) in [
+            ("Read file", "read_file"),
+            ("Read file: /tmp/a.txt", "read_file"),
+            ("Run command", "terminal"),
+            ("Run command: cargo test", "terminal"),
+            ("Search", "search_files"),
+            ("custom tool", "custom_tool"),
+        ] {
+            assert_eq!(normalize_tool_name(title), expected, "title {title:?}");
+        }
+    }
+
+    #[test]
+    fn tool_completion_prefers_input_and_renders_content_blocks() {
+        let (sender, mut receiver) = mpsc::channel(8);
+        let mut state = NotificationState::default();
+        handle_notification(
+            AcpNotification {
+                method: "session/update".to_string(),
+                params: serde_json::json!({
+                    "update": {
+                        "type": "ToolCall",
+                        "toolCallId": "tool-1",
+                        "title": "Read file",
+                    }
+                }),
+            },
+            &sender,
+            &mut state,
+        );
+        handle_notification(
+            AcpNotification {
+                method: "session/update".to_string(),
+                params: serde_json::json!({
+                    "update": {
+                        "type": "ToolCallUpdate",
+                        "toolCallId": "tool-1",
+                        "status": "completed",
+                        "rawInput": {"path": "README.md"},
+                        "content": [
+                            {"type": "content", "content": {"type": "text", "text": "read output"}},
+                            {"type": "diff", "path": "src/main.rs", "oldText": "old", "newText": "new"}
+                        ]
+                    }
+                }),
+            },
+            &sender,
+            &mut state,
+        );
+
+        let tool = receiver.try_recv().expect("deferred tool use");
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert_eq!(tool.tool, "read_file");
+        assert_eq!(
+            tool.input.get("path").and_then(Value::as_str),
+            Some("README.md")
+        );
+        let result = receiver.try_recv().expect("tool result");
+        assert_eq!(result.message_type, MessageType::ToolResult);
+        assert!(result.output.contains("read output"));
+        assert!(result.output.contains("--- src/main.rs"));
+        assert!(result.output.contains("(edited: 3 → 3 bytes)"));
+    }
+
+    #[test]
+    fn inclusive_cached_input_is_normalized_only_with_total_tokens_proof() {
+        let inclusive = serde_json::json!({
+            "inputTokens": 100,
+            "outputTokens": 20,
+            "cachedReadTokens": 30,
+            "totalTokens": 120
+        });
+        let usage = parse_usage(Some(&inclusive));
+        assert_eq!(usage.input_tokens, 70);
+        assert_eq!(usage.cache_read_tokens, 30);
+
+        let exclusive = serde_json::json!({
+            "inputTokens": 100,
+            "outputTokens": 20,
+            "cachedReadTokens": 30,
+            "totalTokens": 150
+        });
+        assert_eq!(parse_usage(Some(&exclusive)).input_tokens, 100);
+    }
+
     #[cfg(unix)]
     fn fake_backend(script: &str) -> (tempfile::TempDir, QoderBackend) {
         let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
@@ -798,6 +1000,8 @@ while IFS= read -r line; do
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"tool-1","name":"read_file","status":"completed","output":"contents"}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"final answer"}}}}'
       printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":11,"outputTokens":4}}}\n' "$id"
+      sleep 0.01
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" after response"}}}}'
       ;;
   esac
 done
@@ -819,7 +1023,7 @@ done
             .await
             .unwrap_or_else(|error| panic!("Qoder result: {error}"));
         assert_eq!(result.status, "completed");
-        assert_eq!(result.output, "final answer");
+        assert_eq!(result.output, "final answer after response");
         assert_eq!(result.session_id, "qoder-real");
         assert_eq!(result.usage["qoder-auto"].input_tokens, 11);
         assert!(types.contains(&MessageType::ToolUse));
