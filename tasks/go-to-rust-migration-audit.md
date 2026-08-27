@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | route parity、CLI 命令树/退出码/daemon control 矩阵已交付；issue-status API、事务竞态、错误 JSON 与事件副作用完整契约已交付 Ready #565 | 异步收口 #565 verification/review/fix，同时继续其他 API/WS/background worker smoke | 依赖 AUDIT-001 Rust 默认 server 与已迁移 issue-status handler/service/query；#565 堆叠在 Ready #564 | PR #565；§5、§6.2、§18、§52 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI/daemon matrix 与 issue-status Ready #565 已交付；当前切片迁移 issue create admission + ordering 完整事务契约 | 一次收口 active duplicate、allow-duplicate、identity scope、并发 advisory lock、autopilot recent window 与 MIN(position)-1；随后继续其他 API/WS/background worker smoke | 依赖现有 Rust IssueService/issueguard/issueposition production chain；堆叠在 Ready #565 | PR #565；§5、§6.2、§18、§52、§53 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -1892,3 +1892,41 @@ update 无返回行当前 404 而 Go concurrent guard 是 409，且新测试未�
 handler，绕过 production router/middleware/extractor，TestFlags 也未断言真实 key/default。reviewer 确认唯一
 production mount 复用同一 HandlerState/pool/bus/service/query、无 Stub/Noop/Fake/alternate path，单文件无新依赖方向
 成立，但 635 行测试证据强度不足，不能支持完整契约或 Go 下线声明。全部 finding 已交独立 fixer，PR 保持 Ready。
+
+## 53. AUDIT-002 执行缺口：issue create admission and column ordering transaction contract
+
+当前切片继续选择 `AUDIT-002`，把台账 §5 已点名但尚无 production behavior smoke 的 `internal/issueguard` 与
+`internal/issueposition` 作为同一条 issue-create 事务能力迁移，不按两个小模块或 helper 拆 PR：
+
+- Go `internal/issueguard/duplicate.go`、`internal/issueposition/position.go`、`service/issue.go` 和
+  `handler/issue_create_position_test.go` 共同定义完整契约。标题用 Unicode whitespace collapse + lowercase 归一；
+  active duplicate identity 是 workspace/project/parent/normalized-title；done/cancelled effective category 不阻塞，
+  active built-in 或 custom-category issue 阻塞；`allow_duplicate` 仍必须取得同一 advisory transaction lock 后放行，
+  避免与普通 create 竞态绕过。
+- 两个同 identity 的真实 `IssueService::create` 并发时 advisory xact lock 必须序列化，最多一个普通 create 成功，
+  loser 返回包含现有 issue id/identifier/title/status 的 typed duplicate outcome；不同 workspace/project/parent/title
+  互不串扰。autopilot recent guard 还要按 autopilot/project/title/window 隔离，并在非正 window/空 title/无
+  autopilot ID 时明确 no-op。
+- 同一 create transaction 在 duplicate guard 后以 `(workspace,status)` 的当前 `MIN(position)-1` 插入，新 issue
+  必须严格排在该列顶部；不同 status/workspace 独立，显式负 position 后仍从真实 minimum 继续，HTTP create 与
+  autopilot create 复用各自已有 production caller，不能只测试 `next_top_position` helper。
+
+Rust 默认生产链已存在：`cordy-handler::issue::create_issue` 调用唯一 `HandlerState.issues`，
+`cordy-service::IssueService::create` 在同一 SQL transaction 内依次调用
+`issue_guard::lock_and_find_active_duplicate` 和 `issue_position::next_top_position` 后插入；autopilot service 复用
+recent guard/position。当前 Rust guard 只有纯函数/lock-key unit tests，position 只有 optional-DB helper test，无法
+证明真实 create transaction、并发序列化、effective custom category、typed HTTP outcome 或 caller wiring。
+
+本切片必须复用既有 handler/state/IssueService/query/advisory lock，不新增 repository、duplicate service、position
+allocator、mock transaction 或 test-only production seam；用可证伪的真实 Postgres production caller checks 覆盖
+上述完整事务。要求 DB 的 contract 不得在缺失/坏 `DATABASE_URL` 时成功 self-return；环境不可用必须由 verifier
+如实报告为未执行/失败。fixture 必须用唯一 workspace 并显式清理。
+
+- 默认生产路径：Rust `cordy-server` 的唯一 issue POST router 与 autopilot service 使用同一 DB/query/guard/position
+  机制，不存在 Stub、Noop、Fake 或 alternate production allocator。
+- 退出证据：删除任一 production duplicate lock/find 或 position caller 会使直接 contract 失败；独立 verifier
+  负责真实 DB/compile/test，reviewer 对照 Go，finding 仅交 fixer。
+- Go 是否可下线：本契约和异步 finding 收口后，Go issueguard/issueposition 回归不再是 Rust production 的依赖；
+  AUDIT-002 其余能力与 AUDIT-001..010 仍未完成。
+- owner：主 agent 只迁移完整契约与 Ready PR；独立 verifier/reviewer/fixer 异步。branch
+  `codex/cord-230-issue-create-admission-order-rust`，依赖 Ready #565 branch at `5c81b6d5`；编码尚未开始。
