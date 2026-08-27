@@ -195,7 +195,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | Rust server/daemon 入口已由 AUDIT-001 交付，可执行 | PR #525；详见 §13 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
-| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack 与 Telegram 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | 当前切片 Composio；随后 VCS/GHSnapshot | 依赖 AUDIT-001 已交付的 Rust server 入口；各 provider 互不重叠，可执行 | PR #532..#536；§5.3、§6.2、§20..§24 | 主 agent；独立 V/R/F subagent |
+| AUDIT-004 | 进行中 | Lark、WeCom、DingTalk、Slack、Telegram 与 Composio 已建立 production 配置/transport 证据；shutdown 纳入 channel runtime deadline | 下一切片 VCS；随后 GHSnapshot | 依赖 AUDIT-001 已交付的 Rust server 入口；各 provider 互不重叠，可执行 | PR #532..#536/#538；§5.3、§6.2、§20..§25 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | §5.2、§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -673,3 +673,26 @@ outbound 和 shutdown wiring，不增加生产抽象：
   stable rustfmt 与 `git diff --check` 通过。新增 server production configure
   测试已启动完整依赖编译/链接，当前尚未返回结果，因此不记录为通过；长编译不阻塞
   Ready PR 或后续主线迁移。
+
+## 25. AUDIT-004 执行更新：Composio production configuration contract
+
+Ready PR #538（`codex/cord-202-composio-production-contract-rust`，commit
+`711940c4`）直接执行 Composio 的 production HandlerState 选择路径，复用现有
+feature flag、ClientBuilder、Service、HTTP state 和 TaskService overlay，不新增
+生产 factory 或配置抽象：
+
+- Go 能力：`server/cmd/server/router.go` 只有在 `composio_mcp_apps` flag 开启，且
+  API key、state signing secret 和 callback base 完整时，才同时为 HTTP handler
+  与每任务 MCP overlay 安装同一个 Composio service；任一 gate 缺失必须 fail-closed。
+- Rust 入口：契约测试直接调用
+  `HandlerState::new_with_production_dependencies`；缺 API key、缺 state secret、缺
+  callback 或 flag 关闭时，`HandlerState::composio` 与 `TaskService::composio` 均为
+  `None`。有效配置通过既有 `build_service` 创建真实 `cordy_composio::ClientBuilder`
+  client，并同时接入 HTTP 与 task overlay 路径。
+- 生产路径状态：Rust server 已使用该 production constructor；默认 client 指向
+  `https://backend.composio.dev/api/v3.1`，有效配置不会选择 Stub、Noop 或 Fake。
+- Go 是否可下线：否。Composio 选择路径已形成直接 Rust 证据，但 VCS、GitHub
+  snapshot、真实外部凭证 smoke 和 AUDIT-001..010 最终门仍未完成。
+- 异步状态：verification 与 reviewer 尚未返回，未把任何编译、测试或格式检查
+  记录为通过；fixer 尚未派发。该 PR 堆叠在 Telegram PR #536，base 中已知的
+  Telegram server-test `base64` 编译错误正由独立 fixer 处理。
