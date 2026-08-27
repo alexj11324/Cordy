@@ -28,6 +28,7 @@ use crate::contract::{
 use crate::process::OwnedProcessTree;
 use crate::stderr::{sanitize_diagnostic, with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::AgentLineReader;
+use crate::version::extract_version_line;
 
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
@@ -37,6 +38,7 @@ const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_SEMANTIC_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_FIRST_TURN_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(60);
+const CODEX_VERSION_DIAGNOSTIC_TIMEOUT: Duration = Duration::from_secs(2);
 const PATCH_INPUT_MAX_BYTES: usize = 64 * 1024;
 // ponytail: one bounded retry only needs a short fixed delay; add jitter if
 // launch contention becomes an observed production issue.
@@ -86,6 +88,25 @@ enum RetryReason {
     None,
     Initialize,
     ModelCatalogRefresh,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum CodexTimeoutKind {
+    #[default]
+    None,
+    SemanticInactivity,
+    FirstTurnNoProgress,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CodexTimeoutDiagnostic {
+    kind: CodexTimeoutKind,
+    timeout: Duration,
+    last_activity: String,
+    thread_id: String,
+    turn_id: String,
+    model: String,
+    codex_version: String,
 }
 
 /// Builds the daemon-owned Codex app-server invocation.
@@ -493,6 +514,9 @@ impl CodexBackend {
         if managed_mcp {
             prefix = filter_managed_mcp_overrides(prefix);
         }
+        let diagnostic_prefix = prefix.clone();
+        let diagnostic_env = self.config.env.clone();
+        let diagnostic_command_path = command_path.to_string();
         let mut argv = prefix;
         argv.extend(build_codex_args(&options));
 
@@ -565,6 +589,9 @@ impl CodexBackend {
                 timeout,
                 configured_model,
                 codex_home,
+                diagnostic_command_path,
+                diagnostic_prefix,
+                diagnostic_env,
                 resumed,
                 started,
                 started_at,
@@ -703,6 +730,9 @@ async fn run_codex(
     timeout: Duration,
     configured_model: String,
     codex_home: Option<String>,
+    diagnostic_command_path: String,
+    diagnostic_prefix: Vec<String>,
+    diagnostic_env: BTreeMap<String, String>,
     resumed: bool,
     started: Instant,
     started_at: SystemTime,
@@ -754,6 +784,16 @@ async fn run_codex(
         stderr_task.abort();
     }
     let stderr = stderr_tail.tail();
+    let has_timeout_diagnostic = result.timeout_diagnostic.is_some();
+    if let Some(mut diagnostic) = result.timeout_diagnostic.take() {
+        diagnostic.codex_version = detect_codex_version_for_diagnostics(
+            &diagnostic_command_path,
+            &diagnostic_prefix,
+            &diagnostic_env,
+        )
+        .await;
+        result.error = build_codex_timeout_diagnostic_error(&diagnostic, &stderr);
+    }
     let retry_reason = classify_retry_reason(&result, &stderr, cleanup_confirmed);
     let _ = retry_tx.send(retry_reason);
     if !has_usage(&result.usage) && !result.session_id.is_empty() {
@@ -775,7 +815,7 @@ async fn run_codex(
             result.usage.insert(model, scanned.usage);
         }
     }
-    if !result.error.is_empty() {
+    if !has_timeout_diagnostic && !result.error.is_empty() {
         result.error = with_stderr(&result.error, "codex", &stderr);
     }
     let _ = result_tx.send(ExecutionResult {
@@ -803,6 +843,7 @@ struct ProtocolOutcome {
     session_id: String,
     usage: BTreeMap<String, TokenUsage>,
     resume_rejected: bool,
+    timeout_diagnostic: Option<CodexTimeoutDiagnostic>,
 }
 
 impl ProtocolOutcome {
@@ -955,7 +996,30 @@ async fn run_protocol(
         .await
     {
         let (status, error) = match error {
-            TurnWaitError::Timeout(error) => ("timeout", error),
+            TurnWaitError::Timeout {
+                kind,
+                timeout,
+                last_activity,
+            } => {
+                let diagnostic = CodexTimeoutDiagnostic {
+                    kind,
+                    timeout,
+                    last_activity,
+                    thread_id: client.state.thread_id.clone(),
+                    turn_id: client.state.turn_id.clone(),
+                    model: configured_model(&client.state, &options),
+                    ..CodexTimeoutDiagnostic::default()
+                };
+                let error = build_codex_timeout_diagnostic_error(&diagnostic, "");
+                return ProtocolOutcome {
+                    status: "timeout".to_string(),
+                    error,
+                    session_id: client.state.thread_id,
+                    resume_rejected,
+                    timeout_diagnostic: Some(diagnostic),
+                    ..ProtocolOutcome::default()
+                };
+            }
             TurnWaitError::Protocol(error) => ("failed", error),
         };
         return ProtocolOutcome {
@@ -1285,16 +1349,18 @@ where
                     if first_turn_deadline.is_some_and(|deadline| {
                         now >= deadline && deadline <= semantic_deadline
                     }) {
-                        return Err(TurnWaitError::Timeout(format!(
-                            "{CODEX_FIRST_TURN_NO_PROGRESS_MARKER} after {}s: received turn start but no item, message, tool, turn/completed, or error event (last activity: {last_activity})",
-                            first_turn_timeout.as_secs_f64(),
-                        )));
+                        return Err(TurnWaitError::Timeout {
+                            kind: CodexTimeoutKind::FirstTurnNoProgress,
+                            timeout: first_turn_timeout,
+                            last_activity,
+                        });
                     }
                     if now >= semantic_deadline {
-                        return Err(TurnWaitError::Timeout(format!(
-                            "{CODEX_SEMANTIC_INACTIVITY_MARKER} after {}s without agent progress (last activity: {last_activity})",
-                            semantic_timeout.as_secs_f64(),
-                        )));
+                        return Err(TurnWaitError::Timeout {
+                            kind: CodexTimeoutKind::SemanticInactivity,
+                            timeout: semantic_timeout,
+                            last_activity,
+                        });
                     }
                 }
             }
@@ -1697,7 +1763,11 @@ impl CodexTurnNotificationGate {
 #[derive(Debug)]
 enum TurnWaitError {
     Protocol(String),
-    Timeout(String),
+    Timeout {
+        kind: CodexTimeoutKind,
+        timeout: Duration,
+        last_activity: String,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -1747,6 +1817,91 @@ fn first_turn_no_progress_timeout(semantic_timeout: Duration, configured: Durati
 
 fn is_first_turn_progress_activity(activity: &str) -> bool {
     !activity.is_empty() && activity != "status:running" && activity != "error:retry"
+}
+
+fn build_codex_timeout_diagnostic_error(
+    diagnostic: &CodexTimeoutDiagnostic,
+    stderr_tail: &str,
+) -> String {
+    let stderr_tail = sanitize_diagnostic(stderr_tail);
+    let mut message = match diagnostic.kind {
+        CodexTimeoutKind::FirstTurnNoProgress => format!(
+            "{CODEX_FIRST_TURN_NO_PROGRESS_MARKER} after {}s: received turn start but no item, message, tool, turn/completed, or error event ({})",
+            diagnostic.timeout.as_secs_f64(),
+            format_codex_diagnostic_fields(diagnostic),
+        ),
+        CodexTimeoutKind::SemanticInactivity => format!(
+            "{CODEX_SEMANTIC_INACTIVITY_MARKER} after {}s without agent progress (last activity: {}; {})",
+            diagnostic.timeout.as_secs_f64(),
+            non_empty_codex_diagnostic_value(&diagnostic.last_activity),
+            format_codex_diagnostic_fields(diagnostic),
+        ),
+        CodexTimeoutKind::None => "codex timed out".to_string(),
+    };
+    let lower_stderr = stderr_tail.to_ascii_lowercase();
+    if lower_stderr.contains(MODEL_CATALOG_REFRESH_FAILURE_SIGNAL) {
+        message.push_str("; diagnosis: Codex could not load its model catalog, which blocks the first turn. This is usually a transient network failure reaching the Codex service. Check network/proxy connectivity and retry the task, or switch to another runtime while the Codex service is unreachable");
+    }
+    with_stderr(&message, "codex", &stderr_tail)
+}
+
+fn format_codex_diagnostic_fields(diagnostic: &CodexTimeoutDiagnostic) -> String {
+    format!(
+        "codex_version={:?} thread_id={:?} turn_id={:?} model={:?}",
+        non_empty_codex_diagnostic_value(&diagnostic.codex_version),
+        non_empty_codex_diagnostic_value(&diagnostic.thread_id),
+        non_empty_codex_diagnostic_value(&diagnostic.turn_id),
+        format_codex_diagnostic_model(&diagnostic.model),
+    )
+}
+
+fn non_empty_codex_diagnostic_value(value: &str) -> &str {
+    if value.trim().is_empty() {
+        "unknown"
+    } else {
+        value
+    }
+}
+
+fn format_codex_diagnostic_model(model: &str) -> String {
+    if model.trim().is_empty() {
+        "default(empty)".to_string()
+    } else {
+        model.to_string()
+    }
+}
+
+async fn detect_codex_version_for_diagnostics(
+    command_path: &str,
+    prefix: &[String],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let mut command = Command::new(command_path);
+    command
+        .args(prefix)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .envs(env)
+        .kill_on_drop(true);
+    let output = match tokio::time::timeout(
+        CODEX_VERSION_DIAGNOSTIC_TIMEOUT,
+        command.output(),
+    )
+    .await
+    {
+        Ok(Ok(output)) if output.status.success() => output,
+        _ => return "unknown".to_string(),
+    };
+    let mut data = output.stdout;
+    data.extend(output.stderr);
+    let version = extract_version_line(&String::from_utf8_lossy(&data));
+    if version.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        version
+    }
 }
 
 fn describe_message_activity(message: &Message) -> String {
@@ -2544,7 +2699,13 @@ mod tests {
             .await
             .err()
             .unwrap_or_else(|| panic!("first-turn watchdog completed unexpectedly"));
-        assert!(matches!(first_turn_error, TurnWaitError::Timeout(ref error) if error.starts_with(CODEX_FIRST_TURN_NO_PROGRESS_MARKER)));
+        assert!(matches!(
+            first_turn_error,
+            TurnWaitError::Timeout {
+                kind: CodexTimeoutKind::FirstTurnNoProgress,
+                ..
+            }
+        ));
 
         let (client_io, _agent_io) = tokio::io::duplex(1024);
         let (client_read, client_write) = tokio::io::split(client_io);
@@ -2558,7 +2719,34 @@ mod tests {
             .await
             .err()
             .unwrap_or_else(|| panic!("semantic watchdog completed unexpectedly"));
-        assert!(matches!(semantic_error, TurnWaitError::Timeout(ref error) if error.starts_with(CODEX_SEMANTIC_INACTIVITY_MARKER)));
+        assert!(matches!(
+            semantic_error,
+            TurnWaitError::Timeout {
+                kind: CodexTimeoutKind::SemanticInactivity,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn timeout_diagnostic_keeps_context_and_known_model_hint() {
+        let error = build_codex_timeout_diagnostic_error(
+            &CodexTimeoutDiagnostic {
+                kind: CodexTimeoutKind::FirstTurnNoProgress,
+                timeout: Duration::from_secs(60),
+                last_activity: "status:running".to_string(),
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                model: String::new(),
+                codex_version: "0.118.0".to_string(),
+            },
+            "failed to refresh available models: timeout",
+        );
+        assert!(error.contains("codex_version=\"0.118.0\""));
+        assert!(error.contains("thread_id=\"thread-1\""));
+        assert!(error.contains("model=\"default(empty)\""));
+        assert!(error.contains("diagnosis: Codex could not load its model catalog"));
+        assert!(error.contains("codex stderr: failed to refresh available models: timeout"));
     }
 
     #[tokio::test]
