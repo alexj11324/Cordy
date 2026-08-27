@@ -197,7 +197,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
 | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control 与 auto-update production chain 已交付 | 异步收口 V/R/F，同时继续下一条完整 daemon 能力链 | 依赖 AUDIT-001 Rust daemon 产物及堆叠 PR #542..#550，可执行 | PR #542..#550；§5.2、§6.2、§29..§37 | 主 agent；独立 V/R/F subagent |
-| AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
+| AUDIT-006 | 进行中 | 三个 backfill 业务能力及 Rust Makefile/image 产物已交付；当前切片收口 migration operator lifecycle | 为 Rust migrate 接入有界 advisory-lock wait、SIGINT/SIGTERM 取消、status/退出码和运维恢复契约 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523/当前切片；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新 | 对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525；§6.2 | 主 agent；独立 V/R/F subagent |
@@ -1266,3 +1266,20 @@ implementation commit `d607e429`）已经完整删除 required merge gate 的 Go
   `git diff --check`，未把 YAML、job graph、path-filter 或 contract scripts 记为通过。
 - 已知继承问题：#551 的 migrate bin 选择、#552/#553 review/verification finding 仍在 fixer
   队列，本 PR 不声称这些堆叠问题已解决。
+
+## 42. AUDIT-006 执行缺口：Rust migration operator lifecycle
+
+当前切片选择 `AUDIT-006` 的 migration runner 完整运维生命周期，而不是单独补一条命令或测试：
+
+- Rust `cordy-migrate` 已迁移 up/down/status、hook、condition 与 session-pinned advisory lock，三个
+  backfill 也已进入 Makefile 和 production image；但 migrate 在等待锁或执行 SQL/hook 时没有
+  SIGINT/SIGTERM 取消边界，也没有有界锁等待，滚动升级中一个失联/长跑 runner 可以让后继实例
+  无限等待，运维只能依靠进程硬退出。
+- `status` 仅检查版本记录，没有复用 migration lock；它可能在另一个 runner 正在逐条执行时返回
+  瞬时结果，且当前 runbook 未定义 busy/timeout/interrupted 的非零退出与恢复步骤。
+- 本切片在现有 `main.rs`/`runner.rs` 内完成：生产 CLI 的明确 up/down/status contract、统一
+  SIGINT/SIGTERM cancellation token、可配置且有默认值的 advisory-lock timeout、status 与写操作
+  共享锁边界，以及最小运维文档。复用现有 tokio/sqlx/tokio-util，不新增 crate、框架或兼容层。
+- 退出证据：并发 runner 串行；锁超时、信号取消和 pending migration 都 fail nonzero；成功
+  up/down/status 保持现有 production entry 与输出；取消或失败后 session lock 可由后继 runner
+  获取。编译、数据库并发/信号/恢复验证由独立 verifier 执行，finding 由独立 fixer 处理。
