@@ -2,7 +2,6 @@
 //!
 //! Usage: `cordy-migrate up|down` (DATABASE_URL env required).
 
-mod backfill;
 mod files;
 mod hooks;
 mod index_maps;

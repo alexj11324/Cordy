@@ -6,7 +6,7 @@ use std::pin::Pin;
 
 use sqlx::{PgConnection, PgPool};
 
-use crate::backfill::{attribution, task_usage};
+use cordy_migrate::backfill::{attribution, task_usage};
 
 /// int64 key shared with the Go runner so mixed-version clusters serialize.
 pub(crate) const MIGRATION_ADVISORY_LOCK_KEY: i64 = 7244554146635925501;
