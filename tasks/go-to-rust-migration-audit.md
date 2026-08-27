@@ -1805,3 +1805,11 @@ cache、legacy endpoint state 或 runtime registry。
   每项实际执行 0 tests；生产 socket/loopback smoke 未运行，只完成静态 production call-chain 核对，不能
   记录行为通过。direct format finding 与 blocker 后的全部 rerun 已排入 independent fixer，主 agent 不修复、
   不等待。
+- independent reviewer 在 exact product HEAD `49bfaf87a499015b030979c96aa6be6b538644ec` 无 P0，
+  报告 1 个 P1：Rust heartbeat 当前把除 404 外的所有错误都累计 streak，且任意 404 都发 RuntimeGone；Go
+  只让 transport/5xx/408/429 累计，永久 4xx/cancellation 重置，并要求 404 body 明确包含
+  `runtime not found`。现有 `client::is_transient_error` 已有正确分类但 production heartbeat 未复用，新增
+  socket test 只覆盖 500。P2 指出台账对 404/WS reset、auth/identity、state preservation 和退休证据的措辞
+  宽于直接测试；须把静态 wiring 与实际运行证据分开。reviewer 同时确认 pool swap lifetime、全部集中 request
+  builder、独一 production `Arc<Client>` 和两文件最小抽象方向成立，未发现 Stub/Noop/Fake/alternate path。
+  finding 已排入同一 independent fixer，PR 继续 Ready，未把该能力标记为已验证或可删除 Go。
