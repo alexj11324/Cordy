@@ -488,12 +488,145 @@ pub enum RuntimeSweeperShutdownOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use cordy_db::dbid::new_v7;
+    use cordy_db::models::AgentRuntime;
+    use cordy_events::Event;
 
     struct FixedClock(DateTime<Utc>);
 
     impl Clock for FixedClock {
         fn now(&self) -> DateTime<Utc> {
             self.0
+        }
+    }
+
+    struct RuntimeRows {
+        pool: PgPool,
+        workspace_id: uuid::Uuid,
+    }
+
+    impl RuntimeRows {
+        async fn required() -> Self {
+            let url = std::env::var("DATABASE_URL")
+                .expect("DATABASE_URL is required for runtime sweeper contracts");
+            let pool = PgPool::connect(&url)
+                .await
+                .expect("runtime sweeper contract requires a reachable migrated PostgreSQL");
+            let workspace_id = new_v7();
+            sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind("Rust runtime sweeper contract")
+                .bind(format!("rust-sweeper-{workspace_id}"))
+                .execute(&pool)
+                .await
+                .expect("insert runtime sweeper workspace");
+            Self { pool, workspace_id }
+        }
+
+        async fn runtime(&self, suffix: &str, status: &str, age: Duration) -> AgentRuntime {
+            let id = new_v7();
+            sqlx::query(
+                "INSERT INTO agent_runtime \
+                 (id, workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) \
+                 VALUES ($1, $2, $3, $4, 'local', $5, $6, now() - $7::interval)",
+            )
+            .bind(id)
+            .bind(self.workspace_id)
+            .bind(format!("sweeper-{suffix}"))
+            .bind(format!("Sweeper {suffix}"))
+            .bind(format!("provider-{suffix}"))
+            .bind(status)
+            .bind(format!("{} seconds", age.as_secs()))
+            .execute(&self.pool)
+            .await
+            .expect("insert runtime sweeper runtime");
+            runtime::get_agent_runtime(&self.pool, id)
+                .await
+                .expect("read runtime sweeper runtime")
+                .expect("runtime sweeper runtime exists")
+        }
+
+        async fn status(&self, id: uuid::Uuid) -> String {
+            sqlx::query_scalar("SELECT status FROM agent_runtime WHERE id = $1")
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await
+                .expect("read runtime sweeper status")
+        }
+
+        async fn cleanup(&self) {
+            sqlx::query("DELETE FROM workspace WHERE id = $1")
+                .bind(self.workspace_id)
+                .execute(&self.pool)
+                .await
+                .expect("clean runtime sweeper workspace");
+        }
+    }
+
+    impl Drop for RuntimeRows {
+        fn drop(&mut self) {
+            let pool = self.pool.clone();
+            let workspace_id = self.workspace_id;
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
+                        .bind(workspace_id)
+                        .execute(&pool)
+                        .await;
+                });
+            }
+        }
+    }
+
+    struct TestLiveness {
+        available: bool,
+        alive: HashSet<String>,
+        forgotten: Arc<Mutex<Vec<String>>>,
+        race_id: Option<uuid::Uuid>,
+        pool: Option<PgPool>,
+    }
+
+    #[async_trait]
+    impl LivenessStore for TestLiveness {
+        fn available(&self) -> bool {
+            self.available
+        }
+
+        async fn touch(&self, _: &str, _: Duration) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn is_alive_batch(&self, runtime_ids: &[String]) -> (HashMap<String, bool>, bool) {
+            if let (Some(race_id), Some(pool)) = (self.race_id, self.pool.clone()) {
+                if runtime_ids.iter().any(|id| id == &race_id.to_string()) {
+                    sqlx::query("UPDATE agent_runtime SET status = 'offline' WHERE id = $1")
+                        .bind(race_id)
+                        .execute(&pool)
+                        .await
+                        .expect("force runtime stale-sweep race");
+                }
+            }
+            if !self.available {
+                return (HashMap::new(), false);
+            }
+            (
+                runtime_ids
+                    .iter()
+                    .map(|id| (id.clone(), self.alive.contains(id)))
+                    .collect(),
+                true,
+            )
+        }
+
+        async fn forget(&self, runtime_id: &str) {
+            self.forgotten
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(runtime_id.to_string());
         }
     }
 
@@ -531,5 +664,128 @@ mod tests {
                 .unwrap()
                 .with_timezone(&Utc)
         );
+    }
+
+    #[tokio::test]
+    async fn production_stale_sweep_filters_liveness_and_publishes_one_workspace_event() {
+        let rows = RuntimeRows::required().await;
+        let dead = rows.runtime("dead", "online", Duration::from_secs(300)).await;
+        let alive = rows.runtime("alive", "online", Duration::from_secs(300)).await;
+        let fresh = rows.runtime("fresh", "online", Duration::from_secs(30)).await;
+        let already_offline = rows
+            .runtime("offline", "offline", Duration::from_secs(300))
+            .await;
+        let forgotten = Arc::new(Mutex::new(Vec::new()));
+        let liveness = Arc::new(TestLiveness {
+            available: true,
+            alive: HashSet::from([alive.id.to_string()]),
+            forgotten: forgotten.clone(),
+            race_id: None,
+            pool: None,
+        });
+        let bus = Arc::new(Bus::new());
+        let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+        {
+            let events = events.clone();
+            bus.subscribe(cordy_protocol::EVENT_DAEMON_REGISTER, move |event| {
+                events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(event.clone());
+            });
+        }
+        let tasks = Arc::new(TaskService::new(rows.pool.clone(), bus.clone()));
+        let sweeper = RuntimeTaskSweeper::new(
+            rows.pool.clone(),
+            liveness,
+            tasks,
+            bus,
+            None,
+            DEFAULT_RECONNECT_GRACE,
+        );
+        let stale_before = Utc::now() - chrono::Duration::seconds(150);
+        assert_eq!(sweeper.sweep_stale_runtimes(stale_before).await, 1);
+        assert_eq!(rows.status(dead.id).await, "offline");
+        assert_eq!(rows.status(alive.id).await, "online");
+        assert_eq!(rows.status(fresh.id).await, "online");
+        assert_eq!(rows.status(already_offline.id).await, "offline");
+        assert_eq!(
+            forgotten
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_slice(),
+            [dead.id.to_string()]
+        );
+        let events = events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].workspace_id, rows.workspace_id.to_string());
+        assert_eq!(events[0].event_type, cordy_protocol::EVENT_DAEMON_REGISTER);
+        assert_eq!(events[0].payload, serde_json::json!({"action": "stale_sweep"}));
+        drop(events);
+        sqlx::query("UPDATE agent_runtime SET status = 'offline' WHERE id = $1")
+            .bind(alive.id)
+            .execute(&rows.pool)
+            .await
+            .expect("isolate later sweeper cases");
+
+        let unavailable = rows
+            .runtime("unavailable", "online", Duration::from_secs(300))
+            .await;
+        let unavailable_forgotten = Arc::new(Mutex::new(Vec::new()));
+        let unavailable_bus = Arc::new(Bus::new());
+        let unavailable_sweeper = RuntimeTaskSweeper::new(
+            rows.pool.clone(),
+            Arc::new(TestLiveness {
+                available: false,
+                alive: HashSet::new(),
+                forgotten: unavailable_forgotten.clone(),
+                race_id: None,
+                pool: None,
+            }),
+            Arc::new(TaskService::new(rows.pool.clone(), unavailable_bus.clone())),
+            unavailable_bus,
+            None,
+            DEFAULT_RECONNECT_GRACE,
+        );
+        assert_eq!(
+            unavailable_sweeper
+                .sweep_stale_runtimes(stale_before)
+                .await,
+            1
+        );
+        assert_eq!(rows.status(unavailable.id).await, "offline");
+        assert_eq!(
+            unavailable_forgotten
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_slice(),
+            [unavailable.id.to_string()]
+        );
+
+        let raced = rows.runtime("raced", "online", Duration::from_secs(300)).await;
+        let race_forgotten = Arc::new(Mutex::new(Vec::new()));
+        let race_bus = Arc::new(Bus::new());
+        let race_sweeper = RuntimeTaskSweeper::new(
+            rows.pool.clone(),
+            Arc::new(TestLiveness {
+                available: true,
+                alive: HashSet::new(),
+                forgotten: race_forgotten,
+                race_id: Some(raced.id),
+                pool: Some(rows.pool.clone()),
+            }),
+            Arc::new(TaskService::new(rows.pool.clone(), race_bus.clone())),
+            race_bus,
+            None,
+            DEFAULT_RECONNECT_GRACE,
+        );
+        assert_eq!(
+            race_sweeper.sweep_stale_runtimes(stale_before).await,
+            0
+        );
+        assert_eq!(rows.status(raced.id).await, "offline");
+        rows.cleanup().await;
     }
 }
