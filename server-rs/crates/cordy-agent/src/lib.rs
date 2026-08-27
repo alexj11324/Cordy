@@ -5,6 +5,7 @@
 //! become constructible only when their real transport implementation lands;
 //! metadata alone never manufactures a backend that cannot execute.
 
+pub mod acp;
 pub mod claude;
 pub mod antigravity;
 pub mod codebuddy;
@@ -28,6 +29,7 @@ pub mod stream;
 pub mod version;
 
 pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
+pub use acp::{AcpClient, AcpError, AcpNotification};
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
