@@ -190,7 +190,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | ID | 状态 | 已交付/当前切片 | 下一动作与退出缺口 | 依赖/可执行门 | 证据/PR | owner |
 | --- | --- | --- | --- | --- | --- | --- |
 | AUDIT-001 | 进行中 | 默认 server、CLI、migration、Docker、CI、Helm、CLI release 资产链、Desktop 内嵌 CLI、tag release 验证门、self-host exact-image rollback、opt-in systemd 生命周期与 required backend CI Go gate 已切到 Rust | 收口异步 finding；随后执行真实启动/升级/回滚演练 | release/installer/systemd/CI gate 已交付；最终生产验收依赖 AUDIT-002..009 退出 | PR #523/#527/#551..#554；详见 §11、§15、§16、§38..§41 | 主 agent；独立 V/R/F subagent |
-| AUDIT-002 | 进行中 | 已有 route parity、局部包测试；当前切片建立 CLI 命令树/退出码/daemon control smoke 矩阵 | 先收口 CLI/daemon 矩阵，再补 API/WS/事务/错误 JSON 和 background worker 的真实 smoke | 依赖 AUDIT-001 已交付的 Rust 默认产物；各域 smoke 随 AUDIT-003..006 落地 | §5、§6.2、§18 | 主 agent；独立 V/R/F subagent |
+| AUDIT-002 | 进行中 | route parity、CLI 命令树/退出码/daemon control 矩阵已交付；当前切片迁移 issue-status API、事务竞态、错误 JSON 与事件副作用完整契约 | 一次收口 catalog self-heal、member/admin/flag gate、系统状态不可变、custom category、archive/write/reorder 锁语义和 commit 后事件；随后继续其他 API/WS/background worker smoke | 依赖 AUDIT-001 Rust 默认 server 与已迁移 issue-status handler/service/query；堆叠在 Ready #564 | §5、§6.2、§18、§52 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003A | Ready PR | CPU/cmdline/symbol pprof 已接入；PR #556 的 Linux process telemetry 保留为趋势指标；PR #560 迁移真实 allocation-stack heap profile 与 Rust async runtime diagnostics | 异步收口 Cargo.lock、Linux/non-Linux/Docker 构建、真实 pprof/console client、public isolation、shutdown 与开销证据，finding 交 fixer | Rust server/profiling 入口可执行；依赖当前稳定 Rust、Linux release 构建和可写临时目录 | PR #524/#556/#560；详见 §12、§43、§47 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003B | Ready PR | logger 配置、TTY、component、request attrs 与本地毫秒时间布局已接入全部 Rust production subscriber | 异步验证真实输出、daemon rotating sink、timezone/DST与既有行为无回归，finding 交 fixer | Rust server/daemon/migrate/backfill 入口可执行 | PR #525/#557；详见 §13、§44 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
@@ -1813,3 +1813,44 @@ cache、legacy endpoint state 或 runtime registry。
   宽于直接测试；须把静态 wiring 与实际运行证据分开。reviewer 同时确认 pool swap lifetime、全部集中 request
   builder、独一 production `Arc<Client>` 和两文件最小抽象方向成立，未发现 Stub/Noop/Fake/alternate path。
   finding 已排入同一 independent fixer，PR 继续 Ready，未把该能力标记为已验证或可删除 Go。
+
+## 52. AUDIT-002 执行缺口：issue-status production API and transaction contract
+
+当前切片选择 `AUDIT-002` 已列出的 API authentication/authorization、transaction、error JSON 与 side-effect
+smoke，并以一个完整 workflow contract 迁移 Go issue-status 回归，不按 `issue_status*_test.go` 文件或单个
+helper 拆 PR：
+
+- Go `internal/handler/issue_status.go`、`issue_status_test.go`、`issue_status_reorder_test.go` 和
+  `issue.go` 的 status guard 共同定义能力：旧 workspace 在 list 时幂等补齐七个系统状态；任意 member 可读，
+  只有 owner/admin 且 rollout flag 开启可创建；系统状态不可修改/归档；custom status 继承 canonical category；
+  archive 只禁止未来 assignment，不改写已有 issue。
+- archive 使用 exclusive catalog transaction lock；所有写入 custom status 的 issue create/update/batch path 在同一
+  transaction 内取 shared lock 并重新 resolve。两种先后顺序必须分别表现为“writer 先提交后 archive”或
+  “archive 先提交后 writer 409”，不能把 issue 写到已归档状态。reorder 同样在 shared lock 下核对 category 的
+  全部 active custom IDs、原子更新全部 position；partial/duplicate/cross-category/cross-workspace/system/archived
+  input 必须 fail-closed，竞态失败不得留下部分 position。
+- mutation event 只可在 transaction commit 后发布 `issue_status:changed`，payload 只含 action；拒绝、冲突和
+  rollback 不得发布。HTTP status 与 `{"error": ...}` wire shape、UUID validation、workspace scoping、archived
+  nullable timestamp、canonical order 和 stored custom key 都是本契约的一部分。
+- Rust 默认 router 已把 `cordy_handler::issue_status::router` 放在 workspace member middleware 后，handler 直接
+  使用 `HandlerState` production pool/bus、`cordy_service::issue_status` 与 `cordy_db::queries::issue_status`；
+  issue create/update/batch 已有 status guard 调用点。但 handler 当前只有 color unit check，service 只有局部
+  optional-DB checks，不能直接证明真实 handler、transaction lock、error JSON、event ordering 和 issue write
+  chain，也不足以退休对应 Go contract。
+
+本切片必须复用现有 handler/service/query/router/state，不增加 repository、service、mock transaction、第二套
+router 或 test-only production seam；在既有 Rust 文件内用真实 Postgres fixture 和真实 handler arguments 建立
+一组直接 contract checks，覆盖上述 happy path、拒绝路径和两个真实并发 interleaving。fixture 必须按 workspace
+隔离并显式清理，不能依赖共享固定 ID；无 `DATABASE_URL` 时必须明确报告未执行，不能伪报通过。
+
+- 默认生产路径：Rust `cordy-server` 只挂载这一 issue-status router 和同一 issue mutation handler/service/query；
+  不存在 Stub、Noop、Fake 或 alternate production catalog。有效 production feature source 决定 create gate；
+  missing/disabled flag fail-closed，read/resolve 继续兼容 rollout 前 workspace。
+- 退出证据：真实 DB 上从 handler request/response 穿过 query/transaction lock/commit/bus，证明 catalog、role/flag、
+  immutable/archive、custom assignment、reorder atomicity、archive races、event ordering 与 wire errors；独立
+  verifier 负责执行，reviewer 负责比对 Go，失败与 finding 只交 fixer。
+- Go 是否可下线：本契约和异步 finding 收口后，Go issue-status API/guard 回归不再是 Rust production 的依赖；
+  AUDIT-002 其余 API/WS/background worker、AUDIT-001..009 和最终 AUDIT-010 仍未完成。
+- owner：主 agent 只迁移契约、生产入口证据和 Ready PR；独立 verifier/reviewer/fixer 异步收口。branch
+  `codex/cord-229-issue-status-production-contract-rust`，依赖 Ready #564 branch
+  `codex/cord-228-daemon-http-pool-recovery-rust` at `b68910a4`；尚无 implementation commit 或 PR。
