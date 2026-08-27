@@ -14,8 +14,10 @@ anyhow = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 cordy-daemon = { path = "../cordy-daemon" }
 dirs = { workspace = true }
+hex = { workspace = true }
 reqwest = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }

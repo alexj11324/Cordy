@@ -17,7 +17,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use chrono::{DateTime, FixedOffset};
-use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use config::Environment;
 use rand::RngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -124,6 +124,11 @@ enum Command {
     Squad(SquadArgs),
     #[command(about = "Control the local agent runtime daemon")]
     Daemon(DaemonArgs),
+    #[command(hide = true, about = "Generate shell completion scripts")]
+    Completion {
+        #[arg(value_enum)]
+        shell: CompletionShell,
+    },
     #[command(about = "Update cordy to the latest version")]
     Update {
         #[arg(
@@ -188,11 +193,6 @@ enum SetupCommand {
 
 #[derive(Debug, Args)]
 struct SetupSelfHostArgs {
-    #[arg(
-        long = "server-url",
-        help = "Backend server URL (e.g. https://api.internal.co)"
-    )]
-    self_host_server_url: Option<String>,
     #[arg(long, help = "Frontend app URL (e.g. https://app.internal.co)")]
     app_url: Option<String>,
     #[arg(long, value_name = "PORT", help = "Backend port for a local server")]
@@ -200,7 +200,7 @@ struct SetupSelfHostArgs {
     #[arg(long, value_name = "PORT", help = "Frontend port for a local server")]
     frontend_port: Option<u16>,
     #[arg(
-        long,
+        long = "callback-host",
         help = "Host/IP the OAuth callback URL points at when the browser can reach this CLI directly"
     )]
     self_host_callback_host: Option<String>,
@@ -2785,6 +2785,15 @@ enum VersionOutput {
     Json,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    #[value(name = "powershell")]
+    Powershell,
+}
+
 #[derive(Debug)]
 pub struct RunOutput {
     pub stdout: String,
@@ -3114,6 +3123,7 @@ async fn run_with_input<R: Read>(
             )
             .await
         }
+        Command::Completion { shell } => run_completion(*shell),
         Command::Update { download_timeout } => run_update(*download_timeout).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
@@ -3590,6 +3600,21 @@ async fn run_with_input<R: Read>(
         }) => run_runtime_profile_unset_path(cli, environment, profile_id),
         Command::Version { output } => run_version(*output),
     }
+}
+
+fn run_completion(shell: CompletionShell) -> Result<RunOutput> {
+    let shell = match shell {
+        CompletionShell::Bash => clap_complete::Shell::Bash,
+        CompletionShell::Zsh => clap_complete::Shell::Zsh,
+        CompletionShell::Fish => clap_complete::Shell::Fish,
+        CompletionShell::Powershell => clap_complete::Shell::PowerShell,
+    };
+    let mut stdout = Vec::new();
+    clap_complete::generate(shell, &mut Cli::command(), "cordy", &mut stdout);
+    Ok(RunOutput {
+        stdout: String::from_utf8(stdout).context("generate shell completion")?,
+        stderr: String::new(),
+    })
 }
 
 fn update_error(stderr: String, message: impl Into<String>) -> anyhow::Error {
@@ -6284,7 +6309,7 @@ fn resolve_disk_usage_root(
     root_override: &str,
 ) -> Result<String> {
     if !task_context {
-        return resolve_workspaces_root_for_profile(profile, root_override);
+        return cordy_daemon::config::resolve_workspaces_root(profile, root_override);
     }
     let root = environment
         .trimmed(cordy_daemon::config::TASK_WORKSPACES_ROOT_ENV)
@@ -6422,7 +6447,7 @@ fn enumerate_disk_usage_roots(
     environment: &Environment,
 ) -> Vec<cordy_daemon::diskusage::DiskUsageRoot> {
     let mut roots = Vec::new();
-    if let Ok(root) = resolve_workspaces_root_for_profile("", "") {
+    if let Ok(root) = cordy_daemon::config::resolve_workspaces_root("", "") {
         roots.push(cordy_daemon::diskusage::DiskUsageRoot {
             profile: String::new(),
             root,
@@ -6443,7 +6468,7 @@ fn enumerate_disk_usage_roots(
     names.sort();
 
     for profile in names {
-        let Ok(root) = resolve_workspaces_root_for_profile(&profile, "") else {
+        let Ok(root) = cordy_daemon::config::resolve_workspaces_root(&profile, "") else {
             continue;
         };
         if contains_disk_usage_root(&roots, &root) {
@@ -6504,11 +6529,12 @@ fn print_aggregate_disk_usage(
             root.profile.as_str()
         };
         let _ = writeln!(output, "[{label}]");
-        output.push_str(if by_workspace {
-            &print_disk_usage_workspace_table(&root.report)
+        let table = if by_workspace {
+            print_disk_usage_workspace_table(&root.report)
         } else {
-            &print_disk_usage_task_table(&root.report)
-        });
+            print_disk_usage_task_table(&root.report)
+        };
+        output.push_str(&table);
     }
     let _ = writeln!(
         output,
@@ -6701,7 +6727,7 @@ fn disk_usage_profile_suggestions(
 ) -> Vec<DiskUsageProfileSuggestion> {
     let mut suggestions = Vec::new();
     if !current_profile.is_empty() {
-        if let Ok(root) = resolve_workspaces_root_for_profile("", "") {
+        if let Ok(root) = cordy_daemon::config::resolve_workspaces_root("", "") {
             if !same_disk_usage_path(&root, current_root) {
                 let task_count = count_disk_usage_task_dirs(&root);
                 if task_count > 0 {
@@ -6730,7 +6756,7 @@ fn disk_usage_profile_suggestions(
         if profile == current_profile {
             continue;
         }
-        let Ok(root) = resolve_workspaces_root_for_profile(&profile, "") else {
+        let Ok(root) = cordy_daemon::config::resolve_workspaces_root(&profile, "") else {
             continue;
         };
         if same_disk_usage_path(&root, current_root) {
@@ -9289,6 +9315,7 @@ async fn run_login_browser(
     let mut query = form_urlencoded::Serializer::new(String::new());
     query.append_pair("cli_callback", &callback_url);
     query.append_pair("cli_state", &state);
+    let query = query.finish();
     let login_url = format!("{app_url}/login?{query}");
 
     let (token_sender, token_receiver) = oneshot::channel();
@@ -9665,10 +9692,9 @@ fn resolve_setup_self_host_server_url(
     args: &SetupSelfHostArgs,
     existing: &config::CliConfig,
 ) -> Result<(String, bool)> {
-    if let Some(raw) = args
-        .self_host_server_url
+    if let Some(raw) = cli
+        .server_url
         .as_deref()
-        .or(cli.server_url.as_deref())
         .or_else(|| environment.trimmed("CORDY_SERVER_URL"))
     {
         return Ok((normalize_api_base_url(raw)?, true));
@@ -16871,14 +16897,14 @@ mod tests {
     }
 
     #[test]
-    fn top_level_and_daemon_commands_match_go_contract_except_completion_gap() {
+    fn top_level_and_daemon_commands_match_go_contract() {
         let command = Cli::command();
         let mut top_level = command
             .get_subcommands()
             .map(|subcommand| subcommand.get_name())
             .collect::<Vec<_>>();
         top_level.sort_unstable();
-        let expected_go = [
+        let expected = [
             "agent",
             "attachment",
             "auth",
@@ -16902,13 +16928,17 @@ mod tests {
             "version",
             "workspace",
         ];
-        let missing = expected_go
-            .iter()
-            .copied()
-            .filter(|name| !top_level.contains(name))
-            .collect::<Vec<_>>();
-        assert_eq!(missing, ["completion"]);
-        assert!(top_level.iter().all(|name| expected_go.contains(name)));
+        assert_eq!(top_level, expected);
+
+        let completion = command
+            .find_subcommand("completion")
+            .expect("completion command");
+        assert!(completion.is_hide_set());
+        assert!(Cli::try_parse_from(["cordy", "completion", "bash"]).is_ok());
+        assert!(run_completion(CompletionShell::Bash)
+            .expect("bash completion")
+            .stdout
+            .contains("cordy"));
 
         let mut daemon = command
             .find_subcommand("daemon")
@@ -17029,7 +17059,7 @@ mod tests {
             panic!("expected self-host setup command");
         };
         assert_eq!(
-            args.self_host_server_url.as_deref(),
+            self_host.server_url.as_deref(),
             Some("https://api.internal.example")
         );
         assert_eq!(
@@ -26598,7 +26628,7 @@ mod tests {
     #[tokio::test]
     async fn property_create_update_and_archive_use_go_patch_and_output_contracts() {
         let property_id = "11111111-1111-1111-1111-111111111111";
-        let definition = || {
+        let definition = move || {
             serde_json::json!({
                 "id":property_id,"name":"Severity","type":"select","description":"",
                 "icon":"shield","config":{"options":[{
