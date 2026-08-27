@@ -331,20 +331,7 @@ impl ProductionProviderAdapter {
                 .and_then(|env| env.get("CURSOR_MCP_AUTH_SOURCE"))
                 .cloned()
                 .unwrap_or_default();
-            if let Some(agent_mcp_config) = agent.mcp_config.as_ref() {
-                match crate::runtime_mcp::merge_runtime_and_agent_mcp_config(
-                    &target.provider,
-                    agent_mcp_config,
-                ) {
-                    Ok(effective) => inputs.effective_mcp_config = effective,
-                    Err(error) => tracing::warn!(
-                        task = %task.id,
-                        provider = %target.provider,
-                        %error,
-                        "mcp_config: runtime merge failed; using agent configuration only"
-                    ),
-                }
-            }
+            apply_task_mcp_config(&task, &target, &mut inputs);
         }
         if let Some(assignment) = &assignment {
             if assignment.uses_worktree() {
@@ -722,6 +709,30 @@ impl ProductionProviderAdapter {
                 .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}")),
             () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
         }
+    }
+}
+
+fn apply_task_mcp_config(
+    task: &Task,
+    target: &RuntimeExecutionTarget,
+    inputs: &mut ProviderExecutionInputs,
+) {
+    let Some(agent_mcp_config) = task
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.mcp_config.as_ref())
+    else {
+        return;
+    };
+    match crate::runtime_mcp::merge_runtime_and_agent_mcp_config(&target.provider, agent_mcp_config)
+    {
+        Ok(effective) => inputs.effective_mcp_config = effective,
+        Err(error) => tracing::warn!(
+            task = %task.id,
+            provider = %target.provider,
+            %error,
+            "mcp_config: runtime merge failed; using agent configuration only"
+        ),
     }
 }
 
@@ -1559,8 +1570,129 @@ fn provider_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::SkillFileData;
+    use crate::types::{AgentData, SkillFileData};
     use cordy_agent::TokenUsage;
+
+    struct RestoreClawdbotConfig(Option<std::ffi::OsString>);
+
+    impl RestoreClawdbotConfig {
+        fn set(path: &Path) -> Self {
+            let original = std::env::var_os("CLAWDBOT_CONFIG_PATH");
+            std::env::set_var("CLAWDBOT_CONFIG_PATH", path);
+            Self(original)
+        }
+    }
+
+    impl Drop for RestoreClawdbotConfig {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("CLAWDBOT_CONFIG_PATH", value),
+                None => std::env::remove_var("CLAWDBOT_CONFIG_PATH"),
+            }
+        }
+    }
+
+    #[test]
+    fn production_task_mcp_merge_reaches_prepare_and_options_and_fails_soft() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime_config = temp.path().join("openclaw.json");
+        let _env = RestoreClawdbotConfig::set(&runtime_config);
+        std::fs::write(
+            &runtime_config,
+            r#"{"mcp":{"servers":{"runtime":{"command":"runtime"},"shared":{"command":"old"}}}}"#,
+        )
+        .unwrap();
+
+        let agent_mcp = json!({
+            "mcpServers": {
+                "agent": {"command": "agent"},
+                "shared": {"command": "override"}
+            }
+        });
+        let task = Task {
+            id: "task-1".into(),
+            workspace_id: "workspace-1".into(),
+            runtime_id: "runtime-1".into(),
+            agent_id: "agent-1".into(),
+            issue_id: "issue-1".into(),
+            auth_token: "mat_task".into(),
+            agent: Some(AgentData {
+                id: "agent-1".into(),
+                name: "Builder".into(),
+                mcp_config: Some(agent_mcp.clone()),
+                ..AgentData::default()
+            }),
+            ..Task::default()
+        };
+        let target = RuntimeExecutionTarget {
+            provider: "openclaw".into(),
+            profile_id: String::new(),
+        };
+        let config = Config {
+            server_base_url: "https://cordy.example".into(),
+            workspaces_root: temp
+                .path()
+                .join("workspaces")
+                .to_string_lossy()
+                .into_owned(),
+            ..Config::default()
+        };
+        let build = |mut inputs: ProviderExecutionInputs| {
+            apply_task_mcp_config(&task, &target, &mut inputs);
+            ProviderExecutionPlan::build(&config, &task, &target, inputs).unwrap()
+        };
+        let inputs = || ProviderExecutionInputs {
+            temp_dir: temp.path().join("tmp").to_string_lossy().into_owned(),
+            ..ProviderExecutionInputs::default()
+        };
+
+        let plan = build(inputs());
+        let expected = json!({
+            "mcpServers": {
+                "agent": {"command": "agent"},
+                "runtime": {"command": "runtime"},
+                "shared": {"command": "override"}
+            }
+        });
+        assert_eq!(plan.prepare_params().mcp_config, Some(expected.clone()));
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: temp.path().join("workdir").to_string_lossy().into_owned(),
+                    cordy_config_root: temp.path().join("config").to_string_lossy().into_owned(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+        assert_eq!(bound.options.mcp_config, Some(expected));
+
+        std::fs::write(&runtime_config, "{").unwrap();
+        let fallback = build(inputs());
+        assert_eq!(
+            fallback.prepare_params().mcp_config,
+            Some(agent_mcp.clone())
+        );
+        let fallback = fallback
+            .bind_environment(
+                &Environment {
+                    work_dir: temp
+                        .path()
+                        .join("fallback-workdir")
+                        .to_string_lossy()
+                        .into_owned(),
+                    cordy_config_root: temp
+                        .path()
+                        .join("fallback-config")
+                        .to_string_lossy()
+                        .into_owned(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+        assert_eq!(fallback.options.mcp_config, Some(agent_mcp));
+    }
 
     #[test]
     fn skill_bundle_timeout_matches_size_budget() {

@@ -883,6 +883,12 @@ override，继续使用 provider 原生 inheritance；存在配置时，合并�
   dependency 或 test-only seam。
 - Go 是否可下线：否；remote MCP broker 与 plugin-hook MCP 仍未进入 Rust production
   task path，AUDIT-005 其余生命周期和最终 AUDIT-001..010 门也未收口。
-- 异步状态：独立 verification 与 reviewer 尚未返回，fixer 尚未派发。主 agent 只实际
-  运行并通过 `git diff --check 15e4ec28..1c340cde`；未把编译、测试、rustfmt、静态检查
-  或生产验证记录为通过。PR 明确堆叠在 Ready PR #544。
+- Reviewer/fixer：reviewer 指出新增 merge 单测未调用 production adapter 路径，删除
+  `run_task_inner` 接线仍会绿。fixer 将实际 task-path merge 收敛为同一 production
+  helper，并以临时 OpenClaw provider 配置 + agent MCP 直接执行该边界：runtime server
+  被保留、同名项由 agent 覆盖，结果同时进入 `PrepareParams` 和最终 `ExecOptions`；
+  provider JSON 损坏时 warning/fail-soft 回落原 agent 配置，plan/bind 仍成功，不新增
+  factory 或 test-only production seam。
+- 验证：传播上游 #544 编译修复后，精确 production task MCP regression 通过（1
+  passed、0 failed、442 filtered）；targeted fixed stable rustfmt 与 `git diff --check`
+  通过。PR 明确堆叠在 Ready PR #544；真实 provider 凭证/进程 smoke 仍未执行。
