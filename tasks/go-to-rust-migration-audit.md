@@ -196,7 +196,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 V/R/F，并纳入生产对象存储 smoke | 依赖 AUDIT-004 的生产存储证据完成退出 | PR #526；详见 §14 | 主 agent；独立 V/R/F subagent |
 | AUDIT-003D | Ready PR | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 等待异步 V/R/F；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 配置契约可执行；最终退出依赖 AUDIT-005 daemon 生命周期 | PR #531；§6.2、§19 | 主 agent；独立 V/R/F subagent |
 | AUDIT-004 | 主线切片已交付 | Lark、WeCom、DingTalk、Slack、Telegram、Composio、VCS、GHSnapshot 与 channel media production lifecycle 已交付 | verification 收口 supervisor/lease 矩阵、外部凭证 smoke/不可测原因与回滚策略；review/fix 异步回写 | 主 agent 当前无新的不重叠迁移缺口；最终退出依赖异步 V/R/F 直接证据 | PR #532..#536/#538..#541；§5.3、§6.2、§20..§28 | 主 agent；独立 V/R/F subagent |
-| AUDIT-005 | 进行中 | `/health` uptime、provider refresh 重试和 GC metadata 单一 wire contract 已交付 | 继续选择 MCP 等尚未接线的 daemon 生产调用链 | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | PR #542/#543/#544；§5.2、§6.2、§29..§31 | 主 agent；独立 V/R/F subagent |
+| AUDIT-005 | 进行中 | `/health` uptime、provider refresh 重试和 GC metadata 单一 wire contract 已交付；当前选定 runtime MCP production merge | 接通本机 runtime MCP 与 agent MCP 配置的任务启动路径，再继续 remote/plugin broker | 依赖 AUDIT-001 已交付的 Rust CLI/daemon 产物，可执行 | PR #542/#543/#544/当前切片；§5.2、§6.2、§29..§32 | 主 agent；独立 V/R/F subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | 依赖 AUDIT-001 已交付的 Rust image/package 入口，可执行 | PR #518/#519/#520/#523；§6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-007 | 待办 | feature-flag 等局部契约测试已有 | 把高风险 Go 回归按业务契约映射到 Rust 测试，不机械复制 807 个文件 | 可增量执行；最终索引依赖 AUDIT-002..006 能力矩阵稳定 | §6.2 | 主 agent；独立 V/R/F subagent |
 | AUDIT-008 | 待办 | route parity 和部分 wire tests 已有 | 完成 JSON/时间/UUID-ULID/Redis/DB/event/旧数据兼容证据 | 可增量执行；最终兼容门依赖 AUDIT-002..006 的实际 wire 路径 | §6.2 | 主 agent；独立 V/R/F subagent |
@@ -848,3 +848,20 @@ reader。缺失、坏 metadata 仍走既有 mtime fallback；unknown kind 保留
 - 异步状态：独立 verification 与 reviewer 尚未返回，fixer 尚未派发。主 agent 只实际
   运行并通过 `git diff --check c1683ce3..8a5db875`；未把编译、测试、rustfmt、静态检查
   或生产验证记录为通过。PR 明确堆叠在 Ready PR #543。
+
+## 32. AUDIT-005 执行缺口：runtime MCP production merge
+
+当前切片选择 `AUDIT-005` 的任务启动/MCP production 调用链。编码前确认的真实差异：
+
+- Go `runTask` 在构造 execution environment 前调用
+  `mergeRuntimeAndAgentMcpConfig`，读取 provider 原生的本机 MCP 配置，再以 agent 保存的
+  `mcpServers` 覆盖同名 runtime entry；失败只降级为 agent 配置并留下 warning。
+- Rust `runtime_mcp::merge_runtime_and_agent_mcp_config` 已迁移相同 parser、provider 路径、
+  JSONC/TOML 兼容和覆盖语义，`ProviderExecutionInputs::effective_mcp_config` 也已存在；但
+  production `ProductionProviderAdapter::run_task_inner` 从未调用该函数，因此实际任务只把
+  agent 配置交给 `ProviderExecutionPlan`，本机 runtime MCP server 不会进入启动配置。
+- 真实 `ProviderExecutionPlan`、execenv sidecar/wrapper 和 provider backend 已接线；不需要
+  新 parser、config type、factory 或 production seam。
+
+本切片只在 production adapter 构建 plan 前复用现有 merge，并保持 Go 的 fail-soft
+warning/fallback。实现、Ready PR、verification、review 和 fix 尚未产生，不能记录通过。
