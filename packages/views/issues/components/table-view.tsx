@@ -2101,8 +2101,8 @@ export function TableView({
 
   // Inline row edits are single-issue writes like the picker in the issue
   // detail or the right-click menu, so they route on the same gate: a status
-  // change that promotes an agent-owned issue out of the backlog category
-  // starts a run, and must confirm rather than fire from one click (MUL-6463).
+  // change that promotes an agent-owned issue or enters Review must confirm
+  // rather than fire from one click (MUL-6463).
   const updateIssue = useCallback(
     (issue: Issue, updates: Partial<UpdateIssueRequest>) => {
       const intent = runConfirmIntent(issue, updates, { entryOf });

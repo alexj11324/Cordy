@@ -107,7 +107,6 @@ describe("runConfirmIntent — promote", () => {
     ["custom Todo-category status", "backlog", "rework"],
     ["custom backlog-category origin", "later", "rework"],
     ["a non-todo target that still starts a run", "backlog", "in_progress"],
-    ["a custom in_review target", "backlog", "qa"],
   ])("confirms the promotion (%s)", (_label, from, to) => {
     expect(runConfirmIntent(issue({ status: from }), { status: to }, CATALOG)).toEqual({
       issueIds: ["issue-1"],
@@ -135,5 +134,48 @@ describe("runConfirmIntent — promote", () => {
     ["the same status again", { status: "backlog" }, "backlog"],
   ])("applies directly when no run starts (%s)", (_label, from, to) => {
     expect(runConfirmIntent(issue(from as Partial<GateIssue>), { status: to }, CATALOG)).toBeNull();
+  });
+});
+
+describe("runConfirmIntent — review handoff", () => {
+  it.each([
+    ["built-in review", "in_review"],
+    ["custom review", "qa"],
+  ])("requires choosing a different reviewer for %s", (_label, status) => {
+    expect(
+      runConfirmIntent(issue({ status: "in_progress" }), { status }, CATALOG),
+    ).toEqual({
+      issueIds: ["issue-1"],
+      mode: "review",
+      status,
+      fromAssigneeType: "agent",
+      fromAssigneeId: "agent-1",
+      assigneeType: null,
+      assigneeId: null,
+    });
+  });
+
+  it("keeps an explicitly selected reviewer in the atomic transition", () => {
+    expect(
+      runConfirmIntent(
+        issue({ status: "in_progress" }),
+        { status: "in_review", assignee_type: "member", assignee_id: "user-2" },
+        CATALOG,
+      ),
+    ).toEqual(expect.objectContaining({
+      mode: "review",
+      assigneeType: "member",
+      assigneeId: "user-2",
+    }));
+  });
+
+  it("does not ask for another handoff within the review category", () => {
+    expect(
+      runConfirmIntent(
+        issue({ status: "qa", status_category: "in_review" }),
+        { status: "in_review" },
+        CATALOG,
+      ),
+    ).toBeNull();
   });
 });

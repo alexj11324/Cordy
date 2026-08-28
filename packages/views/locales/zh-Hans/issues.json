@@ -382,6 +382,8 @@
     "assigned_to": "分配给 {{name}}",
     "removed_assignee": "移除了负责人",
     "changed_assignee": "更改了负责人",
+    "review_handoff": "将审核从 {{from}} 移交给 {{to}}",
+    "review_handoff_short": "移交审核",
     "status_changed": "状态从 {{from}} 改为 {{to}}",
     "priority_changed": "优先级从 {{from}} 改为 {{to}}",
     "start_date_set": "开始日期设为 {{date}}",

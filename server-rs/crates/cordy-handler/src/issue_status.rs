@@ -976,6 +976,8 @@ mod tests {
             title: title.into(),
             status: status.into(),
             priority: "none".into(),
+            assignee_type: Some("member".into()),
+            assignee_id: Some(creator_id),
             creator_type: "member".into(),
             creator_id,
             allow_duplicate: true,

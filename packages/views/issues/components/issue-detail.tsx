@@ -14,6 +14,7 @@ import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink, useBackOrReplace } from "../../navigation";
 import {
   Archive,
+  ArrowRight,
   Calendar,
   CalendarClock,
   CalendarDays,
@@ -319,6 +320,15 @@ function formatActivity(
       if (details.from_id && !details.to_id) return t(($) => $.activity.removed_assignee);
       return t(($) => $.activity.changed_assignee);
     }
+    case "review_handoff": {
+      const fromName = details.from_id && details.from_type && resolveActorName
+        ? resolveActorName(details.from_type, details.from_id)
+        : "?";
+      const toName = details.to_id && details.to_type && resolveActorName
+        ? resolveActorName(details.to_type, details.to_id)
+        : "?";
+      return t(($) => $.activity.review_handoff, { from: fromName, to: toName });
+    }
     case "start_date_changed": {
       if (!details.to) return t(($) => $.activity.start_date_removed);
       const formatted = formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US");
@@ -609,6 +619,7 @@ function ActivityBlock({
         const isPriorityChange = entry.action === "priority_changed";
         const isStartDateChange = entry.action === "start_date_changed";
         const isDueDateChange = entry.action === "due_date_changed";
+        const isReviewHandoff = entry.action === "review_handoff";
 
         let leadIcon: React.ReactNode;
         if (isStatusChange && details.to) {
@@ -637,7 +648,22 @@ function ActivityBlock({
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <span className="shrink-0 font-medium">{getActorName(entry.actor_type, entry.actor_id)}</span>
-              <span className="truncate">{formatActivity(entry, t, getActorName, resolveStatusLabel)}</span>
+              {isReviewHandoff && details.from_type && details.from_id && details.to_type && details.to_id ? (
+                <>
+                  <span className="shrink-0">{t(($) => $.activity.review_handoff_short)}</span>
+                  <ActorAvatar actorType={details.from_type} actorId={details.from_id} size="xs" />
+                  <span className="max-w-32 truncate font-medium text-foreground">
+                    {getActorName(details.from_type, details.from_id)}
+                  </span>
+                  <ArrowRight className="size-3.5 shrink-0" aria-hidden="true" />
+                  <ActorAvatar actorType={details.to_type} actorId={details.to_id} size="xs" />
+                  <span className="max-w-32 truncate font-medium text-foreground">
+                    {getActorName(details.to_type, details.to_id)}
+                  </span>
+                </>
+              ) : (
+                <span className="truncate">{formatActivity(entry, t, getActorName, resolveStatusLabel)}</span>
+              )}
               {(entry.coalesced_count ?? 1) > 1 &&
                 entry.action !== "task_completed" &&
                 entry.action !== "task_failed" && (

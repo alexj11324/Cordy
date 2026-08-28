@@ -382,6 +382,8 @@
     "assigned_to": "{{name}} に割り当てました",
     "removed_assignee": "担当者を削除しました",
     "changed_assignee": "担当者を変更しました",
+    "review_handoff": "レビューを {{from}} から {{to}} へ引き継ぎました",
+    "review_handoff_short": "レビューを引き継ぎ",
     "status_changed": "ステータスを {{from}} から {{to}} に変更しました",
     "priority_changed": "優先度を {{from}} から {{to}} に変更しました",
     "start_date_set": "開始日を {{date}} に設定しました",

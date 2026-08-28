@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -24,6 +25,8 @@ import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@co
 import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@cordy/core/shortcuts";
 import { isImeComposing } from "@cordy/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
+import { ActorAvatar } from "../common/actor-avatar";
+import { AssigneePicker } from "../issues/components/pickers/assignee-picker";
 import { useStatusLabel } from "../issues/utils/status-label";
 import { useT } from "../i18n";
 
@@ -59,21 +62,21 @@ function boldFenced(text: string): ReactNode {
   );
 }
 
-interface RunConfirmData {
+type RunConfirmData = {
   issueIds?: string[];
-  // The two issue writes that hand work to an agent, and the only two that
-  // confirm. `assign` gives the issue an agent/squad owner; `promote` moves an
-  // already-owned issue out of the backlog category, which starts the run on
-  // its own (RunSourceStatus). Batch status changes still apply directly
-  // (MUL-4155) — `promote` is the single-issue picker path only (MUL-6463).
-  mode?: "assign" | "promote";
-  /** promote only: the status KEY the issue is moving to. */
+  // `assign` gives the issue an agent/squad owner; `promote` moves an
+  // already-owned issue out of the backlog category; `review` atomically
+  // changes status and owner so review work cannot be left unclaimed.
+  mode?: "assign" | "promote" | "review";
+  /** promote/review only: the status KEY the issue is moving to. */
   status?: IssueStatus;
   assigneeType?: IssueAssigneeType;
   assigneeId?: string;
   assigneeName?: string;
+  fromAssigneeType?: IssueAssigneeType | null;
+  fromAssigneeId?: string | null;
   issueRevision?: number;
-}
+};
 
 /**
  * Handoff confirmation for the issue writes that start agent runs.
@@ -91,7 +94,7 @@ interface RunConfirmData {
  * toast. Whether a run starts stays the server's existing decision at write
  * time. Dismissing the dialog (X / Esc / click-outside) cancels without any
  * write. Shared by single assign (1 id), batch assign (N ids), and the
- * single-issue promotion out of backlog.
+ * single-issue promotion out of backlog, and review handoff.
  */
 export function RunConfirmModal({
   onClose,
@@ -108,6 +111,12 @@ export function RunConfirmModal({
   const issueIds = d.issueIds ?? [];
 
   const [note, setNote] = useState("");
+  const [reviewerType, setReviewerType] = useState<IssueAssigneeType | null>(
+    d.mode === "review" ? d.assigneeType ?? null : null,
+  );
+  const [reviewerId, setReviewerId] = useState<string | null>(
+    d.mode === "review" ? d.assigneeId ?? null : null,
+  );
   // Which footer action is in flight, so only the clicked button shows a
   // spinner (the request runs an agent on the server for note assigns, so it is
   // not instant — the disabled-only state read as frozen).
@@ -132,15 +141,18 @@ export function RunConfirmModal({
   const { data: agents = [] } = useQuery({ ...agentListOptions(wsId), enabled: !!wsId });
   const { data: runtimes = [] } = useQuery({ ...runtimeListOptions(wsId), enabled: !!wsId });
   const { data: squads = [] } = useQuery({ ...squadListOptions(wsId), enabled: !!wsId });
+  const isReview = d.mode === "review" && !!d.status;
+  const targetAssigneeType = isReview ? reviewerType : d.assigneeType ?? null;
+  const targetAssigneeId = isReview ? reviewerId : d.assigneeId ?? null;
   const localHandoff = useMemo<boolean | null>(() => {
-    if (!d.assigneeId) return null;
+    if (!targetAssigneeId) return null;
     let agentId: string | undefined;
-    if (d.assigneeType === "agent") {
-      agentId = d.assigneeId;
-    } else if (d.assigneeType === "squad") {
+    if (targetAssigneeType === "agent") {
+      agentId = targetAssigneeId;
+    } else if (targetAssigneeType === "squad") {
       // A squad run is executed by its leader, so the leader's runtime is the
       // one that has to render the note.
-      agentId = squads.find((s) => s.id === d.assigneeId)?.leader_id;
+      agentId = squads.find((s) => s.id === targetAssigneeId)?.leader_id;
     }
     if (!agentId) return null;
     const agent = agents.find((a) => a.id === agentId);
@@ -148,7 +160,7 @@ export function RunConfirmModal({
     const runtime = runtimes.find((r) => r.id === agent.runtime_id);
     if (!runtime) return null;
     return handoffSupported(readRuntimeCliVersion(runtime.metadata));
-  }, [d.assigneeType, d.assigneeId, agents, runtimes, squads]);
+  }, [targetAssigneeType, targetAssigneeId, agents, runtimes, squads]);
 
   // Soft gate: an old runtime can't render the note. Disable the box but let
   // the assignment proceed (MUL-3375 §6.3).
@@ -158,9 +170,23 @@ export function RunConfirmModal({
   // the issue, and re-sending the same assignee would turn a status write into
   // an assignee write on the server's side of the trigger predicate.
   const isPromote = d.mode === "promote" && !!d.status;
+  const isSameReviewer =
+    isReview &&
+    reviewerType === d.fromAssigneeType &&
+    reviewerId === d.fromAssigneeId;
+  const reviewReady =
+    !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
+  const noteApplies =
+    targetAssigneeType === "agent" || targetAssigneeType === "squad";
 
   const applyTo = (extra: Partial<UpdateIssueRequest>) => {
-    const base: UpdateIssueRequest = isPromote
+    const base: UpdateIssueRequest = isReview
+      ? {
+          status: d.status,
+          assignee_type: reviewerType,
+          assignee_id: reviewerId,
+        }
+      : isPromote
       ? { status: d.status }
       : {
           assignee_type: d.assigneeType ?? null,
@@ -173,14 +199,22 @@ export function RunConfirmModal({
   // squad itself, since its leader deciding who works is an internal detail.
   const assigneeName =
     d.assigneeName ??
-    getActorName(d.assigneeType === "squad" ? "squad" : "agent", d.assigneeId ?? "");
+    (targetAssigneeType && targetAssigneeId
+      ? getActorName(targetAssigneeType, targetAssigneeId)
+      : "");
+  const previousAssigneeName =
+    d.fromAssigneeType && d.fromAssigneeId
+      ? getActorName(d.fromAssigneeType, d.fromAssigneeId)
+      : t(($) => $.run_confirm.unassigned);
 
   const submit = async (suppressRun: boolean) => {
-    if (issueIds.length === 0 || submitting) return;
+    if (issueIds.length === 0 || submitting || !reviewReady) return;
     setPendingAction(suppressRun ? "suppress" : "go");
     const payload = applyTo({
       ...(suppressRun ? { suppress_run: true } : {}),
-      ...(!suppressRun && !noteDisabled && note.trim() ? { handoff_note: note.trim() } : {}),
+      ...(!suppressRun && noteApplies && !noteDisabled && note.trim()
+        ? { handoff_note: note.trim() }
+        : {}),
     });
     try {
       // Completion is silent, exactly as before: the assignee and any run show
@@ -242,7 +276,17 @@ export function RunConfirmModal({
   // status it is moving to by its workspace label — a custom status is only
   // recognisable by the name its admin gave it.
   const headline: ReactNode = boldFenced(
-    isPromote
+    isReview
+      ? assigneeName
+        ? t(($) => $.run_confirm.review_single, {
+            from: fenced(previousAssigneeName),
+            to: fenced(assigneeName),
+            status: fenced(statusLabel(d.status ?? "")),
+          })
+        : t(($) => $.run_confirm.review_choose, {
+            status: fenced(statusLabel(d.status ?? "")),
+          })
+      : isPromote
       ? t(($) => $.run_confirm.promote_single, {
           name: fenced(assigneeName),
           status: fenced(statusLabel(d.status ?? "")),
@@ -256,49 +300,104 @@ export function RunConfirmModal({
   );
 
   return (
-    <Dialog open onOpenChange={(v) => { if (!v && !submitting) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(v) => {
+        if (!v && !submitting) onClose();
+      }}
+    >
       <DialogContent onKeyDown={onDialogKeyDown}>
         <DialogHeader>
           <DialogTitle>
             {isPromote
               ? t(($) => $.run_confirm.title_promote)
+              : isReview
+                ? t(($) => $.run_confirm.title_review)
               : t(($) => $.run_confirm.title_assign)}
           </DialogTitle>
           <DialogDescription>{headline}</DialogDescription>
         </DialogHeader>
 
+        {isReview ? (
+          <div className="grid gap-2">
+            <span className="text-body font-medium">
+              {t(($) => $.run_confirm.reviewer_label)}
+            </span>
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+              {d.fromAssigneeType && d.fromAssigneeId ? (
+                <ActorAvatar
+                  actorType={d.fromAssigneeType}
+                  actorId={d.fromAssigneeId}
+                  size="sm"
+                />
+              ) : null}
+              <span className="min-w-0 truncate text-body">{previousAssigneeName}</span>
+              <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <AssigneePicker
+                  assigneeType={reviewerType}
+                  assigneeId={reviewerId}
+                  onUpdate={(updates) => {
+                    setReviewerType(updates.assignee_type ?? null);
+                    setReviewerId(updates.assignee_id ?? null);
+                  }}
+                  align="start"
+                />
+              </div>
+            </div>
+            {isSameReviewer ? (
+              <p className="text-caption text-destructive">
+                {t(($) => $.run_confirm.reviewer_must_change)}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Always mounted and always usable on the first frame — nothing about
             this box depends on a server answer. */}
-        <div className="grid gap-1.5">
-          <label className="text-body font-medium" htmlFor="handoff-note">
-            {t(($) => $.run_confirm.note_label)}
-          </label>
-          <Textarea
-            id="handoff-note"
-            value={note}
-            maxLength={MAX_HANDOFF_NOTE}
-            disabled={submitting || noteDisabled}
-            placeholder={t(($) => $.run_confirm.note_placeholder)}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-          />
-          {noteDisabled ? (
-            <p className="text-caption text-muted-foreground">{t(($) => $.run_confirm.note_unsupported)}</p>
-          ) : null}
-        </div>
+        {noteApplies ? (
+          <div className="grid gap-1.5">
+            <label className="text-body font-medium" htmlFor="handoff-note">
+              {t(($) => $.run_confirm.note_label)}
+            </label>
+            <Textarea
+              id="handoff-note"
+              value={note}
+              maxLength={MAX_HANDOFF_NOTE}
+              disabled={submitting || noteDisabled}
+              placeholder={t(($) => $.run_confirm.note_placeholder)}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+            />
+            {noteDisabled ? (
+              <p className="text-caption text-muted-foreground">
+                {t(($) => $.run_confirm.note_unsupported)}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* The only spinner left is on the button the user just pressed, and it
             reflects the write in flight — never a pre-flight check. */}
         <DialogFooter>
-          <Button type="button" variant="outline" disabled={submitting} onClick={() => submit(true)}>
-            {pendingAction === "suppress" ? <Spinner className="size-4" /> : t(($) => $.run_confirm.dont_start)}
-          </Button>
-          <Button type="button" disabled={submitting} onClick={() => submit(false)}>
+          {noteApplies && !isReview ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={submitting || !reviewReady}
+              onClick={() => submit(true)}
+            >
+              {pendingAction === "suppress" ? <Spinner className="size-4" /> : t(($) => $.run_confirm.dont_start)}
+            </Button>
+          ) : null}
+          <Button type="button" disabled={submitting || !reviewReady} onClick={() => submit(false)}>
             {pendingAction === "go" ? (
               <Spinner className="size-4" />
             ) : (
               <>
-                {isPromote
+                {isReview
+                  ? t(($) => $.run_confirm.confirm_review)
+                  : isPromote
                   ? t(($) => $.run_confirm.confirm_promote)
                   : t(($) => $.run_confirm.confirm_assign)}
                 {/* Decorative: the accessible name stays the button's own copy,

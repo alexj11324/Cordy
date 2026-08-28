@@ -244,6 +244,31 @@ describe("useIssueActions", () => {
     expect(mockOpenModal).not.toHaveBeenCalled();
   });
 
+  it("moving into review opens the reviewer handoff flow", () => {
+    const active = {
+      ...mockIssue,
+      status: "in_progress",
+      assignee_type: "agent",
+      assignee_id: "agent-1",
+    } as Issue;
+    const { result } = renderHook(() => useIssueActions(active), { wrapper });
+
+    act(() => {
+      result.current.updateField({ status: "in_review" });
+    });
+
+    expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
+      issueIds: ["issue-1"],
+      mode: "review",
+      status: "in_review",
+      fromAssigneeType: "agent",
+      fromAssigneeId: "agent-1",
+      assigneeType: null,
+      assigneeId: null,
+    });
+    expect(mockUpdateMutate).not.toHaveBeenCalled();
+  });
+
   it("assigning a member applies directly without the run-confirm modal", () => {
     const { result } = renderHook(() => useIssueActions(mockIssue), { wrapper });
 

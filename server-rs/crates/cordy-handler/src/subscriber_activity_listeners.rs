@@ -176,7 +176,40 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
     if event.payload.get("priority_changed").is_none() {
         return;
     }
-    if flag(&event.payload, "status_changed") {
+    let review_handoff = flag(&event.payload, "review_handoff");
+    if review_handoff {
+        let mut details = Map::new();
+        insert_optional(
+            &mut details,
+            "from_type",
+            event.payload.get("prev_assignee_type"),
+        );
+        insert_optional(
+            &mut details,
+            "from_id",
+            event.payload.get("prev_assignee_id"),
+        );
+        insert_optional_str(&mut details, "to_type", fields.assignee_type.as_deref());
+        if let Some(to_id) = fields.assignee_id {
+            details.insert("to_id".into(), Value::String(to_id.to_string()));
+        }
+        insert_optional(
+            &mut details,
+            "from_status",
+            event.payload.get("prev_status"),
+        );
+        details.insert("to_status".into(), Value::String(fields.status.clone()));
+        create_activity(
+            pool,
+            bus,
+            event,
+            &fields,
+            "review_handoff",
+            Value::Object(details),
+        )
+        .await;
+    }
+    if flag(&event.payload, "status_changed") && !review_handoff {
         create_activity(
             pool,
             bus,
@@ -198,7 +231,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
         )
         .await;
     }
-    if flag(&event.payload, "assignee_changed") {
+    if flag(&event.payload, "assignee_changed") && !review_handoff {
         let mut details = Map::new();
         insert_optional(
             &mut details,

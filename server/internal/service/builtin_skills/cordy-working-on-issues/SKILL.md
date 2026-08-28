@@ -230,8 +230,18 @@ on it. These are the contracts, not advice:
   Squad leaders: dispatching members is not delivery — a dispatch turn
   leaves the parent `in_progress`, and it moves to `in_review` only when a
   later re-trigger confirms the overall goal is met.
-- **`in_review`** is an accepted issue status. Some workflows use it while a PR
-  is open and awaiting review; moving to it is an explicit mutation.
+- **Every active status needs an owner.** `in_progress`, `in_review`, `blocked`,
+  and custom statuses in those categories are rejected without a member,
+  agent, or squad assignee. `backlog`, `todo`, `done`, and `cancelled` may be
+  unassigned. When claiming an unassigned issue, write status and assignee in
+  one `cordy issue update` call.
+- **Entering `in_review` is a handoff, not a status-only update.** Select a
+  reviewer who is different from the current assignee and atomically update
+  both fields, for example
+  `cordy issue update <issue-id> --status in_review --assignee-id <reviewer-id>`.
+  The server rejects a missing or unchanged reviewer. If no suitable reviewer
+  is available, keep the issue in its current active state and ask a human to
+  choose one; do not leave it ownerless or parked in review.
 - **`done`** on a child issue posts a system comment on its parent. If a PR
   carries close intent (`Closes MUL-XXXX`), it advances the issue to `done`
   itself on merge — you do not also need to flip it manually.

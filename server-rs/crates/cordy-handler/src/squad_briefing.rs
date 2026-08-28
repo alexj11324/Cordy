@@ -67,8 +67,9 @@ const SQUAD_PARENT_STATUS_OWNED: &str = r#"6. **Own the parent issue status.** T
    changes). On the first assignment turn, move the parent to
    `in_progress` and keep it there while members work — a successful
    dispatch is not completion. On later turns, do not flip status for
-   routine progress updates. When you confirm the overall goal is met, run
-   `cordy issue status <issue-id> in_review` — this responsibility is
+   routine progress updates. When you confirm the overall goal is met, choose
+   a reviewer different from the current squad and run
+   `cordy issue update <issue-id> --status in_review --assignee-id <reviewer-id>` — this responsibility is
    itself the standing instruction that authorizes that change, so do it even
    when no comment asked you to. Leave `done` to a human reviewer or
    existing integrations (for example a PR with close intent that merges)."#;
@@ -340,11 +341,16 @@ mod tests {
         let owned = squad_operating_protocol_for(true);
         assert!(owned.starts_with("## Squad Operating Protocol\n"));
         assert!(owned.contains("**Own the parent issue status.**"));
+        assert!(owned.contains("reviewer different from the current squad"));
+        assert!(owned.contains(
+            "cordy issue update <issue-id> --status in_review --assignee-id <reviewer-id>"
+        ));
         assert!(owned.ends_with("Never both for the same work."));
 
         let guest = squad_operating_protocol_for(false);
         assert!(guest.contains("**Do NOT change this issue's status.**"));
         assert!(!guest.contains("**Own the parent issue status.**"));
+        assert!(!guest.contains("--status in_review --assignee-id"));
     }
 
     #[test]
