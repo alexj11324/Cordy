@@ -1129,7 +1129,7 @@ mod tests {
         assert_eq!(e.name, "signup");
         assert_eq!(
             e.properties.as_ref().unwrap()["email_domain"],
-            json!("aspectlylabs.com")
+            json!("example.test")
         );
         assert_eq!(e.properties.as_ref().unwrap()["signup_source"], json!("x"));
         assert_eq!(
