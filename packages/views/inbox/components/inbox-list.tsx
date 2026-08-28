@@ -25,7 +25,7 @@ const INBOX_ROW_ESTIMATED_HEIGHT = 58;
  * identical scroller. Rows are virtualized via react-virtuoso so only the
  * visible window (plus a small overscan) is mounted — the notification list
  * can grow long and every row otherwise carries an avatar + hover card, so
- * mounting all of them inflates the tab-switch commit (MUL-4474).
+ * mounting all of them inflates the tab-switch commit (PB-4474).
  *
  * Virtualization changes exactly one thing: whether an off-screen row is in
  * the DOM. Selection, hover, archive, and scroll semantics are unchanged —
@@ -63,7 +63,7 @@ export function InboxList({
   // A callback ref into state hands the element over once it mounts and
   // triggers the re-render that lets Virtuoso attach to it.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (MUL-4741): assign the saved offset at
+  // Pull-based scroll restoration (PB-4741): assign the saved offset at
   // ref-attach (the seed's estimate spacer gives the container a truthful
   // height on the first commit, so the assignment sticks pre-paint) and feed
   // the same offset into the Virtuoso as its initial position.
@@ -100,7 +100,7 @@ export function InboxList({
   );
 
   // Arrow keys move the selection instead of scrolling the container — what
-  // every mail-style list does (MUL-5622). Bound to the scroll container
+  // every mail-style list does (PB-5622). Bound to the scroll container
   // rather than the document so it only fires while focus is inside the list:
   // pressing Down while reading the issue detail must not swap the row out
   // from under the reader.
@@ -202,7 +202,7 @@ export function InboxList({
   // While the callback ref hasn't handed the scroll element over yet (the first
   // render after a remount), seed a bounded slice of real rows so the list
   // never paints blank; once it's set, mount the Virtuoso with a matching
-  // `initialItemCount` so the measurement frame keeps those rows (MUL-4750).
+  // `initialItemCount` so the measurement frame keeps those rows (PB-4750).
   return (
     <div
       ref={attachScrollEl}

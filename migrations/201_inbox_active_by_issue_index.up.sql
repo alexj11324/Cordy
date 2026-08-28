@@ -1,4 +1,4 @@
--- Partial index over ACTIVE rows keyed by issue (MUL-3736). Serves the
+-- Partial index over ACTIVE rows keyed by issue (PB-3736). Serves the
 -- NOT EXISTS probe in ListArchivedInboxItems, which asks "does this issue still
 -- have a non-archived row?" once per archived row, and the identically-filtered
 -- ArchiveInboxByIssue / UnarchiveInboxByIssue writes. Partial on archived=false

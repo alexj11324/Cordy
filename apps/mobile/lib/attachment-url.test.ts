@@ -65,7 +65,7 @@ describe("resolveAttachmentUrlWithBase", () => {
 });
 
 describe("composer file chip — completed non-image attachment", () => {
-  // MUL-2976 (PR #3747 follow-up): when `api.uploadFile(...)` finishes on
+  // PB-2976 (PR #3747 follow-up): when `api.uploadFile(...)` finishes on
   // a non-CloudFront deployment the returned `attachment.download_url` is
   // a server-relative path. `composer-attachment-row.tsx` taps that value
   // straight into `Linking.openURL` — and iOS rejects relative URLs with

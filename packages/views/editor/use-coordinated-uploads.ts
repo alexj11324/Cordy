@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The coordinated-upload engine shared by every composer surface (MUL-5181, L2).
+ * The coordinated-upload engine shared by every composer surface (PB-5181, L2).
  *
  * Ownership inversion: an upload is owned by the module-level upload
  * coordinator (`@cordy/core/drafts`), not by the React component that
@@ -317,7 +317,7 @@ export function useCoordinatedUploads(
   // the composer looks idle while `gate` quietly blocks the send.
   //
   // ONCE per id per mount, tracked here rather than by scanning the document:
-  // a user who deletes the placeholder mid-upload means it, and MUL-5181's
+  // a user who deletes the placeholder mid-upload means it, and PB-5181's
   // rule that a deleted placeholder stays deleted would be undone by the next
   // store write re-drawing it.
   //
@@ -423,7 +423,7 @@ export function useCoordinatedUploads(
                 // Generation guard: only write if the draft still tracks it.
                 if (target.getUploads().some((u) => u.clientUploadId === clientUploadId)) {
                   target.settleUpload(clientUploadId, outcome.attachment);
-                  // Write-back (MUL-5181): the mount that started this upload
+                  // Write-back (PB-5181): the mount that started this upload
                   // is gone, so no editor swap will put the finished link into
                   // the document — deliver it into the BODY instead (that is
                   // what submit binds, reference-filtered). Skipped while this

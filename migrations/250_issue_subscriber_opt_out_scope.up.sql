@@ -1,4 +1,4 @@
--- MUL-5483 review follow-up: an opt-out has to remember HOW FAR it reaches.
+-- PB-5483 review follow-up: an opt-out has to remember HOW FAR it reaches.
 --
 -- 249 gave every unsubscribe a tombstone, and HasAncestorOptOut treats any
 -- ancestor tombstone as "do not re-subscribe below here". That made the two UI

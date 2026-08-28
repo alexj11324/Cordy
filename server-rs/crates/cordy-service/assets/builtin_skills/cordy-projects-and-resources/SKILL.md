@@ -71,7 +71,7 @@ For `github_repo`, non-JSON `--ref` sets `resource_ref.ref`, the default checkou
 
 ## Referring to a project in a comment
 
-A project has no `MUL-123`-style identifier, so writing its title as prose
+A project has no `PB-123`-style identifier, so writing its title as prose
 produces dead text — there is nothing for the reader's client to autolink. Use
 the mention-link form instead, with the project UUID from
 `cordy project list --output json`:

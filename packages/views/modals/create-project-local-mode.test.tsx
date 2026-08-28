@@ -10,7 +10,7 @@ import { renderWithI18n } from "../test/i18n";
 // CLI version before rendering.
 let runtimeCliVersion = "9.9.9";
 // What the fake runtime row says about worktree support. This — not the version
-// string — is what the gate reads now (MUL-5707), and the three values are
+// string — is what the gate reads now (PB-5707), and the three values are
 // genuinely different states: "yes", "a daemon that cannot", and a row written
 // by a server too old to record capabilities at all (#7113).
 let runtimeWorktreeMetadata: "advertised" | "daemon_cannot" | "server_recorded_nothing" =

@@ -43,7 +43,7 @@ impl AutopilotService {
     }
 
     /// "Run now" for a member: a direct human action attributed direct_human
-    /// to the clicker across both execution modes (MUL-4302 §4). A nil actor
+    /// to the clicker across both execution modes (PB-4302 §4). A nil actor
     /// behaves exactly like source="manual" automation dispatch.
     pub async fn dispatch_autopilot_manual(
         &self,

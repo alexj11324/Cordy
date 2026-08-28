@@ -1,7 +1,7 @@
 //! Reconciles `agent_task_queue` rows to the Human Attribution strict
 //! invariant BEFORE migration 198 validates it.
 //!
-//! For GH #5544 / MUL-4302 / MUL-4897, migration 197 installs the strict cross-column CHECK
+//! For GH #5544 / PB-4302 / PB-4897, migration 197 installs the strict cross-column CHECK
 //! as NOT VALID and 198 runs VALIDATE CONSTRAINT. Self-hosted databases that
 //! never ran the out-of-band backfill have legacy rows that fail 198 closed;
 //! this hook mirrors originator_user_id into accountable_user_id for exactly

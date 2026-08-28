@@ -22,16 +22,16 @@ function initialsOf(name: string): string {
 }
 
 /**
- * AttributionBadge renders who an agent run is accountable to (MUL-4302 §9):
+ * AttributionBadge renders who an agent run is accountable to (PB-4302 §9):
  * the "on behalf of <member>" provenance, with the resolution source in a
  * tooltip and a cautionary tone ONLY when the named human may not be the real
  * responsible person — a fallback guess (owner_fallback). A backfilled
  * attribution is a historical, after-the-fact record (non-realtime, not
  * compliance-grade), but that does not make the displayed name wrong, so it
  * earns no warning tone; its historical origin still shows in the tooltip and
- * the raw `source` field (MUL-4768).
+ * the raw `source` field (PB-4768).
  *
- * Three shapes, all silent when no responsible member resolved (MUL-4765):
+ * Three shapes, all silent when no responsible member resolved (PB-4765):
  *  - `variant="badge"` (default): the full "on behalf of <name>" chip. Renders
  *    nothing when there's no accountable member, so an unassigned run reads as
  *    plain rather than a warning.
@@ -104,7 +104,7 @@ export function AttributionBadge({
   // historical, after-the-fact record (non-realtime, not compliance-grade), but
   // that does not make the displayed name wrong — so it warrants no warning tone;
   // its historical origin stays visible in the tooltip and the raw `source` field
-  // (MUL-4768). The cautionary tone therefore fires for any non-precise source
+  // (PB-4768). The cautionary tone therefore fires for any non-precise source
   // EXCEPT backfill; keeping the `precise === false` base means a future unknown
   // degraded source still warns (fail-safe) instead of silently reading as
   // confident.
@@ -197,7 +197,7 @@ export function AttributionBadge({
   // No resolved responsible member: render nothing rather than a warning chip.
   // An empty accountable member is a normal state (e.g. an unassigned task), not
   // something to flag — so the badge variant stays silent, matching the avatar
-  // variant above (MUL-4765).
+  // variant above (PB-4765).
   if (!initiator) return null;
 
   const name = initiator.name || t(($) => $.execution_log.attribution.someone);

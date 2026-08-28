@@ -488,7 +488,7 @@ async fn deregister(
             continue;
         }
         // A valid reason rides along; anything unusable falls back to the
-        // plain offline write (MUL-6164).
+        // plain offline write (PB-6164).
         let result = match req.offline_reasons.get(rid) {
             Some(reason @ Value::Object(_)) => {
                 runtime::set_agent_runtime_offline_with_reason(&state.pool, rt.id, reason).await
@@ -3292,7 +3292,7 @@ async fn batch_issue_gc_check(
     }
 
     // ONE resolver for the whole batch so an all-built-in batch costs zero
-    // catalog reads (MUL-6243).
+    // catalog reads (PB-6243).
     let mut resolver = issue_status_svc::Resolver::new(ws_uuid);
     let mut items: Vec<Value> = Vec::with_capacity(req.issue_ids.len());
     for (raw, uuid) in req.issue_ids.iter().zip(parsed.iter()) {

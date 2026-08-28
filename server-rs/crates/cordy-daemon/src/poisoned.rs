@@ -127,7 +127,7 @@ const CODEX_LINE_OVERFLOW_MARKER: &str = "token too long";
 /// "thread/resume failed" alone covers ordinary rejections a plain retry
 /// handles; "token too long" alone would also match overflows on unrelated
 /// RPCs. Codex rollouts are append-only, so the session behind such a failure
-/// is unusable for resume until it shrinks, which it never does (MUL-5722).
+/// is unusable for resume until it shrinks, which it never does (PB-5722).
 fn codex_resume_overflow_error(err_text: &str) -> bool {
     if err_text.is_empty() {
         return false;
@@ -193,7 +193,7 @@ pub(crate) fn classify_poisoned_error(err_msg: &str) -> Option<&'static str> {
 /// `classifyResumeUnsafeTransport` (poisoned.go:194): a Codex thread/resume
 /// response too large to read back means the recorded session must not be
 /// resumed again — the thread only grows, so every later resume overflows
-/// identically (MUL-5722). Provider-specific on purpose: no other backend
+/// identically (PB-5722). Provider-specific on purpose: no other backend
 /// replays its entire history through a single line.
 pub(crate) fn classify_resume_unsafe_transport(
     provider: &str,
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn classify_output_long_output_quoting_marker_not_classified() {
-        // MUL-1630: a code-review reply quoting a marker is a real result.
+        // PB-1630: a code-review reply quoting a marker is a real result.
         let long = format!(
             "reviewing: {} {}",
             "x".repeat(400),

@@ -186,7 +186,7 @@ pub fn comment_data_ids(comments: &[CoalescedCommentData]) -> Vec<uuid::Uuid> {
 
 /// Row loader shared by the handler: workspace-scoped so a foreign comment UUID
 /// resolves to "missing" (skipped) instead of leaking another tenant's text
-/// into the prompt (MUL-4252). Chronologically sorted, de-duplicated.
+/// into the prompt (PB-4252). Chronologically sorted, de-duplicated.
 ///
 /// Builds coalesced comment data for claim delivery.
 pub async fn build_coalesced_comment_data(

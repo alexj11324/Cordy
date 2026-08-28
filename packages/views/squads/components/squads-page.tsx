@@ -900,7 +900,7 @@ export function SquadsPage() {
 
   // Reserve the row-actions (kebab) track when the current user can manage at
   // least one visible squad. Workspace admins manage all squads; a regular
-  // member manages the squads they created (MUL-4223).
+  // member manages the squads they created (PB-4223).
   const canManageAnyRow = useMemo(
     () =>
       isWorkspaceAdmin ||

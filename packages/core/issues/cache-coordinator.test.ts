@@ -134,7 +134,7 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     id: `issue-${idx}`,
     workspace_id: WS_ID,
     number: idx,
-    identifier: `MUL-${idx}`,
+    identifier: `PB-${idx}`,
     title: `Issue ${idx}`,
     description: null,
     status: "todo",

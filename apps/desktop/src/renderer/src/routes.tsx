@@ -124,7 +124,7 @@ export const appRoutes: RouteObject[] = [
           // A bare `/{slug}` URL is normalized to `/{slug}/issues` by
           // sanitizeTabPath before it ever becomes a session, so the index
           // route is unreachable in practice; null keeps it a harmless
-          // safety net instead of an in-router <Navigate> (MUL-4741
+          // safety net instead of an in-router <Navigate> (PB-4741
           // invariant 1: the router never self-navigates).
           { index: true, element: null },
           {
@@ -244,7 +244,7 @@ export const appRoutes: RouteObject[] = [
 ];
 
 /**
- * Create THE app router (MUL-4741 single-router session architecture).
+ * Create THE app router (PB-4741 single-router session architecture).
  * There is exactly one instance, owned by the tab Coordinator; it projects
  * the active tab session's URL and is never navigated by anything else.
  */

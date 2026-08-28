@@ -98,7 +98,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     subject.kind === "issue"
       ? subject.id
       : (inboxItem?.issue_id ?? "");
-  // An issue tab's URL segment may be a human-readable identifier (`MUL-123`).
+  // An issue tab's URL segment may be a human-readable identifier (`PB-123`).
   // The route seeds that entry when it resolves, but only the UUID-keyed entry
   // receives realtime patches — so hop through it, or a tab opened by
   // identifier would freeze on the title and status it had when first opened.

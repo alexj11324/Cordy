@@ -48,8 +48,8 @@ import { ContentEditor } from "./content-editor";
 const CURRENT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ID = "22222222-2222-4222-8222-222222222222";
 const CONTENT = [
-  `[MUL-7](mention://issue/${CURRENT_ID})`,
-  `[MUL-8](mention://issue/${OTHER_ID})`,
+  `[PB-7](mention://issue/${CURRENT_ID})`,
+  `[PB-8](mention://issue/${OTHER_ID})`,
 ].join(" and ");
 
 function adapter(): NavigationAdapter {
@@ -71,7 +71,7 @@ function renderEditor() {
     <NavigationProvider value={adapter()}>
       <QueryClientProvider client={queryClient}>
         <CurrentIssueRenderContextProvider
-          value={{ id: CURRENT_ID, identifier: "MUL-7" }}
+          value={{ id: CURRENT_ID, identifier: "PB-7" }}
         >
           <ContentEditor
             defaultValue={CONTENT}
@@ -96,6 +96,6 @@ describe("ContentEditor current-issue context", () => {
       "true",
       "false",
     ]);
-    expect(chips[0]).toHaveTextContent("This issue · MUL-7");
+    expect(chips[0]).toHaveTextContent("This issue · PB-7");
   });
 });

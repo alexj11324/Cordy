@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Issue-create binding for the coordinated-upload engine (MUL-5181, L2).
+ * Issue-create binding for the coordinated-upload engine (PB-5181, L2).
  *
  * Both create panels (manual form and agent prompt) share ONE upload pool —
  * `draft.shared.attachments` — so a file survives a mode switch from either

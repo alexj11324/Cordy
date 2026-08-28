@@ -5,7 +5,7 @@ import type { IssueStatusCategory } from "../../types";
 // of the 7 categories below — so board columns, the presentation config and the
 // paginated fetch all keep a fixed shape. Resolve a status KEY to its category
 // with the workspace catalog (`useIssueStatuses`) before indexing these.
-// (MUL-6243)
+// (PB-6243)
 
 export const STATUS_ORDER: IssueStatusCategory[] = [
   "backlog",

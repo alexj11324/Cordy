@@ -111,7 +111,7 @@ export interface IssueUpdatedPayload {
   // counts when a status change lands on an off-screen (unloaded) issue;
   // project_changed lets it drop a moved issue from the old project's filtered
   // list (the client-side cache diff is unreliable after an optimistic local
-  // move — MUL-3669 / #4548). Other change flags are present on the wire too and
+  // move — PB-3669 / #4548). Other change flags are present on the wire too and
   // can be surfaced here when needed.
   assignee_changed?: boolean;
   status_changed?: boolean;
@@ -150,7 +150,7 @@ export interface PropertyChangedPayload {
 }
 
 /**
- * The workspace issue status catalog changed (MUL-6243).
+ * The workspace issue status catalog changed (PB-6243).
  *
  * One event covers all four writes because clients answer them the same way:
  * re-read the catalog. It deliberately carries no entry — merging a row out of
@@ -413,7 +413,7 @@ export interface ChatDonePayload {
   created_at?: string;
   /**
    * "message" (default) or "no_response" — a completed direct-chat turn with
-   * no text reply (MUL-4351). Optional/additive: older servers omit it, so the
+   * no text reply (PB-4351). Optional/additive: older servers omit it, so the
    * consumer defaults to "message". Because direct-chat completion now always
    * persists exactly one assistant row, message_id/content/created_at are
    * populated alongside this even for a no_response turn.

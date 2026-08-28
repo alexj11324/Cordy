@@ -17,7 +17,11 @@ Cordy를 일상적으로 사용할 때 주로 접하는 자격 증명은 브라�
 
 ## 개인 액세스 토큰
 
-개인 액세스 토큰(PAT)은 `mul_`로 시작하며 사용자 계정을 나타냅니다. 사용자가 접근할 권한이 있는 모든 워크스페이스와 API에 접근할 수 있으므로 비밀번호처럼 보관해야 합니다.
+개인 액세스 토큰(PAT)은 `pby_`로 시작하며 사용자 계정을 나타냅니다. 사용자가 접근할 권한이 있는 모든 워크스페이스와 API에 접근할 수 있으므로 비밀번호처럼 보관해야 합니다.
+
+<Callout type="info">
+Patchbay로 이름을 바꾸기 전 릴리스에서 업그레이드했다면 다시 로그인하고 저장된 PAT를 교체하세요. 이전 제품 접두사를 사용하는 토큰은 더 이상 허용되지 않습니다.
+</Callout>
 
 **설정 → API Token**에서 토큰을 만들 때 이름을 입력하고 30일, 90일, 1년, 만료 없음 중 하나를 선택합니다. 기본값은 90일입니다. 전체 토큰은 한 번만 표시됩니다. 창을 닫은 뒤 Cordy에는 다음 정보만 남습니다.
 
@@ -40,7 +44,7 @@ PAT를 저장소, 이슈, 댓글, 스크린샷, 로그에 넣지 마세요. 저�
 ~/.cordy/profiles/<name>/config.json
 ```
 
-데몬도 같은 PAT로 Cordy에 연결합니다. 만료 시간이 있는 `mul_` PAT는 남은 유효 기간이 7일 미만이면 자동으로 갱신되어 그 시점부터 90일 뒤까지 연장됩니다. 갱신 실패는 토큰 자체를 바꾸지 않습니다. 토큰이 이미 만료되었거나 취소되었다면 `cordy login`을 다시 실행해야 합니다.
+데몬도 같은 PAT로 Cordy에 연결합니다. 만료 시간이 있는 `pby_` PAT는 남은 유효 기간이 7일 미만이면 자동으로 갱신되어 그 시점부터 90일 뒤까지 연장됩니다. 갱신 실패는 토큰 자체를 바꾸지 않습니다. 토큰이 이미 만료되었거나 취소되었다면 `cordy login`을 다시 실행해야 합니다.
 
 브라우저가 없는 환경에서는 Web에서 PAT를 먼저 만든 뒤 CLI가 안전하게 입력을 요청하도록 할 수 있습니다.
 
@@ -53,7 +57,7 @@ cordy login --token
 PAT를 `Authorization` header에 넣습니다.
 
 ```bash
-export CORDY_TOKEN='mul_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export CORDY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.cordy.ai/api/me \
   -H "Authorization: Bearer $CORDY_TOKEN"
@@ -92,7 +96,7 @@ curl https://api.cordy.ai/api/issues \
 | `mcn_` | Cordy Cloud Node 연결 | Cordy Cloud Fleet |
 | `mdt_` | 워크스페이스 범위의 데몬 인증 프로토콜 | 서버 내부 절차 |
 
-일반 Cloud, 자체 호스팅, Desktop 설치에서는 이를 직접 만들 필요가 없습니다. 사용자 측 CLI와 데몬은 항상 `mul_` PAT를 사용합니다. 다른 접두사의 토큰을 직접 만들지 마세요.
+일반 Cloud, 자체 호스팅, Desktop 설치에서는 이를 직접 만들 필요가 없습니다. 사용자 측 CLI와 데몬은 항상 `pby_` PAT를 사용합니다. 다른 접두사의 토큰을 직접 만들지 마세요.
 
 ## 다음 단계
 

@@ -241,7 +241,7 @@ async fn setup_probes_before_replacing_profile_and_preserves_env_token() {
     let profile = "staging";
     let config_path = environment.config_path(profile).expect("config path");
     fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
-    let old_config = br#"{"server_url":"http://old.example","app_url":"http://old.app","token":"mul_old","workspace_id":"old"}"#;
+    let old_config = br#"{"server_url":"http://old.example","app_url":"http://old.app","token":"pby_old","workspace_id":"old"}"#;
     fs::write(&config_path, old_config).expect("old config");
 
     let observed_during_probe = Arc::new(Mutex::new(None::<Vec<u8>>));
@@ -263,7 +263,7 @@ async fn setup_probes_before_replacing_profile_and_preserves_env_token() {
     let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
 
     let mut environment = environment;
-    environment.set("CORDY_TOKEN", "mul_env");
+    environment.set("CORDY_TOKEN", "pby_env");
     let cli = Cli::try_parse_from([
         "cordy",
         "--profile",
@@ -290,7 +290,7 @@ async fn setup_probes_before_replacing_profile_and_preserves_env_token() {
         serde_json::from_slice(&fs::read(config_path).expect("saved config")).expect("saved JSON");
     assert_eq!(saved["server_url"], format!("http://{address}"));
     assert_eq!(saved["app_url"], "https://app.example");
-    assert_eq!(saved["token"], "mul_env");
+    assert_eq!(saved["token"], "pby_env");
     assert!(saved.get("workspace_id").is_none());
     assert_eq!(input.server_url, format!("http://{address}"));
     server.abort();
@@ -305,9 +305,9 @@ async fn setup_failed_probe_does_not_mutate_existing_profile() {
     let config_path = environment.config_path(profile).expect("config path");
     fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
     let old_config =
-        br#"{"server_url":"http://old.example","token":"mul_old","workspace_id":"old"}"#;
+        br#"{"server_url":"http://old.example","token":"pby_old","workspace_id":"old"}"#;
     fs::write(&config_path, old_config).expect("old config");
-    environment.set("CORDY_TOKEN", "mul_env");
+    environment.set("CORDY_TOKEN", "pby_env");
     let cli = Cli::try_parse_from([
         "cordy",
         "--profile",

@@ -1,4 +1,4 @@
-//! Scrape-time SQL sampler for business metrics (PR4, MUL-2947).
+//! Scrape-time SQL sampler for business metrics (PR4, PB-2947).
 //!
 //! The sampler runs at /metrics scrape time against a dedicated pool and is
 //! opt-in. Every SQL statement runs in its own short read-only transaction
@@ -31,7 +31,7 @@ pub const WINDOW_FIVE_MINUTES: &str = "5m";
 /// 60s matches daemon heartbeat cadence (~15s) plus relay lag and clock skew.
 const RUNTIME_ONLINE_WINDOW_SECONDS: i32 = 60;
 
-/// A running task is "stuck" once started_at is older than this (MUL-2328).
+/// A running task is "stuck" once started_at is older than this (PB-2328).
 const STUCK_RUNNING_INTERVAL: &str = "30 minutes";
 
 fn sampler_windows() -> Vec<(&'static str, String)> {

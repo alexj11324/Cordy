@@ -2,7 +2,7 @@
 //! (`ResolveAgentMcpConfig`) and `mcp_overlay.go` (`mergeMCPOverlay`).
 //!
 //! Precedence: bound workspace servers < agent's own servers < per-task overlay.
-//! The contract (GH #6062, MUL-5421):
+//! The contract (GH #6062, PB-5421):
 //! - Only servers explicitly bound to the agent and left enabled are folded in.
 //! - The agent's own entry WINS on a name collision with a bound server.
 //! - An agent with no bindings and no config of its own resolves to None.

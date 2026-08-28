@@ -2,7 +2,7 @@
 -- workspace owner/admin) authorize specific workspace members to manage the
 -- autopilot, beyond the implicit "creator ∪ owner/admin" set. A member listed
 -- here is treated as a writer — they can edit, delete, trigger, replay
--- deliveries, and manage triggers/webhook secrets (MUL-3807).
+-- deliveries, and manage triggers/webhook secrets (PB-3807).
 --
 -- No foreign keys or cascades — autopilot existence and workspace membership
 -- are enforced in the application layer (the autopilot delete handler removes

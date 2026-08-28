@@ -197,7 +197,7 @@ describe("WorkspaceRouteLayout", () => {
 });
 
 /**
- * MUL-6231 / #7021. This layout is the only owner of the platform workspace
+ * PB-6231 / #7021. This layout is the only owner of the platform workspace
  * singleton, and it used to only ever SET it. Deleting the active workspace
  * therefore left the singleton pointing at a workspace that no longer existed,
  * which is what kept the desktop shell mounting workspace-scoped chrome over
@@ -255,7 +255,7 @@ describe("WorkspaceRouteLayout workspace singleton lifecycle", () => {
 });
 
 /**
- * MUL-6303 / #7086. Desktop mounts exactly one tab at a time and keys the host
+ * PB-6303 / #7086. Desktop mounts exactly one tab at a time and keys the host
  * on the active tab id (tab-content.tsx), so opening or switching a tab
  * unmounts the whole router subtree and builds a new one beside it. React
  * renders the incoming tree first and only then runs the outgoing tree's

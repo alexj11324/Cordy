@@ -133,7 +133,7 @@ export function applyChatDoneToCache(
       elapsed_ms: payload.elapsed_ms ?? null,
       // Mirror web's applyChatDoneToCache: carry the kind so a no_response turn
       // renders its notice inline; missing → "message" for older servers
-      // (MUL-4351).
+      // (PB-4351).
       message_kind: payload.message_kind ?? "message",
       ...(payload.quick_actions !== undefined
         ? { quick_actions: payload.quick_actions }
@@ -190,7 +190,7 @@ export async function applyChatQuickActionsToCache(
   // read the assistant row BEFORE the daemon persisted these actions. Cancel it
   // first so its actions-less response can't land after — and overwrite — the
   // patch below. The messages query is staleTime: Infinity, so such an overwrite
-  // would never self-heal (MUL-5149 stale-refetch race). Cancel before
+  // would never self-heal (PB-5149 stale-refetch race). Cancel before
   // setQueryData: cancelQueries reverts to the pre-fetch state, so patching
   // first would be undone by the revert.
   await qc.cancelQueries({

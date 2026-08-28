@@ -136,7 +136,7 @@ pub async fn resolve_workspace_id_from_request(
 ) -> Option<String> {
     // A mat_ task token is bound to exactly one workspace by the token row.
     // Any other workspace identifier on the request is the agent trying to
-    // widen its blast radius — ignore it (MUL-2600).
+    // widen its blast radius — ignore it (PB-2600).
     if header(req, "x-actor-source") == Some("task_token") {
         return header(req, "x-workspace-id").map(str::to_string);
     }
@@ -202,7 +202,7 @@ async fn resolve_workspace_uuid(
     identifiers: WorkspaceRequestIdentifiers,
 ) -> ResolveOutcome {
     // Task-token-authenticated requests must operate on the token's bound
-    // workspace; nothing on the wire can override it (MUL-2600).
+    // workspace; nothing on the wire can override it (PB-2600).
     if identifiers.actor_source.as_deref() == Some("task_token") {
         return match identifiers.header_id {
             Some(id) if !id.is_empty() => ResolveOutcome::Found(id),
@@ -286,7 +286,7 @@ pub async fn require_workspace(
 
     // Final task-token binding catch-all: even when the workspace came from a
     // URL parameter, the agent must not operate outside its token-bound
-    // workspace (MUL-2600).
+    // workspace (PB-2600).
     if header(&req, "x-actor-source") == Some("task_token") {
         let bound = header(&req, "x-workspace-id").unwrap_or("");
         if bound.is_empty() || workspace_id != bound {

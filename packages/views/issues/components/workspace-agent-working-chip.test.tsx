@@ -26,7 +26,7 @@ vi.mock("../../agents/components/agent-avatar-stack", () => ({
 }));
 
 // The real hover card renders its body only while open. Render it inline so the
-// chip's own wiring to the hover body is observable: the MUL-5525 follow-up bug
+// chip's own wiring to the hover body is observable: the PB-5525 follow-up bug
 // was in that wiring (`agents ?? []`), not in the body's rendering.
 vi.mock("@cordy/ui/components/ui/hover-card", () => ({
   HoverCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -92,7 +92,7 @@ describe("WorkspaceAgentWorkingChip", () => {
     expect(mockState.buttonVariant).toBe("brandSubtle");
   });
 
-  // The whole point of MUL-5525: the chip must not invent a count of its own.
+  // The whole point of PB-5525: the chip must not invent a count of its own.
   // A surface whose filters leave no working rows has to read zero even while
   // other agents are busy elsewhere in the workspace.
   it("shows a known zero for a surface with no working rows", () => {

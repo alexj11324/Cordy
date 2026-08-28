@@ -56,7 +56,7 @@ beforeEach(() => {
 
 describe("resolveRuntimeModels", () => {
   // The server answers a warm runtime straight from its catalog cache
-  // (MUL-5444). That response is already terminal, so discovery must resolve on
+  // (PB-5444). That response is already terminal, so discovery must resolve on
   // the POST alone — one round trip, no polling, no spinner.
   it("resolves from a cached completed response without polling", async () => {
     initiateListModels.mockResolvedValue(

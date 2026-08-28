@@ -106,7 +106,7 @@ describe("installContextMenu — link items", () => {
 
   it("adds 'Open Link in Browser' and 'Copy Link Address' when right-clicking an http(s) link", () => {
     // The link case is the one this test file is here to cover —
-    // before MUL-3083 follow-up, right-clicking an <a> in the
+    // before PB-3083 follow-up, right-clicking an <a> in the
     // renderer only surfaced 'copy' (when the user happened to have
     // text selected) and gave no way to open the URL externally.
     const wc = makeWebContents();

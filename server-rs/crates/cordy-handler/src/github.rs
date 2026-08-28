@@ -29,7 +29,7 @@ type HmacSha256 = Hmac<Sha256>;
 const MAX_WEBHOOK_BODY: usize = 10 << 20;
 const GITHUB_STATE_TTL_SECS: i64 = 10 * 60;
 const GITHUB_STATE_REDIS_TIMEOUT: Duration = Duration::from_secs(1);
-const GITHUB_STATE_REPLAY_PREFIX: &str = "mul:{github_callback_state}:";
+const GITHUB_STATE_REPLAY_PREFIX: &str = "patchbay:{github_callback_state}:";
 
 pub fn public_router() -> Router<HandlerState> {
     Router::new()

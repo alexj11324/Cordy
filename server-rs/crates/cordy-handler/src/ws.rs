@@ -537,7 +537,7 @@ fn resolve_pat(pr: &DbPatResolver, token: &str) -> Option<String> {
 /// `authenticateToken`. Error payloads are the exact JSON strings Go writes
 /// back before closing.
 fn authenticate_token(pr: &DbPatResolver, token: &str) -> Result<String, &'static str> {
-    if token.starts_with("mul_") {
+    if token.starts_with("pby_") {
         let Some(user_id) = resolve_pat(pr, token) else {
             return Err(r#"{"error":"invalid token"}"#);
         };
@@ -901,8 +901,8 @@ mod tests {
             .await
             .expect("create membership");
 
-        let member_token = format!("mul_ws_member_{suffix}");
-        let outsider_token = format!("mul_ws_outsider_{suffix}");
+        let member_token = format!("pby_ws_member_{suffix}");
+        let outsider_token = format!("pby_ws_outsider_{suffix}");
         let member_jwt = cordy_auth::jwt::issue_user_jwt(
             &user_id.to_string(),
             &format!("ws-member-{suffix}@example.test"),

@@ -6,7 +6,7 @@ import { I18nProvider } from "@cordy/core/i18n/react";
 import { RESOURCES } from "@cordy/views/locales";
 
 /**
- * Regression guard for MUL-6231 / #7021: deleting the last workspace blanked
+ * Regression guard for PB-6231 / #7021: deleting the last workspace blanked
  * the desktop client.
  *
  * The shell used to decide whether to mount workspace-scoped chrome from the
@@ -172,7 +172,7 @@ describe("DesktopShell workspace gating", () => {
     expect(queryByTestId("tab-content")).not.toBeNull();
   });
 
-  // The shell had no navigation feedback at all before MUL-6404 — the bar
+  // The shell had no navigation feedback at all before PB-6404 — the bar
   // only ever shipped inside web's DashboardLayout. It sits beside TabContent
   // in the canvas and, like it, is not workspace-gated: a cold workspace
   // resolve is exactly when the wait is longest.

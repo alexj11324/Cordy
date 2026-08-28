@@ -149,7 +149,7 @@ function normalize(source: PreviewSource): PreviewState {
 // ---------------------------------------------------------------------------
 
 /**
- * Position of this preview inside a surface's image sequence (MUL-5752).
+ * Position of this preview inside a surface's image sequence (PB-5752).
  *
  * `onPrev` / `onNext` are undefined AT the boundaries — the sequence does not
  * wrap, so first/last simply disable the corresponding control. Supplied only
@@ -249,7 +249,7 @@ export function useAttachmentPreview(): AttachmentPreviewHandle {
 // image that worked (with the "unavailable" toast) instead of a broken glyph.
 //
 // Engines without `Image.decode()` (jsdom in tests) swap immediately: the old
-// pre-MUL-5752 behaviour, traded back for correctness there.
+// pre-PB-5752 behaviour, traded back for correctness there.
 function useSettledImageURL(
   targetUrl: string,
   enabled: boolean,

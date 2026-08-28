@@ -14,7 +14,7 @@ use crate::types::DropReason;
 
 /// Records dropped inbound events to channel_inbound_audit. The interface
 /// deliberately does not accept a message body — see the drop-audit policy in
-/// MUL-2671 §4.7.
+/// PB-2671 §4.7.
 #[async_trait]
 pub trait AuditLogger: Send + Sync {
     async fn record_drop(&self, p: AuditDropParams);

@@ -70,7 +70,7 @@ interface StatusBranchData {
 
 // Every "status" in this hook is a board COLUMN, and columns are categories:
 // a workspace's custom statuses live inside their category's column rather than
-// adding one of their own. (MUL-6243)
+// adding one of their own. (PB-6243)
 function statusGroupKey(status: IssueStatusCategory, byCategory: boolean) {
   return byCategory ? `status_category:${status}` : `status:${status}`;
 }
@@ -82,7 +82,7 @@ function statusGroupKey(status: IssueStatusCategory, byCategory: boolean) {
  * sent once the workspace is KNOWN to have custom statuses — see
  * `IssueStatusCatalog.hasCustomStatuses` for why that is both the
  * rolling-deploy guard and the cold-load guard. Everyone else keeps the exact
- * request they made before. (MUL-6243)
+ * request they made before. (PB-6243)
  */
 const CATEGORY_GROUP = { kind: "status_category" } as const;
 const STATUS_GROUP = { kind: "status" } as const;
@@ -128,14 +128,14 @@ function rebaseCursorState(
  * elsewhere" from "not a status at all", and inflating an arbitrary column's
  * header is worse than a total that is briefly one card short. Before the
  * catalog loads there is nothing to fold, so only built-ins are counted — which
- * is exactly the pre-feature behavior. (MUL-6243)
+ * is exactly the pre-feature behavior. (PB-6243)
  *
  * The status facet is DISJUNCTIVE — the server answers it with the status
  * filter dropped, so the filter menu can show what each option would select.
  * A column header is the opposite question, so an active filter narrows the
  * fold to the keys it selected. Without that, filtering by one custom status
  * headed the In Review column with every in_review issue (220) above the 5
- * cards that actually matched. (MUL-6409)
+ * cards that actually matched. (PB-6409)
  */
 function statusCountsFromFacets(
   facets: IssueTableFacetsResponse | undefined,
@@ -199,7 +199,7 @@ export function useIssueStatusBranches({
   // it flips from `status` to `status_category` the moment the catalog lands,
   // and a cursor minted against the old contract is meaningless to the new one.
   // Without this, catalog arrival carried stale `status:` cursors into
-  // `status_category:` requests. (MUL-6243)
+  // `status_category:` requests. (PB-6243)
   const identity = useMemo(
     () => JSON.stringify({ query, group: group.kind }),
     [group.kind, query],

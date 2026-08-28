@@ -16,7 +16,7 @@
  * a category, so "Code Review" and "QA" both land under In Review and the row
  * is the only place left to tell them apart. It stays silent for built-in
  * statuses, so a workspace without custom statuses renders exactly as before.
- * (MUL-6243)
+ * (PB-6243)
  *
  * Behavioral parity:
  *   - Same `Issue` type, same `assignee_type`/`assignee_id` semantics
@@ -56,7 +56,7 @@ export function IssueRow({ issue, onPress, showStatus = false }: Props) {
       <View className="flex-row items-center gap-3">
         {/* The glyph is per CATEGORY, so a custom status draws its category's
             icon rather than falling back to Todo's; the colour is what tells
-            two statuses of one category apart. (MUL-6243) */}
+            two statuses of one category apart. (PB-6243) */}
         {showStatus ? (
           <StatusIcon
             status={issue.status}

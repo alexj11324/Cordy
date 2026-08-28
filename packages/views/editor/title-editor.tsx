@@ -30,7 +30,7 @@ interface TitleEditorProps {
   /**
    * Fires on the configured `send` chord, independent of `onSubmit`'s plain
    * Enter path. Hosts that submit on plain Enter pass `onSubmit`; hosts that
-   * want an explicit chord (create-issue, MUL-4931) pass this instead.
+   * want an explicit chord (create-issue, PB-4931) pass this instead.
    *
    * Plain Enter is deliberately never a trigger here even when `send` is
    * configured as plain Enter: the keymap below already owns that key for

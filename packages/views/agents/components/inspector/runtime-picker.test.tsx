@@ -54,7 +54,7 @@ function makeRuntime(overrides: Partial<RuntimeDevice>): RuntimeDevice {
 }
 
 // Machine "Jiayuan's MacBook Pro": a machine-level rename stamped the same
-// custom_name on both runtimes (MUL-4217) — the exact shape that made the
+// custom_name on both runtimes (PB-4217) — the exact shape that made the
 // old flat list unreadable.
 const RT_CLAUDE = makeRuntime({
   id: "rt-claude",

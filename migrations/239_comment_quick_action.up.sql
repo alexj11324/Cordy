@@ -1,4 +1,4 @@
--- Quick-action-triggered comments (MUL-5465).
+-- Quick-action-triggered comments (PB-5465).
 --
 -- A quick action posts an ORDINARY comment (type stays 'comment') and marks it
 -- with the action that produced it. The timeline renders the collapsed

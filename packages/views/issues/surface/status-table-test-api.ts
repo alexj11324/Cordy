@@ -17,7 +17,7 @@ type LegacyListIssues = (
 
 /** One agent holding running issue tasks, as the working-agents projection
  *  reports it. `issue_ids` may name issues outside the queried surface — the
- *  facet is expected to drop those, which is the whole point of MUL-5525. */
+ *  facet is expected to drop those, which is the whole point of PB-5525. */
 export interface WorkingTaskFixture {
   id: string;
   issue_ids: readonly string[];
@@ -39,7 +39,7 @@ export interface WorkingAgentsFixture {
  * CATEGORY (`status_category:<category>`); the table still groups by concrete
  * status key. This fixture holds only built-in statuses, where a key IS its own
  * category, so the two axes select the same rows — only the key shape differs.
- * (MUL-6243)
+ * (PB-6243)
  */
 function statusAxis(group: { kind: string }): string {
   return group.kind === "status_category" ? "status_category" : "status";

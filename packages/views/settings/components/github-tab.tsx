@@ -50,7 +50,7 @@ export function GitHubTab() {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
   // `canView` gates the read-only installation list (every workspace member
-  // sees it after MUL-2413); `canManage` gates the Connect / Disconnect
+  // sees it after PB-2413); `canManage` gates the Connect / Disconnect
   // actions and comes from the backend response (`can_manage`) so the
   // frontend never claims management rights the server would reject.
   const canView = !!currentMember;

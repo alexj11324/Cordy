@@ -96,7 +96,7 @@ pub struct DispatchResult {
     pub task_id: Option<Uuid>,
     pub issue_id: Option<Uuid>,
     pub issue_number: i32,
-    /// IssueIdentifier is the workspace-qualified key ("MUL-42") for the
+    /// IssueIdentifier is the workspace-qualified key ("PB-42") for the
     /// created issue, used verbatim in the confirmation message.
     pub issue_identifier: String,
     /// IssueTitle is the title supplied on /issue, echoed in the confirmation.

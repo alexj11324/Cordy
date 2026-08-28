@@ -186,7 +186,7 @@ export function IssueActionsMenuItems({
           {/* Catalog-driven, like the picker and the filter: every entry point
               that can change a status must offer the same set, or a custom
               status is unreachable from the board's right-click menu. One flat
-              list in canonical category order. (MUL-6243) */}
+              list in canonical category order. (PB-6243) */}
           {statusOptions.map((option) => (
             <P.Item
               key={option.key}

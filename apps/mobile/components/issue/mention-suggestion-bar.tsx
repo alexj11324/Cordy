@@ -83,7 +83,7 @@ export function MentionSuggestionBar({
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const isChat = mode === "chat";
   // Rows are icon-only, so colour is the only thing that can carry a custom
-  // status's identity here. (MUL-6243)
+  // status's identity here. (PB-6243)
   const catalog = useIssueStatuses();
 
   // Comment-mode data — disabled in chat mode to avoid wasted fetches.
@@ -362,7 +362,7 @@ export function MentionSuggestionBar({
           // By CATEGORY, not by key: a custom status in the done category IS
           // done, and `status === "done"` silently disagrees — the row would
           // render at full opacity as though the work were still open.
-          // (MUL-6243)
+          // (PB-6243)
           const closed = issueBehavesAsAny(item.issue, CLOSED_CATEGORIES);
           return (
             <Pressable

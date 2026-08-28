@@ -12,7 +12,7 @@ import { InboxListSchema } from "./schemas";
  * The matching server-side contract is covered independently by the Rust
  * notification and inbox modules.
  *
- * Why both halves exist: during MUL-5483 a new inbox type was added and the
+ * Why both halves exist: during PB-5483 a new inbox type was added and the
  * mobile label map was updated so `tsc` passed — but a NUMBER went into
  * `details.child_count`, and `details` is `z.record(z.string(), z.string())`.
  * Because the endpoint parses an ARRAY, one bad row fails the whole parse and

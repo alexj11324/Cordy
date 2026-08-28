@@ -1,5 +1,5 @@
 /**
- * Workspace issue status catalog (MUL-6243).
+ * Workspace issue status catalog (PB-6243).
  *
  * Key shape mirrors web's `packages/core/issue-statuses/queries.ts` —
  * `["issue-statuses", wsId, "list"]` — so the cross-platform mental model

@@ -117,7 +117,7 @@ const mockListIssueTableRows = vi.hoisted(() =>
         next_cursor: null,
       };
     }
-    // Board / list surfaces page by CATEGORY since MUL-6243. This fixture
+    // Board / list surfaces page by CATEGORY since PB-6243. This fixture
     // holds only built-in statuses, where a key IS its own category.
     const status = request.group_key?.replace(/^status(_category)?:/, "");
     const response = await mockListIssues({

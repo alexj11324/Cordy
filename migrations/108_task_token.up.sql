@@ -2,7 +2,7 @@
 -- owner's CORDY_TOKEN (a workspace owner/admin PAT) into the agent
 -- process. That practice gave the agent full owner privileges via
 -- whatever credential the daemon happened to be using, which made
--- agent-resource secrets reachable from the agent (MUL-2600).
+-- agent-resource secrets reachable from the agent (PB-2600).
 --
 -- The daemon now mints a short-lived task-scoped token at task-claim
 -- time and injects THAT into the agent. The server treats `mat_`

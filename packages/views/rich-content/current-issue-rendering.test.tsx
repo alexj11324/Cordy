@@ -17,8 +17,8 @@ const resolvedIssues = vi.hoisted(() => ({
 
 vi.mock("../issues/hooks", () => ({
   useResolveIssueIdentifier: (identifier: string) => {
-    if (identifier === "MUL-7") return resolvedIssues.current;
-    if (identifier === "MUL-8") return resolvedIssues.other;
+    if (identifier === "PB-7") return resolvedIssues.current;
+    if (identifier === "PB-8") return resolvedIssues.other;
     return null;
   },
 }));
@@ -76,11 +76,11 @@ const CURRENT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ID = "22222222-2222-4222-8222-222222222222";
 const CURRENT_CONTEXT: CurrentIssueRenderContextValue = {
   id: CURRENT_ID,
-  identifier: "MUL-7",
+  identifier: "PB-7",
 };
 const CONTENT = [
-  `See [MUL-7](mention://issue/${CURRENT_ID})`,
-  "MUL-8",
+  `See [PB-7](mention://issue/${CURRENT_ID})`,
+  "PB-8",
   `${APP_ORIGIN}/acme/issues/${OTHER_ID}.`,
 ].join(" and ");
 
@@ -96,14 +96,14 @@ const CONTENT = [
  * that the path stopped resolving at all.
  */
 const SELF_REFERENCE_FORMS: ReadonlyArray<readonly [string, string]> = [
-  ["a bare identifier", "See MUL-7 and MUL-8."],
+  ["a bare identifier", "See PB-7 and PB-8."],
   [
     "a UUID URL",
     `See ${APP_ORIGIN}/acme/issues/${CURRENT_ID} and ${APP_ORIGIN}/acme/issues/${OTHER_ID}.`,
   ],
   [
     "an identifier URL",
-    `See ${APP_ORIGIN}/acme/issues/MUL-7 and ${APP_ORIGIN}/acme/issues/MUL-8.`,
+    `See ${APP_ORIGIN}/acme/issues/PB-7 and ${APP_ORIGIN}/acme/issues/PB-8.`,
   ],
 ];
 
@@ -140,8 +140,8 @@ function renderContent(
 }
 
 beforeEach(() => {
-  resolvedIssues.current = makeIssue(CURRENT_ID, "MUL-7");
-  resolvedIssues.other = makeIssue(OTHER_ID, "MUL-8");
+  resolvedIssues.current = makeIssue(CURRENT_ID, "PB-7");
+  resolvedIssues.other = makeIssue(OTHER_ID, "PB-8");
 });
 
 describe("RichContent current-issue rendering", () => {
@@ -160,7 +160,7 @@ describe("RichContent current-issue rendering", () => {
       "false",
       "false",
     ]);
-    expect(chips[0]).toHaveTextContent("This issue · MUL-7");
+    expect(chips[0]).toHaveTextContent("This issue · PB-7");
   });
 
   it.each(SELF_REFERENCE_FORMS)(
@@ -177,7 +177,7 @@ describe("RichContent current-issue rendering", () => {
         "true",
         "false",
       ]);
-      expect(chips[0]).toHaveTextContent("This issue · MUL-7");
+      expect(chips[0]).toHaveTextContent("This issue · PB-7");
     },
   );
 

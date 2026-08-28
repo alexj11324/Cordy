@@ -165,7 +165,7 @@ function TeammatesVisual() {
         <div className="flex items-center gap-1.5 min-w-0 text-caption">
           <span className="text-muted-foreground">Cordy Demo</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
-          <span className="text-muted-foreground">MUL-18</span>
+          <span className="text-muted-foreground">PB-18</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
           <span className="truncate">Refactor API error handling middleware</span>
         </div>
@@ -424,7 +424,7 @@ function AutonomousVisual() {
         <div className="flex items-center gap-1.5 min-w-0 text-caption">
           <span className="text-muted-foreground">Cordy Demo</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
-          <span className="text-muted-foreground">MUL-18</span>
+          <span className="text-muted-foreground">PB-18</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
           <span className="truncate">Refactor API error handling middleware</span>
         </div>

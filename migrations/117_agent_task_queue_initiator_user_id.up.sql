@@ -7,7 +7,7 @@
 --
 -- NULL for non-chat tasks and for chat tasks queued before this column existed;
 -- the brief simply omits the `## Task Initiator` section in that case. See
--- MUL-2645.
+-- PB-2645.
 --
 -- Plain UUID, no FK to "user": adding a foreign key here also takes a lock on
 -- the (hot) "user" table at migration time, which made this ALTER time out on a

@@ -6,7 +6,7 @@
  * swipe-down-to-dismiss — all handled by `react-native-image-viewing`.
  *
  * `open(uri, sequence)` opens the same viewer positioned inside a whole
- * screen's images (MUL-5752), so a horizontal swipe walks to the next one
+ * screen's images (PB-5752), so a horizontal swipe walks to the next one
  * and a "3 / 7" counter says where the reader is. `ImageSequenceProvider`
  * builds that array; screens that don't mount one keep passing a single URI
  * and get the previous single-image behaviour.

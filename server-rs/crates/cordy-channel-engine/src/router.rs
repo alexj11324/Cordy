@@ -553,7 +553,7 @@ impl Router {
 
         // 4. Identity check: map the platform sender to a Cordy user and
         //    re-verify workspace membership (no binding->member FK;
-        //    MUL-3515 §4).
+        //    PB-3515 §4).
         let identity = match set
             .identity
             .as_ref()
@@ -926,7 +926,7 @@ impl Router {
         //    identity.user_id is THIS message's sender (the task
         //    initiator), deliberately not the session creator (group
         //    sessions are creator=installer). Latest sender in a window
-        //    wins (MUL-2645).
+        //    wins (PB-2645).
         //
         //    SkipAgentRun lets an adapter opt this message out of the
         //    agent turn — used by wecom for standalone /issue commands
@@ -1284,7 +1284,7 @@ impl Router {
         });
     }
 
-    /// Reads the workspace's issue key (the "MUL" in MUL-42). A read
+    /// Reads the workspace's issue key (the "PB" in PB-42). A read
     /// failure is not worth failing issue creation over, so it degrades
     /// to empty and only the rendered identifier suffers.
     async fn issue_prefix(&self, workspace_id: Uuid) -> String {

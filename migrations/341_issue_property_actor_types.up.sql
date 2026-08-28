@@ -1,4 +1,4 @@
--- Custom issue property actor types (MUL-6286).
+-- Custom issue property actor types (PB-6286).
 --
 -- Adds 'actor' and 'multi_actor' to the type allowlist. Both store a prefixed
 -- reference string ("member:<user_id>"); multi_actor stores an array of them.

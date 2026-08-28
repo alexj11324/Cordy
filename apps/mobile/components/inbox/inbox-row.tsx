@@ -59,7 +59,7 @@ export function InboxRow({ item, onPress }: Props) {
             {/* The glyph is per category, so it alone cannot tell "In Review"
                 from a custom "Human Review" — a move between two statuses of
                 one category would leave this row pixel-identical and read as
-                "the inbox never updated" (MUL-6395). Colour is what carries a
+                "the inbox never updated" (PB-6395). Colour is what carries a
                 custom status's identity; `colorOf` is null for a built-in,
                 which keeps it on its category token. */}
             {item.issue_status ? (

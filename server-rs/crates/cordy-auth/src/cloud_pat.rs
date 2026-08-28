@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 pub const CLOUD_PAT_PREFIX: &str = "mcn_";
-const CACHE_PREFIX: &str = "mul:auth:mcn:";
+const CACHE_PREFIX: &str = "patchbay:auth:mcn:";
 const CACHE_TTL: Duration = Duration::from_secs(60);
 const REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn namespace_ttl_and_wire_shape_match_go() {
-        assert_eq!(CACHE_PREFIX, "mul:auth:mcn:");
+        assert_eq!(CACHE_PREFIX, "patchbay:auth:mcn:");
         assert_eq!(CACHE_TTL, Duration::from_secs(60));
         let identity = CloudPatIdentity {
             owner_id: "owner".into(),

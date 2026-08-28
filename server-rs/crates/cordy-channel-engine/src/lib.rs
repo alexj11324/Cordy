@@ -1,7 +1,7 @@
 //! The channel-agnostic runtime that DRIVES the channel adapters defined
 //! in `cordy-channel`.
 //!
-//! This is the generalized channel engine tracked by MUL-3620.
+//! This is the generalized channel engine tracked by PB-3620.
 //!
 //! It provides:
 //!
@@ -16,7 +16,7 @@
 //!    `/new` command parsers (cross-platform product behavior).
 //! 4. [`provenance`] — the reply-origin check: did this task's input
 //!    arrive via a channel (reply goes to IM) or directly from
-//!    web/mobile (reply stays in Cordy, MUL-4988)?
+//!    web/mobile (reply stays in Cordy, PB-4988)?
 //!
 //! Supervisor, router, and session state machines use the shared seams defined
 //! here ([`lease::LeaseStore`], `cordy_channel::Registry`,

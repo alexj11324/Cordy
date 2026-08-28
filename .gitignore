@@ -25,7 +25,7 @@ dist-electron
 !apps/desktop/.env.production
 # Desktop staging config is public (staging API/web URLs) — track it so
 # `pnpm dev:desktop:staging` works from a fresh checkout instead of relying
-# on a hand-written local env file (MUL-5025: a misnamed VITE_ var there
+# on a hand-written local env file (PB-5025: a misnamed VITE_ var there
 # silently broke copy-link URLs).
 !apps/desktop/.env.staging
 # Mobile staging config is public (staging API URL) — track it so a fresh

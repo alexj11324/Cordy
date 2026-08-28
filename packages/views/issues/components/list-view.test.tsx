@@ -154,7 +154,7 @@ vi.mock("react-virtuoso", () => ({
 const ISSUES: Issue[] = [
   {
     id: "issue-1",
-    identifier: "MUL-1",
+    identifier: "PB-1",
     title: "First todo issue",
     status: "todo",
     priority: "none",
@@ -165,7 +165,7 @@ const ISSUES: Issue[] = [
   } as Issue,
   {
     id: "issue-2",
-    identifier: "MUL-2",
+    identifier: "PB-2",
     title: "Second todo issue",
     status: "todo",
     priority: "none",
@@ -241,7 +241,7 @@ describe("ListView status header collapse", () => {
     // that starts on a row: the drag activates past the 5px threshold, then
     // the browser takes the gesture over and fires pointercancel. A cancel
     // that leaves the drag lock engaged makes the header's collapse toggle a
-    // permanent no-op (MUL-6240).
+    // permanent no-op (PB-6240).
     expect(lastOnDragCancel).toBeTypeOf("function");
     act(() => {
       lastOnDragStart({ active: { id: "issue-1" } });
@@ -258,14 +258,14 @@ describe("ListView status header collapse", () => {
 // Sections are CATEGORIES, cards carry concrete status KEYS. Bucketing a card
 // by its key gave a custom status a section id no section has, so the card was
 // dropped: filtering the surface down to that status left the section rendering
-// "no issues" beside a non-zero header count (MUL-6409). The category mapping
+// "no issues" beside a non-zero header count (PB-6409). The category mapping
 // itself is covered in utils/drag-utils.test.ts.
 describe("ListView custom statuses", () => {
   it("renders a custom-status issue in its category's section", () => {
     const custom = {
       ...ISSUES[0]!,
       id: "issue-custom",
-      identifier: "MUL-3",
+      identifier: "PB-3",
       title: "Waiting on the reporter",
       status: "awaiting_response",
       status_category: "in_review",

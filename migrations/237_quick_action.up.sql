@@ -1,4 +1,4 @@
--- Issue Quick Actions (MUL-5465).
+-- Issue Quick Actions (PB-5465).
 --
 -- A quick action is a workspace-level preset for "who to call and what to say"
 -- on an existing issue. Clicking one renders `prompt` server-side and posts a

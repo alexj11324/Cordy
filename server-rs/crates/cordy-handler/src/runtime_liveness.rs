@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-const KEY_PREFIX: &str = "mul:runtime:hb:";
+const KEY_PREFIX: &str = "patchbay:runtime:hb:";
 const REDIS_OPERATION_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[async_trait]

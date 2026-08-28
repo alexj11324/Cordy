@@ -54,7 +54,7 @@ import { isReservedSlug } from "@cordy/core/paths";
  * `Issues will look
  * like ACME-123` line shows the user what their issue IDs will read
  * like before they've created anything. The issue prefix behind that line
- * is an editable field pre-filled from the slug (MUL-6050) — it used to be
+ * is an editable field pre-filled from the slug (PB-6050) — it used to be
  * read-only, which left every non-ASCII-named workspace stuck on the
  * server's old `WS` fallback with no in-flow way out.
  *
@@ -134,7 +134,7 @@ export function StepWorkspace({
   const [slugServerError, setSlugServerError] = useState<string | null>(null);
   const slugTouched = useRef(false);
   // Prefix follows the slug the same way the slug follows the name, and stops
-  // following the moment the user edits it (MUL-6050). Editable here because
+  // following the moment the user edits it (PB-6050). Editable here because
   // settings was the only place to change it, and a user who never noticed the
   // default would never go looking.
   const [prefix, setPrefix] = useState("");

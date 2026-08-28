@@ -29,7 +29,7 @@ const SORT_METRIC: Record<LeaderboardSort, (r: AgentDashboardRow) => number> = {
 // How many agents the leaderboard ranks before collapsing the tail behind a
 // toggle, mirroring the offender list's cap. A workspace with dozens of agents
 // rendered every one of them, which pushed everything below it a full screen or
-// more down the page (MUL-5388). Ten answers "who is spending the most" — the
+// more down the page (PB-5388). Ten answers "who is spending the most" — the
 // tail is reachable via the toggle.
 const LEADERBOARD_LIMIT = 10;
 
@@ -158,7 +158,7 @@ export function Leaderboard({
               // Only the deleted bucket dashes out Time/Tasks — it genuinely
               // never carries them (see bucketUnknownAgentRows). The server's
               // bucket does: those agents are alive and ran, the server just
-              // merged them (MUL-5409), so zeroing their columns would
+              // merged them (PB-5409), so zeroing their columns would
               // under-report the workspace's run time.
               //
               // Its copy is the neutral "Other agents" rather than anything

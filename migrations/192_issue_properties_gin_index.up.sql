@@ -1,4 +1,4 @@
--- Containment index for custom-property value filtering (MUL-4463).
+-- Containment index for custom-property value filtering (PB-4463).
 -- Separate single-statement migration: CREATE INDEX CONCURRENTLY cannot run
 -- inside a transaction or share a migration, and a non-concurrent build would
 -- block writes on the hot issue table for the duration of the scan.

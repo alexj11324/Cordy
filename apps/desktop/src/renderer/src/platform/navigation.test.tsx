@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render } from "@testing-library/react";
 import { useEffect } from "react";
 
-// MUL-4741: the adapter mutates tab sessions in the REAL store (no router,
+// PB-4741: the adapter mutates tab sessions in the REAL store (no router,
 // no mocks needed for it anymore) — the Coordinator, not tested here, is
 // what projects sessions into the single router. Overlay and auth stay
 // mocked so we can spy on their entry points.
@@ -257,12 +257,12 @@ describe("canGoBack", () => {
   });
 });
 
-describe("routeContentLinkPath (links inside content — MUL-5208)", () => {
+describe("routeContentLinkPath (links inside content — PB-5208)", () => {
   it("opens a same-workspace path in a foreground tab of its own", () => {
-    routeContentLinkPath("/acme/issues/MUL-1");
+    routeContentLinkPath("/acme/issues/PB-1");
 
     const group = useTabStore.getState().byWorkspace.acme;
-    const opened = group.tabs.find((t) => t.url === "/acme/issues/MUL-1")!;
+    const opened = group.tabs.find((t) => t.url === "/acme/issues/PB-1")!;
     expect(opened).toBeDefined();
     expect(group.activeTabId).toBe(opened.id);
   });

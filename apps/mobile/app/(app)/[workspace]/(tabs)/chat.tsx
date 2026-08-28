@@ -163,7 +163,7 @@ export default function ChatTab() {
   // a message enqueues a run, so it clears the server's invoke gate
   // (`canInvokeAgent`), which has no admin bypass. Shared rule, not a mobile
   // copy: a local mirror drifted from it and let admins pick a teammate's
-  // personal agent only to be 403'd on send (MUL-6380 / GH #7180).
+  // personal agent only to be 403'd on send (PB-6380 / GH #7180).
   const availableAgents = useMemo(
     () =>
       agents.filter(
@@ -195,10 +195,10 @@ export default function ChatTab() {
   // A session outlives the permission that created it: the agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the transcript (MUL-4525 — read uses the view gate, send re-runs the
+  // serving the transcript (PB-4525 — read uses the view gate, send re-runs the
   // invoke gate). `currentAgent` deliberately resolves an open session's agent
   // from the FULL list so the header stays honest, which means the picker filter
-  // above cannot cover this case — judge the bound agent too (MUL-6380).
+  // above cannot cover this case — judge the bound agent too (PB-6380).
   const accessRevoked =
     currentAgent !== null &&
     !canAssignAgentToIssue(currentAgent, {
@@ -307,7 +307,7 @@ export default function ChatTab() {
       } catch (err) {
         // Session create runs the same invoke gate as a send, so a permission
         // change refuses here too — and this is the only layer that sees the
-        // reason code (MUL-6380).
+        // reason code (PB-6380).
         Alert.alert("Message not sent", sendFailureMessage(err));
         throw err;
       }
@@ -389,7 +389,7 @@ export default function ChatTab() {
         );
         // The composer restores the draft on a thrown rejection but says nothing
         // about it, so a revoked-permission 403 used to read as a silent no-op
-        // (MUL-6380). Name the cause here: only this layer sees the error body.
+        // (PB-6380). Name the cause here: only this layer sees the error body.
         Alert.alert("Message not sent", sendFailureMessage(err));
         throw err;
       }

@@ -49,11 +49,11 @@ export interface UpdateIssueRequest {
    *  surface in `issueAttachments` and keep their preview Eye on refresh. */
   attachment_ids?: string[];
   /** Skip starting the agent run this write would trigger ("暂时不启动",
-   *  MUL-3375). The assignee/status change still applies. Control field —
+   *  PB-3375). The assignee/status change still applies. Control field —
    *  strip from optimistic cache patches; never written onto the Issue. */
   suppress_run?: boolean;
   /** Free-text handoff instruction injected into the started run's opening
-   *  context (MUL-3375). Only consumed when a run actually starts. Control
+   *  context (PB-3375). Only consumed when a run actually starts. Control
    *  field — strip from optimistic cache patches. */
   handoff_note?: string;
 }
@@ -115,7 +115,7 @@ export interface ListIssuesParams {
    * Filter by status CATEGORY rather than by exact key, so one bucket holds a
    * category's canonical status plus every custom status that inherits it.
    * This is what keeps the board's fan-out fixed at 7 requests however many
-   * custom statuses a workspace defines. (MUL-6243)
+   * custom statuses a workspace defines. (PB-6243)
    */
   status_category?: IssueStatusCategory;
   /** Multi-value form of `status_category`. OR within the field. */
@@ -322,7 +322,7 @@ export type IssueTableGroupSpec =
    * many statuses a workspace defines. The descriptor still reports
    * `value.kind === "status"` because a category's value IS its canonical
    * status key; the group KEY is what distinguishes the two contracts.
-   * (MUL-6243)
+   * (PB-6243)
    */
   | { kind: "status_category" }
   | { kind: "assignee" }
@@ -481,7 +481,7 @@ export interface IssueStatusBucket {
  * `api.listIssues` responses by the query functions in `issues/queries.ts`.
  */
 export interface ListIssuesCache {
-  /** Bucketed by status CATEGORY — see PAGINATED_CATEGORIES. (MUL-6243) */
+  /** Bucketed by status CATEGORY — see PAGINATED_CATEGORIES. (PB-6243) */
   byStatus: Partial<Record<IssueStatusCategory, IssueStatusBucket>>;
 }
 

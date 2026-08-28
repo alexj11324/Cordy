@@ -32,7 +32,7 @@ export interface Attachment {
    * CloudFront / S3 signed URL with a TTL). `markdown_url` is contracted
    * to be safe to embed in markdown bodies that outlive the current
    * session and to load as a native browser resource fetch on every
-   * supported client (web / desktop / mobile webview). MUL-3192.
+   * supported client (web / desktop / mobile webview). PB-3192.
    *
    * Empty when the response was produced by a server old enough to
    * predate this field, or by an upload path that did not produce a

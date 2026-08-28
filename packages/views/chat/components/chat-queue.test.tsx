@@ -127,7 +127,7 @@ describe("ChatQueue", () => {
   });
 });
 
-// MUL-6380: steering a queued message dispatches it now, so it has to clear the
+// PB-6380: steering a queued message dispatches it now, so it has to clear the
 // same invoke gate as a fresh send. When the caller has lost permission to run
 // the agent, a live-looking Steer button just walks them into a 403.
 describe("ChatQueue send-now gating", () => {

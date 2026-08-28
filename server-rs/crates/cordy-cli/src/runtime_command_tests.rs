@@ -599,7 +599,7 @@ async fn runtime_profile_path_mutation_fails_closed_in_task_context() {
     let cwd = tempfile::tempdir().expect("temp cwd");
     let config_dir = home.path().join(".cordy");
     fs::create_dir_all(&config_dir).expect("config dir");
-    let owner = br#"{"profile_command_overrides":{"owner":"/owner/bin"},"token":"mul_owner"}"#;
+    let owner = br#"{"profile_command_overrides":{"owner":"/owner/bin"},"token":"pby_owner"}"#;
     fs::write(config_dir.join("config.json"), owner).expect("owner config");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
     environment.set("CORDY_AGENT_ID", "agent-1");

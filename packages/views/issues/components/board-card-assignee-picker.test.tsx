@@ -114,7 +114,7 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
     id: `issue-${assigneeType}`,
     workspace_id: "ws-1",
     number: 6082,
-    identifier: "MUL-6082",
+    identifier: "PB-6082",
     title: "Fix Board assignee interaction",
     description: null,
     status: "todo",

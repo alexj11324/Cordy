@@ -9,7 +9,7 @@ import { TitleEditor } from "./title-editor";
 
 // Every other editor test mocks `@tiptap/react`, which means nothing verifies
 // that the submit-shortcut extension actually wins over the title keymap in a
-// real ProseMirror instance — the one genuinely new interaction in MUL-4931.
+// real ProseMirror instance — the one genuinely new interaction in PB-4931.
 // This file deliberately runs the real editor to pin that ordering down.
 
 vi.mock("../i18n", () => ({

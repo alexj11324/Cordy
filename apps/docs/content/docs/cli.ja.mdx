@@ -87,32 +87,32 @@ cordy workspace member invite admin@example.com --role admin
 ```bash
 # 表示と検索
 cordy issue list
-cordy issue get MUL-123
+cordy issue get PB-123
 cordy issue search "ログイン失敗"
 
 # 作成と更新
 cordy issue create --title "ログイン失敗を修正"
-cordy issue status MUL-123 in_progress
-cordy issue assign MUL-123 --to "Backend Agent"
+cordy issue status PB-123 in_progress
+cordy issue assign PB-123 --to "Backend Agent"
 
 # コメントと実行履歴
-cordy issue comment list MUL-123
-cordy issue comment add MUL-123 --content "まず回帰テストを確認してください"
-cordy issue runs MUL-123
+cordy issue comment list PB-123
+cordy issue comment add PB-123 --content "まず回帰テストを確認してください"
+cordy issue runs PB-123
 ```
 
 長い説明やコメントは stdin から読み込むと、改行や引用符の扱いに悩まずに済みます:
 
 ```bash
 cordy issue create --title "アップグレードメモ" --description-stdin < notes.md
-cordy issue comment add MUL-123 --content-stdin < review.md
+cordy issue comment add PB-123 --content-stdin < review.md
 ```
 
 1 回の実行のメッセージを表示する、またはタスクを停止する:
 
 ```bash
-cordy issue run-messages <task-id> --issue MUL-123
-cordy issue cancel-task <task-id> --issue MUL-123
+cordy issue run-messages <task-id> --issue PB-123
+cordy issue cancel-task <task-id> --issue PB-123
 ```
 
 ## エージェントとスキル
@@ -180,7 +180,7 @@ cordy runtime activity <runtime-id>
 
 ## ID と出力形式
 
-イシューには `MUL-123` のようなキーまたは完全な UUID を使います。UUID の短いプレフィックスは受け付けません。
+イシューには `PB-123` のようなキーまたは完全な UUID を使います。UUID の短いプレフィックスは受け付けません。
 
 その他のリソースの `list` コマンドは通常、コピーできる短い ID を表示し、`--full-id` で完全な UUID を出力できます。短い ID が一意に定まらない場合、CLI は文字の追加か完全な UUID への切り替えを求めます。タスクの短い ID は、所属するイシューを `--issue` で指定する必要もあります。
 

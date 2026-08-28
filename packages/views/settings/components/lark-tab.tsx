@@ -43,7 +43,7 @@ import type { LarkInstallation, LarkInstallStatusResponse } from "@cordy/core/ty
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
-// MUL-3083: the Lark (international, open.larksuite.com) "connect a Bot"
+// PB-3083: the Lark (international, open.larksuite.com) "connect a Bot"
 // entry is temporarily hidden while its install → inbound pipeline is
 // stabilized — some Lark installs complete on Lark's side but never land a
 // `lark_installation` row, so the Bot silently can't receive messages.
@@ -272,7 +272,7 @@ function InstallationRow({
 //   1. Only the agent's owner or a workspace owner/admin see anything —
 //      the backend authorizes `POST /lark/install/begin`, the status
 //      poll, AND disconnect with canManageAgent (agent owner OR ws
-//      owner/admin; see the Rust Lark handler, MUL-4213), so
+//      owner/admin; see the Rust Lark handler, PB-4213), so
 //      the gate here mirrors that. `agentOwnerId` is what lets a
 //      non-admin owner through; when it is omitted the button stays
 //      workspace owner/admin-only.
@@ -300,7 +300,7 @@ export function LarkAgentBindButton({
    * The bound agent's owner (`agent.owner_id`). When it matches the
    * current user, the button treats them as able to manage the bot even
    * if they are not a workspace owner/admin — mirroring the backend's
-   * canManageAgent authorization (MUL-4213). Omit it to keep the button
+   * canManageAgent authorization (PB-4213). Omit it to keep the button
    * workspace owner/admin-only.
    */
   agentOwnerId?: string | null;
@@ -344,7 +344,7 @@ export function LarkAgentBindButton({
   const isAgentOwner =
     !!user?.id && agentOwnerId != null && agentOwnerId === user.id;
   // Mirror the backend canManageAgent gate: the agent's owner OR a
-  // workspace owner/admin may bind/manage the bot (MUL-4213).
+  // workspace owner/admin may bind/manage the bot (PB-4213).
   const canManage = isWorkspaceAdmin || isAgentOwner;
 
   if (!canManage) return null;
@@ -380,7 +380,7 @@ export function LarkAgentBindButton({
   // entry points instead of one auto-detect QR because Lark only emits
   // tenant_brand="lark" mid-poll AFTER the user has authorized; until
   // then a Lark user has to scan a QR served from accounts.feishu.cn,
-  // which has surfaced as confusing for international users (MUL-3083
+  // which has surfaced as confusing for international users (PB-3083
   // follow-up). Each button passes its region to the install dialog,
   // which threads it to the backend so the device-flow `begin` POSTs
   // directly against the matching accounts host. The mid-poll
@@ -407,7 +407,7 @@ export function LarkAgentBindButton({
           <ExternalLink className="h-3 w-3" />
           {t(($) => $.lark.bind_button_feishu)}
         </Button>
-        {/* MUL-3083: Lark (international) bind entry is temporarily hidden —
+        {/* PB-3083: Lark (international) bind entry is temporarily hidden —
             see LARK_INTL_CONNECT_ENABLED. Mainland Feishu (above) is
             unaffected. */}
         {LARK_INTL_CONNECT_ENABLED && (
@@ -491,7 +491,7 @@ function LarkAgentBotStatusRow({
 // Visibility rules carry over from the parent `LarkAgentBindButton`:
 // only the agent's owner or a workspace owner/admin ever reach this
 // component, so the unbind affordance is unconditionally shown — the
-// backend authorizes DELETE with the same canManageAgent check (MUL-4213)
+// backend authorizes DELETE with the same canManageAgent check (PB-4213)
 // and would 403 anyone else, which makes a redundant gate here dead code.
 //
 // The dev-console host depends on which Lark cloud the bot lives on:

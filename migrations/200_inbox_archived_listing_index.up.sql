@@ -1,4 +1,4 @@
--- Back the archived-inbox listing (MUL-3736). The only inbox_item index is
+-- Back the archived-inbox listing (PB-3736). The only inbox_item index is
 -- idx_inbox_recipient (recipient_type, recipient_id, read), which carries
 -- neither workspace_id nor archived nor created_at, so the archived list would
 -- scan and sort every notification the recipient ever received. Keep this as

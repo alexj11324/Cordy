@@ -11,7 +11,7 @@ interface IssueDetailRouteProps {
   /**
    * Raw `/{ws}/issues/{segment}` parameter. Either a UUID (older links, and
    * anything the app itself linked before the issue row was in hand) or a
-   * human-readable identifier such as `MUL-123`.
+   * human-readable identifier such as `PB-123`.
    */
   routeId: string;
   onDelete?: () => void;
@@ -19,7 +19,7 @@ interface IssueDetailRouteProps {
 
 /**
  * Rewrite `/{ws}/issues/{uuid}` to `/{ws}/issues/{identifier}` once the issue
- * is known, so the address bar and any copied URL read as `MUL-123`.
+ * is known, so the address bar and any copied URL read as `PB-123`.
  *
  * A replace, not a push: the UUID URL is the same page, and a history entry
  * for it would make Back bounce the user between two spellings of one issue.

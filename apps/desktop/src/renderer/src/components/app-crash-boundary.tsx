@@ -13,7 +13,7 @@ import { DragStrip } from "@cordy/views/platform";
  * window overlay are siblings of the router, outside its reach. A render-time
  * throw in any of them unmounted the whole React tree and left an empty,
  * unresponsive window with no way back except force-quitting the app. That is
- * exactly what #7021 reported after deleting the last workspace (MUL-6231).
+ * exactly what #7021 reported after deleting the last workspace (PB-6231).
  *
  * The specific throw behind that report is fixed at its source, but "one
  * component throws" must not stay a whole-app kill switch on desktop, where

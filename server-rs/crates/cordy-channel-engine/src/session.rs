@@ -1,5 +1,5 @@
 //! The shared, channel-agnostic chat-session service every IM adapter
-//! reuses (MUL-3516).
+//! reuses (PB-3516).
 //!
 //! Database-backed session operations
 //! (ChatSession: EnsureSession / MarkPendingFresh / AppendUserMessage /

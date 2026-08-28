@@ -20,7 +20,7 @@ function makeIssue(id: string): Issue {
     id,
     workspace_id: "ws-1",
     number: id === "issue-1" ? 1 : 2,
-    identifier: id === "issue-1" ? "MUL-1" : "MUL-2",
+    identifier: id === "issue-1" ? "PB-1" : "PB-2",
     title: id,
     description: null,
     status: "todo",
@@ -82,7 +82,7 @@ describe("useIssueStatusBranches", () => {
     setApiInstance({
       listIssueTableRows,
       // The hook pages by category, so it reads the catalog. Empty is the real
-      // shape for a workspace with no custom statuses. (MUL-6243)
+      // shape for a workspace with no custom statuses. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
     } as unknown as ApiClient);
     // Mirror the production client (createQueryClient): row pages stay fresh
@@ -140,7 +140,7 @@ describe("useIssueStatusBranches", () => {
       expect.objectContaining({
         // No custom statuses in this fixture, so the hook keeps the
         // pre-feature contract. See use-issue-status-branches.category.test.tsx
-        // for the category contract. (MUL-6243)
+        // for the category contract. (PB-6243)
         group_key: "status:todo",
         page: { limit: 50, cursor: "cursor-2" },
       }),

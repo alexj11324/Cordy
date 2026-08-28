@@ -13,7 +13,7 @@ export interface GitHubSettings {
 
 /**
  * Pure derivation from a workspace's settings JSONB. Defaults every flag to
- * true so workspaces predating MUL-2414 keep the historical "all on" behavior.
+ * true so workspaces predating PB-2414 keep the historical "all on" behavior.
  */
 export function deriveGitHubSettings(
   workspace: Pick<Workspace, "settings"> | null | undefined,

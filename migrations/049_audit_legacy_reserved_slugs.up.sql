@@ -3,7 +3,7 @@
 -- Follow-up to migration 047 (extended reserved slugs). 047 intentionally
 -- omitted these four slugs from its audit because each had one conflicting
 -- workspace in production at the time, and blocking deploy on owner outreach
--- was deemed unacceptable. MUL-972 closed that loop on prd:
+-- was deemed unacceptable. PB-972 closed that loop on prd:
 --
 --   * `admin`   (99cd10e4-…) → renamed to `legacy-admin-99cd10e4`
 --   * `cordy` (dcd796aa-…) → renamed to `legacy-cordy-dcd796aa`
@@ -43,6 +43,6 @@ BEGIN
   );
 
   IF conflict_count > 0 THEN
-    RAISE EXCEPTION 'Found % workspace(s) with slugs that collide with the legacy reserved-slug audit set: %. Rename or delete before deploying (see MUL-972 for the playbook).', conflict_count, conflict_list;
+    RAISE EXCEPTION 'Found % workspace(s) with slugs that collide with the legacy reserved-slug audit set: %. Rename or delete before deploying (see PB-972 for the playbook).', conflict_count, conflict_list;
   END IF;
 END $$;

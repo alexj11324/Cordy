@@ -292,7 +292,7 @@ function SquadAvatarHoverCard({
 // parallel — content varies, frame doesn't.
 //
 // Do NOT defer-mount the HoverCard on pointerenter to save per-avatar mount
-// cost (MUL-4827). Base UI drives hover through native mouseenter/mouseleave
+// cost (PB-4827). Base UI drives hover through native mouseenter/mouseleave
 // listeners on the trigger element, and installs its close path *inside* the
 // mouseleave handler — so a trigger that never received a real mouseenter can
 // neither cancel a pending open nor ever hover-close. Warming on pointerenter

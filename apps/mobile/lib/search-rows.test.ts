@@ -12,7 +12,7 @@ function issue(
   return {
     id: partial.id,
     number: partial.number ?? 1,
-    identifier: partial.identifier ?? `MUL-${partial.number ?? 1}`,
+    identifier: partial.identifier ?? `PB-${partial.number ?? 1}`,
     title: partial.title ?? "Untitled",
     status: partial.status ?? "todo",
     match_source: partial.match_source ?? "title",
@@ -51,7 +51,7 @@ describe("buildSearchRows", () => {
     ).toEqual([]);
   });
 
-  // MUL-5824 regression: this screen renders every project before every issue,
+  // PB-5824 regression: this screen renders every project before every issue,
   // so a cancelled project used to be the first row even next to a live issue.
   it("puts a cancelled project below a live issue instead of first", () => {
     const rows = buildSearchRows({
@@ -99,8 +99,8 @@ describe("buildSearchRows", () => {
 
   it("keeps a cancelled direct hit at the top", () => {
     const rows = buildSearchRows({
-      query: "MUL-7",
-      issues: [issue({ id: "i-hit", number: 7, identifier: "MUL-7", status: "cancelled" })],
+      query: "PB-7",
+      issues: [issue({ id: "i-hit", number: 7, identifier: "PB-7", status: "cancelled" })],
       projects: [],
       recentIssues: [],
     });

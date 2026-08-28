@@ -57,7 +57,7 @@ fn authenticated_profile_save_resets_stale_workspace_atomically() {
             "",
             "https://api.new.example",
             "https://app.new.example",
-            "mul_new_secret",
+            "pby_new_secret",
             "new-workspace",
         )
         .expect("save authenticated profile");
@@ -65,7 +65,7 @@ fn authenticated_profile_save_resets_stale_workspace_atomically() {
     assert_eq!(config.server_url, "https://api.new.example");
     assert_eq!(config.app_url, "https://app.new.example");
     assert_eq!(config.workspace_id, "new-workspace");
-    assert_eq!(config.token, "mul_new_secret");
+    assert_eq!(config.token, "pby_new_secret");
 }
 
 #[tokio::test]
@@ -79,7 +79,7 @@ async fn login_callback_rejects_wrong_state_then_accepts_matching_state() {
         .expect("attacker connection");
     attacker
         .write_all(
-            b"GET /callback?state=wrong&token=mul_secret HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            b"GET /callback?state=wrong&token=pby_secret HTTP/1.1\r\nHost: localhost\r\n\r\n",
         )
         .await
         .expect("attacker request");
@@ -95,7 +95,7 @@ async fn login_callback_rejects_wrong_state_then_accepts_matching_state() {
         .expect("browser connection");
     browser
         .write_all(
-            b"GET /callback?state=expected&token=mul_secret HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            b"GET /callback?state=expected&token=pby_secret HTTP/1.1\r\nHost: localhost\r\n\r\n",
         )
         .await
         .expect("browser request");
@@ -107,7 +107,7 @@ async fn login_callback_rejects_wrong_state_then_accepts_matching_state() {
     assert!(String::from_utf8_lossy(&response).contains("200 OK"));
     assert_eq!(
         waiter.await.expect("callback task").expect("token"),
-        "mul_secret"
+        "pby_secret"
     );
 }
 
@@ -147,7 +147,7 @@ async fn workspace_creation_polling_opens_url_and_returns_new_workspace() {
     let client = ApiClient::new(
         format!("http://{address}"),
         String::new(),
-        "mul_test".into(),
+        "pby_test".into(),
         String::new(),
         String::new(),
         Duration::from_secs(1),

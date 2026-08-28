@@ -866,7 +866,7 @@ class ApiClient {
     );
   }
 
-  // --- Issue status catalog (MUL-6243) ---
+  // --- Issue status catalog (PB-6243) ---
   /**
    * The workspace's issue statuses — the 7 built-ins plus any custom ones an
    * admin defined. Reads are open to every workspace member; the catalog

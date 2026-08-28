@@ -13,7 +13,7 @@ export const VISIBILITY_LABEL: Record<AgentVisibility, string> = {
 /**
  * Descriptions for the visibility CHOICE (create dialog / picker), where
  * "Personal" is submitted as `permission_mode: "private"` — owner-only, with
- * no workspace-admin bypass since MUL-3963 (`canInvokeAgent` in
+ * no workspace-admin bypass since PB-3963 (`canInvokeAgent` in
  * the Rust agent-access handler). The older
  * "…and workspace admins…" copy predates that gate and is no longer true.
  */

@@ -82,7 +82,7 @@ function IconStack({ children }: { children: ReactNode[] }) {
  *
  * Members are keyed by `user_id`, NOT by the membership row id: every actor
  * filter value — assignee, creator, and actor properties — carries the user
- * id. Keying by `Member.id` silently resolved nothing (MUL-6286 review).
+ * id. Keying by `Member.id` silently resolved nothing (PB-6286 review).
  *
  * Returns undefined for anything unresolved so the caller can omit it, rather
  * than rendering a placeholder like "Unknown".
@@ -117,7 +117,7 @@ export function actorFilterValues(selected: string[]): ActorFilterValue[] {
  * The chips bar loads each directory lazily, and actor properties are the one
  * property type whose chip needs the member directory to say anything useful:
  * their values are references, not config options, so without this the chip
- * can only render a bare count (MUL-6286 review).
+ * can only render a bare count (PB-6286 review).
  */
 export function hasActorPropertyFilterSelection(
   propertyFilters: Record<string, string[]>,

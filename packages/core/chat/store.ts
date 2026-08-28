@@ -48,11 +48,11 @@ const PENDING_SEND_RESTORES_KEY = "cordy:chat:pending-send-restores";
  * workspace: the new-chat composer's identity is "the chat I have not created",
  * not "the chat I have not created with agent X". `selectedAgentId` is the send
  * target, not draft ownership, so switching agent mid-compose keeps the text
- * (MUL-4864). Created sessions keep their own slot, keyed by session id.
+ * (PB-4864). Created sessions keep their own slot, keyed by session id.
  */
 export const DRAFT_NEW_SESSION = "__new__";
 
-/** Pre-MUL-4864 per-agent new-chat slots, shaped `__new__:<agentId>`. */
+/** Pre-PB-4864 per-agent new-chat slots, shaped `__new__:<agentId>`. */
 const LEGACY_NEW_SESSION_PREFIX = `${DRAFT_NEW_SESSION}:`;
 const CHAT_WIDTH_KEY = "cordy:chat:width";
 const CHAT_HEIGHT_KEY = "cordy:chat:height";
@@ -118,7 +118,7 @@ function readDraftAttachments(storage: StorageAdapter, key: string): Record<stri
     const out: Record<string, DraftUpload[]> = {};
     for (const [draftKey, value] of Object.entries(parsed)) {
       if (!Array.isArray(value)) continue;
-      // Normalize on every load (MUL-5181 L2): bare Attachment rows persisted
+      // Normalize on every load (PB-5181 L2): bare Attachment rows persisted
       // by pre-L2 builds become `uploaded` placeholders, and an upload still
       // `uploading` at load time is dropped (bytes are gone, and nothing in the
       // body references it).

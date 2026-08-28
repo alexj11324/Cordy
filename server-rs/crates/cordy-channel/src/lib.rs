@@ -1,7 +1,7 @@
 //! Platform-agnostic foundation for Cordy's inbound IM integrations
 //! (Feishu/Lark, Slack, WeCom, …).
 //!
-//! Shared channel contract (MUL-3506 / MUL-3515).
+//! Shared channel contract (PB-3506 / PB-3515).
 //! This crate owns the contract every integration implements so the core
 //! never learns what a given platform's event JSON looks like.
 //!
@@ -23,7 +23,7 @@
 //!    last-writer-wins semantics. Adding a platform is "register a
 //!    factory", not "edit the core".
 //!
-//! Boundary rule (MUL-3515 decision §2): the envelope holds ONLY fields
+//! Boundary rule (PB-3515 decision §2): the envelope holds ONLY fields
 //! that are true across every platform. Anything platform-specific lives
 //! in [`message::InboundMessage::raw`] and is read ONLY by the adapter
 //! that produced it. The core never reads `raw`.

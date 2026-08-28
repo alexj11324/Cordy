@@ -1,5 +1,5 @@
 /**
- * Avatar profile-link modifier-click (MUL-5456).
+ * Avatar profile-link modifier-click (PB-5456).
  *
  * The trigger is a `<span role="link">`, not an anchor — deliberately, so it
  * can sit inside rows and menus without nesting interactive elements. That

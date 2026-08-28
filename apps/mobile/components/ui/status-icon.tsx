@@ -13,7 +13,7 @@
  *
  * The glyph set is per CATEGORY, not per status key: a workspace's custom
  * status renders with its category's icon, which is what makes it read as "the
- * same kind of thing" (MUL-6243). Callers that hold the workspace catalog pass
+ * same kind of thing" (PB-6243). Callers that hold the workspace catalog pass
  * `category` and `color`; callers that only hold a key get the built-in
  * resolution, which is exact for the 7 built-ins.
  */

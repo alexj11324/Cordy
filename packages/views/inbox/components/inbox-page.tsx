@@ -133,7 +133,7 @@ export function InboxPage() {
   // Mounting `IssueDetail` is the expensive half of switching rows, and driven
   // straight off `selectedKey` it ran as an urgent update: the main thread
   // blocked from the click until the new detail was ready, which is the
-  // "click, freeze, jump" the desktop shell showed (MUL-6404). Deferred, the
+  // "click, freeze, jump" the desktop shell showed (PB-6404). Deferred, the
   // click commits the row highlight and the URL right away, React renders the
   // new detail at transition priority — interruptible, so the shell keeps
   // painting — and the previous issue stays on screen until it is ready.

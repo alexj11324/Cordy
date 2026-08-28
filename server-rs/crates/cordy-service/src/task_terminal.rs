@@ -47,15 +47,15 @@ use crate::task_service::{
 /// The non-empty English body stored on a no_response assistant row. New
 /// clients render a localized message keyed on message_kind='no_response';
 /// older clients that ignore message_kind still show this text instead of an
-/// empty bubble (MUL-4351).
+/// empty bubble (PB-4351).
 pub const CHAT_NO_RESPONSE_FALLBACK: &str = "The agent finished this turn without a text reply.";
 
 /// Failure reasons the auto-retry path is allowed to act on. Agent-side
 /// errors are intentionally excluded — those are real problems the user
 /// should see. The one agent_error.* exception is provider_network: a
 /// mid-stream provider disconnect is transient infrastructure flakiness
-/// (MUL-4910). skill_bundle_unavailable: the agent process never started, so
-/// every downloaded bundle is already cached on disk (MUL-5370).
+/// (PB-4910). skill_bundle_unavailable: the agent process never started, so
+/// every downloaded bundle is already cached on disk (PB-5370).
 fn retryable_reason(reason: &str) -> bool {
     matches!(
         reason,
@@ -199,7 +199,7 @@ impl TaskService {
             }
 
             // Assistant outcome row written in the SAME transaction as the
-            // status flip (MUL-4351). Failing here rolls everything back so
+            // status flip (PB-4351). Failing here rolls everything back so
             // the daemon retries the terminal callback; the status CAS above
             // guarantees a replay can't write a second row.
             chat_assistant_msg = self
@@ -298,7 +298,7 @@ impl TaskService {
 
     /// Marks a task failed with auto-retry pre-computed OUTSIDE the
     /// transaction so the retry child commits atomically with the fail
-    /// (MUL-4351), closing the window where a newer chat task could claim the
+    /// (PB-4351), closing the window where a newer chat task could claim the
     /// idle session ahead of its own retry.
     #[allow(clippy::too_many_arguments)]
     pub async fn fail_task(
@@ -318,7 +318,7 @@ impl TaskService {
         // (GH #7098).
         let err_msg = sanitize_text_for_postgres(err_msg);
 
-        // MUL-2946: synthesise a refined reason when none supplied; MUL-5370:
+        // PB-2946: synthesise a refined reason when none supplied; PB-5370:
         // normalise legacy daemon catchalls either way, before retry
         // pre-compute so the upgraded reason decides eligibility.
         let mut failure_reason = failure_reason_in.to_string();
@@ -505,7 +505,7 @@ impl TaskService {
         // reanchors past it.
         if let (Some(chat_session_id), false) = (t.chat_session_id, retried.is_some()) {
             // An adopted onboarding kickoff must not stay bound to a task that
-            // will never run again (MUL-5827); gated on retried==nil because a
+            // will never run again (PB-5827); gated on retried==nil because a
             // retry child still reads the root's input binding.
             release_onboarding_kickoff_from_task(&mut *tx, chat_input_owner_id(&t))
                 .await
@@ -712,7 +712,7 @@ impl TaskService {
     /// Manual rerun endpoint core. Target resolution: source task's agent
     /// (with leader/squad provenance + trigger inheritance) or the issue's
     /// current assignee. A block fails closed before anything mutates
-    /// (MUL-4525); the pending-slot clear/enqueue pair retries once against a
+    /// (PB-4525); the pending-slot clear/enqueue pair retries once against a
     /// concurrent system retry.
     pub async fn rerun_issue(
         &self,
@@ -791,7 +791,7 @@ impl TaskService {
         };
 
         // Re-validate invoke permission on the RESOLVED target before any
-        // mutation (MUL-4525). A blocked rerun mutates nothing.
+        // mutation (PB-4525). A blocked rerun mutates nothing.
         if let Some(can_invoke) = can_invoke {
             let target_agent = cordy_db::queries::agent::get_agent(&self.pool, agent_id)
                 .await
@@ -886,7 +886,7 @@ impl TaskService {
             }
         }
         // A manual rerun is a NEW direct_human trigger attributed to the
-        // rerunning member (MUL-4302 §5); rerun_of rides the insert so the
+        // rerunning member (PB-4302 §5); rerun_of rides the insert so the
         // queued event never sees NULL lineage.
         self.enqueue_rerun_task(
             issue,
@@ -952,7 +952,7 @@ impl TaskService {
     /// path when the target IS the single-agent assignee (keeps assignee
     /// bookkeeping in sync), mention path otherwise. force_fresh_session is
     /// pinned true on every rerun row — rollback-safe legacy signal for old
-    /// claim handlers (MUL-4869).
+    /// claim handlers (PB-4869).
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn enqueue_rerun_task(
         &self,
@@ -1044,7 +1044,7 @@ impl TaskService {
                 if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
                     // Reset stuck in_progress issues only when nothing else is
                     // active and no retry was just enqueued. in_review/blocked
-                    // excluded — a human owns those then (MUL-6243).
+                    // excluded — a human owns those then (PB-6243).
                     let effective =
                         issue_status::effective(&self.pool, issue.workspace_id, &issue.status)
                             .await;
@@ -1069,7 +1069,7 @@ impl TaskService {
                                 {
                                     Ok(Some(updated_issue)) => {
                                         // Direct reset bypasses the HTTP handler that
-                                        // normally emits issue:updated (#4648 / MUL-3782).
+                                        // normally emits issue:updated (#4648 / PB-3782).
                                         self.broadcast_issue_updated(&updated_issue, &issue.status)
                                             .await;
                                     }
@@ -1125,7 +1125,7 @@ impl TaskService {
     /// Channel/legacy tasks: empty output writes NO row so chat:done carries
     /// empty content and the channel outbound silently drops it — the
     /// no_response fallback body must never be pushed to Slack/Lark
-    /// (MUL-4351). Attachments force a row regardless.
+    /// (PB-4351). Attachments force a row regardless.
     async fn write_chat_completion_outcome_tx(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -1149,7 +1149,7 @@ impl TaskService {
         let (body, _) = split_chat_quick_actions(&body_full);
         let is_empty = body.trim().is_empty();
 
-        // Completion-boundary observation (MUL-4899). Strictly non-blocking.
+        // Completion-boundary observation (PB-4899). Strictly non-blocking.
         observe_chat_output_local_path(self, task, &body);
 
         // Unclaimed attachments make an empty-text turn a real response —
@@ -1192,7 +1192,7 @@ impl TaskService {
             let content = redact::text(&body);
             // Deploy-window case: a kickoff task enqueued by the previous
             // server can be claimed here; its reply IS that member's opening
-            // and must keep the starter cards (MUL-5827). Keyed on the input
+            // and must keep the starter cards (PB-5827). Keyed on the input
             // batch owner so an auto-retry clone reaches the same verdict.
             let opening_only =
                 task_input_is_onboarding_kickoff_only(&mut **tx, chat_input_owner_id(task))
@@ -1278,7 +1278,7 @@ impl TaskService {
 }
 
 /// Records a metric when a chat reply references a runtime-local path
-/// (MUL-4899). Lexical only: file:// URLs and the recorded work_dir prefix.
+/// (PB-4899). Lexical only: file:// URLs and the recorded work_dir prefix.
 /// No path, body text, or fragment may reach the metric or the log.
 fn observe_chat_output_local_path(svc: &TaskService, task: &AgentTaskQueue, body: &str) {
     let Some(metrics) = &svc.metrics else { return };

@@ -188,7 +188,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
   // reflect, so anything it showed would be a proposal dressed as the
   // autopilot's state — and `scheduleDirty` below, comparing that proposal
   // against itself, then dropped the save on the floor under a success toast
-  // (MUL-5649). The schedule is asked for explicitly instead: until the user
+  // (PB-5649). The schedule is asked for explicitly instead: until the user
   // adds one, the panel says the autopilot is manual, and once they do, Save
   // writes what it shows whether or not they touched the default.
   const [scheduleAdded, setScheduleAdded] = useState(false);

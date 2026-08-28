@@ -8,7 +8,7 @@
 -- not_addressed_in_group (if the OTHER bot was @-ed). With a single
 -- shared dedup row, whichever WS claims first locks the row, and the
 -- bot that was actually @-ed gets dropped as `duplicate` before it can
--- evaluate the mention. See MUL-2671 multi-bot routing triage.
+-- evaluate the mention. See PB-2671 multi-bot routing triage.
 --
 -- The dedup table is short-lived (24h TTL via PurgeLarkInboundDedup);
 -- existing rows can be dropped on the way through — there's no

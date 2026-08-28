@@ -113,7 +113,7 @@ conversation owner). Use `@all` to announce, not to request work from the
 assignee.
 
 `@all` only suppresses those IMPLICIT routes. An EXPLICIT `@agent` / `@squad`
-mention in the same comment still fires normally (MUL-5411): a comment reading
+mention in the same comment still fires normally (PB-5411): a comment reading
 `[@all](mention://all/all) heads up — [@Preflight](mention://agent/<uuid>)
 please take this` enqueues Preflight and nobody else. Explicit mentions win over
 the broadcast; see `compute_comment_agent_triggers` in
@@ -140,7 +140,7 @@ read. Read that array after posting — it is the only place any of this shows u
   look identical on purpose**, because the id you typed could name a private
   agent in another workspace and the reason must not confirm that it exists.
   **So when you see `invocation_not_allowed`, check the UUID against the live
-  roster BEFORE you touch any visibility or invocation setting** (MUL-5548);
+  roster BEFORE you touch any visibility or invocation setting** (PB-5548);
   `cordy squad member list <squad-id> --output json` returns the `member_id`
   to build the mention from. An id that matches the pattern but is NOT a valid
   UUID at all (`mention://agent/-`) is rejected by the id parser and blocked
@@ -161,13 +161,13 @@ read. Read that array after posting — it is the only place any of this shows u
   not invoke the target never learns its state.
 - **A private agent you cannot invoke:** blocked — the mention path gates on
   `canInvokeAgent` for both `@agent` and `@squad`. That is the *run* gate, not
-  the *see* gate: since MUL-3963 a workspace admin who can open a private agent
+  the *see* gate: since PB-3963 a workspace admin who can open a private agent
   in the UI still may not trigger it, so being able to view the target says
   nothing about being able to mention it. (The `canEnqueueSquadLeader` wrapper
   is the squad assignment/promote path, not this one; the child-done wake is
   ungated — see the cordy-squads skill.)
 
-One nuance for automation (MUL-4857): when an UNATTRIBUTED autopilot run (a
+One nuance for automation (PB-4857): when an UNATTRIBUTED autopilot run (a
 schedule/webhook dispatch has no human originator, so the A2A gate has no human
 to key on) delegates by `@mention` while working on the issue that autopilot
 created, the invoke gate falls back to the **autopilot creator** as the effective

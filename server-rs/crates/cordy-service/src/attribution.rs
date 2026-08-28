@@ -1,5 +1,5 @@
 //! Accountable-human resolution contract for agent task runs — port of
-//! Human-attribution contract (MUL-4302).
+//! Human-attribution contract (PB-4302).
 //!
 //! Every run enqueued into agent_task_queue must be traceable to exactly one
 //! accountable human, and the attribution must be EXPLAINABLE: it records not
@@ -10,7 +10,7 @@
 //! in the caller; already-fetched facts are passed into the classify functions
 //! so the rules remain side-effect-free and unit-testable without a database.
 //!
-//! Hard invariant (MUL-4302 §1.3): attribution is "on behalf of", never blame
+//! Hard invariant (PB-4302 §1.3): attribution is "on behalf of", never blame
 //! and never authorization. Nothing here is consulted for permission decisions.
 
 use uuid::Uuid;
@@ -34,30 +34,30 @@ impl Source {
     }
     /// An agent running on behalf of a human caused the enqueue. The parent
     /// task's accountable human is COPIED, not chained, so delegation cycles
-    /// stay harmless (MUL-4302 §3.2).
+    /// stay harmless (PB-4302 §3.2).
     pub fn delegation() -> Source {
         Source("delegation".to_string())
     }
     /// The issue's standing assignee reacted to an agent/system-authored
     /// comment; the human is resolved through comment.source_task_id
-    /// (MUL-4302 §3.3).
+    /// (PB-4302 §3.3).
     pub fn comment_source() -> Source {
         Source("comment_source".to_string())
     }
     /// An autopilot schedule/webhook trigger fired; the accountable human is
     /// the member who CREATED that trigger. Preferred over [`Source::rule_owner`]
-    /// (MUL-4302; Bohan's refinement). originator stays NULL — authz-safe
+    /// (PB-4302; Bohan's refinement). originator stays NULL — authz-safe
     /// audit-only divergence.
     pub fn trigger_owner() -> Source {
         Source("trigger_owner".to_string())
     }
     /// Autopilot trigger whose creator is not recoverable; degrades to the
-    /// publisher of the rule's active version (MUL-4302 §3.4).
+    /// publisher of the rule's active version (PB-4302 §3.4).
     pub fn rule_owner() -> Source {
         Source("rule_owner".to_string())
     }
     /// Nothing above resolved a human; degrades to the agent owner. DEGRADED,
-    /// not compliance-grade (MUL-4302 §3.5).
+    /// not compliance-grade (PB-4302 §3.5).
     pub fn owner_fallback() -> Source {
         Source("owner_fallback".to_string())
     }
@@ -73,7 +73,7 @@ impl Source {
 
     /// True when src is compliance-grade (non-degraded). OWNER_FALLBACK,
     /// BACKFILL, and UNATTRIBUTED count against the attribution-coverage
-    /// health metric (MUL-4302 §9).
+    /// health metric (PB-4302 §9).
     pub fn precise(&self) -> bool {
         matches!(
             self.as_str(),
@@ -114,7 +114,7 @@ pub fn evidence_delegated_failure() -> EvidenceKind {
     EvidenceKind("delegated_failure".to_string())
 }
 /// Points the uniform evidence pair at the chat session that triggered the
-/// run — the chat analogue of autopilot_run/issue_assignment (MUL-4302 §2).
+/// run — the chat analogue of autopilot_run/issue_assignment (PB-4302 §2).
 pub fn evidence_chat() -> EvidenceKind {
     EvidenceKind("chat".to_string())
 }
@@ -189,7 +189,7 @@ pub struct Result_ {
     pub evidence_ref_id: Option<Uuid>,
 }
 
-/// Enforces the one-way Phase 1 accountability invariant (MUL-4302 §11):
+/// Enforces the one-way Phase 1 accountability invariant (PB-4302 §11):
 /// `originator IS NOT NULL ⟹ accountable = originator`. When user_id is None
 /// it leaves accountable exactly as the caller set it — the single divergence
 /// point where rule_owner / owner_fallback name an accountable human for
@@ -217,7 +217,7 @@ pub struct CommentFacts {
     pub source_task_id: Option<Uuid>,
     pub parent_originator: Option<Uuid>,
 
-    /// The source task's accountable_user_id (MUL-4302 §3.2): lets an
+    /// The source task's accountable_user_id (PB-4302 §3.2): lets an
     /// autopilot-rooted chain copy its responsible human down the delegation
     /// instead of dropping the chain root to unattributed.
     pub parent_accountable: Option<Uuid>,
@@ -286,7 +286,7 @@ pub struct DirectFacts {
 
     /// The member who PERFORMED the action that enqueued this run. When valid
     /// it takes precedence over the issue creator: the person who acted, not
-    /// whoever happened to file the issue, is on the hook (MUL-4302 §4).
+    /// whoever happened to file the issue, is on the hook (PB-4302 §4).
     pub actor_user_id: Option<Uuid>,
 
     /// An agent-created issue's provenance ("quick_create" or "agent_create");
@@ -296,14 +296,14 @@ pub struct DirectFacts {
     pub origin_originator: Option<Uuid>,
 
     /// The origin task's accountable_user_id — the DirectFacts analogue of
-    /// CommentFacts.parent_accountable (MUL-4302 §3.2).
+    /// CommentFacts.parent_accountable (PB-4302 §3.2).
     pub origin_accountable: Option<Uuid>,
 }
 
 /// Resolves attribution for a run with no trigger comment.
 pub fn classify_direct(f: DirectFacts) -> Result_ {
     // A member who directly assigned/promoted the issue is the accountable
-    // human, ahead of the issue's creator (MUL-4302 §4).
+    // human, ahead of the issue's creator (PB-4302 §4).
     if f.actor_user_id.is_some() {
         return finalize_attribution(Result_ {
             user_id: f.actor_user_id,
@@ -392,7 +392,7 @@ pub fn unattributed(evidence_kind: EvidenceKind, evidence_ref_id: Option<Uuid>) 
 }
 
 /// Builds attribution for an autopilot-triggered run keyed to the publisher
-/// of the active rule version (MUL-4302 §3.4). No human authorized the run:
+/// of the active rule version (PB-4302 §3.4). No human authorized the run:
 /// user_id stays None; accountable is publisher_user_id — THE divergence the
 /// two-column split exists for. A missing publisher degrades to unattributed
 /// so we never fabricate a human.
@@ -442,7 +442,7 @@ pub fn trigger_owner(
 }
 
 /// Already-fetched facts about an agent-created issue, deciding who inherits
-/// VISIBILITY of it (MUL-5483).
+/// VISIBILITY of it (PB-5483).
 #[derive(Debug, Clone, Default)]
 pub struct SubscriptionFacts {
     /// Only agent-created issues can carry a delegated subscription.
@@ -454,7 +454,7 @@ pub struct SubscriptionFacts {
 /// Resolves the human who should be auto-subscribed to an agent-created
 /// issue, plus the reason label. Deliberately mirrors classify_direct's
 /// origin branch rather than inventing a second notion of "whose behalf is
-/// this" (the defect MUL-5483 fixed was attribution and notification
+/// this" (the defect PB-5483 fixed was attribution and notification
 /// disagreeing about exactly that).
 ///
 /// - OriginOriginator valid → subscribe; resolves the ORIGINAL human at any
@@ -478,7 +478,7 @@ pub fn delegated_subscriber(f: SubscriptionFacts) -> Option<(Uuid, &'static str)
     }
 }
 
-/// Degrades an UNATTRIBUTED result to OWNER_FALLBACK (MUL-4302 §3.5): the
+/// Degrades an UNATTRIBUTED result to OWNER_FALLBACK (PB-4302 §3.5): the
 /// agent owner becomes the accountable human so no run is left without one,
 /// but this is a DEGRADED label surfaced distinctly in reporting. Audit-only
 /// — user_id stays None. Applied ONLY when the resolved source is
@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(
             out.user_id,
             Some(id(3)),
-            "actor outranks creator (MUL-4302 §4)"
+            "actor outranks creator (PB-4302 §4)"
         );
         assert_eq!(out.evidence_ref_id, Some(id(100)));
 

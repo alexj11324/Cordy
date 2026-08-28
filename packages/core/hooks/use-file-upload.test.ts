@@ -7,7 +7,7 @@ import type { ApiClient } from "../api/client";
 import type { Attachment } from "../types";
 import { useFileUpload, type UploadResult } from "./use-file-upload";
 
-// MUL-3192 — verifies that the URL chosen for markdown persistence is
+// PB-3192 — verifies that the URL chosen for markdown persistence is
 // a durable, server-supplied absolute URL when available, and falls
 // through to the legacy site-relative shape only when the server didn't
 // populate `markdown_url` (older deployments) or when there's no
@@ -101,7 +101,7 @@ describe("useFileUpload — markdownLink picks the durable URL with three-layer 
   });
 });
 
-// MUL-3339 — `uploading` is an in-flight counter, not a single boolean.
+// PB-3339 — `uploading` is an in-flight counter, not a single boolean.
 // The single-boolean shape silently regressed the quick-create multi-image
 // attach flow: callers fire N concurrent uploads (drag-drop, multi-image
 // paste), the first upload's `finally` would flip `uploading` back to false
@@ -111,7 +111,7 @@ describe("useFileUpload — markdownLink picks the durable URL with three-layer 
 // server. The fix tracks an in-flight counter and exposes
 // `uploading = count > 0`, so callers see "uploading" as long as ANY upload
 // is in flight.
-describe("useFileUpload — concurrent uploads (MUL-3339 regression)", () => {
+describe("useFileUpload — concurrent uploads (PB-3339 regression)", () => {
   it("keeps uploading=true until ALL concurrent uploads resolve", async () => {
     // Hand-rolled deferreds so the test controls resolve order.
     const att1 = makeAttachment({ id: "att-1" });

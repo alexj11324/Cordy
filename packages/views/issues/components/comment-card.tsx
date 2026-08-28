@@ -187,7 +187,7 @@ export function AttachmentList({
   if (!attachments?.length) return null;
   // Skip attachments whose URL (stable or legacy) is already referenced in the
   // markdown content, and duplicates of the same file that are referenced.
-  // Shared with the image-sequence builder (MUL-5752) so the cards rendered
+  // Shared with the image-sequence builder (PB-5752) so the cards rendered
   // here and the images the viewer pages through can't disagree.
   const standalone = selectStandaloneAttachments(content, attachments);
   if (!standalone.length) return null;
@@ -263,7 +263,7 @@ function TaskCommentRetryButton({
     try {
       await api.rerunIssue(issueId, taskId);
     } catch (e) {
-      // Rerun re-checks the operator's invoke permission (MUL-4525); a
+      // Rerun re-checks the operator's invoke permission (PB-4525); a
       // structured 403 is a permission block, not a transient failure.
       toast.error(
         dispatchReasonCode(e) === "invocation_not_allowed"
@@ -320,7 +320,7 @@ function useEditAttachmentState(
   const cancelledRef = useRef(false);
   const [content, setContent] = useState(entry.content ?? "");
   const [suppressedAgentIds, setSuppressedAgentIds] = useState<Set<string>>(() => new Set());
-  // Uploads for this edit session (MUL-5181) — coordinator-owned, persisted in
+  // Uploads for this edit session (PB-5181) — coordinator-owned, persisted in
   // the draft store keyed by the edit draft so scroll-out/close no longer drops
   // an in-flight upload.
   const draftKey = `edit:${issueId}:${entry.id}` as const;
@@ -417,11 +417,11 @@ function useEditAttachmentState(
     setRevisionConflict(false);
   };
 
-  // Await-then-render save (MUL-5181): shared submit contract, with the edit-
+  // Await-then-render save (PB-5181): shared submit contract, with the edit-
   // only concerns folded into onSubmit — the cancel-race guard, the no-op
   // short-circuit, and the failure toast. The hook owns the empty guard,
   // upload re-check, single-flight, and lock/spin via `submitting`.
-  // Stale-submit guard (MUL-5181 P0) — see CommentInput. The edit hook lives
+  // Stale-submit guard (PB-5181 P0) — see CommentInput. The edit hook lives
   // in CommentRow, so "unmounted" here means the issue detail closed.
   const editMountedRef = useRef(true);
   useEffect(() => {
@@ -445,7 +445,7 @@ function useEditAttachmentState(
       const activeIds = collectActiveAttachmentIds(
         trimmed,
         [...(entry.attachments ?? []), ...pendingAttachments],
-        // Body-referenced + retained-standalone only (MUL-5181): an upload the
+        // Body-referenced + retained-standalone only (PB-5181): an upload the
         // user removed from the body is really unbound. Close-surviving
         // uploads are written back into the body by the settle handler.
         retainedStandaloneIds,
@@ -821,7 +821,7 @@ function CommentRow({
 // CommentCard — One Card per thread (parent + all replies flat inside)
 // ---------------------------------------------------------------------------
 
-// A quick action posts an ordinary comment and is rendered as one (MUL-5465).
+// A quick action posts an ordinary comment and is rendered as one (PB-5465).
 // It briefly had a collapsed one-line header that expanded to reveal the
 // prompt, on the theory that repeated runs would bury the discussion. In
 // practice the prompts are short, the header restated what the body already

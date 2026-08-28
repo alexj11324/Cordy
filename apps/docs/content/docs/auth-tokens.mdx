@@ -17,7 +17,11 @@ Browser cookies are not meant to be copied into scripts or the CLI; use a person
 
 ## Personal access tokens
 
-A personal access token (PAT) starts with `mul_` and represents your account. It can access every workspace and API you have access to, so guard it like a password.
+A personal access token (PAT) starts with `pby_` and represents your account. It can access every workspace and API you have access to, so guard it like a password.
+
+<Callout type="info">
+If you upgraded from a release before the Patchbay rename, sign in again and replace any saved PATs. Tokens that use the former product prefix are no longer accepted.
+</Callout>
 
 When creating a token under **Settings → API Token**, you provide a name and pick an expiry of 30 days, 90 days, 1 year, or never; 90 days is preselected. The full token is shown exactly once; after the dialog closes, Cordy keeps only:
 
@@ -40,7 +44,7 @@ When you run `cordy login`, the CLI completes sign-in through the browser, then 
 ~/.cordy/profiles/<name>/config.json
 ```
 
-The daemon connects to Cordy with the same PAT. A `mul_` PAT with an expiry renews automatically when less than 7 days remain, extending it to 90 days from that moment. A failed renewal leaves the token unchanged; once a token has expired or been revoked, run `cordy login` again.
+The daemon connects to Cordy with the same PAT. A `pby_` PAT with an expiry renews automatically when less than 7 days remain, extending it to 90 days from that moment. A failed renewal leaves the token unchanged; once a token has expired or been revoked, run `cordy login` again.
 
 On a machine without a browser, create a PAT on the web first and let the CLI prompt for it safely:
 
@@ -53,7 +57,7 @@ cordy login --token
 Put the PAT in the `Authorization` header:
 
 ```bash
-export CORDY_TOKEN='mul_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export CORDY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.cordy.ai/api/me \
   -H "Authorization: Bearer $CORDY_TOKEN"
@@ -92,7 +96,7 @@ The server also recognizes two credentials used in internal or managed scenarios
 | `mcn_` | Cordy Cloud Node connections | Cordy Cloud Fleet |
 | `mdt_` | Workspace-scoped daemon authentication protocol | Internal server flows |
 
-Regular Cloud, self-hosted, and Desktop installations never need to create them manually. The user-side CLI and daemon always use `mul_` PATs; don't construct tokens with other prefixes yourself.
+Regular Cloud, self-hosted, and Desktop installations never need to create them manually. The user-side CLI and daemon always use `pby_` PATs; don't construct tokens with other prefixes yourself.
 
 ## Next steps
 

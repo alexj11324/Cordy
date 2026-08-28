@@ -190,7 +190,7 @@ describe("runtime list row menu", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders the kebab menu for an online local runtime (self-healing is no longer hidden)", () => {
-    // MUL-3352: hiding the kebab on a self-healing row left owners reading
+    // PB-3352: hiding the kebab on a self-healing row left owners reading
     // it as a missing permission. The action stays available; the dialog
     // surfaces the self-heal warning instead.
     renderActionsCell(

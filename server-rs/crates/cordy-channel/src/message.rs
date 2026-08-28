@@ -3,7 +3,7 @@
 //! Every
 //! adapter translates its platform's raw payload into an
 //! [`InboundMessage`]; the core's router, dedup, identity check, and
-//! persistence read ONLY these fields. Per the boundary rule (MUL-3515
+//! persistence read ONLY these fields. Per the boundary rule (PB-3515
 //! §2) the struct holds only cross-platform-true fields; everything
 //! platform-specific lives in [`InboundMessage::raw`].
 
@@ -240,7 +240,7 @@ pub struct InboundMessage {
 /// The minimal outbound reply the core can ask any Channel to deliver: a
 /// text body into a chat, optionally threaded or quoting a specific
 /// message. Rich cards, media uploads, and outbound webhooks are
-/// deliberately NOT modeled here (MUL-3515 decision §6) — an adapter that
+/// deliberately NOT modeled here (PB-3515 decision §6) — an adapter that
 /// supports richer output exposes it on its own type, not on this
 /// cross-platform envelope.
 #[derive(Debug, Clone, Default)]

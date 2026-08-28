@@ -311,7 +311,7 @@ describe("ProjectsPage compact row navigation", () => {
 
   // Web (no adapter): the row is a <div>, so nothing native catches a
   // modifier or middle click — rowLink opens the browser tab itself instead
-  // of navigating in place (MUL-5456).
+  // of navigating in place (PB-5456).
   it("has a single rowLink path for modifier and middle clicks without openInNewTab", () => {
     const push = vi.fn();
     const open = vi.spyOn(window, "open").mockReturnValue(null);

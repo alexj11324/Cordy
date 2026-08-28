@@ -109,7 +109,7 @@ function renderOverrides(
   return { onChange };
 }
 
-// MUL-5390: the create flow never offered these two, so a Fast Codex agent had
+// PB-5390: the create flow never offered these two, so a Fast Codex agent had
 // to be created first and fixed afterwards in settings.
 describe("AgentExecutionOverrides", () => {
   beforeEach(() => {

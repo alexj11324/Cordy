@@ -9,7 +9,7 @@ import type {
 
 /**
  * How long a quick-actions pending marker may stay unresolved before a client
- * gives up and clears it (MUL-5149). Used to stamp the marker's absolute
+ * gives up and clears it (PB-5149). Used to stamp the marker's absolute
  * `expires_at` deadline at creation, and by `useQuickActionsPendingTimeout` to
  * clear it — a shared deadline survives chat-surface switches instead of
  * re-arming a fresh window on each remount.
@@ -111,7 +111,7 @@ export function sortChatSessions(sessions: ChatSession[]): ChatSession[] {
  * a badge sourced from one is uncleared-able — the user can't open it to mark it
  * read. Archiving now also drops the external-channel binding server-side, so no
  * new unread should land on an archived session; this filter is the front-end
- * half of that guarantee (MUL-4372).
+ * half of that guarantee (PB-4372).
  */
 export function countUnreadChatSessions(sessions: ChatSession[]): number {
   return sessions.filter((s) => s.has_unread && s.status !== "archived").length;
@@ -292,7 +292,7 @@ export function unionTaskMessagesBySeq(
  * The realtime layer uses this to decide whether a `task:message` frame is
  * worth caching. Every client in the workspace receives every run's frames,
  * but only a handful of runs are ever opened; without this gate every client
- * accumulates the transcript of runs its user will never look at (MUL-6396).
+ * accumulates the transcript of runs its user will never look at (PB-6396).
  *
  * Presence, not data: mounting a `useQuery` registers the entry before the
  * fetch resolves, so a frame that lands mid-backfill is still kept. Dropping

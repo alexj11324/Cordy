@@ -78,7 +78,7 @@ export interface IssueSurfaceController {
   swimlaneIssues: Issue[];
   /** Agents currently working inside THIS surface, under the surface's active
    *  filters — the header chip's count, so clicking it leaves exactly these
-   *  agents' rows (MUL-4884, MUL-5525). `undefined` means the projection has
+   *  agents' rows (PB-4884, PB-5525). `undefined` means the projection has
    *  not resolved yet; the chip renders an indeterminate state rather than a
    *  number it cannot stand behind. */
   workingAgents: WorkingAgentSummary[] | undefined;
@@ -125,7 +125,7 @@ export interface IssueSurfaceController {
   /**
    * The status catalog a CUSTOM status filter depends on failed to load. The
    * filter cannot be honoured, so the surface shows a retryable error rather
-   * than an unexplained empty board. (MUL-6243)
+   * than an unexplained empty board. (PB-6243)
    */
   isStatusCatalogError: boolean;
   /** Re-runs the failed catalog request behind {@link isStatusCatalogError}. */
@@ -177,7 +177,7 @@ function useDebouncedTableSearch(value: string, delayMs = 250) {
  * for as long as the query has no data — which is the whole window right after
  * a workspace switch. Downstream that array is a memo dependency, so the empty
  * default alone was enough to rebuild the derived Sets, the table query spec,
- * and the branch query list once per render (MUL-5477). */
+ * and the branch query list once per render (PB-5477). */
 const EMPTY_LIST: never[] = [];
 
 /**
@@ -343,7 +343,7 @@ export function useIssueSurfaceController({
    * A custom-status filter cannot be routed until the catalog answers. While it
    * is pending the surface must HOLD ITS LOADING STATE, and on failure it must
    * surface a retryable error — not fetch zero branches and render an empty
-   * board, which is what "return no columns" alone produced. (MUL-6243)
+   * board, which is what "return no columns" alone produced. (PB-6243)
    */
   const statusFilterPending = statusColumnsForFilters.state === "pending";
   const statusFilterError = statusColumnsForFilters.state === "error";
@@ -360,7 +360,7 @@ export function useIssueSurfaceController({
   // them is what let "hide the Backlog column" also drop every custom status in
   // other categories: `hiddenStatusCategories` is display state, `statusFilters`
   // is a filter over concrete status KEYS which we map back to the columns those
-  // keys land in. (MUL-6243)
+  // keys land in. (PB-6243)
   const serverStatuses = useMemo<IssueStatusCategory[]>(
     () => {
       const selected =
@@ -638,7 +638,7 @@ export function useIssueSurfaceController({
         // a contract this feature introduced, so it is only sent once the
         // catalog confirms this workspace HAS a custom status — which can only
         // be true if the fleet already serves this version. Otherwise the
-        // swimlane keeps the exact request it made before. (MUL-6243)
+        // swimlane keeps the exact request it made before. (PB-6243)
         secondary: hasCustomStatuses ? "status_category" : "status",
         secondary_values: serverStatuses,
       };

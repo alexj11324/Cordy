@@ -129,7 +129,7 @@ describe("WelcomeAfterOnboarding", () => {
   it("provisions the no-runtime guide, then opens the completion modal", async () => {
     mockCreateIssue.mockResolvedValueOnce({
       id: "issue-install",
-      identifier: "MUL-1",
+      identifier: "PB-1",
       workspace_id: "ws-1",
     });
     useWelcomeStore.getState().set({

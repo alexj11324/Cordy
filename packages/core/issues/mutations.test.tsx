@@ -40,7 +40,7 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     id: `issue-${idx}`,
     workspace_id: WS_ID,
     number: idx,
-    identifier: `MUL-${idx}`,
+    identifier: `PB-${idx}`,
     title: `Issue ${idx}`,
     description: null,
     status: "todo",
@@ -431,7 +431,7 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     // A project move makes the issue leave the old project's filtered list.
     // The membership-aware coordinator removes the card from that loaded list
     // in onMutate — deterministic, no WS echo or refetch needed — replacing
-    // the old blanket "invalidate myAll on settle" safety net (MUL-3669 /
+    // the old blanket "invalidate myAll on settle" safety net (PB-3669 /
     // #4548). Lists whose filter the move cannot affect stay untouched.
     let resolve!: (issue: Issue) => void;
     updateIssue.mockReturnValue(
@@ -726,7 +726,7 @@ describe("useBatchUpdateIssues — optimistic patch covers filtered boards too",
   it("surgically removes moved issues from the old project's list (no blanket myAll refetch)", async () => {
     // Mirrors useUpdateIssue: a batch project move drops the cards from the
     // old project's loaded list via the membership-aware coordinator instead
-    // of refetching every filtered list (MUL-3669 / #4548).
+    // of refetching every filtered list (PB-3669 / #4548).
     const projectScope = "project:p1";
     const projectFilter = { project_id: "p1" };
     const projectKey = issueKeys.myListSorted(WS_ID, projectScope, projectFilter, sort);
@@ -950,7 +950,7 @@ describe("useResolveComment", () => {
   });
 });
 
-// MUL-6394: posting a comment while the Table view's grouped/facet caches are
+// PB-6394: posting a comment while the Table view's grouped/facet caches are
 // loaded rejected `mutateAsync` with "Cannot read properties of undefined
 // (reading 'some')" — the comment WAS created server-side (the agent task
 // started), but the composer showed an error toast and never appended the

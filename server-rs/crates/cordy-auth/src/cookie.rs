@@ -340,11 +340,11 @@ mod tests {
 
     #[test]
     fn csrf_roundtrip_and_tamper_rejection() {
-        let auth_token = "mul_test_token";
+        let auth_token = "pby_test_token";
         let csrf = generate_csrf_token(auth_token).unwrap();
 
         assert!(verify_csrf_signature(auth_token, &csrf));
-        assert!(!verify_csrf_signature("mul_other", &csrf));
+        assert!(!verify_csrf_signature("pby_other", &csrf));
         let mut tampered = csrf.clone();
         tampered.replace_range(
             csrf.len() - 1..,

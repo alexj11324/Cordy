@@ -81,7 +81,7 @@ export interface MentionItem {
    * The category that status behaves as, carried from the issue payload so the
    * list never has to resolve a custom key itself. Both the glyph and the
    * "closed / demoted" rules read this — comparing the raw key left a custom
-   * done status looking and ranking like active work. (MUL-6243)
+   * done status looking and ranking like active work. (PB-6243)
    */
   statusCategory?: IssueStatusCategory;
   /** Project emoji/icon snapshot for ProjectIcon rendering */
@@ -805,7 +805,7 @@ export function createMentionSuggestion(
     allowSpaces: true,
     // Only open over an `@` the user actually typed. Tiptap matches on document
     // content alone, so without this a pasted, dropped, undone or server-loaded
-    // `@` opens the picker just as readily (MUL-5429).
+    // `@` opens the picker just as readily (PB-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
     items: ({ query }) => {
       if (options.mode === "context") {

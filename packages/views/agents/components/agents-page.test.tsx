@@ -7,7 +7,7 @@ import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { AgentsPage } from "./agents-page";
 
-// These tests pin the `listReady` render gate (MUL-4511): the Agents list must
+// These tests pin the `listReady` render gate (PB-4511): the Agents list must
 // not paint real rows until the auxiliary queries the active sort field /
 // filter depends on have landed, or it sorts on placeholder values
 // (lastActiveDays null→Infinity, runCount 0) and visibly re-orders when each

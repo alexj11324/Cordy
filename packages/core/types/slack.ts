@@ -1,4 +1,4 @@
-/** A Slack bot installation bound to a single Cordy agent (MUL-3666).
+/** A Slack bot installation bound to a single Cordy agent (PB-3666).
  *
  * Wire shape mirrors `SlackInstallationResponse` in
  * the Rust Slack handler. New fields the backend adds in the

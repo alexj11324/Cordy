@@ -1037,7 +1037,7 @@ mod tests {
                 "server_url":"https://cordy.example",
                 "app_url":"https://app.cordy.example",
                 "workspace_id":"workspace-1",
-                "token":"mul_secret",
+                "token":"pby_secret",
                 "device_name":"build-host",
                 "runtime_name":"night-shift",
                 "workspaces_root":"/srv/cordy-workspaces",
@@ -1080,7 +1080,7 @@ mod tests {
         assert!(config.disable_auto_reload);
 
         let daemon = config.daemon_profile_input();
-        assert_eq!(daemon.token, "mul_secret");
+        assert_eq!(daemon.token, "pby_secret");
         assert_eq!(
             daemon
                 .profile_command_overrides
@@ -1096,7 +1096,7 @@ mod tests {
     #[test]
     fn absent_agent_timeout_and_backend_overrides_remain_unset() {
         let config: CliConfig =
-            serde_json::from_str(r#"{"token":"mul_secret"}"#).expect("minimal profile");
+            serde_json::from_str(r#"{"token":"pby_secret"}"#).expect("minimal profile");
         assert!(config.agent_timeout.is_none());
         assert!(config.backends.is_none());
 
@@ -1364,13 +1364,13 @@ mod tests {
         fs::create_dir_all(&profile_dir).expect("profile dir");
         fs::write(
             profile_dir.join("config.json"),
-            r#"{"server_url":"https://dev.example","token":"mul_dev","future":{"enabled":true}}"#,
+            r#"{"server_url":"https://dev.example","token":"pby_dev","future":{"enabled":true}}"#,
         )
         .expect("profile config");
         fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
         let default_path = home.path().join(".cordy/config.json");
         fs::create_dir_all(default_path.parent().expect("default dir")).expect("default dir");
-        let default_bytes = br#"{"token":"mul_default","workspace_id":"default-workspace"}"#;
+        let default_bytes = br#"{"token":"pby_default","workspace_id":"default-workspace"}"#;
         fs::write(&default_path, default_bytes).expect("default config");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
 
@@ -1440,7 +1440,7 @@ mod tests {
         let old_config = br#"{
             "server_url":"https://old.example",
             "app_url":"https://old-app.example",
-            "token":"mul_old",
+            "token":"pby_old",
             "workspace_id":"workspace-old",
             "future":{"kept":true}
         }
@@ -1471,7 +1471,7 @@ mod tests {
         fs::create_dir_all(&profile_dir).expect("profile dir");
         fs::write(
             profile_dir.join("config.json"),
-            br#"{"server_url":"https://old.example","token":"mul_old","workspace_id":"old","future":{"kept":true}}"#,
+            br#"{"server_url":"https://old.example","token":"pby_old","workspace_id":"old","future":{"kept":true}}"#,
         )
         .expect("old config");
         fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");

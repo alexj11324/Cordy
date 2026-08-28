@@ -48,7 +48,7 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
   const typeLabels = useTypeLabels();
   const { getActorName } = useActorName();
   // Inbox is a cross-workspace surface, so the catalog is read per item's own
-  // workspace rather than from the route. (MUL-6243)
+  // workspace rather than from the route. (PB-6243)
   const { categoryOf, entryOf, colorOf } = useIssueStatuses(item.workspace_id);
   const details = item.details ?? {};
 

@@ -70,7 +70,7 @@ export function clearRegisteredWorkspaceDrafts(
 export function resetAllRegisteredDrafts(): void {
   // Abort in-flight uploads BEFORE clearing drafts: an upload that settles
   // after the draft is wiped must not resurrect a placeholder, and its bytes
-  // must never bind an attachment under the next session (MUL-5181).
+  // must never bind an attachment under the next session (PB-5181).
   abortAllUploads();
   for (const entry of entries.values()) {
     entry.resetInMemory();

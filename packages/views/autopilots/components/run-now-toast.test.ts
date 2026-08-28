@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
 
-// Elon must-fix 1 (MUL-4525): the "run now" toast must be a whitelist — only
+// Elon must-fix 1 (PB-4525): the "run now" toast must be a whitelist — only
 // explicit start statuses are success; every other class (including an unknown
 // future status) must NOT show a false "triggered".
 describe("runNowToastKind", () => {

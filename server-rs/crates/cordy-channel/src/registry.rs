@@ -25,7 +25,7 @@ pub struct UnknownTypeError(pub Type);
 ///
 /// Registration is last-writer-wins: registering a Type that already has
 /// a Factory replaces it silently. This mirrors the plugin-registry
-/// pattern from the reference design (MUL-3506) where the last adapter
+/// pattern from the reference design (PB-3506) where the last adapter
 /// to register a type wins, so a deployment can override a built-in
 /// adapter by registering its own afterwards without a removal step.
 #[derive(Default)]

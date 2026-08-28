@@ -844,7 +844,7 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
    * same snapshot it pushes into state. `dirtySummary` is a `useMemo` keyed on
    * those state values, so every baseline write is paired with the state
    * change that recomputes it. Assigning this ref anywhere else breaks that
-   * pairing and silently re-opens MUL-5645.
+   * pairing and silently re-opens PB-5645.
    */
   const baselineRef = useRef<SkillDraft | null>(null);
 

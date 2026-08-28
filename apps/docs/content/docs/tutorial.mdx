@@ -147,7 +147,7 @@ The description carries three kinds of information: constraints (start from the 
 
 ![Agent mode in the new issue dialog, with Engineer selected as the creator](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-After submitting, Cordy creates the issue (`MUL-1`, with a generated title) and sets Engineer as the assignee. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, assignee, linked pull requests, and the execution log.
+After submitting, Cordy creates the issue (`PB-1`, with a generated title) and sets Engineer as the assignee. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, assignee, linked pull requests, and the execution log.
 
 The run takes a few minutes, and there are two ways into its progress: the working-status badge next to the title, and **Execution log** on the right — open the current run:
 
@@ -173,7 +173,7 @@ Open it, select Engineer, and type `@` to reference the current issue — the co
 
 ![Asking in chat with the issue referenced](/images/docs/tutorial-chat-ask-in-issue.webp)
 
-Engineer's reply has two parts: the local server is running, with the address to open; and the PR was in fact already submitted, but the title, branch name, and body all lacked `MUL-1`, so automatic linking had nothing to match — it then added the identifier to the PR title.
+Engineer's reply has two parts: the local server is running, with the address to open; and the PR was in fact already submitted, but the title, branch name, and body all lacked `PB-1`, so automatic linking had nothing to match — it then added the identifier to the PR title.
 
 ![Engineer's reply: the local address and why the PR was not linked](/images/docs/tutorial-chat-engineer-reply.webp)
 
@@ -209,7 +209,7 @@ Creation again goes to Cordy helper: an agent named Reviewer, this time on Codex
 
 ![Reviewer's configuration](/images/docs/tutorial-reviewer-detail.webp)
 
-Review needs no new issue and no change of assignee. Back in MUL-1's comment box, type `@Reviewer` to mention it, write what needs doing, and send — a hint below the box says that Reviewer starts executing once the comment is sent:
+Review needs no new issue and no change of assignee. Back in PB-1's comment box, type `@Reviewer` to mention it, write what needs doing, and send — a hint below the box says that Reviewer starts executing once the comment is sent:
 
 ![Starting a review by @-mentioning Reviewer in a comment](/images/docs/tutorial-comment-mention-reviewer.webp)
 
@@ -239,7 +239,7 @@ That closes the loop on the first issue: from the description of the requirement
 
 ## Form a squad
 
-The MUL-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Cordy's answer to it is the **squad**: a named group of agents and members led by a leader agent. When an issue is assigned to a squad, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
+The PB-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Cordy's answer to it is the **squad**: a named group of agents and members led by a leader agent. When an issue is assigned to a squad, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
 
 A squad is the division of labor you already have, plus a leader:
 
@@ -289,7 +289,7 @@ Give the squad a complete piece of work: turn the site into a generic template �
 
 In the generated issue, the requirement is already organized into a structured description, and the badge next to the title shows the leader has taken it:
 
-![MUL-2: Lead creates the issue and starts work](/images/docs/tutorial-issue-squad-created.webp)
+![PB-2: Lead creates the issue and starts work](/images/docs/tutorial-issue-squad-created.webp)
 
 What follows is all the leader's work. Its delegation comment is more than a forward: it adds two constraints the issue did not have — the placeholder identity must be consistent site-wide, and the sweep must cover metadata and the README — before handing off to Engineer. When Engineer finishes, it reports the PR on the same timeline:
 
@@ -299,7 +299,7 @@ The review comes back with zero findings and Lead delivers: it mentions you for 
 
 ![Lead's delivery report](/images/docs/tutorial-squad-delivery.webp)
 
-From organizing the requirement, to settling the approach, development, review, and the delivery report, no step of this issue needed you to connect it. Sign-off works the same as on MUL-1 — you can also have it start a local server and look in the browser, not repeated here. Done is still yours: reply to merge, or change the status by hand. Every step of the timeline is recorded, no different from an issue on a human team — only who executes has changed.
+From organizing the requirement, to settling the approach, development, review, and the delivery report, no step of this issue needed you to connect it. Sign-off works the same as on PB-1 — you can also have it start a local server and look in the browser, not repeated here. Done is still yours: reply to merge, or change the status by hand. Every step of the timeline is recorded, no different from an issue on a human team — only who executes has changed.
 
 ## Automation: Autopilot
 

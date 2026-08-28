@@ -198,7 +198,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
       {/* Structural navigation; bounded setting groups remain in the content surface.
           Stays on the content surface color (no shell tint): the desktop's active
           tab merges into the card top, and a tinted panel under the first tabs
-          breaks that seam (MUL-4439). Zoning comes from the divider instead. */}
+          breaks that seam (PB-4439). Zoning comes from the divider instead. */}
       <div className="shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-56 md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
         {/* This page builds its own chrome instead of a PageHeader, so it has
             to supply the nav trigger itself — below `xl` the nav is a sheet or

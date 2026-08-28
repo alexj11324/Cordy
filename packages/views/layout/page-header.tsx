@@ -39,7 +39,7 @@ export const PAGE_TOOLBAR = cn(
  * reopen), and under a shell that declares `hasExternalTrigger` — the desktop
  * window toolbar's trigger never scrolls away or hides, so a second copy in
  * every page header stacked two identical icons 50px apart, and a third
- * whenever a detail pane brought its own header along (MUL-6218).
+ * whenever a detail pane brought its own header along (PB-6218).
  */
 export function CollapsedNavTrigger() {
   const sidebar = useSidebarSafe();

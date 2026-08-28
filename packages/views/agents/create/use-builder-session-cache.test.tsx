@@ -96,7 +96,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-// Regression (MUL-5711 review): the Builder send seeds BOTH message caches, so
+// Regression (PB-5711 review): the Builder send seeds BOTH message caches, so
 // every Builder cleanup path has to clear both. `messagesPage` is
 // staleTime: Infinity — a copy left behind there stays fresh forever, and any
 // chat surface opening the same session reads it instead of the server.

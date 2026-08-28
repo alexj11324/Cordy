@@ -64,7 +64,7 @@ const baseIssue: Issue = {
   id: ISSUE_ID,
   workspace_id: WS_ID,
   number: 1,
-  identifier: "MUL-1",
+  identifier: "PB-1",
   title: "Test",
   description: null,
   status: "todo",
@@ -94,7 +94,7 @@ const parentedIssue: Issue = {
 const otherIssue: Issue = {
   ...baseIssue,
   id: OTHER_ISSUE_ID,
-  identifier: "MUL-2",
+  identifier: "PB-2",
   title: "Other",
 };
 
@@ -353,7 +353,7 @@ describe("onIssueMetadataChanged", () => {
   });
 
   it("re-sorts an updated_at-sorted board but not a position-sorted one", () => {
-    // A metadata write bumps updated_at server-side (MUL-5016), so a board
+    // A metadata write bumps updated_at server-side (PB-5016), so a board
     // sorted by "Updated date" must refetch; a position-sorted board must not.
     const boardUpdatedKey = issueKeys.listSorted(WS_ID, {
       sort_by: "updated_at",
@@ -447,7 +447,7 @@ describe("issue property snapshots", () => {
   });
 
   it("re-sorts an updated_at-sorted board but not a position-sorted one after commit", () => {
-    // A property write also bumps updated_at server-side (MUL-5016), so a board
+    // A property write also bumps updated_at server-side (PB-5016), so a board
     // sorted by "Updated date" (no property param) must refetch on commit while
     // a position-sorted board stays put.
     const qc = new QueryClient();
@@ -659,7 +659,7 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
   });
 
   it("drops the card from the old project's list on a server project_changed flag even when the cached project_id already matches", () => {
-    // Reproduces the drift state behind MUL-3669: the detail cache already
+    // Reproduces the drift state behind PB-3669: the detail cache already
     // carries the NEW project (e.g. a local optimistic write), so a cache
     // diff would compute projectChanged=false — the authoritative server
     // flag must still drive the membership reconcile for any list where the

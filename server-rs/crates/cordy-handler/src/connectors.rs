@@ -382,7 +382,7 @@ fn dingtalk_installation_bindings(
     value
 }
 
-const LARK_SESSION_PREFIX: &str = "mul:{lark_install_session}:";
+const LARK_SESSION_PREFIX: &str = "patchbay:{lark_install_session}:";
 const LARK_SESSION_TTL: Duration = Duration::from_secs(15 * 60);
 const LARK_SESSION_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 const LARK_SESSION_MEMORY_CAP: usize = 1024;
@@ -2342,7 +2342,7 @@ mod tests {
         let session_id = "11111111-1111-1111-1111-111111111111";
         assert_eq!(
             LarkSessionStore::key(session_id),
-            format!("mul:{{lark_install_session}}:{session_id}")
+            format!("patchbay:{{lark_install_session}}:{session_id}")
         );
     }
 

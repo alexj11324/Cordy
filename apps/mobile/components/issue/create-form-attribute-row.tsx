@@ -54,7 +54,7 @@ export function CreateFormAttributeRow() {
   const project = useNewIssueDraftStore((s) => s.project);
 
   const { getName } = useActorLookup();
-  // The draft can hold a custom status the user picked in the sheet. (MUL-6243)
+  // The draft can hold a custom status the user picked in the sheet. (PB-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
   const assigneeLabel = assignee
     ? getName(assignee.type, assignee.id)

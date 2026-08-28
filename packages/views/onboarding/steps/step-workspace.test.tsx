@@ -185,7 +185,7 @@ describe("StepWorkspace — random workspace identity", () => {
   });
 });
 
-// MUL-6050: the issue prefix used to be a read-only preview derived
+// PB-6050: the issue prefix used to be a read-only preview derived
 // server-side from the workspace NAME, so every workspace named in Chinese
 // (or Japanese, Korean, emoji…) was created as "WS" with no way to change it
 // in the create flow. It now derives from the slug — which the same form

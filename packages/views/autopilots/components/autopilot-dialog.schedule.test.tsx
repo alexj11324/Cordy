@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AutopilotTrigger } from "@cordy/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
-// Regression cover for MUL-5649: editing a manual-only autopilot (no triggers)
+// Regression cover for PB-5649: editing a manual-only autopilot (no triggers)
 // showed the schedule panel seeded with the editor's default — 09:00 every day
 // — as if that were the autopilot's schedule. Saving compared that default
 // against itself, found no change, and wrote nothing, while the toast said the

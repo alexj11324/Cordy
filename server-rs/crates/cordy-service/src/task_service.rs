@@ -90,7 +90,7 @@ pub const PREPARE_LEASE_DURATION: Duration = Duration::from_secs(45);
 const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
 
 /// Signals that a run resolved to no precise accountable human and the enqueue
-/// is REFUSED rather than started (MUL-4302 §1/§3.5).
+/// is REFUSED rather than started (PB-4302 §1/§3.5).
 #[derive(Debug, thiserror::Error)]
 #[error(
     "attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)"
@@ -384,7 +384,7 @@ impl TaskService {
     /// workspaceID scopes the fetch to the task's own workspace: the summary
     /// is later returned in claim / task-history responses, so a foreign
     /// comment UUID must NOT leak another workspace's text even truncated
-    /// (MUL-4252).
+    /// (PB-4252).
     pub async fn build_comment_trigger_summary(
         &self,
         workspace_id: Uuid,
@@ -407,7 +407,7 @@ impl TaskService {
     // --- Attribution ---------------------------------------------------------
 
     /// Top-of-chain HUMAN user id for a comment-triggered Enqueue* path
-    /// (MUL-3869 chain rules). Missing comment / unknown source task / NULL
+    /// (PB-3869 chain rules). Missing comment / unknown source task / NULL
     /// parent originator → None.
     pub async fn resolve_originator_from_trigger_comment(
         &self,
@@ -425,7 +425,7 @@ impl TaskService {
     }
 
     /// FULL attribution snapshot for a comment being coalesced into an
-    /// already-queued task (MUL-4302). Re-runs the fail-closed gate the fresh
+    /// already-queued task (PB-4302). Re-runs the fail-closed gate the fresh
     /// enqueue faced; see [`Self::apply_attribution_fallback`].
     pub async fn attribution_for_merged_comment(
         &self,
@@ -447,7 +447,7 @@ impl TaskService {
 
     /// Recomputes the Composio MCP overlay + connected-app metadata for
     /// (originatorUserID, agent) when a merge re-stamps a coalesced task's
-    /// originator (MUL-4195 review must-fix #1). Fails soft to empty.
+    /// originator (PB-4195 review must-fix #1). Fails soft to empty.
     pub async fn build_runtime_mcp_overlay_for_merge(
         &self,
         originator_user_id: Uuid,
@@ -532,7 +532,7 @@ impl TaskService {
     }
 
     /// Full attribution for an issue-backed enqueue. actor_user_id (a direct
-    /// member action) wins ahead of any trigger comment or origin (MUL-4302
+    /// member action) wins ahead of any trigger comment or origin (PB-4302
     /// §4/§5) — a manual rerun may inherit a triggerCommentID for prompt
     /// context but must attribute to the member who clicked rerun.
     pub async fn attribution_for_issue_task(
@@ -551,7 +551,7 @@ impl TaskService {
         }
         if let Some(trigger_comment_id) = trigger_comment_id {
             // workspace-scoped so a foreign comment UUID cannot resolve a
-            // human from another tenant (MUL-4252).
+            // human from another tenant (PB-4252).
             let comment =
                 get_comment_in_workspace(&self.pool, trigger_comment_id, issue.workspace_id)
                     .await
@@ -566,7 +566,7 @@ impl TaskService {
             // A SYSTEM-authored comment (Stage-completion child-done cascade)
             // carries no human and is not part of any delegation chain; skip
             // to the issue's own provenance below instead of degrading to
-            // owner_fallback (MUL-4302; Bohan stage-cascade fallback).
+            // owner_fallback (PB-4302; Bohan stage-cascade fallback).
             if comment.author_type != "system" {
                 return self
                     .attribution_from_comment(&comment, agent_authored_source)
@@ -576,7 +576,7 @@ impl TaskService {
         // Autopilot-origin issues from schedule/webhook triggers: no human
         // authorized the run → originator stays NULL, accountable goes to the
         // human responsible for the firing trigger's effective config —
-        // trigger_owner (MUL-4302; Elon must-fix), degrading to rule_owner.
+        // trigger_owner (PB-4302; Elon must-fix), degrading to rule_owner.
         if issue.origin_type.as_deref() == Some("autopilot") {
             if let Some(origin_id) = issue.origin_id {
                 let trigger_id = match get_autopilot_run_by_issue(&self.pool, issue.id).await {
@@ -602,7 +602,7 @@ impl TaskService {
         };
         // Member-created issues resolve without a DB read. Only origin-linked
         // agent-created issues (quick_create, agent_create) load the origin
-        // task to inherit its human (MUL-4305).
+        // task to inherit its human (PB-4305).
         if issue.creator_type != "member"
             && matches!(
                 issue.origin_type.as_deref(),
@@ -945,7 +945,7 @@ impl TaskService {
     }
 
     /// Terminal-cancelled capture plus eager revocation of any mat_ task
-    /// tokens minted for this task (MUL-2600): cancellation is terminal, so
+    /// tokens minted for this task (PB-2600): cancellation is terminal, so
     /// deleting the token closes the window where a compromised process could
     /// keep authenticating until the 24h expiry. Failure is non-fatal.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
@@ -1225,7 +1225,7 @@ pub fn task_error_type(reason: &str) -> &'static str {
 // --- Free-function attribution helpers (DB-backed) ----------------------------
 
 /// Resolves the rule_owner attribution for an autopilot run from its active
-/// rule version snapshot (MUL-4302 §3.4). Shared by both autopilot execution
+/// rule version snapshot (PB-4302 §3.4). Shared by both autopilot execution
 /// modes. Never errors: attribution must not fail an enqueue.
 pub async fn rule_owner_attribution(
     pool: &PgPool,
@@ -1247,7 +1247,7 @@ pub async fn rule_owner_attribution(
 }
 
 /// Resolves an autopilot schedule/webhook run to the human currently
-/// RESPONSIBLE for the firing trigger's effective config (MUL-4302; Bohan +
+/// RESPONSIBLE for the firing trigger's effective config (PB-4302; Bohan +
 /// Elon must-fix). published_by starts at the creator and transfers to whoever
 /// later substantively edits it. Degrades to rule_owner when unrecoverable.
 pub async fn trigger_owner_attribution(
@@ -1575,8 +1575,8 @@ impl TaskService {
     }
 
     /// Assign/promote variant carrying a handoff note into the run's opening
-    /// context (MUL-3375). actorUserID becomes the accountable human
-    /// (MUL-4302 §4).
+    /// context (PB-3375). actorUserID becomes the accountable human
+    /// (PB-4302 §4).
     pub async fn enqueue_task_for_issue_with_handoff(
         &self,
         issue: &Issue,
@@ -1983,7 +1983,7 @@ impl TaskService {
     }
 
     /// Assign/promote variant carrying a handoff note into the leader run
-    /// (MUL-3375).
+    /// (PB-3375).
     pub async fn enqueue_task_for_squad_leader_with_handoff(
         &self,
         issue: &Issue,
@@ -2144,7 +2144,7 @@ impl TaskService {
 
         // The fallback assignee reacts to the same trigger comment as the
         // primary routed task; stamping at creation keeps the eventual run off
-        // the NULL-source bypass (MUL-4302 §2). Overlay intentionally left for
+        // the NULL-source bypass (PB-4302 §2). Overlay intentionally left for
         // the promotion path.
         let attr = self
             .attribution_for_issue_task(
@@ -2259,7 +2259,7 @@ impl TaskService {
         // The requester is the direct_human originator and accountable.
         // Quick-create has NO antecedent row for the evidence pair — the run's
         // whole job is to CREATE the issue — so evidence is intentionally NULL;
-        // source is still stamped direct_human (MUL-4302 §2), which is not a
+        // source is still stamped direct_human (PB-4302 §2), which is not a
         // NULL-source bypass.
         let attr = direct_human_run(Some(requester_id), EvidenceKind(String::new()), None);
         let attr = self.apply_attribution_fallback(attr, &agent).await?;
@@ -2354,7 +2354,7 @@ impl TaskService {
     /// Cancels every active task on the issue, reconciles each affected
     /// agent's status, and broadcasts task:cancelled. Only explicit
     /// issue-lifecycle cleanup paths may call this (DeleteIssue /
-    /// BatchDeleteIssues); a plain status flip must NOT route here (MUL-4465).
+    /// BatchDeleteIssues); a plain status flip must NOT route here (PB-4465).
     pub async fn cancel_tasks_for_issue(&self, issue_id: Uuid) -> Result<(), TaskServiceError> {
         let cancelled = cancel_agent_tasks_by_issue(&self.pool, issue_id)
             .await
@@ -2377,7 +2377,7 @@ impl TaskService {
     /// initiatorUserID is the user who actually sent the triggering message —
     /// NOT necessarily chat_session.creator_id (Lark group sessions set the
     /// creator to the installer). Stored so the daemon brief attributes the run
-    /// to the right person (MUL-2645).
+    /// to the right person (PB-2645).
     pub async fn enqueue_chat_task(
         &self,
         chat_session: &ChatSession,
@@ -2398,7 +2398,7 @@ impl TaskService {
         // The chat sender is the direct_human originator and accountable.
         // Evidence uses the uniform pair (kind=chat, ref=session id); an
         // unresolved sender degrades to unattributed rather than a NULL-source
-        // bypass (MUL-4302 §2).
+        // bypass (PB-4302 §2).
         let attr = direct_human_run(initiator_user_id, evidence_chat(), Some(chat_session.id));
         let attr = self.apply_attribution_fallback(attr, &agent).await.inspect_err(|_e| {
             tracing::warn!(chat_session_id = %chat_session.id, "chat task enqueue refused: attribution fail-closed");
@@ -2545,7 +2545,7 @@ impl TaskService {
 
     /// Atomically persists one web/mobile direct-chat turn: owning task, user
     /// message bound to that task, attachment bindings, and the session touch
-    /// all commit together (MUL-4351). The daemon is notified only after
+    /// all commit together (PB-4351). The daemon is notified only after
     /// commit. Caller must have gated the session and preflighted the agent;
     /// those checks repeat under the transaction locks because either row may
     /// change before enqueue.
@@ -2567,7 +2567,7 @@ impl TaskService {
         };
         // Full attribution resolved before the tx (policy read + fallback must
         // not run with a transaction open) — same direct_human stamp as
-        // EnqueueChatTask (MUL-4302 §2).
+        // EnqueueChatTask (PB-4302 §2).
         let attr = direct_human_run(initiator_user_id, evidence_chat(), Some(session.id));
         let attr = self.apply_attribution_fallback(attr, agent).await?;
         let (attr_source, _, attr_evidence_kind, attr_evidence_ref) =
@@ -2582,7 +2582,7 @@ impl TaskService {
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
 
         // Serialise against a concurrent runtime rebind of the same session
-        // (MUL-5163): lock first, then re-read both rows under it.
+        // (PB-5163): lock first, then re-read both rows under it.
         lock_chat_session_for_runtime_bind(&mut *tx, session.id)
             .await
             .map_err(|e| TaskServiceError::Internal(format!("lock chat session: {e}")))?;
@@ -2708,7 +2708,7 @@ impl TaskService {
     }
 
     /// Writes a Mika conversation's first two rows in one transaction: hidden
-    /// kickoff + product-authored opening (MUL-5827). Nothing is enqueued.
+    /// kickoff + product-authored opening (PB-5827). Nothing is enqueued.
     /// "Session still empty" is enforced under the chat-session lock.
     pub async fn open_mika_onboarding_chat(
         &self,
@@ -2811,7 +2811,7 @@ impl TaskService {
             return Err(TaskServiceError::ChatQuickActionsNoTurn);
         };
         // Refuse unless the client is refreshing the turn that is STILL the
-        // latest (MUL-5149).
+        // latest (PB-5149).
         if target.id != expected_message_id {
             return Err(TaskServiceError::ChatQuickActionsStale);
         }
@@ -2863,7 +2863,7 @@ pub struct DirectChatSendResult {
     pub queued: bool,
 }
 
-/// The two rows that open a Mika conversation (MUL-5827).
+/// The two rows that open a Mika conversation (PB-5827).
 #[derive(Debug, Clone)]
 pub struct MikaOnboardingOpenResult {
     /// Hidden product context, written WITHOUT a task; the member's first real
@@ -2955,7 +2955,7 @@ pub struct CancelTaskResult {
 pub struct ErrTaskNoLongerQueued;
 
 /// RerunIssue refused because the current operator may not invoke the
-/// resolved target agent (MUL-4525); the handler maps it to a structured 403.
+/// resolved target agent (PB-4525); the handler maps it to a structured 403.
 #[derive(Debug, Clone, Copy)]
 pub struct ErrRerunInvokeNotAllowed;
 
@@ -3408,7 +3408,7 @@ impl TaskService {
             vec![]
         };
         // Release the adopted kickoff together with the delete: leaving it bound
-        // to the dead task strands the onboarding context (MUL-5827).
+        // to the dead task strands the onboarding context (PB-5827).
         release_onboarding_kickoff_from_task(&mut **tx, input_owner_id)
             .await
             .map_err(|e| TaskServiceError::Internal(format!("release onboarding kickoff: {e}")))?;
@@ -3531,7 +3531,7 @@ impl TaskService {
                     return Ok(());
                 };
                 // Always restorable now: the delete cannot return a kickoff row,
-                // so what comes back is always what the member typed (MUL-5827).
+                // so what comes back is always what the member typed (PB-5827).
                 cancelled = Some(CancelledChatMessageResult {
                     chat_session_id: deleted.chat_session_id.to_string(),
                     message_id: deleted.id.to_string(),
@@ -3608,7 +3608,7 @@ impl TaskService {
         let result: Result<(), TaskServiceError> = async {
             let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
             // Lock the task's chat_session first: chat_draft_restore has no FK
-            // (MUL-3515), so without this a concurrent sweep could orphan our
+            // (PB-3515), so without this a concurrent sweep could orphan our
             // restore row holding the user's prompt. Also fixes the global
             // chat_session → agent_task_queue lock order.
             let session_gone = match lock_chat_session_for_task(&mut *tx, task_id).await {
@@ -4012,7 +4012,7 @@ impl TaskService {
         Ok(requeued)
     }
 
-    /// Machine-level batch counterpart of claim_task_for_runtime (MUL-4257):
+    /// Machine-level batch counterpart of claim_task_for_runtime (PB-4257):
     /// claims up to maxTasks across every runtime in one call. Preserves
     /// per-runtime semantics set-ified, with partial-success returns so a late
     /// failure never drops already-dispatched work.
@@ -4124,7 +4124,7 @@ impl TaskService {
             Ok(c) => c,
             Err(e) => {
                 // Partial success: hand back what committed so the handler
-                // finalizes and returns it (MUL-4257).
+                // finalizes and returns it (PB-4257).
                 if !claimed.is_empty() {
                     tracing::error!(error = %e, claimed = claimed.len(), "batch claim: candidate query failed after partial success; returning claimed tasks to avoid loss");
                     return Ok(claimed);

@@ -1,6 +1,6 @@
 //! Slack adapter.
 //!
-//! Slack uses the bring-your-own-app (BYO) model (MUL-3666): each agent's
+//! Slack uses the bring-your-own-app (BYO) model (PB-3666): each agent's
 //! Slack app is created and installed by the workspace admin, who pastes its
 //! bot token (`xoxb-`) and app-level token (`xapp-`) into Cordy. Each
 //! `channel_installation` therefore carries its OWN app-level token and gets

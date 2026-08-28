@@ -59,7 +59,7 @@ export function MarkdownImage({ uri, attachments }: Props) {
       : uri;
     // The backend may return a server-relative `download_url` (e.g.
     // `/api/attachments/{id}/download`) when no CloudFront signer is
-    // configured — see MUL-2976. RN's image loader has no document
+    // configured — see PB-2976. RN's image loader has no document
     // origin to resolve against, so prepend `EXPO_PUBLIC_API_URL` for
     // server-relative paths and let absolute URLs / external links pass
     // through unchanged.

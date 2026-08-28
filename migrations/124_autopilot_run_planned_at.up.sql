@@ -3,7 +3,7 @@
 -- time of its triggering occurrence; the unique index is the dispatch-layer
 -- idempotency guard for scheduled triggers.
 --
--- Why we need it (MUL-3551):
+-- Why we need it (PB-3551):
 --
 --   * The primary idempotency for scheduled dispatch lives one layer up, in
 --     `sys_cron_executions` (job_name, scope_kind, scope_id, plan_time). A

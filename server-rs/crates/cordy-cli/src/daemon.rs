@@ -174,7 +174,7 @@ mod tests {
         fs::write(
             path,
             r#"{
-                "token":"mul_secret",
+                "token":"pby_secret",
                 "server_url":"https://profile.example",
                 "device_name":"profile-device",
                 "poll_interval":"3s",
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(assembly.launch.server_url, "https://profile.example");
         assert_eq!(assembly.launch.device_name, "profile-device");
         assert_eq!(assembly.launch.poll_interval, Duration::from_secs(3));
-        assert_eq!(assembly.profile_input.token, "mul_secret");
+        assert_eq!(assembly.profile_input.token, "pby_secret");
         assert_eq!(assembly.profile_input.openclaw_state_dir, "/srv/openclaw");
 
         let executable = PathBuf::from("/opt/cordy/bin/cordy");

@@ -86,7 +86,7 @@ import { useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
 /**
- * Workspace issue status catalog management (MUL-6243).
+ * Workspace issue status catalog management (PB-6243).
  *
  * The page is organised by CATEGORY rather than as one flat list, because a
  * category is not decoration here — it is the behavior a status inherits. A
@@ -100,7 +100,7 @@ import { SettingsTab } from "./settings-layout";
  * definition, and the default workspace has to look identical for every user
  * who never opens this page.
  *
- * The chrome is deliberately thin (MUL-6422). A category and its built-in row
+ * The chrome is deliberately thin (PB-6422). A category and its built-in row
  * are the same concept seen twice, so anything the row already carries — the
  * glyph, the behavior sentence — is noise on the header above it. What is left
  * on a header is the label and the one action it owns.
@@ -396,7 +396,7 @@ function CustomStatusRow({
       {/* The handle rides inside the row's own left padding instead of taking a
           column of its own. A reserved gutter indents every status away from
           the card edge — including the built-in rows, which can never be
-          dragged — and that indent is what the list reads as. (MUL-6422) */}
+          dragged — and that indent is what the list reads as. (PB-6422) */}
       {canReorder && (
         <button
           type="button"
@@ -573,7 +573,7 @@ function StatusEditorDialog({
                 status does not move it — so it has to be readable somewhere.
                 Here, not as a chip on every row: the list is for scanning
                 names, and a slug beside each one is what turned it into a
-                table of internals. (MUL-6422) */}
+                table of internals. (PB-6422) */}
             {status && (
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.issue_statuses.editor.key_hint, { key: status.key })}

@@ -1,5 +1,5 @@
 /**
- * Cached reserved height must not reach the first frame (MUL-4922).
+ * Cached reserved height must not reach the first frame (PB-4922).
  *
  * The Mermaid layout cache lives in sessionStorage, which a server does not
  * have. Reading it during render yields the skeleton default on the server and

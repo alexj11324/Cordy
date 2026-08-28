@@ -10,7 +10,7 @@ import type { FreezeBreadcrumb } from "../../shared/freeze-breadcrumb";
 //    delivery callback (`CaptureOptions` has `send_instantly` and `transport`,
 //    and nothing else). Acking there would delete the breadcrumb while the
 //    request is still in flight, so an app that freezes again or is killed a
-//    moment later loses the report anyway — the exact MUL-4115 failure this
+//    moment later loses the report anyway — the exact PB-4115 failure this
 //    was meant to fix. We therefore ack after a grace window: if the process
 //    dies inside it, the timer never fires, the file survives, and the next
 //    boot retries. A duplicate report is the acceptable trade (they carry

@@ -20,7 +20,7 @@ import type { Attachment } from "../../types";
  *  - reload
  *
  * A draft holds both the in-progress text AND the uploads started in the same
- * composer session (MUL-5181). Uploads used to live in component `useState`,
+ * composer session (PB-5181). Uploads used to live in component `useState`,
  * so closing or scrolling the composer away dropped in-flight and already-
  * uploaded files; persisting them here keeps them recoverable exactly like the
  * text. Each upload is a {@link DraftUpload} that carries its status — an
@@ -55,7 +55,7 @@ interface CommentDraftStore {
   setDraft: (key: CommentDraftKey, content: string) => void;
   /**
    * Append a markdown fragment to the draft body (upload write-back,
-   * MUL-5181): an upload that finished after its composer unmounted has no
+   * PB-5181): an upload that finished after its composer unmounted has no
    * live editor to insert its link, so the settle handler lands it here —
    * the draft body stays the single source of truth for what gets bound.
    */

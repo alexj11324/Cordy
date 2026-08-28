@@ -351,7 +351,7 @@ pub async fn auth_middleware(
     // Agent task token: "mat_" prefix. Minted by the server at task-claim
     // time and injected by the daemon into the agent process. Authoritative
     // for actor identity — the bound ids are written into request headers
-    // here, OVERRIDING whatever the client sent (MUL-2600).
+    // here, OVERRIDING whatever the client sent (PB-2600).
     if token.starts_with("mat_") {
         let Some(tt) = task_token::get_task_token_by_hash(&state.pool, &hash)
             .await
@@ -418,8 +418,8 @@ pub async fn auth_middleware(
         return Ok(next.run(req).await);
     }
 
-    // PAT: tokens starting with "mul_".
-    if token.starts_with("mul_") {
+    // PAT: tokens starting with "pby_".
+    if token.starts_with("pby_") {
         // Cache hit: skip both the DB SELECT and the last_used_at UPDATE —
         // last_used_at is bumped at most once per TTL window per token.
         if let Some(user_id) = state.pat_cache.get(&hash).await {
@@ -583,7 +583,7 @@ mod tests {
 
     #[test]
     fn spoofed_identity_cannot_bypass_jwt_pat_or_cloud_pat_paths() {
-        for bearer in ["header.payload.signature", "mul_secret", "mcn_secret"] {
+        for bearer in ["header.payload.signature", "pby_secret", "mcn_secret"] {
             let mut request = request(Some("203.0.113.9:443"), bearer, MARKER);
             let expected_authorization = format!("Bearer {bearer}");
             assert_eq!(policy().take_identity(&mut request), None, "{bearer}");
@@ -643,7 +643,7 @@ mod tests {
 
     #[test]
     fn jwt_and_pat_paths_cannot_retain_forged_task_identity() {
-        for bearer in ["header.payload.signature", "mul_secret"] {
+        for bearer in ["header.payload.signature", "pby_secret"] {
             let mut request = request(Some("203.0.113.9:443"), bearer, MARKER);
             request
                 .headers_mut()
@@ -723,7 +723,7 @@ mod tests {
             (Some("10.2.3.4:443"), "wrong-marker"),
             (None, MARKER),
         ] {
-            let mut request = request(peer, "mul_secret", marker);
+            let mut request = request(peer, "pby_secret", marker);
             assert_eq!(policy().take_identity(&mut request), None);
             assert!(request.headers().get("x-user-id").is_none());
         }

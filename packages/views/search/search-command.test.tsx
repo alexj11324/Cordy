@@ -360,7 +360,7 @@ describe("SearchCommand", () => {
     // The Pages group is generated from WORKSPACE_PAGES — the same registry
     // the sidebar and the desktop tab bar read — so searching a page by the
     // exact name the sidebar shows must always reach it. The hand-written
-    // list this replaced had gone stale by four pages (MUL-6272).
+    // list this replaced had gone stale by four pages (PB-6272).
     for (const page of Object.values(WORKSPACE_PAGES)) {
       const label = enLayout.nav[page.navKey];
       await user.clear(input);
@@ -534,17 +534,17 @@ describe("SearchCommand", () => {
       { id: "issue-2", visitedAt: 900 },
     ];
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "MUL-1", title: "First issue", status: "todo" },
-      { id: "issue-2", identifier: "MUL-2", title: "Second issue", status: "done" },
+      { id: "issue-1", identifier: "PB-1", title: "First issue", status: "todo" },
+      { id: "issue-2", identifier: "PB-2", title: "Second issue", status: "done" },
     ];
 
     renderSearch();
 
     expect(screen.getByText("Recent")).toBeInTheDocument();
     expect(screen.getByText("First issue")).toBeInTheDocument();
-    expect(screen.getByText("MUL-1")).toBeInTheDocument();
+    expect(screen.getByText("PB-1")).toBeInTheDocument();
     expect(screen.getByText("Second issue")).toBeInTheDocument();
-    expect(screen.getByText("MUL-2")).toBeInTheDocument();
+    expect(screen.getByText("PB-2")).toBeInTheDocument();
   });
 
   it("shows New Issue / New Project under Commands and triggers the modal store", async () => {
@@ -594,7 +594,7 @@ describe("SearchCommand", () => {
       .mockImplementation(mockClipboardWrite);
     mockPathname.current = "/ws-test/issues/issue-1";
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "MUL-42", title: "Demo", status: "todo" },
+      { id: "issue-1", identifier: "PB-42", title: "Demo", status: "todo" },
     ];
     renderSearch();
 
@@ -618,11 +618,11 @@ describe("SearchCommand", () => {
     await user.type(input2, "copy");
     const idItem = await screen.findByText(
       (_, el) =>
-        el?.textContent === "Copy Identifier (MUL-42)" && el?.tagName === "SPAN",
+        el?.textContent === "Copy Identifier (PB-42)" && el?.tagName === "SPAN",
     );
     await user.click(idItem);
-    expect(mockClipboardWrite).toHaveBeenCalledWith("MUL-42");
-    expect(mockToastSuccess).toHaveBeenCalledWith("Copied MUL-42");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("PB-42");
+    expect(mockToastSuccess).toHaveBeenCalledWith("Copied PB-42");
 
     writeSpy.mockRestore();
   });
@@ -643,7 +643,7 @@ describe("SearchCommand", () => {
     const user = userEvent.setup();
     mockPathname.current = "/ws-test/issues/issue-1";
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "MUL-42", title: "Demo", status: "todo" },
+      { id: "issue-1", identifier: "PB-42", title: "Demo", status: "todo" },
     ];
     mockTimeline.current = [
       { type: "activity", id: "act-1", actor_type: "member", actor_id: "u1", created_at: "2026-01-01T00:00:00Z", action: "status_changed" },
@@ -674,7 +674,7 @@ describe("SearchCommand", () => {
     const user = userEvent.setup();
     mockPathname.current = "/ws-test/issues/issue-1";
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "MUL-42", title: "Demo", status: "todo" },
+      { id: "issue-1", identifier: "PB-42", title: "Demo", status: "todo" },
     ];
     mockTimeline.current = [
       { type: "comment", id: "root-1", actor_type: "member", actor_id: "u1", created_at: "2026-01-01T01:00:00Z", parent_id: null },
@@ -764,7 +764,7 @@ describe("SearchCommand", () => {
       { id: "deleted-issue", visitedAt: 900 },
     ];
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "MUL-1", title: "Existing issue", status: "in_progress" },
+      { id: "issue-1", identifier: "PB-1", title: "Existing issue", status: "in_progress" },
     ];
 
     renderSearch();
@@ -794,7 +794,7 @@ describe("SearchCommand", () => {
           id: "issue-assigned",
           workspace_id: "ws-test",
           number: 101,
-          identifier: "MUL-101",
+          identifier: "PB-101",
           title: "Assigned search result",
           description: null,
           status: "in_review",
@@ -843,7 +843,7 @@ describe("SearchCommand", () => {
     mockAllIssues.current = [
       {
         id: "issue-1",
-        identifier: "MUL-1",
+        identifier: "PB-1",
         title: "Recent assigned issue",
         status: "done",
         assignee_type: "agent",
@@ -866,7 +866,7 @@ describe("SearchCommand", () => {
           id: "issue-snippet",
           workspace_id: "ws-test",
           number: 99,
-          identifier: "MUL-99",
+          identifier: "PB-99",
           title: "HTML rendering pipeline",
           description: null,
           status: "todo",
@@ -965,7 +965,7 @@ describe("SearchCommand", () => {
     expect(selectedValue()).toBe(first);
   });
 
-  // MUL-5824: the two searches are ranked independently server-side and the
+  // PB-5824: the two searches are ranked independently server-side and the
   // palette renders the whole Projects group before the whole Issues group, so
   // per-type ranking let one cancelled project be the very first row. The
   // partition has to be cross-type and applied here, where results aggregate.
@@ -975,7 +975,7 @@ describe("SearchCommand", () => {
     ) => ({
       workspace_id: "ws-test",
       number: 1,
-      identifier: "MUL-1",
+      identifier: "PB-1",
       title: "Untitled",
       description: null,
       status: "todo",
@@ -1039,7 +1039,7 @@ describe("SearchCommand", () => {
           fixtureIssue({
             id: "issue-live",
             number: 10,
-            identifier: "MUL-10",
+            identifier: "PB-10",
             title: "search live issue",
             status: "in_progress",
           }),
@@ -1080,21 +1080,21 @@ describe("SearchCommand", () => {
           fixtureIssue({
             id: "issue-dead",
             number: 11,
-            identifier: "MUL-11",
+            identifier: "PB-11",
             title: "search a",
             status: "cancelled",
           }),
           fixtureIssue({
             id: "issue-live",
             number: 12,
-            identifier: "MUL-12",
+            identifier: "PB-12",
             title: "search b",
             status: "todo",
           }),
           fixtureIssue({
             id: "issue-done",
             number: 13,
-            identifier: "MUL-13",
+            identifier: "PB-13",
             title: "search c",
             status: "done",
           }),
@@ -1137,7 +1137,7 @@ describe("SearchCommand", () => {
           fixtureIssue({
             id: "issue-hit",
             number: 7,
-            identifier: "MUL-7",
+            identifier: "PB-7",
             title: "Direct hit",
             status: "cancelled",
           }),
@@ -1149,7 +1149,7 @@ describe("SearchCommand", () => {
       renderSearch();
       await user.type(
         screen.getByPlaceholderText("Type a command or search..."),
-        "MUL-7",
+        "PB-7",
       );
 
       await waitFor(
@@ -1172,7 +1172,7 @@ describe("SearchCommand", () => {
       id: "issue-alpha",
       workspace_id: "ws-test",
       number: 100,
-      identifier: "MUL-100",
+      identifier: "PB-100",
       title: "Alpha result",
       description: null,
       status: "todo",

@@ -61,7 +61,7 @@ export function StepRuntimeConnect({
    *  have agent CLIs on this host that haven't finished registering yet.
    *  While true, the step keeps showing the scanning skeleton past the normal
    *  timeout instead of flashing the "no runtime found" empty state — that
-   *  empty state is a false negative when the daemon is mid-probe (MUL-5119).
+   *  empty state is a false negative when the daemon is mid-probe (PB-5119).
    *  Web omits it and keeps the plain wall-clock timeout. */
   runtimesPending?: boolean;
 }) {
@@ -131,7 +131,7 @@ function FancyView({
   //     empty UNLESS `runtimesPending` says the platform (desktop daemon) is
   //     still booting or mid-probe — registration on a host with several CLIs
   //     can outlast the soft budget, and flashing "no runtime found" while the
-  //     daemon is still working is a false negative (MUL-5119).
+  //     daemon is still working is a false negative (PB-5119).
   //   - hard (EMPTY_HARD_TIMEOUT_MS): an absolute ceiling so a wedged probe
   //     that never resolves `runtimesPending` back to false can't pin the step
   //     on the scanning skeleton forever.

@@ -55,7 +55,7 @@ describe("buildIssueStatusCatalog", () => {
   // The 7 built-ins carry a seeded hex the server refuses to let anyone edit,
   // and every surface paints them from their category token instead. A caller
   // that read the seed drew the SAME status in two different greens depending
-  // on which control it was looking at. (MUL-6440)
+  // on which control it was looking at. (PB-6440)
   it("gives a built-in no color of its own", () => {
     const builtIn = { ...entry("in_review", "in_review", "In Review"), is_system: true, color: "#22c55e" };
     const c = buildIssueStatusCatalog([builtIn, entry("qa", "in_review", "QA")]);

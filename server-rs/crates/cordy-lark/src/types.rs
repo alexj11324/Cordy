@@ -148,7 +148,7 @@ pub fn region_or_default(s: &str) -> Region {
 /// constants to keep dashboards / queries consistent.
 ///
 /// All drop_reason values are recorded WITHOUT message body — see
-/// MUL-2671 §4.7 (drop-audit policy).
+/// PB-2671 §4.7 (drop-audit policy).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DropReason(pub String);
 

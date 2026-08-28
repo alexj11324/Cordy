@@ -20,7 +20,7 @@ const buttonVariants = cva(
         // `aria-expanded:bg-muted`, and those win the cascade (the `dark:`
         // ones by specificity, since `dark` compiles to `&:is(.dark *)`),
         // repainting the chip neutral. That is what silently killed the
-        // brand colour in dark mode — see MUL-4884.
+        // brand colour in dark mode — see PB-4884.
         //
         // `brand` needs no `dark:` of its own: the --brand token already
         // flips per theme, so one set of rules is correct in both.

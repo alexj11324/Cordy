@@ -46,7 +46,7 @@ export type RunConfirmIntent =
  * into `todo`, which is indistinguishable from a real `todo` and is exactly
  * the guess this gate must not make: it decides whether a write may start an
  * agent, so an unresolvable key has to stay unresolved and let the caller fail
- * safe. (MUL-6463)
+ * safe. (PB-6463)
  *
  * Resolution order mirrors the server (`issuestatus.Effective`): a category the
  * payload already carries wins, a BUILT-IN key is its own category, and only a
@@ -71,7 +71,7 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  *
  * Both writes that can hand work to an agent confirm; everything else applies
  * directly. Pure so every entry point — issue detail, context menu, table row —
- * routes on one answer instead of re-deriving it (MUL-6463).
+ * routes on one answer instead of re-deriving it (PB-6463).
  *
  * - **assign**: giving the issue an agent/squad owner. Skipped only when the
  *   issue is KNOWN to be parked, because assigning into the backlog category

@@ -139,7 +139,7 @@ describe("ApiClient schema fallback", () => {
       id: "issue-1",
       workspace_id: "ws-1",
       number: 1,
-      identifier: "MUL-1",
+      identifier: "PB-1",
       title: "Existing",
       description: null,
       status: "todo",
@@ -160,7 +160,7 @@ describe("ApiClient schema fallback", () => {
     it("resolves a well-formed issue, defaulting the fields older servers omit", async () => {
       stubFetchJson({ ...validIssue, unknown_field: "kept" });
       const client = new ApiClient("https://api.example.test");
-      const issue = await client.getIssue("MUL-1");
+      const issue = await client.getIssue("PB-1");
       expect(issue.id).toBe("issue-1");
       expect(issue.stage).toBeNull();
       expect(issue.metadata).toEqual({});
@@ -170,19 +170,19 @@ describe("ApiClient schema fallback", () => {
     it("rejects a 200 body that is not a usable issue (no truthy issue with an undefined id)", async () => {
       stubFetchJson({ not: "an issue" });
       const client = new ApiClient("https://api.example.test");
-      await expect(client.getIssue("MUL-1")).rejects.toThrow();
+      await expect(client.getIssue("PB-1")).rejects.toThrow();
     });
 
     it("rejects a 200 body whose required field drifted type", async () => {
       stubFetchJson({ ...validIssue, number: "1" });
       const client = new ApiClient("https://api.example.test");
-      await expect(client.getIssue("MUL-1")).rejects.toThrow();
+      await expect(client.getIssue("PB-1")).rejects.toThrow();
     });
 
     it("does not disguise a malformed body as a 404", async () => {
       stubFetchJson({ id: "issue-1" });
       const client = new ApiClient("https://api.example.test");
-      await expect(client.getIssue("MUL-1")).rejects.not.toBeInstanceOf(
+      await expect(client.getIssue("PB-1")).rejects.not.toBeInstanceOf(
         ApiError,
       );
     });
@@ -207,7 +207,7 @@ describe("ApiClient schema fallback", () => {
       id: "issue-1",
       workspace_id: "ws-1",
       number: 1,
-      identifier: "MUL-1",
+      identifier: "PB-1",
       title: "Created",
       description: null,
       status: "todo",
@@ -324,7 +324,7 @@ describe("ApiClient schema fallback", () => {
     });
 
     it("accepts an old-server row without assignee_type or derived fields", async () => {
-      // Pre-MUL-2429 servers omit assignee_type; servers older than the
+      // Pre-PB-2429 servers omit assignee_type; servers older than the
       // list-derived-fields change omit trigger_kinds/next_run_at/
       // last_run_status. Both must parse, not fall back.
       stubFetchJson({ autopilots: [baseAutopilot], total: 1 });

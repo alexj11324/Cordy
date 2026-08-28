@@ -14,7 +14,7 @@ async fn auth_status_matches_human_table_and_json_contracts() {
         get(|request: Request| async move {
             assert_eq!(
                 request.headers()["authorization"],
-                "Bearer mul_env_status_token"
+                "Bearer pby_env_status_token"
             );
             assert!(request.headers().get("x-workspace-id").is_none());
             assert!(request.headers().get("x-agent-id").is_none());
@@ -30,7 +30,7 @@ async fn auth_status_matches_human_table_and_json_contracts() {
     let cwd = tempfile::tempdir().expect("temp cwd");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
     environment.set("CORDY_SERVER_URL", format!("http://{address}"));
-    environment.set("CORDY_TOKEN", "mul_env_status_token");
+    environment.set("CORDY_TOKEN", "pby_env_status_token");
 
     let table = Cli::try_parse_from(["cordy", "auth", "status"]).expect("status CLI");
     let output = run_with_input(&table, &environment, &mut Cursor::new(Vec::<u8>::new()))
@@ -41,7 +41,7 @@ async fn auth_status_matches_human_table_and_json_contracts() {
         output.stderr,
         format!(
             "Server:  http://{address}\nUser:    Ada (ada@example.com)\nToken:   {}\n",
-            display_token_prefix("mul_env_status_token")
+            display_token_prefix("pby_env_status_token")
         )
     );
 
@@ -55,7 +55,7 @@ async fn auth_status_matches_human_table_and_json_contracts() {
     assert_eq!(status["user"]["email"], "ada@example.com");
     assert_eq!(
         status["token"],
-        display_token_prefix("mul_env_status_token")
+        display_token_prefix("pby_env_status_token")
     );
     server.abort();
 }
@@ -107,7 +107,7 @@ async fn auth_status_task_context_requires_mat_token_and_never_prints_it() {
         .get("token")
         .is_none());
 
-    environment.set("CORDY_TOKEN", "mul_owner_token");
+    environment.set("CORDY_TOKEN", "pby_owner_token");
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("human token rejected in task");
@@ -123,15 +123,15 @@ fn auth_logout_only_clears_current_profile_and_is_task_guarded() {
     let profile_path = home.path().join(".cordy/profiles/dev/config.json");
     fs::create_dir_all(default_path.parent().expect("default parent")).expect("default dir");
     fs::create_dir_all(profile_path.parent().expect("profile parent")).expect("profile dir");
-    let default_bytes = br#"{"token":"mul_default","workspace_id":"default"}"#;
+    let default_bytes = br#"{"token":"pby_default","workspace_id":"default"}"#;
     fs::write(&default_path, default_bytes).expect("default config");
     fs::write(
         &profile_path,
-        r#"{"token":"mul_dev","server_url":"https://dev.example","future":7}"#,
+        r#"{"token":"pby_dev","server_url":"https://dev.example","future":7}"#,
     )
     .expect("profile config");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-    environment.set("CORDY_TOKEN", "mul_env_must_not_affect_logout");
+    environment.set("CORDY_TOKEN", "pby_env_must_not_affect_logout");
     let cli =
         Cli::try_parse_from(["cordy", "--profile", "dev", "auth", "logout"]).expect("logout CLI");
     let output = run_auth_logout(&cli, &environment).expect("logout");

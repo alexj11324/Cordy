@@ -7,7 +7,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     id: "issue-1",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "MUL-1",
+    identifier: "PB-1",
     title: "Issue 1",
     description: null,
     status: "todo",
@@ -49,7 +49,7 @@ describe("commonIssueFields", () => {
   });
 
   it("returns the shared status when every issue agrees, not a hardcoded default", () => {
-    // Regression for MUL-3510: the batch picker used to assert "todo"
+    // Regression for PB-3510: the batch picker used to assert "todo"
     // regardless of the selection.
     const common = commonIssueFields([
       makeIssue({ id: "a", status: "in_review" }),

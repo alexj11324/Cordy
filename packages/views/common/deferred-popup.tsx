@@ -10,7 +10,7 @@ import { cloneElement, useState, type ReactElement, type ReactNode } from "react
  * each one carries a Base UI root/trigger tree plus its own query
  * subscriptions — even though almost none are ever opened. Rendering a plain
  * lookalike trigger first and swapping in the real picker on interaction cuts
- * that per-item mount cost to zero for untouched items (MUL-4474 follow-up:
+ * that per-item mount cost to zero for untouched items (PB-4474 follow-up:
  * the tab-switch remount froze the main thread for seconds mostly on these).
  *
  * Upgrade triggers — deliberately only events that END a gesture:

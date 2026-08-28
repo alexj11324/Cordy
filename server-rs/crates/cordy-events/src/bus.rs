@@ -21,7 +21,7 @@ pub struct Event {
     /// Optional scope hints used by the realtime fanout layer to route the
     /// event to a more specific scope than `workspace:{WorkspaceID}`. When
     /// set these tell the listener which Redis stream / Hub room to publish
-    /// on without re-deserializing Payload (MUL-1138 phase 1).
+    /// on without re-deserializing Payload (PB-1138 phase 1).
     pub task_id: String,
     pub chat_session_id: String,
 }

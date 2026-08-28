@@ -14,7 +14,7 @@ import {
 } from "@/stores/tab-store";
 
 /**
- * Tab Coordinator (MUL-4741 Phase 2) — the ONLY writer of the single app
+ * Tab Coordinator (PB-4741 Phase 2) — the ONLY writer of the single app
  * router.
  *
  * Architecture: the tab store is the source of truth; the router is a

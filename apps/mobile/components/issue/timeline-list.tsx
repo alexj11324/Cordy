@@ -165,7 +165,7 @@ export function TimelineList({
   }, [entries]);
 
   // Every image on this screen, in render order: the description first, then
-  // each comment row with its replies (MUL-5752). Tapping any of them opens
+  // each comment row with its replies (PB-5752). Tapping any of them opens
   // the lightbox at its real position so a swipe walks to the next.
   //
   // The description's attachments come from the same query IssueDescription

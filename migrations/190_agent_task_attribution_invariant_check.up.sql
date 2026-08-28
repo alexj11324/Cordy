@@ -1,5 +1,5 @@
--- Human Attribution — enforce the one-way invariant at the DB layer (MUL-4302;
--- decided by Bohan + Elon on the MUL-4302 thread). The application collapses
+-- Human Attribution — enforce the one-way invariant at the DB layer (PB-4302;
+-- decided by Bohan + Elon on the PB-4302 thread). The application collapses
 -- originator == accountable at a single chokepoint (finalizeAttribution) and every
 -- write path takes both from the same attribution.Result — but the #5192 comment-
 -- coalescing merge proved that ANOTHER feature's code can silently bypass that
@@ -14,7 +14,7 @@
 -- enumerable value, and carries no FK / cascade.
 --
 -- UPGRADE SAFETY — the `originator_source IS NULL` clause exempts legacy-writer /
--- unbackfilled-lineage rows (Bohan chose the two-phase rollout on the MUL-4302 thread;
+-- unbackfilled-lineage rows (Bohan chose the two-phase rollout on the PB-4302 thread;
 -- raised by Elon). `NOT VALID` skips the initial scan, but Postgres STILL checks a
 -- pre-existing row whenever a later UPDATE touches it — even an UPDATE that leaves the
 -- attribution columns alone. Cross-deployment stale queued/running tasks predate

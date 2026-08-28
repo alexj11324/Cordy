@@ -4,14 +4,14 @@ export type AutopilotExecutionMode = "create_issue" | "run_only";
 
 // `assignee_type` selects which polymorphic actor backs the autopilot:
 // "agent" → assignee_id references agent(id); "squad" → assignee_id references
-// squad(id) and dispatch resolves to squad.leader_id at run time (MUL-2429,
+// squad(id) and dispatch resolves to squad.leader_id at run time (PB-2429,
 // Path A). Older servers omit this field — callers should default to "agent".
 export type AutopilotAssigneeType = "agent" | "squad";
 
 export type AutopilotTriggerKind = "schedule" | "webhook" | "api";
 
 // `skipped` is emitted by the backend pre-flight admission check
-// (assignee runtime offline at dispatch time, MUL-1899). The frontend MUST
+// (assignee runtime offline at dispatch time, PB-1899). The frontend MUST
 // handle it explicitly — falling through to a generic case used to show
 // the run as still-pending which masked the no-op.
 export type AutopilotRunStatus =

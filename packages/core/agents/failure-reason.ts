@@ -11,7 +11,7 @@ import type { TaskFailureReason } from "../types";
  *   3. `undefined` — nothing usable; the caller renders its own fallback.
  *
  * Why this exists: the backend's taxonomy is refined (`agent_error.*`) and
- * grows independently of shipped clients. Before MUL-5370 the surfaces did an
+ * grows independently of shipped clients. Before PB-5370 the surfaces did an
  * exact `Record` lookup against the six-value coarse enum, so every refined
  * reason missed and rendered a generic "something went wrong" — the useful
  * classification the backend had already computed was thrown away at the last

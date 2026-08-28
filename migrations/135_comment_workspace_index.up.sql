@@ -1,6 +1,6 @@
 -- Supporting btree index on comment.workspace_id for the search handler.
 --
--- Context (MUL-4059): The search handler's WHERE clause contains a
+-- Context (PB-4059): The search handler's WHERE clause contains a
 -- correlated `EXISTS` subquery over `comment` that Postgres routinely
 -- rewrites into a *hashed* subplan — the subquery is evaluated once and
 -- the results are hashed for lookup by the outer scan. That rewrite is
@@ -30,7 +30,7 @@
 -- Prd extrapolation: 32.3 s → tens of milliseconds.
 --
 -- This CREATE INDEX is deliberately unwrapped. The whole point of
--- MUL-4059 was that migrations 032 / 033 / 036 hid CREATE INDEX inside
+-- PB-4059 was that migrations 032 / 033 / 036 hid CREATE INDEX inside
 -- `DO $$ ... EXCEPTION WHEN OTHERS $$` blocks, so on any environment
 -- where pg_bigm was absent the migration "succeeded" while quietly
 -- creating no indexes at all — the exact silent-skip pattern that took

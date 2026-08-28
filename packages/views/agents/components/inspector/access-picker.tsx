@@ -72,7 +72,7 @@ export function AccessPicker({
 }) {
   const { t } = useT("agents");
   const { t: tc } = useT("common");
-  // Centralized derivation (MUL-3963): map canonical scope to picker's
+  // Centralized derivation (PB-3963): map canonical scope to picker's
   // local draft key (private / workspace / members).
   const canonical = effectiveAccessScope(permissionMode, invocationTargets);
   const persistedPrivate = permissionMode === "private";

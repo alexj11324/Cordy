@@ -13,7 +13,7 @@ fn daemon_context_never_falls_back_to_owner_credentials() {
     fs::create_dir_all(&config_dir).expect("config dir");
     fs::write(
         config_dir.join("config.json"),
-        r#"{"server_url":"https://api.example.com","token":"mul_owner"}"#,
+        r#"{"server_url":"https://api.example.com","token":"pby_owner"}"#,
     )
     .expect("config");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());

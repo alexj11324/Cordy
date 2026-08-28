@@ -51,7 +51,7 @@ vi.mock("@cordy/core/issues/mutations", () => ({
 // The status catalog is server state; this suite only needs it to answer which
 // CATEGORY a key belongs to, so the entries are fed in directly. `later` parks
 // like Backlog and `rework` starts work like Todo — the two cases a raw
-// `status === "backlog"` / `=== "todo"` comparison gets wrong (MUL-6463).
+// `status === "backlog"` / `=== "todo"` comparison gets wrong (PB-6463).
 const catalogEntries: IssueStatusEntry[] = [
   ...(["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"] as const).map(
     (key, i) => statusEntry({ id: key, key, name: key, category: key, is_system: true, position: i }),

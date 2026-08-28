@@ -7,7 +7,7 @@ import {
 } from "@cordy/views/platform";
 
 /**
- * Web half of the MUL-4741 scroll-restoration protocol (desktop's half lives
+ * Web half of the PB-4741 scroll-restoration protocol (desktop's half lives
  * in the tab coordinator). The browser only restores the window's own scroll
  * position on back/forward — the app's scrollable containers
  * (`data-tab-scroll-root`) are inner divs and virtualized lists it knows

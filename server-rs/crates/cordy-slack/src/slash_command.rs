@@ -3,7 +3,7 @@
 //! Deliberately separate from the message-based `/issue` (engine
 //! ParseIssueCommand): on Slack a message whose first character is `/` is
 //! intercepted by the client as a slash command and never delivered to the app,
-//! so the message-prefix form of `/issue` cannot work here at all (MUL-3908).
+//! so the message-prefix form of `/issue` cannot work here at all (PB-3908).
 //! Registering `/issue` as a real slash command in the app manifest is what
 //! makes it reach us — as a slash_commands envelope over the same Socket Mode
 //! connection.

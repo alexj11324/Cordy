@@ -32,7 +32,7 @@ async fn config_show_table_and_json_exclude_credentials_and_unknown_fields() {
   "workspace_id": "workspace-1",
   "agent_timeout": "0s",
   "disable_auto_update": true,
-  "token": "mul_secret",
+  "token": "pby_secret",
   "future_secret": "do-not-print"
 }"#,
     )
@@ -48,7 +48,7 @@ async fn config_show_table_and_json_exclude_credentials_and_unknown_fields() {
     assert!(output.stdout.contains("agent_timeout:"));
     assert!(output.stdout.contains("0s (disabled)"));
     assert!(output.stdout.contains("disable_auto_update:"));
-    assert!(!output.stdout.contains("mul_secret"));
+    assert!(!output.stdout.contains("pby_secret"));
     assert!(!output.stdout.contains("do-not-print"));
 
     let json = Cli::try_parse_from([
@@ -80,11 +80,11 @@ async fn config_set_is_profile_scoped_and_preserves_unrelated_fields() {
     let profile_path = home.path().join(".cordy/profiles/dev/config.json");
     fs::create_dir_all(default_path.parent().expect("default parent")).expect("default dir");
     fs::create_dir_all(profile_path.parent().expect("profile parent")).expect("profile dir");
-    let default_bytes = br#"{"server_url":"https://default.example","token":"mul_default"}"#;
+    let default_bytes = br#"{"server_url":"https://default.example","token":"pby_default"}"#;
     fs::write(&default_path, default_bytes).expect("default config");
     fs::write(
         &profile_path,
-        r#"{"token":"mul_dev","future":{"keep":true}}"#,
+        r#"{"token":"pby_dev","future":{"keep":true}}"#,
     )
     .expect("profile config");
     let environment = Environment::for_test(home.path().into(), cwd.path().into());
@@ -108,7 +108,7 @@ async fn config_set_is_profile_scoped_and_preserves_unrelated_fields() {
     }
     let saved: Value = serde_json::from_slice(&fs::read(&profile_path).expect("saved profile"))
         .expect("saved JSON");
-    assert_eq!(saved["token"], "mul_dev");
+    assert_eq!(saved["token"], "pby_dev");
     assert_eq!(saved["future"]["keep"], true);
     assert_eq!(saved["heartbeat_interval"], "5s");
     assert_eq!(saved["max_concurrent_tasks"], 4);
@@ -172,7 +172,7 @@ async fn config_commands_fail_closed_without_task_local_root() {
     let cwd = tempfile::tempdir().expect("task cwd");
     let owner_path = home.path().join(".cordy/config.json");
     fs::create_dir_all(owner_path.parent().expect("owner parent")).expect("owner dir");
-    let owner_bytes = br#"{"server_url":"https://owner.invalid","token":"mul_owner"}"#;
+    let owner_bytes = br#"{"server_url":"https://owner.invalid","token":"pby_owner"}"#;
     fs::write(&owner_path, owner_bytes).expect("owner config");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
     environment.set("CORDY_AGENT_ID", "agent-1");

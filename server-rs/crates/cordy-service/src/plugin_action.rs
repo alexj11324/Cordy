@@ -105,7 +105,7 @@ pub fn has_scope(scopes: &[String], want: &str) -> bool {
     scopes.iter().any(|scope| scope == want)
 }
 
-/// Renders the human-facing issue key ("MUL-42"). Callers that resolve the
+/// Renders the human-facing issue key ("PB-42"). Callers that resolve the
 /// workspace prefix defensively may pass "": a failed workspace lookup should
 /// not surface as a stray "-42", so the number stands alone as "#42". The HTTP
 /// layer never passes "" — the handler derives a prefix from the workspace name
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn issue_identifier_renders_the_human_facing_key() {
-        assert_eq!(issue_identifier("MUL", 42), "MUL-42");
+        assert_eq!(issue_identifier("PB", 42), "PB-42");
         assert_eq!(issue_identifier("", 42), "#42");
     }
 

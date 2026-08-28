@@ -23,7 +23,7 @@ import { useT } from "../../i18n";
 // It rides the scrollbar side on purpose: it looks and behaves like a scroll
 // affordance, and every precedent for that (the scrollbar itself, editor
 // minimaps, floating outlines) lives on the right — so the pointer is already
-// there, and the travel from scrolling to jumping is short (MUL-4522).
+// there, and the travel from scrolling to jumping is short (PB-4522).
 //
 // The preview is ONE card owned by the rail, not a popover per tick: the
 // open-intent delay is paid once when the pointer enters the rail, and while
@@ -129,7 +129,7 @@ interface ThreadMinimapProps {
   /**
    * Thread the header panel's pointer is currently resting on. The rail lights
    * that tick in the brand colour so the two navigators read as one coordinate
-   * system rather than two competing lists (MUL-5755).
+   * system rather than two competing lists (PB-5755).
    */
   highlightedThreadId?: string | null;
   /** Positioning within the page (e.g. `absolute right-3 top-12 bottom-0`) — owned by the caller, like FindBar. */

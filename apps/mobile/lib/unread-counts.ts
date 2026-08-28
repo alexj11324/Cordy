@@ -39,7 +39,7 @@ export function useInboxUnreadCount(wsId: string | null | undefined): number {
 /**
  * Total unread assistant *messages* across chat sessions (IM-style), the
  * same number web/desktop's sidebar Chat badge shows. Was a session count
- * before MUL-4286; that matched the (since removed) web ChatFab badge and
+ * before PB-4286; that matched the (since removed) web ChatFab badge and
  * disagreed with the sidebar.
  *
  * No excludeSessionId here: the chat tab renders the active conversation
