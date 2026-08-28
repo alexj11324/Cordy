@@ -513,7 +513,7 @@ jobs:
 
       - name: Apply database migrations with the Rust runner
         working-directory: server-rs
-        run: cargo run --locked -p cordy-migrate -- up
+        run: cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
 
       - name: Run workspace tests
         working-directory: server-rs

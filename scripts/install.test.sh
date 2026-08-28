@@ -51,7 +51,12 @@ if [[ -z "$out" ]]; then
 fi
 if [[ "$url" == */checksums.txt ]]; then
   asset="$(cat "$CORDY_TEST_ASSET_FILE")"
-  sha256sum "$CORDY_TEST_ARCHIVE" | awk -v asset="$asset" '{print $1 "  " asset}' >"$out"
+  if command -v sha256sum >/dev/null 2>&1; then
+    checksum="$(sha256sum "$CORDY_TEST_ARCHIVE" | awk '{print $1}')"
+  else
+    checksum="$(shasum -a 256 "$CORDY_TEST_ARCHIVE" | awk '{print $1}')"
+  fi
+  printf '%s  %s\n' "$checksum" "$asset" >"$out"
 else
   printf '%s' "${url##*/}" >"$CORDY_TEST_ASSET_FILE"
   cp "$CORDY_TEST_ARCHIVE" "$out"
