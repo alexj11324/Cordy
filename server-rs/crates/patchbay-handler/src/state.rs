@@ -418,6 +418,9 @@ pub struct HandlerState {
     pub liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
     /// Public authentication dependencies and boot-time policy.
     pub auth_settings: crate::auth::AuthSettings,
+    /// Clerk session verifier used only by the public session-exchange route.
+    /// None keeps self-hosted deployments that do not use Clerk unchanged.
+    pub clerk_auth: Option<Arc<dyn crate::clerk_auth::ClerkSessionVerifier>>,
     pub email_service: Arc<EmailService>,
     pub analytics: Arc<dyn patchbay_analytics::AnalyticsClient>,
     pub auth_rate_limit: patchbay_middleware::ratelimit::RateLimitState,
@@ -626,6 +629,7 @@ impl HandlerState {
             heartbeat_scheduler,
             liveness_store: Arc::new(crate::runtime_liveness::NoopLivenessStore),
             auth_settings: crate::auth::AuthSettings::from_env(),
+            clerk_auth: None,
             email_service: Arc::new(EmailService::new()),
             analytics,
             auth_rate_limit,
@@ -1004,6 +1008,15 @@ impl HandlerState {
     pub fn with_auth_settings(mut self, settings: crate::auth::AuthSettings) -> Self {
         self.auth_settings = settings;
         self
+    }
+
+    pub fn with_clerk_auth_from_config(
+        mut self,
+        config: &patchbay_config::AuthConfig,
+    ) -> anyhow::Result<Self> {
+        self.clerk_auth = crate::clerk_auth::ClerkAuthClient::from_config(config)?
+            .map(|client| Arc::new(client) as Arc<dyn crate::clerk_auth::ClerkSessionVerifier>);
+        Ok(self)
     }
 
     pub fn with_cloud_pat_fleet_url(mut self, fleet_url: Option<&str>) -> Self {

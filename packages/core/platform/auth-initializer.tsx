@@ -315,7 +315,15 @@ export function AuthInitializer({
       void attempt();
     };
 
-    if (cookieAuth || clerkAuth) {
+    if (clerkAuth) {
+      // ClerkAuthAdapter owns the one-time Clerk -> Patchbay session exchange.
+      // Starting /api/me here races that exchange and produces a false 401.
+      useAuthStore.setState({
+        user: null,
+        isLoading: true,
+        status: "authenticating",
+      });
+    } else if (cookieAuth) {
       window.addEventListener("online", retryNow);
       void attempt();
     } else {

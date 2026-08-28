@@ -106,6 +106,14 @@ pub struct AuthConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub google_redirect_uri: Option<String>,
+    /// Clerk session exchange. `CLERK_JWT_KEY` is the instance PEM public
+    /// key; `CLERK_ISSUER` and `CLERK_AUTHORIZED_PARTIES` bind otherwise
+    /// valid tokens to this deployment; `CLERK_SECRET_KEY` reads the verified
+    /// primary email from Clerk's Backend API.
+    pub clerk_secret_key: Option<String>,
+    pub clerk_jwt_key: Option<String>,
+    pub clerk_issuer: Option<String>,
+    pub clerk_authorized_parties: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -297,6 +305,13 @@ impl Config {
         env_str(&mut self.auth.google_client_id, "GOOGLE_CLIENT_ID");
         env_str(&mut self.auth.google_client_secret, "GOOGLE_CLIENT_SECRET");
         env_str(&mut self.auth.google_redirect_uri, "GOOGLE_REDIRECT_URI");
+        env_str(&mut self.auth.clerk_secret_key, "CLERK_SECRET_KEY");
+        env_str(&mut self.auth.clerk_jwt_key, "CLERK_JWT_KEY");
+        env_str(&mut self.auth.clerk_issuer, "CLERK_ISSUER");
+        env_str(
+            &mut self.auth.clerk_authorized_parties,
+            "CLERK_AUTHORIZED_PARTIES",
+        );
 
         // urls
         env_str(&mut self.urls.public_url, "PATCHBAY_PUBLIC_URL");
@@ -437,6 +452,10 @@ mod tests {
             "REDIS_URL",
             "APP_ENV",
             "JWT_SECRET",
+            "CLERK_SECRET_KEY",
+            "CLERK_JWT_KEY",
+            "CLERK_ISSUER",
+            "CLERK_AUTHORIZED_PARTIES",
             "PATCHBAY_LLM_MAX_RETRIES",
         ] {
             std::env::remove_var(var);

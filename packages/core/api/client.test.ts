@@ -7,6 +7,39 @@ afterEach(() => {
 });
 
 describe("ApiClient edit guards", () => {
+  it("sends the Clerk token only to the session exchange endpoint", async () => {
+    const user = {
+      id: "01972f7e-7e8d-77ef-a13d-1b0ce3e9c001",
+      name: "Alice",
+      email: "alice@example.com",
+      avatar_url: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: "patchbay-token", user }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.clerkLogin("clerk-session")).resolves.toEqual({
+      token: "patchbay-token",
+      user,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/auth/clerk",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.objectContaining({
+          Authorization: "Bearer clerk-session",
+        }),
+      }),
+    );
+  });
+
   it("serializes field baselines for issue and comment writes", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response("{}", {

@@ -67,14 +67,6 @@ function initCore(
     if (token) api.setToken(token);
   }
 
-  if (clerkAuth) {
-    api.setTokenProvider(async () => {
-      const w = globalThis as unknown as Record<string, unknown>;
-      const provider = w["__CLERK_GET_TOKEN__"] as (() => Promise<string | null>) | undefined;
-      return provider ? provider() : null;
-    });
-  }
-
   authStore = createAuthStore({ api, storage, onLogin, onLogout, cookieAuth });
   registerAuthStore(authStore);
 

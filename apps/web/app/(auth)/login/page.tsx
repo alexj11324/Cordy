@@ -16,7 +16,7 @@ export default function LoginPage() {
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
@@ -42,9 +42,11 @@ function LoginContent() {
     const authorize = async () => {
       setError("");
       try {
-        // The managed web identity boundary authenticates the Clerk session
-        // supplied by the ApiClient. The backend then exchanges that identity
-        // for the native Patchbay bearer understood by the CLI and Rust API.
+        // Do not race the background adapter: ensure Clerk has been exchanged
+        // for the native Patchbay session before minting a CLI bearer.
+        const sessionToken = await getToken();
+        if (!sessionToken) throw new Error("Clerk session token unavailable");
+        await api.clerkLogin(sessionToken);
         const { token } = await api.issueCliToken();
         if (!token) throw new Error("Patchbay CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);

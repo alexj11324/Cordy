@@ -60,4 +60,38 @@ describe("authStore", () => {
     expect(store.getState().user).toBeNull();
     expect(store.getState().status).toBe("unauthenticated");
   });
+
+  it("exchanges a Clerk session for the UUID-backed cookie session", async () => {
+    const storage = makeStorage();
+    const onLogin = vi.fn();
+    const api = {
+      clerkLogin: vi.fn().mockResolvedValue({
+        token: "patchbay-token",
+        user: fakeUser,
+      }),
+      setToken: vi.fn(),
+      setTokenProvider: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({
+      api,
+      storage,
+      cookieAuth: true,
+      onLogin,
+    });
+
+    await expect(store.getState().loginWithClerk("clerk-session")).resolves.toEqual(
+      fakeUser,
+    );
+
+    expect(api.clerkLogin).toHaveBeenCalledWith("clerk-session");
+    expect(api.setTokenProvider).toHaveBeenCalledWith(null);
+    expect(api.setToken).toHaveBeenCalledWith(null);
+    expect(storage.snapshot()).toEqual({});
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(store.getState()).toMatchObject({
+      user: fakeUser,
+      isLoading: false,
+      status: "authenticated",
+    });
+  });
 });

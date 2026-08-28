@@ -73,11 +73,13 @@ function renderInitializer({
   api,
   storage = makeStorage({ patchbay_token: "token-1" }),
   cookieAuth = false,
+  clerkAuth = false,
   platform = "desktop",
 }: {
   api: ApiClient;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
+  clerkAuth?: boolean;
   platform?: "desktop" | "web";
 }) {
   const onLogin = vi.fn();
@@ -94,6 +96,7 @@ function renderInitializer({
     <QueryClientProvider client={queryClient}>
       <AuthInitializer
         cookieAuth={cookieAuth}
+        clerkAuth={clerkAuth}
         identity={{ platform }}
         onLogin={onLogin}
         onLogout={onLogout}
@@ -116,6 +119,22 @@ afterEach(() => {
 });
 
 describe("AuthInitializer recovery", () => {
+  it("leaves Clerk session bootstrap to the Clerk adapter", async () => {
+    const getMe = vi.fn().mockResolvedValue(fakeUser);
+    const api = makeApi({ getMe });
+    renderInitializer({
+      api,
+      cookieAuth: true,
+      clerkAuth: true,
+      platform: "web",
+    });
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe("authenticating");
+    });
+    expect(getMe).not.toHaveBeenCalled();
+  });
+
   it("keeps the token and recovers on the online event after a network failure", async () => {
     const storage = makeStorage({ patchbay_token: "token-1" });
     const getMe = vi

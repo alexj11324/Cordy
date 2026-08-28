@@ -27,6 +27,9 @@ images:
 #     --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
 #     --from-literal=RESEND_API_KEY="" \
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
+#     --from-literal=CLERK_SECRET_KEY="" \
+#     --from-literal=CLERK_JWT_KEY="" \
+#     --from-literal=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
 #     --from-literal=PATCHBAY_ENTITLEMENT_SERVICE_TOKEN="" \
 #     --from-literal=PATCHBAY_DEV_VERIFICATION_CODE=""
@@ -38,6 +41,9 @@ images:
 #     --from-literal=DATABASE_URL="postgres://user:pass@host:5432/patchbay?sslmode=require" \
 #     --from-literal=RESEND_API_KEY="" \
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
+#     --from-literal=CLERK_SECRET_KEY="" \
+#     --from-literal=CLERK_JWT_KEY="" \
+#     --from-literal=NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
 #     --from-literal=PATCHBAY_ENTITLEMENT_SERVICE_TOKEN="" \
 #     --from-literal=PATCHBAY_DEV_VERIFICATION_CODE=""
@@ -148,6 +154,8 @@ backend:
       emergencyDisabled: false
     googleClientId: ""
     googleRedirectUri: http://patchbay.dev.lan/auth/callback
+    clerkIssuer: ""
+    clerkAuthorizedParties: ""
     s3Bucket: ""
     s3Region: us-west-2
     cloudfrontDomain: ""

@@ -33,6 +33,12 @@ spec:
               value: "3000"
             - name: REMOTE_API_URL
               value: {{ $remoteApiUrl | quote }}
+            - name: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "patchbay.existingSecret" . }}
+                  key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+                  optional: true
             {{- if .Values.frontend.config.docsUrl }}
             - name: DOCS_URL
               value: {{ .Values.frontend.config.docsUrl | quote }}

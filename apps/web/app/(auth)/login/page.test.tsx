@@ -5,6 +5,7 @@ const {
   signInProps,
   authState,
   search,
+  clerkLogin,
   issueCliToken,
   redirectToCliCallback,
 } = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const {
     current: { isLoaded: true, isSignedIn: false, getToken: vi.fn() },
   },
   search: { current: "" },
+  clerkLogin: vi.fn(),
   issueCliToken: vi.fn(),
   redirectToCliCallback: vi.fn(),
 }));
@@ -30,7 +32,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@patchbay/core/api", () => ({
-  api: { issueCliToken },
+  api: { clerkLogin, issueCliToken },
 }));
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
@@ -45,6 +47,7 @@ describe("LoginPage", () => {
     signInProps.current = {};
     search.current = "";
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
+    clerkLogin.mockReset();
     issueCliToken.mockReset();
     redirectToCliCallback.mockReset();
   });
@@ -75,7 +78,12 @@ describe("LoginPage", () => {
   it("offers CLI authorization after Clerk has established the session", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authState.current = {
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: vi.fn().mockResolvedValue("clerk-session-token"),
+    };
+    clerkLogin.mockResolvedValue({});
 
     render(<LoginPage />);
 
@@ -88,7 +96,12 @@ describe("LoginPage", () => {
   it("exchanges the Clerk session for a native Patchbay CLI token", async () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authState.current = {
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: vi.fn().mockResolvedValue("clerk-session-token"),
+    };
+    clerkLogin.mockResolvedValue({});
     issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
 
     render(<LoginPage />);
@@ -100,6 +113,7 @@ describe("LoginPage", () => {
       "patchbay-native-token",
       "opaque-state",
     );
-    expect(authState.current.getToken).not.toHaveBeenCalled();
+    expect(authState.current.getToken).toHaveBeenCalledOnce();
+    expect(clerkLogin).toHaveBeenCalledWith("clerk-session-token");
   });
 });
