@@ -1761,6 +1761,11 @@ async fn run_protocol(
             );
         }
     }
+    let drain_quiet = if provider == "hermes" {
+        Duration::ZERO
+    } else {
+        NOTIFICATION_QUIET
+    };
     let drain = if provider == "reasonix" {
         client
             .drain_notifications_with_permission(
@@ -1779,7 +1784,7 @@ async fn run_protocol(
             .await
     } else {
         client
-            .drain_notifications(NOTIFICATION_QUIET, NOTIFICATION_DRAIN_MAX, |notification| {
+            .drain_notifications(drain_quiet, NOTIFICATION_DRAIN_MAX, |notification| {
                 handle_notification(notification, &messages, &mut state)
             })
             .await
@@ -3440,6 +3445,18 @@ mod tests {
 
     use super::*;
 
+    fn requests_contain_config(requests: &str, config_id: &str, value: &str) -> bool {
+        requests.lines().any(|line| {
+            let Ok(request) = serde_json::from_str::<Value>(line) else {
+                return false;
+            };
+            let params = &request["params"];
+            request["method"].as_str() == Some("session/set_config_option")
+                && params["configId"].as_str() == Some(config_id)
+                && params["value"].as_str() == Some(value)
+        })
+    }
+
     #[test]
     fn arguments_keep_protocol_and_permission_mode_owned() {
         let args = build_qoder_args(&ExecOptions {
@@ -4572,7 +4589,8 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"cached_token"},{"id":"xai.api_key"}]}}\n' "$id" ;;
     *'"method":"authenticate"'*)
-      case "$line" in *'"methodId":"xai.api_key"'*'"headless":true'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"methodId":"xai.api_key"'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"headless":true'*) ;; *) exit 41 ;; esac
       authenticated=true
       printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
     *'"method":"session/new"'*)
@@ -4948,9 +4966,9 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Dim requests: {error}"));
         assert_eq!(requests.matches("session/load").count(), 2);
-        assert!(requests.contains(r#""configId":"permission","value":"full-access""#));
-        assert!(requests.contains(r#""configId":"mode","value":"agent""#));
-        assert!(requests.contains(r#""configId":"thought_level","value":"high""#));
+        assert!(requests_contain_config(&requests, "permission", "full-access"));
+        assert!(requests_contain_config(&requests, "mode", "agent"));
+        assert!(requests_contain_config(&requests, "thought_level", "high"));
         assert!(requests.contains("session/close"));
     }
 
@@ -5065,7 +5083,7 @@ done
         assert_eq!(result.usage["deepseek-v4"].cost_usd_ticks, 100_000_000);
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Reasonix requests: {error}"));
-        assert!(requests.contains(r#""configId":"effort","value":"high""#));
+        assert!(requests_contain_config(&requests, "effort", "high"));
         assert!(!requests.contains("system must not be sent"));
     }
 

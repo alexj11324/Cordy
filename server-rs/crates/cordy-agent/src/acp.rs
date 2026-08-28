@@ -74,7 +74,7 @@ impl AcpError {
 
 pub struct AcpClient<R, W> {
     reader: AgentLineReader<R>,
-    writer: W,
+    writer: Option<W>,
     next_id: u64,
 }
 
@@ -86,7 +86,7 @@ where
     pub fn new(reader: R, writer: W) -> Self {
         Self {
             reader: AgentLineReader::new(reader),
-            writer,
+            writer: Some(writer),
             next_id: 1,
         }
     }
@@ -164,14 +164,15 @@ where
     /// Closes the client request side while retaining stdout ownership so a
     /// runtime can flush notifications that it emits only after stdin EOF.
     pub async fn close_request_side(&mut self) -> Result<(), AcpError> {
-        self.writer.shutdown().await.map_err(AcpError::Transport)
+        if let Some(mut writer) = self.writer.take() {
+            writer.shutdown().await.map_err(AcpError::Transport)?;
+        }
+        Ok(())
     }
 
-    /// Drains post-response notifications until stdout EOF or the absolute
-    /// `maximum` bound expires. Closing the request side first is what lets a
-    /// well-behaved agent flush and hang up; a quiet interval is not treated
-    /// as terminal, because some runtimes emit their final `session/update`
-    /// after a gap that is still inside the advertised drain bound.
+    /// Drains post-response notifications until stdout EOF, the `quiet`
+    /// interval, or the absolute `maximum` bound expires. A zero quiet interval
+    /// disables the idle bound for runtimes that flush only after stdin EOF.
     pub async fn drain_notifications(
         &mut self,
         quiet: Duration,
@@ -194,16 +195,20 @@ where
         mut on_notification: impl FnMut(AcpNotification),
         mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<(), AcpError> {
-        let _ = quiet;
         let deadline = tokio::time::Instant::now() + maximum;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 return Ok(());
             }
+            let wait = if quiet.is_zero() {
+                remaining
+            } else {
+                quiet.min(remaining)
+            };
             let line = tokio::select! {
                 line = self.reader.next_line() => line?,
-                () = tokio::time::sleep(remaining) => return Ok(()),
+                () = tokio::time::sleep(wait) => return Ok(()),
             };
             let Some(line) = line else {
                 return Ok(());
@@ -286,8 +291,14 @@ where
     async fn write(&mut self, frame: &Value) -> Result<(), AcpError> {
         let mut encoded = serde_json::to_vec(frame)?;
         encoded.push(b'\n');
-        self.writer.write_all(&encoded).await?;
-        self.writer.flush().await?;
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            AcpError::Transport(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "ACP request side is closed",
+            ))
+        })?;
+        writer.write_all(&encoded).await?;
+        writer.flush().await?;
         Ok(())
     }
 }
@@ -365,7 +376,7 @@ fn rpc_error(method: &str, error: &Value) -> AcpError {
 
 #[cfg(test)]
 mod tests {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
     use super::*;
 
@@ -415,6 +426,25 @@ mod tests {
         assert_eq!(notifications.len(), 1);
     }
 
+    #[tokio::test]
+    async fn close_request_side_delivers_eof_to_the_peer() {
+        let (client_io, agent_io) = tokio::io::duplex(1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (mut agent_read, _agent_write) = tokio::io::split(agent_io);
+        let mut client = AcpClient::new(BufReader::new(client_read), client_write);
+
+        client
+            .close_request_side()
+            .await
+            .unwrap_or_else(|error| panic!("close request side: {error}"));
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), agent_read.read_to_end(&mut bytes))
+            .await
+            .unwrap_or_else(|_| panic!("peer did not observe request-side EOF"))
+            .unwrap_or_else(|error| panic!("read peer EOF: {error}"));
+        assert!(bytes.is_empty());
+    }
+
     #[test]
     fn session_not_found_requires_known_rpc_code_and_wording() {
         let rejected = AcpError::Rpc {
@@ -434,7 +464,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_keeps_reading_after_the_first_quiet_interval() {
+    async fn drain_without_idle_bound_keeps_reading_after_a_gap() {
         let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
         let (client_read, client_write) = tokio::io::split(client_io);
         let (_agent_read, mut agent_write) = tokio::io::split(agent_io);
@@ -453,7 +483,7 @@ mod tests {
         let mut notifications = Vec::new();
         client
             .drain_notifications(
-                Duration::from_millis(20),
+                Duration::ZERO,
                 Duration::from_secs(1),
                 |notification| notifications.push(notification),
             )
