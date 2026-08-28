@@ -3,9 +3,9 @@
 ## Normal release
 
 Release from a reviewed commit on `main` by creating and pushing a new semantic
-version tag such as `v0.18.4`. The Release workflow intentionally has no manual
-trigger: a tag push is the only event that can publish binaries, desktop
-installers, container images, and the Helm chart.
+version tag such as `v0.18.4`. A tag push publishes the Rust CLI archives and
+desktop installers. It does not build self-hosted container images or the Helm
+chart, so desktop downloads are not blocked by server-image publication.
 
 The verification job applies migrations with `cordy-migrate`, runs every Rust
 workspace target, builds the server, CLI, migration runner, and all three
@@ -31,6 +31,18 @@ notarization ticket, and require Gatekeeper to report `Notarized Developer ID`.
 Only then are the macOS assets uploaded to the draft Release. The public
 Release job still waits for both macOS matrix entries, so an unsigned or
 unnotarized package cannot become the production auto-update baseline.
+
+## Manual self-hosted publication
+
+Backend/Web container images and the Helm chart are published only through a
+manual **Release** workflow run. In **Actions → Release → Run workflow**, enter
+an existing semantic version tag. The workflow checks out that exact tag,
+builds native `linux/amd64` and `linux/arm64` images, publishes the versioned
+multi-architecture manifests, and then publishes the matching Helm chart.
+
+Select **promote_latest** only when the requested tag is a stable release and
+the versioned images have been intentionally chosen as the new self-hosted
+default. Pre-release tags are never promoted to `latest`.
 
 ## Emergency vulnerability-scan bypass
 
