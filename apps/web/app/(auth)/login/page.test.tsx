@@ -1,12 +1,20 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signInProps, authState, search } = vi.hoisted(() => ({
+const {
+  signInProps,
+  authState,
+  search,
+  issueCliToken,
+  redirectToCliCallback,
+} = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
     current: { isLoaded: true, isSignedIn: false, getToken: vi.fn() },
   },
   search: { current: "" },
+  issueCliToken: vi.fn(),
+  redirectToCliCallback: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs", () => ({
@@ -21,6 +29,15 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
+vi.mock("@cordy/core/api", () => ({
+  api: { issueCliToken },
+}));
+
+vi.mock("@cordy/views/auth", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@cordy/views/auth")>();
+  return { ...original, redirectToCliCallback };
+});
+
 import LoginPage from "./page";
 
 describe("LoginPage", () => {
@@ -28,6 +45,8 @@ describe("LoginPage", () => {
     signInProps.current = {};
     search.current = "";
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
+    issueCliToken.mockReset();
+    redirectToCliCallback.mockReset();
   });
 
   it("renders the Clerk sign-in flow at the canonical login route", () => {
@@ -60,7 +79,27 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    expect(screen.getByRole("button", { name: "Authorize CLI" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Authorize CLI" }),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+  });
+
+  it("exchanges the Clerk session for a native Cordy CLI token", async () => {
+    search.current =
+      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    issueCliToken.mockResolvedValue({ token: "cordy-native-token" });
+
+    render(<LoginPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Authorize CLI" }));
+
+    await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
+    expect(redirectToCliCallback).toHaveBeenCalledWith(
+      "http://localhost:43821/callback",
+      "cordy-native-token",
+      "opaque-state",
+    );
+    expect(authState.current.getToken).not.toHaveBeenCalled();
   });
 });
