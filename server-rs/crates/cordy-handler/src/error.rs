@@ -22,15 +22,11 @@ fn go_json_bytes(value: &serde_json::Value) -> Vec<u8> {
             b'<' => out.extend_from_slice(br#"\u003c"#),
             b'>' => out.extend_from_slice(br#"\u003e"#),
             b'&' => out.extend_from_slice(br#"\u0026"#),
-            0xe2 if bytes.get(index + 1) == Some(&0x80)
-                && bytes.get(index + 2) == Some(&0xa8) =>
-            {
+            0xe2 if bytes.get(index + 1) == Some(&0x80) && bytes.get(index + 2) == Some(&0xa8) => {
                 out.extend_from_slice(br#"\u2028"#);
                 index += 2;
             }
-            0xe2 if bytes.get(index + 1) == Some(&0x80)
-                && bytes.get(index + 2) == Some(&0xa9) =>
-            {
+            0xe2 if bytes.get(index + 1) == Some(&0x80) && bytes.get(index + 2) == Some(&0xa9) => {
                 out.extend_from_slice(br#"\u2029"#);
                 index += 2;
             }
@@ -107,8 +103,11 @@ mod tests {
             .parse::<usize>()
             .unwrap();
         let bytes = res.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(&bytes[..], br#"{"error":"task not found"}
-"#);
+        assert_eq!(
+            &bytes[..],
+            br#"{"error":"task not found"}
+"#
+        );
         assert_eq!(content_length, bytes.len());
     }
 
@@ -137,10 +136,7 @@ mod tests {
 
     #[tokio::test]
     async fn error_response_uses_go_safe_string_escaping() {
-        let res = error_response(
-            StatusCode::BAD_REQUEST,
-            "<unsafe> & \u{2028}\u{2029}",
-        );
+        let res = error_response(StatusCode::BAD_REQUEST, "<unsafe> & \u{2028}\u{2029}");
         let bytes = res.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(
             &bytes[..],
