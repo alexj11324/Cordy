@@ -1569,17 +1569,18 @@ cat > /dev/null
             .await;
         assert_eq!(catalog.models.len(), 1);
         assert!(catalog.models[0].default);
+        let thinking = catalog.models[0].thinking.as_ref();
         assert_eq!(
-            catalog.models[0].thinking.as_ref().unwrap().default_level,
-            "high"
+            thinking.map(|thinking| thinking.default_level.as_str()),
+            Some("high")
         );
-        assert!(!catalog.models[0]
-            .thinking
-            .as_ref()
-            .unwrap()
-            .supported_levels
-            .iter()
-            .any(|level| level.value == "max"));
+        let supports_max = thinking.is_some_and(|thinking| {
+            thinking
+                .supported_levels
+                .iter()
+                .any(|level| level.value == "max")
+        });
+        assert!(!supports_max);
         assert_eq!(catalog.models[0].label, "anthropic/claude-sonnet");
     }
 

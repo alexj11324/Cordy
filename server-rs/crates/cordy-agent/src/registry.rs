@@ -694,12 +694,11 @@ mod tests {
 
     #[test]
     fn factory_fails_closed_for_unknown_or_unimplemented_runtime() {
-        for runtime in ["unknown"] {
-            assert!(matches!(
-                build_backend(runtime, backend_config()),
-                Err(AgentError::UnsupportedRuntime(value)) if value == runtime
-            ));
-        }
+        let runtime = "unknown";
+        assert!(matches!(
+            build_backend(runtime, backend_config()),
+            Err(AgentError::UnsupportedRuntime(value)) if value == runtime
+        ));
     }
 
     #[test]
@@ -748,7 +747,9 @@ mod tests {
             Duration::ZERO,
         )
         .await
-        .expect("catalogless runtime discovery is supported");
+        .unwrap_or_else(|error| {
+            panic!("catalogless runtime discovery is supported: {error}")
+        });
         assert_eq!(catalog, Catalog::default());
     }
 
@@ -765,7 +766,9 @@ mod tests {
             Duration::ZERO,
         )
         .await
-        .expect("codex discovery should degrade to its static catalog");
+        .unwrap_or_else(|error| {
+            panic!("codex discovery should degrade to its static catalog: {error}")
+        });
         assert_eq!(
             catalog.models.first().map(|model| model.id.as_str()),
             Some("gpt-5.6-sol")
