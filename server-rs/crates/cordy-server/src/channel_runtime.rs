@@ -1479,7 +1479,7 @@ mod tests {
         assert_eq!(channel.r#type(), lark);
         assert!(channel
             .capabilities()
-            .contains(cordy_channel::Capability::TEXT));
+            .has(cordy_channel::Capability::TEXT));
 
         // The backfill is ancillary to this assembly contract and must not
         // outlive the test's intentionally disconnected pool.
