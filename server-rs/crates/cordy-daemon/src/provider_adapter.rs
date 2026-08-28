@@ -2278,7 +2278,12 @@ mod tests {
             agent_id: "agent-1".to_string(),
             runtime_id: "runtime-1".to_string(),
             workspace_id: "workspace-1".to_string(),
-            agent: Some(crate::types::AgentData::default()),
+            issue_id: "issue-1".to_string(),
+            agent: Some(crate::types::AgentData {
+                id: "agent-1".to_string(),
+                name: "Builder".to_string(),
+                ..crate::types::AgentData::default()
+            }),
             remote_mcp_connections: vec![cordy_remotemcp::Connection {
                 contribution_id: "connection-1".to_string(),
                 contribution_key: "required-tools".to_string(),

@@ -926,6 +926,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn custom_profiles_require_a_real_protocol_backend() {
+        assert!(LocalProviderCatalog::supports_backend("codex"));
+        assert!(!LocalProviderCatalog::supports_backend("omp"));
+        assert!(LocalProviderCatalog::supports_backend("claude"));
+        assert!(!LocalProviderCatalog::supports_backend("unknown"));
+    }
+
+    #[test]
     fn launch_registry_keeps_provider_and_profile_identity_atomic() {
         let registry = RuntimeLaunchRegistry::default();
         registry.replace_builtins(
