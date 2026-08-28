@@ -3205,10 +3205,13 @@ Go 命令，不把文档文字更新当作生产切换证据。
 - owner：主 agent 负责文档切换和证据回写；独立 verification/reviewer/fixer 负责命令复核、生产边界和回归检查。
 - 本次文档对齐（同一切片，不拆语言/命令 PR）：
   - `apps/docs/content/docs/troubleshooting.{mdx,zh.mdx,ko.mdx,ja.mdx}` 的 migration 103 手动回填示例统一使用
-    `./server/bin/backfill_task_usage_hourly`（源码 checkout 先执行 `make rust-build`），删除仍指向 Go `go run` 的生产操作。
+    backend image 内的 `/app/backfill_task_usage_hourly`，通过一次性 Compose command 覆盖失败的普通 entrypoint；
+    `make rust-build` + `./server/bin/backfill_task_usage_hourly` 仅作为明确需要 Rust toolchain 的源码 checkout 备选，删除仍
+    指向 Go `go run` 的生产操作。
   - `apps/docs/content/docs/self-host-quickstart.{mdx,zh.mdx,ko.mdx,ja.mdx}` 的 readiness 说明统一指向
-    `server-rs/crates/cordy-handler/src/health.rs`，反映 Rust `/readyz` 的数据库可达性和 `{"status":"ready"}` 响应；
-    不再引用已下线语义的 Go `router.go` 行号或虚构的 `checks.migrations` 字段。
+    `server-rs/crates/cordy-handler/src/health.rs`，反映 Rust `/readyz` 只执行数据库 ping，并分别返回 HTTP 200
+    `{"status":"ready"}` 或 HTTP 503 `{"status":"unavailable"}`；migration-before-server 是 entrypoint 边界，不是
+    readiness response 子检查，不再引用已下线语义的 Go `router.go` 行号或虚构的 `checks.migrations` 字段。
   - `SELF_HOSTING_ADVANCED.md` 中 `go tool pprof` 仅作为可选的 profile 客户端明确标注；它读取 Rust pprof 输出，
     不构建或运行 Cordy Go 服务。迁移审计/源码映射中的 Go 路径仍是历史证据，不属于默认生产操作，保持不改。
 - 证据/PR：T-61 是一个运维文档切片，已准备 Ready PR #590（基于 T-60 最新 tip），本项只改上述直接相关文档，

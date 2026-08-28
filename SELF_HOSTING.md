@@ -258,11 +258,11 @@ Watch the pods come up:
 kubectl -n cordy get pods -w
 ```
 
-On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns OK:
+On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns the Rust readiness response:
 
 ```bash
 curl -H "Host: api.cordy.dev.lan" http://<ingress-ip>/healthz
-# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+# {"status":"ready"}
 ```
 
 Then open http://cordy.dev.lan in your browser.

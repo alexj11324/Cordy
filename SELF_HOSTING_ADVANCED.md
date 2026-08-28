@@ -548,16 +548,17 @@ GET /health
 → {"status":"ok"}
 
 GET /readyz
-→ {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+→ {"status":"ready"}
 
 GET /healthz
 → same response as /readyz
 ```
 
 Use `/health` for basic liveness / reachability checks. Use `/readyz` for
-dependency-aware readiness probes and external monitoring that should fail when
-the database is unavailable or migrations are not fully applied. `/healthz` is
-kept as an alias for operator familiarity.
+readiness probes and external monitoring that should fail when the database is
+unavailable. The Rust entrypoint runs migrations before serving, so migration
+failures prevent the service from becoming ready. `/healthz` is kept as an alias
+for operator familiarity.
 
 ## Prometheus Metrics
 

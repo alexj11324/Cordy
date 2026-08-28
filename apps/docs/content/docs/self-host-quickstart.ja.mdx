@@ -67,7 +67,7 @@ make selfhost
 docker compose -f docker-compose.selfhost.yml ps
 ```
 
-`postgres` が `healthy`、`backend` と `frontend` が実行中であることを確認します。続いて backend、データベース、migration をチェックします。
+`postgres` が `healthy`、`backend` と `frontend` が実行中であることを確認します。続いて backend とデータベースへの到達性をチェックします。
 
 ```bash
 curl -fsS http://localhost:8080/readyz
@@ -76,7 +76,7 @@ curl -fsS http://localhost:8080/readyz
 期待されるレスポンスは次のとおりです。
 
 ```json
-{"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+{"status":"ready"}
 ```
 
 backend コンテナは起動のたびにデータベースの migration を実行してからサービスを開始するため、migration コマンドを手動で実行する必要はありません。
@@ -309,14 +309,14 @@ migration は backend の起動時に自動で実行されます。過去デー�
 
 ### `/health` ではなく `/readyz` で検証する
 
-`/health` は **liveness** プローブで、プロセスが動いている限り `{"status":"ok"}` を返します。`/readyz`（`server-rs/crates/cordy-handler/src/health.rs`で実装され、`/healthz` はそのエイリアス）はデータベースへの接続を確認し、Rust エントリーポイントの migration が完了してから `ready` を返すため、起動失敗の確認にはこちらを使います。
+`/health` は **liveness** プローブで、プロセスが動いている限り `{"status":"ok"}` を返します。`/readyz`（`server-rs/crates/cordy-handler/src/health.rs`で実装され、`/healthz` はそのエイリアス）はデータベースを ping するだけです。到達可能なら HTTP 200 と `{"status":"ready"}`、到達不能なら HTTP 503 と `{"status":"unavailable"}` を返します。これとは別に Rust エントリーポイントはサーバー起動前に migration を実行するため、migration が失敗すると ready server はプローブに応答しません。
 
 ```bash
 curl -s localhost:8080/readyz
 # {"status":"ready"}
 ```
 
-HTTP 200 かつ両方のチェックが `ok` でない場合、新しいバージョンは migration を完了していません。トラフィックを流す前にバックエンドのログを確認してください。
+HTTP 200 と `{"status":"ready"}` 以外なら、実行中の backend はデータベースに到達できません。トラフィックを流す前に backend のログを確認してください。レスポンスに migration のサブチェックはなく、サーバーが起動できたこと自体がエントリーポイントの migration 完了を示します。
 
 ### Kubernetes
 
@@ -332,7 +332,7 @@ Helm には独自のアップグレード経路があります。values ファ�
 
 | 症状 | まず確認すること |
 |---|---|
-| `/readyz` が `ok` を返さない | `docker compose -f docker-compose.selfhost.yml logs backend postgres` を実行する。 |
+| `/readyz` が `{"status":"ready"}` を返さない | `docker compose -f docker-compose.selfhost.yml logs backend postgres` を実行する。 |
 | 認証コードが届かない | コードを一度リクエストし、backend のログで `Verification code` を探す。 |
 | `setup self-host` が server に到達できないと報告する | 実行用コンピュータから `https://api.example.com/health` をリクエストし、DNS、TLS、リバースプロキシがすべて到達可能か確認する。 |
 | デーモンが `Agents` を表示しない | AI コーディングツールが `PATH` にありログイン済みであることを確認し、`cordy daemon restart` を実行する。 |
