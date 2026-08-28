@@ -1005,13 +1005,9 @@ mod tests {
             ..LocalWorktreeParams::default()
         });
 
-        let plan = ProviderExecutionPlan::build(
-            &config(),
-            &side_chat_task,
-            &target(),
-            side_chat_inputs,
-        )
-        .unwrap();
+        let plan =
+            ProviderExecutionPlan::build(&config(), &side_chat_task, &target(), side_chat_inputs)
+                .unwrap();
 
         assert!(plan.prepare_params().local_work_dir.is_empty());
         assert!(plan.prepare_params().local_worktree.is_none());

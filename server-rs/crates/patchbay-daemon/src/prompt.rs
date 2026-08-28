@@ -817,12 +817,8 @@ mod tests {
         assert!(out.contains("Patchbay Side Chat"));
         assert!(out.contains("Do not modify files"));
         assert!(out.contains("--thread thread-root-1 --full --output json"));
-        assert!(out.contains(
-            "patchbay issue message-main main-task-1 --content-stdin"
-        ));
-        assert!(out.contains(
-            "pass the instruction verbatim through the command's stdin"
-        ));
+        assert!(out.contains("patchbay issue message-main main-task-1 --content-stdin"));
+        assert!(out.contains("pass the instruction verbatim through the command's stdin"));
         assert!(out.contains("Do not ask the user to copy it"));
     }
 
