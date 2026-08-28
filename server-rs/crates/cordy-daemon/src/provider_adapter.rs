@@ -460,9 +460,11 @@ impl ProductionProviderAdapter {
             temp_dir: planned_temp_dir,
             default_model,
             codex_version: launch.version.clone(),
-            openclaw_bin: (target.provider == "openclaw")
-                .then(|| launch.command_path.clone())
-                .unwrap_or_default(),
+            openclaw_bin: if target.provider == "openclaw" {
+                launch.command_path.clone()
+            } else {
+                String::new()
+            },
             launch_prefix_args: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
@@ -1331,6 +1333,7 @@ impl ProviderRuntimeAdapter for ProductionProviderAdapter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_model_list(
     ctx: Ctx,
     client: Arc<Client>,
@@ -1642,6 +1645,7 @@ async fn withhold_missing_codex_rollout(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn drain_session(
     ctx: &Ctx,
     backend_cancel: &CancellationToken,
@@ -1914,6 +1918,7 @@ impl TranscriptBatch {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_and_drain(
     backend: &dyn Backend,
     ctx: &Ctx,
@@ -2579,9 +2584,11 @@ fn prepared_environment_inputs(
     cancellation: CancellationToken,
 ) -> PreparedEnvironmentInputs {
     PreparedEnvironmentInputs {
-        system_prompt: provider_needs_inline_system_prompt(provider)
-            .then(|| build_prompt(task.clone(), provider))
-            .unwrap_or_default(),
+        system_prompt: if provider_needs_inline_system_prompt(provider) {
+            build_prompt(task.clone(), provider)
+        } else {
+            String::new()
+        },
         openclaw_include_roots: environment.openclaw_include_root.clone(),
         cancellation,
     }

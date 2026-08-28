@@ -293,7 +293,7 @@ impl DaemonControl {
         let (socket, _) = tokio::time::timeout(TASK_WAKEUP_HANDSHAKE_TIMEOUT, connect)
             .await
             .map_err(|_| ConnectionEnd::TimedOut("websocket handshake"))?
-            .map_err(|err| ConnectionEnd::Transport(err.into()))?;
+            .map_err(ConnectionEnd::Transport)?;
         let (sink, mut stream) = socket.split();
         let connection_ctx = ctx.child();
         let capacity = 16usize.max(runtime_ids.len().saturating_mul(2));

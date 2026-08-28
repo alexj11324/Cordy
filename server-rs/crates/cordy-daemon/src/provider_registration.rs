@@ -232,6 +232,7 @@ impl LocalProviderCatalog {
         self.not_executable_since.lock().unwrap().remove(provider);
     }
 
+    #[allow(clippy::result_large_err)]
     async fn probe_builtin(
         &self,
         ctx: &Ctx,
