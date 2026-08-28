@@ -3135,13 +3135,23 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   2. **本地 Rust 默认入口**：在 disposable fresh PostgreSQL 上运行 `make migrate-up`，以 `make start`/`make rust-server`
      启动，记录 `/health`、`/healthz`、`/readyz` 状态、migration lock/失败退出与干净 shutdown；以 `cordy daemon start`
      完成 registration→claim→execute→reconcile→shutdown smoke，并记录 matched/executed/blocked。
-  3. **发布入口**：运行 `docker build -f Dockerfile` 和
+  3. **发布、CI 与安装入口**：运行 `docker build -f Dockerfile` 和
      `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`，记录镜像
      digest、entrypoint `migrate up`、backend healthcheck 与 `/readyz`；运行 `helm lint deploy/helm/cordy`、
-     `helm template`，并在 Linux 可用时运行 `scripts/install.sh --with-server --systemd` 的 user-unit start/stop。
-  4. **业务与诊断**：在具备凭证的环境验证 provider 正常/坏凭证/网络失败 fail-closed、channel lease/media、
-     `/debug/pprof/{,profile,heap,trace,cmdline,symbol}` 和 metrics listener 的可达性与隔离；无凭证或平台不可用时
-     记录未执行原因，不能用 Stub/Noop/Fake 代替生产证据。
+     `helm template`。验证 `.github/workflows/release.yml` 的 required Rust build/test、RustSec、仅限 release tag 的
+     bypass，以及 backend aggregate CI 对 changed/unchanged/missing-invalid classifier 的 fail-closed 结果；对 CLI
+     release archive 与 checksum 逐项核对后执行 Homebrew 安装/升级 smoke，并验证 Desktop 内嵌 CLI 与 desktop smoke。
+     在 Linux/macOS/Windows runner 上分别执行 `scripts/install.sh`/`scripts/install.ps1` 的 main、严格 release
+     exact-ref、升级和 rollback（Linux 可用时含 `--with-server --systemd` user-unit start/stop）。缺少对应 runner、
+     Docker/Helm/Homebrew/PowerShell/systemd 工具或 registry/network 时必须把该单元记为 `blocked`，不得以另一平台或
+     静态检查记为通过。
+  4. **provider、channel/storage 生命周期与诊断**：逐项验证 Lark、WeCom、DingTalk、Slack、Telegram、Composio、
+     VCS、GHSnapshot 的有效配置、缺失配置、malformed/坏凭证、network failure 与 shutdown/cancellation；每项必须
+     经过真实 production registry/factory/client 或 transport，分别记录 matched/executed/blocked，缺凭证或网络时可
+     记 `blocked`，但不能以 Stub/Noop/Fake 代替。另逐项验证 channel registration/lease/reconnect/media/关闭清理和
+     production storage 的初始化、读写、错误隔离与 shutdown/flush 生命周期，同样覆盖 valid、missing、malformed、
+     network failure 与 shutdown/cancellation；运行
+     `/debug/pprof/{,profile,heap,trace,cmdline,symbol}` 和 metrics listener 的可达性、public-router 隔离与关闭回收。
   5. **升级与回滚**：使用两个 immutable image/tag 和 disposable DB 记录迁移前后 schema、服务可用性、向后/向前
      兼容边界、`cordy-migrate up/down`（或已支持 operator rollback）退出码、exact-image rollback 后的
      `/readyz` 与数据完整性；不得把局部 route parity 或静态编译当作回滚通过。
