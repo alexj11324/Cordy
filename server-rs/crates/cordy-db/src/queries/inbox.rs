@@ -330,6 +330,7 @@ pub struct ListArchivedInboxItemsRow {
     pub workspace_id: Option<Uuid>,
     pub recipient_type: String,
     pub recipient_id: Option<Uuid>,
+    #[serde(rename = "type")]
     pub type_: String,
     pub severity: String,
     pub issue_id: Option<Uuid>,
@@ -403,6 +404,7 @@ pub struct ListInboxItemsRow {
     pub workspace_id: Option<Uuid>,
     pub recipient_type: String,
     pub recipient_id: Option<Uuid>,
+    #[serde(rename = "type")]
     pub type_: String,
     pub severity: String,
     pub issue_id: Option<Uuid>,

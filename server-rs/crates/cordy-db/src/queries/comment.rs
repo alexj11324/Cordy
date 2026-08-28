@@ -172,6 +172,7 @@ pub struct CreateCommentRow {
     pub author_type: String,
     pub author_id: Option<Uuid>,
     pub content: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -778,6 +779,7 @@ pub struct ListRecentThreadCommentsForIssueRow {
     pub author_type: String,
     pub author_id: Option<Uuid>,
     pub content: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -938,6 +940,7 @@ pub struct ListRootCommentsForIssueRow {
     pub author_type: String,
     pub author_id: Option<Uuid>,
     pub content: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -1035,6 +1038,7 @@ pub struct ListRootCommentsSinceForIssueRow {
     pub author_type: String,
     pub author_id: Option<Uuid>,
     pub content: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -1135,6 +1139,7 @@ pub struct ListThreadCommentsForIssuePagedRow {
     pub author_type: String,
     pub author_id: Option<Uuid>,
     pub content: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -1344,6 +1349,7 @@ pub struct UpdateCommentRow {
     pub author_type: String,
     pub author_id: Option<Uuid>,
     pub content: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,

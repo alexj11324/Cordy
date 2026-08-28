@@ -195,6 +195,7 @@ pub struct ListIssuePropertiesRow {
     pub id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
     pub name: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub description: String,
     pub config: Option<serde_json::Value>,

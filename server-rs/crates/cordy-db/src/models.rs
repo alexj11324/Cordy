@@ -535,6 +535,7 @@ pub struct Comment {
     pub resolved_by_type: Option<String>,
     pub revision: i64,
     pub source_task_id: Option<Uuid>,
+    #[serde(rename = "type")]
     pub type_: String,
     pub updated_at: DateTime<Utc>,
     pub via_plugin_id: Option<Uuid>,
@@ -737,6 +738,7 @@ pub struct InboxItem {
     pub recipient_type: String,
     pub severity: String,
     pub title: String,
+    #[serde(rename = "type")]
     pub type_: String,
     pub workspace_id: Uuid,
 }
@@ -780,6 +782,7 @@ pub struct IssueDependency {
     pub depends_on_issue_id: Uuid,
     pub id: Uuid,
     pub issue_id: Uuid,
+    #[serde(rename = "type")]
     pub type_: String,
 }
 
@@ -807,6 +810,7 @@ pub struct IssueProperty {
     pub id: Uuid,
     pub name: String,
     pub position: f64,
+    #[serde(rename = "type")]
     pub type_: String,
     pub updated_at: DateTime<Utc>,
     pub workspace_id: Uuid,
@@ -1290,6 +1294,7 @@ pub struct TaskMessage {
     pub seq: i32,
     pub task_id: Uuid,
     pub tool: Option<String>,
+    #[serde(rename = "type")]
     pub type_: String,
 }
 
@@ -1563,4 +1568,132 @@ pub struct WorkspaceShareLink {
     pub role: String,
     pub use_count: i32,
     pub workspace_id: Uuid,
+}
+
+#[cfg(test)]
+mod wire_compatibility_tests {
+    use super::*;
+    use serde::Serialize;
+
+    fn assert_type_field<T: Serialize>(value: &T) {
+        let json = serde_json::to_value(value).expect("model serializes");
+        let object = json.as_object().expect("model is an object");
+        assert!(object.get("type").is_some(), "Go wire key `type` is present");
+        assert!(object.get("type_").is_none(), "Rust field name must not leak");
+    }
+
+    #[test]
+    fn reserved_type_fields_keep_go_wire_key() {
+        let id = Uuid::nil();
+        let now = Utc::now();
+
+        assert_type_field(&Comment {
+            author_id: id,
+            author_type: "member".into(),
+            content: "body".into(),
+            created_at: now,
+            id,
+            issue_id: id,
+            parent_id: None,
+            quick_action_id: None,
+            resolved_at: None,
+            resolved_by_id: None,
+            resolved_by_type: None,
+            revision: 1,
+            source_task_id: None,
+            type_: "comment".into(),
+            updated_at: now,
+            via_plugin_id: None,
+            workspace_id: id,
+        });
+
+        assert_type_field(&InboxItem {
+            actor_id: None,
+            actor_type: None,
+            archived: false,
+            body: None,
+            created_at: now,
+            details: None,
+            id,
+            issue_id: None,
+            read: false,
+            recipient_id: id,
+            recipient_type: "member".into(),
+            severity: "info".into(),
+            title: "title".into(),
+            type_: "issue".into(),
+            workspace_id: id,
+        });
+
+        assert_type_field(&IssueDependency {
+            depends_on_issue_id: id,
+            id,
+            issue_id: id,
+            type_: "blocks".into(),
+        });
+
+        assert_type_field(&IssueProperty {
+            archived_at: None,
+            config: serde_json::json!({}),
+            created_at: now,
+            description: "description".into(),
+            icon: "".into(),
+            id,
+            name: "priority".into(),
+            position: 0.0,
+            type_: "text".into(),
+            updated_at: now,
+            workspace_id: id,
+        });
+
+        assert_type_field(&TaskMessage {
+            content: None,
+            created_at: now,
+            id,
+            input: None,
+            output: None,
+            seq: 1,
+            task_id: id,
+            tool: None,
+            type_: "assistant".into(),
+        });
+    }
+
+    #[test]
+    fn legacy_nullable_json_fields_remain_null_on_the_wire() {
+        let id = Uuid::nil();
+        let item = InboxItem {
+            actor_id: None,
+            actor_type: None,
+            archived: false,
+            body: None,
+            created_at: Utc::now(),
+            details: None,
+            id,
+            issue_id: None,
+            read: false,
+            recipient_id: id,
+            recipient_type: "member".into(),
+            severity: "info".into(),
+            title: "legacy".into(),
+            type_: "issue".into(),
+            workspace_id: id,
+        };
+        let message = TaskMessage {
+            content: None,
+            created_at: Utc::now(),
+            id,
+            input: None,
+            output: None,
+            seq: 1,
+            task_id: id,
+            tool: None,
+            type_: "assistant".into(),
+        };
+
+        let item_json = serde_json::to_value(item).expect("inbox item serializes");
+        let message_json = serde_json::to_value(message).expect("task message serializes");
+        assert!(item_json.get("details").is_some_and(serde_json::Value::is_null));
+        assert!(message_json.get("input").is_some_and(serde_json::Value::is_null));
+    }
 }

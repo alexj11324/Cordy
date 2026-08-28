@@ -199,7 +199,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F，并在 T-60 执行真实 daemon registration→claim→execute→reconcile→shutdown smoke；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62、§75 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding，并在 T-60 执行新鲜 PostgreSQL、镜像启动、operator recovery 和 backfill 产物矩阵；不重复创建脱离 backend image 的第二套 release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42、§75 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576；高风险 API/DB/provider/daemon/security/backfill/CLI 回归统一沿 T-53 冻结矩阵收口，不另建重复任务 | 收口 #576 的异步 V/R/F，并按 T-53 矩阵补直接 Rust contract evidence；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008；不拆为按文件/测试的微任务 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract；T-54D 已把 realtime created_at/heartbeat 切到 Go-compatible RFC3339Nano，并创建 Ready PR #582；T-54E 已将 handler/service 已迁移的 RFC3339Nano 输出统一到 `cordy-util`，并创建 Ready PR #583；T-54F 已将 PostHog batch timestamp 切到同一 helper，并创建 Ready PR #584；T-57 已实现共享 HTTP 错误 envelope framing 并创建 Ready PR #585；T-58 已实现 issue response projection 的 null/empty 与 activity timestamp 契约并创建 Ready PR #586；T-59 将一次性收口其余 DB nullable/enum、旧 schema 读取和 golden/round-trip/cross-language residual | 收口 #577/#579/#580/#581/#582/#583/#584/#585/#586 异步 V/R/F；继续按 T-59 的完整 residual wire/schema 契约收口 AUDIT-008，避免单字段微型 PR | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口；T-57/T-58 已有共享 helper/投影；T-59 复用现有 model/query/event/serde 入口 | PR #577/#579/#580/#581/#582/#583/#584/#585/#586；T-59 待实现；§6.2、§64、§66、§67、§68、§69、§70、§71、§72、§73、§74 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract；T-54D 已把 realtime created_at/heartbeat 切到 Go-compatible RFC3339Nano，并创建 Ready PR #582；T-54E 已将 handler/service 已迁移的 RFC3339Nano 输出统一到 `cordy-util`，并创建 Ready PR #583；T-54F 已将 PostHog batch timestamp 切到同一 helper，并创建 Ready PR #584；T-57 已实现共享 HTTP 错误 envelope framing 并创建 Ready PR #585；T-58 已实现 issue response projection 的 null/empty 与 activity timestamp 契约并创建 Ready PR #586；T-59 当前收口 DB model/query serializers 的 reserved-key、nullable legacy-row 和 cross-language JSON residual | 收口 #577/#579/#580/#581/#582/#583/#584/#585/#586 异步 V/R/F；继续按 T-59 的完整 residual wire/schema 契约收口 AUDIT-008，避免单字段微型 PR | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口；T-57/T-58 已有共享 helper/投影；T-59 复用现有 model/query/event/serde 入口 | PR #577/#579/#580/#581/#582/#583/#584/#585/#586；T-59 当前切片待 Ready PR；§6.2、§64、§66、§67、§68、§69、§70、§71、§72、§73、§74 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578；T-61 将一次性复核文档与新鲜产物 | 收口 #578 异步 V/R/F，并在 T-61 完成 install/systemd/release/rollback/pprof/metrics 文档逐项复核 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65、§76 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009、T-59..T-61 退出且生产验证通过后，执行全仓引用审计、删除全部 Go 源文件和剩余 Go assets | 严格依赖 AUDIT-001..009、T-59..T-61 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
@@ -291,7 +291,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 61. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
 62. `[~]` `T-57 / §72` AUDIT-008 shared HTTP error envelope framing（Ready PR #585，待异步退出证据）
 63. `[~]` `T-58 / §73` AUDIT-008 issue response projection null/empty 与 activity timestamp contract（Ready PR #586，待异步退出证据）
-64. `[ ]` `T-59 / §74` AUDIT-008 残余 wire/schema、旧 schema 与跨语言 vectors（已登记，待实现）
+64. `[~]` `T-59 / §74` AUDIT-008 DB model/query reserved-key 与 nullable legacy-row wire contract（实现待提交）
 65. `[ ]` `T-60 / §75` AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（已登记，待验收）
 66. `[ ]` `T-61 / §76` AUDIT-009 运维文档与新鲜产物复核（已登记，待复核）
 67. `[ ]` `T-56` AUDIT-010 Go 源码退休（仅在 T-53、T-59、T-60、T-61、T-57、T-58 及 AUDIT-001..009 退出后）
@@ -3078,7 +3078,7 @@ detail/list/search/event 序列化路径。保持 status/status_category、错�
 - 证据/PR：`PR #586 <https://github.com/alexj11324/Cordy/pull/586>`；本项已交付但仍待上述基线解除后的真实编译/测试/生产
   smoke，AUDIT-008 及 Go 退休门不能因此标记完成。
 
-## 74. [ ] AUDIT-008 残余 wire/schema、旧 schema 与跨语言 vectors（T-59）
+## 74. [~] AUDIT-008 残余 wire/schema、旧 schema 与跨语言 vectors（T-59）
 
 本项承接 AUDIT-008 在 T-54、T-54A..F、T-57、T-58 之后仍未闭合的完整兼容面：DB nullable/enum 与旧 schema
 读取、迁移后 model/query 行为、尚未覆盖的 JSON null/empty/error 字段、Redis/event residual、golden vector、
@@ -3096,7 +3096,13 @@ serializer、migration framework 或 fallback。
 - 依赖：T-54/T-54A..F、T-57、T-58 的既有实现；数据库旧 schema/真实 event fixture 可由 verifier 在可用环境执行。
 - owner：主 agent 负责 Rust contract 和生产接线；独立 verification/reviewer/fixer 负责 vectors、旧数据/DB 验证
   和回归修复。
-- 证据/PR：本次冻结阶段无实现证据；实现 commit、Ready PR、精确 V/R/F 结果待回写。
+- 实现：`cordy-db` 的模型和查询结果为避免 Rust 保留字使用 `type_`，但 serde 默认会把它输出为 `type_`；Go sqlc
+  模型和 API contract 的 wire key 是 `type`。本切片为 5 个表模型和 9 个可序列化查询结果统一添加
+  `#[serde(rename = "type")]`，覆盖 comment、inbox、issue dependency/property、task message 的全部 DB-row
+  serializers；新增固定序列化向量，断言 `type` 不泄漏为 `type_`，并保留旧行中 nullable `details`/`input` 的 JSON `null`。
+  没有改变 SQL、列名、状态值、生产路由或默认配置。
+- 主 agent 仅执行 `git diff --check`；没有运行 cargo、rustfmt、测试、DB 或长编译命令。实现 commit、Ready PR、精确
+  V/R/F 结果待回写；在 verifier 完成 Rust 编译/测试和可用数据库旧行读取前，本项不能声称 AUDIT-008 已完成或删除 Go。
 
 ## 75. [ ] AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（T-60）
 
