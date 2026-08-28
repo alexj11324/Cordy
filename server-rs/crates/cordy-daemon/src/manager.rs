@@ -281,14 +281,9 @@ impl DaemonControl {
         let connect = async {
             if let Some(proxy) = environment_proxy_for_target(request.uri())? {
                 let tunnel = open_wakeup_proxy_tunnel(&proxy, request.uri()).await?;
-                tokio_tungstenite::client_async_tls_with_config(
-                    request,
-                    tunnel,
-                    Some(config),
-                    None,
-                )
-                .await
-                .map_err(anyhow::Error::from)
+                tokio_tungstenite::client_async_tls_with_config(request, tunnel, Some(config), None)
+                    .await
+                    .map_err(anyhow::Error::from)
             } else {
                 tokio_tungstenite::connect_async_with_config(request, Some(config), false)
                     .await
@@ -672,7 +667,9 @@ fn environment_proxy_for_target(target: &http::Uri) -> anyhow::Result<Option<Int
         .map_err(|error| anyhow::anyhow!("{proxy_name} is invalid for wakeup websocket: {error}"))
 }
 
-fn first_environment_value(names: &[&'static str]) -> anyhow::Result<Option<(&'static str, String)>> {
+fn first_environment_value(
+    names: &[&'static str],
+) -> anyhow::Result<Option<(&'static str, String)>> {
     for &name in names {
         let Some(value) = std::env::var_os(name) else {
             continue;
@@ -758,8 +755,8 @@ async fn open_wakeup_proxy_tunnel(
         Some("ws") => Some(80),
         _ => None,
     });
-    let target_port = target_port
-        .ok_or_else(|| anyhow::anyhow!("wakeup websocket target has no port"))?;
+    let target_port =
+        target_port.ok_or_else(|| anyhow::anyhow!("wakeup websocket target has no port"))?;
     let authority = format_host_port(target_host, target_port);
 
     let mut stream = tokio::net::TcpStream::connect((proxy_host, proxy_port))
@@ -911,11 +908,7 @@ mod tests {
         stream.read_exact(&mut body).await.unwrap();
     }
 
-    async fn write_control_response(
-        stream: &mut tokio::net::TcpStream,
-        status: &str,
-        body: &str,
-    ) {
+    async fn write_control_response(stream: &mut tokio::net::TcpStream, status: &str, body: &str) {
         stream
             .write_all(
                 format!(
@@ -938,8 +931,7 @@ mod tests {
             let (mut first_pool, _) = listener.accept().await.unwrap();
             for _ in 0..2 {
                 read_control_request(&mut first_pool).await;
-                write_control_response(&mut first_pool, "500 Internal Server Error", "{}")
-                    .await;
+                write_control_response(&mut first_pool, "500 Internal Server Error", "{}").await;
             }
 
             let (mut second_pool, _) = listener.accept().await.unwrap();
@@ -947,8 +939,7 @@ mod tests {
             write_control_response(&mut second_pool, "200 OK", ack).await;
             for _ in 0..2 {
                 read_control_request(&mut second_pool).await;
-                write_control_response(&mut second_pool, "500 Internal Server Error", "{}")
-                    .await;
+                write_control_response(&mut second_pool, "500 Internal Server Error", "{}").await;
             }
 
             let (mut third_pool, _) = listener.accept().await.unwrap();
@@ -1170,10 +1161,7 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(proxy.uri().authority().unwrap(), "proxy.example:8080");
-        assert_eq!(
-            proxy.basic_auth().unwrap(),
-            "Basic dXNlcjpwQHNz"
-        );
+        assert_eq!(proxy.basic_auth().unwrap(), "Basic dXNlcjpwQHNz");
         assert!(configured_proxy_for_target(
             &target,
             "https",
@@ -1195,21 +1183,17 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(malformed.contains("malformed"));
-        let unsupported = configured_proxy_for_target(
-            &target,
-            "https",
-            "https://proxy.example:8443",
-            "",
-        )
-        .unwrap_err()
-        .to_string();
+        let unsupported =
+            configured_proxy_for_target(&target, "https", "https://proxy.example:8443", "")
+                .unwrap_err()
+                .to_string();
         assert!(unsupported.contains("only HTTP CONNECT"));
     }
 
     #[tokio::test]
     async fn wakeup_proxy_connect_rejects_refusal_truncation_and_oversize() {
-        let refused = proxy_tunnel_error(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
-            .await;
+        let refused =
+            proxy_tunnel_error(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n").await;
         assert!(refused.contains("status Some(407)"));
 
         let truncated = proxy_tunnel_error(b"HTTP/1.1 200 Connection Established\r\n").await;
@@ -1231,14 +1215,10 @@ mod tests {
             let _ = stream.write_all(&response).await;
         });
         let target: http::Uri = "wss://wakeup.example.invalid/socket".parse().unwrap();
-        let proxy = configured_proxy_for_target(
-            &target,
-            "https",
-            &format!("http://{proxy_addr}"),
-            "",
-        )
-        .unwrap()
-        .unwrap();
+        let proxy =
+            configured_proxy_for_target(&target, "https", &format!("http://{proxy_addr}"), "")
+                .unwrap()
+                .unwrap();
         let error = open_wakeup_proxy_tunnel(&proxy, &target)
             .await
             .unwrap_err()

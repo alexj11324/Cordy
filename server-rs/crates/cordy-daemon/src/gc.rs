@@ -26,7 +26,7 @@ use crate::activity::DaemonActivity;
 use crate::artifact_matcher::{
     safe_relative_path, ArtifactMatcher, MANAGED_ARTIFACT_PATTERN_PREFIX,
 };
-use crate::execenv::execenv::{read_gc_meta, GcMeta, GCMetaKind};
+use crate::execenv::execenv::{read_gc_meta, GCMetaKind, GcMeta};
 use crate::repocache::{CancelCause, Ctx};
 
 // ---------------------------------------------------------------------------
