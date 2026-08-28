@@ -1277,7 +1277,9 @@ mod tests {
             "https://API.ASPECTLYLABS.COM:443/some/path"
         ));
         // Staging subdomains deliberately excluded.
-        assert!(!is_official_cloud_server("https://staging.aspectlylabs.com"));
+        assert!(!is_official_cloud_server(
+            "https://staging.aspectlylabs.com"
+        ));
         assert!(!is_official_cloud_server("not a url"));
     }
 
