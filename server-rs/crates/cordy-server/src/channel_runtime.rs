@@ -1477,9 +1477,7 @@ mod tests {
             .await
             .expect("production Lark factory builds its WebSocket channel");
         assert_eq!(channel.r#type(), lark);
-        assert!(channel
-            .capabilities()
-            .has(cordy_channel::Capability::TEXT));
+        assert!(channel.capabilities().has(cordy_channel::Capability::TEXT));
 
         // The backfill is ancillary to this assembly contract and must not
         // outlive the test's intentionally disconnected pool.
