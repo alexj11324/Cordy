@@ -42,9 +42,9 @@ function LoginContent() {
     const authorize = async () => {
       setError("");
       try {
-        // Clerk authenticates this browser request through the ApiClient's
-        // token provider. The backend exchanges that session for the native
-        // Cordy bearer understood by the CLI and Rust API middleware.
+        // The managed web identity boundary authenticates the Clerk session
+        // supplied by the ApiClient. The backend then exchanges that identity
+        // for the native Cordy bearer understood by the CLI and Rust API.
         const { token } = await api.issueCliToken();
         if (!token) throw new Error("Cordy CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);
