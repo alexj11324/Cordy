@@ -239,7 +239,7 @@ jobs:
         working-directory: release-assets
         run: sha256sum * > checksums.txt
 
-      - name: Create draft Rust CLI release
+      - name: Create or reuse draft Rust CLI release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
@@ -249,13 +249,49 @@ jobs:
           if [ "$IS_STABLE" != "true" ]; then
             release_channel=(--prerelease --latest=false)
           fi
-          gh release create "$TAG_NAME" \
+
+          # The tag is the immutable release target. Resolve annotated tags
+          # until the underlying commit and ensure it is still the commit that
+          # triggered this workflow before reusing or creating any release.
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
+          tag_type="$(jq -r '.object.type' <<<"$tag_object")"
+          tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
+          while [ "$tag_type" = "tag" ]; do
+            tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
+            tag_type="$(jq -r '.object.type' <<<"$tag_object")"
+            tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
+          done
+          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag $TAG_NAME no longer resolves to workflow commit $GITHUB_SHA"
+            exit 1
+          fi
+
+          # A failed upload must be recoverable with GitHub's "rerun failed
+          # jobs" button. Reuse an existing draft for this exact tag, but
+          # refuse to mutate a release that is already public or whose channel
+          # no longer matches this workflow invocation.
+          if release_json="$(gh release view "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "$TAG_NAME" \
-            --generate-notes \
-            --draft \
-            "${release_channel[@]}"
+            --json isDraft,isPrerelease 2>/dev/null)"; then
+            is_draft="$(jq -r '.isDraft' <<<"$release_json")"
+            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
+            expected_prerelease=false
+            if [ "$IS_STABLE" != "true" ]; then
+              expected_prerelease=true
+            fi
+            if [ "$is_draft" != "true" ] || [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with incompatible draft/channel state"
+              exit 1
+            fi
+          else
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft \
+              "${release_channel[@]}"
+          fi
           gh release upload "$TAG_NAME" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
@@ -358,7 +394,6 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
             type=raw,value=${{ needs.verify.outputs.tag_name }}
             type=sha,prefix=sha-
 
@@ -475,7 +510,6 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
             type=raw,value=${{ needs.verify.outputs.tag_name }}
             type=sha,prefix=sha-
 
@@ -662,11 +696,44 @@ jobs:
             "cordy-cli-$version-darwin-amd64.tar.gz" \
             "cordy-cli-$version-darwin-arm64.tar.gz" \
             "cordy-cli-$version-windows-amd64.zip" \
-            "cordy-cli-$version-windows-arm64.zip"; do
+            "cordy-cli-$version-windows-arm64.zip" \
+            "cordy-desktop-$version-linux-x64.AppImage" \
+            "cordy-desktop-$version-linux-x64.deb" \
+            "cordy-desktop-$version-linux-x64.rpm" \
+            "cordy-desktop-$version-linux-arm64.AppImage" \
+            "cordy-desktop-$version-linux-arm64.deb" \
+            "cordy-desktop-$version-linux-arm64.rpm" \
+            "latest-linux.yml" \
+            "latest-linux-arm64.yml" \
+            "cordy-desktop-$version-windows-x64.exe" \
+            "cordy-desktop-$version-windows-x64.exe.blockmap" \
+            "cordy-desktop-$version-windows-arm64.exe" \
+            "cordy-desktop-$version-windows-arm64.exe.blockmap" \
+            "latest.yml" \
+            "latest-arm64.yml"; do
             grep -Fxq "$asset" <<<"$published_assets" || {
               echo "::error::Draft release is missing required asset $asset"
               exit 1
             }
+          done
+
+      - name: Setup Docker Buildx for final promotion
+        if: needs.verify.outputs.is_stable == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote stable image tags
+        if: needs.verify.outputs.is_stable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          for image in cordy-backend cordy-web; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest" \
+              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:${TAG_NAME}"
+            docker buildx imagetools inspect \
+              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
           done
 
       - name: Publish complete GitHub release

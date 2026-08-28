@@ -252,13 +252,58 @@ get_latest_version() {
   curl -sI "$REPO_WEB_URL/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n' || true
 }
 
+existing_selfhost_image_pin() {
+  [ "$SELFHOST_ENV_EXISTED" = true ] || return 1
+  [ -f "$INSTALL_DIR/.env" ] || return 1
+
+  local image_tag
+  image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)"
+  [ -n "$image_tag" ] || return 1
+  printf '%s' "$image_tag"
+}
+
+validate_selfhost_image_tag() {
+  local image_tag="$1"
+  case "$image_tag" in
+    "" | [.-]* | *[!A-Za-z0-9_.-]*)
+      fail "Self-host image tag '$image_tag' is invalid. Use a release tag such as v0.4.10 or main."
+      ;;
+  esac
+  if [ "${#image_tag}" -gt 128 ]; then
+    fail "Self-host image tag '$image_tag' is too long."
+  fi
+}
+
 get_selfhost_ref() {
   if [ -n "${CORDY_SELFHOST_REF:-}" ]; then
     printf '%s' "$CORDY_SELFHOST_REF"
     return
   fi
 
-  local latest
+  # Keep deployment assets and images on one version boundary. A rerun of an
+  # existing install must check out the ref represented by its durable image
+  # pin instead of combining that old image with the newest Compose/config.
+  local existing_pin latest
+  if existing_pin="$(existing_selfhost_image_pin)"; then
+    validate_selfhost_image_tag "$existing_pin"
+    case "$existing_pin" in
+      latest)
+        printf '%s' "main"
+        ;;
+      sha-*)
+        local commit_ref="${existing_pin#sha-}"
+        if ! printf '%s' "$commit_ref" | grep -Eq '^[0-9A-Fa-f]{7,40}$'; then
+          fail "Existing self-host image pin '$existing_pin' cannot be mapped to a Git commit. Set CORDY_SELFHOST_REF explicitly."
+        fi
+        printf '%s' "$commit_ref"
+        ;;
+      *)
+        printf '%s' "$existing_pin"
+        ;;
+    esac
+    return
+  fi
+
   latest=$(get_latest_version)
   if [ -n "$latest" ]; then
     printf '%s' "$latest"
@@ -288,14 +333,7 @@ pin_selfhost_image_tag() {
     image_tag="$ref"
   fi
 
-  case "$image_tag" in
-    "" | [.-]* | *[!A-Za-z0-9_.-]*)
-      fail "Self-host ref '$ref' is not a valid container image tag. Use a release tag such as v0.4.10 or main."
-      ;;
-  esac
-  if [ "${#image_tag}" -gt 128 ]; then
-    fail "Self-host ref '$ref' is too long for a container image tag."
-  fi
+  validate_selfhost_image_tag "$image_tag"
 
   if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
     export CORDY_IMAGE_TAG="$image_tag"
@@ -486,6 +524,9 @@ After installing Docker, re-run this script with --with-server."
 setup_server() {
   info "Setting up Cordy server..."
   local server_ref
+  if [ -d "$INSTALL_DIR/.git" ] && [ -f "$INSTALL_DIR/.env" ]; then
+    SELFHOST_ENV_EXISTED=true
+  fi
   server_ref=$(get_selfhost_ref)
   info "Using self-host assets from ${server_ref}..."
 

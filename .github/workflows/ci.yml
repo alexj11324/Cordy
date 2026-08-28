@@ -45,6 +45,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
+
       - name: Filter paths
         id: filter
         uses: dorny/paths-filter@v3
@@ -67,6 +72,8 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
               - 'knip.jsonc'
+              - 'Dockerfile.web'
+              - '.dockerignore'
               - '.github/workflows/ci.yml'
               - 'scripts/generate-reserved-slugs.mjs'
               - 'server/internal/handler/reserved_slugs.json'
@@ -108,6 +115,8 @@ jobs:
               - 'scripts/install.test.sh'
               - 'scripts/install.ps1.test.ps1'
               - 'docker/entrypoint.sh'
+              - 'docker-compose.selfhost.yml'
+              - '.env.example'
               - '.github/workflows/ci.yml'
             # Gates the image-budget job so the full-history checkout it
             # needs is only paid for on PRs that actually touch a bitmap.
@@ -327,6 +336,23 @@ jobs:
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
         run: pnpm exec turbo test --filter='!@cordy/docs' --filter='!@cordy/mobile' --filter='!@cordy/views'
 
+  frontend-production-image:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        uses: actions/checkout@v6
+
+      - name: Build production web image
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: |
+          docker build \
+            --file Dockerfile.web \
+            --tag cordy-web:ci \
+            --build-arg NEXT_PUBLIC_APP_VERSION=ci \
+            .
+
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
   frontend-views-test:
@@ -392,7 +418,7 @@ jobs:
   # staying pending) on PRs the path filter excluded — all workers succeed
   # trivially in that case because every step is gated off.
   frontend:
-    needs: [frontend-build, frontend-test, frontend-views-test]
+    needs: [frontend-build, frontend-test, frontend-views-test, frontend-production-image]
     # `!cancelled()` rather than `always()`: a run superseded by a newer push
     # is cancelled by the concurrency group above, and there is no reason to
     # spend a runner reporting a verdict nobody will read.
@@ -404,11 +430,13 @@ jobs:
           BUILD_RESULT: ${{ needs.frontend-build.result }}
           TEST_RESULT: ${{ needs.frontend-test.result }}
           VIEWS_TEST_RESULT: ${{ needs.frontend-views-test.result }}
+          PRODUCTION_IMAGE_RESULT: ${{ needs.frontend-production-image.result }}
         run: |
           echo "frontend-build: $BUILD_RESULT"
           echo "frontend-test:  $TEST_RESULT"
           echo "frontend-views-test: $VIEWS_TEST_RESULT"
-          if [ "$BUILD_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$VIEWS_TEST_RESULT" != "success" ]; then
+          echo "frontend-production-image: $PRODUCTION_IMAGE_RESULT"
+          if [ "$BUILD_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$VIEWS_TEST_RESULT" != "success" ] || [ "$PRODUCTION_IMAGE_RESULT" != "success" ]; then
             echo "::error::frontend validation failed"
             exit 1
           fi

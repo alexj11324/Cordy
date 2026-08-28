@@ -386,7 +386,11 @@ STUB
 
   # git: the installer takes the existing-installation path and now requires
   # both fetch and detached checkout to succeed before changing image tags.
-  printf '#!/usr/bin/env bash\nexit 0\n' >"$stub_bin/git"
+  cat >"$stub_bin/git" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${CORDY_TEST_GIT_LOG:-/dev/null}"
+exit 0
+STUB
   chmod +x "$stub_bin/git"
 
   # brew: pretend the CLI installs cleanly so the run reaches the summary.
@@ -421,12 +425,14 @@ _run_with_server() {
   shift
 
   : >"$tmp/curl.log"
+  : >"$tmp/git.log"
   if ! env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
     CORDY_INSTALL_DIR="$tmp/server" \
     CORDY_SELFHOST_REF="main" \
     CORDY_TEST_CURL_LOG="$tmp/curl.log" \
+    CORDY_TEST_GIT_LOG="$tmp/git.log" \
     "$@" \
     bash "$ROOT_DIR/scripts/install.sh" --with-server \
     >"$tmp/install.out" 2>"$tmp/install.err"; then
@@ -585,6 +591,11 @@ test_with_server_preserves_existing_image_pin_without_explicit_ref() {
   if ! grep -q "Preserved existing backend and web image pin v0.2.9" "$tmp/install.out"; then
     echo "installer did not report the preserved image pin" >&2
     cat "$tmp/install.out" >&2 || true
+    return 1
+  fi
+  if ! grep -Fq "fetch origin v0.2.9 --depth 1" "$tmp/git.log"; then
+    echo "installer preserved the image pin but did not check out its matching assets" >&2
+    cat "$tmp/git.log" >&2 || true
     return 1
   fi
 }

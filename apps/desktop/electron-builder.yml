@@ -125,10 +125,10 @@ publish:
   provider: github
   owner: cordy-ai
   repo: cordy
-  # Align with our CLI release flow which pre-creates a *published* GitHub
-  # Release via `gh release create`. The electron-builder default of
-  # `releaseType: draft` conflicts with `existingType=release` and causes
-  # uploads of the DMG/ZIP/blockmaps/latest-mac.yml to be silently skipped,
-  # which breaks electron-updater auto-update on installed clients.
-  releaseType: release
+  # The release workflow pre-creates a draft and publishes it only after the
+  # CLI archives, every Desktop matrix asset, images, and chart have passed
+  # their gates. This must match the existing GitHub Release type exactly:
+  # electron-builder silently skips uploads when existingType and releaseType
+  # disagree.
+  releaseType: draft
 npmRebuild: false
