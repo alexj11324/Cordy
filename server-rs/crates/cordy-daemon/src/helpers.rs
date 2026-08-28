@@ -1,24 +1,8 @@
 //! Environment-variable, duration, and sleep helpers shared by the daemon.
 //!
-//! Symbol map (Go → Rust):
-//! - `envOrDefault` → [`env_or_default`]
-//! - `durationFromEnv` → [`duration_from_env`]
-//! - `dayUnit` + `parseFlexDuration` → [`DAY_UNIT`] + [`parse_flex_duration`]
-//!   (backed by [`parse_go_duration`], a faithful `time.ParseDuration`)
-//! - `boolFromEnv` → [`bool_from_env`]
-//! - `intFromEnv` → [`int_from_env`]
-//! - `sleepWithContext` → [`sleep_with_context`]
-//! - `sleepWithContextOrWakeup` → [`sleep_with_context_or_wakeup`]
-//!
-//! Port notes: `context.Context` is the crate-wide [`Ctx`] seam
-//! (`crate::repocache::Ctx`); Go's `<-chan struct{}` wakeup channel becomes a
-//! `tokio::sync::mpsc::Receiver<()>` passed as `Option<&mut …>` (Go's nil
-//! channel disables the case). Negative parsed durations are rejected — every
-//! call site feeds a timeout/floor that Go code would immediately misuse
-//! anyway (documented deviation).
-
-// S9-integration: consumed by daemon.go core (lane B); silence dead-code.
-#![allow(dead_code)]
+//! Durations accept the service's established syntax, including the `d` day
+//! suffix. Negative values are rejected because every consumer requires a
+//! non-negative timeout or interval.
 
 use std::time::Duration;
 
@@ -27,7 +11,7 @@ use regex::Regex;
 
 use crate::repocache::{CancelCause, Ctx};
 
-/// `envOrDefault` (helpers.go:13–19).
+/// Returns a trimmed environment value or the supplied fallback.
 pub(crate) fn env_or_default(key: &str, fallback: &str) -> String {
     let value = std::env::var(key).unwrap_or_default();
     let value = value.trim();
@@ -38,7 +22,7 @@ pub(crate) fn env_or_default(key: &str, fallback: &str) -> String {
     }
 }
 
-/// `durationFromEnv` (helpers.go:21–31).
+/// Parses a duration override from the environment.
 pub(crate) fn duration_from_env(key: &str, fallback: Duration) -> anyhow::Result<Duration> {
     let value = std::env::var(key).unwrap_or_default();
     let value = value.trim();
@@ -48,20 +32,18 @@ pub(crate) fn duration_from_env(key: &str, fallback: Duration) -> anyhow::Result
     parse_flex_duration(value).map_err(|e| anyhow!("{}: invalid duration {:?}: {}", key, value, e))
 }
 
-/// `dayUnit` (helpers.go:35): matches a decimal number (with optional leading
+/// Matches a decimal number (with optional leading
 /// digits) followed by `d` (days), so both "5d" and "1.5d" are captured whole
 /// and expanded to hours.
 static DAY_UNIT: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"(\d*\.\d+|\d+)d").expect("static regex"));
-/// `parseFlexDuration` (helpers.go:40–56): accepts the standard Go
-/// `time.ParseDuration` syntax plus a `d` (day) suffix, which the stdlib
+/// Accepts standard service duration syntax plus a `d` (day) suffix, which the stdlib
 /// rejects. "5d" → 120h, "1d12h" → 36h, "0.5d" → 12h. Overflow or malformed
 /// numbers propagate as errors.
 pub(crate) fn parse_flex_duration(value: &str) -> anyhow::Result<Duration> {
     let expanded = DAY_UNIT.replace_all(value, |caps: &regex::Captures<'_>| {
         // strconv.ParseFloat(match[:len(match)-1], 64) — strip the trailing
-        // 'd'. On parse failure Go records convErr and keeps the match; we do
-        // the same by echoing the original text and failing below.
+        // 'd'. On parse failure, keep the match and report the error below.
         let raw = caps.get(0).map(|m| m.as_str()).unwrap_or_default();
         let num_part = &raw[..raw.len() - 1];
         match num_part.parse::<f64>() {
@@ -72,8 +54,7 @@ pub(crate) fn parse_flex_duration(value: &str) -> anyhow::Result<Duration> {
             Err(_) => raw.to_string(),
         }
     });
-    // Propagate a conversion failure the way Go does (convErr checked before
-    // ParseDuration): re-validate any day-unit number that failed to parse.
+    // Re-validate any day-unit number that failed to parse.
     for caps in DAY_UNIT.captures_iter(value) {
         let raw = caps.get(0).map(|m| m.as_str()).unwrap_or_default();
         let num_part = &raw[..raw.len() - 1];
@@ -87,13 +68,11 @@ pub(crate) fn parse_flex_duration(value: &str) -> anyhow::Result<Duration> {
     parse_go_duration(&expanded)
 }
 
-/// Faithful port of Go `time.ParseDuration`
-/// (go/src/time/format.go ParseDuration): `[-+]?([0-9]*(\.[0-9]*)?[a-z]+)+`
-/// with units ns/us/µs/μs/ms/s/m/h. Error strings mirror Go's byte-for-byte.
+/// Parses `[-+]?([0-9]*(\.[0-9]*)?[a-z]+)+` with units
+/// ns/us/µs/μs/ms/s/m/h. Error strings preserve the public contract.
 ///
-/// Deviation vs Go: a negative total yields an error instead of a negative
-/// duration (Rust `Duration` is unsigned); all daemon call sites require
-/// positive values.
+/// A negative total yields an error because `Duration` is unsigned and every
+/// daemon call site requires a positive value.
 pub fn parse_go_duration(s: &str) -> anyhow::Result<Duration> {
     const NANOSECOND: f64 = 1.0;
     const MICROSECOND: f64 = 1000.0 * NANOSECOND;
@@ -187,7 +166,7 @@ pub fn parse_go_duration(s: &str) -> anyhow::Result<Duration> {
         };
 
         if v > 9.223_372_036_854_776e18 / unit {
-            // Overflow: Go reports the same class of failure.
+            // Overflow has the same externally visible error class.
             return Err(anyhow!("time: invalid duration {:?}", orig));
         }
         v *= unit;
@@ -202,7 +181,7 @@ pub fn parse_go_duration(s: &str) -> anyhow::Result<Duration> {
     Ok(Duration::from_nanos(total as u64))
 }
 
-/// `boolFromEnv` (helpers.go:61–69): reads a boolean env override, returning
+/// Reads a boolean environment override, returning
 /// fallback when the variable is unset or carries an unrecognized token.
 /// Accepted (case insensitive): true/1/yes/on and false/0/no/off.
 pub(crate) fn bool_from_env(key: &str, fallback: bool) -> bool {
@@ -218,7 +197,7 @@ pub(crate) fn bool_from_env(key: &str, fallback: bool) -> bool {
     }
 }
 
-/// `intFromEnv` (helpers.go:71–81).
+/// Reads an integer environment override.
 pub(crate) fn int_from_env(key: &str, fallback: i64) -> anyhow::Result<i64> {
     let value = std::env::var(key).unwrap_or_default();
     let value = value.trim();
@@ -230,7 +209,7 @@ pub(crate) fn int_from_env(key: &str, fallback: i64) -> anyhow::Result<i64> {
         .map_err(|e| anyhow!("{}: invalid integer {:?}: {}", key, value, e))
 }
 
-/// `sleepWithContext` (helpers.go:83–93): sleeps for `d`, returning the
+/// Sleeps for `d`, returning the
 /// cancellation cause when `ctx` fires first.
 pub(crate) async fn sleep_with_context(ctx: &Ctx, d: Duration) -> Result<(), CancelCause> {
     tokio::select! {
@@ -239,10 +218,9 @@ pub(crate) async fn sleep_with_context(ctx: &Ctx, d: Duration) -> Result<(), Can
     }
 }
 
-/// `sleepWithContextOrWakeup` (helpers.go:95–111): like
+/// Like
 /// [`sleep_with_context`] but also wakes early when a token arrives on the
-/// wakeup channel. A `None` channel mirrors Go's nil-channel case (the select
-/// arm is disabled).
+/// wakeup channel. A `None` channel disables the wakeup arm.
 pub(crate) async fn sleep_with_context_or_wakeup(
     ctx: &Ctx,
     d: Duration,
@@ -260,8 +238,6 @@ pub(crate) async fn sleep_with_context_or_wakeup(
 
 #[cfg(test)]
 mod tests {
-    //! Ports of the pure-logic cases from helpers_test.go (52 lines).
-
     use super::*;
 
     #[test]

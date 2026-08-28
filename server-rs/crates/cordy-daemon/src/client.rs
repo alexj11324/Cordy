@@ -1,41 +1,9 @@
 //! HTTP communication with the Cordy server daemon API.
 //!
-//! Symbol map (Go → Rust):
-//! - `requestError` → [`RequestError`] (a distinct error type so Go's
-//!   `errors.As` predicates become downcast checks)
-//! - `isWorkspaceNotFoundError` / `isTaskNotFoundError` /
-//!   `isUnauthorizedError` / `isRuntimeNotFoundError` /
-//!   `isBatchClaimUnsupported` / `isIssueGCBatchUnsupported` → same-named
-//!   functions over [`ClientError::Request`]
-//! - `Client` → [`Client`]
-//! - `normalizeGOOS` → [`normalize_goos`]
-//! - `daemonClientCapabilities` → [`daemon_client_capabilities`]
-//! - `batchClaimRequestTimeout` → [`BATCH_CLAIM_REQUEST_TIMEOUT`]
-//! - `TaskCancelAck`, `TaskMessageData`, `WorkspaceInfo`,
-//!   `RenewTokenResponse`, `IssueGCStatus`, `IssueGCCheckResult`,
-//!   `ChatSessionGCStatus`, `AutopilotRunGCStatus`, `TaskGCStatus`,
-//!   `RuntimeOfflineReason`, `RegisterResponse`, `WorkspaceReposResponse`,
-//!   `RuntimeProfile`, `RuntimeProfilesResponse` → same-named structs
-//! - heartbeat aliases (`HeartbeatResponse = protocol.DaemonHeartbeatAck…`)
-//!   → type aliases onto `cordy_protocol::messages::*`
-//! - `defaultTerminalRetrySchedule` / `skillBundleResolveRetrySchedule` →
-//!   [`DEFAULT_TERMINAL_RETRY_SCHEDULE`] / [`SKILL_BUNDLE_RESOLVE_RETRY_SCHEDULE`]
-//! - `postJSON*` / `getJSONWithToken` family → private request helpers
-//!
-//! Deviations from Go:
-//! - Go's two `http.Client`s (fixed 30s control-plane vs. no-timeout bundle
-//!   client) become one shared `reqwest::Client`; reqwest applies per-request
-//!   timeouts instead, so the control-plane 30s budget is enforced with
-//!   [`Client::CONTROL_PLANE_TIMEOUT`] at each call site and bundle downloads
-//!   run under the caller-supplied ctx deadline only (GitHub #4505).
-//! - `retrySleep` is inlined as a ctx-aware tokio sleep (no test-injection var;
-//!   tests use instant schedules).
-//! - `ResolveRemoteMCPCredential` returns `Vec<(String, String)>` header pairs
-//!   rather than `http.Header`.
-
-// S9-integration: consumed by daemon.go core (lane B) wiring that lands with
-// integration; silence dead-code until then.
-#![allow(dead_code)]
+//! Control-plane requests use a fixed 30-second budget. Bundle downloads use
+//! only their caller-supplied deadline so large bundles are not truncated.
+//! Request errors preserve status and body data for lifecycle-specific
+//! handling by callers.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -82,7 +50,7 @@ pub enum ClientError {
 }
 
 impl ClientError {
-    /// Go's `errors.As(err, &reqErr)` — the request-error downcast.
+    /// Returns the structured server response error, if present.
     pub fn as_request(&self) -> Option<&RequestError> {
         match self {
             ClientError::Request(req_err) => Some(req_err),
@@ -91,25 +59,7 @@ impl ClientError {
     }
 }
 
-/// `isWorkspaceNotFoundError` (client.go:35): a 404 with "workspace not found"
-/// body.
-pub(crate) fn is_workspace_not_found_error(err: &ClientError) -> bool {
-    matches!(
-        err.as_request(),
-        Some(req) if req.status_code == 404 && req.body.to_lowercase().contains("workspace not found")
-    )
-}
-
-/// `isTaskNotFoundError` (client.go:51): a 404 with "task not found" body —
-/// the task was deleted server-side while the local agent was still running.
-pub(crate) fn is_task_not_found_error(err: &ClientError) -> bool {
-    matches!(
-        err.as_request(),
-        Some(req) if req.status_code == 404 && req.body.to_lowercase().contains("task not found")
-    )
-}
-
-/// `isTaskNotFoundError` over the `anyhow::Result` surface returned by client
+/// Detects a deleted task over the `anyhow::Result` surface returned by client
 /// methods. Request helpers preserve either the concrete [`RequestError`] or
 /// its [`ClientError`] wrapper in the error chain.
 pub(crate) fn is_task_not_found_anyhow(err: &anyhow::Error) -> bool {
@@ -118,40 +68,8 @@ pub(crate) fn is_task_not_found_anyhow(err: &anyhow::Error) -> bool {
     })
 }
 
-/// `isUnauthorizedError` (client.go:65): a 401 from the server.
-pub(crate) fn is_unauthorized_error(err: &ClientError) -> bool {
-    matches!(err.as_request(), Some(req) if req.status_code == 401)
-}
-
-/// `isRuntimeNotFoundError` (client.go:82): a 404 with "runtime not found" body
-/// — the runtime row was deleted server-side while the daemon was still
-/// heartbeating against the dead UUID.
-pub(crate) fn is_runtime_not_found_error(err: &ClientError) -> bool {
-    matches!(
-        err.as_request(),
-        Some(req) if req.status_code == 404 && req.body.to_lowercase().contains("runtime not found")
-    )
-}
-
-/// `isBatchClaimUnsupported` (client.go:288): a 404 from the batch claim
-/// endpoint — the server predates the route and the daemon must fall back to
-/// the legacy per-runtime claim.
-pub(crate) fn is_batch_claim_unsupported(err: &ClientError) -> bool {
-    matches!(err.as_request(), Some(req) if req.status_code == 404)
-}
-
-/// `isIssueGCBatchUnsupported` (client.go:708): distinguishes chi's
-/// unmatched-route response on an older server ("404 page not found") from the
-/// JSON 404 returned by a current server on an authorization failure.
-pub(crate) fn is_issue_gc_batch_unsupported(err: &ClientError) -> bool {
-    matches!(
-        err.as_request(),
-        Some(req) if req.status_code == 404 && req.body.trim() == "404 page not found"
-    )
-}
-
 // ---------------------------------------------------------------------------
-// Client (client.go:93–137)
+// Client
 // ---------------------------------------------------------------------------
 
 /// `Client`: handles HTTP communication with the Cordy server daemon API.

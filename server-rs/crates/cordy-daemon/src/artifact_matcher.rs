@@ -1,21 +1,10 @@
-#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
 //! Combines
 //! operator-configured basename matches with exact daemon-managed paths.
 //! Exact paths take precedence so a broad basename such as `.sandbox-bin`
 //! cannot double-count a managed directory.
 //!
-//! This is the crate's SINGLE copy of the matcher: the inline duplicates that
-//! used to live in diskusage.rs (lane A) and gc.rs (lane R2) were retired into
-//! this module (CORD-12 review item). `buildPatternSet` moved here with them —
-//! Go defines it in diskusage.go but its only caller is `newArtifactMatcher`.
-//!
-//! Symbol map:
-//! - `artifactMatcher` → [`ArtifactMatcher`]
-//! - `newArtifactMatcher` → [`ArtifactMatcher::new`]
-//! - `matchDirectory` → [`ArtifactMatcher::match_directory`]
-//! - `managedSubpaths` → [`ArtifactMatcher::managed_subpaths`]
-//! - `safeRelativePath` → [`safe_relative_path`]
-//! - `buildPatternSet` (diskusage.go:285) → [`build_pattern_set`]
+//! This is the crate's single matcher implementation, shared by disk-usage and
+//! garbage-collection paths.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

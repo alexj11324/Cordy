@@ -1,17 +1,8 @@
 //! OpenClaw runtime configuration decoding.
 //!
-//! S9-integration: consumed by dispatch wiring that lands with integration.
-//!
-//! Symbol map (Go → Rust):
-//! - `openclawRuntimeConfig` → [`OpenclawRuntimeConfig`]
-//! - `openclawRuntimeGatewayConfig` → [`OpenclawRuntimeGatewayConfig`]
-//! - `decodeOpenclawRuntimeConfig` → [`decode_openclaw_runtime_config`]
-//!
-//! Port notes: consumes [`OpenclawGatewayPin`](crate::execenv::execenv::OpenclawGatewayPin)
-//! from the execenv module (lane E1a). A malformed payload degrades to local
-//! mode rather than failing dispatch, exactly as Go does.
-
-#![allow(dead_code)]
+//! Decodes the agent's runtime payload into the routing mode and the gateway
+//! pin consumed by the execution-environment launcher. Malformed payloads
+//! degrade to local mode rather than failing dispatch.
 
 use serde::Deserialize;
 use tracing::warn;
@@ -19,7 +10,7 @@ use tracing::warn;
 use crate::execenv::execenv::OpenclawGatewayPin;
 
 /// The schema the daemon expects under an openclaw agent's `runtime_config`
-/// JSONB column (openclaw_runtime_config.go:29–32). All fields optional.
+/// JSONB column. All fields are optional.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct OpenclawRuntimeConfig {
@@ -27,7 +18,7 @@ struct OpenclawRuntimeConfig {
     gateway: OpenclawRuntimeGatewayConfig,
 }
 
-/// The owner-supplied Gateway endpoint (openclaw_runtime_config.go:43–48).
+/// The owner-supplied Gateway endpoint.
 ///
 /// Trust boundary: in gateway mode the daemon writes this host:port into the
 /// per-task wrapper and the spawned openclaw CLI dials it. Operators running a
@@ -52,10 +43,8 @@ struct OpenclawRuntimeGatewayConfig {
 pub(crate) fn decode_openclaw_runtime_config(
     raw: &serde_json::Value,
 ) -> (String, OpenclawGatewayPin) {
-    // Go receives json.RawMessage and treats len(raw)==0 / "null" as absent.
-    // The daemon-side Task carries resource payloads as serde_json::Value, so
-    // absence is Null here; an empty object behaves identically because every
-    // field defaults.
+    // Task carries resource payloads as serde_json::Value, so absence is Null;
+    // an empty object behaves identically because every field defaults.
     let raw = match raw {
         serde_json::Value::Null => return (String::new(), OpenclawGatewayPin::default()),
         value => value,

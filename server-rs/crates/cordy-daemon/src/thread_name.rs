@@ -4,17 +4,11 @@
 //! candidate among the task's thread name, autopilot title, quick-create
 //! prompt, chat message, and trigger comment content — whitespace-collapsed
 //! and rune-truncated to [`CODEX_THREAD_NAME_MAX_RUNES`].
-//!
-//! Port notes: Go's `Task` struct is `crate::types::Task` (ported in this
-//! lane); `deriveTaskThreadName` reads it directly. `ThreadNameSource`
-//! remains as the test seam with `From<&Task>` so both shapes work.
 
-#![allow(dead_code)]
-
-/// `codexThreadNameMaxRunes` (thread_name.go:5).
+/// Maximum Unicode scalar count in a generated thread name.
 pub(crate) const CODEX_THREAD_NAME_MAX_RUNES: usize = 120;
 
-/// The five `Task` fields `deriveTaskThreadName` reads (thread_name.go:8–14).
+/// The five task fields used to derive a thread name.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadNameSource {
     pub thread_name: String,
@@ -36,14 +30,12 @@ impl From<&crate::types::Task> for ThreadNameSource {
     }
 }
 
-/// `deriveTaskThreadName` over a full wire Task (Go's actual signature).
-#[allow(dead_code)]
+/// Derives a thread name from a full wire task.
 pub(crate) fn derive_task_thread_name_from_task(task: &crate::types::Task) -> String {
     derive_task_thread_name(&ThreadNameSource::from(task))
 }
 
-/// `deriveTaskThreadName` (thread_name.go:7–21): first candidate whose
-/// normalized form is non-empty wins.
+/// Returns the first candidate whose normalized form is non-empty.
 pub(crate) fn derive_task_thread_name(task: &ThreadNameSource) -> String {
     let candidates = [
         &task.thread_name,
@@ -60,10 +52,10 @@ pub(crate) fn derive_task_thread_name(task: &ThreadNameSource) -> String {
     String::new()
 }
 
-/// `normalizeThreadName` (thread_name.go:23–40): collapse whitespace runs to
+/// Collapses whitespace runs to
 /// single spaces (`strings.Fields` + join), then truncate to `max_runes`
 /// runes, appending `"..."` when truncating. Returns `None` when nothing
-/// survives normalization (Go returns "").
+/// survives normalization.
 ///
 /// `max_runes == 0` disables truncation; `max_runes <= 3` truncates without
 /// the ellipsis marker.

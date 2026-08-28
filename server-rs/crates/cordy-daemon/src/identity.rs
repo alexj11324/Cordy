@@ -9,15 +9,8 @@
 //! and execution-store paths. Keeping those consumers on one resolver avoids
 //! platform and task-local environment drift.
 //!
-//! Deviations from the previous implementation:
-//! - `uuid.NewV7` → [`uuid::Uuid::now_v7`].
-//! - File bytes are decoded lossily before trimming so a non-UTF-8 daemon.id
-//!   regenerates (Go would fail uuid.Parse the same way) instead of surfacing
-//!   as a read error.
-
-// S9-integration: consumed by daemon registration wiring that lands with
-// integration; silence dead-code until then.
-#![allow(dead_code)]
+//! File bytes are decoded lossily before trimming so a non-UTF-8 daemon id is
+//! regenerated instead of surfacing as a read error.
 
 use std::fs;
 use std::io;
@@ -26,14 +19,14 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use uuid::Uuid;
 
-/// `daemonIDFileName` (identity.go:18): stores this machine's stable daemon
+/// Stores this machine's stable daemon
 /// identifier. Once created, the UUID inside is the daemon's identity forever.
 pub(crate) const DAEMON_ID_FILE_NAME: &str = "daemon.id";
 
-/// `cli.TaskConfigRootEnv` (internal/cli/config.go:19).
+/// Optional task-local configuration root.
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
 
-/// `EnsureDaemonID` (identity.go:39–74): stable UUID for this daemon instance,
+/// Stable UUID for this daemon instance,
 /// persisted on first call. Identity is machine-scoped — every profile shares
 /// one UUID at `~/.cordy/daemon.id`. A corrupt file is regenerated rather than
 /// hard-failing startup.
@@ -67,7 +60,7 @@ pub(crate) fn ensure_daemon_id(profile: &str) -> anyhow::Result<String> {
     Ok(id)
 }
 
-/// `promoteProfileDaemonID` (identity.go:81–102): copy a pre-change
+/// Copies a pre-change
 /// per-profile daemon.id into the canonical machine-scoped location. Returns
 /// None when there is nothing valid to promote (empty profile, missing/corrupt
 /// source, any I/O failure) — best-effort, falls through to fresh mint.
@@ -88,9 +81,8 @@ fn promote_profile_daemon_id(profile: &str, target_path: &Path) -> Option<String
     Some(id)
 }
 
-/// `writeDaemonIDFile` (identity.go:105–132): write the UUID atomically via
-/// temp file + rename, mode 0600. The tempfile guard removes the temp file on
-/// any failure path, mirroring Go's explicit remove calls.
+/// Writes the UUID atomically via temp file + rename, mode 0600. The tempfile
+/// guard removes the temp file on any failure path.
 fn write_daemon_id_file(path: &Path, id: &str) -> anyhow::Result<()> {
     use std::io::Write;
 

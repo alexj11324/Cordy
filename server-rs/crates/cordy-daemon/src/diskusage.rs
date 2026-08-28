@@ -1,32 +1,9 @@
 //! Disk-usage scanning and reporting. Artifact matching is shared through
 //! [`crate::artifact_matcher`] (CORD-12).
 //!
-//! Symbol map (Go → Rust):
-//! - `TaskDiskUsage` / `WorkspaceDiskUsage` / `DiskUsageReport` /
-//!   `DiskUsageRoot` / `RootDiskUsage` / `AggregateDiskUsageReport` →
-//!   same-named structs
-//! - `DiskUsageKindUnknown` → [`DISK_USAGE_KIND_UNKNOWN`]
-//! - `ScanDiskUsageRoots` → [`scan_disk_usage_roots`]
-//! - `ScanDiskUsage` → [`scan_disk_usage`]
-//! - `repoCacheSize` / `ratio` / `buildTaskUsage` / `parentIDForMeta` /
-//!   `taskSize` / `ShortID` → same-named fns
-//! - `ParentStatusFetcher` → [`ParentStatusResolver`]
-//! - `ResolveParentStatuses` → [`resolve_parent_statuses`]
-//!
-//! Port notes:
-//! - `dirSize` and `ShortID` reuse gc.rs/repocache.rs equivalents (Go's
-//!   diskusage.go re-implemented shortID because execenv.shortID is
-//!   unexported; here both live in one crate).
-//! - Go's `filepath.WalkDir` with SkipDir becomes a hand-rolled recursive walk
-//!   using symlink_metadata so junction/symlink semantics match (never follow,
-//!   never count).
-//! - Map iteration order in Go randomizes workspace aggregation order before
-//!   sort; here a BTreeMap keeps deterministic iteration, then the same sort
-//!   applies. Output ordering contract is identical (sorted by size desc).
-
-// S9-integration: consumed by the daemon CLI `disk-usage` command (S10 bins)
-// and lane B wiring; silence dead-code until then.
-#![allow(dead_code)]
+//! Directory walks use symlink metadata so junctions and symlinks are neither
+//! followed nor counted. Workspace aggregation is deterministic and reports
+//! entries by descending size.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -45,7 +22,7 @@ use crate::repocache::{CancelCause, Ctx};
 
 pub use crate::config::{artifact_patterns_from_env, resolve_workspaces_root};
 
-/// `issueGCBatchSize` (gc.go:195): same chunk size the GC loop uses so one
+/// Same chunk size the GC loop uses so one
 /// oversized root cannot trip the server's batch cap.
 pub(crate) const ISSUE_GC_BATCH_SIZE: usize = 500;
 
