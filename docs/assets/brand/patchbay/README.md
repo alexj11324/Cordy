@@ -1,8 +1,8 @@
 # Patchbay brand
 
 This directory contains the approved Patchbay identity. Use these maintained
-assets for public product surfaces; legacy internal identifiers are migrated at
-their own compatibility boundaries.
+assets for every public product surface; persisted identifiers move through the
+explicit compatibility boundaries in the product code.
 
 ## Idea
 

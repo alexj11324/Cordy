@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RouterProvider } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { ScrollRestorationProvider } from "@cordy/views/platform";
+import { ScrollRestorationProvider } from "@patchbay/views/platform";
 import { useActiveGroup, useTabStore } from "@/stores/tab-store";
 import {
   createScrollRestorationAdapter,

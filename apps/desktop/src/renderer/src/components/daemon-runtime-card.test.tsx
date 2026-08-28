@@ -8,13 +8,13 @@ import type { DaemonStatus } from "../../../shared/daemon-types";
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [] }),
 }));
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@cordy/core/runtimes", () => ({
+vi.mock("@patchbay/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
 }));
-vi.mock("@cordy/core/agents", () => ({
+vi.mock("@patchbay/core/agents", () => ({
   agentTaskSnapshotOptions: () => ({ queryKey: ["snapshot"] }),
 }));
 vi.mock("./daemon-panel", () => ({ DaemonPanel: () => null }));

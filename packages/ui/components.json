@@ -12,11 +12,11 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@cordy/ui/components",
-    "ui": "@cordy/ui/components/ui",
-    "hooks": "@cordy/ui/hooks",
-    "lib": "@cordy/ui/lib",
-    "utils": "@cordy/ui/lib/utils"
+    "components": "@patchbay/ui/components",
+    "ui": "@patchbay/ui/components/ui",
+    "hooks": "@patchbay/ui/hooks",
+    "lib": "@patchbay/ui/lib",
+    "utils": "@patchbay/ui/lib/utils"
   },
   "registries": {
     "@reui": {

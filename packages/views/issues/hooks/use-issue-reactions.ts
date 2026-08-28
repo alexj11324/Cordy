@@ -2,14 +2,14 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient, useMutationState } from "@tanstack/react-query";
-import type { IssueReaction } from "@cordy/core/types";
+import type { IssueReaction } from "@patchbay/core/types";
 import type {
   IssueReactionAddedPayload,
   IssueReactionRemovedPayload,
-} from "@cordy/core/types";
-import { issueReactionsOptions, issueKeys } from "@cordy/core/issues/queries";
-import { useToggleIssueReaction, type ToggleIssueReactionVars } from "@cordy/core/issues/mutations";
-import { useWSEvent, useWSReconnect } from "@cordy/core/realtime";
+} from "@patchbay/core/types";
+import { issueReactionsOptions, issueKeys } from "@patchbay/core/issues/queries";
+import { useToggleIssueReaction, type ToggleIssueReactionVars } from "@patchbay/core/issues/mutations";
+import { useWSEvent, useWSReconnect } from "@patchbay/core/realtime";
 
 export function useIssueReactions(issueId: string, userId?: string) {
   const qc = useQueryClient();

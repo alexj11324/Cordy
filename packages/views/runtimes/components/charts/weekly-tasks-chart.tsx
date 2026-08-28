@@ -11,7 +11,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@cordy/ui/components/ui/chart";
+} from "@patchbay/ui/components/ui/chart";
 import { useT } from "../../../i18n";
 
 // Weekly counterpart of DailyTasksChart — same completed/cancelled/failed

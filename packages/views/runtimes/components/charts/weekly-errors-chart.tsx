@@ -3,7 +3,7 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@cordy/ui/components/ui/chart";
+} from "@patchbay/ui/components/ui/chart";
 import { useT } from "../../../i18n";
 import {
   activeFailureClasses,

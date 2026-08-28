@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CloudWaitlistExpand } from "@cordy/views/onboarding";
+import { CloudWaitlistExpand } from "@patchbay/views/onboarding";
 import { useLocale } from "../../i18n";
 
 /**

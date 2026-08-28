@@ -1,11 +1,11 @@
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 
 /**
  * The host half of the bridge.
  *
  * A surface asks; the host performs the call on the signed-in user's own
  * session and returns the result. The plugin holds no credential, so this is
- * the only path from a surface into Cordy.
+ * the only path from a surface into Patchbay.
  *
  * Identity is bound by the MessagePort, not by `event.origin`. A sandboxed
  * frame without `allow-same-origin` has the opaque origin "null" — every
@@ -16,8 +16,8 @@ import { api } from "@cordy/core/api";
  */
 
 const BRIDGE_PROTOCOL_VERSION = 1;
-const BRIDGE_INIT_MESSAGE = "cordy:plugin-bridge-init";
-const BRIDGE_READY_MESSAGE = "cordy:plugin-surface-ready";
+const BRIDGE_INIT_MESSAGE = "patchbay:plugin-bridge-init";
+const BRIDGE_READY_MESSAGE = "patchbay:plugin-surface-ready";
 
 type BridgeMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 

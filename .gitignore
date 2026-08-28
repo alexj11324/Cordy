@@ -34,7 +34,7 @@ dist-electron
 !apps/mobile/.env.staging
 # Mobile production config is public (production API URL) — track it so
 # external users can run `pnpm ios:mobile:device:prod:release` against
-# cordy.ai's production backend without copying templates first.
+# patchbay.ai's production backend without copying templates first.
 !apps/mobile/.env.production
 
 # test coverage
@@ -47,7 +47,8 @@ apps/web/test-results/
 # context (agent workspace)
 .context
 .agent_context/
-.cordy/
+.patchbay/
+.cordy/ # legacy-brand-compat
 
 # local settings
 .claude/

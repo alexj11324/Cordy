@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -14,25 +14,25 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@cordy/core/auth";
-import { useLeaveWorkspace, useDeleteWorkspace } from "@cordy/core/workspace/mutations";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useLeaveWorkspace, useDeleteWorkspace } from "@patchbay/core/workspace/mutations";
 import {
   memberListOptions,
   workspaceKeys,
   workspaceListOptions,
-} from "@cordy/core/workspace/queries";
-import { issueKeys } from "@cordy/core/issues/queries";
-import { api } from "@cordy/core/api";
+} from "@patchbay/core/workspace/queries";
+import { issueKeys } from "@patchbay/core/issues/queries";
+import { api } from "@patchbay/core/api";
 import {
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@cordy/core/paths";
-import { setCurrentWorkspace } from "@cordy/core/platform";
-import type { Workspace } from "@cordy/core/types";
+} from "@patchbay/core/paths";
+import { setCurrentWorkspace } from "@patchbay/core/platform";
+import type { Workspace } from "@patchbay/core/types";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";

@@ -2,9 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceList } from "@cordy/core/workspace";
-import { resolvePostAuthDestination, useHasOnboarded } from "@cordy/core/paths";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceList } from "@patchbay/core/workspace";
+import { resolvePostAuthDestination, useHasOnboarded } from "@patchbay/core/paths";
 import { isOfficialMarketingHost } from "@/lib/public-host";
 
 /**

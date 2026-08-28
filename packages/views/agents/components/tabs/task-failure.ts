@@ -7,7 +7,7 @@
 // failed tasks no longer have a top-level workload state; failure context
 // is purely a detail-page concern now.
 //
-// Covers the canonical taxonomy in the `cordy-task-failure` crate — platform-side
+// Covers the canonical taxonomy in the `patchbay-task-failure` crate — platform-side
 // reasons plus 14 `agent_error.*` sub-reasons — and the pre-PB-1949 coarse
 // values still present on historical rows. This used to be a
 // `Record<TaskFailureReason, string>` indexed with a cast, which silently

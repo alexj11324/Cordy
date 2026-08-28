@@ -8,17 +8,17 @@ import {
   decodeBuilderInput,
   pickBuilderRestore,
   type BuilderRestore,
-} from "@cordy/core/agents";
-import { api, ApiError } from "@cordy/core/api";
+} from "@patchbay/core/agents";
+import { api, ApiError } from "@patchbay/core/api";
 import {
   chatKeys,
   chatMessagesOptions,
   pendingChatTaskOptions,
-} from "@cordy/core/chat/queries";
-import { upsertChatMessageToCaches } from "@cordy/core/chat/message-cache";
-import { removeChatMessageFromCaches } from "@cordy/core/realtime";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import type { ChatMessage } from "@cordy/core/types";
+} from "@patchbay/core/chat/queries";
+import { upsertChatMessageToCaches } from "@patchbay/core/chat/message-cache";
+import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import type { ChatMessage } from "@patchbay/core/types";
 import { useAppForeground } from "../../common/use-app-foreground";
 import { useChatDraftRestore } from "../../chat/components/use-chat-draft-restore";
 import { useT } from "../../i18n";

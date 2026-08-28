@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import type { GitHubPullRequest } from "@cordy/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { GitHubPullRequest } from "@patchbay/core/types";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@cordy/core/github/queries", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/github/queries")>(
-    "@cordy/core/github/queries",
+vi.mock("@patchbay/core/github/queries", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/github/queries")>(
+    "@patchbay/core/github/queries",
   );
   return {
     ...actual,

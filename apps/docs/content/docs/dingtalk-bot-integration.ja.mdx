@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 任意の[エージェント](/agents)を DingTalk Bot に接続すれば、チームは DingTalk の中から直接それを使えます——Bot に DM したり、グループで @ メンションしたり、スクリーンショットを送ったり、`/issue` と入力してアプリを開かずに [Patchbay イシュー](/issues)を起票したりできます。
 
-DingTalk 連携は[コミュニティメンテナンス](/community-maintained)です。毎リリースに同梱されますが、公式のサポート SLA は付きません。問題があれば [GitHub issues](https://github.com/alexj11324/Cordy/issues) に報告してください。
+DingTalk 連携は[コミュニティメンテナンス](/community-maintained)です。毎リリースに同梱されますが、公式のサポート SLA は付きません。問題があれば [GitHub issues](https://github.com/patchbay-ai/patchbay/issues) に報告してください。
 
 DingTalk は**自分のアプリを持ち込む（BYO: bring-your-own-app）**モデルを採用しています。ワークスペースの admin が DingTalk アプリを作成し、Stream モードのロボットを追加して、その認証情報を Patchbay に貼り付けます。セットアップ時に選んだエージェントが DM と新しく検出されたグループのデフォルトになります。同じロボットを複数のグループに追加し、グループごとに別のエージェントへルーティングできます。（これは紐づけがスキャンしてインストールするフローである [Lark](/lark-bot-integration) とは異なります。）
 
@@ -120,7 +120,7 @@ Patchbay Cloud では連携はすでに利用可能です——このセクシ�
 1. 32 バイトのキーを生成し、API サーバーに設定します。
 
    ```dotenv
-   CORDY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+   PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
    ```
 
    たとえば: `openssl rand -base64 32`。
@@ -128,7 +128,7 @@ Patchbay Cloud では連携はすでに利用可能です——このセクシ�
 2. API を再起動します。キーを設定するまで、**Settings → Integrations** には「DingTalk integration not enabled」という通知が表示され、**Connect DingTalk** のエントリポイントは非表示のままになります。
 
 <Callout type="info">
-キーはちょうど 32 バイトにデコードされなければなりません——`openssl rand -base64 32` はそれを満たします。これは長く使い続けるシークレットとして扱ってください。ローテーションしたり紛失したりすると、すでに保存済みの認証情報が復号できなくなり、すべての Bot を再接続せざるを得なくなります。「アカウントを紐づける」リンクは、Web アプリの URL（`CORDY_APP_URL`、未設定時は `FRONTEND_ORIGIN` にフォールバック）から生成されます。通常のデプロイではこれは既に設定されているため、追加で設定するものはありません。
+キーはちょうど 32 バイトにデコードされなければなりません——`openssl rand -base64 32` はそれを満たします。これは長く使い続けるシークレットとして扱ってください。ローテーションしたり紛失したりすると、すでに保存済みの認証情報が復号できなくなり、すべての Bot を再接続せざるを得なくなります。「アカウントを紐づける」リンクは、Web アプリの URL（`PATCHBAY_APP_URL`、未設定時は `FRONTEND_ORIGIN` にフォールバック）から生成されます。通常のデプロイではこれは既に設定されているため、追加で設定するものはありません。
 </Callout>
 
 ## 次に

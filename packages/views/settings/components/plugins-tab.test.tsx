@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -21,7 +21,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: data.installed, isLoading: false, isError: false }),
 }));
 
-vi.mock("@cordy/core/plugins", () => ({
+vi.mock("@patchbay/core/plugins", () => ({
   pluginInstallationsOptions: () => ({ queryKey: ["plugins", "installed"] }),
   usePreviewPlugin: () => ({ mutateAsync: mockPreview, isPending: false }),
   useInstallPlugin: () => ({ mutateAsync: mockInstall, isPending: false }),
@@ -30,11 +30,11 @@ vi.mock("@cordy/core/plugins", () => ({
   useUninstallPlugin: () => ({ mutateAsync: mockUninstall, isPending: false }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
 }));
 
-vi.mock("@cordy/core/permissions", () => ({
+vi.mock("@patchbay/core/permissions", () => ({
   useCurrentMember: () => ({ role: data.role, isLoading: false }),
 }));
 
@@ -54,14 +54,14 @@ const INSTALLATION = {
   name: "Hello Panel",
   description: "A greeting panel.",
   version: "1.0.0",
-  source_url: "https://example.com/cordy.plugin.json",
+  source_url: "https://example.com/patchbay.plugin.json",
   enabled: true,
   granted_scopes: ["issues:read", "comments:write", "net:example.com"],
   config_schema: [
     { key: "repo", type: "string", label: "Repo", required: true, options: [] },
     { key: "token", type: "secret", label: "Token", required: true, options: [] },
   ],
-  config: { repo: "alexj11324/Cordy" },
+  config: { repo: "patchbay-ai/patchbay" },
   configured_secrets: ["token"],
   surfaces: [{ key: "hello", type: "issue_panel", name: "Hello", entry: "ui/main.js", platforms: [] }],
   hooks: [],
@@ -101,8 +101,8 @@ describe("PluginsTab", () => {
     render(<PluginsTab />, { wrapper: Wrapper });
 
     await user.type(
-      screen.getByPlaceholderText("https://example.com/cordy.plugin.json"),
-      "https://example.com/cordy.plugin.json",
+      screen.getByPlaceholderText("https://example.com/patchbay.plugin.json"),
+      "https://example.com/patchbay.plugin.json",
     );
     await user.click(screen.getByRole("button", { name: "Review" }));
 
@@ -117,7 +117,7 @@ describe("PluginsTab", () => {
 
     await user.click(screen.getByRole("button", { name: "Grant and install" }));
     await waitFor(() => expect(mockInstall).toHaveBeenCalledWith({
-      source_url: "https://example.com/cordy.plugin.json",
+      source_url: "https://example.com/patchbay.plugin.json",
       granted_scopes: ["issues:read", "comments:write", "net:example.com"],
     }));
   });
@@ -127,7 +127,7 @@ describe("PluginsTab", () => {
     const user = userEvent.setup();
     render(<PluginsTab />, { wrapper: Wrapper });
 
-    const repo = screen.getByDisplayValue("alexj11324/Cordy");
+    const repo = screen.getByDisplayValue("patchbay-ai/patchbay");
     expect(repo).toBeInTheDocument();
 
     const secret = screen.getByPlaceholderText("Saved — enter a new value to replace it");
@@ -139,7 +139,7 @@ describe("PluginsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
       installationId: "installation-1",
-      values: { repo: "alexj11324/Cordy" },
+      values: { repo: "patchbay-ai/patchbay" },
     }));
 
     mockConfigure.mockClear();
@@ -147,7 +147,7 @@ describe("PluginsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
       installationId: "installation-1",
-      values: { repo: "alexj11324/Cordy", token: "new-token" },
+      values: { repo: "patchbay-ai/patchbay", token: "new-token" },
     }));
   });
 

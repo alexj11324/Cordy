@@ -10,7 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@cordy/ui/components/ui/chart";
+} from "@patchbay/ui/components/ui/chart";
 import type { DailyCostStackData } from "../../utils";
 import { useT } from "../../../i18n";
 

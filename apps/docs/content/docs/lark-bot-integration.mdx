@@ -67,7 +67,7 @@ After disconnecting, the Bot stops receiving new messages. Existing conversation
 Patchbay Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Bot credentials:
 
 ```dotenv
-CORDY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 Generate one like this:
@@ -78,7 +78,7 @@ openssl rand -base64 32
 
 Restart the API server, then connect the Bot from the agent's **Integrations** page. Keep this key long-term: if it is rotated or lost, existing credentials can no longer be decrypted and the Bot must be reconnected.
 
-`CORDY_LARK_HTTP_BASE_URL` and `CORDY_LARK_CALLBACK_BASE_URL` exist only for special deployments such as proxies and testing; leave them unset in normal operation.
+`PATCHBAY_LARK_HTTP_BASE_URL` and `PATCHBAY_LARK_CALLBACK_BASE_URL` exist only for special deployments such as proxies and testing; leave them unset in normal operation.
 
 ## Troubleshooting
 

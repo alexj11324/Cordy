@@ -1,9 +1,9 @@
 ---
 title: プロジェクトアーキテクチャ
-description: Cordy のクライアント、Rust サービス、実行デーモン、共有フロントエンドパッケージがどのように連携するかを説明します。
+description: Patchbay のクライアント、Rust サービス、実行デーモン、共有フロントエンドパッケージがどのように連携するかを説明します。
 ---
 
-Cordy は Rust バックエンド、複数のクライアント、実行用コンピューター上で動作するデーモンで構成されています。PostgreSQL がコラボレーションデータを保存し、デーモンがタスクを取得してローカルの AI コーディングツールを呼び出します。
+Patchbay は Rust バックエンド、複数のクライアント、実行用コンピューター上で動作するデーモンで構成されています。PostgreSQL がコラボレーションデータを保存し、デーモンがタスクを取得してローカルの AI コーディングツールを呼び出します。
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
   ローカルデーモン ─── AI コーディングツール
 ```
 
-プロダクト利用者向けの説明は [Cordy の仕組み](/how-cordy-works)を参照してください。このページではコードの階層構造に焦点を当てます。
+プロダクト利用者向けの説明は [Patchbay の仕組み](/how-patchbay-works)を参照してください。このページではコードの階層構造に焦点を当てます。
 
 ## リポジトリ構成
 
@@ -55,7 +55,7 @@ apps/web/platform/         Next.js ルーティングアダプター
 apps/desktop/.../platform/ Electron ルーティングアダプター
 ```
 
-Mobile はこれらの React ページを再利用しません。`@cordy/core` の型や純粋関数をインポートできますが、UI、query key、状態、リアルタイム購読、リリースフローは独自に持ちます。
+Mobile はこれらの React ページを再利用しません。`@patchbay/core` の型や純粋関数をインポートできますが、UI、query key、状態、リアルタイム購読、リリースフローは独自に持ちます。
 
 ## フロントエンドの状態
 
@@ -76,32 +76,32 @@ API レスポンスは `packages/core/api/` の境界で zod schema により解
 
 | エントリーポイント | 役割 |
 | --- | --- |
-| `server-rs/crates/cordy-server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
-| `server-rs/crates/cordy-cli`（`cordy`） | CLI とローカルデーモン |
-| `server-rs/crates/cordy-migrate` | `migrations/` のデータベース migration を実行 |
-| `cordy-migrate` の `backfill_*` バイナリ | 特定バージョン向けのデータ backfill ツール |
+| `server-rs/crates/patchbay-server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
+| `server-rs/crates/patchbay-cli`（`patchbay`） | CLI とローカルデーモン |
+| `server-rs/crates/patchbay-migrate` | `migrations/` のデータベース migration を実行 |
+| `patchbay-migrate` の `backfill_*` バイナリ | 特定バージョン向けのデータ backfill ツール |
 
 リクエストは通常、次の方向に流れます。
 
 ```text
-cordy-server router → cordy-middleware → cordy-handler → cordy-service → cordy-db query module → PostgreSQL
+patchbay-server router → patchbay-middleware → patchbay-handler → patchbay-service → patchbay-db query module → PostgreSQL
 ```
 
-- `cordy-middleware` は認証、ワークスペース、リクエスト境界を扱います。
-- `cordy-handler` は HTTP/WebSocket 入力を解析し、レスポンスと添付ストレージの接続を担当します。
-- `cordy-service` は複数クエリにまたがるビジネスフローとトランザクションを担当します。
-- `cordy-db/src/queries/` には手書きの SQLx query module を置きます。Rust 経路に生成された sqlc 層はありません。
-- `cordy-lark`、`cordy-wecom`、`cordy-dingtalk`、`cordy-slack`、`cordy-telegram`、`cordy-composio`、`cordy-vcs`、`cordy-ghsnapshot` などの integration crate が外部境界を担当します。
-- `cordy-realtime`、`cordy-redis`、`cordy-daemon` が realtime fanout、任意の Redis 調整、ローカル実行ライフサイクルを担当します。
+- `patchbay-middleware` は認証、ワークスペース、リクエスト境界を扱います。
+- `patchbay-handler` は HTTP/WebSocket 入力を解析し、レスポンスと添付ストレージの接続を担当します。
+- `patchbay-service` は複数クエリにまたがるビジネスフローとトランザクションを担当します。
+- `patchbay-db/src/queries/` には手書きの SQLx query module を置きます。Rust 経路に生成された sqlc 層はありません。
+- `patchbay-lark`、`patchbay-wecom`、`patchbay-dingtalk`、`patchbay-slack`、`patchbay-telegram`、`patchbay-composio`、`patchbay-vcs`、`patchbay-ghsnapshot` などの integration crate が外部境界を担当します。
+- `patchbay-realtime`、`patchbay-redis`、`patchbay-daemon` が realtime fanout、任意の Redis 調整、ローカル実行ライフサイクルを担当します。
 
 PostgreSQL がビジネスデータの信頼できる情報源です。Redis は任意のコンポーネントで、複数インスタンス間のリアルタイムイベント、キャッシュ、一時的な調整に使います。未設定の場合、単一インスタンスの開発環境ではプロセス内実装を使用します。
 
 ## リアルタイム接続
 
-Cordy には異なる 2 つの WebSocket パスがあります。
+Patchbay には異なる 2 つの WebSocket パスがあります。
 
-- `cordy-realtime` と `server-rs/crates/cordy-server/src/realtime_runtime.rs` はイシュー、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
-- `cordy-handler` の daemon WebSocket route と `cordy-daemon` は実行用コンピューターを接続し、ランタイムの起動通知と daemon RPC に使います。
+- `patchbay-realtime` と `server-rs/crates/patchbay-server/src/realtime_runtime.rs` はイシュー、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
+- `patchbay-handler` の daemon WebSocket route と `patchbay-daemon` は実行用コンピューターを接続し、ランタイムの起動通知と daemon RPC に使います。
 
 WebSocket は遅延を減らしますが、最終的な状態はデータベースにあります。クライアントは再接続後にクエリで再同期する必要があります。デーモンも polling 経路を保持し、1 回の切断で queued タスクが永久に止まらないようにします。
 
@@ -111,7 +111,7 @@ WebSocket は遅延を減らしますが、最終的な状態はデータベー�
 2. `TaskService` が queued タスクを作成し、対応するランタイムへ通知します。
 3. デーモンが daemon API を通じてタスクを取得します。
 4. サーバーがタスクとエージェントに紐づく一時的な認証情報を発行します。
-5. デーモンがローカルディレクトリを準備し、`cordy-agent` と production provider adapter を通じて対応する provider backend を呼び出します。
+5. デーモンがローカルディレクトリを準備し、`patchbay-agent` と production provider adapter を通じて対応する provider backend を呼び出します。
 6. ツールがローカルで動作し、デーモンが進捗、メッセージ、最終状態をアップロードします。
 7. サーバーがタスクとイシューを更新し、リアルタイムイベントでクライアントを更新します。
 

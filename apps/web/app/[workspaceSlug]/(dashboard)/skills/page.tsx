@@ -1,1 +1,1 @@
-export { SkillsPage as default } from "@cordy/views/skills";
+export { SkillsPage as default } from "@patchbay/views/skills";

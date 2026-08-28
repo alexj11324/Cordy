@@ -29,43 +29,43 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@cordy/ui/components/ui/context-menu";
+} from "@patchbay/ui/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@cordy/ui/components/ui/tooltip";
-import { cn } from "@cordy/ui/lib/utils";
-import type { IssueView } from "@cordy/core/api/schemas";
+} from "@patchbay/ui/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { IssueView } from "@patchbay/core/api/schemas";
 import {
   canManageIssueView,
   type IssueViewScope,
-} from "@cordy/core/issue-views/queries";
+} from "@patchbay/core/issue-views/queries";
 import {
   applyViewBarPrefs,
   issueViewPreferenceOptions,
   useUpdateIssueViewPreference,
   EMPTY_VIEW_BAR_PREFS,
-} from "@cordy/core/issue-views/preferences";
-import { useDeleteIssueView } from "@cordy/core/issue-views/mutations";
-import { useAuthStore } from "@cordy/core/auth";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { pinListOptions } from "@cordy/core/pins/queries";
-import { useCreatePin, useDeletePin } from "@cordy/core/pins/mutations";
+} from "@patchbay/core/issue-views/preferences";
+import { useDeleteIssueView } from "@patchbay/core/issue-views/mutations";
+import { useAuthStore } from "@patchbay/core/auth";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { pinListOptions } from "@patchbay/core/pins/queries";
+import { useCreatePin, useDeletePin } from "@patchbay/core/pins/mutations";
 import { useSingleRowFit } from "../../common/single-row-fit";
 import { ManageViewsDialog } from "./manage-views-dialog";
 import {

@@ -625,9 +625,10 @@ export class ApiClient {
 
   private readCsrfToken(): string | null {
     if (typeof document === "undefined") return null;
-    const match = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith("cordy_csrf="));
+    const cookies = document.cookie.split("; ");
+    const match =
+      cookies.find((c) => c.startsWith("patchbay_csrf=")) ??
+      cookies.find((c) => c.startsWith("patchbay_csrf=")); // legacy-brand-compat
     return match ? match.split("=")[1] ?? null : null;
   }
 
@@ -1556,8 +1557,8 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------
-  // Cloud Billing — proxies to cordy-cloud /api/v1/billing/*. The
-  // cordy-api server stamps X-User-ID and forwards bytes; everything
+  // Cloud Billing — proxies to patchbay-cloud /api/v1/billing/*. The
+  // patchbay-api server stamps X-User-ID and forwards bytes; everything
   // here is upstream-shaped. See packages/core/types/billing.ts for the
   // response field documentation.
   // ---------------------------------------------------------------------
@@ -2551,7 +2552,7 @@ export class ApiClient {
       : "";
     return this.fetch<unknown>(`/api/v1/plugin${request.path}${query}`, {
       method: request.method,
-      headers: { "X-Cordy-Plugin-Installation": installationId },
+      headers: { "X-Patchbay-Plugin-Installation": installationId },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   }
@@ -2572,7 +2573,7 @@ export class ApiClient {
   ): Promise<PluginHookResult> {
     const raw = await this.fetch<unknown>(`/api/v1/plugin/hooks/${encodeURIComponent(hookKey)}`, {
       method: "POST",
-      headers: { "X-Cordy-Plugin-Installation": installationId },
+      headers: { "X-Patchbay-Plugin-Installation": installationId },
       body: JSON.stringify({ trigger: request.trigger, issue_id: request.issueId, input: request.input }),
     });
     return parseWithFallback(raw, PluginHookResultSchema, {
@@ -4300,7 +4301,7 @@ export class ApiClient {
 
   // registerWecomBYO performs a bring-your-own-app install: the admin pastes
   // the bot id and long-connection secret from the WeCom admin console,
-  // and the backend seals the secret with CORDY_WECOM_SECRET_KEY before
+  // and the backend seals the secret with PATCHBAY_WECOM_SECRET_KEY before
   // persisting, returning the new installation.
   async registerWecomBYO(
     workspaceId: string,
@@ -4327,8 +4328,8 @@ export class ApiClient {
   }
 
   // redeemWecomBindingToken binds the WeCom aibot userid carried by the
-  // token to the logged-in Cordy user. Called by the /wecom/bind redeem
-  // page after the user clicks through the "link your Cordy account"
+  // token to the logged-in Patchbay user. Called by the /wecom/bind redeem
+  // page after the user clicks through the "link your Patchbay account"
   // prompt the bot sent in WeCom. Status codes:
   //   410 Gone      → invalid / expired / already consumed
   //   409 Conflict  → the WeCom user is already bound to a different user

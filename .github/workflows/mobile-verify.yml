@@ -8,7 +8,7 @@ name: Mobile Verify
 # - apps/mobile/**                — the app itself
 # - packages/core/**              — mobile imports types AND pure functions
 #                                   (agents, markdown, permissions, api/schemas, …),
-#                                   not only @cordy/core/types
+#                                   not only @patchbay/core/types
 # - package.json / pnpm-lock.yaml — install graph
 # - pnpm-workspace.yaml           — catalog versions
 # - turbo.json                    — turbo task pipeline
@@ -44,4 +44,4 @@ jobs:
         run: pnpm install
 
       - name: Type check, lint, and test
-        run: pnpm exec turbo typecheck lint test --filter=@cordy/mobile
+        run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile

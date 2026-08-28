@@ -21,22 +21,22 @@ import type { ReactNode } from "react";
 import { BoardView } from "./board-view";
 import { SwimLaneView } from "./swimlane-view";
 import { IssueContextMenuProvider } from "../actions";
-import { setApiInstance } from "@cordy/core/api";
-import type { ApiClient } from "@cordy/core/api/client";
-import type { Issue } from "@cordy/core/types";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { setApiInstance } from "@patchbay/core/api";
+import type { ApiClient } from "@patchbay/core/api/client";
+import type { Issue } from "@patchbay/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@cordy/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
-    "@cordy/core/paths",
+vi.mock("@patchbay/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
+    "@patchbay/core/paths",
   );
   return {
     ...actual,
@@ -47,7 +47,7 @@ vi.mock("@cordy/core/paths", async () => {
 });
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -71,7 +71,7 @@ vi.mock("../../navigation", () => ({
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@cordy/core/issues/config", () => ({
+vi.mock("@patchbay/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -94,15 +94,15 @@ vi.mock("@cordy/core/issues/config", () => ({
   },
 }));
 
-vi.mock("@cordy/core/issues/mutations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@cordy/core/issues/mutations")>();
+vi.mock("@patchbay/core/issues/mutations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/issues/mutations")>();
   return {
     ...actual,
   };
 });
 
-vi.mock("@cordy/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@cordy/core/properties")>();
+vi.mock("@patchbay/core/properties", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/properties")>();
   return {
     ...actual,
     useSetIssueProperty: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
@@ -135,13 +135,13 @@ const mockViewState: Record<string, unknown> = {
   cardPropertyIds: [],
   agentRunningFilter: false,
 };
-vi.mock("@cordy/core/issues/stores/view-store-context", () => ({
+vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
 }));
 
-vi.mock("@cordy/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },

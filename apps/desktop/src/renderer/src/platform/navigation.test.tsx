@@ -21,14 +21,14 @@ vi.mock("@/stores/window-overlay-store", () => ({
 
 const auth = vi.hoisted(() => ({ logout: vi.fn() }));
 
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(() => null, {
     getState: () => auth,
   }),
 }));
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
-import { useNavigation } from "@cordy/views/navigation";
+import { useNavigation } from "@patchbay/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {

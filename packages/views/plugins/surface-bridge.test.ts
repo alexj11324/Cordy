@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCall = vi.hoisted(() => vi.fn());
-vi.mock("@cordy/core/api", () => ({ api: { callPluginAction: mockCall } }));
+vi.mock("@patchbay/core/api", () => ({ api: { callPluginAction: mockCall } }));
 
 import { createSurfaceBridge } from "./surface-bridge";
 
-// The bridge is the only path from a surface into Cordy, so what it refuses
+// The bridge is the only path from a surface into Patchbay, so what it refuses
 // matters more than what it forwards. None of this is visible from the
 // component: it only holds if the guards run before the fetch.
 
@@ -38,7 +38,7 @@ function connectedBridge(options: Parameters<typeof createSurfaceBridge>[0] = { 
  * host reads it by identity, which is exactly the check being exercised.
  */
 function announce(source: Window | null) {
-  const event = new MessageEvent("message", { data: { type: "cordy:plugin-surface-ready" } });
+  const event = new MessageEvent("message", { data: { type: "patchbay:plugin-surface-ready" } });
   Object.defineProperty(event, "source", { value: source, configurable: true });
   window.dispatchEvent(event);
 }

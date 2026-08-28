@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,21 +14,21 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import type { Issue, UpdateIssueRequest } from "@cordy/core/types";
-import { commonIssueFields } from "@cordy/core/issues/batch";
-import { issueBehavesAs } from "@cordy/core/issues";
-import { useBatchUpdateIssues, useBatchDeleteIssues } from "@cordy/core/issues/mutations";
-import { useModalStore } from "@cordy/core/modals";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
+import { commonIssueFields } from "@patchbay/core/issues/batch";
+import { issueBehavesAs } from "@patchbay/core/issues";
+import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
+import { useModalStore } from "@patchbay/core/modals";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
 import { useT } from "../../i18n";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@cordy/ui/lib/motion";
+} from "@patchbay/ui/lib/motion";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 

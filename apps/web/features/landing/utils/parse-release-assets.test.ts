@@ -12,23 +12,23 @@ function asset(name: string) {
 describe("parseReleaseAssets", () => {
   it("keeps both Apple Silicon and Intel macOS installers", () => {
     const assets = parseReleaseAssets([
-      asset("cordy-desktop-0.4.2-mac-arm64.dmg"),
-      asset("cordy-desktop-0.4.2-mac-arm64.zip"),
-      asset("cordy-desktop-0.4.2-mac-x64.dmg"),
-      asset("cordy-desktop-0.4.2-mac-x64.zip"),
-      asset("cordy-desktop-0.4.2-mac-x64.dmg.blockmap"),
+      asset("patchbay-desktop-0.4.2-mac-arm64.dmg"),
+      asset("patchbay-desktop-0.4.2-mac-arm64.zip"),
+      asset("patchbay-desktop-0.4.2-mac-x64.dmg"),
+      asset("patchbay-desktop-0.4.2-mac-x64.zip"),
+      asset("patchbay-desktop-0.4.2-mac-x64.dmg.blockmap"),
       asset("latest-x64-mac.yml"),
     ]);
 
     expect(assets).toEqual({
       macArm64Dmg:
-        "https://github.test/releases/cordy-desktop-0.4.2-mac-arm64.dmg",
+        "https://github.test/releases/patchbay-desktop-0.4.2-mac-arm64.dmg",
       macArm64Zip:
-        "https://github.test/releases/cordy-desktop-0.4.2-mac-arm64.zip",
+        "https://github.test/releases/patchbay-desktop-0.4.2-mac-arm64.zip",
       macX64Dmg:
-        "https://github.test/releases/cordy-desktop-0.4.2-mac-x64.dmg",
+        "https://github.test/releases/patchbay-desktop-0.4.2-mac-x64.dmg",
       macX64Zip:
-        "https://github.test/releases/cordy-desktop-0.4.2-mac-x64.zip",
+        "https://github.test/releases/patchbay-desktop-0.4.2-mac-x64.zip",
     });
   });
 });
@@ -37,18 +37,18 @@ describe("parseReleaseAssets", () => {
  *  note Linux arch varies by format (x86_64 for AppImage/rpm, amd64 for
  *  deb; aarch64 for rpm, arm64 for the rest). */
 const ALL_ARTIFACT_NAMES = [
-  "cordy-desktop-0.4.27-mac-arm64.dmg",
-  "cordy-desktop-0.4.27-mac-arm64.zip",
-  "cordy-desktop-0.4.27-mac-x64.dmg",
-  "cordy-desktop-0.4.27-mac-x64.zip",
-  "cordy-desktop-0.4.27-windows-x64.exe",
-  "cordy-desktop-0.4.27-windows-arm64.exe",
-  "cordy-desktop-0.4.27-linux-x86_64.AppImage",
-  "cordy-desktop-0.4.27-linux-amd64.deb",
-  "cordy-desktop-0.4.27-linux-x86_64.rpm",
-  "cordy-desktop-0.4.27-linux-arm64.AppImage",
-  "cordy-desktop-0.4.27-linux-arm64.deb",
-  "cordy-desktop-0.4.27-linux-aarch64.rpm",
+  "patchbay-desktop-0.4.27-mac-arm64.dmg",
+  "patchbay-desktop-0.4.27-mac-arm64.zip",
+  "patchbay-desktop-0.4.27-mac-x64.dmg",
+  "patchbay-desktop-0.4.27-mac-x64.zip",
+  "patchbay-desktop-0.4.27-windows-x64.exe",
+  "patchbay-desktop-0.4.27-windows-arm64.exe",
+  "patchbay-desktop-0.4.27-linux-x86_64.AppImage",
+  "patchbay-desktop-0.4.27-linux-amd64.deb",
+  "patchbay-desktop-0.4.27-linux-x86_64.rpm",
+  "patchbay-desktop-0.4.27-linux-arm64.AppImage",
+  "patchbay-desktop-0.4.27-linux-arm64.deb",
+  "patchbay-desktop-0.4.27-linux-aarch64.rpm",
 ];
 
 describe("hasCompleteAssetSet", () => {

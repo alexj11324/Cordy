@@ -6,24 +6,24 @@ import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 import { useTranslation } from "react-i18next"
 
-import { useIsCompact } from "@cordy/ui/hooks/use-mobile"
-import { cn } from "@cordy/ui/lib/utils"
-import { Button } from "@cordy/ui/components/ui/button"
-import { Input } from "@cordy/ui/components/ui/input"
-import { Separator } from "@cordy/ui/components/ui/separator"
+import { useIsCompact } from "@patchbay/ui/hooks/use-mobile"
+import { cn } from "@patchbay/ui/lib/utils"
+import { Button } from "@patchbay/ui/components/ui/button"
+import { Input } from "@patchbay/ui/components/ui/input"
+import { Separator } from "@patchbay/ui/components/ui/separator"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@cordy/ui/components/ui/sheet"
-import { Skeleton } from "@cordy/ui/components/ui/skeleton"
+} from "@patchbay/ui/components/ui/sheet"
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip"
+} from "@patchbay/ui/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
 const SIDEBAR_WIDTH_DEFAULT = 256

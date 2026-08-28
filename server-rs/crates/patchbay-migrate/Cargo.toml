@@ -1,0 +1,23 @@
+[package]
+name = "patchbay-migrate"
+description = "Database migration runner and data backfills"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "patchbay-migrate"
+
+[[bin]]
+name = "patchbay-migrate"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+patchbay-util = { path = "../patchbay-util" }
+futures-util = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

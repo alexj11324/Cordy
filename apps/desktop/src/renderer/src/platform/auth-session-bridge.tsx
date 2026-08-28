@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useAuthStore, type AuthStatus } from "@cordy/core/auth";
+import { useAuthStore, type AuthStatus } from "@patchbay/core/auth";
 
 export function authSessionReportValue(
   status: AuthStatus,

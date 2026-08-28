@@ -6,7 +6,7 @@ import {
   ItemDescription,
   ItemMedia,
   ItemTitle,
-} from "@cordy/ui/components/ui/item";
+} from "@patchbay/ui/components/ui/item";
 import { useT } from "../../i18n";
 
 /** Mirrors the Mika avatar URL in the Rust onboarding handler.

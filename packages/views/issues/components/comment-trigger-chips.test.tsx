@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
-import type { CommentTriggerPreviewAgent } from "@cordy/core/types";
+import type { CommentTriggerPreviewAgent } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 
-vi.mock("@cordy/core/agents", () => ({
+vi.mock("@patchbay/core/agents", () => ({
   useAgentPresenceDetail: () => ({ availability: "online", workload: "idle" }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1" }),
 }));
 

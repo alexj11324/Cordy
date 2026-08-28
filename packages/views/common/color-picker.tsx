@@ -6,10 +6,10 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/popover";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../i18n";
 import {
   type Hsv,

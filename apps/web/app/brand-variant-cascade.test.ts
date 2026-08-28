@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import postcss from "postcss";
 import tailwind from "@tailwindcss/postcss";
-import { cn } from "@cordy/ui/lib/utils";
-import { buttonVariants } from "@cordy/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
+import { buttonVariants } from "@patchbay/ui/components/ui/button";
 import { beforeAll, describe, expect, it } from "vitest";
 
 /**

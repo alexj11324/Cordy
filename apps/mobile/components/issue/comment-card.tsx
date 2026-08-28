@@ -32,7 +32,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
-import type { Reaction, TimelineEntry } from "@cordy/core/types";
+import type { Reaction, TimelineEntry } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { useActorLookup } from "@/data/use-actor-name";

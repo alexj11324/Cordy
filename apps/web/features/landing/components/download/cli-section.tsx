@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
-import { copyText } from "@cordy/ui/lib/clipboard";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import { useLocale } from "../../i18n";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash";
-const SETUP_CMD = "cordy setup";
+  "curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash";
+const SETUP_CMD = "patchbay setup";
 
 /**
  * Scenario-first CLI section. Copy leans into servers / remote dev

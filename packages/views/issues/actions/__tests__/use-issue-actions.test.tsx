@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { buildIssueStatusCatalog } from "@cordy/core/issue-statuses";
-import type { Issue, IssueStatusEntry } from "@cordy/core/types";
+import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
+import type { Issue, IssueStatusEntry } from "@patchbay/core/types";
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockOpenModal = vi.fn();
-vi.mock("@cordy/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -20,7 +20,7 @@ vi.mock("@cordy/core/modals", () => ({
 }));
 
 const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
     { getState: () => mockAuthState },
@@ -34,7 +34,7 @@ const pinListRef: { value: Array<{ item_type: string; item_id: string }> } = {
 };
 const mockCreatePinMutate = vi.fn();
 const mockDeletePinMutate = vi.fn();
-vi.mock("@cordy/core/pins", () => ({
+vi.mock("@patchbay/core/pins", () => ({
   pinListOptions: () => ({
     queryKey: ["pins", "ws-1", "user-1"],
     queryFn: () => Promise.resolve(pinListRef.value),
@@ -44,7 +44,7 @@ vi.mock("@cordy/core/pins", () => ({
 }));
 
 const mockUpdateMutate = vi.fn();
-vi.mock("@cordy/core/issues/mutations", () => ({
+vi.mock("@patchbay/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mockUpdateMutate }),
 }));
 
@@ -76,13 +76,13 @@ function statusEntry(overrides: Partial<IssueStatusEntry>): IssueStatusEntry {
     ...overrides,
   };
 }
-vi.mock("@cordy/core/issue-statuses/hooks", () => ({
+vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog(catalogEntries),
 }));
 
-vi.mock("@cordy/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
-    "@cordy/core/paths",
+vi.mock("@patchbay/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
+    "@patchbay/core/paths",
   );
   return {
     ...actual,
@@ -98,7 +98,7 @@ vi.mock("../../../navigation", () => ({
     searchParams: new URLSearchParams(),
     back: vi.fn(),
     replace: vi.fn(),
-    getShareableUrl: (p: string) => `https://app.cordy.com${p}`,
+    getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
   }),
 }));
 
@@ -295,7 +295,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.cordy.com/test/issues/TES-1",
+      "https://app.patchbay.com/test/issues/TES-1",
     );
   });
 
@@ -310,7 +310,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.cordy.com/test/issues/issue-1",
+      "https://app.patchbay.com/test/issues/issue-1",
     );
   });
 

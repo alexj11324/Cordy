@@ -1,1 +1,1 @@
-export { DashboardPage as default } from "@cordy/views/dashboard";
+export { DashboardPage as default } from "@patchbay/views/dashboard";

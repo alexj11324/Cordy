@@ -1,4 +1,4 @@
-import { ManualCreateAgentPage } from "@cordy/views/agents";
+import { ManualCreateAgentPage } from "@patchbay/views/agents";
 
 export default function NewAgentManualRoute() {
   return <ManualCreateAgentPage />;

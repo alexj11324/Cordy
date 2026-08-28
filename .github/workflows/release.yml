@@ -29,7 +29,7 @@ jobs:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization
     # credential is present in the canonical repository's Actions secrets.
-    if: github.event_name == 'push' && github.repository == 'alexj11324/Cordy'
+    if: github.event_name == 'push' && github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -64,18 +64,18 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_DB: cordy
-          POSTGRES_USER: cordy
-          POSTGRES_PASSWORD: cordy
+          POSTGRES_DB: patchbay
+          POSTGRES_USER: patchbay
+          POSTGRES_PASSWORD: patchbay
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-cmd "pg_isready -U patchbay -d patchbay"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
       SQLX_OFFLINE: "false"
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
@@ -120,7 +120,7 @@ jobs:
 
       - name: Apply database migrations with the Rust runner
         working-directory: server-rs
-        run: cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
+        run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
 
       - name: Run Rust workspace tests
         working-directory: server-rs
@@ -129,12 +129,12 @@ jobs:
       - name: Build production Rust binaries
         working-directory: server-rs
         env:
-          CORDY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
-          CORDY_BUILD_COMMIT: ${{ github.sha }}
+          PATCHBAY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
+          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
         run: |
-          CORDY_BUILD_DATE="$(git show -s --format=%cI "$CORDY_BUILD_COMMIT")"
-          export CORDY_BUILD_DATE
-          cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
+          PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
+          export PATCHBAY_BUILD_DATE
+          cargo build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins
 
       - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
@@ -145,7 +145,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
           # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
-          # the compiled Cordy graph enables Postgres only. CloudFront signing
+          # the compiled Patchbay graph enables Postgres only. CloudFront signing
           # no longer uses rsa and is implemented with ring/SHA-256.
           ignore: RUSTSEC-2023-0071
 
@@ -154,7 +154,7 @@ jobs:
         run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
   self-hosted-prepare:
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
@@ -263,12 +263,12 @@ jobs:
         working-directory: server-rs
         shell: bash
         env:
-          CORDY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
-          CORDY_BUILD_COMMIT: ${{ github.sha }}
+          PATCHBAY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
+          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
         run: |
-          CORDY_BUILD_DATE="$(git show -s --format=%cI "$CORDY_BUILD_COMMIT")"
-          export CORDY_BUILD_DATE
-          cargo build --locked --release --target ${{ matrix.target }} -p cordy-cli
+          PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
+          export PATCHBAY_BUILD_DATE
+          cargo build --locked --release --target ${{ matrix.target }} -p patchbay-cli
 
       - name: Package Unix archives
         if: runner.os != 'Windows'
@@ -277,12 +277,12 @@ jobs:
           RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
         run: |
           version="${RELEASE_TAG#v}"
-          package_dir="$RUNNER_TEMP/cordy-cli"
+          package_dir="$RUNNER_TEMP/patchbay-cli"
           binary_dir="target/${{ matrix.target }}/release"
           mkdir -p "$package_dir"
-          for prefix in "cordy-cli-${version}-${{ matrix.os }}-${{ matrix.arch }}" "cordy_${{ matrix.os }}_${{ matrix.arch }}"; do
+          for prefix in "patchbay-cli-${version}-${{ matrix.os }}-${{ matrix.arch }}" "patchbay_${{ matrix.os }}_${{ matrix.arch }}"; do
             tar -czf "$package_dir/${prefix}.tar.gz" \
-              -C "$binary_dir" cordy \
+              -C "$binary_dir" patchbay \
               -C "$GITHUB_WORKSPACE" LICENSE README.md README.zh.md NOTICE
           done
 
@@ -294,8 +294,8 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:RELEASE_TAG.TrimStart('v')
-          $packageDir = Join-Path $env:RUNNER_TEMP "cordy-cli"
-          $binary = Join-Path (Get-Location) "target/${{ matrix.target }}/release/cordy.exe"
+          $packageDir = Join-Path $env:RUNNER_TEMP "patchbay-cli"
+          $binary = Join-Path (Get-Location) "target/${{ matrix.target }}/release/patchbay.exe"
           $metadata = @(
               (Join-Path $env:GITHUB_WORKSPACE "LICENSE"),
               (Join-Path $env:GITHUB_WORKSPACE "README.md"),
@@ -305,8 +305,8 @@ jobs:
           New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
           $files = @($binary) + $metadata
           foreach ($prefix in @(
-              "cordy-cli-$version-${{ matrix.os }}-${{ matrix.arch }}",
-              "cordy_${{ matrix.os }}_${{ matrix.arch }}"
+              "patchbay-cli-$version-${{ matrix.os }}-${{ matrix.arch }}",
+              "patchbay_${{ matrix.os }}_${{ matrix.arch }}"
           )) {
               Compress-Archive -Path $files -DestinationPath (Join-Path $packageDir "$prefix.zip") -Force
           }
@@ -315,7 +315,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rust-cli-${{ matrix.os }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/cordy-cli/*
+          path: ${{ runner.temp }}/patchbay-cli/*
           if-no-files-found: error
           retention-days: 1
 
@@ -323,7 +323,7 @@ jobs:
     needs: [macos-release-preflight, verify, rust-cli-build]
     # Only the canonical repository may publish release assets. A fork can
     # still run verification and builds without creating a Release.
-    if: github.repository == 'alexj11324/Cordy'
+    if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -425,10 +425,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/cordy-backend
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
           labels: |
-            org.opencontainers.image.title=Cordy Backend
-            org.opencontainers.image.description=Cordy self-hosted backend
+            org.opencontainers.image.title=Patchbay Backend
+            org.opencontainers.image.description=Patchbay self-hosted backend
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -454,7 +454,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
             COMMIT=${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/cordy-backend,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -491,7 +491,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/cordy-backend
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
           flavor: |
             latest=false
           tags: |
@@ -521,14 +521,14 @@ jobs:
           digest_args=()
           for digest_file in "${digest_files[@]}"; do
             digest="${digest_file#./}"
-            digest_args+=("ghcr.io/${{ github.repository_owner }}/cordy-backend@sha256:$digest")
+            digest_args+=("ghcr.io/${{ github.repository_owner }}/patchbay-backend@sha256:$digest")
           done
           docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/cordy-backend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/patchbay-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
     needs: self-hosted-prepare
@@ -556,10 +556,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/cordy-web
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-web
           labels: |
-            org.opencontainers.image.title=Cordy Web
-            org.opencontainers.image.description=Cordy self-hosted web frontend
+            org.opencontainers.image.title=Patchbay Web
+            org.opencontainers.image.description=Patchbay self-hosted web frontend
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -585,7 +585,7 @@ jobs:
           build-args: |
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/cordy-web,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -622,7 +622,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/cordy-web
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-web
           flavor: |
             latest=false
           tags: |
@@ -652,24 +652,24 @@ jobs:
           digest_args=()
           for digest_file in "${digest_files[@]}"; do
             digest="${digest_file#./}"
-            digest_args+=("ghcr.io/${{ github.repository_owner }}/cordy-web@sha256:$digest")
+            digest_args+=("ghcr.io/${{ github.repository_owner }}/patchbay-web@sha256:$digest")
           done
           docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/cordy-web:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.meta.outputs.version }}
 
   helm-chart:
     needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
-    if: github.repository == 'alexj11324/Cordy'
+    if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-helm-chart-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     env:
-      CHART_DIR: deploy/helm/cordy
+      CHART_DIR: deploy/helm/patchbay
       OCI_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
     steps:
       - name: Checkout
@@ -699,17 +699,17 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
       - name: Push chart to GHCR
-        run: helm push ".chart-packages/cordy-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
+        run: helm push ".chart-packages/patchbay-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
 
       - name: Verify published chart
-        run: helm show chart "$OCI_REGISTRY/cordy" --version "$CHART_VERSION"
+        run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
   promote-self-hosted-latest:
     needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
-      github.repository == 'alexj11324/Cordy'
+      github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
       - name: Setup Docker Buildx
@@ -726,7 +726,7 @@ jobs:
         env:
           TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
         run: |
-          for image in cordy-backend cordy-web; do
+          for image in patchbay-backend patchbay-web; do
             docker buildx imagetools create \
               --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest" \
               "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:${TAG_NAME}"
@@ -858,9 +858,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
-          app_path="$(find dist -type d -name 'Cordy.app' -print -quit)"
+          app_path="$(find dist -type d -name 'Patchbay.app' -print -quit)"
           if [ -z "$app_path" ]; then
-            echo "::error::Packaged Cordy.app was not found"
+            echo "::error::Packaged Patchbay.app was not found"
             exit 1
           fi
 
@@ -868,11 +868,11 @@ jobs:
           signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
           printf '%s\n' "$signature_details"
           grep -Fq 'Authority=Developer ID Application:' <<<"$signature_details" || {
-            echo "::error::Cordy.app is not signed with a Developer ID Application identity"
+            echo "::error::Patchbay.app is not signed with a Developer ID Application identity"
             exit 1
           }
           grep -Fq "TeamIdentifier=$APPLE_TEAM_ID" <<<"$signature_details" || {
-            echo "::error::Cordy.app was signed by an unexpected Apple team"
+            echo "::error::Patchbay.app was signed by an unexpected Apple team"
             exit 1
           }
 
@@ -880,7 +880,7 @@ jobs:
           assessment="$(spctl --assess --type execute --verbose=4 "$app_path" 2>&1)"
           printf '%s\n' "$assessment"
           grep -Fq 'source=Notarized Developer ID' <<<"$assessment" || {
-            echo "::error::Gatekeeper did not recognize Cordy.app as notarized Developer ID software"
+            echo "::error::Gatekeeper did not recognize Patchbay.app as notarized Developer ID software"
             exit 1
           }
 
@@ -899,8 +899,8 @@ jobs:
           fi
 
           required_assets=(
-            "dist/cordy-desktop-$version-mac-${{ matrix.arch }}.dmg"
-            "dist/cordy-desktop-$version-mac-${{ matrix.arch }}.zip"
+            "dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.dmg"
+            "dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.zip"
             "dist/$metadata"
           )
           for asset in "${required_assets[@]}"; do
@@ -910,7 +910,7 @@ jobs:
             fi
           done
 
-          blockmap="dist/cordy-desktop-$version-mac-${{ matrix.arch }}.zip.blockmap"
+          blockmap="dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.zip.blockmap"
           if [ -f "$blockmap" ]; then
             required_assets+=("$blockmap")
           fi
@@ -921,7 +921,7 @@ jobs:
 
   publish-release:
     needs: [verify, release, desktop]
-    if: github.repository == 'alexj11324/Cordy'
+    if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -946,30 +946,30 @@ jobs:
           # becomes aarch64 for RPM. These are the actual uploaded filenames.
           for asset in \
             checksums.txt \
-            "cordy-cli-$version-linux-amd64.tar.gz" \
-            "cordy-cli-$version-linux-arm64.tar.gz" \
-            "cordy-cli-$version-darwin-amd64.tar.gz" \
-            "cordy-cli-$version-darwin-arm64.tar.gz" \
-            "cordy-cli-$version-windows-amd64.zip" \
-            "cordy-cli-$version-windows-arm64.zip" \
-            "cordy-desktop-$version-linux-x86_64.AppImage" \
-            "cordy-desktop-$version-linux-amd64.deb" \
-            "cordy-desktop-$version-linux-x86_64.rpm" \
-            "cordy-desktop-$version-linux-arm64.AppImage" \
-            "cordy-desktop-$version-linux-arm64.deb" \
-            "cordy-desktop-$version-linux-aarch64.rpm" \
+            "patchbay-cli-$version-linux-amd64.tar.gz" \
+            "patchbay-cli-$version-linux-arm64.tar.gz" \
+            "patchbay-cli-$version-darwin-amd64.tar.gz" \
+            "patchbay-cli-$version-darwin-arm64.tar.gz" \
+            "patchbay-cli-$version-windows-amd64.zip" \
+            "patchbay-cli-$version-windows-arm64.zip" \
+            "patchbay-desktop-$version-linux-x86_64.AppImage" \
+            "patchbay-desktop-$version-linux-amd64.deb" \
+            "patchbay-desktop-$version-linux-x86_64.rpm" \
+            "patchbay-desktop-$version-linux-arm64.AppImage" \
+            "patchbay-desktop-$version-linux-arm64.deb" \
+            "patchbay-desktop-$version-linux-aarch64.rpm" \
             "latest-linux.yml" \
             "latest-linux-arm64.yml" \
-            "cordy-desktop-$version-mac-arm64.dmg" \
-            "cordy-desktop-$version-mac-arm64.zip" \
-            "cordy-desktop-$version-mac-x64.dmg" \
-            "cordy-desktop-$version-mac-x64.zip" \
+            "patchbay-desktop-$version-mac-arm64.dmg" \
+            "patchbay-desktop-$version-mac-arm64.zip" \
+            "patchbay-desktop-$version-mac-x64.dmg" \
+            "patchbay-desktop-$version-mac-x64.zip" \
             "latest-mac.yml" \
             "latest-x64-mac.yml" \
-            "cordy-desktop-$version-windows-x64.exe" \
-            "cordy-desktop-$version-windows-x64.exe.blockmap" \
-            "cordy-desktop-$version-windows-arm64.exe" \
-            "cordy-desktop-$version-windows-arm64.exe.blockmap" \
+            "patchbay-desktop-$version-windows-x64.exe" \
+            "patchbay-desktop-$version-windows-x64.exe.blockmap" \
+            "patchbay-desktop-$version-windows-arm64.exe" \
+            "patchbay-desktop-$version-windows-arm64.exe.blockmap" \
             "latest.yml" \
             "latest-arm64.yml"; do
             grep -Fxq "$asset" <<<"$published_assets" || {

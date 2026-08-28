@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getShortcut, shortcutMatchesEvent } from "@cordy/core/shortcuts";
-import { isImeComposing } from "@cordy/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
+import { isImeComposing } from "@patchbay/core/utils";
 
 // ---------------------------------------------------------------------------
 // In-page find (Cmd/Ctrl+F) for the issue detail page.
@@ -16,8 +16,8 @@ import { isImeComposing } from "@cordy/core/utils";
 // editors without fighting ProseMirror.
 // ---------------------------------------------------------------------------
 
-const HIGHLIGHT_NAME = "cordy-find";
-const ACTIVE_HIGHLIGHT_NAME = "cordy-find-active";
+const HIGHLIGHT_NAME = "patchbay-find";
+const ACTIVE_HIGHLIGHT_NAME = "patchbay-find-active";
 
 // Feature detection, evaluated lazily per call site. On browsers without the
 // CSS Custom Highlight API the bar still opens and navigates, it just paints

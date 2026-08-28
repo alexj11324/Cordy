@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { CoreProvider } from "@cordy/core/platform";
-import { createBrowserCookieLocaleAdapter } from "@cordy/core/i18n/browser";
-import type { LocaleResources, SupportedLocale } from "@cordy/core/i18n";
-import { useWelcomeStore } from "@cordy/core/onboarding";
+import { CoreProvider } from "@patchbay/core/platform";
+import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
+import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
+import { useWelcomeStore } from "@patchbay/core/onboarding";
 import packageJson from "../package.json";
 import { WebNavigationProvider } from "@/platform/navigation";
 import { WebScrollRestorationProvider } from "@/platform/scroll-restoration";

@@ -1,5 +1,5 @@
 /* =============================================================================
- * Cordy shared base styles — imported by all apps
+ * Patchbay shared base styles — imported by all apps
  * ============================================================================= */
 
 /* The chat launcher overlays the dashboard's bottom-right corner on every
@@ -42,7 +42,7 @@
   color: var(--shiki-dark) !important;
 }
 
-/* Cordy icon: entrance spin animation */
+/* Patchbay icon: entrance spin animation */
 @keyframes entrance-spin {
   0% { transform: rotate(0deg); opacity: 0; }
   50% { opacity: 1; }
@@ -369,13 +369,13 @@ html[data-dnd-dragging="true"] * {
 /* In-page find (Cmd/Ctrl+F on the issue detail page). Matches are painted with
  * the CSS Custom Highlight API — ranges only, no DOM mutation — so the tint
  * layers cleanly over React-rendered markdown and the contenteditable
- * title/description editors. `cordy-find-active` is registered with a higher
+ * title/description editors. `patchbay-find-active` is registered with a higher
  * priority so the current match paints on top of the dimmer all-matches tint. */
-::highlight(cordy-find) {
+::highlight(patchbay-find) {
   background-color: var(--find-match);
   color: var(--find-match-foreground);
 }
-::highlight(cordy-find-active) {
+::highlight(patchbay-find-active) {
   background-color: var(--find-match-active);
   color: var(--find-match-foreground);
 }

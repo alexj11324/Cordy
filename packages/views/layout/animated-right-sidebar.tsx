@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import type { Layout, PanelSize } from "react-resizable-panels";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
 export const rightSidebarPanelMotionProps = {
   "data-right-sidebar-panel": "true",

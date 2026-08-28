@@ -1,5 +1,5 @@
 /**
- * Scroll-position bridge for sandboxed HTML attachment iframes (alexj11324#6405).
+ * Scroll-position bridge for sandboxed HTML attachment iframes (patchbay-ai#6405).
  *
  * The full-page `AttachmentPreviewPage` mounts user HTML inside
  * `<iframe sandbox="allow-scripts" srcDoc={...}>` — WITHOUT
@@ -49,13 +49,13 @@ function buildScript(token: string): string {
   return `<script>
 (function(){
   var TOKEN = ${JSON.stringify(safeToken)};
-  var MARK = "__cordy";
+  var MARK = "__patchbay";
   function docHeight() {
     var de = document.documentElement;
     return Math.max(de.scrollHeight, document.body ? document.body.scrollHeight : 0);
   }
   function post(msg) {
-    msg.__cordy = MARK;
+    msg.__patchbay = MARK;
     msg.token = TOKEN;
     try { parent.postMessage(msg, "*"); } catch (_) {}
   }
@@ -144,7 +144,7 @@ function buildScript(token: string): string {
   // -- parent -> child messages -------------------------------------------
   window.addEventListener("message", function (e) {
     var d = e.data;
-    if (!d || d.__cordy !== MARK || d.token !== TOKEN) return;
+    if (!d || d.__patchbay !== MARK || d.token !== TOKEN) return;
     if (d.kind === "restore" && typeof d.y === "number") {
       beginRestore(d.y);
     } else if (d.kind === "request-sync") {

@@ -1,12 +1,12 @@
-import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
+import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
 import type {
   TableCalculation,
   TableColumnKey,
-} from "@cordy/core/issues/stores/view-store";
+} from "@patchbay/core/issues/stores/view-store";
 import type {
   Issue,
   IssuePropertyValue,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 /** Export must fail closed when paged Table responses cannot prove that the
  * complete query window was collected. The UI translates this marker instead

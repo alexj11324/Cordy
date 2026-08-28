@@ -3,33 +3,33 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, UserPlus, X } from "lucide-react";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { AGENT_DESCRIPTION_MAX_LENGTH } from "@cordy/core/agents";
-import { isImeComposing } from "@cordy/core/utils";
-import type { Agent, MemberWithUser } from "@cordy/core/types";
+} from "@patchbay/core/workspace/queries";
+import { AGENT_DESCRIPTION_MAX_LENGTH } from "@patchbay/core/agents";
+import { isImeComposing } from "@patchbay/core/utils";
+import type { Agent, MemberWithUser } from "@patchbay/core/types";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
+} from "@patchbay/ui/components/ui/popover";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
 import { toast } from "sonner";
 
 import { useNavigation } from "../navigation";

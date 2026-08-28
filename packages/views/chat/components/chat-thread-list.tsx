@@ -14,19 +14,19 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { paths, useWorkspaceSlug } from "@cordy/core/paths";
-import { useWorkspacePresenceMap } from "@cordy/core/agents";
-import { api } from "@cordy/core/api";
-import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@cordy/core/chat/queries";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
+import { useWorkspacePresenceMap } from "@patchbay/core/agents";
+import { api } from "@patchbay/core/api";
+import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@patchbay/core/chat/queries";
 import {
   useDeleteChatSession,
   useSetChatSessionArchived,
   useSetChatSessionPinned,
-} from "@cordy/core/chat/mutations";
-import { useChatStore } from "@cordy/core/chat";
-import type { Agent, ChatSession, PendingChatTasksResponse } from "@cordy/core/types";
+} from "@patchbay/core/chat/mutations";
+import { useChatStore } from "@patchbay/core/chat";
+import type { Agent, ChatSession, PendingChatTasksResponse } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   RowActionsMenu,
@@ -34,8 +34,8 @@ import {
   type RowActionItem,
 } from "../../common/row-actions-menu";
 import { resolveClickIntent, useOptionalNavigation } from "../../navigation";
-import { createLogger } from "@cordy/core/logger";
-import { removeChatMessageFromCaches } from "@cordy/core/realtime";
+import { createLogger } from "@patchbay/core/logger";
+import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
 import { useT } from "../../i18n";
 
 const apiLogger = createLogger("chat.api");

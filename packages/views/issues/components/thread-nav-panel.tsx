@@ -2,23 +2,23 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, MessageSquare, MessagesSquare, Search } from "lucide-react";
-import type { TimelineEntry } from "@cordy/core/types";
-import { useActorName } from "@cordy/core/workspace/hooks";
+import type { TimelineEntry } from "@patchbay/core/types";
+import { useActorName } from "@patchbay/core/workspace/hooks";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Button } from "@cordy/ui/components/ui/button";
-import { cn } from "@cordy/ui/lib/utils";
-import { createShortcutChord, useShortcut } from "@cordy/core/shortcuts";
-import { preprocessMentionShortcodes } from "@cordy/core/markdown";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/ui/components/ui/popover";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
+import { createShortcutChord, useShortcut } from "@patchbay/core/shortcuts";
+import { preprocessMentionShortcodes } from "@patchbay/core/markdown";
+import { isImeComposing } from "@patchbay/core/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { pickerNavigationDirection } from "../../common/picker-keys";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";

@@ -30,7 +30,7 @@ import {
 } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { stripChannelMediaMarkers } from "@cordy/core/types";
+import { stripChannelMediaMarkers } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { DescriptionField } from "@/components/issue/description-field";
 import { MentionSuggestionBar } from "@/components/issue/mention-suggestion-bar";

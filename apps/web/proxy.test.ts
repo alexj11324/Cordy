@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { CORDY_LOCALE_HEADER } from "./lib/locale-routing";
+import { PATCHBAY_LOCALE_HEADER } from "./lib/locale-routing";
 
 vi.mock("@clerk/nextjs/server", async (importOriginal) => {
   const actual =
@@ -8,7 +8,7 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
   return {
     ...actual,
     getAuth: async (request: NextRequest) => ({
-      userId: request.cookies.has("cordy_logged_in") ? "user-1" : null,
+      userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
     }),
   };
 });
@@ -18,7 +18,7 @@ import { proxy } from "./proxy";
 function makeRequest(
   path: string,
   cookies: Record<string, string> = {},
-  host = "app.cordy.test",
+  host = "app.patchbay.test",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -64,7 +64,7 @@ async function withoutRuntimeUpstreams(run: () => Promise<void>) {
 
 describe("proxy legacy workspace route redirects", () => {
   const sessionCookies = {
-    cordy_logged_in: "1",
+    patchbay_logged_in: "1",
     last_workspace_slug: "acme",
   };
 
@@ -85,33 +85,33 @@ describe("proxy legacy workspace route redirects", () => {
     async (segment, expectedPath) => {
       expect(
         await redirectLocation(`/${segment}?tab=all`, sessionCookies),
-      ).toBe(`https://app.cordy.test${expectedPath}?tab=all`);
+      ).toBe(`https://app.patchbay.test${expectedPath}?tab=all`);
     },
   );
 
   it("preserves nested legacy paths and query strings", async () => {
     expect(
       await redirectLocation("/squads/squad-123?view=members", sessionCookies),
-    ).toBe("https://app.cordy.test/acme/squads/squad-123?view=members");
+    ).toBe("https://app.patchbay.test/acme/squads/squad-123?view=members");
   });
 
   it("sends logged-out legacy URLs to login", async () => {
     expect(await redirectLocation("/usage?tab=billing")).toBe(
-      "https://app.cordy.test/login?tab=billing&redirect_url=%2Fusage",
+      "https://app.patchbay.test/login?tab=billing&redirect_url=%2Fusage",
     );
   });
 
   it("sends logged-in legacy URLs without a last workspace cookie to login", async () => {
     expect(
-      await redirectLocation("/squads?view=members", { cordy_logged_in: "1" }),
-    ).toBe("https://app.cordy.test/login");
+      await redirectLocation("/squads?view=members", { patchbay_logged_in: "1" }),
+    ).toBe("https://app.patchbay.test/login");
   });
 
-  it.each(["cordy.ai", "www.cordy.ai"])(
+  it.each(["patchbay.ai", "www.patchbay.ai"])(
     "resolves a slugless session off the marketing host %s instead of stranding it",
     async (host) => {
       expect(
-        await redirectLocation("/inbox", { cordy_logged_in: "1" }, host),
+        await redirectLocation("/inbox", { patchbay_logged_in: "1" }, host),
       ).toBe(`https://${host}/login`);
     },
   );
@@ -122,11 +122,11 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("redirects app-host root URLs to the last workspace", async () => {
     expect(await redirectLocation("/", sessionCookies)).toBe(
-      "https://app.cordy.test/acme/issues",
+      "https://app.patchbay.test/acme/issues",
     );
   });
 
-  it.each(["cordy.ai", "www.cordy.ai"])(
+  it.each(["patchbay.ai", "www.patchbay.ai"])(
     "does not redirect public marketing root on %s",
     async (host) => {
       expect(await redirectLocation("/", sessionCookies, host)).toBeNull();
@@ -135,8 +135,8 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("still redirects explicit legacy app routes on the public marketing host", async () => {
     expect(
-      await redirectLocation("/issues/ABC-123", sessionCookies, "cordy.ai"),
-    ).toBe("https://cordy.ai/acme/issues/ABC-123");
+      await redirectLocation("/issues/ABC-123", sessionCookies, "patchbay.ai"),
+    ).toBe("https://patchbay.ai/acme/issues/ABC-123");
   });
 });
 
@@ -148,7 +148,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${CORDY_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
@@ -160,7 +160,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${CORDY_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
@@ -204,13 +204,13 @@ describe("proxy runtime upstream rewrites", () => {
     process.env.REMOTE_API_URL = "http://backend:8080";
     try {
       const res = await proxy(
-        makeRequest("/auth/callback", { cordy_logged_in: "1" }),
+        makeRequest("/auth/callback", { patchbay_logged_in: "1" }),
       );
 
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${CORDY_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
       ).toBe("en");
     } finally {
       restoreEnv("REMOTE_API_URL", previous);
@@ -222,26 +222,26 @@ describe("proxy root and locale handling", () => {
   it("redirects logged-in root visits to the last workspace", async () => {
     const res = await proxy(
       makeRequest("/", {
-        cordy_logged_in: "1",
+        patchbay_logged_in: "1",
         last_workspace_slug: "acme",
       }),
     );
 
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://app.cordy.test/acme/issues",
+      "https://app.patchbay.test/acme/issues",
     );
   });
 
   it("forwards locale on login requests", async () => {
     const res = await proxy(
-      makeRequest("/login", { "cordy-locale": "zh-Hans" }),
+      makeRequest("/login", { "patchbay-locale": "zh-Hans" }),
     );
 
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
     expect(
-      res.headers.get(`x-middleware-request-${CORDY_LOCALE_HEADER}`),
+      res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
     ).toBe("zh-Hans");
   });
 });

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PluginInstallation, PluginSurface } from "@cordy/core/types";
-import { cn } from "@cordy/ui/lib/utils";
+import type { PluginInstallation, PluginSurface } from "@patchbay/core/types";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../i18n";
 import { buildSurfaceDocument, readThemeTokens, resolveSurfaceEntry } from "./surface-document";
 import { createSurfaceBridge } from "./surface-bridge";
@@ -65,7 +65,7 @@ export function PluginSurfaceFrame({ installation, surface, issueId, className }
     // A surface whose script 404s posts this to the parent window rather than
     // rendering blank — the frame has no other way to tell us.
     const onMessage = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type !== "cordy:plugin-surface-error") return;
+      if ((event.data as { type?: string } | null)?.type !== "patchbay:plugin-surface-error") return;
       // Same window-identity rule as the bridge: without it any frame on the
       // page could light up the failure banner on every other panel.
       if (!frameRef.current?.contentWindow || event.source !== frameRef.current.contentWindow) return;

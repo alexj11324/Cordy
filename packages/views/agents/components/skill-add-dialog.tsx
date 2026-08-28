@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent, SkillSummary } from "@cordy/core/types";
-import { api } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
+import type { Agent, SkillSummary } from "@patchbay/core/types";
+import { api } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   skillListOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/workspace/queries";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { SkillPickerList } from "./skill-picker-list";
 

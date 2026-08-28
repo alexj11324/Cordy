@@ -355,7 +355,7 @@
     "install": {
       "title": "Plugin をインストール",
       "description": "Plugin manifest の URL を貼り付けてください。インストール前に要求される権限を確認できます。",
-      "placeholder": "https://example.com/cordy.plugin.json",
+      "placeholder": "https://example.com/patchbay.plugin.json",
       "review": "権限を確認"
     },
     "installed": {
@@ -580,7 +580,7 @@
   },
   "tokens": {
     "title": "API トークン",
-    "description": "個人アクセストークンを使うと、CLI や外部連携があなたのアカウントで認証できます。cordy login --token で使用するか、API 呼び出し時に Bearer トークンとして送信します。",
+    "description": "個人アクセストークンを使うと、CLI や外部連携があなたのアカウントで認証できます。patchbay login --token で使用するか、API 呼び出し時に Bearer トークンとして送信します。",
     "security_note": "トークンはアカウントへのフルアクセスを付与します。パスワードと同じように厳重に管理してください。",
     "empty": "API トークンはまだありません。上のフォームから作成できます。",
     "load_failed": "API トークンを読み込めませんでした。ページを再読み込みしてもう一度お試しください。",

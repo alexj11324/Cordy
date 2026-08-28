@@ -16,7 +16,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 资源进入执行的方式
 
-当智能体处理项目内的 issue 时，Cordy 会把项目名称、项目描述和资源列表加入执行上下文，并在工作目录中写入 `.cordy/project/resources.json`。
+当智能体处理项目内的 issue 时，Patchbay 会把项目名称、项目描述和资源列表加入执行上下文，并在工作目录中写入 `.patchbay/project/resources.json`。
 
 工作区关联的仓库列表始终包含在执行上下文中。项目关联的仓库在此基础上指明这组工作使用的代码和默认 ref。
 
@@ -26,7 +26,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 打开项目，在 **资源** 中选择"添加资源"。可以选择已关联到工作区的仓库，也可以粘贴 Git URL。工作区仓库在 **设置 → 代码仓库** 中维护；连接 GitHub 后，可在同一页面通过 **从 GitHub 选择** 导入 App 已授权的仓库。
 
-仓库不限于 GitHub：任何运行时能访问的 Git URL 都可以作为仓库资源。自部署的 Cordy 还可以在 **设置 → 集成 → Git 代码托管** 连接自托管的 Forgejo、Gitea 或 GitLab，见[自托管 Git 代码托管](/vcs-integration)。
+仓库不限于 GitHub：任何运行时能访问的 Git URL 都可以作为仓库资源。自部署的 Patchbay 还可以在 **设置 → 集成 → Git 代码托管** 连接自托管的 Forgejo、Gitea 或 GitLab，见[自托管 Git 代码托管](/vcs-integration)。
 
 创建项目时，也可以直接在 **Repos** 中选择仓库。一个项目可以关联多个 GitHub 仓库。
 
@@ -55,7 +55,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 每个项目在同一台守护进程上最多关联一个本地目录。团队中的不同电脑可以分别为同一个项目关联各自的目录。
 
 <Callout type="warning">
-在默认的 `in_place` 模式下，本地目录不是隔离环境：智能体会直接看到并修改当前分支和未提交的文件，Cordy 也不会自动切换分支、stash、commit、push 或创建 PR。worktree 模式会改变这一点 —— 见下面的“任务如何共享这个目录”。
+在默认的 `in_place` 模式下，本地目录不是隔离环境：智能体会直接看到并修改当前分支和未提交的文件，Patchbay 也不会自动切换分支、stash、commit、push 或创建 PR。worktree 模式会改变这一点 —— 见下面的“任务如何共享这个目录”。
 </Callout>
 
 ## 任务如何共享这个目录
@@ -72,12 +72,12 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 每条任务拿到你仓库的一个独立 [git worktree](https://git-scm.com/docs/git-worktree)，建在运行时自己的工作区目录里。**同一目录上的任务并发执行，谁都不用排队**，并且都不会写你的工作副本。
 
-要求这个目录是一个至少有一次提交的 git 仓库。如果不是，任务会明确报错，而不是悄悄退回串行。那台机器上的运行时也必须实现了该模式。运行时在连接时会声明这项能力，Cordy 判断的是这个声明而不是版本号 —— 一个开发构建完全可能带着看起来足够新的版本号，却根本没有对应的实现。这个声明会被检查两次：只要那台机器的运行时没有声明该能力，保存资源就会被拒绝，并提示去升级那台机器上的 App；每条任务在被真正领取时还会再按领取它的运行时检查一次 —— 所以资源保存之后才降级的机器，其任务会被带原因取消，而不是悄悄原地跑掉。选择 `worktree` 就是在要求隔离，把它换成“直接改你的工作副本”永远不是兜底方案。
+要求这个目录是一个至少有一次提交的 git 仓库。如果不是，任务会明确报错，而不是悄悄退回串行。那台机器上的运行时也必须实现了该模式。运行时在连接时会声明这项能力，Patchbay 判断的是这个声明而不是版本号 —— 一个开发构建完全可能带着看起来足够新的版本号，却根本没有对应的实现。这个声明会被检查两次：只要那台机器的运行时没有声明该能力，保存资源就会被拒绝，并提示去升级那台机器上的 App；每条任务在被真正领取时还会再按领取它的运行时检查一次 —— 所以资源保存之后才降级的机器，其任务会被带原因取消，而不是悄悄原地跑掉。选择 `worktree` 就是在要求隔离，把它换成“直接改你的工作副本”永远不是兜底方案。
 
 智能体看到什么、你拿回什么：
 
 - **智能体从你眼前的状态开始，而不是从 `HEAD` 开始。** 你未提交的改动和未跟踪的文件会被回放进 worktree，所以它不会去 review 一份你已经不用的代码。你自己的工作副本、暂存区和 stash 列表都不会被动到。如果这个状态无法忠实还原 —— 包括未跟踪内容超出回放上限（2000 个文件 / 200 MiB）—— 任务会直接失败，而不是从一棵你认不出来的树开始。通常的解决办法是把还没被忽略的构建产物加进 gitignore 或清理掉。
-- **结果是你仓库里的一个分支**，命名为 `agent/<agent>/<task>`。执行记录的**运行详情**面板里会显示分支名（可直接复制），也可以用 `git branch` 找到它。用 `git log` / `git diff` review，然后自己决定 merge 还是 cherry-pick。Cordy 不会替你合并。中途失败的任务同样会报告它的分支，因为它已经把智能体做出来的部分提交进去了。
+- **结果是你仓库里的一个分支**，命名为 `agent/<agent>/<task>`。执行记录的**运行详情**面板里会显示分支名（可直接复制），也可以用 `git branch` 找到它。用 `git log` / `git diff` review，然后自己决定 merge 还是 cherry-pick。Patchbay 不会替你合并。中途失败的任务同样会报告它的分支，因为它已经把智能体做出来的部分提交进去了。
 - **不会静默丢东西。** 智能体留下的未提交改动，会在 worktree 被移除前提交到那个分支上，**任务中途失败时同样如此**。极少数情况下连这次提交都做不了 —— 例如仓库开了 `commit.gpgSign` 而运行时拿不到签名密钥 —— worktree 会被刻意保留而不是删除，任务标记为失败，并且在你仓库里执行 `git worktree list` 就能看到存放这些改动的目录。
 - **没有产生改动的任务不留下任何东西。** 它的分支会被删除，而不是作为一个空条目留在 `git branch` 里。
 
@@ -93,44 +93,44 @@ worktree 模式面向 git 仓库。普通的非 git 目录仍然串行执行 —
 
 ## 执行期间写入的内容
 
-除了智能体产生的代码改动，运行时还可能在目录中写入当前 AI 编程工具所需的说明文件，以及 `.cordy/project/resources.json`。不希望它们进入版本控制时，加入 `.gitignore` 即可。
+除了智能体产生的代码改动，运行时还可能在目录中写入当前 AI 编程工具所需的说明文件，以及 `.patchbay/project/resources.json`。不希望它们进入版本控制时，加入 `.gitignore` 即可。
 
-Cordy 清理执行环境时不会删除关联的本地目录。智能体对该目录的改动，与你在终端中直接运行 AI 编程工具的改动性质相同，需要同样的审查。
+Patchbay 清理执行环境时不会删除关联的本地目录。智能体对该目录的改动，与你在终端中直接运行 AI 编程工具的改动性质相同，需要同样的审查。
 
 ## 使用 CLI 管理资源
 
 ```bash
 # 创建项目时关联仓库
-cordy project create \
+patchbay project create \
   --title "Agent UX" \
-  --repo https://github.com/alexj11324/Cordy
+  --repo https://github.com/patchbay-ai/patchbay
 
 # 查看和添加资源
-cordy project resource list <project-id>
-cordy project resource add <project-id> \
+patchbay project resource list <project-id>
+patchbay project resource add <project-id> \
   --type github_repo \
-  --url https://github.com/alexj11324/Cordy \
+  --url https://github.com/patchbay-ai/patchbay \
   --ref main
 
 # 关联指定守护进程上的本地目录
-cordy project resource add <project-id> \
+patchbay project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id>
 
 # 关联一个本地 git 仓库，并让任务在各自的 worktree 中并发执行
-cordy project resource add <project-id> \
+patchbay project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id> \
   --execution-mode worktree
 
 # 为已有的本地目录切换模式
-cordy project resource update <project-id> <resource-id> --execution-mode worktree
-cordy project resource update <project-id> <resource-id> --execution-mode in_place
+patchbay project resource update <project-id> <resource-id> --execution-mode worktree
+patchbay project resource update <project-id> <resource-id> --execution-mode in_place
 
 # 移除资源
-cordy project resource remove <project-id> <resource-id>
+patchbay project resource remove <project-id> <resource-id>
 ```
 
 资源变更会影响之后创建的执行任务，不会改写已经结束的执行记录。

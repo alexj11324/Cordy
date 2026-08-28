@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, type InfiniteData } from "@tanstack/react-query";
-import { chatKeys } from "@cordy/core/chat/queries";
-import type { ChatMessage, ChatMessagesPage, ChatPendingTask } from "@cordy/core/types";
+import { chatKeys } from "@patchbay/core/chat/queries";
+import type { ChatMessage, ChatMessagesPage, ChatPendingTask } from "@patchbay/core/types";
 import {
   hasInFlightPendingTask,
   isStillOnComposeTarget,

@@ -11,13 +11,13 @@ fi
 worktree_name="${WORKTREE_NAME:-$(basename "$PWD")}"
 slug="$(printf '%s' "$worktree_name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')"
 if [ -z "$slug" ]; then
-  slug="cordy"
+  slug="patchbay"
 fi
 
 hash_value="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
 offset=$((hash_value % 1000))
 
-postgres_db="cordy_${slug}_${offset}"
+postgres_db="patchbay_${slug}_${offset}"
 postgres_port=5432
 backend_port=$((18080 + offset))
 frontend_port=$((13000 + offset))
@@ -25,17 +25,17 @@ frontend_origin="http://localhost:${frontend_port}"
 
 cat > "$ENV_FILE" <<EOF
 POSTGRES_DB=${postgres_db}
-POSTGRES_USER=cordy
-POSTGRES_PASSWORD=cordy
+POSTGRES_USER=patchbay
+POSTGRES_PASSWORD=patchbay
 POSTGRES_PORT=${postgres_port}
-DATABASE_URL=postgres://cordy:cordy@localhost:${postgres_port}/${postgres_db}?sslmode=disable
+DATABASE_URL=postgres://patchbay:patchbay@localhost:${postgres_port}/${postgres_db}?sslmode=disable
 
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production
-CORDY_DEV_VERIFICATION_CODE=888888
-CORDY_SERVER_URL=ws://localhost:${backend_port}/ws
-CORDY_PUBLIC_URL=http://localhost:${backend_port}
-CORDY_APP_URL=${frontend_origin}
+PATCHBAY_DEV_VERIFICATION_CODE=888888
+PATCHBAY_SERVER_URL=ws://localhost:${backend_port}/ws
+PATCHBAY_PUBLIC_URL=http://localhost:${backend_port}
+PATCHBAY_APP_URL=${frontend_origin}
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

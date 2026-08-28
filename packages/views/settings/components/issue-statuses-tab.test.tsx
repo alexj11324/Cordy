@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { IssueStatusEntry } from "@cordy/core/types";
+import type { IssueStatusEntry } from "@patchbay/core/types";
 import en from "../../locales/en/settings.json";
 import { IssueStatusesTab } from "./issue-statuses-tab";
 
@@ -18,21 +18,21 @@ vi.mock("@tanstack/react-query", () => ({
     isLoading: false,
   }),
 }));
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (selector: (s: unknown) => unknown) => selector({ user: { id: "u-1" } }),
 }));
-vi.mock("@cordy/core/config", () => ({ useFeatureEnabled: () => flagOn }));
-vi.mock("@cordy/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/config", () => ({ useFeatureEnabled: () => flagOn }));
+vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members", "ws-1"] }),
 }));
 // Only the fetch is stubbed. The module's pure helpers (`issueStatusColor`)
 // are what the rows render with, and a stub of those would test the stub.
-vi.mock("@cordy/core/issue-statuses/queries", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@cordy/core/issue-statuses/queries")>()),
+vi.mock("@patchbay/core/issue-statuses/queries", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@patchbay/core/issue-statuses/queries")>()),
   issueStatusListOptions: () => ({ queryKey: ["issue-statuses", "ws-1"] }),
 }));
-vi.mock("@cordy/core/issue-statuses/mutations", () => ({
+vi.mock("@patchbay/core/issue-statuses/mutations", () => ({
   useCreateIssueStatus: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateIssueStatus: () => ({ mutate: vi.fn(), isPending: false }),
   useArchiveIssueStatus: () => ({ mutate: vi.fn() }),

@@ -4,11 +4,11 @@ import { useState } from "react";
 import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Clock, X, Mail, Link, Copy, Trash2 } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useOptionalNavigation } from "../../navigation";
-import type { MemberWithUser, MemberRole, Invitation, ShareLink } from "@cordy/core/types";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { Badge } from "@cordy/ui/components/ui/badge";
+import type { MemberWithUser, MemberRole, Invitation, ShareLink } from "@patchbay/core/types";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Badge } from "@patchbay/ui/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -18,14 +18,14 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@cordy/ui/components/ui/select";
+} from "@patchbay/ui/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -35,14 +35,14 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { memberListOptions, invitationListOptions, shareLinkListOptions, workspaceKeys } from "@cordy/core/workspace/queries";
-import { api } from "@cordy/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { memberListOptions, invitationListOptions, shareLinkListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+import { api } from "@patchbay/core/api";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";
 

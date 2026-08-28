@@ -1,14 +1,14 @@
 "use client";
 
-import type { TaskAttribution } from "@cordy/core/types";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
+import type { TaskAttribution } from "@patchbay/core/types";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/tooltip";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /** First + last initial, for the avatar fallback when there's no picture. */

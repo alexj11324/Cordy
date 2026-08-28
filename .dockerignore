@@ -36,10 +36,10 @@ coverage
 
 # Rust production binaries embed these crate-owned assets at compile time.
 # Re-include them after the repository-wide Markdown ignore.
-!server-rs/crates/cordy-service/assets/
-!server-rs/crates/cordy-service/assets/**
-!server-rs/crates/cordy-handler/assets/
-!server-rs/crates/cordy-handler/assets/**
+!server-rs/crates/patchbay-service/assets/
+!server-rs/crates/patchbay-service/assets/**
+!server-rs/crates/patchbay-handler/assets/
+!server-rs/crates/patchbay-handler/assets/**
 
 # Only the web workspace is used by Dockerfile.web. Default-exclude future
 # app workspaces so they do not silently enter the build context.

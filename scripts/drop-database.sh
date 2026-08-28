@@ -21,7 +21,7 @@ set -a
 set +a
 
 POSTGRES_DB="${POSTGRES_DB:-}"
-POSTGRES_USER="${POSTGRES_USER:-cordy}"
+POSTGRES_USER="${POSTGRES_USER:-patchbay}"
 DATABASE_URL="${DATABASE_URL:-}"
 
 if [ -z "$POSTGRES_DB" ]; then
@@ -42,9 +42,9 @@ case "$POSTGRES_DB" in
     echo "Refusing to drop protected PostgreSQL database '$POSTGRES_DB'." >&2
     exit 1
     ;;
-  cordy)
+  patchbay)
     if [ "${ALLOW_MAIN_DB_DROP:-0}" != "1" ]; then
-      echo "Refusing to drop the default main database 'cordy'." >&2
+      echo "Refusing to drop the default main database 'patchbay'." >&2
       echo "Re-run with ALLOW_MAIN_DB_DROP=1 only if deleting the main checkout database is intentional." >&2
       exit 1
     fi

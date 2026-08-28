@@ -24,7 +24,7 @@
 const DOWNLOAD_PREFIX = "/api/attachments/";
 const DOWNLOAD_SUFFIX = "/download";
 const CHANNEL_MEDIA_MARKER_RE =
-  /<!-- cordy:channel-media:[0-9a-fA-F-]{36} -->/g;
+  /<!-- patchbay:channel-media:[0-9a-fA-F-]{36} -->/g;
 
 /** Remove server-owned channel-media merge metadata from editable or rendered
  * Markdown while leaving the visible attachment link untouched. */

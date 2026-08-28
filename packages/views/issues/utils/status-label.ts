@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import { isIssueStatusCategory } from "@cordy/core/issue-statuses";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
-import type { IssueStatusCategory } from "@cordy/core/types";
+import { isIssueStatusCategory } from "@patchbay/core/issue-statuses";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import type { IssueStatusCategory } from "@patchbay/core/types";
 import { useT } from "../../i18n";
 
 /**

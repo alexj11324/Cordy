@@ -1,6 +1,6 @@
-// Mirrors the cordy-cloud Billing module response shapes
-// (cordy-cloud/docs/api/billing.md). These types are the contract our
-// frontend consumes via /api/cloud-billing/* — cordy-api itself does
+// Mirrors the patchbay-cloud Billing module response shapes
+// (patchbay-cloud/docs/api/billing.md). These types are the contract our
+// frontend consumes via /api/cloud-billing/* — patchbay-api itself does
 // not own the schema, it just proxies bytes. Keep field names verbatim
 // with what the cloud sends.
 //

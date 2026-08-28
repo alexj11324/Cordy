@@ -2,14 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@cordy/core/auth";
+import { useAuthStore } from "@patchbay/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@cordy/core/paths";
-import { useWorkspaceList } from "@cordy/core/workspace";
-import { CliInstallInstructions, OnboardingFlow } from "@cordy/views/onboarding";
+} from "@patchbay/core/paths";
+import { useWorkspaceList } from "@patchbay/core/workspace";
+import { CliInstallInstructions, OnboardingFlow } from "@patchbay/views/onboarding";
 
 /**
  * Web shell for the onboarding flow. The route is the platform chrome on

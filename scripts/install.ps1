@@ -1,21 +1,25 @@
-# Cordy installer for Windows — one command to get started.
+# Patchbay installer for Windows — one command to get started.
 #
-# Install CLI (default): connects to cordy.ai
-#   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
+# Install CLI (default): connects to patchbay.ai
+#   irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
 #
-# Self-host: starts a local Cordy server + installs CLI + configures
-#   $env:CORDY_MODE="local"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
+# Self-host: starts a local Patchbay server + installs CLI + configures
+#   $env:PATCHBAY_MODE="local"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
 
+if (-not $env:PATCHBAY_INSTALL_DIR -and $env:CORDY_INSTALL_DIR) { $env:PATCHBAY_INSTALL_DIR = $env:CORDY_INSTALL_DIR } # legacy-brand-compat
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-$RepoUrl       = "https://github.com/alexj11324/Cordy.git"
-$RepoWebUrl    = "https://github.com/alexj11324/Cordy"
-$DefaultInstallDir = Join-Path $env:USERPROFILE ".cordy\server"
-$InstallDir    = if ($env:CORDY_INSTALL_DIR) { $env:CORDY_INSTALL_DIR } else { $DefaultInstallDir }
+$RepoUrl       = "https://github.com/patchbay-ai/patchbay.git"
+$RepoWebUrl    = "https://github.com/patchbay-ai/patchbay"
+$DefaultInstallDir = Join-Path $env:USERPROFILE ".patchbay\server"
+$PatchbayHome      = Join-Path $env:USERPROFILE ".patchbay"
+$LegacyPatchbayHome = Join-Path $env:USERPROFILE ".cordy" # legacy-brand-compat
+$InstallDir    = if ($env:PATCHBAY_INSTALL_DIR) { $env:PATCHBAY_INSTALL_DIR } else { $DefaultInstallDir }
 
 # Host ports Compose reported after `up -d`; set by Setup-Server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -33,6 +37,13 @@ function Write-Fail  { param([string]$Msg) Write-Host "[ERROR] $Msg" -Foreground
 function Test-CommandExists {
     param([string]$Name)
     $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Move-LegacyPatchbayHome {
+    if (-not $env:PATCHBAY_INSTALL_DIR -and -not (Test-Path $PatchbayHome) -and (Test-Path $LegacyPatchbayHome -PathType Container)) {
+        Move-Item -Path $LegacyPatchbayHome -Destination $PatchbayHome
+        Write-Ok "Migrated the existing Patchbay home directory to $PatchbayHome"
+    }
 }
 
 function New-RandomHex {
@@ -86,7 +97,7 @@ function Get-ComposePublishedPort {
 
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/alexj11324/Cordy/releases/latest" -ErrorAction Stop
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/patchbay-ai/patchbay/releases/latest" -ErrorAction Stop
         return $release.tag_name
     } catch {
         return $null
@@ -94,8 +105,8 @@ function Get-LatestVersion {
 }
 
 function Get-SelfHostRef {
-    if ($env:CORDY_SELFHOST_REF) {
-        return $env:CORDY_SELFHOST_REF
+    if ($env:PATCHBAY_SELFHOST_REF) {
+        return $env:PATCHBAY_SELFHOST_REF
     }
 
     $latest = Get-LatestVersion
@@ -122,25 +133,31 @@ function Checkout-ServerRef {
 function Update-LegacySelfHostImageRepositories {
     param([Parameter(Mandatory = $true)][string]$EnvPath)
 
-    $legacyBackend = "CORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend"
-    $legacyWeb = "CORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web"
-    $canonicalBackend = "CORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend"
-    $canonicalWeb = "CORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web"
+    $canonicalBackend = "PATCHBAY_BACKEND_IMAGE=ghcr.io/patchbay-ai/patchbay-backend"
+    $canonicalWeb = "PATCHBAY_WEB_IMAGE=ghcr.io/patchbay-ai/patchbay-web"
+    $legacyImages = @{
+        "PATCHBAY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend" = $canonicalBackend # legacy-brand-compat
+        "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend" = $canonicalBackend # legacy-brand-compat
+        "PATCHBAY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web" = $canonicalWeb # legacy-brand-compat
+        "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web" = $canonicalWeb # legacy-brand-compat
+    }
     $changed = $false
     $content = @(Get-Content $EnvPath) | ForEach-Object {
-        if ($_ -ceq $legacyBackend) {
+        $line = $_
+        if ($line -cmatch '^CORDY_') { # legacy-brand-compat
             $changed = $true
-            $canonicalBackend
-        } elseif ($_ -ceq $legacyWeb) {
+            $line = $line -creplace '^CORDY_', 'PATCHBAY_' # legacy-brand-compat
+        }
+        if ($legacyImages.ContainsKey($line)) {
             $changed = $true
-            $canonicalWeb
+            $legacyImages[$line]
         } else {
-            $_
+            $line
         }
     }
     if ($changed) {
         $content | Set-Content $EnvPath
-        Write-Ok "Migrated legacy Cordy image repositories to ghcr.io/alexj11324"
+        Write-Ok "Migrated the existing self-host configuration to Patchbay identifiers"
     }
 }
 
@@ -154,18 +171,18 @@ function Set-SelfHostImageTag {
 
     $envPath = Join-Path $InstallDir ".env"
     $content = @(Get-Content $envPath)
-    if ($content -match '^CORDY_IMAGE_TAG=') {
+    if ($content -match '^PATCHBAY_IMAGE_TAG=') {
         $content = $content | ForEach-Object {
-            if ($_ -match '^CORDY_IMAGE_TAG=') { "CORDY_IMAGE_TAG=$imageTag" } else { $_ }
+            if ($_ -match '^PATCHBAY_IMAGE_TAG=') { "PATCHBAY_IMAGE_TAG=$imageTag" } else { $_ }
         }
         $content | Set-Content $envPath
     } else {
-        Add-Content -Path $envPath -Value "`nCORDY_IMAGE_TAG=$imageTag"
+        Add-Content -Path $envPath -Value "`nPATCHBAY_IMAGE_TAG=$imageTag"
     }
 
     # Compose gives the process environment precedence over .env. Pin both so
     # an ambient value cannot silently defeat an explicit rollback ref.
-    $env:CORDY_IMAGE_TAG = $imageTag
+    $env:PATCHBAY_IMAGE_TAG = $imageTag
     Write-Ok "Pinned backend and web images to $imageTag"
 }
 
@@ -257,7 +274,7 @@ function Get-WindowsCliArch {
 
 function Get-InstalledCliVersion {
     try {
-        $firstLine = cordy version 2>$null | Select-Object -First 1
+        $firstLine = patchbay version 2>$null | Select-Object -First 1
         if ("$firstLine" -match '\b(v?\d+(?:\.\d+)+)\b') {
             $version = $Matches[1]
             if ($version -notlike 'v*') {
@@ -274,10 +291,10 @@ function Get-InstalledCliVersion {
 # CLI Installation
 # ---------------------------------------------------------------------------
 function Install-CliBinary {
-    Write-Info "Installing Cordy CLI from GitHub Releases..."
+    Write-Info "Installing Patchbay CLI from GitHub Releases..."
 
     if (-not [Environment]::Is64BitOperatingSystem) {
-        Write-Fail "Cordy requires a 64-bit Windows installation."
+        Write-Fail "Patchbay requires a 64-bit Windows installation."
     }
 
     $arch = Get-WindowsCliArch
@@ -288,15 +305,15 @@ function Install-CliBinary {
     }
 
     $version = $latest.TrimStart('v')
-    $url = "https://github.com/alexj11324/Cordy/releases/download/$latest/cordy-cli-$version-windows-$arch.zip"
-    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "cordy-install"
+    $url = "https://github.com/patchbay-ai/patchbay/releases/download/$latest/patchbay-cli-$version-windows-$arch.zip"
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "patchbay-install"
 
     if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
     New-Item -ItemType Directory -Path $tmpDir | Out-Null
 
     Write-Info "Downloading $url ..."
     try {
-        Invoke-WebRequest -Uri $url -OutFile (Join-Path $tmpDir "cordy.zip") -UseBasicParsing
+        Invoke-WebRequest -Uri $url -OutFile (Join-Path $tmpDir "patchbay.zip") -UseBasicParsing
     } catch {
         Remove-Item $tmpDir -Recurse -Force
         Write-Fail "Failed to download CLI binary: $_"
@@ -305,7 +322,7 @@ function Install-CliBinary {
     # Verify SHA256 checksum. A missing, malformed, or unavailable manifest is
     # fatal: the release workflow publishes one for every CLI archive, and
     # installing without it would silently remove the download integrity gate.
-    $checksumUrl = "https://github.com/alexj11324/Cordy/releases/download/$latest/checksums.txt"
+    $checksumUrl = "https://github.com/patchbay-ai/patchbay/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
         $checksumContent = if ($checksums.Content -is [byte[]]) {
@@ -313,9 +330,9 @@ function Install-CliBinary {
         } else {
             [string]$checksums.Content
         }
-        $zipFile = Join-Path $tmpDir "cordy.zip"
+        $zipFile = Join-Path $tmpDir "patchbay.zip"
         $actualHash = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash.ToLower()
-        $releaseAsset = "cordy-cli-$version-windows-$arch.zip"
+        $releaseAsset = "patchbay-cli-$version-windows-$arch.zip"
         $expectedHashes = @(
             $checksumContent -split "`r?`n" | ForEach-Object {
                 if ($_ -match '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?<name>\S+)\s*$' -and $Matches.name -eq $releaseAsset) {
@@ -338,27 +355,27 @@ function Install-CliBinary {
         Write-Fail "Could not verify the CLI checksum: $_"
     }
 
-    Expand-Archive -Path (Join-Path $tmpDir "cordy.zip") -DestinationPath $tmpDir -Force
+    Expand-Archive -Path (Join-Path $tmpDir "patchbay.zip") -DestinationPath $tmpDir -Force
 
-    $binDir = Join-Path $env:USERPROFILE ".cordy\bin"
+    $binDir = Join-Path $env:USERPROFILE ".patchbay\bin"
     if (-not (Test-Path $binDir)) {
         New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     }
 
-    $exeSrc = Join-Path $tmpDir "cordy.exe"
+    $exeSrc = Join-Path $tmpDir "patchbay.exe"
     if (-not (Test-Path $exeSrc)) {
-        $exeSrc = Get-ChildItem -Path $tmpDir -Filter "cordy.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+        $exeSrc = Get-ChildItem -Path $tmpDir -Filter "patchbay.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
     }
     if (-not $exeSrc -or -not (Test-Path $exeSrc)) {
         Remove-Item $tmpDir -Recurse -Force
-        Write-Fail "cordy.exe not found in downloaded archive."
+        Write-Fail "patchbay.exe not found in downloaded archive."
     }
 
-    Copy-Item $exeSrc (Join-Path $binDir "cordy.exe") -Force
+    Copy-Item $exeSrc (Join-Path $binDir "patchbay.exe") -Force
     Remove-Item $tmpDir -Recurse -Force
 
     Add-ToUserPath $binDir
-    Write-Ok "Cordy CLI installed to $binDir\cordy.exe"
+    Write-Ok "Patchbay CLI installed to $binDir\patchbay.exe"
 }
 
 function Add-ToUserPath {
@@ -377,7 +394,7 @@ function Add-ToUserPath {
 }
 
 function Install-Cli {
-    if (Test-CommandExists "cordy") {
+    if (Test-CommandExists "patchbay") {
         $currentVer = Get-InstalledCliVersion
         $latestVer = Get-LatestVersion
 
@@ -394,22 +411,22 @@ function Install-Cli {
         }
 
         if ($isUpToDate) {
-            Write-Ok "Cordy CLI is up to date ($currentVer)"
+            Write-Ok "Patchbay CLI is up to date ($currentVer)"
             return
         }
 
-        Write-Info "Cordy CLI $currentVer installed, latest is $latestVer - upgrading..."
+        Write-Info "Patchbay CLI $currentVer installed, latest is $latestVer - upgrading..."
         Install-CliBinary
 
         $newVer = Get-InstalledCliVersion
-        Write-Ok "Cordy CLI upgraded ($currentVer -> $newVer)"
+        Write-Ok "Patchbay CLI upgraded ($currentVer -> $newVer)"
         return
     }
 
     Install-CliBinary
 
-    if (-not (Test-CommandExists "cordy")) {
-        Write-Fail "CLI installed but 'cordy' not found on PATH. Restart your terminal and try again."
+    if (-not (Test-CommandExists "patchbay")) {
+        Write-Fail "CLI installed but 'patchbay' not found on PATH. Restart your terminal and try again."
     }
 }
 
@@ -419,12 +436,12 @@ function Install-Cli {
 function Test-Docker {
     if (-not (Test-CommandExists "docker")) {
         Write-Fail @"
-Docker is not installed. Cordy self-hosting requires Docker and Docker Compose.
+Docker is not installed. Patchbay self-hosting requires Docker and Docker Compose.
 
 Install Docker Desktop for Windows:
   https://docs.docker.com/desktop/install/windows-install/
 
-After installing Docker, re-run this script with `$env:CORDY_MODE="local"`.
+After installing Docker, re-run this script with `$env:PATCHBAY_MODE="local"`.
 "@
     }
 
@@ -441,7 +458,7 @@ After installing Docker, re-run this script with `$env:CORDY_MODE="local"`.
 # Server setup (self-host / local)
 # ---------------------------------------------------------------------------
 function Install-Server {
-    Write-Info "Setting up Cordy server..."
+    Write-Info "Setting up Patchbay server..."
     $serverRef = Get-SelfHostRef
     Write-Info "Using self-host assets from $serverRef..."
 
@@ -449,7 +466,7 @@ function Install-Server {
         Write-Info "Updating existing installation at $InstallDir..."
         Write-Warn "Any local changes in $InstallDir will be overwritten."
     } else {
-        Write-Info "Cloning Cordy repository..."
+        Write-Info "Cloning Patchbay repository..."
         if (-not (Test-CommandExists "git")) {
             Write-Fail "Git is not installed. Please install git and re-run."
         }
@@ -486,9 +503,9 @@ function Install-Server {
     Update-LegacySelfHostImageRepositories -EnvPath (Join-Path $InstallDir ".env")
     Set-SelfHostImageTag -Ref $serverRef
 
-    Write-Info "Pulling official Cordy images..."
+    Write-Info "Pulling official Patchbay images..."
     Pull-OfficialSelfHostImages
-    Write-Info "Starting Cordy services (this may take a few minutes on first run)..."
+    Write-Info "Starting Patchbay services (this may take a few minutes on first run)..."
     docker compose -f docker-compose.selfhost.yml up -d
 
     # Read the ports Compose actually published, once, and reuse them for both
@@ -515,7 +532,7 @@ function Install-Server {
     }
 
     if ($ready) {
-        Write-Ok "Cordy server is running"
+        Write-Ok "Patchbay server is running"
     } else {
         Write-Warn "Server is still starting. Check logs with:"
         Write-Host "  cd $InstallDir; docker compose -f docker-compose.selfhost.yml logs"
@@ -530,23 +547,23 @@ function Install-Server {
 # ---------------------------------------------------------------------------
 function Start-DefaultInstall {
     Write-Host ""
-    Write-Host "  Cordy - Installer" -ForegroundColor White
+    Write-Host "  Patchbay - Installer" -ForegroundColor White
     Write-Host ""
 
     Install-Cli
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
-    Write-Host "  [OK] Cordy CLI is ready!" -ForegroundColor Green
+    Write-Host "  [OK] Patchbay CLI is ready!" -ForegroundColor Green
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Next: configure your environment"
     Write-Host ""
-    Write-Host "     cordy setup               " -NoNewline; Write-Host "# Connect to Cordy Cloud (cordy.ai)" -ForegroundColor DarkGray
-    Write-Host "     cordy setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
+    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Patchbay Cloud (patchbay.ai)" -ForegroundColor DarkGray
+    Write-Host "     patchbay setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
-    Write-Host '     $env:CORDY_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -555,7 +572,7 @@ function Start-DefaultInstall {
 # ---------------------------------------------------------------------------
 function Start-LocalInstall {
     Write-Host ""
-    Write-Host "  Cordy - Self-Host Installer" -ForegroundColor White
+    Write-Host "  Patchbay - Self-Host Installer" -ForegroundColor White
     Write-Host "  Provisioning server infrastructure + installing CLI"
     Write-Host ""
 
@@ -565,7 +582,7 @@ function Start-LocalInstall {
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
-    Write-Host "  [OK] Cordy server is running and CLI is ready!" -ForegroundColor Green
+    Write-Host "  [OK] Patchbay server is running and CLI is ready!" -ForegroundColor Green
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Frontend:  http://localhost:$($script:SelfHostFrontendPort)"
@@ -574,13 +591,13 @@ function Start-LocalInstall {
     Write-Host ""
     Write-Host "  Next: configure your CLI to connect"
     Write-Host ""
-    Write-Host "     cordy setup self-host  " -NoNewline; Write-Host "# Configure + authenticate + start daemon" -ForegroundColor DarkGray
+    Write-Host "     patchbay setup self-host  " -NoNewline; Write-Host "# Configure + authenticate + start daemon" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Login: configure RESEND_API_KEY in .env for email codes,"
     Write-Host "  or read the generated code from backend logs when Resend is unset."
     Write-Host ""
     Write-Host "  To stop all services:"
-    Write-Host '     $env:CORDY_MODE="stop"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:PATCHBAY_MODE="stop"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -589,7 +606,7 @@ function Start-LocalInstall {
 # ---------------------------------------------------------------------------
 function Start-Stop {
     Write-Host ""
-    Write-Info "Stopping Cordy services..."
+    Write-Info "Stopping Patchbay services..."
 
     if (Test-Path $InstallDir) {
         Push-Location $InstallDir
@@ -601,12 +618,12 @@ function Start-Stop {
         }
         Pop-Location
     } else {
-        Write-Warn "No Cordy installation found at $InstallDir"
+        Write-Warn "No Patchbay installation found at $InstallDir"
     }
 
-    if (Test-CommandExists "cordy") {
+    if (Test-CommandExists "patchbay") {
         try {
-            cordy daemon stop 2>$null
+            patchbay daemon stop 2>$null
             Write-Ok "Daemon stopped"
         } catch {}
     }
@@ -617,7 +634,8 @@ function Start-Stop {
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-$mode = if ($env:CORDY_MODE) { $env:CORDY_MODE.ToLower() } else { "default" }
+Move-LegacyPatchbayHome
+$mode = if ($env:PATCHBAY_MODE) { $env:PATCHBAY_MODE.ToLower() } else { "default" }
 
 switch ($mode) {
     "with-server" { Start-LocalInstall }

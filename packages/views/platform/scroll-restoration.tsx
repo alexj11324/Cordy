@@ -30,7 +30,7 @@ import {
 
 /**
  * One captured scroll entry. `contentKey` is an optional fingerprint of the
- * rendered content (alexj11324#6405): views that render untrusted HTML inside
+ * rendered content (patchbay-ai#6405): views that render untrusted HTML inside
  * a sandboxed iframe cannot be scrolled externally and register an external
  * capture source instead; they tag the entry with a hash of the rendered HTML
  * so a re-upload to the same attachment id refuses to restore a stale offset.
@@ -116,7 +116,7 @@ export function useScrollRestorationAdapter(): ScrollRestorationAdapter | null {
 /**
  * The full saved entry for a container key on the current route, including
  * `contentKey` — use this when a view must decide whether a saved offset is
- * still applicable to the currently rendered content (alexj11324#6405).
+ * still applicable to the currently rendered content (patchbay-ai#6405).
  */
 export function useRestoredScrollEntry(
   containerKey: string,

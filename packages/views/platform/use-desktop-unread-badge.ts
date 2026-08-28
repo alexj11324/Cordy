@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useInboxUnreadCount } from "@cordy/core/inbox/queries";
+import { useInboxUnreadCount } from "@patchbay/core/inbox/queries";
 
 type BadgeCapableAPI = {
   setUnreadBadge?: (count: number) => void;

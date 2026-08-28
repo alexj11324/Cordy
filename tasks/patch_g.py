@@ -2,15 +2,15 @@
 """autopilot.rs sub-slice E: public dispatch entry points."""
 import sys
 
-P = "server-rs/crates/cordy-service/src/autopilot.rs"
+P = "server-rs/crates/patchbay-service/src/autopilot.rs"
 s = open(P).read()
 
 BODY = '''
 
 // --- Public dispatch entry points -------------------------------------------
 
-use cordy_db::queries::agent::{get_autopilot_task_by_run, list_tasks_by_issue};
-use cordy_db::queries::autopilot::{
+use patchbay_db::queries::agent::{get_autopilot_task_by_run, list_tasks_by_issue};
+use patchbay_db::queries::autopilot::{
     get_autopilot_run_by_trigger_and_planned, get_autopilot_run_by_webhook_delivery,
 };
 

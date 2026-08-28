@@ -1,13 +1,13 @@
 ---
 title: モバイルアプリ (iOS)
-description: ソースコードから Cordy を iPhone にインストールし、Cloud またはセルフホストインスタンスに接続します。
+description: ソースコードから Patchbay を iPhone にインストールし、Cloud またはセルフホストインスタンスに接続します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy の iOS クライアントはまだ App Store にありません。Mac でオープンソースリポジトリから Release 版をビルドし、自分の iPhone にインストールできます。Android クライアントはまだ提供されていません。
+Patchbay の iOS クライアントはまだ App Store にありません。Mac でオープンソースリポジトリから Release 版をビルドし、自分の iPhone にインストールできます。Android クライアントはまだ提供されていません。
 
-インストールしたアプリはデフォルトで Cordy Cloud に接続し、既存のアカウントでそのままサインインできます。ワークスペース、イシュー、コメント、実行履歴はすべてサーバー側に保存されるため、Web や Desktop から手動で同期する必要はありません。
+インストールしたアプリはデフォルトで Patchbay Cloud に接続し、既存のアカウントでそのままサインインできます。ワークスペース、イシュー、コメント、実行履歴はすべてサーバー側に保存されるため、Web や Desktop から手動で同期する必要はありません。
 
 ## 事前準備
 
@@ -26,8 +26,8 @@ Xcode や実機の開発環境がまだ設定されていない場合は、先�
 リポジトリをクローンして依存関係をインストールします:
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd cordy
+git clone https://github.com/patchbay-ai/patchbay.git
+cd patchbay
 pnpm install
 ```
 
@@ -52,11 +52,11 @@ Apple Developer Program アカウントで署名すると有効期間が長く�
 Xcode が `No matching provisioning profiles found` と報告する場合、デフォルトの bundle identifier があなたの Apple ID に属していない可能性があります。自分が管理する逆ドメイン名に切り替えて再ビルドしてください:
 
 ```bash
-export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.cordy
+export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.patchbay
 pnpm ios:mobile:device:prod:release
 ```
 
-この値はあなたの Apple Developer team で利用できれば十分で、Cordy のアカウントやワークスペースには影響しません。
+この値はあなたの Apple Developer team で利用できれば十分で、Patchbay のアカウントやワークスペースには影響しません。
 
 ## 更新
 
@@ -85,7 +85,7 @@ EXPO_PUBLIC_WEB_URL=https://app.example.com
 `.env.production` を変更すると、現在のチェックアウトの本番設定が変わります。その変更をコミットすると、個人の API アドレスがリポジトリの本番設定に書き込まれます。
 </Callout>
 
-モバイルの開発、Simulator の使用、staging への接続については、リポジトリの [`apps/mobile/README.md`](https://github.com/alexj11324/Cordy/blob/main/apps/mobile/README.md) を参照してください。
+モバイルの開発、Simulator の使用、staging への接続については、リポジトリの [`apps/mobile/README.md`](https://github.com/patchbay-ai/patchbay/blob/main/apps/mobile/README.md) を参照してください。
 
 ## 次のステップ
 

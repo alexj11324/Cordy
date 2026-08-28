@@ -1,4 +1,4 @@
-import type { SupportedLocale } from "@cordy/core/i18n";
+import type { SupportedLocale } from "@patchbay/core/i18n";
 export { docsHrefForLocale } from "@/lib/docs-href";
 
 export type Locale = SupportedLocale;

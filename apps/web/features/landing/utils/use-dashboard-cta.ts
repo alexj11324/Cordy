@@ -1,13 +1,13 @@
 "use client";
 
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceList } from "@cordy/core/workspace";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceList } from "@patchbay/core/workspace";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@cordy/core/paths";
-import type { Workspace } from "@cordy/core/types";
+} from "@patchbay/core/paths";
+import type { Workspace } from "@patchbay/core/types";
 
 /**
  * While the workspace list is in flight the CTA points at `/issues`, which the

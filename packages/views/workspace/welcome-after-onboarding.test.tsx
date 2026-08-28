@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import { useWelcomeStore } from "@cordy/core/onboarding";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { useWelcomeStore } from "@patchbay/core/onboarding";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 import {
@@ -15,7 +15,7 @@ import { WelcomeAfterOnboarding } from "./welcome-after-onboarding";
 const mockUser = {
   id: "user-1",
   name: "Test",
-  email: "test@cordy.ai",
+  email: "test@patchbay.ai",
   avatar_url: null,
   onboarded_at: "2026-01-01T00:00:00Z",
   onboarding_questionnaire: {},
@@ -26,7 +26,7 @@ const mockUser = {
   updated_at: "",
 };
 
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: { user: typeof mockUser }) => unknown) => {
       const state = { user: mockUser };
@@ -41,9 +41,9 @@ vi.mock("@cordy/core/auth", () => ({
 const mockCreateIssue = vi.fn();
 const mockGetWorkspace = vi.fn();
 
-vi.mock("@cordy/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
-    "@cordy/core/paths",
+vi.mock("@patchbay/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
+    "@patchbay/core/paths",
   );
   return {
     ...actual,
@@ -55,7 +55,7 @@ vi.mock("@cordy/core/paths", async () => {
   };
 });
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     createIssue: (...args: unknown[]) => mockCreateIssue(...args),
     getWorkspace: (...args: unknown[]) => mockGetWorkspace(...args),
@@ -141,7 +141,7 @@ describe("WelcomeAfterOnboarding", () => {
 
     expect(screen.getByText(/Setting up your workspace/i)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText(/Welcome to Cordy/i)).toBeInTheDocument();
+      expect(screen.getByText(/Welcome to Patchbay/i)).toBeInTheDocument();
     });
 
     expect(mockCreateIssue).toHaveBeenCalledTimes(1);
@@ -192,7 +192,7 @@ describe("WelcomeAfterOnboarding", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
 
-    expect(await screen.findByText(/Welcome to Cordy/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Welcome to Patchbay/i)).toBeInTheDocument();
     expect(mockCreateIssue).toHaveBeenCalledTimes(2);
   });
 

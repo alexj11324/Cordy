@@ -1,9 +1,9 @@
 ---
 title: Project architecture
-description: Learn how Cordy's clients, Rust service, execution daemon, and shared frontend packages work together.
+description: Learn how Patchbay's clients, Rust service, execution daemon, and shared frontend packages work together.
 ---
 
-Cordy consists of a Rust backend, multiple clients, and a daemon that runs on execution computers. PostgreSQL stores collaboration data; the daemon claims tasks and invokes local AI coding tools.
+Patchbay consists of a Rust backend, multiple clients, and a daemon that runs on execution computers. PostgreSQL stores collaboration data; the daemon claims tasks and invokes local AI coding tools.
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
      local daemon ─── AI coding tools
 ```
 
-For a product-facing explanation, see [How Cordy works](/how-cordy-works). This page focuses on how the code is layered.
+For a product-facing explanation, see [How Patchbay works](/how-patchbay-works). This page focuses on how the code is layered.
 
 ## Repository layout
 
@@ -55,7 +55,7 @@ apps/web/platform/         Next.js routing adapter
 apps/desktop/.../platform/ Electron routing adapter
 ```
 
-Mobile does not reuse these React pages. It may import types and pure functions from `@cordy/core`, but it owns its UI, query keys, state, realtime subscriptions, and release process.
+Mobile does not reuse these React pages. It may import types and pure functions from `@patchbay/core`, but it owns its UI, query keys, state, realtime subscriptions, and release process.
 
 ## Frontend state
 
@@ -76,32 +76,32 @@ The production entry points are Cargo packages in `server-rs/crates/`:
 
 | Entry point | Purpose |
 | --- | --- |
-| `server-rs/crates/cordy-server` | Starts the HTTP API, WebSocket services, scheduler, and integration workers |
-| `server-rs/crates/cordy-cli` (`cordy`) | CLI and local daemon |
-| `server-rs/crates/cordy-migrate` | Runs database migrations from `migrations/` |
-| `cordy-migrate` `backfill_*` binaries | Data backfill tools for specific releases |
+| `server-rs/crates/patchbay-server` | Starts the HTTP API, WebSocket services, scheduler, and integration workers |
+| `server-rs/crates/patchbay-cli` (`patchbay`) | CLI and local daemon |
+| `server-rs/crates/patchbay-migrate` | Runs database migrations from `migrations/` |
+| `patchbay-migrate` `backfill_*` binaries | Data backfill tools for specific releases |
 
 Requests usually flow in this direction:
 
 ```text
-cordy-server router → cordy-middleware → cordy-handler → cordy-service → cordy-db query module → PostgreSQL
+patchbay-server router → patchbay-middleware → patchbay-handler → patchbay-service → patchbay-db query module → PostgreSQL
 ```
 
-- `cordy-middleware` handles authentication, workspace, and request boundaries.
-- `cordy-handler` parses HTTP/WebSocket input, produces responses, and wires attachment storage.
-- `cordy-service` owns cross-query business workflows and transactions.
-- `cordy-db/src/queries/` contains the handwritten SQLx query modules; there is no generated sqlc layer in the Rust path.
-- Integration crates such as `cordy-lark`, `cordy-wecom`, `cordy-dingtalk`, `cordy-slack`, `cordy-telegram`, `cordy-composio`, `cordy-vcs`, and `cordy-ghsnapshot` own external boundaries.
-- `cordy-realtime`, `cordy-redis`, and `cordy-daemon` own realtime fanout, optional Redis coordination, and local execution lifecycle.
+- `patchbay-middleware` handles authentication, workspace, and request boundaries.
+- `patchbay-handler` parses HTTP/WebSocket input, produces responses, and wires attachment storage.
+- `patchbay-service` owns cross-query business workflows and transactions.
+- `patchbay-db/src/queries/` contains the handwritten SQLx query modules; there is no generated sqlc layer in the Rust path.
+- Integration crates such as `patchbay-lark`, `patchbay-wecom`, `patchbay-dingtalk`, `patchbay-slack`, `patchbay-telegram`, `patchbay-composio`, `patchbay-vcs`, and `patchbay-ghsnapshot` own external boundaries.
+- `patchbay-realtime`, `patchbay-redis`, and `patchbay-daemon` own realtime fanout, optional Redis coordination, and local execution lifecycle.
 
 PostgreSQL is the source of truth for business data. Redis is optional and is used for cross-instance realtime events, caching, or temporary coordination. Without Redis, a single-instance development environment uses in-process implementations.
 
 ## Realtime connections
 
-Cordy has two distinct WebSocket paths:
+Patchbay has two distinct WebSocket paths:
 
-- `cordy-realtime` plus `server-rs/crates/cordy-server/src/realtime_runtime.rs` push issue, comment, inbox, and other changes to user clients.
-- `cordy-handler` daemon WebSocket routes and `cordy-daemon` connect execution computers for wakeups and daemon RPC.
+- `patchbay-realtime` plus `server-rs/crates/patchbay-server/src/realtime_runtime.rs` push issue, comment, inbox, and other changes to user clients.
+- `patchbay-handler` daemon WebSocket routes and `patchbay-daemon` connect execution computers for wakeups and daemon RPC.
 
 WebSocket reduces latency, but the database remains the final state. Clients must recalibrate through queries after reconnecting. The daemon also keeps a polling path so that one disconnect cannot leave a queued task stuck forever.
 
@@ -111,7 +111,7 @@ WebSocket reduces latency, but the database remains the final state. Clients mus
 2. `TaskService` creates a queued task and notifies the corresponding runtime.
 3. The daemon claims the task through the daemon API.
 4. The server issues temporary credentials bound to the task and agent.
-5. The daemon prepares a local directory and invokes the matching provider backend through `cordy-agent` and the production provider adapter.
+5. The daemon prepares a local directory and invokes the matching provider backend through `patchbay-agent` and the production provider adapter.
 6. The tool runs locally while the daemon uploads progress, messages, and final status.
 7. The server updates the task and issue, then refreshes clients through realtime events.
 

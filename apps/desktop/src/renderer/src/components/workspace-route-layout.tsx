@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { WorkspaceSlugProvider } from "@cordy/core/paths";
+import { WorkspaceSlugProvider } from "@patchbay/core/paths";
 import {
   workspaceBySlugOptions,
   workspaceListOptions,
-} from "@cordy/core/workspace";
-import { getCurrentSlug, setCurrentWorkspace } from "@cordy/core/platform";
-import { isWorkspaceDeletePending } from "@cordy/core/workspace/pending-delete";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceSeen } from "@cordy/views/workspace/use-workspace-seen";
-import { WelcomeAfterOnboarding } from "@cordy/views/workspace/welcome-after-onboarding";
-import { WorkspacePresencePrefetch } from "@cordy/views/layout";
-import { SourceBackfillModal } from "@cordy/views/onboarding";
+} from "@patchbay/core/workspace";
+import { getCurrentSlug, setCurrentWorkspace } from "@patchbay/core/platform";
+import { isWorkspaceDeletePending } from "@patchbay/core/workspace/pending-delete";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceSeen } from "@patchbay/views/workspace/use-workspace-seen";
+import { WelcomeAfterOnboarding } from "@patchbay/views/workspace/welcome-after-onboarding";
+import { WorkspacePresencePrefetch } from "@patchbay/views/layout";
+import { SourceBackfillModal } from "@patchbay/views/onboarding";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 

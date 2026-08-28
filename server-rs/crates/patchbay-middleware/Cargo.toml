@@ -1,0 +1,25 @@
+[package]
+name = "patchbay-middleware"
+description = "HTTP middleware"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+patchbay-auth = { path = "../patchbay-auth" }
+patchbay-db = { path = "../patchbay-db" }
+patchbay-redis = { path = "../patchbay-redis" }
+chrono = { workspace = true }
+ipnetwork = { workspace = true }
+jsonwebtoken = { workspace = true }
+redis = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

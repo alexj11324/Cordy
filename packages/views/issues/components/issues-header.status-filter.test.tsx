@@ -14,7 +14,7 @@
  * one was created — and then opening the filter took the whole app down, since
  * no error boundary sits above the issues surface (PB-6393, PB-4819).
  *
- * These tests therefore must NOT mock `@cordy/ui/components/ui/dropdown-menu`:
+ * These tests therefore must NOT mock `@patchbay/ui/components/ui/dropdown-menu`:
  * a flattened mock renders a heading outside a group perfectly happily, which
  * is exactly how that bug shipped.
  */
@@ -23,19 +23,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createStore } from "zustand/vanilla";
-import { setApiInstance } from "@cordy/core/api";
-import type { ApiClient } from "@cordy/core/api/client";
-import { STATUS_ORDER } from "@cordy/core/issues/config";
+import { setApiInstance } from "@patchbay/core/api";
+import type { ApiClient } from "@patchbay/core/api/client";
+import { STATUS_ORDER } from "@patchbay/core/issues/config";
 import {
   type IssueViewState,
   viewStoreSlice,
-} from "@cordy/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@cordy/core/issues/stores/view-store-context";
-import type { IssueStatusEntry } from "@cordy/core/types";
+} from "@patchbay/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
+import type { IssueStatusEntry } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueFilterMenu } from "./issues-header";
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 

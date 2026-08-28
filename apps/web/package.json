@@ -1,5 +1,5 @@
 {
-  "name": "@cordy/web",
+  "name": "@patchbay/web",
   "version": "0.4.31",
   "private": true,
   "type": "module",
@@ -14,9 +14,9 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.7.9",
-    "@cordy/core": "workspace:*",
-    "@cordy/ui": "workspace:*",
-    "@cordy/views": "workspace:*",
+    "@patchbay/core": "workspace:*",
+    "@patchbay/ui": "workspace:*",
+    "@patchbay/views": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "dotenv": "^17.4.1",
     "fumadocs-core": "^15.5.2",
@@ -30,7 +30,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@cordy/eslint-config": "workspace:*",
+    "@patchbay/eslint-config": "workspace:*",
     "@tailwindcss/postcss": "catalog:",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",

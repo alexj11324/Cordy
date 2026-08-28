@@ -23,8 +23,8 @@ import {
   UserPen,
   Waves,
 } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Spinner } from "@cordy/ui/components/ui/spinner";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Spinner } from "@patchbay/ui/components/ui/spinner";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -39,14 +39,14 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@cordy/ui/components/ui/popover";
-import { Calendar } from "@cordy/ui/components/ui/calendar";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/popover";
+import { Calendar } from "@patchbay/ui/components/ui/calendar";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Select,
   SelectTrigger,
@@ -54,27 +54,27 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-} from "@cordy/ui/components/ui/select";
-import { Toggle } from "@cordy/ui/components/ui/toggle";
+} from "@patchbay/ui/components/ui/select";
+import { Toggle } from "@patchbay/ui/components/ui/toggle";
 import {
   PRIORITY_DISPLAY_ORDER,
-} from "@cordy/core/issues/config";
+} from "@patchbay/core/issues/config";
 import { StatusIcon, PriorityIcon } from ".";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions } from "@cordy/core/workspace/queries";
-import { projectListOptions } from "@cordy/core/projects/queries";
-import { labelListOptions } from "@cordy/core/labels/queries";
-import { propertyListOptions } from "@cordy/core/properties";
-import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions, agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { projectListOptions } from "@patchbay/core/projects/queries";
+import { labelListOptions } from "@patchbay/core/labels/queries";
+import { propertyListOptions } from "@patchbay/core/properties";
+import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
 import type {
   Issue,
   IssueProperty,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@cordy/core/types";
-import { formatActorRef, isActorPropertyType } from "@cordy/core/types";
+} from "@patchbay/core/types";
+import { formatActorRef, isActorPropertyType } from "@patchbay/core/types";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
@@ -92,27 +92,27 @@ import {
   type SwimlaneGrouping,
   type TableGrouping,
   type ViewMode,
-} from "@cordy/core/issues/stores/view-store";
-import { useViewStore, useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
+} from "@patchbay/core/issues/stores/view-store";
+import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
 import { FilterChipsBar } from "./filter-chips-bar";
 import { SaveViewDialog, type SaveViewScope } from "./save-view-dialog";
 import { ViewBar } from "./view-bar";
 import { toast } from "sonner";
-import { useActiveIssueView } from "@cordy/core/issue-views/use-active-view";
-import { useAuthStore } from "@cordy/core/auth";
-import type { IssueViewScope } from "@cordy/core/issue-views/queries";
-import { actorFilterKey, baselineFromQuery, type IssueViewBaseline } from "@cordy/core/issue-views/baseline";
-import type { IssueView } from "@cordy/core/api/schemas";
-import { addDaysDateOnly, dateOnlyToLocalDate, formatDateOnly, toDateOnly, todayDateOnly } from "@cordy/core/issues/date";
+import { useActiveIssueView } from "@patchbay/core/issue-views/use-active-view";
+import { useAuthStore } from "@patchbay/core/auth";
+import type { IssueViewScope } from "@patchbay/core/issue-views/queries";
+import { actorFilterKey, baselineFromQuery, type IssueViewBaseline } from "@patchbay/core/issue-views/baseline";
+import type { IssueView } from "@patchbay/core/api/schemas";
+import { addDaysDateOnly, dateOnlyToLocalDate, formatDateOnly, toDateOnly, todayDateOnly } from "@patchbay/core/issues/date";
 import {
   useIssuesScope,
   useIssuesScopeStore,
   type IssuesScope,
   type IssuesScopePageKey,
-} from "@cordy/core/issues/stores/issues-scope-store";
-import { actorKindForViewVariant } from "@cordy/core/issues/surface/scope";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@cordy/ui/components/ui/tooltip";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/core/issues/stores/issues-scope-store";
+import { actorKindForViewVariant } from "@patchbay/core/issues/surface/scope";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+import { cn } from "@patchbay/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { useStatusOptions } from "../utils/status-options";

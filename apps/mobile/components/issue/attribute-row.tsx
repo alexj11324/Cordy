@@ -22,8 +22,8 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   Issue,
   IssuePriority,
-} from "@cordy/core/types";
-import { formatDateOnly } from "@cordy/core/issues/date";
+} from "@patchbay/core/types";
+import { formatDateOnly } from "@patchbay/core/issues/date";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

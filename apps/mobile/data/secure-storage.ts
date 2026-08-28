@@ -1,11 +1,11 @@
 /**
  * Thin wrapper around expo-secure-store for the auth token.
- * Keyed identically to web/desktop ("cordy_token") so logic stays aligned
+ * Keyed identically to web/desktop ("patchbay_token") so logic stays aligned
  * with packages/core/auth/store.ts even though storage backends differ.
  */
 import * as SecureStore from "expo-secure-store";
 
-const TOKEN_KEY = "cordy_token";
+const TOKEN_KEY = "patchbay_token";
 
 export async function getToken(): Promise<string | null> {
   return SecureStore.getItemAsync(TOKEN_KEY);

@@ -19,9 +19,9 @@ import {
   getShortcutPlatform,
   type ShortcutChord,
   type ShortcutPlatform,
-} from "@cordy/core/shortcuts";
-import { Kbd } from "@cordy/ui/components/ui/kbd";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/core/shortcuts";
+import { Kbd } from "@patchbay/ui/components/ui/kbd";
+import { cn } from "@patchbay/ui/lib/utils";
 
 type ShortcutToken = {
   id: string;

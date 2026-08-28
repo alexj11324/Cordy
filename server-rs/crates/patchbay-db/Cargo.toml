@@ -1,0 +1,24 @@
+[package]
+name = "patchbay-db"
+description = "Postgres pool + migrations (sqlx), shared with the Go schema"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+patchbay-config = { path = "../patchbay-config" }
+patchbay-migrate = { path = "../patchbay-migrate" }
+
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+ipnetwork = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+uuid = { workspace = true }
+ipnetwork = { workspace = true }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { TaskMessagePayload } from "@cordy/core/types/events";
+import type { TaskMessagePayload } from "@patchbay/core/types/events";
 import { appendTimelineItem, buildTimeline, coalesceTimelineItems, type TimelineItem } from "./build-timeline";
 
 function message(seq: number, type: TaskMessagePayload["type"], content?: string): TaskMessagePayload {

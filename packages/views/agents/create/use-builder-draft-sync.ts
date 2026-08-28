@@ -14,8 +14,8 @@ import {
   toStoredAgentDraft,
   type AgentDraft,
   type StoredAgentDraft,
-} from "@cordy/core/agents";
-import { api } from "@cordy/core/api";
+} from "@patchbay/core/agents";
+import { api } from "@patchbay/core/api";
 
 /** How long editing pauses before the configuration is written back. */
 const AUTOSAVE_DELAY_MS = 800;

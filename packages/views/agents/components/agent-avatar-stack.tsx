@@ -1,9 +1,9 @@
 "use client";
 
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX, type AvatarSize } from "@cordy/ui/lib/avatar-size";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { cn } from "@cordy/ui/lib/utils";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX, type AvatarSize } from "@patchbay/ui/lib/avatar-size";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { cn } from "@patchbay/ui/lib/utils";
 
 interface AgentAvatarStackProps {
   // Agent ids to render, in display order. The component does NOT dedupe —

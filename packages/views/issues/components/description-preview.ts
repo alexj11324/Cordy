@@ -1,4 +1,4 @@
-import { stripChannelMediaMarkers } from "@cordy/core/types";
+import { stripChannelMediaMarkers } from "@patchbay/core/types";
 
 /**
  * Flatten description Markdown into a one-line plain-text preview. Shared by

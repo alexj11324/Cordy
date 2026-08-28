@@ -24,7 +24,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 割り当て後の実行フロー
 
-Cordy はエージェントのために[タスク](/tasks)を作成します。オンラインのランタイムがタスクを受け取ると、そのマシン上の AI コーディングツールを呼び出します。進捗、コメント、結果はその後イシューに表示されます。
+Patchbay はエージェントのために[タスク](/tasks)を作成します。オンラインのランタイムがタスクを受け取ると、そのマシン上の AI コーディングツールを呼び出します。進捗、コメント、結果はその後イシューに表示されます。
 
 ランタイムが一時的にオフラインの場合、タスクはキューで待機します。タスクはそのランタイムに紐づいており、別のマシンに移ることはありません。
 
@@ -68,13 +68,13 @@ Cordy はエージェントのために[タスク](/tasks)を作成します。�
 ## CLI での操作
 
 ```bash
-cordy issue assign PB-42 --to "Agent name"
-cordy issue assign PB-42 --to-id <agent-uuid> --no-start
-cordy issue status PB-42 in_progress --no-start
-cordy issue assign PB-42 --unassign
+patchbay issue assign PB-42 --to "Agent name"
+patchbay issue assign PB-42 --to-id <agent-uuid> --no-start
+patchbay issue status PB-42 in_progress --no-start
+patchbay issue assign PB-42 --unassign
 ```
 
-スクリプトでは `--to-id <uuid>` を使うと、同名のオブジェクトへの誤マッチを避けられます。UUID は `cordy agent list --output json` または `cordy workspace member list --output json` で確認できます。
+スクリプトでは `--to-id <uuid>` を使うと、同名のオブジェクトへの誤マッチを避けられます。UUID は `patchbay agent list --output json` または `patchbay workspace member list --output json` で確認できます。
 
 割り当てで担当だけを記録し、新しいタスクを作成しない場合（たとえば同じエージェントが別の実行ですでにそのイシューを処理している場合）は、`--no-start` を使用します。`issue update` と `issue status` でも同じフラグを使用できます。担当とステータスの両方を変更する所有権のみのフローでは、両方のコマンドにこのフラグを指定してください。割り当てを抑止しても、後続のステータス変更による実行は自動では抑止されません。
 

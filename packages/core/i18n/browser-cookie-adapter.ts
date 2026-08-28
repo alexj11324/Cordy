@@ -1,6 +1,7 @@
 import type { LocaleAdapter, SupportedLocale } from "./types";
 
-export const LOCALE_COOKIE = "cordy-locale";
+export const LOCALE_COOKIE = "patchbay-locale";
+const LEGACY_LOCALE_COOKIE = "cordy-locale"; // legacy-brand-compat
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 // Web-only adapter: persists via document.cookie so the Next.js proxy can
@@ -12,7 +13,9 @@ export function createBrowserCookieLocaleAdapter(): LocaleAdapter {
     getUserChoice() {
       if (typeof document === "undefined") return null;
       const m = document.cookie.match(
-        new RegExp(`(?:^|;\\s*)${LOCALE_COOKIE}=([^;]+)`),
+        new RegExp(
+          `(?:^|;\\s*)(?:${LOCALE_COOKIE}|${LEGACY_LOCALE_COOKIE})=([^;]+)`,
+        ),
       );
       const value = m?.[1];
       return value ? decodeURIComponent(value) : null;
@@ -30,6 +33,7 @@ export function createBrowserCookieLocaleAdapter(): LocaleAdapter {
       document.cookie =
         `${LOCALE_COOKIE}=${encodeURIComponent(locale)};` +
         `path=/;max-age=${COOKIE_MAX_AGE};SameSite=Lax${secure}`;
+      document.cookie = `${LEGACY_LOCALE_COOKIE}=;path=/;max-age=0;SameSite=Lax${secure}`;
     },
   };
 }

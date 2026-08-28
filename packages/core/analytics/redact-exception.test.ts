@@ -10,8 +10,8 @@ describe("redactText", () => {
 
   it("strips URL query strings that may carry tokens, keeping host + path", () => {
     expect(
-      redactText("fetch failed https://api.cordy.ai/issues?token=abc123secret"),
-    ).toBe("fetch failed https://api.cordy.ai/issues?[redacted]");
+      redactText("fetch failed https://api.patchbay.ai/issues?token=abc123secret"),
+    ).toBe("fetch failed https://api.patchbay.ai/issues?[redacted]");
   });
 
   it("redacts long opaque tokens (JWT / API key / uuid)", () => {

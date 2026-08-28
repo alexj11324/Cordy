@@ -1,4 +1,4 @@
-import type { RuntimeModel } from "@cordy/core/types";
+import type { RuntimeModel } from "@patchbay/core/types";
 import { findModelCapabilityEntry } from "./model-capability";
 
 /**

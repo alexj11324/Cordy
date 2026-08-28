@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     listRuntimes: vi.fn().mockResolvedValue([]),
   },

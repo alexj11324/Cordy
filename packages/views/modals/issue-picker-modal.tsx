@@ -1,9 +1,9 @@
 "use client";
 
-import { issueStatusCategory } from "@cordy/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Issue } from "@cordy/core/types";
-import { api } from "@cordy/core/api";
+import type { Issue } from "@patchbay/core/types";
+import { api } from "@patchbay/core/api";
 import {
   Command,
   CommandDialog,
@@ -12,7 +12,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from "@cordy/ui/components/ui/command";
+} from "@patchbay/ui/components/ui/command";
 import { StatusIcon } from "../issues/components/status-icon";
 import { useT } from "../i18n";
 

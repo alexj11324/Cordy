@@ -29,12 +29,12 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { issueCliToken },
 }));
 
-vi.mock("@cordy/views/auth", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@cordy/views/auth")>();
+vi.mock("@patchbay/views/auth", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@patchbay/views/auth")>();
   return { ...original, redirectToCliCallback };
 });
 
@@ -85,11 +85,11 @@ describe("LoginPage", () => {
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   });
 
-  it("exchanges the Clerk session for a native Cordy CLI token", async () => {
+  it("exchanges the Clerk session for a native Patchbay CLI token", async () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    issueCliToken.mockResolvedValue({ token: "cordy-native-token" });
+    issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
 
     render(<LoginPage />);
     fireEvent.click(screen.getByRole("button", { name: "Authorize CLI" }));
@@ -97,7 +97,7 @@ describe("LoginPage", () => {
     await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
     expect(redirectToCliCallback).toHaveBeenCalledWith(
       "http://localhost:43821/callback",
-      "cordy-native-token",
+      "patchbay-native-token",
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();

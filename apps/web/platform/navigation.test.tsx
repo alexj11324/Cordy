@@ -1,5 +1,5 @@
 /**
- * PB-5208 — the web half of the `cordy:navigate` bridge.
+ * PB-5208 — the web half of the `patchbay:navigate` bridge.
  *
  * Shared content (comments, chat, issue descriptions) fires this event whenever
  * a link resolves to an in-app destination, including an absolute URL on this
@@ -23,11 +23,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { WebNavigationProvider } from "./navigation";
-import { useNavigation, type NavigationAdapter } from "@cordy/views/navigation";
+import { useNavigation, type NavigationAdapter } from "@patchbay/views/navigation";
 
 function navigate(path: string) {
   window.dispatchEvent(
-    new CustomEvent("cordy:navigate", { detail: { path } }),
+    new CustomEvent("patchbay:navigate", { detail: { path } }),
   );
 }
 
@@ -61,7 +61,7 @@ describe("WebNavigationProvider internal link bridge", () => {
   it("ignores an event without a path", () => {
     render(<WebNavigationProvider>{null}</WebNavigationProvider>);
 
-    window.dispatchEvent(new CustomEvent("cordy:navigate", { detail: {} }));
+    window.dispatchEvent(new CustomEvent("patchbay:navigate", { detail: {} }));
 
     expect(router.push).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe("WebNavigationProvider internal link bridge", () => {
 
 /**
  * `canGoBack` decides whether a page whose subject was just deleted steps back
- * or replaces with a fallback. A wrong `true` walks the user out of Cordy,
+ * or replaces with a fallback. A wrong `true` walks the user out of Patchbay,
  * so the adapter must expose the browser's own answer and nothing derived.
  */
 describe("WebNavigationProvider canGoBack", () => {

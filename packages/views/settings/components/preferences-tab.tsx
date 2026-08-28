@@ -8,18 +8,18 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
-import { Switch } from "@cordy/ui/components/ui/switch";
-import { useTheme } from "@cordy/ui/components/common/theme-provider";
+} from "@patchbay/ui/components/ui/select";
+import { Switch } from "@patchbay/ui/components/ui/switch";
+import { useTheme } from "@patchbay/ui/components/common/theme-provider";
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@cordy/core/i18n";
-import { useLocaleAdapter } from "@cordy/core/i18n/react";
-import { useAuthStore } from "@cordy/core/auth";
-import { useCommentComposerStore } from "@cordy/core/issues/stores";
-import { api } from "@cordy/core/api";
+} from "@patchbay/core/i18n";
+import { useLocaleAdapter } from "@patchbay/core/i18n/react";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useCommentComposerStore } from "@patchbay/core/issues/stores";
+import { api } from "@patchbay/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
 import { useT } from "../../i18n";
 import {

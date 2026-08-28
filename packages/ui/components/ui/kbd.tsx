@@ -1,4 +1,4 @@
-import { cn } from "@cordy/ui/lib/utils"
+import { cn } from "@patchbay/ui/lib/utils"
 
 function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
   return (

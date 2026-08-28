@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AutopilotDetailPage as AutopilotDetail } from "@cordy/views/autopilots/components";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { autopilotDetailOptions } from "@cordy/core/autopilots/queries";
+import { AutopilotDetailPage as AutopilotDetail } from "@patchbay/views/autopilots/components";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { autopilotDetailOptions } from "@patchbay/core/autopilots/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function AutopilotDetailPage() {

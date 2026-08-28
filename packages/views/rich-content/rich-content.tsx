@@ -39,16 +39,16 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
-import { cn } from "@cordy/ui/lib/utils";
-import { useWorkspaceSlug } from "@cordy/core/paths";
-import { useConfigStore } from "@cordy/core/config";
-import type { Attachment } from "@cordy/core/types";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspaceSlug } from "@patchbay/core/paths";
+import { useConfigStore } from "@patchbay/core/config";
+import type { Attachment } from "@patchbay/core/types";
 import {
   isAllowedFileCardHref,
   isIssueIdentifier,
   markdownSanitizeSchema,
   markdownUrlTransform,
-} from "@cordy/ui/markdown";
+} from "@patchbay/ui/markdown";
 import {
   resolveClickIntent,
   useAppOrigin,

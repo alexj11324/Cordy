@@ -1,0 +1,45 @@
+[package]
+name = "patchbay-slack"
+description = "Slack adapter: Socket Mode link, resolver set, outbound replies, slash commands, and media ingest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+patchbay-channel = { path = "../patchbay-channel" }
+patchbay-channel-engine = { path = "../patchbay-channel-engine" }
+patchbay-db = { path = "../patchbay-db" }
+patchbay-events = { path = "../patchbay-events" }
+patchbay-protocol = { path = "../patchbay-protocol" }
+futures-util = "0.3"
+hex = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+# Socket Mode websocket client. TLS is wired through tokio-rustls with the
+# workspace's single ring provider, so tungstenite's own rustls features stay
+# off (same pattern as patchbay-wecom).
+tokio-tungstenite = { version = "0.26", default-features = false, features = [
+    "connect",
+    "handshake",
+] }
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

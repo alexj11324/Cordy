@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enChat from "../../locales/en/chat.json";
 import { SessionRenameInput } from "./session-rename-input";
 

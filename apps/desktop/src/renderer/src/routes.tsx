@@ -13,24 +13,24 @@ import {
   RuntimeSettingsPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
-import { IssuesPage } from "@cordy/views/issues/components";
-import { ProjectsPage } from "@cordy/views/projects/components";
-import { DashboardPage } from "@cordy/views/dashboard";
-import { AutopilotsPage } from "@cordy/views/autopilots/components";
-import { MyIssuesPage } from "@cordy/views/my-issues";
-import { SkillsPage } from "@cordy/views/skills";
+import { IssuesPage } from "@patchbay/views/issues/components";
+import { ProjectsPage } from "@patchbay/views/projects/components";
+import { DashboardPage } from "@patchbay/views/dashboard";
+import { AutopilotsPage } from "@patchbay/views/autopilots/components";
+import { MyIssuesPage } from "@patchbay/views/my-issues";
+import { SkillsPage } from "@patchbay/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
   AiCreateAgentPage,
   ChooseCreateMethodPage,
   ManualCreateAgentPage,
-} from "@cordy/views/agents";
-import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@cordy/views/squads/components";
-import { InboxPage } from "@cordy/views/inbox";
-import { ChatPage } from "@cordy/views/chat";
-import { SettingsPage } from "@cordy/views/settings";
-import { useT } from "@cordy/views/i18n";
+} from "@patchbay/views/agents";
+import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@patchbay/views/squads/components";
+import { InboxPage } from "@patchbay/views/inbox";
+import { ChatPage } from "@patchbay/views/chat";
+import { SettingsPage } from "@patchbay/views/settings";
+import { useT } from "@patchbay/views/i18n";
 import { Download, Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { UpdatesSettingsTab } from "./components/updates-settings-tab";

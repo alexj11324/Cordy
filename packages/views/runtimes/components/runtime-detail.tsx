@@ -15,27 +15,27 @@ import type {
   Agent,
   MemberWithUser,
   RuntimeProfile,
-} from "@cordy/core/types";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { memberListOptions, agentListOptions } from "@cordy/core/workspace/queries";
-import { useUpdateRuntime } from "@cordy/core/runtimes/mutations";
+} from "@patchbay/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
+import { useUpdateRuntime } from "@patchbay/core/runtimes/mutations";
 import {
   deriveRuntimeHealth,
   runtimeDisplayName,
   runtimeProfileListOptions,
-} from "@cordy/core/runtimes";
+} from "@patchbay/core/runtimes";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@cordy/core/agents";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/agents";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { AppLink, useNavigation } from "../../navigation";
@@ -334,7 +334,7 @@ function HeroCard({
         </Fact>
       </dl>
 
-      {/* Diagnostic IDs — cordy CLI git hash + truncated daemon UUID.
+      {/* Diagnostic IDs — patchbay CLI git hash + truncated daemon UUID.
           Only useful when filing an issue or reading logs; folded by
           default so they don't compete with the user-visible facts above. */}
       {hasTechDetails && (

@@ -6,7 +6,7 @@ import {
   SidebarProvider,
   SidebarRail,
   useSidebar,
-} from "@cordy/ui/components/ui/sidebar";
+} from "@patchbay/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
 
 describe("left sidebar resizing", () => {

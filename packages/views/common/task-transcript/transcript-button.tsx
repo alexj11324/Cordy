@@ -3,20 +3,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, ScrollText } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { api } from "@cordy/core/api";
+} from "@patchbay/ui/components/ui/tooltip";
+import { api } from "@patchbay/core/api";
 import {
   chatKeys,
   isTaskMessageTaskId,
   taskMessagesOptions,
-} from "@cordy/core/chat/queries";
-import type { AgentTask } from "@cordy/core/types/agent";
-import type { TaskMessagePayload } from "@cordy/core/types/events";
+} from "@patchbay/core/chat/queries";
+import type { AgentTask } from "@patchbay/core/types/agent";
+import type { TaskMessagePayload } from "@patchbay/core/types/events";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 import { buildTimeline, type TimelineItem } from "./build-timeline";
 
@@ -138,9 +138,9 @@ export function TranscriptButton({
       setOpen(false);
     };
 
-    window.addEventListener("cordy:navigate", handleGlobalNavigate);
+    window.addEventListener("patchbay:navigate", handleGlobalNavigate);
     return () => {
-      window.removeEventListener("cordy:navigate", handleGlobalNavigate);
+      window.removeEventListener("patchbay:navigate", handleGlobalNavigate);
     };
   }, [open, setOpen]);
 

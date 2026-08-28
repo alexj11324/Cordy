@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ProjectDetail } from "@cordy/views/projects/components";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { projectDetailOptions } from "@cordy/core/projects/queries";
+import { ProjectDetail } from "@patchbay/views/projects/components";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function ProjectDetailPage() {

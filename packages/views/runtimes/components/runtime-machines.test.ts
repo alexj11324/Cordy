@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentRuntime } from "@cordy/core/types";
+import type { AgentRuntime } from "@patchbay/core/types";
 import {
   buildRuntimeMachines,
   filterRuntimeMachines,

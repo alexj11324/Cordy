@@ -3,7 +3,7 @@
 import {
   NumberFlow,
   NumberFlowGroup,
-} from "@cordy/ui/components/ui/number-flow";
+} from "@patchbay/ui/components/ui/number-flow";
 import { formatDuration } from "../utils";
 
 // Period selector — mirrors the runtime detail page so users see the same

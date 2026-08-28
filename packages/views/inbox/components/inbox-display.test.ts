@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { InboxItem } from "@cordy/core/types";
+import type { InboxItem } from "@patchbay/core/types";
 import {
   getInboxDisplayTitle,
   getQuickCreateOutcomeDetail,

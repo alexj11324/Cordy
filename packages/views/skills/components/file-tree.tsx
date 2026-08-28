@@ -13,14 +13,14 @@ import {
   PencilLine,
   Trash2,
 } from "lucide-react";
-import { Input } from "@cordy/ui/components/ui/input";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**

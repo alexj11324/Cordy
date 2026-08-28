@@ -3,11 +3,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import type { Agent, MemberWithUser, RuntimeDevice } from "@cordy/core/types";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import { WorkspaceSlugProvider } from "@cordy/core/paths";
-import { configStore } from "@cordy/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@cordy/core/feature-flags";
+import type { Agent, MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { WorkspaceSlugProvider } from "@patchbay/core/paths";
+import { configStore } from "@patchbay/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
@@ -23,7 +23,7 @@ const navigationStub: NavigationAdapter = {
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 

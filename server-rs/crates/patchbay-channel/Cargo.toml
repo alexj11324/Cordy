@@ -1,0 +1,19 @@
+[package]
+name = "patchbay-channel"
+description = "Platform-agnostic foundation for inbound IM integrations: Channel contract, normalized envelopes, capability bitmask, factory registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

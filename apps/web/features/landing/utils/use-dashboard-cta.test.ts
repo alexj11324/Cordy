@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { paths } from "@cordy/core/paths";
-import type { Workspace } from "@cordy/core/types";
+import { paths } from "@patchbay/core/paths";
+import type { Workspace } from "@patchbay/core/types";
 import { resolveDashboardCtaHref } from "./use-dashboard-cta";
 
 function makeWs(slug: string): Workspace {

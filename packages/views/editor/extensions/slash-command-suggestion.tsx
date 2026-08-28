@@ -11,13 +11,13 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
-import { useAuthStore } from "@cordy/core/auth";
-import { useChatStore } from "@cordy/core/chat";
-import { getCurrentWsId } from "@cordy/core/platform";
-import { canAssignAgentToIssue } from "@cordy/core/permissions";
-import { isImeComposing } from "@cordy/core/utils";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
-import type { Agent, MemberWithUser } from "@cordy/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useChatStore } from "@patchbay/core/chat";
+import { getCurrentWsId } from "@patchbay/core/platform";
+import { canAssignAgentToIssue } from "@patchbay/core/permissions";
+import { isImeComposing } from "@patchbay/core/utils";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import type { Agent, MemberWithUser } from "@patchbay/core/types";
 import { useT } from "../../i18n";
 import {
   createSuggestionPopupRender,

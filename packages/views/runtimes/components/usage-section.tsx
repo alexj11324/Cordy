@@ -3,21 +3,21 @@
 import { useMemo, useState } from "react";
 import { BarChart3, ChevronRight, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
-import { cn } from "@cordy/ui/lib/utils";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   CompactNumberFlow,
   CurrencyNumberFlow,
-} from "@cordy/ui/components/ui/number-flow";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { agentListOptions } from "@cordy/core/workspace/queries";
-import type { RuntimeUsage, AgentRuntime } from "@cordy/core/types";
+} from "@patchbay/ui/components/ui/number-flow";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { agentListOptions } from "@patchbay/core/workspace/queries";
+import type { RuntimeUsage, AgentRuntime } from "@patchbay/core/types";
 import {
   runtimeUsageOptions,
   runtimeUsageByAgentOptions,
-} from "@cordy/core/runtimes/queries";
-import { useCustomPricingStore } from "@cordy/core/runtimes/custom-pricing-store";
+} from "@patchbay/core/runtimes/queries";
+import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import {
   formatTokens,

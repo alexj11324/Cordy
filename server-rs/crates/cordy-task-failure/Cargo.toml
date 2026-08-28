@@ -1,9 +1,0 @@
-[package]
-name = "cordy-task-failure"
-description = "Canonical failure-reason taxonomy"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-
-[dependencies]
-regex = { workspace = true }

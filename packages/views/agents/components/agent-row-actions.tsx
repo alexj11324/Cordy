@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent } from "@cordy/core/types";
-import type { AgentPresenceDetail } from "@cordy/core/agents";
-import { api } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
+import type { Agent } from "@patchbay/core/types";
+import type { AgentPresenceDetail } from "@patchbay/core/agents";
+import { api } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,14 +27,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { useT } from "../../i18n";
 import { AppLink, useIntentNavigate } from "../../navigation";
 
@@ -89,7 +89,7 @@ export function AgentRowActions({
   // branches.
   const showStop = canManage && !isArchived && hasActiveWork;
   const showDuplicate = !isArchived; // any workspace member can duplicate
-  // Cordy's built-in agents cannot be archived — the server refuses it, and
+  // Patchbay's built-in agents cannot be archived — the server refuses it, and
   // the workspace's entry point runs through one. Hide the action rather than
   // let it fail with a toast.
   const isSystemAgent = !!agent.system_key;

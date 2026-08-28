@@ -1,17 +1,17 @@
 ---
 title: AI コーディングツールをインストールする
-description: 対応する AI コーディングツールをインストールしてログインし、Cordy がローカル環境でタスクを実行できるようにします。
+description: 対応する AI コーディングツールをインストールしてログインし、Patchbay がローカル環境でタスクを実行できるようにします。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-ローカルランタイムは、Cordy デーモンと、デーモンが呼び出せる AI コーディングツールの 2 つで構成されます。使用するツールだけをインストールすればよく、すべてをインストールする必要はありません。
+ローカルランタイムは、Patchbay デーモンと、デーモンが呼び出せる AI コーディングツールの 2 つで構成されます。使用するツールだけをインストールすればよく、すべてをインストールする必要はありません。
 
 ## 1. ツールを選ぶ
 
 すでにインストールしてログイン済みのツールには、追加設定は不要です。モデル、MCP、セッション再開、スキルの対応状況はツールごとに異なります。詳しくは [AI コーディングツール比較](/providers)を参照してください。
 
-Cordy は現在、次のコマンドを検出します。
+Patchbay は現在、次のコマンドを検出します。
 
 | ツール | 検出するコマンド | 公式インストールガイド |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ Cordy は現在、次のコマンドを検出します。
 | TRAE CLI | `traecli` | [TRAE 公式サイト](https://www.trae.cn/) |
 | Dim | `dim` | [DimCode](https://dimagent.cn/en/docs/cli) |
 
-ここでの「対応」とは、Cordy が該当する CLI を呼び出せるという意味です。そのツールのアカウント、サブスクリプション、モデルの利用枠を Cordy が提供するわけではありません。
+ここでの「対応」とは、Patchbay が該当する CLI を呼び出せるという意味です。そのツールのアカウント、サブスクリプション、モデルの利用枠を Patchbay が提供するわけではありません。
 
 ## 2. ローカル環境でログインする
 
@@ -48,13 +48,13 @@ Cordy は現在、次のコマンドを検出します。
 
 Reasonix を使う場合は、デーモンを起動する前に `reasonix setup` を実行し、デフォルトのプロバイダーとモデルを設定してください。
 
-QwenPaw を使う場合は、QwenPaw 側の設定でプロバイダーとモデルを選んでください。Cordy が実行時に QwenPaw のモデルを上書きすることはできません。
+QwenPaw を使う場合は、QwenPaw 側の設定でプロバイダーとモデルを選んでください。Patchbay が実行時に QwenPaw のモデルを上書きすることはできません。
 
-MiniMax Code を使う場合は、対応する Node.js バージョン（`>=22.19 <23` または `>=24 <27`）をインストールし、`npm install --global @minimax-ai/code@latest` を実行してください。npm のグローバルインストールによって `mcode` は npm のグローバル実行ファイルディレクトリに配置されます。`command -v mcode` または `Get-Command mcode` で見つからない場合は、そのディレクトリを `PATH` に追加してください。その後 `mcode login` を実行します。モデルは MiniMax Code が管理し、Cordy から ACP 経由で上書きすることはできません。
+MiniMax Code を使う場合は、対応する Node.js バージョン（`>=22.19 <23` または `>=24 <27`）をインストールし、`npm install --global @minimax-ai/code@latest` を実行してください。npm のグローバルインストールによって `mcode` は npm のグローバル実行ファイルディレクトリに配置されます。`command -v mcode` または `Get-Command mcode` で見つからない場合は、そのディレクトリを `PATH` に追加してください。その後 `mcode login` を実行します。モデルは MiniMax Code が管理し、Patchbay から ACP 経由で上書きすることはできません。
 
-DeepSeek Harness を使う場合は、Node.js 20+ をインストールして `npm install -g @deepseek-ai/dsh` を実行し、Cordy ランタイムプロファイルを追加してください（`dsh plugin --profile cordy add <bundle>`）。デーモンは `dsh --profile cordy --probe` が成功した場合のみ DeepSeek Harness を登録します。デーモンを起動する前に `DEEPSEEK_API_KEY` を設定（または dsh の設定に保存）してください。
+DeepSeek Harness を使う場合は、Node.js 20+ をインストールして `npm install -g @deepseek-ai/dsh` を実行し、Patchbay ランタイムプロファイルを追加してください（`dsh plugin --profile patchbay add <bundle>`）。デーモンは `dsh --profile patchbay --probe` が成功した場合のみ DeepSeek Harness を登録します。デーモンを起動する前に `DEEPSEEK_API_KEY` を設定（または dsh の設定に保存）してください。
 
-ログイン情報はツールがローカル環境に保存します。Cordy が Claude、Codex、Cursor などの CLI のログイントークンを受け取ることはありません。
+ログイン情報はツールがローカル環境に保存します。Patchbay が Claude、Codex、Cursor などの CLI のログイントークンを受け取ることはありません。
 
 <Callout type="info">
 Claude Code は 2.0.0 以降、Codex は 0.100.0 以降、Copilot は 1.0.0 以降、Grok は 0.2.89 以降、Qwen Code は 0.20.0 以降、MiniMax Code は 0.1.2 以降が必要です。最低バージョンを満たしていない場合、デーモンはそのランタイムを登録しません。
@@ -78,25 +78,25 @@ Get-Command <command>
 
 `<command>` は表にあるコマンド名に置き換えてください。たとえば `claude`、`codex`、`cursor-agent` です。最初のコマンドで実行ファイルのパスが返れば、検出できています。
 
-ターミナルではツールを見つけられるのに、Desktop やバックグラウンドのデーモンでは見つからない場合、両者が異なる `PATH` を使っていることが一般的な原因です。アプリを再起動するか、対応する `CORDY_<PROVIDER>_PATH` 環境変数で絶対パスを指定してください。設定の詳細は[環境変数](/environment-variables#デーモン設定)を参照してください。
+ターミナルではツールを見つけられるのに、Desktop やバックグラウンドのデーモンでは見つからない場合、両者が異なる `PATH` を使っていることが一般的な原因です。アプリを再起動するか、対応する `PATCHBAY_<PROVIDER>_PATH` 環境変数で絶対パスを指定してください。設定の詳細は[環境変数](/environment-variables#デーモン設定)を参照してください。
 
 ## 4. 再検出してオンライン状態を確認する
 
 CLI でデーモンを起動します。
 
 ```bash
-cordy daemon start
+patchbay daemon start
 ```
 
 デーモンがすでに実行中の場合は、新しいツールをインストールした後に再起動します。
 
 ```bash
-cordy daemon restart
+patchbay daemon restart
 ```
 
-Cordy Desktop を使っている場合は、アプリを終了して開き直してください。
+Patchbay Desktop を使っている場合は、アプリを終了して開き直してください。
 
-次に Cordy の**ランタイム**ページを開きます。対象のコンピューターの下にツールが表示され、オンライン状態になっていることを確認してください。これで、エージェントを作成または編集するときにこのランタイムを選択できます。
+次に Patchbay の**ランタイム**ページを開きます。対象のコンピューターの下にツールが表示され、オンライン状態になっていることを確認してください。これで、エージェントを作成または編集するときにこのランタイムを選択できます。
 
 <Callout type="warning">
 デーモンの起動時には、標準対応している CLI が少なくとも 1 つ検出される必要があります。カスタムランタイム設定はデーモンの起動後に同期されるため、ツールが何もないコンピューターで唯一の起動条件として使うことはできません。
@@ -108,7 +108,7 @@ Cordy Desktop を使っている場合は、アプリを終了して開き直し
 
 1. ターミナルからツール自体を実行し、インストールとログインが完了していることを確認します。
 2. `command -v` または `Get-Command` で、実際のコマンド名とパスを確認します。
-3. `cordy daemon logs -f` を実行し、バージョン、パス、認証に関するエラーを確認します。
+3. `patchbay daemon logs -f` を実行し、バージョン、パス、認証に関するエラーを確認します。
 4. デーモンを再起動し、現在の環境を読み込み直します。
 5. **ランタイム**ページに戻り、コンピューターとツールがどちらもオンラインであることを確認します。
 
@@ -118,4 +118,4 @@ Cordy Desktop を使っている場合は、アプリを終了して開き直し
 
 - [エージェントを作成・設定する](/agents-create) — 接続したランタイムを選択する
 - [デーモンとランタイム](/daemon-runtimes) — オンライン状態、同時実行、カスタムランタイムについて確認する
-- [AI コーディングツール比較](/providers) — Cordy で使える機能をツールごとに比較する
+- [AI コーディングツール比較](/providers) — Patchbay で使える機能をツールごとに比較する

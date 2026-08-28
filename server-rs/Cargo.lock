@@ -933,7 +933,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
-name = "cordy-agent"
+name = "patchbay-agent"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -952,12 +952,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-analytics"
+name = "patchbay-analytics"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
- "cordy-util",
+ "patchbay-util",
  "reqwest",
  "serde",
  "serde_json",
@@ -967,12 +967,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-auth"
+name = "patchbay-auth"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "cordy-redis",
+ "patchbay-redis",
  "hex",
  "hmac 0.12.1",
  "jsonwebtoken",
@@ -988,7 +988,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-channel"
+name = "patchbay-channel"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1002,15 +1002,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-channel-engine"
+name = "patchbay-channel-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "cordy-channel",
- "cordy-db",
- "cordy-util",
+ "patchbay-channel",
+ "patchbay-db",
+ "patchbay-util",
  "hex",
  "rand 0.8.7",
  "redis",
@@ -1026,7 +1026,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-cli"
+name = "patchbay-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1034,9 +1034,9 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "cordy-config",
- "cordy-daemon",
- "cordy-util",
+ "patchbay-config",
+ "patchbay-daemon",
+ "patchbay-util",
  "dirs",
  "hex",
  "rand 0.8.7",
@@ -1051,16 +1051,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-composio"
+name = "patchbay-composio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
  "hmac 0.12.1",
  "http 1.5.0",
  "rand 0.8.7",
@@ -1075,18 +1075,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-config"
+name = "patchbay-config"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cordy-util",
+ "patchbay-util",
  "serde",
  "toml",
  "tracing",
 ]
 
 [[package]]
-name = "cordy-daemon"
+name = "patchbay-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1094,14 +1094,14 @@ dependencies = [
  "axum",
  "base64",
  "chrono",
- "cordy-agent",
- "cordy-config",
- "cordy-db",
- "cordy-protocol",
- "cordy-realtime",
- "cordy-remotemcp",
- "cordy-task-failure",
- "cordy-util",
+ "patchbay-agent",
+ "patchbay-config",
+ "patchbay-db",
+ "patchbay-protocol",
+ "patchbay-realtime",
+ "patchbay-remotemcp",
+ "patchbay-task-failure",
+ "patchbay-util",
  "flate2",
  "futures-util",
  "hex",
@@ -1135,13 +1135,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-db"
+name = "patchbay-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "cordy-config",
- "cordy-migrate",
+ "patchbay-config",
+ "patchbay-migrate",
  "ipnetwork",
  "serde",
  "serde_json",
@@ -1152,7 +1152,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-dingtalk"
+name = "patchbay-dingtalk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1160,12 +1160,12 @@ dependencies = [
  "base64",
  "bytes",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
- "cordy-events",
- "cordy-protocol",
- "cordy-util",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-protocol",
+ "patchbay-util",
  "futures-util",
  "hex",
  "rand 0.8.7",
@@ -1187,7 +1187,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-events"
+name = "patchbay-events"
 version = "0.1.0"
 dependencies = [
  "serde_json",
@@ -1195,14 +1195,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-ghsnapshot"
+name = "patchbay-ghsnapshot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
  "chrono",
- "cordy-db",
+ "patchbay-db",
  "jsonwebtoken",
  "rand 0.8.7",
  "reqwest",
@@ -1217,7 +1217,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-handler"
+name = "patchbay-handler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1228,34 +1228,34 @@ dependencies = [
  "base64",
  "chrono",
  "chrono-tz",
- "cordy-agent",
- "cordy-analytics",
- "cordy-auth",
- "cordy-channel",
- "cordy-composio",
- "cordy-config",
- "cordy-daemon",
- "cordy-db",
- "cordy-dingtalk",
- "cordy-events",
- "cordy-ghsnapshot",
- "cordy-lark",
- "cordy-llm",
- "cordy-metrics",
- "cordy-middleware",
- "cordy-plugincontract",
- "cordy-protocol",
- "cordy-realtime",
- "cordy-redis",
- "cordy-remotemcp",
- "cordy-service",
- "cordy-slack",
- "cordy-task-failure",
- "cordy-telegram",
- "cordy-util",
- "cordy-vcs",
- "cordy-wecom",
- "cordy-weixin",
+ "patchbay-agent",
+ "patchbay-analytics",
+ "patchbay-auth",
+ "patchbay-channel",
+ "patchbay-composio",
+ "patchbay-config",
+ "patchbay-daemon",
+ "patchbay-db",
+ "patchbay-dingtalk",
+ "patchbay-events",
+ "patchbay-ghsnapshot",
+ "patchbay-lark",
+ "patchbay-llm",
+ "patchbay-metrics",
+ "patchbay-middleware",
+ "patchbay-plugincontract",
+ "patchbay-protocol",
+ "patchbay-realtime",
+ "patchbay-redis",
+ "patchbay-remotemcp",
+ "patchbay-service",
+ "patchbay-slack",
+ "patchbay-task-failure",
+ "patchbay-telegram",
+ "patchbay-util",
+ "patchbay-vcs",
+ "patchbay-wecom",
+ "patchbay-weixin",
  "crc32fast",
  "futures-util",
  "hex",
@@ -1288,19 +1288,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-lark"
+name = "patchbay-lark"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
- "cordy-events",
- "cordy-protocol",
- "cordy-util",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-protocol",
+ "patchbay-util",
  "futures-util",
  "hex",
  "rand 0.8.7",
@@ -1320,7 +1320,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-llm"
+name = "patchbay-llm"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -1334,16 +1334,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-metrics"
+name = "patchbay-metrics"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "cordy-analytics",
- "cordy-daemon",
- "cordy-realtime",
- "cordy-task-failure",
+ "patchbay-analytics",
+ "patchbay-daemon",
+ "patchbay-realtime",
+ "patchbay-task-failure",
  "prometheus",
  "regex",
  "serde_json",
@@ -1354,14 +1354,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-middleware"
+name = "patchbay-middleware"
 version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
- "cordy-auth",
- "cordy-db",
- "cordy-redis",
+ "patchbay-auth",
+ "patchbay-db",
+ "patchbay-redis",
  "ipnetwork",
  "jsonwebtoken",
  "redis",
@@ -1375,13 +1375,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-migrate"
+name = "patchbay-migrate"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cordy-util",
+ "patchbay-util",
  "futures-util",
  "sqlx",
  "tokio",
@@ -1391,7 +1391,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-plugincontract"
+name = "patchbay-plugincontract"
 version = "0.1.0"
 dependencies = [
  "regex",
@@ -1402,7 +1402,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-protocol"
+name = "patchbay-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -1410,13 +1410,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-realtime"
+name = "patchbay-realtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "cordy-util",
+ "patchbay-util",
  "redis",
  "serde",
  "serde_json",
@@ -1426,7 +1426,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-redis"
+name = "patchbay-redis"
 version = "0.1.0"
 dependencies = [
  "redis",
@@ -1434,7 +1434,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-remotemcp"
+name = "patchbay-remotemcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -1459,14 +1459,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-scheduler"
+name = "patchbay-scheduler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "cordy-db",
- "cordy-service",
+ "patchbay-db",
+ "patchbay-service",
  "futures-util",
  "serde_json",
  "sqlx",
@@ -1478,7 +1478,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-server"
+name = "patchbay-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1487,27 +1487,27 @@ dependencies = [
  "backtrace",
  "chrono",
  "console-subscriber",
- "cordy-analytics",
- "cordy-auth",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-config",
- "cordy-daemon",
- "cordy-db",
- "cordy-dingtalk",
- "cordy-events",
- "cordy-ghsnapshot",
- "cordy-handler",
- "cordy-lark",
- "cordy-metrics",
- "cordy-realtime",
- "cordy-scheduler",
- "cordy-service",
- "cordy-slack",
- "cordy-telegram",
- "cordy-util",
- "cordy-wecom",
- "cordy-weixin",
+ "patchbay-analytics",
+ "patchbay-auth",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-config",
+ "patchbay-daemon",
+ "patchbay-db",
+ "patchbay-dingtalk",
+ "patchbay-events",
+ "patchbay-ghsnapshot",
+ "patchbay-handler",
+ "patchbay-lark",
+ "patchbay-metrics",
+ "patchbay-realtime",
+ "patchbay-scheduler",
+ "patchbay-service",
+ "patchbay-slack",
+ "patchbay-telegram",
+ "patchbay-util",
+ "patchbay-wecom",
+ "patchbay-weixin",
  "flate2",
  "http-body-util",
  "hyper",
@@ -1528,7 +1528,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-service"
+name = "patchbay-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1536,16 +1536,16 @@ dependencies = [
  "base64",
  "chrono",
  "chrono-tz",
- "cordy-analytics",
- "cordy-db",
- "cordy-events",
- "cordy-metrics",
- "cordy-plugincontract",
- "cordy-protocol",
- "cordy-redis",
- "cordy-remotemcp",
- "cordy-task-failure",
- "cordy-util",
+ "patchbay-analytics",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-metrics",
+ "patchbay-plugincontract",
+ "patchbay-protocol",
+ "patchbay-redis",
+ "patchbay-remotemcp",
+ "patchbay-task-failure",
+ "patchbay-util",
  "croner",
  "futures-util",
  "hex",
@@ -1575,18 +1575,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-slack"
+name = "patchbay-slack"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
- "cordy-events",
- "cordy-protocol",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-protocol",
  "futures-util",
  "hex",
  "rand 0.8.7",
@@ -1609,25 +1609,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-task-failure"
+name = "patchbay-task-failure"
 version = "0.1.0"
 dependencies = [
  "regex",
 ]
 
 [[package]]
-name = "cordy-telegram"
+name = "patchbay-telegram"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
- "cordy-events",
- "cordy-protocol",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-protocol",
  "hex",
  "rand 0.8.7",
  "reqwest",
@@ -1644,7 +1644,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-util"
+name = "patchbay-util"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
@@ -1662,18 +1662,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-weixin"
+name = "patchbay-weixin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
- "cordy-events",
- "cordy-protocol",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-protocol",
  "rand 0.8.7",
  "reqwest",
  "serde",
@@ -1689,7 +1689,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-vcs"
+name = "patchbay-vcs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1711,7 +1711,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cordy-wecom"
+name = "patchbay-wecom"
 version = "0.1.0"
 dependencies = [
  "aes 0.9.2",
@@ -1719,13 +1719,13 @@ dependencies = [
  "async-trait",
  "base64",
  "chrono",
- "cordy-channel",
- "cordy-channel-engine",
- "cordy-db",
- "cordy-events",
- "cordy-protocol",
- "cordy-realtime",
- "cordy-util",
+ "patchbay-channel",
+ "patchbay-channel-engine",
+ "patchbay-db",
+ "patchbay-events",
+ "patchbay-protocol",
+ "patchbay-realtime",
+ "patchbay-util",
  "futures-util",
  "hex",
  "ipnetwork",

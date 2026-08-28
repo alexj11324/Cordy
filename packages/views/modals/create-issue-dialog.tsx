@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@cordy/ui/lib/utils";
-import { Dialog, DialogContent } from "@cordy/ui/components/ui/dialog";
+import { cn } from "@patchbay/ui/lib/utils";
+import { Dialog, DialogContent } from "@patchbay/ui/components/ui/dialog";
 import {
   useCreateModeStore,
   type CreateMode,
-} from "@cordy/core/issues/stores/create-mode-store";
+} from "@patchbay/core/issues/stores/create-mode-store";
 import { AgentCreatePanel } from "./quick-create-issue";
 import { ManualCreatePanel, manualDialogContentClass } from "./create-issue";
 

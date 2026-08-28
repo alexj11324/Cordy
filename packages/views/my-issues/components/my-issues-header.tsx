@@ -2,38 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import type {
   Issue,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@cordy/core/types";
-import { type MyIssuesScope } from "@cordy/core/issues/stores/my-issues-view-store";
-import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
+} from "@patchbay/core/types";
+import { type MyIssuesScope } from "@patchbay/core/issues/stores/my-issues-view-store";
+import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { useT } from "../../i18n";
 import { WorkspaceAgentWorkingChip } from "../../issues/components/workspace-agent-working-chip";
 import {
   IssueDisplayControls,
   ViewRefreshIndicator,
 } from "../../issues/components/issues-header";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { FilterChipsBar } from "../../issues/components/filter-chips-bar";
 import { toast } from "sonner";
 import { SaveViewDialog, type SaveViewScope } from "../../issues/components/save-view-dialog";
-import { useActiveIssueView } from "@cordy/core/issue-views/use-active-view";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { baselineFromQuery } from "@cordy/core/issue-views/baseline";
+import { useActiveIssueView } from "@patchbay/core/issue-views/use-active-view";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { baselineFromQuery } from "@patchbay/core/issue-views/baseline";
 import { ViewBar } from "../../issues/components/view-bar";
-import type { IssueView } from "@cordy/core/api/schemas";
+import type { IssueView } from "@patchbay/core/api/schemas";
 
 /** My Issues tab → saved-view scope_variant (API vocabulary). */
 const SAVE_VARIANT: Record<MyIssuesScope, Extract<SaveViewScope, { kind: "my" }>["variant"]> = {

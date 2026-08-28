@@ -7,8 +7,8 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import type { Attachment } from "@cordy/core/types";
-import { collectImageSequence } from "@cordy/core/attachments/image-sequence";
+import type { Attachment } from "@patchbay/core/types";
+import { collectImageSequence } from "@patchbay/core/attachments/image-sequence";
 
 const { downloadMock, getBaseUrlMock, toastErrorMock } = vi.hoisted(() => ({
   downloadMock: vi.fn(),
@@ -18,7 +18,7 @@ const { downloadMock, getBaseUrlMock, toastErrorMock } = vi.hoisted(() => ({
 
 vi.mock("../platform", () => ({ openExternal: vi.fn() }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getBaseUrl: getBaseUrlMock, getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},

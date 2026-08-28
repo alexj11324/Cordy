@@ -1,7 +1,7 @@
 "use client";
 
-import { useIsMobile } from "@cordy/ui/hooks/use-mobile";
-import { useCommentComposerStore } from "@cordy/core/issues/stores";
+import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
+import { useCommentComposerStore } from "@patchbay/core/issues/stores";
 
 /**
  * Whether the bottom comment composer is pinned to the scroll viewport.

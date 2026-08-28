@@ -319,7 +319,7 @@ export function AuthInitializer({
       window.addEventListener("online", retryNow);
       void attempt();
     } else {
-      const token = storage.getItem("cordy_token");
+      const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
         onLogout?.();

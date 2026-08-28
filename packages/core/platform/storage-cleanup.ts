@@ -17,15 +17,15 @@ import "../drafts/register-all-drafts";
  * or call `registerDraftCleanup` directly.
  */
 const WORKSPACE_SCOPED_KEYS = [
-  "cordy_issue_surface_views",
-  "cordy_issues_view",
-  "cordy_issues_scope",
-  "cordy_my_issues_view",
-  "cordy:chat:selectedAgentId",
-  "cordy:chat:selectedProjectId",
-  "cordy:chat:activeSessionId",
-  "cordy:chat:expanded",
-  "cordy_navigation",
+  "patchbay_issue_surface_views",
+  "patchbay_issues_view",
+  "patchbay_issues_scope",
+  "patchbay_my_issues_view",
+  "patchbay:chat:selectedAgentId",
+  "patchbay:chat:selectedProjectId",
+  "patchbay:chat:activeSessionId",
+  "patchbay:chat:expanded",
+  "patchbay_navigation",
 ];
 
 /** Remove all workspace-scoped storage entries for the given workspace slug. */

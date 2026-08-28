@@ -3,7 +3,7 @@ import { buildScrollBridge } from "../packages/views/editor/utils/iframe-scroll-
 
 /**
  * Self-contained Chromium tests for the in-iframe scroll bridge
- * (alexj11324#6405). No app server: `page.setContent` with a real
+ * (patchbay-ai#6405). No app server: `page.setContent` with a real
  * `sandbox="allow-scripts"` srcdoc iframe, injecting the exact bridge
  * script that ships in the bundle. These pin facts jsdom cannot verify:
  * sandboxed srcdoc throws on sessionStorage, and a real ResizeObserver
@@ -23,7 +23,7 @@ function pageWithIframe(bodyHtml: string): string {
 <script>
   window.__messages = [];
   window.addEventListener("message", (e) => {
-    if (e.data && e.data.__cordy === "__cordy") window.__messages.push(e.data);
+    if (e.data && e.data.__patchbay === "__patchbay") window.__messages.push(e.data);
   });
 </script></body></html>`;
 }
@@ -88,7 +88,7 @@ test.describe("iframe scroll bridge (real Chromium, sandboxed srcdoc)", () => {
       ([token]) => {
         const w = document.querySelector<HTMLIFrameElement>("#f")!.contentWindow!;
         w.postMessage(
-          { __cordy: "__cordy", kind: "restore", y: 600, token },
+          { __patchbay: "__patchbay", kind: "restore", y: 600, token },
           "*",
         );
       },
@@ -108,7 +108,7 @@ test.describe("iframe scroll bridge (real Chromium, sandboxed srcdoc)", () => {
       ([token]) => {
         const w = document.querySelector<HTMLIFrameElement>("#f")!.contentWindow!;
         w.postMessage(
-          { __cordy: "__cordy", kind: "restore", y: 500, token },
+          { __patchbay: "__patchbay", kind: "restore", y: 500, token },
           "*",
         );
       },
@@ -154,7 +154,7 @@ test.describe("iframe scroll bridge (real Chromium, sandboxed srcdoc)", () => {
     await page.evaluate(() => {
       const w = document.querySelector<HTMLIFrameElement>("#f")!.contentWindow!;
       w.postMessage(
-        { __cordy: "__cordy", kind: "restore", y: 777, token: "old" },
+        { __patchbay: "__patchbay", kind: "restore", y: 777, token: "old" },
         "*",
       );
     });
@@ -180,7 +180,7 @@ test.describe("iframe scroll bridge (real Chromium, sandboxed srcdoc)", () => {
           restore: number;
           scroll: number;
         }>((resolve) => {
-          const MARK = "__cordy";
+          const MARK = "__patchbay";
           const iframe = document.querySelector<HTMLIFrameElement>("#f")!;
           let restoreIssued = false;
           let requestSync = 0;
@@ -206,9 +206,9 @@ test.describe("iframe scroll bridge (real Chromium, sandboxed srcdoc)", () => {
           window.addEventListener("message", (e) => {
             if (e.source !== iframe.contentWindow) return;
             const d = e.data as
-              | { __cordy?: string; token?: string; kind?: string }
+              | { __patchbay?: string; token?: string; kind?: string }
               | undefined;
-            if (!d || d.__cordy !== MARK || d.token !== token) return;
+            if (!d || d.__patchbay !== MARK || d.token !== token) return;
             if (d.kind === "ready") {
               ready++;
               // THE FIX: record + restore, but do NOT send request-sync here.

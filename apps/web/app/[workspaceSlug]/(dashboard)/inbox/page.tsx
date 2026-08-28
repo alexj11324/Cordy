@@ -1,1 +1,1 @@
-export { InboxPage as default } from "@cordy/views/inbox";
+export { InboxPage as default } from "@patchbay/views/inbox";

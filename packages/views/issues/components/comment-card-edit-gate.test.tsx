@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode, type Ref } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Attachment, TimelineEntry } from "@cordy/core/types";
-import type { UploadResult } from "@cordy/core/hooks/use-file-upload";
-import { useCommentDraftStore } from "@cordy/core/issues/stores";
+import type { Attachment, TimelineEntry } from "@patchbay/core/types";
+import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
+import { useCommentDraftStore } from "@patchbay/core/issues/stores";
 import { renderWithI18n } from "../../test/i18n";
 
 const apiUploadFile = vi.hoisted(() => vi.fn());
@@ -18,7 +18,7 @@ const editorDefaultValues = vi.hoisted(() => ({
 // the same or the two records drift apart only in tests.
 let mockUploadIdSeq = 0;
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   // Uploads flow through the coordinator, which calls api.uploadFile (PB-5181).
   api: { uploadFile: apiUploadFile },
   dispatchReasonCode: () => undefined,
@@ -36,7 +36,7 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Ada" }),
 }));
 

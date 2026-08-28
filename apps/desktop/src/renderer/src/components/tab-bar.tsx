@@ -32,15 +32,15 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@cordy/ui/components/ui/context-menu";
-import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/context-menu";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useTabStore, useActiveGroup, type Tab } from "@/stores/tab-store";
-import { paths } from "@cordy/core/paths";
+import { paths } from "@patchbay/core/paths";
 import {
   useTabPresentation,
   ResourceLeadingVisual,
-} from "@cordy/views/layout";
+} from "@patchbay/views/layout";
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 const TAB_SCROLL_FADE_SIZE = 24;
@@ -163,7 +163,7 @@ function SortableTabItem({
   // The tab's leading visual and title are derived live from its URL and the
   // query cache — a resource's own icon/status/avatar and its real title,
   // updated as the cache updates. `tab.title` is only a persisted first-frame
-  // fallback. See @cordy/views useTabPresentation.
+  // fallback. See @patchbay/views useTabPresentation.
   const { visual, title } = useTabPresentation(tab.url, tab.title);
 
   // Persist the active tab's resolved title so it survives as the next

@@ -35,8 +35,8 @@ import Animated, {
 import type {
   ChatPendingTask,
   TaskMessagePayload,
-} from "@cordy/core/types";
-import type { AgentAvailability } from "@cordy/core/agents";
+} from "@patchbay/core/types";
+import type { AgentAvailability } from "@patchbay/core/agents";
 import { Text } from "@/components/ui/text";
 import { formatElapsedSecs } from "@/lib/format-elapsed";
 import { useColorScheme } from "@/lib/use-color-scheme";

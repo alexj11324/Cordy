@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Connect any [agent](/agents) to a DingTalk bot and your team can work with it from inside DingTalk — DM the bot, @-mention it in a group, send it screenshots, or type `/issue` to file a [Patchbay issue](/issues) without opening the app.
 
-DingTalk support is [community-maintained](/community-maintained): it ships in every release, but it carries no official support SLA. Report problems in [GitHub issues](https://github.com/alexj11324/Cordy/issues).
+DingTalk support is [community-maintained](/community-maintained): it ships in every release, but it carries no official support SLA. Report problems in [GitHub issues](https://github.com/patchbay-ai/patchbay/issues).
 
 DingTalk uses a **bring-your-own-app (BYO)** model: a workspace admin creates a DingTalk app, adds a Stream-mode robot to it, and pastes its credentials into Patchbay. The agent selected during setup is the robot's default for DMs and newly discovered groups. The same robot can join multiple groups, and each group can then be routed to a different agent. (This differs from [Lark](/lark-bot-integration), where binding is a scan-to-install flow.)
 
@@ -120,7 +120,7 @@ For self-host, DingTalk is **off until you set an at-rest encryption key**. The 
 1. Generate a 32-byte key and set it on the API server:
 
    ```dotenv
-   CORDY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+   PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
    ```
 
    For example: `openssl rand -base64 32`.
@@ -128,7 +128,7 @@ For self-host, DingTalk is **off until you set an at-rest encryption key**. The 
 2. Restart the API. Until the key is set, **Settings → Integrations** shows a "DingTalk integration not enabled" notice and the **Connect DingTalk** entry points stay hidden.
 
 <Callout type="info">
-The key must decode to exactly 32 bytes — `openssl rand -base64 32` does this. Treat it as a long-lived secret: rotating or losing it makes already-stored credentials undecryptable, forcing every bot to reconnect. The "link your account" link is built from your web app URL (`CORDY_APP_URL`, falling back to `FRONTEND_ORIGIN`) — a normal deployment already sets this, so there's nothing extra to configure.
+The key must decode to exactly 32 bytes — `openssl rand -base64 32` does this. Treat it as a long-lived secret: rotating or losing it makes already-stored credentials undecryptable, forcing every bot to reconnect. The "link your account" link is built from your web app URL (`PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN`) — a normal deployment already sets this, so there's nothing extra to configure.
 </Callout>
 
 ## Next

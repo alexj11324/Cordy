@@ -208,17 +208,17 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // The leaderboard renders ActorAvatar, which resolves avatar URLs through
 // the api singleton. Only the base-URL read is exercised here.
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getBaseUrl: () => "https://example.test" },
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     agentDetail: (id: string) => `/acme/agents/${id}`,
   }),
@@ -226,7 +226,7 @@ vi.mock("@cordy/core/paths", () => ({
 
 const tzRef = vi.hoisted(() => ({ current: "UTC" as string | null }));
 
-vi.mock("@cordy/core/auth", () => {
+vi.mock("@patchbay/core/auth", () => {
   type AuthState = { user: { timezone: string | null } | null };
   const state = (): AuthState => ({ user: { timezone: tzRef.current } });
   const useAuthStore = Object.assign(
@@ -236,7 +236,7 @@ vi.mock("@cordy/core/auth", () => {
   return { useAuthStore };
 });
 
-vi.mock("@cordy/core/runtimes/custom-pricing-store", () => {
+vi.mock("@patchbay/core/runtimes/custom-pricing-store", () => {
   const state = () => ({ pricings: {} });
   const useCustomPricingStore = Object.assign(
     (sel?: (s: ReturnType<typeof state>) => unknown) =>
@@ -319,7 +319,7 @@ describe("DashboardPage — viewing timezone drives the query key", () => {
   });
 
   // The `tz` segment is the last element of every dashboard key
-  // (see dashboardKeys in @cordy/core/dashboard/queries).
+  // (see dashboardKeys in @patchbay/core/dashboard/queries).
   function tzSegments(): unknown[] {
     return queryKeys
       .filter((k) => k[0] === "dashboard")

@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { cn } from "@cordy/ui/lib/utils";
-import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
-import { DragStrip } from "@cordy/views/platform";
-import type { OnboardingStep } from "@cordy/core/onboarding";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { DragStrip } from "@patchbay/views/platform";
+import type { OnboardingStep } from "@patchbay/core/onboarding";
 import { StepProgressBar, StepSidebar } from "./step-sidebar";
 
 /**

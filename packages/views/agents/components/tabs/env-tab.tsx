@@ -13,11 +13,11 @@ import {
   Trash2,
   WrapText,
 } from "lucide-react";
-import { api } from "@cordy/core/api";
-import type { Agent } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
+import { api } from "@patchbay/core/api";
+import type { Agent } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 import type { EnvParseError } from "./env-file";

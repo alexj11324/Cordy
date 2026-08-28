@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { issueIdentifierOptions } from "@cordy/core/issues/queries";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { isIssueIdentifier } from "@cordy/ui/markdown";
-import type { Issue } from "@cordy/core/types";
+import { issueIdentifierOptions } from "@patchbay/core/issues/queries";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { isIssueIdentifier } from "@patchbay/ui/markdown";
+import type { Issue } from "@patchbay/core/types";
 
 /**
  * Resolve a bare issue identifier ("PB-123") to a real issue in the current

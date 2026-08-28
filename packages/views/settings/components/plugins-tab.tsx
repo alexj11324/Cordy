@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useCurrentMember } from "@cordy/core/permissions";
+import { useCurrentMember } from "@patchbay/core/permissions";
 import {
   pluginInstallationsOptions,
   useConfigurePlugin,
@@ -12,23 +12,23 @@ import {
   usePreviewPlugin,
   useSetPluginEnabled,
   useUninstallPlugin,
-} from "@cordy/core/plugins";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import type { PluginConfigField, PluginInstallation, PluginPreview } from "@cordy/core/types";
-import { Alert, AlertDescription, AlertTitle } from "@cordy/ui/components/ui/alert";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+} from "@patchbay/core/plugins";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import type { PluginConfigField, PluginInstallation, PluginPreview } from "@patchbay/core/types";
+import { Alert, AlertDescription, AlertTitle } from "@patchbay/ui/components/ui/alert";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/select";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval } from "../../plugins";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";

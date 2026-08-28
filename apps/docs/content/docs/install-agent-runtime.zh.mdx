@@ -1,17 +1,17 @@
 ---
 title: 安装 AI 编程工具
-description: 安装并登录一款受支持的 AI 编程工具，让 Cordy 在本机执行任务。
+description: 安装并登录一款受支持的 AI 编程工具，让 Patchbay 在本机执行任务。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-本地运行时由两部分组成：Cordy 守护进程，以及它能够调用的一款 AI 编程工具。只需要安装你准备使用的工具，不必安装全部工具。
+本地运行时由两部分组成：Patchbay 守护进程，以及它能够调用的一款 AI 编程工具。只需要安装你准备使用的工具，不必安装全部工具。
 
 ## 1. 选择一款工具
 
 已经安装并登录的工具不需要额外配置。工具之间的模型、MCP、会话恢复和 skill 支持有所不同，详细差异见 [AI 编程工具对照](/providers)。
 
-Cordy 当前会检测以下命令：
+Patchbay 当前会检测以下命令：
 
 | 工具 | 检测的命令 | 官方安装说明 |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ Cordy 当前会检测以下命令：
 | TRAE CLI | `traecli` | [TRAE 官方站](https://www.trae.cn/) |
 | Dim | `dim` | [DimCode](https://dimagent.cn/docs/cli) |
 
-"受支持"表示 Cordy 能够调用对应 CLI，不代表 Cordy 会替你提供该工具的账号、订阅或模型额度。
+"受支持"表示 Patchbay 能够调用对应 CLI，不代表 Patchbay 会替你提供该工具的账号、订阅或模型额度。
 
 ## 2. 在本机完成登录
 
@@ -48,13 +48,13 @@ Cordy 当前会检测以下命令：
 
 使用 Reasonix 时，请先运行 `reasonix setup`，配置默认的模型服务和模型，再启动守护进程。
 
-使用 QwenPaw 时，请在 QwenPaw 自身的配置里选择模型服务和模型。Cordy 无法在执行时覆盖 QwenPaw 的模型。
+使用 QwenPaw 时，请在 QwenPaw 自身的配置里选择模型服务和模型。Patchbay 无法在执行时覆盖 QwenPaw 的模型。
 
-使用 MiniMax Code 时，请安装受支持的 Node.js 版本（`>=22.19 <23` 或 `>=24 <27`），并运行 `npm install --global @minimax-ai/code@latest`。全局 npm 安装会把 `mcode` 放入 npm 的全局可执行目录；如果 `command -v mcode` 或 `Get-Command mcode` 找不到它，请将该目录加入 `PATH`。然后运行 `mcode login`。模型由 MiniMax Code 管理，Cordy 无法通过 ACP 覆盖它。
+使用 MiniMax Code 时，请安装受支持的 Node.js 版本（`>=22.19 <23` 或 `>=24 <27`），并运行 `npm install --global @minimax-ai/code@latest`。全局 npm 安装会把 `mcode` 放入 npm 的全局可执行目录；如果 `command -v mcode` 或 `Get-Command mcode` 找不到它，请将该目录加入 `PATH`。然后运行 `mcode login`。模型由 MiniMax Code 管理，Patchbay 无法通过 ACP 覆盖它。
 
-使用 DeepSeek Harness 时，请先安装 Node.js 20+ 并运行 `npm install -g @deepseek-ai/dsh`，然后为它安装 Cordy 运行时 profile（`dsh plugin --profile cordy add <bundle>`）。守护进程只有在 `dsh --profile cordy --probe` 成功后才注册 DeepSeek Harness。启动守护进程前请设置 `DEEPSEEK_API_KEY`（或在 dsh 自身设置中保存）。
+使用 DeepSeek Harness 时，请先安装 Node.js 20+ 并运行 `npm install -g @deepseek-ai/dsh`，然后为它安装 Patchbay 运行时 profile（`dsh plugin --profile patchbay add <bundle>`）。守护进程只有在 `dsh --profile patchbay --probe` 成功后才注册 DeepSeek Harness。启动守护进程前请设置 `DEEPSEEK_API_KEY`（或在 dsh 自身设置中保存）。
 
-这些登录凭据由工具保存在本机。Cordy 不会接收 Claude、Codex、Cursor 或其他 CLI 的登录 token。
+这些登录凭据由工具保存在本机。Patchbay 不会接收 Claude、Codex、Cursor 或其他 CLI 的登录 token。
 
 <Callout type="info">
 Claude Code 需要 2.0.0 或更高版本，Codex 需要 0.100.0 或更高版本，Copilot 需要 1.0.0 或更高版本，Grok 需要 0.2.89 或更高版本，Qwen Code 需要 0.20.0 或更高版本，MiniMax Code 需要 0.1.2 或更高版本。低于最低版本时，守护进程不会注册对应运行时。
@@ -78,25 +78,25 @@ Get-Command <command>
 
 把 `<command>` 换成表格中的命令，例如 `claude`、`codex` 或 `cursor-agent`。第一条命令返回可执行文件路径。
 
-如果终端能够找到工具，但 Desktop 或后台守护进程找不到，通常是两者使用的 `PATH` 不同。可以重启应用，或通过对应的 `CORDY_<PROVIDER>_PATH` 环境变量指定绝对路径；完整配置见[环境变量](/environment-variables#守护进程配置)。
+如果终端能够找到工具，但 Desktop 或后台守护进程找不到，通常是两者使用的 `PATH` 不同。可以重启应用，或通过对应的 `PATCHBAY_<PROVIDER>_PATH` 环境变量指定绝对路径；完整配置见[环境变量](/environment-variables#守护进程配置)。
 
 ## 4. 重新检测并确认上线
 
 使用 CLI 启动守护进程：
 
 ```bash
-cordy daemon start
+patchbay daemon start
 ```
 
 如果守护进程已经运行，安装新工具后重新启动：
 
 ```bash
-cordy daemon restart
+patchbay daemon restart
 ```
 
-使用 Cordy Desktop 时，退出并重新打开应用即可。
+使用 Patchbay Desktop 时，退出并重新打开应用即可。
 
-然后打开 Cordy 的**运行时**页面。目标电脑下面会出现对应工具，并显示为在线。现在可以在创建或编辑智能体时选择这条运行时。
+然后打开 Patchbay 的**运行时**页面。目标电脑下面会出现对应工具，并显示为在线。现在可以在创建或编辑智能体时选择这条运行时。
 
 <Callout type="warning">
 守护进程启动时必须先检测到至少一款内置支持的 CLI。自定义运行时配置会在守护进程启动后同步，因此不能作为一台空白机器上的唯一启动条件。
@@ -108,7 +108,7 @@ cordy daemon restart
 
 1. 在终端运行工具本身，确认安装和登录都已完成。
 2. 用 `command -v` 或 `Get-Command` 检查实际命令名和路径。
-3. 运行 `cordy daemon logs -f`，查看版本、路径或认证错误。
+3. 运行 `patchbay daemon logs -f`，查看版本、路径或认证错误。
 4. 重启守护进程，让它重新读取当前环境。
 5. 回到**运行时**页面，确认电脑和工具都已上线。
 
@@ -118,4 +118,4 @@ cordy daemon restart
 
 - [创建和配置智能体](/agents-create) — 选择刚刚连接的运行时。
 - [守护进程与运行时](/daemon-runtimes) — 了解在线状态、并发和自定义运行时。
-- [AI 编程工具对照](/providers) — 比较各工具在 Cordy 中的能力。
+- [AI 编程工具对照](/providers) — 比较各工具在 Patchbay 中的能力。

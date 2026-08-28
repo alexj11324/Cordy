@@ -355,7 +355,7 @@
     "install": {
       "title": "Install a Plugin",
       "description": "Paste the URL of a plugin manifest. You'll see what it asks for before anything is installed.",
-      "placeholder": "https://example.com/cordy.plugin.json",
+      "placeholder": "https://example.com/patchbay.plugin.json",
       "review": "Review"
     },
     "installed": {
@@ -581,7 +581,7 @@
   },
   "tokens": {
     "title": "API Tokens",
-    "description": "Personal access tokens allow the CLI and external integrations to authenticate with your account. Use one via cordy login --token, or as a Bearer token when calling the API.",
+    "description": "Personal access tokens allow the CLI and external integrations to authenticate with your account. Use one via patchbay login --token, or as a Bearer token when calling the API.",
     "security_note": "A token grants full access to your account — treat it like a password.",
     "empty": "No API tokens yet. Create one above to get started.",
     "load_failed": "Could not load your API tokens. Reload the page to try again.",

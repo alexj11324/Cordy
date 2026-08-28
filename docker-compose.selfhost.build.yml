@@ -3,7 +3,7 @@
 
 services:
   backend:
-    image: cordy-backend:dev
+    image: patchbay-backend:dev
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,7 +13,7 @@ services:
         DATE: ${DATE:-unknown}
 
   frontend:
-    image: cordy-web:dev
+    image: patchbay-web:dev
     build:
       context: .
       dockerfile: Dockerfile.web

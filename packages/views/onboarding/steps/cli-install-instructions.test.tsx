@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import { CliInstallInstructions } from "./cli-install-instructions";
@@ -20,6 +20,6 @@ describe("CliInstallInstructions", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("cordy setup")).toHaveClass(...ligatureClasses);
+    expect(screen.getByText("patchbay setup")).toHaveClass(...ligatureClasses);
   });
 });

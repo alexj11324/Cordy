@@ -29,7 +29,7 @@ import type {
   IssuePriority,
   IssueStatus,
   IssueStatusCategory,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 // Header chrome (back + "Issues" title) comes from the parent Stack

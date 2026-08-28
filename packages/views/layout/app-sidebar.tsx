@@ -1,9 +1,9 @@
 "use client";
 
-import { issueStatusCategory } from "@cordy/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "@cordy/ui/lib/utils";
-import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
 import { HelpLauncher } from "./help-launcher";
 import { JoinDiscordCard } from "./join-discord-card";
@@ -27,13 +27,13 @@ import { Layers,
   X,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@cordy/ui/components/ui/tooltip";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@cordy/ui/components/ui/collapsible";
-import { CappedNumberFlow } from "@cordy/ui/components/ui/number-flow";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@patchbay/ui/components/ui/collapsible";
+import { CappedNumberFlow } from "@patchbay/ui/components/ui/number-flow";
 import { StatusIcon } from "../issues/components/status-icon";
-import { useIssueDraftStore } from "@cordy/core/issues/stores/draft-store";
-import { openCreateIssueWithPreference } from "@cordy/core/issues/stores/create-mode-store";
+import { useIssueDraftStore } from "@patchbay/core/issues/stores/draft-store";
+import { openCreateIssueWithPreference } from "@patchbay/core/issues/stores/create-mode-store";
 import {
   Sidebar,
   SidebarContent,
@@ -47,7 +47,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   useSidebar,
-} from "@cordy/ui/components/ui/sidebar";
+} from "@patchbay/ui/components/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,35 +56,35 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { useAuthStore } from "@cordy/core/auth";
-import { issueViewDetailOptions } from "@cordy/core/issue-views/queries";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { useAuthStore } from "@patchbay/core/auth";
+import { issueViewDetailOptions } from "@patchbay/core/issue-views/queries";
 import {
   issueViewContainerKey,
   useActiveIssueViewStore,
-} from "@cordy/core/issue-views/active-view-store";
-import { useCurrentWorkspace, useWorkspacePaths, paths } from "@cordy/core/paths";
-import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
+} from "@patchbay/core/issue-views/active-view-store";
+import { useCurrentWorkspace, useWorkspacePaths, paths } from "@patchbay/core/paths";
+import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { inboxKeys, deduplicateInboxItems, inboxUnreadSummaryOptions, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@cordy/core/inbox/queries";
-import { chatSessionsOptions } from "@cordy/core/chat/queries";
-import { countUnreadChatMessages } from "@cordy/core/chat/unread";
-import { useChatStore } from "@cordy/core/chat";
-import { api, ApiError } from "@cordy/core/api";
-import { useConfigStore } from "@cordy/core/config";
-import { pinListOptions } from "@cordy/core/pins/queries";
-import { useDeletePin, useReorderPins } from "@cordy/core/pins/mutations";
-import { issueDetailOptions } from "@cordy/core/issues/queries";
-import { projectDetailOptions } from "@cordy/core/projects/queries";
-import type { PinnedItem } from "@cordy/core/types";
+import { inboxKeys, deduplicateInboxItems, inboxUnreadSummaryOptions, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@patchbay/core/inbox/queries";
+import { chatSessionsOptions } from "@patchbay/core/chat/queries";
+import { countUnreadChatMessages } from "@patchbay/core/chat/unread";
+import { useChatStore } from "@patchbay/core/chat";
+import { api, ApiError } from "@patchbay/core/api";
+import { useConfigStore } from "@patchbay/core/config";
+import { pinListOptions } from "@patchbay/core/pins/queries";
+import { useDeletePin, useReorderPins } from "@patchbay/core/pins/mutations";
+import { issueDetailOptions } from "@patchbay/core/issues/queries";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
+import type { PinnedItem } from "@patchbay/core/types";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { routeIconForPath } from "./route-icon-components";
 import { useT } from "../i18n";
 import {
   useShortcut,
-} from "@cordy/core/shortcuts";
+} from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useAppForeground } from "../common/use-app-foreground";
 
@@ -613,7 +613,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         )}
                       </span>
                       <span className="flex-1 truncate font-medium">
-                        {workspace?.name ?? "Cordy"}
+                        {workspace?.name ?? "Patchbay"}
                       </span>
                       <ChevronDown className="size-3 text-muted-foreground" />
                     </SidebarMenuButton>

@@ -1,7 +1,7 @@
 "use client";
 
-import { Switch } from "@cordy/ui/components/ui/switch";
-import { useChatStore } from "@cordy/core/chat";
+import { Switch } from "@patchbay/ui/components/ui/switch";
+import { useChatStore } from "@patchbay/core/chat";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import {

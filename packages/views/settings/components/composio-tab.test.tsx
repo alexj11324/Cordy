@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
-import type { ComposioConnection, ComposioToolkit } from "@cordy/core/types";
+import type { ComposioConnection, ComposioToolkit } from "@patchbay/core/types";
 
 // --- Mutable refs the mocked hooks read from, so each test can shape the data
 // without re-mocking the modules. ---
@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@cordy/core/composio", () => ({
+vi.mock("@patchbay/core/composio", () => ({
   composioKeys: {
     all: ["composio"],
     toolkits: () => ["composio", "toolkits"],
@@ -42,7 +42,7 @@ vi.mock("@cordy/core/composio", () => ({
   composioConnectionsOptions: () => ({ queryKey: ["composio", "connections"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     beginComposioConnect: vi.fn(),
     deleteComposioConnection: vi.fn(),

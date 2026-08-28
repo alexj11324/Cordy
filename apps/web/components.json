@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@cordy/ui/components",
-    "utils": "@cordy/ui/lib/utils",
-    "ui": "@cordy/ui/components/ui",
-    "lib": "@cordy/ui/lib",
-    "hooks": "@cordy/ui/hooks"
+    "components": "@patchbay/ui/components",
+    "utils": "@patchbay/ui/lib/utils",
+    "ui": "@patchbay/ui/components/ui",
+    "lib": "@patchbay/ui/lib",
+    "hooks": "@patchbay/ui/hooks"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

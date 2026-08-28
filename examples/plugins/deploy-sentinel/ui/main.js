@@ -7,7 +7,7 @@
 // call below goes over the bridge, where the host re-issues it as the signed-in
 // user and checks the scopes this plugin was granted.
 
-import { cordy } from "https://esm.sh/@cordy/plugin-sdk@1";
+import { patchbay } from "https://esm.sh/@patchbay/plugin-sdk@1";
 
 const root = document.getElementById("root");
 
@@ -36,13 +36,13 @@ function deployRow(deploy) {
 async function correlate() {
   render(`<p class="muted">Looking for recent deploys…</p>`);
   try {
-    const issue = await cordy.issue.get();
+    const issue = await patchbay.issue.get();
     // The service name is a workspace-level setting rather than something
     // typed per issue: everyone investigating the same service should get the
     // same answer.
-    const service = (await cordy.storage.workspace.get("default_service")) ?? "checkout-api";
+    const service = (await patchbay.storage.workspace.get("default_service")) ?? "checkout-api";
 
-    const result = await cordy.hooks.invoke("correlate_deploys", {
+    const result = await patchbay.hooks.invoke("correlate_deploys", {
       service,
       window_minutes: 120,
     });
@@ -72,7 +72,7 @@ root.addEventListener("click", async (event) => {
 
   event.target.disabled = true;
   try {
-    const result = await cordy.hooks.invoke("request_rollback", { deploy_id: deployId, reason });
+    const result = await patchbay.hooks.invoke("request_rollback", { deploy_id: deployId, reason });
     render(result.status === "filed"
       ? `<p>Filed <code>${escapeHTML(result.change_id)}</code>. ${escapeHTML(result.next_step)}</p>`
       : `<p class="error">${escapeHTML(result.reason)}</p>`);
@@ -81,5 +81,5 @@ root.addEventListener("click", async (event) => {
   }
 });
 
-cordy.ui.resize(360);
+patchbay.ui.resize(360);
 correlate();

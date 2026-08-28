@@ -1,11 +1,11 @@
 "use client";
 
-import { Switch } from "@cordy/ui/components/ui/switch";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   MANUAL_CREATE_FIELDS,
   QUICK_CREATE_FIELDS,
   useIssueCreateSettingsStore,
-} from "@cordy/core/issues/stores/issue-create-settings-store";
+} from "@patchbay/core/issues/stores/issue-create-settings-store";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import {

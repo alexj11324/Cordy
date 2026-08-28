@@ -1,18 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { agentListOptions } from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { agentListOptions } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
   agentTaskSnapshotOptions,
   useAgentPresenceDetail,
-} from "@cordy/core/agents";
-import { issueDetailOptions } from "@cordy/core/issues";
-import type { AgentTask } from "@cordy/core/types";
+} from "@patchbay/core/agents";
+import { issueDetailOptions } from "@patchbay/core/issues";
+import type { AgentTask } from "@patchbay/core/types";
 import { AlertTriangle } from "lucide-react";
 import { AppLink } from "../../navigation";
 import { useT, useTimeAgo } from "../../i18n";

@@ -66,7 +66,7 @@ Safari ではログインに成功してもログイン画面に残ります。
 Patchbay Cloud では追加設定は不要です。セルフホスト環境では、Bot の認証情報を暗号化するキーを先に設定してください。
 
 ```dotenv
-CORDY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 次のコマンドで生成できます。
@@ -77,7 +77,7 @@ openssl rand -base64 32
 
 API サービスを再起動した後、エージェントの**連携**ページから Bot を接続します。このキーは継続して保管してください。変更または紛失すると既存の認証情報を復号できなくなり、Bot の再接続が必要になります。
 
-`CORDY_LARK_HTTP_BASE_URL` と `CORDY_LARK_CALLBACK_BASE_URL` は、プロキシやテストなどの特殊な環境でのみ使用します。通常は設定する必要はありません。
+`PATCHBAY_LARK_HTTP_BASE_URL` と `PATCHBAY_LARK_CALLBACK_BASE_URL` は、プロキシやテストなどの特殊な環境でのみ使用します。通常は設定する必要はありません。
 
 ## よくある問題
 

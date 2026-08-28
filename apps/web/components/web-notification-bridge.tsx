@@ -4,9 +4,9 @@ import { useEffect, useRef } from "react";
 import {
   registerSystemNotificationClickHandler,
   type SystemNotificationPayload,
-} from "@cordy/core/platform";
-import { paths } from "@cordy/core/paths";
-import { useNavigation } from "@cordy/views/navigation";
+} from "@patchbay/core/platform";
+import { paths } from "@patchbay/core/paths";
+import { useNavigation } from "@patchbay/views/navigation";
 
 /**
  * Routes browser notification clicks to the source workspace's inbox, focused

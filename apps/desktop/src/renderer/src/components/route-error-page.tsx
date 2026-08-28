@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { isRouteErrorResponse, useLocation, useRouteError } from "react-router-dom";
 import { AlertTriangle, Compass, RotateCw, Send, X } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import type { DesktopRouteErrorFeedbackContext } from "@cordy/core/feedback";
-import { useModalStore } from "@cordy/core/modals";
+import { Button } from "@patchbay/ui/components/ui/button";
+import type { DesktopRouteErrorFeedbackContext } from "@patchbay/core/feedback";
+import { useModalStore } from "@patchbay/core/modals";
 import { useTabStore } from "@/stores/tab-store";
 
 export function createRouteErrorFeedbackContext({
@@ -70,7 +70,7 @@ function DesktopNotFoundPage() {
       <div className="space-y-2">
         <h2 className="text-title font-semibold">This page doesn&apos;t exist</h2>
         <p className="max-w-lg text-body text-muted-foreground">
-          Nothing in Cordy matches this address. If you got here from a link,
+          Nothing in Patchbay matches this address. If you got here from a link,
           it probably points at a file on someone else&apos;s computer rather
           than a page.
         </p>

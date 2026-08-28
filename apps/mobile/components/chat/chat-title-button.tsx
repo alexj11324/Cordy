@@ -5,7 +5,7 @@
  * — tap opens the sessions + agent picker sheet.
  */
 import { Pressable, View } from "react-native";
-import type { Agent, ChatSession } from "@cordy/core/types";
+import type { Agent, ChatSession } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 

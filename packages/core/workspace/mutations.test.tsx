@@ -179,8 +179,8 @@ describe("useDeleteWorkspace", () => {
     // The realtime `workspace:deleted` handler skips self-initiated deletes,
     // so the mutation owns this cleanup; the slug is captured from the list
     // cache before the mutation fires.
-    defaultStorage.setItem("cordy_issue_draft:delete-me", "draft");
-    defaultStorage.setItem("cordy_issue_draft:keep-me", "draft");
+    defaultStorage.setItem("patchbay_issue_draft:delete-me", "draft");
+    defaultStorage.setItem("patchbay_issue_draft:keep-me", "draft");
 
     const { result } = renderHook(() => useDeleteWorkspace(), {
       wrapper: createWrapper(qc),
@@ -190,14 +190,14 @@ describe("useDeleteWorkspace", () => {
       await result.current.mutateAsync("ws-2");
     });
 
-    expect(defaultStorage.getItem("cordy_issue_draft:delete-me")).toBeNull();
-    expect(defaultStorage.getItem("cordy_issue_draft:keep-me")).toBe("draft");
+    expect(defaultStorage.getItem("patchbay_issue_draft:delete-me")).toBeNull();
+    expect(defaultStorage.getItem("patchbay_issue_draft:keep-me")).toBe("draft");
   });
 
   it("leaves storage and cache untouched when the DELETE fails", async () => {
     seedList();
     deleteWorkspace.mockRejectedValue(new Error("boom"));
-    defaultStorage.setItem("cordy_issue_draft:delete-me", "draft");
+    defaultStorage.setItem("patchbay_issue_draft:delete-me", "draft");
 
     const { result } = renderHook(() => useDeleteWorkspace(), {
       wrapper: createWrapper(qc),
@@ -208,7 +208,7 @@ describe("useDeleteWorkspace", () => {
     });
 
     // No optimistic write happened, so there is nothing to roll back.
-    expect(defaultStorage.getItem("cordy_issue_draft:delete-me")).toBe("draft");
+    expect(defaultStorage.getItem("patchbay_issue_draft:delete-me")).toBe("draft");
     expect(cachedList().map((w) => w.id)).toEqual(["ws-1", "ws-2"]);
   });
 

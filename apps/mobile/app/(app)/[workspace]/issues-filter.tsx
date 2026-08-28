@@ -11,7 +11,7 @@
  */
 import { Pressable, ScrollView, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import type { IssuePriority, IssueStatus } from "@cordy/core/types";
+import type { IssuePriority, IssueStatus } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

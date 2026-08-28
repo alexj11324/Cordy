@@ -8,11 +8,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@cordy/ui/components/ui/dialog";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
-import { Button } from "@cordy/ui/components/ui/button";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/ui/components/ui/dialog";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { isImeComposing } from "@patchbay/core/utils";
 import { useT } from "../../i18n";
 
 /**

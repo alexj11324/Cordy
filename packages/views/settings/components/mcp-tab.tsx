@@ -13,18 +13,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Button } from "@cordy/ui/components/ui/button";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { useCurrentMember } from "@cordy/core/permissions";
-import { workspaceMcpServersOptions } from "@cordy/core/workspace/queries";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { useCurrentMember } from "@patchbay/core/permissions";
+import { workspaceMcpServersOptions } from "@patchbay/core/workspace/queries";
 import {
   useCreateWorkspaceMcpServer,
   useDeleteWorkspaceMcpServer,
   useUpdateWorkspaceMcpServer,
-} from "@cordy/core/workspace/mutations";
-import type { WorkspaceMcpServer } from "@cordy/core/types";
+} from "@patchbay/core/workspace/mutations";
+import type { WorkspaceMcpServer } from "@patchbay/core/types";
 import { McpServerDialog } from "../../agents/components/tabs/mcp-server-dialog";
 import type { ManagedMcpServer } from "../../agents/components/tabs/mcp-config-model";
 import { useT } from "../../i18n";

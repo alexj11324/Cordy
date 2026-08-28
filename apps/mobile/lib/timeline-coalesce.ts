@@ -20,7 +20,7 @@
  *
  * Returns a new array; the input is not mutated.
  */
-import type { TimelineEntry } from "@cordy/core/types";
+import type { TimelineEntry } from "@patchbay/core/types";
 
 const COALESCE_MS = 2 * 60 * 1000;
 const NO_TIME_LIMIT_ACTIONS = new Set(["task_completed", "task_failed"]);

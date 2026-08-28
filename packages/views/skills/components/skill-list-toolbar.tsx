@@ -11,9 +11,9 @@ import {
   Search,
   X,
 } from "lucide-react";
-import type { Agent, MemberWithUser } from "@cordy/core/types";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { Button } from "@cordy/ui/components/ui/button";
+import type { Agent, MemberWithUser } from "@patchbay/core/types";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -24,20 +24,20 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { Input } from "@cordy/ui/components/ui/input";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/popover";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
+} from "@patchbay/ui/components/ui/tooltip";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import {
   type SkillColumnKey,
@@ -45,7 +45,7 @@ import {
   type SkillOriginType,
   type SkillSortDirection,
   type SkillSortField,
-} from "@cordy/core/skills/stores";
+} from "@patchbay/core/skills/stores";
 import { useT } from "../../i18n";
 import type { SkillRow } from "./skills-page";
 import { PAGE_TOOLBAR } from "../../layout/page-header";

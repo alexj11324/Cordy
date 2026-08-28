@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import type { Attachment } from "@cordy/core/types";
+import type { Attachment } from "@patchbay/core/types";
 
 const openExternalMock = vi.hoisted(() => vi.fn());
 
@@ -44,7 +44,7 @@ const {
   };
 });
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getBaseUrl: getBaseUrlMock,
@@ -80,8 +80,8 @@ vi.mock("../navigation", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@cordy/core/paths")>();
+vi.mock("@patchbay/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => slugState.value,

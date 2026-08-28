@@ -1,5 +1,5 @@
 {
-  "name": "@cordy/ui",
+  "name": "@patchbay/ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -63,8 +63,8 @@
     "react-i18next": "catalog:"
   },
   "devDependencies": {
-    "@cordy/eslint-config": "workspace:*",
-    "@cordy/tsconfig": "workspace:*",
+    "@patchbay/eslint-config": "workspace:*",
+    "@patchbay/tsconfig": "workspace:*",
     "@types/linkify-it": "^5.0.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

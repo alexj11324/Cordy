@@ -12,19 +12,19 @@ import {
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Virtuoso, type Components } from "react-virtuoso";
-import { cn } from "@cordy/ui/lib/utils";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@cordy/ui/components/ui/collapsible";
+} from "@patchbay/ui/components/ui/collapsible";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import {
   ChevronRight,
   ChevronDown,
@@ -35,23 +35,23 @@ import {
   RotateCw,
 } from "lucide-react";
 import { ThinkingOrb } from "thinking-orbs";
-import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
-import { isTaskMessageTaskId, taskMessagesOptions } from "@cordy/core/chat/queries";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { isTaskMessageTaskId, taskMessagesOptions } from "@patchbay/core/chat/queries";
 import { RichContent } from "../../rich-content";
 import { RichContentScrollRootProvider } from "../../rich-content/scroll-root";
-import { copyText } from "@cordy/ui/lib/clipboard";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import { AttachmentList } from "../../issues/components/comment-card";
 import { ImageSequenceProvider } from "../../editor";
-import { collectImageSequence } from "@cordy/core/attachments/image-sequence";
-import type { AgentAvailability } from "@cordy/core/agents";
-import { resolveFailureReasonKey } from "@cordy/core/agents";
+import { collectImageSequence } from "@patchbay/core/attachments/image-sequence";
+import type { AgentAvailability } from "@patchbay/core/agents";
+import { resolveFailureReasonKey } from "@patchbay/core/agents";
 import type {
   ChatMessage,
   ChatPendingTask,
   ChatQuickAction,
   TaskMessagePayload,
-} from "@cordy/core/types";
-import type { ChatTimelineItem } from "@cordy/core/chat";
+} from "@patchbay/core/types";
+import type { ChatTimelineItem } from "@patchbay/core/chat";
 import { buildTimeline } from "../../common/task-transcript";
 import { OnboardingStarterCards } from "./onboarding-starter-cards";
 import { TaskStatusPill } from "./task-status-pill";
@@ -1208,7 +1208,7 @@ function TimelineView({
 }: {
   items: ChatTimelineItem[];
   isStreaming?: boolean;
-  attachments?: import("@cordy/core/types").Attachment[];
+  attachments?: import("@patchbay/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
   const blocks = getVisibleTimelineBlocks(items);

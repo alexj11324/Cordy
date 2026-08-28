@@ -22,7 +22,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => state.pathname,
 }));
 
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (
     selector: (auth: {
       user: typeof state.user;
@@ -31,7 +31,7 @@ vi.mock("@cordy/core/auth", () => ({
   ) => selector({ user: state.user, isLoading: state.isAuthLoading }),
 }));
 
-vi.mock("@cordy/core/workspace", () => ({
+vi.mock("@patchbay/core/workspace", () => ({
   workspaceBySlugOptions: (slug: string) => ({
     queryKey: ["workspace-by-slug", slug],
     queryFn: async () => {
@@ -42,7 +42,7 @@ vi.mock("@cordy/core/workspace", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -52,27 +52,27 @@ vi.mock("@cordy/core/paths", () => ({
   },
 }));
 
-vi.mock("@cordy/core/platform", () => ({
+vi.mock("@patchbay/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@cordy/views/workspace/no-access-page", () => ({
+vi.mock("@patchbay/views/workspace/no-access-page", () => ({
   NoAccessPage: () => <div data-testid="no-access" />,
 }));
 
-vi.mock("@cordy/views/workspace/welcome-after-onboarding", () => ({
+vi.mock("@patchbay/views/workspace/welcome-after-onboarding", () => ({
   WelcomeAfterOnboarding: () => null,
 }));
 
-vi.mock("@cordy/views/workspace/use-workspace-seen", () => ({
+vi.mock("@patchbay/views/workspace/use-workspace-seen", () => ({
   useWorkspaceSeen: () => state.hasBeenSeen,
 }));
 
-vi.mock("@cordy/ui/components/common/cordy-icon", () => ({
-  CordyIcon: () => <div data-testid="workspace-loading" />,
+vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
+  PatchbayIcon: () => <div data-testid="workspace-loading" />,
 }));
 
-import { setCurrentWorkspace } from "@cordy/core/platform";
+import { setCurrentWorkspace } from "@patchbay/core/platform";
 import WorkspaceLayout from "./layout";
 
 /** `use()` unwraps a params promise synchronously only when it is already

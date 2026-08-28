@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { ArrowUpRight, Check, Clock, LoaderCircle } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@cordy/ui/components/ui/tooltip";
-import type { ChatQuickAction } from "@cordy/core/types";
+} from "@patchbay/ui/components/ui/tooltip";
+import type { ChatQuickAction } from "@patchbay/core/types";
 import { useT } from "../../i18n";
 
 /**

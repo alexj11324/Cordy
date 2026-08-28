@@ -1,4 +1,4 @@
-import type { UpdateIssueRequest } from "@cordy/core/types";
+import type { UpdateIssueRequest } from "@patchbay/core/types";
 
 /**
  * Mobile keeps text edits last-write-wins until it has a conflict comparison

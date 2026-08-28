@@ -16,8 +16,8 @@ COPY server-rs/crates/ ./crates/
 # These Rust crates embed these source assets at compile time. The explicit
 # copies keep Markdown assets available even when the Docker context excludes
 # repository documentation.
-COPY server-rs/crates/cordy-service/assets/ /src/server-rs/crates/cordy-service/assets/
-COPY server-rs/crates/cordy-handler/assets/ /src/server-rs/crates/cordy-handler/assets/
+COPY server-rs/crates/patchbay-service/assets/ /src/server-rs/crates/patchbay-service/assets/
+COPY server-rs/crates/patchbay-handler/assets/ /src/server-rs/crates/patchbay-handler/assets/
 
 ARG VERSION=dev
 ARG COMMIT=unknown
@@ -25,15 +25,15 @@ ARG DATE=unknown
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/src/server-rs/target,sharing=locked \
-    CORDY_BUILD_VERSION="${VERSION}" \
-    CORDY_BUILD_COMMIT="${COMMIT}" \
-    CORDY_BUILD_DATE="${DATE}" \
-    CORDY_GIT_COMMIT="${COMMIT}" \
-    cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins && \
+    PATCHBAY_BUILD_VERSION="${VERSION}" \
+    PATCHBAY_BUILD_COMMIT="${COMMIT}" \
+    PATCHBAY_BUILD_DATE="${DATE}" \
+    PATCHBAY_GIT_COMMIT="${COMMIT}" \
+    cargo build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins && \
     mkdir -p /out && \
-    cp target/release/cordy-server /out/server && \
-    cp target/release/cordy /out/cordy && \
-    cp target/release/cordy-migrate /out/migrate && \
+    cp target/release/patchbay-server /out/server && \
+    cp target/release/patchbay /out/patchbay && \
+    cp target/release/patchbay-migrate /out/migrate && \
     cp target/release/backfill_task_usage_hourly /out/ && \
     cp target/release/backfill_issue_last_activity /out/ && \
     cp target/release/backfill_codex_usage_cache /out/

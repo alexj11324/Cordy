@@ -33,7 +33,7 @@ vi.mock("@tiptap/react", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/issues/mutations", () => ({
+vi.mock("@patchbay/core/issues/mutations", () => ({
   useCreateIssue: () => ({
     mutateAsync: vi.fn(),
   }),

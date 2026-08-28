@@ -4,22 +4,22 @@ import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { Check, ChevronRight, Link2, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, UserMinus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@cordy/ui/lib/utils";
-import { copyText } from "@cordy/ui/lib/clipboard";
+import { cn } from "@patchbay/ui/lib/utils";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import { toast } from "sonner";
-import type { ProjectStatus, ProjectPriority } from "@cordy/core/types";
-import { useAuthStore } from "@cordy/core/auth";
-import { projectDetailOptions } from "@cordy/core/projects/queries";
-import { useUpdateProject, useDeleteProject } from "@cordy/core/projects/mutations";
-import { pinListOptions } from "@cordy/core/pins";
-import { useCreatePin, useDeletePin } from "@cordy/core/pins";
-import { memberListOptions, agentListOptions } from "@cordy/core/workspace/queries";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useIssuesScope } from "@cordy/core/issues/stores";
-import { useRecentContextStore } from "@cordy/core/chat";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@cordy/core/projects/config";
+import type { ProjectStatus, ProjectPriority } from "@patchbay/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
+import { useUpdateProject, useDeleteProject } from "@patchbay/core/projects/mutations";
+import { pinListOptions } from "@patchbay/core/pins";
+import { useCreatePin, useDeletePin } from "@patchbay/core/pins";
+import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useIssuesScope } from "@patchbay/core/issues/stores";
+import { useRecentContextStore } from "@patchbay/core/chat";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@patchbay/core/projects/config";
 import { getProjectIssueMetrics } from "./project-issue-metrics";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useNavigation } from "../../navigation";
@@ -29,29 +29,29 @@ import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
 import { IssueSurface } from "../../issues/surface/issue-surface";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@cordy/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@cordy/ui/components/ui/sheet";
-import { useIsMobile } from "@cordy/ui/hooks/use-mobile";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@patchbay/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@patchbay/ui/components/ui/sheet";
+import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@cordy/ui/components/ui/popover";
+} from "@patchbay/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@cordy/ui/components/ui/tooltip";
-import { EmojiPicker } from "@cordy/ui/components/common/emoji-picker";
+} from "@patchbay/ui/components/ui/tooltip";
+import { EmojiPicker } from "@patchbay/ui/components/common/emoji-picker";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import {
   AnimatedRightSidebar,
@@ -68,7 +68,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import { useT } from "../../i18n";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -152,7 +152,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "cordy_project_detail_layout",
+    id: "patchbay_project_detail_layout",
   });
   const sidebarRef = usePanelRef();
   const desktopSidebarInitialOpen = getAnimatedRightSidebarInitialOpen(

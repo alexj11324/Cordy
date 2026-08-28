@@ -2,24 +2,24 @@
 
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import {
   workspaceKeys,
   workspaceListOptions,
-} from "@cordy/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@cordy/core/paths";
+} from "@patchbay/core/paths";
 import { AppLink, useNavigation } from "../navigation";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";
 import { useT } from "../i18n";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { ArrowLeft, LogOut, Users, Check, X } from "lucide-react";
 
 export interface InvitePageProps {

@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, ChevronRight, Copy, Terminal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { runtimeKeys } from "@cordy/core/runtimes/queries";
-import { useWSEvent } from "@cordy/core/realtime";
-import { paths, useWorkspaceSlug } from "@cordy/core/paths";
-import { useConfigStore } from "@cordy/core/config";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { runtimeKeys } from "@patchbay/core/runtimes/queries";
+import { useWSEvent } from "@patchbay/core/realtime";
+import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
+import { useConfigStore } from "@patchbay/core/config";
 import {
   Dialog,
   DialogContent,
@@ -16,24 +16,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Button } from "@cordy/ui/components/ui/button";
-import { CODE_LIGATURE_CLASS } from "@cordy/ui/lib/code-style";
-import { copyText } from "@cordy/ui/lib/clipboard";
+} from "@patchbay/ui/components/ui/dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { CODE_LIGATURE_CLASS } from "@patchbay/ui/lib/code-style";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@cordy/ui/lib/motion";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/lib/motion";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
 type Step = "instructions" | "success";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash";
-const CLOUD_SERVER_URL = "https://api.cordy.ai";
-const CLOUD_APP_URL = "https://cordy.ai";
+  "curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash";
+const CLOUD_SERVER_URL = "https://api.patchbay.ai";
+const CLOUD_APP_URL = "https://patchbay.ai";
 
 function normalizeCommandURL(url: string | undefined) {
   return url?.trim().replace(/\/+$/, "") ?? "";
@@ -44,20 +44,20 @@ function daemonCommands(serverUrl: string | undefined, appUrl: string | undefine
   const normalizedAppUrl = normalizeCommandURL(appUrl);
   if (normalizedServerUrl && normalizedAppUrl) {
     return {
-      setupCmd: `cordy setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
-      tokenCmd: `cordy config set server_url ${normalizedServerUrl}
-cordy config set app_url ${normalizedAppUrl}
-cordy login --token <YOUR_TOKEN>
-cordy daemon start`,
+      setupCmd: `patchbay setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
+      tokenCmd: `patchbay config set server_url ${normalizedServerUrl}
+patchbay config set app_url ${normalizedAppUrl}
+patchbay login --token <YOUR_TOKEN>
+patchbay daemon start`,
     };
   }
 
   return {
-    setupCmd: "cordy setup",
-    tokenCmd: `cordy config set server_url ${CLOUD_SERVER_URL}
-cordy config set app_url ${CLOUD_APP_URL}
-cordy login --token <YOUR_TOKEN>
-cordy daemon start`,
+    setupCmd: "patchbay setup",
+    tokenCmd: `patchbay config set server_url ${CLOUD_SERVER_URL}
+patchbay config set app_url ${CLOUD_APP_URL}
+patchbay login --token <YOUR_TOKEN>
+patchbay daemon start`,
   };
 }
 
@@ -70,7 +70,7 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
   const shouldReduceMotion = useReducedMotion() ?? false;
   const newRuntimeIdRef = useRef<string | null>(null);
 
-  // `cordy setup` is one blocking command that handles config + login
+  // `patchbay setup` is one blocking command that handles config + login
   // + daemon start; the dialog passively listens for the resulting
   // `daemon:register` WS event and auto-advances to success.
   const handleDaemonRegister = useCallback(
@@ -318,7 +318,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"cordy daemon status"}
+              {"patchbay daemon status"}
             </code>
           </li>
           <li className="flex items-center gap-1.5">
@@ -330,7 +330,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"cordy daemon logs -f"}
+              {"patchbay daemon logs -f"}
             </code>
           </li>
         </ul>

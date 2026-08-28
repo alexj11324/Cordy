@@ -1,4 +1,4 @@
-import { useAuthStore } from "@cordy/core/auth";
+import { useAuthStore } from "@patchbay/core/auth";
 import { toast } from "sonner";
 
 /**
@@ -20,7 +20,7 @@ import { toast } from "sonner";
  */
 export async function reauthenticateDaemon(): Promise<void> {
   const user = useAuthStore.getState().user;
-  const token = localStorage.getItem("cordy_token");
+  const token = localStorage.getItem("patchbay_token");
   if (!user || !token) {
     // No usable session at all — the standard recovery is the login page.
     useAuthStore.getState().logout();

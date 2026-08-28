@@ -1,4 +1,4 @@
-/** A Lark Bot installation bound to a single Cordy agent.
+/** A Lark Bot installation bound to a single Patchbay agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
  * the Rust Lark handler. New fields the backend adds in the

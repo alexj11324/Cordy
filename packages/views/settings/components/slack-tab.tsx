@@ -5,18 +5,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { SlackMark } from "./slack-mark";
-import { cn } from "@cordy/ui/lib/utils";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
+import { cn } from "@patchbay/ui/lib/utils";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
+} from "@patchbay/ui/components/ui/dialog";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,14 +26,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { slackInstallationsOptions, slackKeys } from "@cordy/core/slack";
-import { api } from "@cordy/core/api";
-import type { SlackInstallation } from "@cordy/core/types";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { slackInstallationsOptions, slackKeys } from "@patchbay/core/slack";
+import { api } from "@patchbay/core/api";
+import type { SlackInstallation } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
@@ -43,7 +43,7 @@ import { useT } from "../../i18n";
 // enforces it; the UI hides the button for non-admins to match).
 //
 // Adding a new installation flows through the Agent detail page: the install
-// path is per-agent (each Cordy agent gets exactly one bot — the
+// path is per-agent (each Patchbay agent gets exactly one bot — the
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
 // asking the user to pick an agent here would re-create that page's picker.
 export function SlackTab() {
@@ -98,7 +98,7 @@ export function SlackTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.slack.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                CORDY_SLACK_SECRET_KEY
+                PATCHBAY_SLACK_SECRET_KEY
               </code>{" "}
               {t(($) => $.slack.not_enabled_description_suffix)}{" "}
               {t(($) => $.slack.not_enabled_self_host_hint)}
@@ -248,7 +248,7 @@ function slackDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://cordy.ai/docs${prefix}/slack-bot-integration`;
+  return `https://patchbay.ai/docs${prefix}/slack-bot-integration`;
 }
 
 // SlackAgentBindButton is the per-agent CTA exposed from the agent detail page.

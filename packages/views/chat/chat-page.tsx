@@ -4,21 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
-} from "@cordy/ui/components/ui/resizable";
-import { useIsCompact } from "@cordy/ui/hooks/use-mobile";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { useChatStore } from "@cordy/core/chat";
-import { chatQuickActionsPendingOptions } from "@cordy/core/chat/queries";
-import { useRegenerateChatQuickActions } from "@cordy/core/chat/mutations";
-import { useQuickActionsPendingTimeout } from "@cordy/core/chat/use-quick-actions-pending-timeout";
+} from "@patchbay/ui/components/ui/resizable";
+import { useIsCompact } from "@patchbay/ui/hooks/use-mobile";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useChatStore } from "@patchbay/core/chat";
+import { chatQuickActionsPendingOptions } from "@patchbay/core/chat/queries";
+import { useRegenerateChatQuickActions } from "@patchbay/core/chat/mutations";
+import { useQuickActionsPendingTimeout } from "@patchbay/core/chat/use-quick-actions-pending-timeout";
 import { useQuickActionsFailureToast } from "./components/use-quick-actions-failure-toast";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, ChatSession } from "@cordy/core/types";
+import type { Agent, ChatSession } from "@patchbay/core/types";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
@@ -118,7 +118,7 @@ export function ChatPage() {
   }, [c.activeSessionId]);
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "cordy_chat_layout",
+    id: "patchbay_chat_layout",
   });
 
   // `?agent=` intent bookkeeping. The ref holds the param value already

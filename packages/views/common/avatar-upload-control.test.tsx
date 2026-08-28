@@ -12,11 +12,11 @@ vi.mock("sonner", () => ({
   toast: { error: toastError, success: toastSuccess },
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getBaseUrl: () => "https://api.test" },
 }));
 
-vi.mock("@cordy/core/hooks/use-file-upload", () => ({
+vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ upload: uploadMock }),
 }));
 

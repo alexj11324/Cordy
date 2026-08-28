@@ -153,7 +153,7 @@ describe("ApiClient Plugin preview response schema", () => {
 
     await expect(new ApiClient("https://api.example.test").previewPlugin(
       "workspace-1",
-      { source_url: "https://example.test/cordy.plugin.json" },
+      { source_url: "https://example.test/patchbay.plugin.json" },
     )).resolves.toEqual(EMPTY_PLUGIN_PREVIEW);
   });
 });

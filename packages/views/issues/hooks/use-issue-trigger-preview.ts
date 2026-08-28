@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { issueKeys } from "@cordy/core/issues/queries";
-import type { IssueAssigneeType, IssueStatus, IssueTriggerPreviewItem } from "@cordy/core/types";
+import { api } from "@patchbay/core/api";
+import { issueKeys } from "@patchbay/core/issues/queries";
+import type { IssueAssigneeType, IssueStatus, IssueTriggerPreviewItem } from "@patchbay/core/types";
 
 export interface UseIssueTriggerPreviewParams {
   /** Existing issues to evaluate (single assign/status or batch). */

@@ -1,6 +1,6 @@
 /**
  * A WeCom smart-bot ("智能机器人" / aibot) installation bound to a single
- * Cordy agent. Wire shape mirrors `WecomInstallationResponse` in
+ * Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
  * the Rust WeCom handler. Any new field the backend adds MUST
  * default to optional so older desktop builds keep parsing the response — see
  * AGENTS.md → API Compatibility.
@@ -17,7 +17,7 @@ export interface WecomInstallation {
 
 export interface ListWecomInstallationsResponse {
   installations: WecomInstallation[];
-  /** Whether CORDY_WECOM_SECRET_KEY is set on this deployment. When false the
+  /** Whether PATCHBAY_WECOM_SECRET_KEY is set on this deployment. When false the
    * BYO Connect button is hidden and the panel renders an "ask the operator"
    * state. */
   configured: boolean;
@@ -30,7 +30,7 @@ export interface ListWecomInstallationsResponse {
 /** Request body for the Web UI's BYO Connect dialog. The first two fields are
  * copied from the WeCom admin console's smart-bot page: the bot's stable
  * identifier and its long-connection secret. The backend seals the secret
- * with the deployment's CORDY_WECOM_SECRET_KEY before writing it, so
+ * with the deployment's PATCHBAY_WECOM_SECRET_KEY before writing it, so
  * plaintext never lands in the DB. */
 export interface RegisterWecomBYORequest {
   bot_id: string;
@@ -38,14 +38,14 @@ export interface RegisterWecomBYORequest {
   /** The bot's name as it appears in a chat. Optional, and used for one
    * thing: recognising the bot's own @-mention in a group. WeCom delivers a
    * mention as literal text with no structured mention list, so a name
-   * containing a space ("Cordy Bot") otherwise swallows the slash command
+   * containing a space ("Patchbay Bot") otherwise swallows the slash command
    * typed after it. Omitting it on a re-install of the same bot keeps the
    * name already stored. */
   bot_name?: string;
 }
 
 /** Post-redemption echo: the WeCom aibot userid the token carried is now
- * bound to the logged-in Cordy user in this workspace/installation. */
+ * bound to the logged-in Patchbay user in this workspace/installation. */
 export interface RedeemWecomBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

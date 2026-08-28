@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Plug } from "lucide-react";
 import { toast } from "sonner";
-import { useFeatureEnabled } from "@cordy/core/config";
-import { PLUGINS_V1_FLAG } from "@cordy/core/feature-flags";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { pluginInstallationsOptions, useInvokePluginHook } from "@cordy/core/plugins";
-import type { PluginHook, PluginInstallation } from "@cordy/core/types";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { pluginInstallationsOptions, useInvokePluginHook } from "@patchbay/core/plugins";
+import type { PluginHook, PluginInstallation } from "@patchbay/core/types";
 import { useT } from "../i18n";
 
 /**

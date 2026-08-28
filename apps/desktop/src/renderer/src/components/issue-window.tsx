@@ -6,15 +6,15 @@ import {
   useRouteError,
 } from "react-router-dom";
 import { AlertTriangle, RotateCw, X } from "lucide-react";
-import { useAuthStore } from "@cordy/core/auth";
-import { setCurrentWorkspace } from "@cordy/core/platform";
-import { WorkspaceSlugProvider } from "@cordy/core/paths";
-import { useWorkspaceList } from "@cordy/core/workspace";
-import { Button } from "@cordy/ui/components/ui/button";
-import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
-import { ModalRegistry } from "@cordy/views/modals/registry";
-import { WorkspacePresencePrefetch } from "@cordy/views/layout";
-import { DragStrip } from "@cordy/views/platform";
+import { useAuthStore } from "@patchbay/core/auth";
+import { setCurrentWorkspace } from "@patchbay/core/platform";
+import { WorkspaceSlugProvider } from "@patchbay/core/paths";
+import { useWorkspaceList } from "@patchbay/core/workspace";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { ModalRegistry } from "@patchbay/views/modals/registry";
+import { WorkspacePresencePrefetch } from "@patchbay/views/layout";
+import { DragStrip } from "@patchbay/views/platform";
 import type { IssueWindowContext } from "../../../shared/issue-window";
 import { DesktopAuthRecoveryPage } from "../pages/auth-recovery";
 import { IssueDetailPage } from "../pages/issue-detail-page";
@@ -67,7 +67,7 @@ function IssueWindowRoute() {
     return (
       <IssueWindowFrame>
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <CordyIcon className="size-6 animate-pulse" />
+          <PatchbayIcon className="size-6 animate-pulse" />
         </div>
       </IssueWindowFrame>
     );

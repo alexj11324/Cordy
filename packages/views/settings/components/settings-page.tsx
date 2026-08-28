@@ -22,14 +22,14 @@ import {
   Server,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@cordy/ui/components/ui/tabs";
-import { useIsMobile } from "@cordy/ui/hooks/use-mobile";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { useFeatureEnabled } from "@cordy/core/config";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@patchbay/ui/components/ui/tabs";
+import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { useFeatureEnabled } from "@patchbay/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   PLUGINS_V1_FLAG,
-} from "@cordy/core/feature-flags";
+} from "@patchbay/core/feature-flags";
 import { useNavigation } from "../../navigation";
 import { AccountTab } from "./account-tab";
 import { PreferencesTab } from "./preferences-tab";

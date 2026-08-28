@@ -17,7 +17,7 @@ export interface ActorIssuesViewState extends IssueViewState {
   setScope: (scope: ActorIssuesScope) => void;
 }
 
-const basePersist = viewStorePersistOptions("cordy_actor_issues_view");
+const basePersist = viewStorePersistOptions("patchbay_actor_issues_view");
 
 const _actorIssuesViewStore = createStore<ActorIssuesViewState>()(
   persist(

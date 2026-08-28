@@ -1,12 +1,12 @@
-name: cordy
+name: patchbay
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: cordy
-      POSTGRES_USER: ${POSTGRES_USER:-cordy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cordy}
+      POSTGRES_DB: patchbay
+      POSTGRES_USER: ${POSTGRES_USER:-patchbay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-patchbay}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:

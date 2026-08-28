@@ -1384,7 +1384,7 @@ export const DashboardRunTimeDailyListSchema = z.array(DashboardRunTimeDailySche
 
 // Failure rollups. `failure_reason` is an open string on purpose — it carries
 // the backend's canonical taxonomy, which grows as new classifier rules land
-// (the `cordy-task-failure` crate). Pinning it to a z.enum would make an installed
+// (the `patchbay-task-failure` crate). Pinning it to a z.enum would make an installed
 // desktop client drop rows for a reason its build predates; the client folds
 // unrecognised reasons into an "other" display class instead. The empty
 // string is the succeeded bucket, so `.default("")` is a meaningful default
@@ -2144,7 +2144,7 @@ export const EMPTY_INBOX_ITEMS: InboxItem[] = [];
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //
-// All billing JSON we receive comes from cordy-cloud verbatim — we proxy
+// All billing JSON we receive comes from patchbay-cloud verbatim — we proxy
 // the bytes without re-shaping. These schemas use `loose()` so a future
 // non-breaking field addition on the cloud side doesn't crash us; required
 // fields are still strictly enforced. EMPTY_* constants supply the
@@ -2314,7 +2314,7 @@ export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSe
 // ---------------------------------------------------------------------------
 // Workspace subscriptions (`/api/cloud-subscriptions/*`)
 //
-// These schemas are the compatibility boundary with cordy-cloud. Three rules
+// These schemas are the compatibility boundary with patchbay-cloud. Three rules
 // hold for all of them:
 //
 //  1. There is no fallback value. Callers get `null` on any parse failure and

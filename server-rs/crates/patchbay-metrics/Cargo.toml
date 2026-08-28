@@ -1,0 +1,25 @@
+[package]
+name = "patchbay-metrics"
+description = "Prometheus metrics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+patchbay-analytics = { path = "../patchbay-analytics" }
+patchbay-daemon = { path = "../patchbay-daemon" }
+patchbay-realtime = { path = "../patchbay-realtime" }
+patchbay-task-failure = { path = "../patchbay-task-failure" }
+anyhow = { workspace = true }
+axum = { workspace = true }
+prometheus = { workspace = true, features = ["process"] }
+regex = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+async-trait = "0.1"
+tokio = { workspace = true }

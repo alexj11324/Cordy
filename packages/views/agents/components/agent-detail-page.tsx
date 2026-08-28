@@ -19,28 +19,28 @@ import type {
   Agent,
   AgentRuntime,
   UpdateAgentRequest,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   type AgentPresenceDetail,
   isAgentRuntimeBound,
   useWorkspacePresenceMap,
-} from "@cordy/core/agents";
-import { api, ApiError } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useModalStore } from "@cordy/core/modals";
-import { useWorkspacePaths } from "@cordy/core/paths";
+} from "@patchbay/core/agents";
+import { api, ApiError } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useModalStore } from "@patchbay/core/modals";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import {
   agentDetailOptions,
   agentListOptions,
   cacheAgentResponse,
   memberListOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@cordy/core/runtimes";
-import { useAgentPermissions } from "@cordy/core/permissions";
-import { Button } from "@cordy/ui/components/ui/button";
-import { CapabilityBanner } from "@cordy/ui/components/common/capability-banner";
+} from "@patchbay/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
+import { useAgentPermissions } from "@patchbay/core/permissions";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
 import {
   Dialog,
   DialogContent,
@@ -48,14 +48,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -490,7 +490,7 @@ function DetailHeader({
    *  the chat, which is what stops AppLink from pushing. */
   onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onAssign: () => void;
-  /** Absent for Cordy's built-in agents, which the server refuses to
+  /** Absent for Patchbay's built-in agents, which the server refuses to
    *  archive — the menu hides the action rather than offering a failure. */
   onArchive?: () => void;
 }) {

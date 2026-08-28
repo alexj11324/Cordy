@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay は Telegram 公式の [@BotFather](https://t.me/BotFather) で作成した Bot を使用します。1 つの Bot は 1 つの Patchbay エージェントに対応します。
 
-Telegram 連携は[コミュニティメンテナンス](/community-maintained)です。毎リリースに同梱されますが、公式のサポート SLA は付きません。問題があれば [GitHub issues](https://github.com/alexj11324/Cordy/issues) に報告してください。
+Telegram 連携は[コミュニティメンテナンス](/community-maintained)です。毎リリースに同梱されますが、公式のサポート SLA は付きません。問題があれば [GitHub issues](https://github.com/patchbay-ai/patchbay/issues) に報告してください。
 
 ## 準備
 
@@ -58,10 +58,10 @@ Bot は Telegram メッセージを送信・編集してテキストをストリ
 セルフホスト環境では、API 起動前に固定の 32-byte 暗号鍵を設定します。
 
 ```dotenv
-CORDY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
-`openssl rand -base64 32` で生成できます。連携リンクは `CORDY_APP_URL`（未設定時は `FRONTEND_ORIGIN`）を使用します。サーバーから `api.telegram.org` への HTTPS 接続も必要で、標準の `HTTPS_PROXY` / `NO_PROXY` を利用できます。
+`openssl rand -base64 32` で生成できます。連携リンクは `PATCHBAY_APP_URL`（未設定時は `FRONTEND_ORIGIN`）を使用します。サーバーから `api.telegram.org` への HTTPS 接続も必要で、標準の `HTTPS_PROXY` / `NO_PROXY` を利用できます。
 
 ## トラブルシューティング
 

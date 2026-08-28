@@ -1,4 +1,4 @@
-import nextConfig from "@cordy/eslint-config/next";
+import nextConfig from "@patchbay/eslint-config/next";
 
 export default [
   ...nextConfig,

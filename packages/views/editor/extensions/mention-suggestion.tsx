@@ -11,40 +11,40 @@ import {
   type ReactNode,
 } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import { getCurrentWsId } from "@cordy/core/platform";
-import { flattenIssueBuckets, issueKeys } from "@cordy/core/issues/queries";
-import { issueStatusCategory } from "@cordy/core/issues";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
-import { useAuthStore } from "@cordy/core/auth";
-import { canAssignAgentToIssue } from "@cordy/core/permissions";
-import { isAgentRuntimeBound } from "@cordy/core/agents";
-import { api } from "@cordy/core/api";
+import { getCurrentWsId } from "@patchbay/core/platform";
+import { flattenIssueBuckets, issueKeys } from "@patchbay/core/issues/queries";
+import { issueStatusCategory } from "@patchbay/core/issues";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { useAuthStore } from "@patchbay/core/auth";
+import { canAssignAgentToIssue } from "@patchbay/core/permissions";
+import { isAgentRuntimeBound } from "@patchbay/core/agents";
+import { api } from "@patchbay/core/api";
 import {
   isIssueDirectHit,
   isProjectDirectHit,
-} from "@cordy/core/search/cancelled-rank";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/core/search/cancelled-rank";
+import { isImeComposing } from "@patchbay/core/utils";
 import type {
   Issue,
   ListIssuesCache,
   MemberWithUser,
   Agent,
   Squad,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { ListTodo } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
-import { Badge } from "@cordy/ui/components/ui/badge";
+import { Badge } from "@patchbay/ui/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { cn } from "@cordy/ui/lib/utils";
-import type { IssueStatus, IssueStatusCategory, ProjectStatus } from "@cordy/core/types";
-import { PROJECT_STATUS_CONFIG } from "@cordy/core/projects/config";
+} from "@patchbay/ui/components/ui/tooltip";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { IssueStatus, IssueStatusCategory, ProjectStatus } from "@patchbay/core/types";
+import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
 import {

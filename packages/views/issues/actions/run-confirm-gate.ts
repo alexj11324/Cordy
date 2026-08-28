@@ -3,9 +3,9 @@ import type {
   IssueAssigneeType,
   IssueStatusCategory,
   UpdateIssueRequest,
-} from "@cordy/core/types";
-import { issueStatusCategory } from "@cordy/core/issues";
-import { isIssueStatusCategory, type IssueStatusCatalog } from "@cordy/core/issue-statuses";
+} from "@patchbay/core/types";
+import { issueStatusCategory } from "@patchbay/core/issues";
+import { isIssueStatusCategory, type IssueStatusCatalog } from "@patchbay/core/issue-statuses";
 
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<

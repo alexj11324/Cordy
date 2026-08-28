@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("sonner", () => ({ toast: mocks.toast }));
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@cordy/core/issues/mutations", () => ({
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@patchbay/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mocks.mutate }),
 }));
-vi.mock("@cordy/core/issues/queries", () => ({
+vi.mock("@patchbay/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, issueId: string) => ({
     queryKey: ["issues", "detail", issueId],
   }),

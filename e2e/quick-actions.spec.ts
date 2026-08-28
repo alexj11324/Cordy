@@ -8,7 +8,7 @@ import type { TestApiClient } from "./fixtures";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
-  "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
+  "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
 
 test("renders assistant quick actions and sends the hidden prompt", async ({
   page,
@@ -98,9 +98,9 @@ test("renders assistant quick actions and sends the hidden prompt", async ({
     if (!token) throw new Error("E2E token missing");
     await page.addInitScript(
       ({ authToken, activeSessionId }) => {
-        localStorage.setItem("cordy_token", authToken);
-        localStorage.setItem("cordy:chat:activeSessionId", activeSessionId);
-        localStorage.setItem("cordy:chat:isOpen", "false");
+        localStorage.setItem("patchbay_token", authToken);
+        localStorage.setItem("patchbay:chat:activeSessionId", activeSessionId);
+        localStorage.setItem("patchbay:chat:isOpen", "false");
       },
       { authToken: token, activeSessionId: sessionId },
     );

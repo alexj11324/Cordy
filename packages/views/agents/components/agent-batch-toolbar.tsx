@@ -4,15 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { MemberWithUser } from "@cordy/core/types";
-import { api } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
-import { Button } from "@cordy/ui/components/ui/button";
+import type { MemberWithUser } from "@patchbay/core/types";
+import { api } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@cordy/ui/lib/motion";
+} from "@patchbay/ui/lib/motion";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { Archive, ArchiveRestore, Loader2, X } from "lucide-react";
 import { useT } from "../../i18n";
 import { AccessPicker, type AccessChange } from "./inspector/access-picker";

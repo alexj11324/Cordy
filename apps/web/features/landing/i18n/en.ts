@@ -19,12 +19,12 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headlineLine1: "Your next 10 hires",
     headlineLine2: "won\u2019t be human.",
     subheading:
-      "Cordy is an open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
+      "Patchbay is an open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
     cta: "Start free trial",
     downloadDesktop: "Download Desktop",
     talkToSales: "Talk to sales",
     worksWith: "Works with",
-    imageAlt: "Cordy board view \u2014 issues managed by humans and agents",
+    imageAlt: "Patchbay board view \u2014 issues managed by humans and agents",
   },
 
   features: {
@@ -116,7 +116,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         {
           title: "Auto-detection on first run",
           description:
-            "Cordy scans for 23 supported coding tools \u2014 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, and Trae CLI \u2014 and registers a runtime for each one it finds.",
+            "Patchbay scans for 23 supported coding tools \u2014 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, and Trae CLI \u2014 and registers a runtime for each one it finds.",
         },
       ],
     },
@@ -136,7 +136,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         title: "Install the CLI & connect your machine",
         description:
-          "Run cordy setup \u2014 it walks you through OAuth, starts the daemon, and scans for the 23 supported coding tools (Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI). Whichever ones you already have installed get registered as runtimes automatically.",
+          "Run patchbay setup \u2014 it walks you through OAuth, starts the daemon, and scans for the 23 supported coding tools (Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI). Whichever ones you already have installed get registered as runtimes automatically.",
       },
       {
         title: "Create your first agent",
@@ -159,13 +159,13 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headlineLine1: "Open source",
     headlineLine2: "for all.",
     description:
-      "Cordy is fully open source. Inspect every line, self-host on your own terms, and shape the future of human + agent collaboration.",
+      "Patchbay is fully open source. Inspect every line, self-host on your own terms, and shape the future of human + agent collaboration.",
     cta: "Star on GitHub",
     highlights: [
       {
         title: "Self-host anywhere",
         description:
-          "Run Cordy on your own infrastructure. Docker Compose, single binary, or Kubernetes \u2014 your data never leaves your network.",
+          "Run Patchbay on your own infrastructure. Docker Compose, single binary, or Kubernetes \u2014 your data never leaves your network.",
       },
       {
         title: "No vendor lock-in",
@@ -190,30 +190,30 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headline: "Questions & answers.",
     items: [
       {
-        question: "What coding agents does Cordy support?",
+        question: "What coding agents does Patchbay support?",
         answer:
-          "Cordy supports 23 coding tools out of the box: Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, and Trae CLI. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one. Since it's open source, you can also add your own backends.",
+          "Patchbay supports 23 coding tools out of the box: Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, and Trae CLI. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one. Since it's open source, you can also add your own backends.",
       },
       {
         question: "Do I need to self-host, or is there a cloud version?",
         answer:
-          "Both. You can self-host Cordy on your own infrastructure with Docker Compose or Kubernetes, or use our hosted cloud version. Your data, your choice.",
+          "Both. You can self-host Patchbay on your own infrastructure with Docker Compose or Kubernetes, or use our hosted cloud version. Your data, your choice.",
       },
       {
         question:
           "How is this different from just using coding agents directly?",
         answer:
-          "Coding agents are great at executing. Cordy adds the management layer: task queues, team coordination, skill reuse, runtime monitoring, and a unified view of what every agent is doing. Think of it as the project manager for your agents.",
+          "Coding agents are great at executing. Patchbay adds the management layer: task queues, team coordination, skill reuse, runtime monitoring, and a unified view of what every agent is doing. Think of it as the project manager for your agents.",
       },
       {
         question: "Can agents work on long-running tasks autonomously?",
         answer:
-          "Yes. Cordy manages the full task lifecycle \u2014 enqueue, claim, execute, complete or fail. Agents report blockers proactively and stream progress in real time. You can check in whenever you want or let them run overnight.",
+          "Yes. Patchbay manages the full task lifecycle \u2014 enqueue, claim, execute, complete or fail. Agents report blockers proactively and stream progress in real time. You can check in whenever you want or let them run overnight.",
       },
       {
         question: "Is my code safe? Where does agent execution happen?",
         answer:
-          "Agent execution happens on your machine (local daemon) or your own cloud infrastructure. Code never passes through Cordy servers. The platform only coordinates task state and broadcasts events.",
+          "Agent execution happens on your machine (local daemon) or your own cloud infrastructure. Code never passes through Patchbay servers. The platform only coordinates task state and broadcasts events.",
       },
       {
         question: "How many agents can I run?",
@@ -243,7 +243,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "Documentation", href: "/docs" },
           { label: "API", href: githubUrl },
-          { label: "X (Twitter)", href: "https://x.com/CordyAI" },
+          { label: "X (Twitter)", href: "https://x.com/PatchbayAI" },
           { label: "Discord", href: discordUrl },
         ],
       },
@@ -257,7 +257,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
       },
     },
-    copyright: "\u00a9 {year} Cordy. All rights reserved.",
+    copyright: "\u00a9 {year} Patchbay. All rights reserved.",
   },
 
   about: {
@@ -276,7 +276,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
 
   changelog: {
     title: "Changelog",
-    subtitle: "New updates and improvements to Cordy.",
+    subtitle: "New updates and improvements to Patchbay.",
     toc: "All releases",
     categories: {
       features: "New Features",
@@ -377,7 +377,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "You can now create a share link that lets someone join your workspace directly.",
           "The transcript now reads as steps, with a two-lane timeline and an outcome summary.",
           "Files sent in Slack now arrive in the conversation as attachments.",
-          "You can now add Cordy to your phone's home screen and open it like an app.",
+          "You can now add Patchbay to your phone's home screen and open it like an app.",
           "Browser tabs are now named after the workspace page you have open.",
           "Imported skills now show where they came from.",
           "A mention of the Issue you are reading now reads as \"This issue\".",
@@ -424,7 +424,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "An agent CLI that cannot run now tells you how to repair it.",
           "Someone else's private runtime can no longer be used from the API or CLI.",
-          "Leftover task files no longer break every cordy command in a folder.",
+          "Leftover task files no longer break every patchbay command in a folder.",
           "Agents installed through Volta or Vite Plus are now recognised.",
           "The gap between the last reply and the composer is back.",
           "In dark mode the active tab no longer prints dark squares, and hover corners stay round.",
@@ -447,7 +447,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Self-hosted setups can now keep task temp files on a bigger disk.",
         ],
         improvements: [
-          "`cordy daemon logs` now tells you where the log file is.",
+          "`patchbay daemon logs` now tells you where the log file is.",
           "A Hermes task now says which HERMES_HOME it read.",
         ],
         fixes: [
@@ -486,7 +486,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Bold text next to Chinese, Japanese and Korean punctuation renders again.",
           "On Android the keyboard stays open after you send or stop a message.",
           "Self-hosted Hermes chats no longer fail on every other message.",
-          "A leftover port setting no longer blocks `cordy login`.",
+          "A leftover port setting no longer blocks `patchbay login`.",
           "Cursor tasks now reach the MCP servers you configured.",
           "Issue titles created from Slack keep their links unchanged.",
           "A PR no longer closes a same-numbered Issue in another workspace.",
@@ -537,7 +537,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Oh-My-Pi can now run your agents as well.",
           "Voice notes sent in WeCom now reach your agents as text.",
           "Kimi and Pi agents can now be set to think harder or faster.",
-          "Cmd/Ctrl+click or middle-click any link in Cordy to open it in a new tab.",
+          "Cmd/Ctrl+click or middle-click any link in Patchbay to open it in a new tab.",
           "When WeCom cannot connect, the page now says whether it was refused or simply unreachable.",
         ],
         improvements: [
@@ -606,7 +606,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The execution log shows what each run cost, and the whole Issue's total.",
           "Muting comment notifications no longer hides messages that @-mention you.",
           "Chat on a phone opens full screen and the composer rides above the keyboard.",
-          "Replacing your cordy or agent CLI now takes effect on its own, no restart.",
+          "Replacing your patchbay or agent CLI now takes effect on its own, no restart.",
         ],
         improvements: [
           "Agents read shorter instructions each run, leaving more room for your work.",
@@ -743,7 +743,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Every workspace can now label agents and Skills to keep them organized.",
           "Codex on Linux now uses the tools and logins already set up on that machine.",
           "Built-in Skills have consistent names and take up far less of each agent run.",
-          "Dimmed text across Cordy is now solid and readable instead of washed out.",
+          "Dimmed text across Patchbay is now solid and readable instead of washed out.",
         ],
         fixes: [
           "Multi-line prompts sent to Copilot on Windows no longer lose their line breaks.",
@@ -772,14 +772,14 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Issue tables stay responsive when you switch workspaces.",
-          "Cordy's interface and four-language docs are more consistent and readable.",
+          "Patchbay's interface and four-language docs are more consistent and readable.",
           "Attachment-heavy CLI and agent workflows now transfer less data.",
           "Self-hosted setup now carries your configuration into the daemon.",
         ],
         fixes: [
           "Codex file changes are now preserved in task transcripts.",
           "Hermes agents now recover from a lost resumed session.",
-          "Qoder CLI is now found when Cordy starts from a desktop app.",
+          "Qoder CLI is now found when Patchbay starts from a desktop app.",
           "Daemon updates no longer wait forever while the machine is idle.",
           "Issue activity labels no longer clip letters below the baseline.",
         ],
@@ -830,7 +830,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Long pasted text now becomes a text attachment automatically.",
           "Uploads now appear once and become draft content only after they finish.",
           "Webhook URLs now hide their secret tokens until you choose to reveal them.",
-          "Starting Cordy with many workspaces now launches far fewer agent checks.",
+          "Starting Patchbay with many workspaces now launches far fewer agent checks.",
           "Usage rankings now focus on the top agents and sort failures more clearly.",
           "Each composer now leaves the cursor where that surface expects it.",
         ],
@@ -1005,7 +1005,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Your settings now save reliably after you reopen the panel.",
           "Resumed Codex tasks now report their usage accurately.",
           "Comments no longer turn the wrong text into links.",
-          "Direct chat replies now stay in Cordy.",
+          "Direct chat replies now stay in Patchbay.",
           "AI-assisted creation is now always available.",
           "The Issues page no longer stutters when you first open it.",
           "Codex agents on Linux now save their Git details correctly.",
@@ -1072,7 +1072,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Labels you pick while creating an issue are now saved together with it, every time.",
           "Pasting formatted text into a comment no longer leaves stray ++ marks.",
           "Hover cards no longer pop up when you just move the mouse past an avatar.",
-          "The Linux desktop app now installs under the name cordy-desktop.",
+          "The Linux desktop app now installs under the name patchbay-desktop.",
         ],
       },
       {
@@ -1309,7 +1309,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "The task transcript remembers your filter and expansion choices, and restores them the next time you open the run.",
-          "Self-hosted (Helm): a new `postgres.external.enabled` toggle points Cordy at an externally managed PostgreSQL (RDS, CNPG, Cloud SQL, Neon…) and skips the built-in database.",
+          "Self-hosted (Helm): a new `postgres.external.enabled` toggle points Patchbay at an externally managed PostgreSQL (RDS, CNPG, Cloud SQL, Neon…) and skips the built-in database.",
         ],
         fixes: [
           "Ordered-list caret no longer strands on the block below when a comment draft with an empty `1. ` line reloads.",
@@ -1363,8 +1363,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Slack /issue slash command, ByteDance TRAE CLI runtime, and Claude Sonnet 5",
         changes: [],
         features: [
-          "Slack's native /issue slash command creates a Cordy Issue and replies to you privately with the link.",
-          "A Slack user who already linked their account to one Cordy bot no longer re-links when the same Slack workspace connects a second bot.",
+          "Slack's native /issue slash command creates a Patchbay Issue and replies to you privately with the link.",
+          "A Slack user who already linked their account to one Patchbay bot no longer re-links when the same Slack workspace connects a second bot.",
           "Slack channel context is now driven by two focused reads: a channel overview and a per-thread read.",
           "ByteDance TRAE CLI (traecli) joins the built-in agent runtimes over the standard ACP transport.",
           "Claude Sonnet 5 is now available in the Anthropic model catalog with introductory pricing.",
@@ -1378,9 +1378,9 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The Slack chat agent no longer narrates its channel-history reads — it reads silently and replies with the answer.",
           "Attachment previews again open on self-hosted local-disk deployments. (Community-reported.)",
           "Cursor and Kiro runtime completion transcripts are recovered so the final result no longer goes missing.",
-          "Self-host: CORDY_SLACK_SECRET_KEY is now passed through to the backend container in docker-compose.selfhost.yml. (Community-reported.)",
+          "Self-host: PATCHBAY_SLACK_SECRET_KEY is now passed through to the backend container in docker-compose.selfhost.yml. (Community-reported.)",
           "The Issues board \"N working\" chip counts distinct Issues instead of distinct agents.",
-          "Anonymous self-host source-channel reports go back to the official Cordy API endpoint.",
+          "Anonymous self-host source-channel reports go back to the official Patchbay API endpoint.",
           "Comment deep-link highlights are now background-only and consistent between root comments and replies.",
         ],
       },
@@ -1391,10 +1391,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Autopilots now have a clear write-permission layer, plus a Manage Access dialog that lets the creator grant write access to specific workspace members.",
-          "Slack channels can backfill their conversation history into Cordy, so an agent has the prior context the moment it joins.",
+          "Slack channels can backfill their conversation history into Patchbay, so an agent has the prior context the moment it joins.",
           "Slack messages show a 👀 reaction while an agent is preparing its reply, and the reaction is always cleared on the way out.",
           "Skill bundles can be installed from a local .skill or .zip archive.",
-          "cordy issue commands no longer accept short UUID prefixes — use the issue key (PB-123) or the full UUID.",
+          "patchbay issue commands no longer accept short UUID prefixes — use the issue key (PB-123) or the full UUID.",
           "The Agents page is now usable on mobile.",
         ],
         improvements: [
@@ -1419,7 +1419,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Issues now have a Remove parent action, so you can detach a sub-Issue without first having to pick a different parent.",
         ],
         improvements: [
-          "The local daemon reconnects to Cordy through a more resilient WebSocket flow with bounded backoff, so brief network drops recover smoothly instead of stalling.",
+          "The local daemon reconnects to Patchbay through a more resilient WebSocket flow with bounded backoff, so brief network drops recover smoothly instead of stalling.",
           "The daemon now bounds each runtime probe with its own timeout, so a single wedged CLI can no longer block every other runtime from coming online.",
         ],
         fixes: [
@@ -1656,7 +1656,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "CodeBuddy Runtime",
         changes: [],
         features: [
-          "CodeBuddy can now run local Cordy agents, with its available model and effort choices shown automatically",
+          "CodeBuddy can now run local Patchbay agents, with its available model and effort choices shown automatically",
           "Quick-created Issues now keep uploaded files attached from the first draft through the final Issue",
         ],
         improvements: [
@@ -1698,15 +1698,15 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Comment boxes now show which agents or squads will start work before you send, with controls to avoid accidental runs",
           "Run transcripts now include timestamps, making agent progress and handoffs easier to review",
           "Autopilot detail pages now show who created each autopilot",
-          "Claude Fable 5 is now available in Cordy's supported model and pricing list",
+          "Claude Fable 5 is now available in Patchbay's supported model and pricing list",
           "Issue conversations can now resolve a specific reply, making long threads easier to close while keeping the final answer visible",
-          "Lark and Feishu conversations now show a typing reaction while Cordy is preparing a reply, then clear it before the answer is sent",
+          "Lark and Feishu conversations now show a typing reaction while Patchbay is preparing a reply, then clear it before the answer is sent",
           "Agent runs now know who started each task, making handoffs, audit trails, and privacy-aware behavior more accurate",
-          "OpenClaw users can point Cordy at a custom app location and data folder from their local configuration",
+          "OpenClaw users can point Patchbay at a custom app location and data folder from their local configuration",
         ],
         improvements: [
           "Comment trigger indicators are quieter, clearer, and less likely to crowd long agent names",
-          "Desktop now disables daemon start and stop controls when the daemon is managed outside Cordy, such as in WSL2",
+          "Desktop now disables daemon start and stop controls when the daemon is managed outside Patchbay, such as in WSL2",
           "The active agent indicator in an Issue header is easier to read, with motion only while work is running and clearer queued wording otherwise",
           "The CLI now gives clearer guidance around common errors, sign-in problems, and project setup values",
         ],
@@ -1730,7 +1730,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Web Notifications and /note Command",
         changes: [],
         features: [
-          "The web app can now show native browser notification banners, making workspace activity easier to catch while Cordy is in the background",
+          "The web app can now show native browser notification banners, making workspace activity easier to catch while Patchbay is in the background",
           "Comments that start with /note can record context without waking the assigned agent, so teams can leave coordination notes without triggering a run",
           "Antigravity is now available as a per-agent model choice for daemon-run agents",
           "The CLI now explains common request failures in plain language and points to the next action",
@@ -1788,10 +1788,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Lark Bot Integration",
         changes: [],
         features: [
-          "Cordy now supports Lark as a third-party integration, so teams can scan a QR code and create a Cordy agent as a Lark Bot",
+          "Patchbay now supports Lark as a third-party integration, so teams can scan a QR code and create a Patchbay agent as a Lark Bot",
           "Chat now has a searchable agent picker and an explicit context picker, making it easier to choose who should respond and what they should see",
           "Descriptions and comments now support checkbox task lists for lightweight planning inside an Issue",
-          "Agents now include built-in Cordy skills so they can follow workspace workflows more consistently",
+          "Agents now include built-in Patchbay skills so they can follow workspace workflows more consistently",
         ],
         improvements: [
           "Chat context is represented with clear mentions, making handoffs and later review easier to understand",
@@ -1835,7 +1835,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Japanese Support and /skill Command",
         changes: [],
         features: [
-          "Cordy now supports Japanese across the app, site, and docs",
+          "Patchbay now supports Japanese across the app, site, and docs",
           "Chat now supports a /skill command for choosing an agent Skill",
           "Workspaces can now show a custom logo",
           "Teams can add Skills to an agent without replacing existing Skills",
@@ -1891,7 +1891,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Agents that continue work from an Issue comment now resume the previous session instead of starting over, keeping the task context intact",
-          "Cordy now supports Korean across the app, public site, and documentation, including Korean docs pages and localized date formatting",
+          "Patchbay now supports Korean across the app, public site, and documentation, including Korean docs pages and localized date formatting",
           "Issue pages now keep active agent work visible near the title, with a cleaner view when multiple agents are working at once",
           "Agents can scan Issue discussions faster with thread previews, reply counts, and recent activity before opening the full conversation",
           "OpenClaw runtimes can use the MCP setup saved on an agent, and Claude Opus 4.8 is available in model selection and usage estimates",
@@ -1939,7 +1939,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Local Working Directories",
         changes: [],
         features: [
-          "Projects can now use a local working directory on Desktop, so tasks can run in an existing folder while Cordy shows when another task is waiting for that directory",
+          "Projects can now use a local working directory on Desktop, so tasks can run in an existing folder while Patchbay shows when another task is waiting for that directory",
           "Autopilot webhook triggers can now filter incoming events and actions before work starts, with docs linked directly from the setup flow",
           "Swimlane views can group Issues by parent Issue, project, or assignee, making large boards easier to slice by how the team plans work",
           "Comments now support selecting multiple attachments and keeping, removing, or replacing attachments while editing",
@@ -1986,11 +1986,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.8",
         date: "2026-05-25",
-        title: "Cordy for iOS, Helm Self-Hosting & Smoother Collaboration",
+        title: "Patchbay for iOS, Helm Self-Hosting & Smoother Collaboration",
         changes: [],
         features: [
-          "Cordy for iOS is now available as our first official usable mobile client, covering login, workspaces, inbox, Issues, projects, chat, comments, reactions, presence, and live updates; it is not on the App Store yet, so users need to build and install it manually",
-          "Self-hosted teams can now deploy Cordy to Kubernetes with a Helm chart, while Docker-based installs keep clearer port and URL controls",
+          "Patchbay for iOS is now available as our first official usable mobile client, covering login, workspaces, inbox, Issues, projects, chat, comments, reactions, presence, and live updates; it is not on the App Store yet, so users need to build and install it manually",
+          "Self-hosted teams can now deploy Patchbay to Kubernetes with a Helm chart, while Docker-based installs keep clearer port and URL controls",
           "Project resource pickers now include repository search, and workspace repository settings can store descriptions that help agents understand each codebase",
           "Runtime usage now recognizes DeepSeek, Kimi K2.6, Zhipu GLM, and long-context Claude Opus model costs more accurately",
           "The public site now supports use-case pages and a clearer path to Docs, Changelog, and getting started",
@@ -2004,7 +2004,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         fixes: [
           "Issue timelines stay in chronological order when live comments and activity arrive close together",
-          "Codex runs no longer inherit hidden host memory during Cordy tasks, and Pi runs receive a cleaner end-of-input signal",
+          "Codex runs no longer inherit hidden host memory during Patchbay tasks, and Pi runs receive a cleaner end-of-input signal",
           "Local runtime delete actions now avoid self-healing rows that would immediately reappear, and dependency updates close server security advisories",
           "Title fields now refresh safely after external updates, and markdown code no longer uses ligatures that can distort command flags",
         ],
@@ -2134,7 +2134,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Failed issue actions now show clearer error messages so teams can understand what happened without digging through logs",
-          "GitHub-linked pull requests now surface CI and merge-conflict status inside Cordy",
+          "GitHub-linked pull requests now surface CI and merge-conflict status inside Patchbay",
           "Self-hosted deployments get safer defaults and clearer guidance for reverse proxies, auth limits, and local-only services",
           "Search results are ranked more usefully and include better snippets",
         ],
@@ -2226,7 +2226,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "GitHub Integration, Chat Attachments & Safer Issue Navigation",
         changes: [],
         features: [
-          "Connect GitHub so linked pull requests appear on Cordy issues, sync their status, and close the Cordy issue automatically when the PR closes",
+          "Connect GitHub so linked pull requests appear on Patchbay issues, sync their status, and close the Patchbay issue automatically when the PR closes",
           "Chat messages can include file attachments and image previews",
           "Agents and runtimes can now be kept public or private for clearer team access",
           "Stopping a single agent task now asks for confirmation before it is terminated",
@@ -2237,7 +2237,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Long issue timelines scroll more smoothly",
           "The feedback dialog now points contributors toward GitHub discussions and issues",
           "Self-hosted Caddy guidance now calls out real-time connection requirements",
-          "Linux desktop packages show the Cordy app icon again",
+          "Linux desktop packages show the Patchbay app icon again",
         ],
         fixes: [
           "Downloaded attachments keep their original filenames",
@@ -2323,7 +2323,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Daemon Disk-Usage CLI, Timeline Polish & Task Usage Rollup",
         changes: [],
         features: [
-          "New `cordy daemon disk-usage` CLI surfaces per-task and per-workspace disk footprint",
+          "New `patchbay daemon disk-usage` CLI surfaces per-task and per-workspace disk footprint",
           "Skill picker in agent settings has a search box for fast lookup",
           "Daemon GC extends to chat, autopilot, and quick-create tasks",
           "Issue detail breadcrumb now shows the PB-xxxx identifier for quick reference",
@@ -2339,7 +2339,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Linux daemon self-restart uses `brew prefix` symlinks, so Homebrew Cellar deletion no longer orphans runtimes",
           "CLI short IDs now route correctly — copied prefixes no longer 404",
           "Windows non-ASCII comment / description input lands via new `--content-file` / `--description-file` flags",
-          "Windows / Linux desktop replaces the Electron placeholder icon with the Cordy asterisk",
+          "Windows / Linux desktop replaces the Electron placeholder with the Patchbay app icon",
           "Orphaned timeline replies are now correctly surfaced",
           "Timeline comment pagination budget excludes activities, so heavy activity no longer crowds out real comments",
         ],
@@ -2407,8 +2407,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Repo Checkout `--ref`, Hermes Replay Fix & Multi-Replica Model Picker",
         changes: [],
         features: [
-          "`cordy repo checkout --ref` targets a branch, tag, or specific commit when pulling a repo into the workspace",
-          "`cordy agent avatar` uploads an agent avatar straight from the CLI",
+          "`patchbay repo checkout --ref` targets a branch, tag, or specific commit when pulling a repo into the workspace",
+          "`patchbay agent avatar` uploads an agent avatar straight from the CLI",
           "Inbox shows an archive button on done tasks; the redundant mark-as-done hover button is gone",
         ],
         improvements: [
@@ -2420,7 +2420,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Newly created agents show up everywhere immediately — the agent cache is hydrated on create",
           "Hermes no longer replays the previous answer when a new turn starts — historical chunks are gated behind a per-turn flag",
           "Codex runtime model picker exposes the GPT-5.5 family",
-          "`cordy login --token <PAT>` accepts the PAT as a flag value instead of rejecting it",
+          "`patchbay login --token <PAT>` accepts the PAT as a flag value instead of rejecting it",
           "CLI update completion status is now reliable",
           "Session resume is guarded by runtime, preventing cross-runtime resume",
           "Kanban display settings survive when dragging issues across columns",
@@ -2443,7 +2443,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Daemon `/tasks/claim` polling uses a Redis empty-claim fast-path, dropping idle DB load and reclaiming disk on long-open issues",
-          "Cordy Agent commits include a `Co-authored-by` trailer for proper Git attribution",
+          "Patchbay Agent commits include a `Co-authored-by` trailer for proper Git attribution",
           "Desktop blocks Cmd+R / Ctrl+R / F5 from reloading the app and shows the real version in dev and Updates settings",
         ],
         fixes: [
@@ -2466,7 +2466,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Server caches PAT / daemon token lookups in Redis, so large fleets stop hammering the database on every request",
-          "Backend default agent CLI args via `CORDY_CLAUDE_ARGS` / `CORDY_CODEX_ARGS` env vars",
+          "Backend default agent CLI args via `PATCHBAY_CLAUDE_ARGS` / `PATCHBAY_CODEX_ARGS` env vars",
           "Manual and agent create-issue flows share one dialog shell, and picker agents become the default assignee",
         ],
         fixes: [
@@ -2527,9 +2527,9 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Custom Agent Env, Better Failure Messages & Reliability Fixes",
         changes: [],
         features: [
-          "`cordy agent create/update --custom-env KEY=VALUE` injects custom environment variables into agent runs",
+          "`patchbay agent create/update --custom-env KEY=VALUE` injects custom environment variables into agent runs",
           "Agent failure messages now include a tail of the runtime CLI's stderr — much easier to debug runtime errors",
-          "CLI update download timeout is now configurable, so slow links no longer abort `cordy update`",
+          "CLI update download timeout is now configurable, so slow links no longer abort `patchbay update`",
         ],
         improvements: [
           "Daemon reports cancelled tasks as `cancelled` instead of `timeout`, and reconciles agent status when an issue's tasks are cancelled",
@@ -2606,7 +2606,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Desktop app cross-platform packaging — macOS, Windows, and Linux artifacts from a single release pipeline",
-          "`cordy update` self-update command — upgrade the CLI and local daemon without reinstalling",
+          "`patchbay update` self-update command — upgrade the CLI and local daemon without reinstalling",
           "Issue board paginates every status column, not only Done — large backlogs stay responsive",
         ],
         fixes: [
@@ -2623,7 +2623,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Per-Agent Models, Kimi Runtime & Self-Host Auth",
         changes: [],
         features: [
-          "Per-agent `model` field with a provider-aware dropdown — pick the LLM model for each agent from the UI or via `cordy agent create/update --model`, with live discovery from each runtime's CLI",
+          "Per-agent `model` field with a provider-aware dropdown — pick the LLM model for each agent from the UI or via `patchbay agent create/update --model`, with live discovery from each runtime's CLI",
           "Kimi CLI as a new agent runtime (Moonshot AI's `kimi-cli` over ACP), with model selection, auto-approved tool permissions, and streaming tool-call rendering",
           "Expand toggle on inline comment and reply editors for composing long text",
         ],
@@ -2771,7 +2771,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "One-Click Setup, Self-Hosting & Stability",
         changes: [],
         features: [
-          "One-click install & setup — `curl | bash` installs CLI, `--with-server` bootstraps full self-hosting, `cordy setup` configures your environment",
+          "One-click install & setup — `curl | bash` installs CLI, `--with-server` bootstraps full self-hosting, `patchbay setup` configures your environment",
           "Self-hosted storage — local file fallback when S3 is unavailable, plus custom S3 endpoint support (MinIO)",
           "Inline property editing (priority, status, lead) on project list page",
         ],
@@ -2917,7 +2917,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Load all open issues without pagination limit; closed issues paginate on scroll",
           "JWT and CloudFront cookie expiration extended from 72 hours to 30 days",
           "Remember last selected workspace after re-login",
-          "Daemon ensures cordy CLI is on PATH in agent task environment",
+          "Daemon ensures patchbay CLI is on PATH in agent task environment",
           "PR template and CLI install guide for agent-driven setup",
         ],
       },
@@ -3046,29 +3046,29 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   download: {
     hero: {
       macArm64: {
-        title: "Cordy for macOS",
+        title: "Patchbay for macOS",
         sub: "Apple Silicon · bundled daemon, zero setup",
         primary: "Download (.dmg)",
         altZip: "or download .zip",
       },
       macIntel: {
-        title: "Cordy for macOS",
+        title: "Patchbay for macOS",
         sub: "Intel · bundled daemon, zero setup",
         primary: "Download (.dmg)",
         altZip: "or download .zip",
       },
       winX64: {
-        title: "Cordy for Windows",
+        title: "Patchbay for Windows",
         sub: "Bundled daemon, zero setup",
         primary: "Download (.exe)",
       },
       winArm64: {
-        title: "Cordy for Windows",
+        title: "Patchbay for Windows",
         sub: "ARM · bundled daemon, zero setup",
         primary: "Download (.exe)",
       },
       linux: {
-        title: "Cordy for Linux",
+        title: "Patchbay for Linux",
         sub: "Bundled daemon, zero setup",
         primary: "Download AppImage",
         altFormats: "or .deb / .rpm",
@@ -3119,7 +3119,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   contactSales: {
     pageTitle: "Contact Sales",
     pageDescription:
-      "Talk to the Cordy team about rolling out human + agent workflows at your company.",
+      "Talk to the Patchbay team about rolling out human + agent workflows at your company.",
     eyebrow: "Contact Sales",
     title: "Let’s understand your needs",
     subtitle:
@@ -3137,10 +3137,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       companyName: "Company name",
       companySize: "Company size",
       countryRegion: "Country / Region",
-      useCase: "How do you plan to use or collaborate with Cordy?",
+      useCase: "How do you plan to use or collaborate with Patchbay?",
       goals: "Your goals or challenges",
       goalsHint:
-        "Tell us what you’d like to achieve with Cordy or the challenges you’re facing. The more details you provide, the better we can support you.",
+        "Tell us what you’d like to achieve with Patchbay or the challenges you’re facing. The more details you provide, the better we can support you.",
       selectPlaceholder: "Please select",
       submit: "Submit",
       submitting: "Submitting…",
@@ -3154,10 +3154,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       { value: "1000+", label: "1,000+ employees" },
     ],
     useCases: [
-      { value: "evaluate", label: "Evaluating Cordy for my team" },
-      { value: "adopt_team", label: "Rolling out Cordy to a team or company" },
+      { value: "evaluate", label: "Evaluating Patchbay for my team" },
+      { value: "adopt_team", label: "Rolling out Patchbay to a team or company" },
       { value: "self_host", label: "Self-hosting on our own infrastructure" },
-      { value: "integrate", label: "Integrating Cordy with existing tools" },
+      { value: "integrate", label: "Integrating Patchbay with existing tools" },
       { value: "partner", label: "Partnership or reseller inquiry" },
       { value: "other", label: "Something else" },
     ],
@@ -3205,22 +3205,22 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     ],
     consent: {
       intro:
-        "Cordy, Inc. respects your privacy. We’ll use your personal information only to manage your account and deliver the products or services you’ve requested. Occasionally, we’d love to share product updates, best practices, and insights that may be relevant to you. Please let us know below if you’d like to hear from us.",
+        "Patchbay, Inc. respects your privacy. We’ll use your personal information only to manage your account and deliver the products or services you’ve requested. Occasionally, we’d love to share product updates, best practices, and insights that may be relevant to you. Please let us know below if you’d like to hear from us.",
       outreach:
-        "I’d like to receive one-to-one communication from Cordy, Inc., including service updates, support inquiries, and business-related follow-ups.",
+        "I’d like to receive one-to-one communication from Patchbay, Inc., including service updates, support inquiries, and business-related follow-ups.",
       updates:
-        "I’d like to receive product updates, insights, and event invitations from Cordy.",
+        "I’d like to receive product updates, insights, and event invitations from Patchbay.",
       unsubscribe:
         "You can unsubscribe from our communications at any time. For more details on how we handle your data and privacy rights, please review our",
       submitConsent:
-        "By clicking “Submit,” you consent to allow Cordy, Inc. to store and process your information for the purpose of delivering the requested content.",
+        "By clicking “Submit,” you consent to allow Patchbay, Inc. to store and process your information for the purpose of delivering the requested content.",
       privacyLinkLabel: "Privacy Policy.",
       privacyLinkHref: "/about",
     },
     success: {
       title: "Thanks — we got it.",
       message:
-        "A member of the Cordy team will respond within three business days. In the meantime, feel free to explore the docs or star us on GitHub.",
+        "A member of the Patchbay team will respond within three business days. In the meantime, feel free to explore the docs or star us on GitHub.",
       cta: "Back to home",
     },
     errors: {

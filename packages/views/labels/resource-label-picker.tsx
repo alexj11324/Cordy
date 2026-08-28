@@ -3,20 +3,20 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Search, Tag } from "lucide-react";
-import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   labelListOptions,
   resourceLabelsOptions,
   useAttachResourceLabel,
   useDetachResourceLabel,
-} from "@cordy/core/labels";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+} from "@patchbay/core/labels";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
+} from "@patchbay/ui/components/ui/popover";
 import { useT } from "../i18n";
 import { LabelChip } from "./label-chip";
 

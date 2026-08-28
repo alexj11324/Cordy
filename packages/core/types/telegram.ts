@@ -1,4 +1,4 @@
-/** A Telegram bot installation bound to a single Cordy agent.
+/** A Telegram bot installation bound to a single Patchbay agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
  * the Rust Telegram handler. New fields the backend adds in the
@@ -38,7 +38,7 @@ export interface RegisterTelegramRequest {
 }
 
 /** Post-redemption echo: the Telegram user id the token carried is now bound
- * to the logged-in Cordy user in this workspace/installation. */
+ * to the logged-in Patchbay user in this workspace/installation. */
 export interface RedeemTelegramBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

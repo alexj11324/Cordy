@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MAX_ISSUE_PROPERTY_ACTOR_VALUES } from "@cordy/core/types";
+import { MAX_ISSUE_PROPERTY_ACTOR_VALUES } from "@patchbay/core/types";
 import { toggleActorRefValue } from "./actor-property-picker";
 
 const A = "member:11111111-1111-4111-8111-111111111111";

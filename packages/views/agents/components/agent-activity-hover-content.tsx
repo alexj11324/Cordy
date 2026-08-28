@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { runtimeListOptions } from "@cordy/core/runtimes/queries";
-import { agentListOptions } from "@cordy/core/workspace/queries";
-import { deriveAgentAvailability } from "@cordy/core/agents";
-import type { AgentTask, Issue } from "@cordy/core/types";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
+import { agentListOptions } from "@patchbay/core/workspace/queries";
+import { deriveAgentAvailability } from "@patchbay/core/agents";
+import type { AgentTask, Issue } from "@patchbay/core/types";
 import { workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 

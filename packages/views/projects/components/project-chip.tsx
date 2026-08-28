@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { projectListOptions, projectDetailOptions } from "@cordy/core/projects/queries";
-import { useWorkspaceId } from "@cordy/core/hooks";
+import { projectListOptions, projectDetailOptions } from "@patchbay/core/projects/queries";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import { ProjectIcon } from "./project-icon";
 import { useT } from "../../i18n";
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enEditor from "../locales/en/editor.json";
 
 const mockToastError = vi.hoisted(() => vi.fn());
@@ -11,7 +11,7 @@ vi.mock("sonner", () => ({
   toast: { error: mockToastError },
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { uploadFile: mockUploadFile },
 }));
 

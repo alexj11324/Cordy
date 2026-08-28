@@ -28,7 +28,7 @@ function cleanHttpUrl(raw: string | undefined): string | undefined {
 // upload — the most common self-hosting mistake (#6619, PB-5922). Strip that
 // one suffix instead of honouring it. Any other path is preserved: a reverse
 // proxy may legitimately mount the whole backend under a prefix such as
-// `https://host/cordy`.
+// `https://host/patchbay`.
 function stripApiPathSuffix(value: string): string {
   let url: URL;
   try {

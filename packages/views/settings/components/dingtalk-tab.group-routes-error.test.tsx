@@ -4,20 +4,20 @@ import { type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import { createQueryClient } from "@cordy/core/query-client";
-import { setApiInstance } from "@cordy/core/api";
-import type { ApiClient } from "@cordy/core/api/client";
-import { dingtalkKeys } from "@cordy/core/dingtalk";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { createQueryClient } from "@patchbay/core/query-client";
+import { setApiInstance } from "@patchbay/core/api";
+import type { ApiClient } from "@patchbay/core/api/client";
+import { dingtalkKeys } from "@patchbay/core/dingtalk";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
 const agentListQueryFn = vi.hoisted(() => vi.fn());
 const memberListQueryFn = vi.hoisted(() => vi.fn());
 
-vi.mock("@cordy/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["members", "workspace-1"],
     queryFn: memberListQueryFn,
@@ -28,7 +28,7 @@ vi.mock("@cordy/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getAgentName: () => "Agent One",
     getMemberName: () => "Unknown",
@@ -39,7 +39,7 @@ vi.mock("@cordy/core/workspace/hooks", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/auth", () => {
+vi.mock("@patchbay/core/auth", () => {
   const useAuthStore = Object.assign(
     (select?: (state: { user: { id: string } }) => unknown) =>
       select ? select({ user: { id: "user-1" } }) : { user: { id: "user-1" } },

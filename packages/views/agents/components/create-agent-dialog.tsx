@@ -5,15 +5,15 @@ import { Globe, Lock, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
 import { RuntimePicker } from "./runtime-picker";
-import { isRuntimeUsableForUser } from "@cordy/core/runtimes";
+import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
-import { api } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useFeatureEnabled } from "@cordy/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@cordy/core/feature-flags";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
+import { api } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import type {
   Agent,
   AgentInvocationTargetInput,
@@ -22,25 +22,25 @@ import type {
   RuntimeDevice,
   MemberWithUser,
   CreateAgentRequest,
-} from "@cordy/core/types";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/core/types";
+import { isImeComposing } from "@patchbay/core/utils";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@cordy/ui/components/ui/dialog";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
+} from "@patchbay/ui/components/ui/dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
 import { toast } from "sonner";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
-} from "@cordy/core/agents";
+} from "@patchbay/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";

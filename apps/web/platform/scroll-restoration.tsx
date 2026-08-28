@@ -4,7 +4,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import {
   ScrollRestorationProvider,
   type ScrollRestorationAdapter,
-} from "@cordy/views/platform";
+} from "@patchbay/views/platform";
 
 /**
  * Web half of the PB-4741 scroll-restoration protocol (desktop's half lives

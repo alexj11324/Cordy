@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent } from "@cordy/core/types";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { skillListOptions } from "@cordy/core/workspace/queries";
+import type { Agent } from "@patchbay/core/types";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { skillListOptions } from "@patchbay/core/workspace/queries";
 import { SkillAddDialog } from "../skill-add-dialog";
 import { useT } from "../../../i18n";
 

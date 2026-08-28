@@ -14,33 +14,33 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { memberListOptions } from "@cordy/core/workspace/queries";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
 import {
   propertyListOptions,
   useCreateProperty,
   useUpdateProperty,
-} from "@cordy/core/properties";
+} from "@patchbay/core/properties";
 import type {
   IssueProperty,
   IssuePropertyOption,
   IssuePropertyType,
-} from "@cordy/core/types";
-import { ISSUE_PROPERTY_TYPES } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@cordy/ui/components/ui/label";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/core/types";
+import { ISSUE_PROPERTY_TYPES } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
+} from "@patchbay/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +48,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,18 +58,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
+} from "@patchbay/ui/components/ui/popover";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import {
   PropertyIcon,

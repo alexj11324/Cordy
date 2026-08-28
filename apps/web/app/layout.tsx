@@ -2,11 +2,11 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@cordy/ui/components/ui/sonner";
-import { cn } from "@cordy/ui/lib/utils";
+import { Toaster } from "@patchbay/ui/components/ui/sonner";
+import { cn } from "@patchbay/ui/lib/utils";
 import { WebProviders } from "@/components/web-providers";
-import type { SupportedLocale } from "@cordy/core/i18n";
-import { RESOURCES } from "@cordy/views/locales";
+import type { SupportedLocale } from "@patchbay/core/i18n";
+import { RESOURCES } from "@patchbay/views/locales";
 import { getRequestLocale } from "@/lib/request-locale";
 import { SITE_TITLE, TITLE_TEMPLATE } from "@/platform/document-title";
 import {
@@ -74,7 +74,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.cordy.ai"),
+  metadataBase: new URL("https://www.patchbay.ai"),
   title: {
     default: SITE_TITLE,
     template: TITLE_TEMPLATE,
@@ -89,13 +89,13 @@ export const metadata: Metadata = {
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
   // Home-screen behaviour: launch without browser chrome, and label the icon
-  // "Cordy" rather than the long SEO <title>. `capable` renders the
+  // "Patchbay" rather than the long SEO <title>. `capable` renders the
   // standardised `mobile-web-app-capable` tag — Next 16 no longer emits the
   // deprecated apple-prefixed spelling, so iOS standalone rides on the
   // manifest's `display` instead (honoured since iOS 16.4).
   appleWebApp: {
     capable: true,
-    title: "Cordy",
+    title: "Patchbay",
     // `default` keeps the web view below the status bar. Going edge-to-edge
     // (`black-translucent` + viewport-fit=cover) needs env(safe-area-inset-*)
     // padding, which no surface in the app has yet.
@@ -103,13 +103,13 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    siteName: "Cordy",
+    siteName: "Patchbay",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    site: "@cordy_hq",
-    creator: "@cordy_hq",
+    site: "@patchbay_hq",
+    creator: "@patchbay_hq",
   },
   alternates: {
     canonical: "/",

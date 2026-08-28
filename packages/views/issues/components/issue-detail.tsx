@@ -5,9 +5,9 @@ import {
   issueBehavesAsAny,
   issueStatusCategory,
   statusCategoryOfKey,
-} from "@cordy/core/issues";
+} from "@patchbay/core/issues";
 import { useStatusLabel } from "../utils/status-label";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment, type ReactNode } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
@@ -34,44 +34,44 @@ import {
   Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@cordy/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@cordy/ui/components/ui/sheet";
-import { useIsMobile } from "@cordy/ui/hooks/use-mobile";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@patchbay/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@patchbay/ui/components/ui/sheet";
+import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, ImageSequenceProvider } from "../../editor";
-import { collectImageSequence, type ImageSequenceBlock } from "@cordy/core/attachments/image-sequence";
-import { FileUploadButton } from "@cordy/ui/components/common/file-upload-button";
+import { collectImageSequence, type ImageSequenceBlock } from "@patchbay/core/attachments/image-sequence";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { Popover, PopoverTrigger, PopoverContent } from "@cordy/ui/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@cordy/ui/components/ui/dialog";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@cordy/ui/components/ui/command";
-import { AvatarGroup, AvatarGroupCount } from "@cordy/ui/components/ui/avatar";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Popover, PopoverTrigger, PopoverContent } from "@patchbay/ui/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@patchbay/ui/components/ui/dialog";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@patchbay/ui/components/ui/command";
+import { AvatarGroup, AvatarGroupCount } from "@patchbay/ui/components/ui/avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
 import { PropertyIcon } from "../../common/property-icon";
-import type { Attachment, Issue, IssueProperty, IssueStatus, IssueStatusCategory, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@cordy/core/types";
-import { contentReferencesAttachment } from "@cordy/core/types";
-import { STATUS_CONFIG, PRIORITY_CONFIG } from "@cordy/core/issues/config";
-import { formatDateOnly, isPastDateOnly } from "@cordy/core/issues/date";
-import { useUpdateIssue } from "@cordy/core/issues/mutations";
+import type { Attachment, Issue, IssueProperty, IssueStatus, IssueStatusCategory, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@patchbay/core/types";
+import { contentReferencesAttachment } from "@patchbay/core/types";
+import { STATUS_CONFIG, PRIORITY_CONFIG } from "@patchbay/core/issues/config";
+import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
+import { useUpdateIssue } from "@patchbay/core/issues/mutations";
 import { toast } from "sonner";
-import { errorCode } from "@cordy/core/api";
+import { errorCode } from "@patchbay/core/api";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
 import { maxSiblingStage } from "./pickers/stage-picker";
 import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
-import { Switch } from "@cordy/ui/components/ui/switch";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { IssueActionsDropdown, useIssueActions, IssueActionsContextMenu, IssueContextMenuProvider } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
@@ -83,8 +83,8 @@ import { RevisionConflictCompare } from "./revision-conflict-compare";
 import { CommentInput } from "./comment-input";
 import { CurrentIssueRenderContextProvider } from "../current-issue-render-context";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
-import { getShortcut, shortcutMatchesEvent } from "@cordy/core/shortcuts";
-import { isImeComposing } from "@cordy/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
+import { isImeComposing } from "@patchbay/core/utils";
 import { ThreadMinimap } from "./thread-minimap";
 import { ThreadNavPanel, mentionsUser, type ThreadNavThread } from "./thread-nav-panel";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
@@ -93,19 +93,19 @@ import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
-import { useGitHubSettings } from "@cordy/core/github";
+import { useGitHubSettings } from "@patchbay/core/github";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useRecentContextStore } from "@cordy/core/chat";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@cordy/core/issues/queries";
-import { projectDetailOptions } from "@cordy/core/projects/queries";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useRecentContextStore } from "@patchbay/core/chat";
+import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@patchbay/core/issues/queries";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
-import { issueLabelsOptions } from "@cordy/core/labels";
-import { propertyListOptions } from "@cordy/core/properties";
-import { memberListOptions, agentListOptions } from "@cordy/core/workspace/queries";
+import { issueLabelsOptions } from "@patchbay/core/labels";
+import { propertyListOptions } from "@patchbay/core/properties";
+import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
 import {
   selectExpandedResolved,
   useRecentIssuesStore,
@@ -115,13 +115,13 @@ import {
   SUB_ISSUE_ROW_PROPERTY_KEYS,
   type SubIssueRowProperties,
   type SubIssueRowPropertyKey,
-} from "@cordy/core/issues/stores";
-import { useIssueSelectionStore } from "@cordy/core/issues/stores/selection-store";
+} from "@patchbay/core/issues/stores";
+import { useIssueSelectionStore } from "@patchbay/core/issues/stores/selection-store";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 import { useIssueTimeline } from "../hooks/use-issue-timeline";
 import { useIssueReactions } from "../hooks/use-issue-reactions";
 import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
-import { ReactionBar } from "@cordy/ui/components/common/reaction-bar";
+import { ReactionBar } from "@patchbay/ui/components/common/reaction-bar";
 import { useTimeAgo } from "../../i18n";
 import {
   useRestoredScrollOffset,
@@ -129,7 +129,7 @@ import {
   useRestoredViewState,
   useViewStateWriter,
 } from "../../platform";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 
 import { ProgressRing } from "./progress-ring";
@@ -1143,7 +1143,7 @@ export function IssueDetailSkeleton({ leading }: { leading?: ReactNode } = {}) {
 // IssueDetail
 // ---------------------------------------------------------------------------
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "cordy_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "patchbay_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const id = issueId;

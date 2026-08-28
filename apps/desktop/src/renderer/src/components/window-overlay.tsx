@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { InvitePage } from "@cordy/views/invite";
-import { InvitationsPage } from "@cordy/views/invitations";
-import { OnboardingFlow } from "@cordy/views/onboarding";
-import { useNavigation } from "@cordy/views/navigation";
-import { paths } from "@cordy/core/paths";
-import { workspaceListOptions } from "@cordy/core/workspace/queries";
+import { InvitePage } from "@patchbay/views/invite";
+import { InvitationsPage } from "@patchbay/views/invitations";
+import { OnboardingFlow } from "@patchbay/views/onboarding";
+import { useNavigation } from "@patchbay/views/navigation";
+import { paths } from "@patchbay/core/paths";
+import { workspaceListOptions } from "@patchbay/core/workspace/queries";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { useLocalRuntimesPending } from "../platform/use-local-runtimes-pending";
 

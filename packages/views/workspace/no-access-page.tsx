@@ -2,12 +2,12 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@cordy/core/paths";
-import { workspaceListOptions } from "@cordy/core/workspace/queries";
+} from "@patchbay/core/paths";
+import { workspaceListOptions } from "@patchbay/core/workspace/queries";
 import { useNavigation } from "../navigation";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";

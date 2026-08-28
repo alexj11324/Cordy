@@ -3,15 +3,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { SkillSummary } from "@cordy/core/types";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import type { SkillSummary } from "@patchbay/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSkills from "../../locales/en/skills.json";
 import type { OriginInfo } from "../lib/origin";
 
 const TEST_RESOURCES = { en: { common: enCommon, skills: enSkills } };
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { refreshSkill: vi.fn() },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));

@@ -1,1 +1,1 @@
-export { SquadsPage as default } from "@cordy/views/squads";
+export { SquadsPage as default } from "@patchbay/views/squads";

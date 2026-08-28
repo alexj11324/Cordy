@@ -1,4 +1,4 @@
-import type { MikaOnboardingLanguage } from "@cordy/core/onboarding";
+import type { MikaOnboardingLanguage } from "@patchbay/core/onboarding";
 
 export type MikaContentLang = MikaOnboardingLanguage;
 
@@ -17,7 +17,7 @@ export interface MikaOnboardingDefinition {
 /**
  * Mika's name, description, avatar, permissions, and system instructions are
  * NOT here — they are server constants delivered by `POST /api/agents/mika`.
- * Keeping them out of the client is what lets Cordy update Mika's prompt by
+ * Keeping them out of the client is what lets Patchbay update Mika's prompt by
  * deploying, and stops a client from minting an agent that claims Mika's
  * identity.
  *

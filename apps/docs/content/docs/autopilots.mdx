@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Autopilots run work that happens over and over — a daily progress summary, a periodic dependency check, or an agent kicked off by an event from an external system.
 
-Each autopilot stores a Runbook, an assignee, and one or more triggers. When triggered, Cordy creates an issue or runs the agent directly, and keeps a record of every run.
+Each autopilot stores a Runbook, an assignee, and one or more triggers. When triggered, Patchbay creates an issue or runs the agent directly, and keeps a record of every run.
 
 ## Create an autopilot
 
@@ -58,10 +58,10 @@ Cron has no seconds field, and timezones use IANA names like `Asia/Shanghai`. Be
 
 ## Run from a webhook
 
-After adding a webhook trigger, Cordy generates a unique URL. Send it a JSON object or array to trigger the autopilot:
+After adding a webhook trigger, Patchbay generates a unique URL. Send it a JSON object or array to trigger the autopilot:
 
 ```bash
-curl -X POST "$CORDY_WEBHOOK_URL" \
+curl -X POST "$PATCHBAY_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"event":"build.completed","eventPayload":{"status":"success"}}'
@@ -73,14 +73,14 @@ Constraints on webhook requests:
 
 - the body must be a valid JSON object or array, up to 256 KiB;
 - `Idempotency-Key` prevents duplicate runs when the sender retries; GitHub deliveries are also deduplicated by `X-GitHub-Delivery`;
-- without a stable idempotency key, Cordy can't guarantee that repeated requests run only once;
+- without a stable idempotency key, Patchbay can't guarantee that repeated requests run only once;
 - when the trigger is disabled or the event doesn't match, the delivery is recorded as ignored and no run is created.
 
 ### Filter events
 
 When one source sends several event types, add event filters to the trigger. Each row holds one event name plus an optional list of actions; a run fires if any row matches, and leaving all rows empty accepts every event.
 
-For example, with `workflow_run` as the event name and `completed, failed` as the actions, only those two kinds of `workflow_run` results are accepted. Cordy recognizes the event and action from common request headers and payload fields, including GitHub's `X-GitHub-Event` and the `action` field in the body.
+For example, with `workflow_run` as the event name and `completed, failed` as the actions, only those two kinds of `workflow_run` results are accepted. Patchbay recognizes the event and action from common request headers and payload fields, including GitHub's `X-GitHub-Event` and the `action` field in the body.
 
 ### Protect the webhook URL
 
@@ -92,7 +92,7 @@ Only the autopilot's creator, workspace owners/admins, and collaborators granted
 
 ### Webhook response reference
 
-When debugging a sender, use this table to interpret Cordy's responses:
+When debugging a sender, use this table to interpret Patchbay's responses:
 
 | HTTP status | Response status | Meaning |
 |---|---|---|
@@ -105,7 +105,7 @@ When debugging a sender, use this table to interpret Cordy's responses:
 | 404 | Error message | The token in the URL is invalid or has been rotated. |
 | 413 | Error message | The body exceeds 256 KiB. |
 | 429 | Error message | Too many requests; retry later per the `Retry-After` response header. |
-| 500 | Error message | Cordy internal error; the sender can retry later. |
+| 500 | Error message | Patchbay internal error; the sender can retry later. |
 
 Business-level ignores — pausing, archiving, and event filtering — return 200 rather than 4xx, so senders don't retry endlessly.
 
@@ -128,7 +128,7 @@ A fully processed webhook delivery can be replayed from its detail view. A repla
 
 A failed task in run-only mode is not retried automatically; the next schedule still fires as planned. Create-issue mode produces regular issue tasks, and infrastructure failures follow the rules in [Tasks](/tasks#failures-and-automatic-retries).
 
-Cordy periodically checks whether recent runs keep failing: when the past 7 days have at least 50 completed or failed runs with a failure rate of 90%, the system pauses the autopilot and notifies its creator; fix the cause, then resume it manually.
+Patchbay periodically checks whether recent runs keep failing: when the past 7 days have at least 50 completed or failed runs with a failure rate of 90%, the system pauses the autopilot and notifies its creator; fix the cause, then resume it manually.
 
 Pausing manually stops schedules, webhooks, and **Run now**. Deletion is actually archiving: future triggers stop, and run and delivery history is kept.
 
@@ -143,9 +143,9 @@ Pausing manually stops schedules, webhooks, and **Run now**. Deletion is actuall
 ## Use the CLI
 
 ```bash
-cordy autopilot trigger <autopilot-id>
-cordy autopilot runs <autopilot-id>
-cordy autopilot trigger-rotate-url <autopilot-id> <trigger-id>
+patchbay autopilot trigger <autopilot-id>
+patchbay autopilot runs <autopilot-id>
+patchbay autopilot trigger-rotate-url <autopilot-id> <trigger-id>
 ```
 
 See [Using the CLI](/cli) for the full parameters.

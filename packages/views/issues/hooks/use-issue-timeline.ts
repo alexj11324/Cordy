@@ -11,7 +11,7 @@ import type {
   Comment,
   TimelineEntry,
   Reaction,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import type {
   CommentCreatedPayload,
   CommentUpdatedPayload,
@@ -21,11 +21,11 @@ import type {
   ActivityCreatedPayload,
   ReactionAddedPayload,
   ReactionRemovedPayload,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   issueTimelineOptions,
   issueKeys,
-} from "@cordy/core/issues/queries";
+} from "@patchbay/core/issues/queries";
 import {
   useCreateComment,
   useUpdateComment,
@@ -33,13 +33,13 @@ import {
   useResolveComment,
   useToggleCommentReaction,
   type ToggleCommentReactionVars,
-} from "@cordy/core/issues/mutations";
-import { sortTimelineEntriesAsc } from "@cordy/core/issues/timeline-sort";
+} from "@patchbay/core/issues/mutations";
+import { sortTimelineEntriesAsc } from "@patchbay/core/issues/timeline-sort";
 import {
   unhandledCommentTriggerOutcomes,
   mentionLabelsByTarget,
-} from "@cordy/core/issues/comment-trigger-outcomes";
-import { useWSEvent, useWSReconnect } from "@cordy/core/realtime";
+} from "@patchbay/core/issues/comment-trigger-outcomes";
+import { useWSEvent, useWSReconnect } from "@patchbay/core/realtime";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { blockedShortReasonLabel } from "../blocked-trigger-copy";

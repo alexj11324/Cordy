@@ -1,5 +1,5 @@
-import type { IssuePriority } from "@cordy/core/types";
-import { PRIORITY_CONFIG } from "@cordy/core/issues/config";
+import type { IssuePriority } from "@patchbay/core/types";
+import { PRIORITY_CONFIG } from "@patchbay/core/issues/config";
 
 /**
  * Priority glyphs, two families on purpose:

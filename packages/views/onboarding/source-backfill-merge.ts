@@ -2,7 +2,7 @@ import type {
   QuestionnaireAnswers,
   Role,
   UseCase,
-} from "@cordy/core/onboarding";
+} from "@patchbay/core/onboarding";
 
 /**
  * `PATCH /api/me/onboarding` overwrites the JSONB column wholesale —

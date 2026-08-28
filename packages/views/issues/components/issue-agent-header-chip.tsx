@@ -6,12 +6,12 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { cn } from "@cordy/ui/lib/utils";
-import { api } from "@cordy/core/api";
-import { issueKeys } from "@cordy/core/issues/queries";
-import type { AgentTask } from "@cordy/core/types";
+} from "@patchbay/ui/components/ui/popover";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { cn } from "@patchbay/ui/lib/utils";
+import { api } from "@patchbay/core/api";
+import { issueKeys } from "@patchbay/core/issues/queries";
+import type { AgentTask } from "@patchbay/core/types";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";

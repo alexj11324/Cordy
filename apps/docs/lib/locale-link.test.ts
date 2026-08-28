@@ -35,11 +35,11 @@ describe("prefixLocale", () => {
   });
 
   it("leaves external URLs alone", () => {
-    expect(prefixLocale("https://cordy.ai/download", "zh")).toBe(
-      "https://cordy.ai/download",
+    expect(prefixLocale("https://patchbay.ai/download", "zh")).toBe(
+      "https://patchbay.ai/download",
     );
-    expect(prefixLocale("mailto:hello@cordy.ai", "zh")).toBe(
-      "mailto:hello@cordy.ai",
+    expect(prefixLocale("mailto:hello@patchbay.ai", "zh")).toBe(
+      "mailto:hello@patchbay.ai",
     );
     expect(prefixLocale("tel:+1234567890", "zh")).toBe("tel:+1234567890");
   });

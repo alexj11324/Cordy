@@ -41,7 +41,7 @@ export async function loadRuntimeConfig(options: {
 }
 
 export function desktopConfigPath(): string {
-  return join(app.getPath("home"), ".cordy", "desktop.json");
+  return join(app.getPath("home"), ".patchbay", "desktop.json");
 }
 
 function isMissingFileError(err: unknown): boolean {

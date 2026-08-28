@@ -79,7 +79,7 @@ jobs:
               - '.dockerignore'
               - '.github/workflows/ci.yml'
               - 'scripts/generate-reserved-slugs.mjs'
-              - 'server-rs/crates/cordy-handler/assets/reserved_slugs.json'
+              - 'server-rs/crates/patchbay-handler/assets/reserved_slugs.json'
               - 'scripts/check-ui-wildcard-exports.mjs'
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
@@ -254,8 +254,8 @@ jobs:
         # to apps/mobile/** + packages/core/**) so it doesn't add
         # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
         # filter in sync with the root package.json scripts, which also
-        # exclude @cordy/mobile.
-        run: pnpm exec turbo build typecheck lint --filter='!@cordy/docs' --filter='!@cordy/mobile'
+        # exclude @patchbay/mobile.
+        run: pnpm exec turbo build typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
 
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four
@@ -335,7 +335,7 @@ jobs:
         # job's responsibility -- frontend-build owns the `typecheck` task.
         # `test` reaches dependency sources through the hash-only
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
-        run: pnpm exec turbo test --filter='!@cordy/docs' --filter='!@cordy/mobile' --filter='!@cordy/views'
+        run: pnpm exec turbo test --filter='!@patchbay/docs' --filter='!@patchbay/mobile' --filter='!@patchbay/views'
 
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
@@ -393,7 +393,7 @@ jobs:
 
       - name: Test views shard ${{ matrix.index }}/${{ matrix.total }}
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: pnpm exec turbo test --filter='@cordy/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
+        run: pnpm exec turbo test --filter='@patchbay/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
 
   # Aggregate gate. `frontend` is the status-check name the repository's
   # branch rules refer to, so it has to survive the split above: this job
@@ -482,18 +482,18 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_DB: cordy
-          POSTGRES_USER: cordy
-          POSTGRES_PASSWORD: cordy
+          POSTGRES_DB: patchbay
+          POSTGRES_USER: patchbay
+          POSTGRES_PASSWORD: patchbay
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-cmd "pg_isready -U patchbay -d patchbay"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
       SQLX_OFFLINE: "false"
     steps:
       - name: Checkout
@@ -512,7 +512,7 @@ jobs:
 
       - name: Apply database migrations with the Rust runner
         working-directory: server-rs
-        run: cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
+        run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
 
       - name: Run workspace tests
         working-directory: server-rs
@@ -535,7 +535,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
           # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
-          # the compiled Cordy graph enables Postgres only. CloudFront signing
+          # the compiled Patchbay graph enables Postgres only. CloudFront signing
           # no longer uses rsa and is implemented with ring/SHA-256.
           ignore: RUSTSEC-2023-0071
 
@@ -602,7 +602,7 @@ jobs:
 
       - name: Test native daemon behavior
         working-directory: server-rs
-        run: cargo test -p cordy-daemon --all-targets --locked
+        run: cargo test -p patchbay-daemon --all-targets --locked
 
   image-budget:
     # A bitmap added or grown past 300KB fails until the PR description says

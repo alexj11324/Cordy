@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useWorkspacePaths } from "@cordy/core/paths";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import type {
   AgentBuilderSessionSummary,
   RuntimeDevice,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { BuilderSetup } from "./builder-conversation";
 import { UnfinishedDraftsBanner } from "./unfinished-drafts";
 import { useBuilderSession } from "./use-builder-session";

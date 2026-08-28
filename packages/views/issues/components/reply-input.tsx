@@ -2,14 +2,14 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
-import { FileUploadButton } from "@cordy/ui/components/common/file-upload-button";
-import { SubmitButton } from "@cordy/ui/components/common/submit-button";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { contentReferencesAttachment } from "@cordy/core/types";
-import { formatShortcut, useShortcut } from "@cordy/core/shortcuts";
-import { useCommentDraftStore, type CommentDraftKey } from "@cordy/core/issues/stores";
-import { cn } from "@cordy/ui/lib/utils";
-import type { AvatarSize } from "@cordy/ui/lib/avatar-size";
+import { contentReferencesAttachment } from "@patchbay/core/types";
+import { formatShortcut, useShortcut } from "@patchbay/core/shortcuts";
+import { useCommentDraftStore, type CommentDraftKey } from "@patchbay/core/issues/stores";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { AvatarSize } from "@patchbay/ui/lib/avatar-size";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";

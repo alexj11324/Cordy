@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarDays } from "lucide-react";
-import type { UpdateProjectRequest } from "@cordy/core/types";
+import type { UpdateProjectRequest } from "@patchbay/core/types";
 import { DateOnlyPicker } from "../../common/date-only-picker";
 import { useT } from "../../i18n";
 

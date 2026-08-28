@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chatKeys,
   chatQuickActionsFailureOptions,
-} from "@cordy/core/chat/queries";
-import type { ChatQuickActionsFailureState } from "@cordy/core/types";
+} from "@patchbay/core/chat/queries";
+import type { ChatQuickActionsFailureState } from "@patchbay/core/types";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

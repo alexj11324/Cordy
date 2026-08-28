@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { useNavigationStore } from "@cordy/core/navigation";
-import { useAuthStore } from "@cordy/core/auth";
+import { useNavigationStore } from "@patchbay/core/navigation";
+import { useAuthStore } from "@patchbay/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@cordy/core/paths";
-import { useWorkspaceList } from "@cordy/core/workspace";
-import { useRecentIssuesStore } from "@cordy/core/issues/stores";
+} from "@patchbay/core/paths";
+import { useWorkspaceList } from "@patchbay/core/workspace";
+import { useRecentIssuesStore } from "@patchbay/core/issues/stores";
 import { useNavigation } from "../navigation";
 
 /**

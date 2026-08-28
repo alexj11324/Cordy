@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { buttonVariants } from "@cordy/ui/components/ui/button";
+import { buttonVariants } from "@patchbay/ui/components/ui/button";
 
 export default function NotFound() {
   return (
@@ -12,7 +12,7 @@ export default function NotFound() {
         The page you are looking for doesn&rsquo;t exist or has been moved.
       </p>
       <Link href="/" className={buttonVariants({ className: "mt-2" })}>
-        Back to Cordy
+        Back to Patchbay
       </Link>
     </main>
   );

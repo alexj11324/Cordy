@@ -7,7 +7,7 @@
  * workspace flips wsId and the cache moves automatically (root AGENTS.md
  * "Workspace-scoped queries must key on wsId").
  */
-import type { ListIssuesParams } from "@cordy/core/types";
+import type { ListIssuesParams } from "@patchbay/core/types";
 
 export type MyIssuesScope = "assigned" | "created" | "agents";
 

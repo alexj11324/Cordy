@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement, ReactNode } from "react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enAuth from "../locales/en/auth.json";
 import enSettings from "../locales/en/settings.json";
@@ -43,7 +43,7 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQueryClient: () => ({ setQueryData: mockSetQueryData }) };
 });
 
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     // Zustand hook form — component may call useAuthStore(selector)
     (selector?: (s: unknown) => unknown) => {
@@ -59,7 +59,7 @@ vi.mock("@cordy/core/auth", () => ({
   ),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
@@ -69,7 +69,7 @@ vi.mock("@cordy/core/api", () => ({
   },
 }));
 
-vi.mock("@cordy/core/types", () => ({}));
+vi.mock("@patchbay/core/types", () => ({}));
 
 // ---------------------------------------------------------------------------
 // Import after mocks
@@ -114,10 +114,10 @@ describe("LoginPage", () => {
   // Email step rendering
   // -------------------------------------------------------------------------
 
-  it("renders email form with 'Sign in to Cordy' title", () => {
+  it("renders email form with 'Sign in to Patchbay' title", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
-      screen.getByText(/sign in to cordy/i),
+      screen.getByText(/sign in to patchbay/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/enter your email to get a login code/i),
@@ -411,7 +411,7 @@ describe("LoginPage", () => {
   // -------------------------------------------------------------------------
 
   it("shows cli_confirm step when existing session + cliCallback", async () => {
-    localStorage.setItem("cordy_token", "existing-jwt");
+    localStorage.setItem("patchbay_token", "existing-jwt");
     // Cookie attempt fails first, then localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -443,7 +443,7 @@ describe("LoginPage", () => {
   });
 
   it("CLI authorize button redirects to callback URL", async () => {
-    localStorage.setItem("cordy_token", "existing-jwt");
+    localStorage.setItem("patchbay_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -478,7 +478,7 @@ describe("LoginPage", () => {
   });
 
   it("'Use a different account' returns to email step", async () => {
-    localStorage.setItem("cordy_token", "existing-jwt");
+    localStorage.setItem("patchbay_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -507,7 +507,7 @@ describe("LoginPage", () => {
     );
 
     expect(
-      screen.getByText(/sign in to cordy/i),
+      screen.getByText(/sign in to patchbay/i),
     ).toBeInTheDocument();
   });
 
@@ -693,7 +693,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: /back/i }));
 
     expect(
-      screen.getByText(/sign in to cordy/i),
+      screen.getByText(/sign in to patchbay/i),
     ).toBeInTheDocument();
   });
 

@@ -1,4 +1,4 @@
-/** A Slack bot installation bound to a single Cordy agent (PB-3666).
+/** A Slack bot installation bound to a single Patchbay agent (PB-3666).
  *
  * Wire shape mirrors `SlackInstallationResponse` in
  * the Rust Slack handler. New fields the backend adds in the
@@ -42,7 +42,7 @@ export interface RegisterSlackBYORequest {
 }
 
 /** Post-redemption echo: the Slack user id the token carried is now bound to
- * the logged-in Cordy user in this workspace/installation. */
+ * the logged-in Patchbay user in this workspace/installation. */
 export interface RedeemSlackBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

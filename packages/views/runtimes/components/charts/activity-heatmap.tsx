@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import type { RuntimeUsage } from "@cordy/core/types";
-import { useCustomPricingStore } from "@cordy/core/runtimes/custom-pricing-store";
+import type { RuntimeUsage } from "@patchbay/core/types";
+import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
 import { addDaysIso, estimateCost, formatUsd, todayIso, weekStartIso } from "../../utils";
 import { useLocale, useT } from "../../../i18n";
 

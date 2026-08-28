@@ -12,7 +12,7 @@ import {
 const tempDirs: string[] = [];
 
 async function makePreferencesPath(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "cordy-updater-preferences-"));
+  const dir = await mkdtemp(join(tmpdir(), "patchbay-updater-preferences-"));
   tempDirs.push(dir);
   return updaterPreferencesPath(dir);
 }

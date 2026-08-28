@@ -1,7 +1,7 @@
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
-export const githubUrl = "https://github.com/alexj11324/Cordy";
-export const twitterUrl = "https://x.com/CordyAI";
+export const githubUrl = "https://github.com/patchbay-ai/patchbay";
+export const twitterUrl = "https://x.com/PatchbayAI";
 export const discordUrl = "https://discord.gg/W8gYBn226t";
 
 export function GitHubMark({ className }: { className?: string }) {

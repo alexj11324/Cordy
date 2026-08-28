@@ -6,9 +6,9 @@ import type {
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@cordy/core/types";
-import { useIssuesScope } from "@cordy/core/issues/stores/issues-scope-store";
-import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
+} from "@patchbay/core/types";
+import { useIssuesScope } from "@patchbay/core/issues/stores/issues-scope-store";
+import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { PageHeader } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { IssueSurface } from "../surface/issue-surface";

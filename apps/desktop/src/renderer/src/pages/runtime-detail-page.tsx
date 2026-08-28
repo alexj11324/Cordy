@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import {
   RuntimeDetailPage as SharedRuntimeDetailPage,
   RuntimeSettingsPage as SharedRuntimeSettingsPage,
-} from "@cordy/views/runtimes";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { runtimeDisplayLabel } from "@cordy/core/runtimes";
-import { runtimeListOptions } from "@cordy/core/runtimes/queries";
+} from "@patchbay/views/runtimes";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { DaemonRuntimeActions } from "../components/daemon-runtime-card";
 import { useDesktopRuntimeContext } from "../components/use-desktop-runtime-context";

@@ -11,21 +11,21 @@ import {
   Trash2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime, WorkspaceMcpServer } from "@cordy/core/types";
-import { ApiError } from "@cordy/core/api";
+import type { Agent, AgentRuntime, WorkspaceMcpServer } from "@patchbay/core/types";
+import { ApiError } from "@patchbay/core/api";
 import {
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@cordy/core/runtimes";
+} from "@patchbay/core/runtimes";
 import {
   agentMcpServersOptions,
   workspaceMcpServersOptions,
-} from "@cordy/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 import {
   useAddAgentMcpServer,
   useRemoveAgentMcpServer,
   useSetAgentMcpServerEnabled,
-} from "@cordy/core/workspace/mutations";
+} from "@patchbay/core/workspace/mutations";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +35,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 import {

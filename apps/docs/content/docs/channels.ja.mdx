@@ -23,7 +23,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 各 Bot は 1 つの Patchbay エージェントに紐づきます。同じチャットプラットフォームで複数のエージェントを使う場合は、エージェントごとに Bot を接続してください。
 
-DingTalk、WeCom、Telegram は[コミュニティメンテナンス](/community-maintained)です。各リリースに含まれますが、公式サポート SLA はありません。問題は [GitHub issues](https://github.com/alexj11324/Cordy/issues) で報告してください。
+DingTalk、WeCom、Telegram は[コミュニティメンテナンス](/community-maintained)です。各リリースに含まれますが、公式サポート SLA はありません。問題は [GitHub issues](https://github.com/alexj11324/Patchbay/issues) で報告してください。
 
 WeCom が現在扱えるのはテキストメッセージのみです。音声、画像、ファイルのメッセージにはその旨の短い返信が返り、エージェントには渡されません。
 
@@ -79,12 +79,12 @@ Patchbay がエージェントを実行するのは、アカウント連携が�
 セルフホスト環境では、Patchbay が接続エンドポイントを有効にする前に、プラットフォームごとに 32 バイトの暗号化キーを設定する必要があります。
 
 ```dotenv
-CORDY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_WEIXIN_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_WEIXIN_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 これらのキーは、保存された Bot の認証情報を暗号化します。生成と保管方法は[環境変数](/environment-variables)を参照してください。Patchbay Cloud では設定済みです。

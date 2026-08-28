@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { InboxItem } from "@cordy/core/types";
+import type { InboxItem } from "@patchbay/core/types";
 import { InboxList } from "./inbox-list";
 
 // jsdom has no layout, so the real Virtuoso measures a 0-height viewport and

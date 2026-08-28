@@ -50,7 +50,7 @@ function cacheKey(chart: string): string {
   for (let i = 0; i < chart.length; i++) {
     hash = ((hash << 5) + hash) ^ chart.charCodeAt(i);
   }
-  return `cordy:mermaid:layout:${(hash >>> 0).toString(36)}`;
+  return `patchbay:mermaid:layout:${(hash >>> 0).toString(36)}`;
 }
 
 beforeEach(() => {

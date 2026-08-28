@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
-import type { Agent } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
+import type { Agent } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { useT } from "../../../i18n";
 
 export function InstructionsTab({

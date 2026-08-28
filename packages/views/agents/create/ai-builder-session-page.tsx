@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { agentBuilderSessionListOptions } from "@cordy/core/agents";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
+import { agentBuilderSessionListOptions } from "@patchbay/core/agents";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { BuilderWorkspace } from "./builder-workspace";

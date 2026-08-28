@@ -1,8 +1,8 @@
 "use client";
 
 import { AlertCircle, WifiOff } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
-import type { AgentAvailability } from "@cordy/core/agents";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { AgentAvailability } from "@patchbay/core/agents";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useT } from "../../i18n";
 

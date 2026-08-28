@@ -10,7 +10,7 @@
 
 import { useEffect, useRef } from "react"
 
-import { cn } from "@cordy/ui/lib/utils"
+import { cn } from "@patchbay/ui/lib/utils"
 
 interface DotSphereProps {
   className?: string
