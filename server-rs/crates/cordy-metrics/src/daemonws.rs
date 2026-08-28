@@ -165,8 +165,11 @@ mod tests {
 
     #[test]
     fn daemonws_families_use_counter_and_gauge_types() {
-        let collector = DaemonWsCollector::new(&cordy_daemon::hub::M);
-        let families = collector.collect();
+        let registry = prometheus::Registry::new();
+        registry
+            .register(Box::new(DaemonWsCollector::new(&cordy_daemon::hub::M)))
+            .expect("register daemon WebSocket collector");
+        let families = registry.gather();
         let active = families
             .iter()
             .find(|family| family.name() == "cordy_daemonws_active_connections")
@@ -183,5 +186,14 @@ mod tests {
             .unwrap();
         assert_eq!(delivered.get_field_type(), MetricType::COUNTER);
         assert_eq!(delivered.get_metric().len(), 2);
+        let mut results = delivered
+            .get_metric()
+            .iter()
+            .flat_map(|metric| metric.get_label())
+            .filter(|label| label.name() == "result")
+            .map(|label| label.value())
+            .collect::<Vec<_>>();
+        results.sort_unstable();
+        assert_eq!(results, ["hit", "miss"]);
     }
 }
