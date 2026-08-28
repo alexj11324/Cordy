@@ -499,35 +499,39 @@ mod tests {
         )
         .await;
 
-        let scopes = hub.scopes.lock().unwrap();
-        assert_eq!(scopes.len(), 1);
-        assert_eq!(scopes[0].0, "workspace");
-        assert_eq!(scopes[0].1, "ws-1");
-        assert_injected_frame(&scopes[0].2);
-        assert_eq!(scopes[0].3, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
-        drop(scopes);
+        {
+            let scopes = hub.scopes.lock().unwrap();
+            assert_eq!(scopes.len(), 1);
+            assert_eq!(scopes[0].0, "workspace");
+            assert_eq!(scopes[0].1, "ws-1");
+            assert_injected_frame(&scopes[0].2);
+            assert_eq!(scopes[0].3, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        }
 
-        let users = hub.users.lock().unwrap();
-        assert_eq!(users.len(), 1);
-        assert_eq!(users[0].0, "u-1");
-        assert_injected_frame(&users[0].1);
-        assert_eq!(users[0].2, "ws-1");
-        assert_eq!(users[0].3, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
-        drop(users);
+        {
+            let users = hub.users.lock().unwrap();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0].0, "u-1");
+            assert_injected_frame(&users[0].1);
+            assert_eq!(users[0].2, "ws-1");
+            assert_eq!(users[0].3, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        }
 
-        let globals = hub.globals.lock().unwrap();
-        assert_eq!(globals.len(), 1);
-        assert_injected_frame(&globals[0].0);
-        assert_eq!(globals[0].1, "");
-        assert_eq!(globals[0].2, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
-        drop(globals);
+        {
+            let globals = hub.globals.lock().unwrap();
+            assert_eq!(globals.len(), 1);
+            assert_injected_frame(&globals[0].0);
+            assert_eq!(globals[0].1, "");
+            assert_eq!(globals[0].2, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        }
 
-        let daemon_events = daemon.0.lock().unwrap();
-        assert_eq!(daemon_events.len(), 1);
-        assert_eq!(daemon_events[0].0, "runtime-1");
-        assert_injected_frame(&daemon_events[0].1);
-        assert_eq!(daemon_events[0].2, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
-        drop(daemon_events);
+        {
+            let daemon_events = daemon.0.lock().unwrap();
+            assert_eq!(daemon_events.len(), 1);
+            assert_eq!(daemon_events[0].0, "runtime-1");
+            assert_injected_frame(&daemon_events[0].1);
+            assert_eq!(daemon_events[0].2, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        }
 
         deliver_envelope(
             hub.clone(),
