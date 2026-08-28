@@ -6,7 +6,7 @@
   <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
 </picture>
 
-**Route coding-agent work from intent to review without losing the thread.**
+**End to End MAS Control Plane for Individual and Teams**
 
 [![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
@@ -14,9 +14,7 @@
 
 </div>
 
-Patchbay is an open-source control plane for coding-agent work. It keeps the
-request, execution, decisions, result, and review state together while agents
-run on infrastructure you control.
+Patchbay is an open-source control plane for orchestrating multi-agent systems on long-horizon tasks. It automatically decomposes ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
 
 The name comes from a physical patch bay: a visible routing surface that
 connects inputs and outputs without hiding the path between them.
