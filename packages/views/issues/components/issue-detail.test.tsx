@@ -1365,7 +1365,7 @@ describe("IssueDetail (shared)", () => {
     const label = await screen.findByText("handed off review");
     const handoff = label.parentElement;
     expect(handoff).not.toBeNull();
-    expect(within(handoff!).getByText("Claude Agent")).toBeInTheDocument();
+    expect(within(handoff!).getAllByText("Claude Agent")).toHaveLength(2);
     expect(within(handoff!).getByText("Reviewer Agent")).toBeInTheDocument();
     expect(within(handoff!).getAllByTestId("actor-avatar")).toHaveLength(2);
     expect(handoff!.querySelector("svg")).toBeInTheDocument();
