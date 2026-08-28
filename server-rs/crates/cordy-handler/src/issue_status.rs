@@ -1098,7 +1098,7 @@ mod tests {
         let update_state = state.clone();
         let update_context = admin.clone();
         let issue_id = created.id;
-        let pending_update = tokio::spawn(async move {
+        let mut pending_update = tokio::spawn(async move {
             issue_request(
                 update_state,
                 update_context,
@@ -1144,7 +1144,7 @@ mod tests {
         let update_state = state.clone();
         let update_context = admin.clone();
         let issue_id = created.id;
-        let mut pending_update = tokio::spawn(async move {
+        let pending_update = tokio::spawn(async move {
             issue_request(
                 update_state,
                 update_context,
