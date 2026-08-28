@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn github_pull_request_urls_match_go_contract() {
         assert_eq!(
-            parse_github_pr_url(" https://github.com/AlexJ11324/Patchbay/pull/24/files "),
+            parse_github_pr_url(" https://github.com/Patchbay-AI/Patchbay/pull/24/files "),
             Ok(("patchbay-ai".into(), "patchbay".into(), 24))
         );
         assert_eq!(
