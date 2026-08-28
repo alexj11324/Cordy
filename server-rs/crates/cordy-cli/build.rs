@@ -4,14 +4,13 @@ fn main() {
     emit("CORDY_BUILD_VERSION", "dev");
     emit("CORDY_BUILD_COMMIT", "unknown");
     emit("CORDY_BUILD_DATE", "unknown");
-    emit("CORDY_BUILD_GO_VERSION", "unknown");
     emit_value(
         "CORDY_BUILD_OS",
-        go_os(&env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".into())),
+        release_os(&env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".into())),
     );
     emit_value(
         "CORDY_BUILD_ARCH",
-        go_arch(&env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".into())),
+        release_arch(&env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".into())),
     );
 }
 
@@ -29,14 +28,14 @@ fn emit_value(name: &str, value: &str) {
     println!("cargo:rustc-env={name}={value}");
 }
 
-fn go_os(target: &str) -> &str {
+fn release_os(target: &str) -> &str {
     match target {
         "macos" => "darwin",
         other => other,
     }
 }
 
-fn go_arch(target: &str) -> &str {
+fn release_arch(target: &str) -> &str {
     match target {
         "x86" => "386",
         "x86_64" => "amd64",
@@ -54,10 +53,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn target_names_match_go_version_contract() {
-        assert_eq!(go_os("macos"), "darwin");
-        assert_eq!(go_arch("x86_64"), "amd64");
-        assert_eq!(go_arch("aarch64"), "arm64");
-        assert_eq!(go_os("linux"), "linux");
+    fn target_names_match_release_artifact_contract() {
+        assert_eq!(release_os("macos"), "darwin");
+        assert_eq!(release_arch("x86_64"), "amd64");
+        assert_eq!(release_arch("aarch64"), "arm64");
+        assert_eq!(release_os("linux"), "linux");
     }
 }

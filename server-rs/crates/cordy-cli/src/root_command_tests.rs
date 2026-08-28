@@ -6,23 +6,22 @@ use std::io::Cursor;
 use std::time::Duration;
 
 #[test]
-fn version_text_json_and_root_flag_match_go_contract() {
+fn version_text_json_and_root_flag_match_release_contract() {
     let text = run_version(VersionOutput::Text).expect("text version");
     assert_eq!(
         text.stdout,
         format!(
-            "cordy {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\ngo: {BUILD_GO_VERSION}, os/arch: {BUILD_OS}/{BUILD_ARCH}\n"
+            "cordy {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\nos/arch: {BUILD_OS}/{BUILD_ARCH}\n"
         )
     );
     assert!(text.stderr.is_empty());
 
     let json = run_version(VersionOutput::Json).expect("JSON version");
     let info: Value = serde_json::from_str(&json.stdout).expect("version JSON");
-    assert_eq!(info.as_object().expect("version object").len(), 6);
+    assert_eq!(info.as_object().expect("version object").len(), 5);
     assert_eq!(info["version"], CLIENT_VERSION);
     assert_eq!(info["commit"], BUILD_COMMIT);
     assert_eq!(info["date"], BUILD_DATE);
-    assert_eq!(info["go"], BUILD_GO_VERSION);
     assert_eq!(info["os"], BUILD_OS);
     assert_eq!(info["arch"], BUILD_ARCH);
 
@@ -36,7 +35,7 @@ fn version_text_json_and_root_flag_match_go_contract() {
 }
 
 #[test]
-fn version_subcommand_accepts_only_go_registry_output_values() {
+fn version_subcommand_accepts_only_supported_output_values() {
     assert!(Cli::try_parse_from(["cordy", "version"]).is_ok());
     assert!(Cli::try_parse_from(["cordy", "version", "--output", "text"]).is_ok());
     assert!(Cli::try_parse_from(["cordy", "version", "--output", "json"]).is_ok());

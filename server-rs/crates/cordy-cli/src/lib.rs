@@ -477,7 +477,6 @@ use workspace_mcp_commands::{
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
 pub const BUILD_COMMIT: &str = env!("CORDY_BUILD_COMMIT");
 pub const BUILD_DATE: &str = env!("CORDY_BUILD_DATE");
-pub const BUILD_GO_VERSION: &str = env!("CORDY_BUILD_GO_VERSION");
 pub const BUILD_OS: &str = env!("CORDY_BUILD_OS");
 pub const BUILD_ARCH: &str = env!("CORDY_BUILD_ARCH");
 
@@ -487,9 +486,7 @@ pub const ROOT_LONG_VERSION: &str = concat!(
     env!("CORDY_BUILD_COMMIT"),
     ", built: ",
     env!("CORDY_BUILD_DATE"),
-    ")\ngo: ",
-    env!("CORDY_BUILD_GO_VERSION"),
-    ", os/arch: ",
+    ")\nos/arch: ",
     env!("CORDY_BUILD_OS"),
     "/",
     env!("CORDY_BUILD_ARCH")
