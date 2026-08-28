@@ -84,13 +84,13 @@ if [ "$mode" = "build" ]; then
   echo "Built images locally via docker-compose.selfhost.build.yml."
   echo "Local tags: cordy-backend:dev and cordy-web:dev."
 else
-  echo "Images: ${CORDY_BACKEND_IMAGE:-ghcr.io/cordy-ai/cordy-backend}:${CORDY_IMAGE_TAG:-latest}"
-  echo "        ${CORDY_WEB_IMAGE:-ghcr.io/cordy-ai/cordy-web}:${CORDY_IMAGE_TAG:-latest}"
+  echo "Images: ${CORDY_BACKEND_IMAGE:-ghcr.io/alexj11324/cordy-backend}:${CORDY_IMAGE_TAG:-latest}"
+  echo "        ${CORDY_WEB_IMAGE:-ghcr.io/alexj11324/cordy-web}:${CORDY_IMAGE_TAG:-latest}"
 fi
 echo ""
 echo "Log in: configure RESEND_API_KEY in .env for email codes,"
 echo "        or read the generated code from backend logs when Resend is unset."
 echo ""
 echo "Next — install the CLI and connect your machine:"
-echo "  brew install cordy-ai/tap/cordy"
+echo "  curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash"
 echo "  cordy setup self-host"

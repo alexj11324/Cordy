@@ -812,7 +812,7 @@ export interface UpdateAgentEnvRequest {
  * `GET /api/agents/:id/skills`). The full SKILL.md `content` is intentionally
  * omitted — bodies routinely run 50–200KB each and shipping them in list
  * payloads tripped CLI timeouts on high-latency links (GH
- * cordy-ai/cordy#2174). Use `Skill` from a detail endpoint when you need
+ * alexj11324/Cordy#2174). Use `Skill` from a detail endpoint when you need
  * the body. For skills embedded in an `Agent` payload see `AgentSkillSummary`.
  */
 export interface SkillSummary {

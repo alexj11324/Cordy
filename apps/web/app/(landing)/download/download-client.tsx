@@ -16,7 +16,7 @@ import {
 import type { LatestRelease } from "@/features/landing/utils/github-release";
 
 const ALL_RELEASES_URL =
-  "https://github.com/cordy-ai/cordy/releases";
+  "https://github.com/alexj11324/Cordy/releases";
 
 export function DownloadClient({ release }: { release: LatestRelease }) {
   const [detected, setDetected] = useState<DetectResult | null>(null);

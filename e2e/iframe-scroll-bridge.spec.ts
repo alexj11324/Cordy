@@ -3,7 +3,7 @@ import { buildScrollBridge } from "../packages/views/editor/utils/iframe-scroll-
 
 /**
  * Self-contained Chromium tests for the in-iframe scroll bridge
- * (cordy-ai#6405). No app server: `page.setContent` with a real
+ * (alexj11324#6405). No app server: `page.setContent` with a real
  * `sandbox="allow-scripts"` srcdoc iframe, injecting the exact bridge
  * script that ships in the bundle. These pin facts jsdom cannot verify:
  * sandboxed srcdoc throws on sessionStorage, and a real ResizeObserver

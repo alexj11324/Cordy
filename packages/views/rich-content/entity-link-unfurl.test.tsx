@@ -186,7 +186,7 @@ describe("bare entity URLs in readonly content", () => {
 
   it("leaves an external URL as a plain link", () => {
     const { queryByTestId, container } = renderContent(
-      `https://github.com/cordy-ai/cordy/pull/1`,
+      `https://github.com/alexj11324/Cordy/pull/1`,
     );
     expect(queryByTestId("project-chip")).toBeNull();
     expect(queryByTestId("issue-chip")).toBeNull();

@@ -1,6 +1,6 @@
 import { cn } from "@cordy/ui/lib/utils";
 
-export const githubUrl = "https://github.com/cordy-ai/cordy";
+export const githubUrl = "https://github.com/alexj11324/Cordy";
 export const twitterUrl = "https://x.com/CordyAI";
 export const discordUrl = "https://discord.gg/W8gYBn226t";
 

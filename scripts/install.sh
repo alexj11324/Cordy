@@ -2,10 +2,10 @@
 # Cordy installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
-#   curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 #
 # Install CLI + provision self-host server:
-#   curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash -s -- --with-server
+#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 #
 # After installation, run `cordy setup` to configure your environment.
 #
@@ -14,10 +14,10 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-REPO_URL="https://github.com/cordy-ai/cordy.git"
-REPO_WEB_URL="https://github.com/cordy-ai/cordy"  # without .git, for GitHub web APIs
+REPO_URL="https://github.com/alexj11324/Cordy.git"
+REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
 INSTALL_DIR="${CORDY_INSTALL_DIR:-$HOME/.cordy/server}"
-BREW_PACKAGE="cordy-ai/tap/cordy"
+BREW_PACKAGE="alexj11324/tap/cordy"
 
 # Host ports Compose reported after `up -d`; set by setup_server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -113,7 +113,7 @@ detect_os() {
     Linux)  OS="linux" ;;
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
-  irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex" ;;
+  irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex" ;;
     *)      fail "Unsupported operating system: $(uname -s). Cordy supports macOS, Linux, and Windows." ;;
   esac
 
@@ -141,7 +141,7 @@ install_cli_brew() {
   info "Installing Cordy CLI via Homebrew..."
   local brew_log
   brew_log=$(mktemp)
-  if ! brew tap cordy-ai/tap >"$brew_log" 2>&1; then
+  if ! brew tap alexj11324/tap >"$brew_log" 2>&1; then
     warn "Failed to add Homebrew tap. Falling back to GitHub Releases binary install."
     _dump_brew_log "$brew_log"
     rm -f "$brew_log"
@@ -175,7 +175,7 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/cordy-ai/cordy/releases/download/${latest}/cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/alexj11324/Cordy/releases/download/${latest}/cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -187,7 +187,7 @@ install_cli_binary() {
 
   local checksum_file="$tmp_dir/checksums.txt"
   local asset_name="cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
-  if ! curl -fsSL "https://github.com/cordy-ai/cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
+  if ! curl -fsSL "https://github.com/alexj11324/Cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
     rm -rf "$tmp_dir"
     fail "Failed to download the CLI checksum manifest; refusing to install an unverified binary."
   fi
@@ -322,6 +322,35 @@ checkout_server_ref() {
   local ref="$1"
   git fetch origin "$ref" --depth 1 || fail "Could not fetch self-host ref '$ref'."
   git checkout --force --detach FETCH_HEAD || fail "Could not check out self-host ref '$ref'."
+}
+
+migrate_legacy_selfhost_image_repositories() {
+  local migrated=false
+  local legacy_backend="ghcr.io/cordy-ai/cordy-backend"
+  local legacy_web="ghcr.io/cordy-ai/cordy-web"
+  local canonical_backend="ghcr.io/alexj11324/cordy-backend"
+  local canonical_web="ghcr.io/alexj11324/cordy-web"
+
+  if grep -Fxq "CORDY_BACKEND_IMAGE=$legacy_backend" .env; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' "s#^CORDY_BACKEND_IMAGE=$legacy_backend\$#CORDY_BACKEND_IMAGE=$canonical_backend#" .env
+    else
+      sed -i "s#^CORDY_BACKEND_IMAGE=$legacy_backend\$#CORDY_BACKEND_IMAGE=$canonical_backend#" .env
+    fi
+    migrated=true
+  fi
+  if grep -Fxq "CORDY_WEB_IMAGE=$legacy_web" .env; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' "s#^CORDY_WEB_IMAGE=$legacy_web\$#CORDY_WEB_IMAGE=$canonical_web#" .env
+    else
+      sed -i "s#^CORDY_WEB_IMAGE=$legacy_web\$#CORDY_WEB_IMAGE=$canonical_web#" .env
+    fi
+    migrated=true
+  fi
+
+  if [ "$migrated" = true ]; then
+    ok "Migrated legacy Cordy image repositories to ghcr.io/alexj11324"
+  fi
 }
 
 pin_selfhost_image_tag() {
@@ -587,6 +616,7 @@ setup_server() {
     ok "Using existing .env"
   fi
 
+  migrate_legacy_selfhost_image_repositories
   pin_selfhost_image_tag "$server_ref"
 
   # Start Docker Compose
@@ -650,7 +680,7 @@ run_default() {
   printf "\n"
   print_remote_server_token_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash -s -- --with-server\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
 
@@ -691,7 +721,7 @@ run_with_server() {
   printf "  or read the generated code from backend logs when Resend is unset.\n"
   printf "\n"
   printf "  ${BOLD}To stop all services:${RESET}\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash -s -- --stop\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --stop\n"
   printf "\n"
 }
 

@@ -31,7 +31,7 @@ import { useT } from "../../i18n";
 type Step = "instructions" | "success";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash";
+  "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash";
 const CLOUD_SERVER_URL = "https://api.cordy.ai";
 const CLOUD_APP_URL = "https://cordy.ai";
 

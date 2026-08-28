@@ -17,7 +17,7 @@ files:
   # Intel (x64) DMG until the HFS volume was full and the real
   # `Electron Framework/Versions/A/Electron Framework` binary was dropped,
   # so Intel Macs crashed on launch with a dyld missing-library error
-  # (github.com/cordy-ai/cordy/issues/5595). Excluding all of dist/**
+  # (github.com/alexj11324/Cordy/issues/5595). Excluding all of dist/**
   # fixes it regardless of build order; a pre-build clean alone does not,
   # because the first arch writes into dist/ mid-run before the second is
   # packaged.
@@ -36,6 +36,8 @@ protocols:
 asarUnpack:
   - resources/**
 mac:
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   target:
     - dmg
@@ -45,10 +47,9 @@ mac:
   # Naming scheme: cordy-desktop-<version>-<platform>-<arch>.<ext>
   # so the filename alone surfaces kind, version, platform, and CPU arch.
   artifactName: cordy-desktop-${version}-mac-${arch}.${ext}
-  # Notarize via notarytool. Requires APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD
-  # + APPLE_TEAM_ID env vars at package time. Non-mac contributors are
-  # unaffected because `pnpm package` already requires the Developer ID
-  # signing cert — notarization is a strict superset.
+  # Notarize via notarytool. The production Release workflow requires
+  # Developer ID signing plus APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD +
+  # APPLE_TEAM_ID and validates the stapled ticket before uploading assets.
   notarize: true
 dmg:
   artifactName: cordy-desktop-${version}-mac-${arch}.${ext}
@@ -75,7 +76,7 @@ linux:
   # shadows the other. Hitting the Electron binary from a CLI call is the
   # worst failure mode: it exits 0 with empty stdout (its own Chromium flags
   # eat CLI args like `--output json`), which looks like a healthy CLI that
-  # returned nothing rather than "wrong binary" (github.com/cordy-ai/cordy/issues/5481).
+  # returned nothing rather than "wrong binary" (github.com/alexj11324/Cordy/issues/5481).
   # `StartupWMClass=Cordy` (productName-derived) is unaffected by this
   # rename — it comes from `app.getName()`, not `executableName`.
   executableName: cordy-desktop
@@ -123,8 +124,8 @@ win:
   artifactName: cordy-desktop-${version}-windows-${arch}.${ext}
 publish:
   provider: github
-  owner: cordy-ai
-  repo: cordy
+  owner: alexj11324
+  repo: Cordy
   # The release workflow pre-creates a draft and publishes it only after the
   # CLI archives, every Desktop matrix asset, images, and chart have passed
   # their gates. This must match the existing GitHub Release type exactly:

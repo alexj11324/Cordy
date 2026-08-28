@@ -14,6 +14,38 @@ permissions:
   checks: write
 
 jobs:
+  macos-release-preflight:
+    # A production release is incomplete without trusted macOS installers.
+    # Fail before a draft Release is created unless every signing/notarization
+    # credential is present in the canonical repository's Actions secrets.
+    if: github.repository == 'alexj11324/Cordy'
+    runs-on: ubuntu-latest
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Require macOS signing and notarization credentials
+        shell: bash
+        run: |
+          missing=()
+          for name in \
+            CSC_LINK \
+            CSC_KEY_PASSWORD \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing required macOS release secret: %s\n' "${missing[@]}"
+            exit 1
+          fi
+
   verify:
     runs-on: ubuntu-latest
     services:
@@ -227,10 +259,10 @@ jobs:
           retention-days: 1
 
   release:
-    needs: [verify, rust-cli-build, docker-backend-merge, docker-web-merge]
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not publish there.
-    if: github.repository_owner == 'cordy-ai'
+    needs: [macos-release-preflight, verify, rust-cli-build, docker-backend-merge, docker-web-merge]
+    # Only the canonical repository may publish release assets. A fork can
+    # still run verification and builds without creating a Release.
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -565,7 +597,7 @@ jobs:
 
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge]
-    if: github.repository_owner == 'cordy-ai'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
       group: release-helm-chart-${{ github.ref }}
@@ -604,12 +636,10 @@ jobs:
       - name: Verify published chart
         run: helm show chart "$OCI_REGISTRY/cordy" --version "$CHART_VERSION"
 
-  # Build the Desktop installers for Linux and Windows and upload them to
-  # the draft GitHub Release created above. The release remains private until
-  # every matrix entry succeeds. macOS
-  # Desktop continues to ship via the manual `release-desktop` skill so it
-  # can be signed + notarized with Apple Developer credentials that are
-  # not (yet) wired into CI.
+  # Build the Desktop installers for every supported platform and upload them
+  # to the draft GitHub Release created above. The release remains private
+  # until every matrix entry succeeds. macOS production builds require a
+  # Developer ID Application identity and successful Apple notarization.
   desktop:
     needs: release
     strategy:
@@ -621,6 +651,12 @@ jobs:
             arch: x64
           - os: ubuntu-24.04-arm
             target: linux
+            arch: arm64
+          - os: macos-15-intel
+            target: mac
+            arch: x64
+          - os: macos-14
+            target: mac
             arch: arm64
           - os: windows-latest
             target: win
@@ -667,6 +703,10 @@ jobs:
             rustup target add x86_64-unknown-linux-musl
             echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
             echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.target }}" == "mac" && "${{ matrix.arch }}" == "arm64" ]]; then
+            rustup target add aarch64-apple-darwin
+          elif [[ "${{ matrix.target }}" == "mac" ]]; then
+            rustup target add x86_64-apple-darwin
           elif [[ "${{ matrix.arch }}" == "arm64" ]]; then
             rustup target add aarch64-pc-windows-msvc
           else
@@ -686,6 +726,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Package Desktop installers (${{ matrix.target }})
+        if: matrix.target != 'mac'
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -698,9 +739,91 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always
 
+      - name: Package Desktop installers (macOS)
+        if: matrix.target == 'mac'
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
+
+      - name: Verify Developer ID signature and notarization (macOS)
+        if: matrix.target == 'mac'
+        working-directory: apps/desktop
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          app_path="$(find dist -type d -name 'Cordy.app' -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "::error::Packaged Cordy.app was not found"
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=4 "$app_path"
+          signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
+          printf '%s\n' "$signature_details"
+          grep -Fq 'Authority=Developer ID Application:' <<<"$signature_details" || {
+            echo "::error::Cordy.app is not signed with a Developer ID Application identity"
+            exit 1
+          }
+          grep -Fq "TeamIdentifier=$APPLE_TEAM_ID" <<<"$signature_details" || {
+            echo "::error::Cordy.app was signed by an unexpected Apple team"
+            exit 1
+          }
+
+          xcrun stapler validate "$app_path"
+          assessment="$(spctl --assess --type execute --verbose=4 "$app_path" 2>&1)"
+          printf '%s\n' "$assessment"
+          grep -Fq 'source=Notarized Developer ID' <<<"$assessment" || {
+            echo "::error::Gatekeeper did not recognize Cordy.app as notarized Developer ID software"
+            exit 1
+          }
+
+      - name: Upload verified macOS release assets
+        if: matrix.target == 'mac'
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          version="${TAG_NAME#v}"
+          metadata='latest-mac.yml'
+          if [ "${{ matrix.arch }}" = 'x64' ]; then
+            metadata='latest-x64-mac.yml'
+          fi
+
+          required_assets=(
+            "dist/cordy-desktop-$version-mac-${{ matrix.arch }}.dmg"
+            "dist/cordy-desktop-$version-mac-${{ matrix.arch }}.zip"
+            "dist/$metadata"
+          )
+          for asset in "${required_assets[@]}"; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::Missing verified macOS release asset $asset"
+              exit 1
+            fi
+          done
+
+          blockmap="dist/cordy-desktop-$version-mac-${{ matrix.arch }}.zip.blockmap"
+          if [ -f "$blockmap" ]; then
+            required_assets+=("$blockmap")
+          fi
+          gh release upload "$TAG_NAME" \
+            "${required_assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
   publish-release:
     needs: [verify, release, desktop, helm-chart]
-    if: github.repository_owner == 'cordy-ai'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -739,6 +862,12 @@ jobs:
             "cordy-desktop-$version-linux-aarch64.rpm" \
             "latest-linux.yml" \
             "latest-linux-arm64.yml" \
+            "cordy-desktop-$version-mac-arm64.dmg" \
+            "cordy-desktop-$version-mac-arm64.zip" \
+            "cordy-desktop-$version-mac-x64.dmg" \
+            "cordy-desktop-$version-mac-x64.zip" \
+            "latest-mac.yml" \
+            "latest-x64-mac.yml" \
             "cordy-desktop-$version-windows-x64.exe" \
             "cordy-desktop-$version-windows-x64.exe.blockmap" \
             "cordy-desktop-$version-windows-arm64.exe" \
@@ -775,56 +904,3 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
-
-      - name: Update stable Homebrew formula
-        if: needs.verify.outputs.is_stable == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          version="${TAG_NAME#v}"
-          formula="$(mktemp)"
-          cat > "$formula" <<EOF
-          class Cordy < Formula
-            desc "Cordy CLI — local agent runtime and management tool for the Cordy platform"
-            homepage "https://github.com/cordy-ai/cordy"
-            version "$version"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-arm64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-arm64.tar.gz" | cut -d' ' -f1)"
-              else
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-amd64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-amd64.tar.gz" | cut -d' ' -f1)"
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-arm64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-arm64.tar.gz" | cut -d' ' -f1)"
-              else
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-amd64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-amd64.tar.gz" | cut -d' ' -f1)"
-              end
-            end
-
-            def install
-              bin.install "cordy"
-            end
-
-            test do
-              system "#{bin}/cordy", "version"
-            end
-          end
-          EOF
-          content="$(base64 -w0 "$formula")"
-          current_sha="$(gh api repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb --jq .sha)"
-          gh api --method PUT repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb \
-            -f message="Update cordy to $TAG_NAME" \
-            -f content="$content" \
-            -f sha="$current_sha" \
-            -f branch=main
-          rm -f "$formula"

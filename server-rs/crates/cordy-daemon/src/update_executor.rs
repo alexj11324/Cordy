@@ -23,12 +23,8 @@ const GITHUB_USER_AGENT: &str = concat!("cordy-daemon/", env!("CARGO_PKG_VERSION
 const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
 pub const DEFAULT_UPDATE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const DOWNLOAD_TIMEOUT: Duration = DEFAULT_UPDATE_DOWNLOAD_TIMEOUT;
-const BREW_PREFIX_TIMEOUT: Duration = Duration::from_secs(10);
-const BREW_UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-const BREW_DIAGNOSTIC_BYTES: usize = 2 * 1024;
 const MAX_ARCHIVE_BYTES: usize = 256 * 1024 * 1024;
 const MAX_BINARY_BYTES: usize = 128 * 1024 * 1024;
-const KNOWN_BREW_PREFIXES: &[&str] = &["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateFailureKind {
@@ -91,9 +87,7 @@ impl std::error::Error for UpdateExecutorError {}
 type Result<T> = std::result::Result<T, UpdateExecutorError>;
 
 /// Typed input for the daemon's self-update operation. `target_version =
-/// None` means resolve the latest GitHub release for direct installs. Homebrew
-/// always upgrades its tap's latest formula; the latest query is advisory
-/// there and never prevents the upgrade from being attempted.
+/// None` means resolve the latest GitHub release.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UpdateRequest {
     pub target_version: Option<String>,
@@ -125,7 +119,9 @@ impl UpdateRequest {
 }
 
 /// Installation method reported by the typed update boundary. It intentionally
-/// does not expose the executor's private paths or command details.
+/// does not expose the executor's private paths or command details. `Homebrew`
+/// remains for caller compatibility, but the executor now migrates every
+/// installation to the maintained direct GitHub Release path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateInstallMethod {
     Direct,
@@ -144,16 +140,9 @@ pub struct UpdateOutcome {
     pub message: String,
 }
 
-#[derive(Debug, Clone)]
-enum InstallMethod {
-    Direct,
-    Homebrew { stable_target: PathBuf },
-}
-
 #[derive(Debug)]
 pub struct UpdateExecutor {
     executable: PathBuf,
-    install_method: InstallMethod,
     metadata_client: reqwest::Client,
     download_client: reqwest::Client,
 }
@@ -177,7 +166,6 @@ impl UpdateExecutor {
     pub(crate) fn direct_for_test(executable: PathBuf) -> Self {
         Self {
             executable,
-            install_method: InstallMethod::Direct,
             metadata_client: http_client(METADATA_TIMEOUT)
                 .expect("build update metadata client for test"),
             download_client: http_client(DOWNLOAD_TIMEOUT)
@@ -185,8 +173,8 @@ impl UpdateExecutor {
         }
     }
 
-    /// Resolves the running inode and detects a Homebrew install. Detection is
-    /// bounded; a broken `brew` cannot block daemon startup indefinitely.
+    /// Resolves the running inode. All installations, including binaries left
+    /// in a Homebrew Cellar by the retired tap, update from GitHub Releases.
     pub async fn detect() -> Result<Self> {
         let executable = resolve_executable()?;
         cleanup_stale_update_artifacts(&executable);
@@ -196,36 +184,20 @@ impl UpdateExecutor {
                 format!("resolve executable symlink: {err}"),
             )
         })?;
-        let brew_prefix = detect_brew_prefix().await;
-        let known_prefix = known_brew_prefix(&resolved);
-        let install_method = brew_prefix
-            .filter(|prefix| resolved.starts_with(prefix))
-            .or(known_prefix)
-            .map(|prefix| InstallMethod::Homebrew {
-                stable_target: prefix.join("bin").join(binary_name()),
-            })
-            .unwrap_or(InstallMethod::Direct);
-
         let metadata_client = http_client(METADATA_TIMEOUT)?;
         let download_client = http_client(DOWNLOAD_TIMEOUT)?;
         Ok(Self {
             executable: resolved,
-            install_method,
             metadata_client,
             download_client,
         })
     }
 
     pub fn restart_target_binary(&self) -> &Path {
-        match &self.install_method {
-            InstallMethod::Direct => &self.executable,
-            InstallMethod::Homebrew { stable_target } => stable_target,
-        }
+        &self.executable
     }
 
-    /// Executes a typed update request. The direct-install path resolves the
-    /// latest release when no target is supplied; Homebrew deliberately keeps
-    /// upgrading even when that advisory latest-release lookup fails.
+    /// Executes a typed update request against GitHub Releases.
     pub async fn update_with_request(
         &self,
         request: UpdateRequest,
@@ -239,57 +211,33 @@ impl UpdateExecutor {
             validate_target_version(target)?;
             if current_version.is_some_and(|current| same_release_version(target, current)) {
                 return Ok(already_current_outcome(
-                    install_method(&self.install_method),
+                    UpdateInstallMethod::Direct,
                     Some(normalize_release_tag(target)),
                 ));
             }
         }
 
-        match &self.install_method {
-            InstallMethod::Homebrew { .. } => {
-                let (latest_tag, latest_query_failed) =
-                    resolve_homebrew_latest(self.fetch_latest_release_tag().await);
-                if let (Some(latest), Some(current)) = (latest_tag.as_deref(), current_version) {
-                    if same_release_version(latest, current) {
-                        return Ok(already_current_outcome(
-                            UpdateInstallMethod::Homebrew,
-                            latest_tag,
-                        ));
-                    }
-                }
-                let message = self.update_homebrew().await.map_err(anyhow::Error::from)?;
-                Ok(UpdateOutcome {
-                    method: UpdateInstallMethod::Homebrew,
-                    resolved_version: latest_tag,
-                    already_current: false,
-                    latest_query_failed,
-                    message,
-                })
-            }
-            InstallMethod::Direct => {
-                let target = match request.target_version {
-                    Some(target) => normalize_release_tag(&target),
-                    None => self.fetch_latest_release_tag().await?,
-                };
-                if current_version.is_some_and(|current| same_release_version(&target, current)) {
-                    return Ok(already_current_outcome(
-                        UpdateInstallMethod::Direct,
-                        Some(target),
-                    ));
-                }
-                let message = self
-                    .update_direct_with_timeout(&target, timeout)
-                    .await
-                    .map_err(anyhow::Error::from)?;
-                Ok(UpdateOutcome {
-                    method: UpdateInstallMethod::Direct,
-                    resolved_version: Some(target),
-                    already_current: false,
-                    latest_query_failed: false,
-                    message,
-                })
-            }
+        let target = match request.target_version {
+            Some(target) => normalize_release_tag(&target),
+            None => self.fetch_latest_release_tag().await?,
+        };
+        if current_version.is_some_and(|current| same_release_version(&target, current)) {
+            return Ok(already_current_outcome(
+                UpdateInstallMethod::Direct,
+                Some(target),
+            ));
         }
+        let message = self
+            .update_direct_with_timeout(&target, timeout)
+            .await
+            .map_err(anyhow::Error::from)?;
+        Ok(UpdateOutcome {
+            method: UpdateInstallMethod::Direct,
+            resolved_version: Some(target),
+            already_current: false,
+            latest_query_failed: false,
+            message,
+        })
     }
 
     /// Alias kept as the concise facade entry point for CLI/service callers.
@@ -322,7 +270,7 @@ impl UpdateExecutor {
     }
 
     async fn fetch_latest_release_tag(&self) -> Result<String> {
-        let endpoint = "https://api.github.com/repos/cordy-ai/cordy/releases/latest";
+        let endpoint = "https://api.github.com/repos/alexj11324/Cordy/releases/latest";
         let response = self
             .metadata_client
             .get(endpoint)
@@ -347,45 +295,13 @@ impl UpdateExecutor {
         release_tag(&release.tag_name)
     }
 
-    async fn update_homebrew(&self) -> Result<String> {
-        let mut command = tokio::process::Command::new("brew");
-        command
-            .args(["upgrade", "cordy-ai/tap/cordy"])
-            .kill_on_drop(true);
-        let result = tokio::time::timeout(BREW_UPDATE_TIMEOUT, command.output())
-            .await
-            .map_err(|_| {
-                UpdateExecutorError::new(
-                    UpdateFailureKind::Homebrew,
-                    "Homebrew upgrade timed out after 30 minutes",
-                )
-            })?
-            .map_err(|err| {
-                UpdateExecutorError::new(
-                    UpdateFailureKind::Homebrew,
-                    format!("start Homebrew upgrade: {err}"),
-                )
-            })?;
-        if !result.status.success() {
-            return Err(UpdateExecutorError::new(
-                UpdateFailureKind::Homebrew,
-                homebrew_failure_message(
-                    result.status.code().unwrap_or(-1),
-                    &result.stdout,
-                    &result.stderr,
-                ),
-            ));
-        }
-        Ok("Homebrew upgraded cordy-ai/tap/cordy".to_string())
-    }
-
     async fn update_direct_with_timeout(
         &self,
         target_version: &str,
         download_timeout: Duration,
     ) -> Result<String> {
         let tag = normalize_release_tag(target_version);
-        let endpoint = format!("https://api.github.com/repos/cordy-ai/cordy/releases/tags/{tag}");
+        let endpoint = format!("https://api.github.com/repos/alexj11324/Cordy/releases/tags/{tag}");
         let response = self
             .metadata_client
             .get(endpoint)
@@ -506,38 +422,6 @@ impl UpdateExecutor {
     }
 }
 
-fn homebrew_failure_message(status: i32, stdout: &[u8], stderr: &[u8]) -> String {
-    let mut message = format!("Homebrew upgrade failed with status {status}");
-    for (label, output) in [("stdout", stdout), ("stderr", stderr)] {
-        let diagnostic = bounded_redacted_diagnostic(output, BREW_DIAGNOSTIC_BYTES);
-        if !diagnostic.is_empty() {
-            message.push_str(&format!("; {label}: {diagnostic}"));
-        }
-    }
-    message
-}
-
-fn bounded_redacted_diagnostic(output: &[u8], max_bytes: usize) -> String {
-    if max_bytes == 0 {
-        return String::new();
-    }
-    let value = String::from_utf8_lossy(output);
-    let redacted = cordy_agent::stderr::sanitize_diagnostic(&value);
-    if redacted.len() <= max_bytes {
-        return redacted.trim().to_string();
-    }
-    const PREFIX: &str = "[truncated] ";
-    if max_bytes <= PREFIX.len() {
-        return PREFIX[..max_bytes].to_string();
-    }
-    let tail_bytes = max_bytes - PREFIX.len();
-    let mut start = redacted.len().saturating_sub(tail_bytes);
-    while start < redacted.len() && !redacted.is_char_boundary(start) {
-        start += 1;
-    }
-    format!("{PREFIX}{}", redacted[start..].trim())
-}
-
 fn append_download_chunk(
     destination: &mut Vec<u8>,
     chunk: &[u8],
@@ -618,13 +502,6 @@ fn validate_target_version(version: &str) -> Result<()> {
     Ok(())
 }
 
-fn install_method(method: &InstallMethod) -> UpdateInstallMethod {
-    match method {
-        InstallMethod::Direct => UpdateInstallMethod::Direct,
-        InstallMethod::Homebrew { .. } => UpdateInstallMethod::Homebrew,
-    }
-}
-
 fn same_release_version(left: &str, right: &str) -> bool {
     normalize_release_tag(left) == normalize_release_tag(right)
 }
@@ -650,13 +527,6 @@ fn validate_download_timeout(timeout: Duration) -> Result<Duration> {
         ));
     }
     Ok(timeout)
-}
-
-fn resolve_homebrew_latest(latest: Result<String>) -> (Option<String>, bool) {
-    match latest {
-        Ok(tag) => (Some(tag), false),
-        Err(_) => (None, true),
-    }
 }
 
 fn release_tag(raw_tag: &str) -> Result<String> {
@@ -1023,29 +893,6 @@ fn find_on_path(name: &OsStr) -> Option<PathBuf> {
     })
 }
 
-async fn detect_brew_prefix() -> Option<PathBuf> {
-    let mut command = tokio::process::Command::new("brew");
-    command.arg("--prefix").kill_on_drop(true);
-    let output = tokio::time::timeout(BREW_PREFIX_TIMEOUT, command.output())
-        .await
-        .ok()?
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let value = String::from_utf8(output.stdout).ok()?;
-    let value = value.trim();
-    (!value.is_empty()).then(|| PathBuf::from(value))
-}
-
-fn known_brew_prefix(path: &Path) -> Option<PathBuf> {
-    KNOWN_BREW_PREFIXES.iter().find_map(|prefix| {
-        let prefix = Path::new(prefix);
-        path.starts_with(prefix.join("Cellar"))
-            .then(|| prefix.to_path_buf())
-    })
-}
-
 fn binary_name() -> &'static str {
     if cfg!(windows) {
         "cordy.exe"
@@ -1158,6 +1005,14 @@ mod tests {
     }
 
     #[test]
+    fn retired_homebrew_cellar_uses_the_resolved_binary_directly() {
+        let executable = PathBuf::from("/opt/homebrew/Cellar/cordy/0.3.0/bin/cordy");
+        let executor = UpdateExecutor::direct_for_test(executable.clone());
+
+        assert_eq!(executor.restart_target_binary(), executable.as_path());
+    }
+
+    #[test]
     fn streaming_download_limit_is_enforced_across_chunk_boundaries() {
         let mut bytes = Vec::new();
         append_download_chunk(&mut bytes, b"123456", 10, "asset.tar.gz").unwrap();
@@ -1167,18 +1022,6 @@ mod tests {
         assert_eq!(error.kind, UpdateFailureKind::Download);
         assert!(error.to_string().contains("exceeds the size limit"));
         assert_eq!(bytes, b"123456");
-    }
-
-    #[test]
-    fn known_homebrew_cellar_maps_to_stable_prefix() {
-        assert_eq!(
-            known_brew_prefix(Path::new("/opt/homebrew/Cellar/cordy/0.3.0/bin/cordy")),
-            Some(PathBuf::from("/opt/homebrew"))
-        );
-        assert_eq!(
-            known_brew_prefix(Path::new("/srv/cordy/Cellar/cordy")),
-            None
-        );
     }
 
     #[test]
@@ -1214,35 +1057,6 @@ mod tests {
         let error = validate_download_timeout(Duration::ZERO).expect_err("zero timeout");
         assert_eq!(error.kind, UpdateFailureKind::InvalidTimeout);
         assert!(error.to_string().contains("greater than zero"));
-    }
-
-    #[test]
-    fn homebrew_latest_lookup_failure_keeps_upgrade_plan_runnable() {
-        let (latest, failed) = resolve_homebrew_latest(Err(UpdateExecutorError::new(
-            UpdateFailureKind::Metadata,
-            "network unavailable",
-        )));
-        assert!(latest.is_none());
-        assert!(failed);
-
-        let (latest, failed) = resolve_homebrew_latest(Ok("v1.2.3".into()));
-        assert_eq!(latest.as_deref(), Some("v1.2.3"));
-        assert!(!failed);
-    }
-
-    #[test]
-    fn homebrew_failure_includes_bounded_redacted_process_diagnostics() {
-        let stdout = format!("{}\nformula resolution failed", "x".repeat(4_096));
-        let stderr = b"Authorization: Bearer very-secret-token-123\npermission denied";
-        let message = homebrew_failure_message(1, stdout.as_bytes(), stderr);
-
-        assert!(message.contains("status 1"));
-        assert!(message.contains("formula resolution failed"));
-        assert!(message.contains("permission denied"));
-        assert!(!message.contains("very-secret-token-123"));
-        let diagnostic = bounded_redacted_diagnostic(stdout.as_bytes(), 64);
-        assert!(diagnostic.len() <= 64);
-        assert!(diagnostic.starts_with("[truncated] "));
     }
 
     #[test]

@@ -1,10 +1,10 @@
 # Cordy installer for Windows — one command to get started.
 #
 # Install CLI (default): connects to cordy.ai
-#   irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 # Self-host: starts a local Cordy server + installs CLI + configures
-#   $env:CORDY_MODE="local"; irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
+#   $env:CORDY_MODE="local"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
@@ -12,8 +12,8 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-$RepoUrl       = "https://github.com/cordy-ai/cordy.git"
-$RepoWebUrl    = "https://github.com/cordy-ai/cordy"
+$RepoUrl       = "https://github.com/alexj11324/Cordy.git"
+$RepoWebUrl    = "https://github.com/alexj11324/Cordy"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".cordy\server"
 $InstallDir    = if ($env:CORDY_INSTALL_DIR) { $env:CORDY_INSTALL_DIR } else { $DefaultInstallDir }
 
@@ -86,7 +86,7 @@ function Get-ComposePublishedPort {
 
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/cordy-ai/cordy/releases/latest" -ErrorAction Stop
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/alexj11324/Cordy/releases/latest" -ErrorAction Stop
         return $release.tag_name
     } catch {
         return $null
@@ -116,6 +116,31 @@ function Checkout-ServerRef {
     git checkout --force --detach FETCH_HEAD
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Could not check out self-host ref '$Ref'."
+    }
+}
+
+function Update-LegacySelfHostImageRepositories {
+    param([Parameter(Mandatory = $true)][string]$EnvPath)
+
+    $legacyBackend = "CORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend"
+    $legacyWeb = "CORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web"
+    $canonicalBackend = "CORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend"
+    $canonicalWeb = "CORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web"
+    $changed = $false
+    $content = @(Get-Content $EnvPath) | ForEach-Object {
+        if ($_ -ceq $legacyBackend) {
+            $changed = $true
+            $canonicalBackend
+        } elseif ($_ -ceq $legacyWeb) {
+            $changed = $true
+            $canonicalWeb
+        } else {
+            $_
+        }
+    }
+    if ($changed) {
+        $content | Set-Content $EnvPath
+        Write-Ok "Migrated legacy Cordy image repositories to ghcr.io/alexj11324"
     }
 }
 
@@ -263,7 +288,7 @@ function Install-CliBinary {
     }
 
     $version = $latest.TrimStart('v')
-    $url = "https://github.com/cordy-ai/cordy/releases/download/$latest/cordy-cli-$version-windows-$arch.zip"
+    $url = "https://github.com/alexj11324/Cordy/releases/download/$latest/cordy-cli-$version-windows-$arch.zip"
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "cordy-install"
 
     if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
@@ -280,7 +305,7 @@ function Install-CliBinary {
     # Verify SHA256 checksum. A missing, malformed, or unavailable manifest is
     # fatal: the release workflow publishes one for every CLI archive, and
     # installing without it would silently remove the download integrity gate.
-    $checksumUrl = "https://github.com/cordy-ai/cordy/releases/download/$latest/checksums.txt"
+    $checksumUrl = "https://github.com/alexj11324/Cordy/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
         $checksumContent = if ($checksums.Content -is [byte[]]) {
@@ -458,6 +483,7 @@ function Install-Server {
         Write-Ok "Using existing .env"
     }
 
+    Update-LegacySelfHostImageRepositories -EnvPath (Join-Path $InstallDir ".env")
     Set-SelfHostImageTag -Ref $serverRef
 
     Write-Info "Pulling official Cordy images..."
@@ -520,7 +546,7 @@ function Start-DefaultInstall {
     Write-Host "     cordy setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
-    Write-Host '     $env:CORDY_MODE="with-server"; irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:CORDY_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -554,7 +580,7 @@ function Start-LocalInstall {
     Write-Host "  or read the generated code from backend logs when Resend is unset."
     Write-Host ""
     Write-Host "  To stop all services:"
-    Write-Host '     $env:CORDY_MODE="stop"; irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:CORDY_MODE="stop"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 

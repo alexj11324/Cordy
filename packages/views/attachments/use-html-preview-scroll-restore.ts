@@ -3,7 +3,7 @@
 /**
  * useHtmlPreviewScrollRestore — wires the full-page HTML attachment iframe
  * into the desktop tab Coordinator's scroll-capture/restore channel
- * (cordy-ai#6405).
+ * (alexj11324#6405).
  *
  * Why this exists: the full-page preview renders user HTML inside
  * `<iframe sandbox="allow-scripts" srcDoc>` with no `allow-same-origin`, so

@@ -5,9 +5,9 @@ import userEvent from "@testing-library/user-event";
 import { renderWithI18n } from "../test/i18n";
 
 const longRepoUrl =
-  "https://github.com/cordy-ai/a-very-long-repository-name-that-needs-a-tooltip";
-const apiRepoUrl = "https://github.com/cordy-ai/api";
-const webRepoUrl = "https://github.com/cordy-ai/web";
+  "https://github.com/alexj11324/a-very-long-repository-name-that-needs-a-tooltip";
+const apiRepoUrl = "https://github.com/alexj11324/api";
+const webRepoUrl = "https://github.com/alexj11324/web";
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [] }),

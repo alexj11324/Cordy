@@ -1042,7 +1042,7 @@ pub(crate) struct WorktreeParams {
     /// instead of a linked worktree whose gitdir lives under the shared
     /// cache. Codex tasks need this because workspace-write keeps a resolved
     /// external worktree gitdir read-only even when explicitly listed as a
-    /// writable root (cordy-ai/cordy#2925, cordy-ai/cordy#6449).
+    /// writable root (alexj11324/Cordy#2925, alexj11324/Cordy#6449).
     pub isolated_git_metadata: bool,
 }
 

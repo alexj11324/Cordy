@@ -1,5 +1,5 @@
 /**
- * Scroll-position bridge for sandboxed HTML attachment iframes (cordy-ai#6405).
+ * Scroll-position bridge for sandboxed HTML attachment iframes (alexj11324#6405).
  *
  * The full-page `AttachmentPreviewPage` mounts user HTML inside
  * `<iframe sandbox="allow-scripts" srcDoc={...}>` — WITHOUT

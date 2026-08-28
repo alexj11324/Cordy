@@ -63,7 +63,7 @@ export const baseOptions: BaseLayoutProps = {
     {
       icon: <GitHubMark />,
       text: externalLinkText("GitHub"),
-      url: "https://github.com/cordy-ai/cordy",
+      url: "https://github.com/alexj11324/Cordy",
       external: true,
     },
     {
