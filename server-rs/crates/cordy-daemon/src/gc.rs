@@ -605,7 +605,10 @@ fn prune_hermes_memory_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let Some(root) = profile_dir(profile).map(|dir| dir.join("hermes-state")) else {
+    let Some(root) = crate::identity::profile_dir(profile)
+        .ok()
+        .map(|dir| dir.join("hermes-state"))
+    else {
         return (0, 0);
     };
     prune_store_tree(&root, 2, ttl, now, reserve)
@@ -617,33 +620,13 @@ fn prune_hermes_session_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let Some(root) = profile_dir(profile).map(|dir| dir.join("hermes-sessions")) else {
+    let Some(root) = crate::identity::profile_dir(profile)
+        .ok()
+        .map(|dir| dir.join("hermes-sessions"))
+    else {
         return (0, 0);
     };
     prune_store_tree(&root, 3, ttl, now, reserve)
-}
-
-fn profile_dir(profile: &str) -> Option<PathBuf> {
-    if profile.contains(['/', '\\']) || profile == "." || profile == ".." {
-        return None;
-    }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT").filter(|v| !v.is_empty()) {
-        let root = PathBuf::from(root);
-        if !root.is_absolute() {
-            return None;
-        }
-        return Some(if profile.is_empty() {
-            root
-        } else {
-            root.join("profiles").join(profile)
-        });
-    }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    Some(if profile.is_empty() {
-        home.join(".cordy")
-    } else {
-        home.join(".cordy").join("profiles").join(profile)
-    })
 }
 
 fn shared_codex_home() -> Option<PathBuf> {
