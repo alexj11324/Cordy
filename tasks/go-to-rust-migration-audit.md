@@ -3218,7 +3218,7 @@ Go 命令，不把文档文字更新当作生产切换证据。
     `cordy-server`/`cordy-cli`/`cordy-migrate` 生产入口、Rust crate 分层、`cordy-db` 手写 SQLx query module 和 Rust tests；
     migration 仍以 `server/migrations/` 为真实路径；Go 1.26.6 仅标为 `make check`/`scripts/test-go.sh` 临时 compatibility
     gate 所需，不是生产 backend 依赖。
-- 证据/PR：T-61 是一个运维文档切片，已创建 Ready PR #590（最终 head `f61cb9e3`，基于 T-60 `60467139`），本项只改上述直接相关文档，
+- 证据/PR：T-61 是一个运维文档切片，已创建 Ready PR #590（文档实现 head `3bf7575c`，基于 T-60 `88319c9a`），本项只改上述直接相关文档，
   不新增脚本、安装器、抽象、任务号或运行时 fallback。主 agent 仅运行 `git diff --check`；T-60 新鲜 binary/image/unit
   的命令和版本由独立 verifier 复核，reviewer 检查文档是否与实际 Rust 产物一致，fixer 只处理 scoped finding。新鲜
   产物尚未可用前，本项保持 `[~]`，不得把静态文档 diff 当作生产验证或 Go 可删除证据。最终 verifier 确认 exact
