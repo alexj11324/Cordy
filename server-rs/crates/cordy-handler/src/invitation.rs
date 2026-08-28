@@ -268,7 +268,12 @@ fn invitation_limit(name: &str, default: usize) -> usize {
     match raw.trim().parse() {
         Ok(limit) => limit,
         Err(_) => {
-            tracing::warn!(name, value = raw, default, "invalid invitation rate limit; using default");
+            tracing::warn!(
+                name,
+                value = raw,
+                default,
+                "invalid invitation rate limit; using default"
+            );
             default
         }
     }

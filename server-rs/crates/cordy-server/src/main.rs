@@ -704,11 +704,7 @@ async fn main() -> anyhow::Result<()> {
         analytics,
     } = app;
     let http_shutdown = CancellationToken::new();
-    let shutdown_hold = duration_env(
-        "CORDY_SHUTDOWN_HOLD_DURATION",
-        Duration::ZERO,
-        true,
-    );
+    let shutdown_hold = duration_env("CORDY_SHUTDOWN_HOLD_DURATION", Duration::ZERO, true);
     let mut server = std::pin::pin!(http_serve::serve_with_bounded_drain(
         listener,
         router,

@@ -1190,11 +1190,7 @@ mod tests {
 
         let original = create(
             &service,
-            params(
-                workspace_id,
-                "  Duplicate\u{00a0}Title  ",
-                "in_progress",
-            ),
+            params(workspace_id, "  Duplicate\u{00a0}Title  ", "in_progress"),
         )
         .await
         .expect("original issue");

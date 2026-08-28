@@ -933,9 +933,6 @@ mod tests {
         assert!(sessions.mounted);
         assert!(!sessions.history_present);
         fs::write(overlay.join("state.db"), b"initialized").unwrap();
-        assert_eq!(
-            fs::read(session.join("state.db")).unwrap(),
-            b"initialized"
-        );
+        assert_eq!(fs::read(session.join("state.db")).unwrap(), b"initialized");
     }
 }

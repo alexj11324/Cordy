@@ -155,9 +155,8 @@ async fn profile(
     let capture_cancel = CancellationToken::new();
     let _cancel_on_drop = CancelOnDrop(capture_cancel.clone());
     let worker_cancel = capture_cancel.clone();
-    let mut worker = tokio::task::spawn_blocking(move || {
-        capture_cpu_profile(duration, &worker_cancel)
-    });
+    let mut worker =
+        tokio::task::spawn_blocking(move || capture_cpu_profile(duration, &worker_cancel));
     let result = tokio::select! {
         result = &mut worker => result,
         () = shutdown.cancelled() => {
