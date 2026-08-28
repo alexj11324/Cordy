@@ -1,4 +1,4 @@
-//! Redis-backed PAT lookup cache — port of `server/internal/auth/pat_cache.go`.
+//! Redis-backed PAT lookup cache.
 
 use chrono::{DateTime, Utc};
 use cordy_redis::RecoveringConnection;

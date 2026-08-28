@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/subscriber.sql (generated subscriber.sql.go).
+//! Typed SQL queries for subscriber records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

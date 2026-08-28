@@ -1,6 +1,5 @@
 //! Platform-neutral translation from a Slack Events API payload to the
 //! engine's normalized `cordy_channel::InboundMessage`. Port of
-//! `server/internal/integrations/slack/inbound.go`.
 //!
 //! These are free functions parameterized by the bot identity rather than
 //! methods on the channel, so the per-installation Socket Mode connection

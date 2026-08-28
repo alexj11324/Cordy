@@ -4,7 +4,6 @@
 //! vcs provider — its App/installation model and check_suite CI differ
 //! enough that it keeps its own handler.
 //!
-//! Port of `server/internal/integrations/vcs/vcs.go`.
 //!
 //! Each provider only contributes the parts that actually differ between
 //! providers: how a webhook is authenticated, how its event/payload shapes

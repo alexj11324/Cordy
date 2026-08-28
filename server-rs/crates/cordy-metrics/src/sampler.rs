@@ -1,6 +1,4 @@
-//! Scrape-time SQL sampler — port of
-//! `server/internal/metrics/business_sampler.go` + `business_sampler_queries.go`
-//! (PR4, MUL-2947).
+//! Scrape-time SQL sampler for business metrics (PR4, MUL-2947).
 //!
 //! The sampler runs at /metrics scrape time against a dedicated pool and is
 //! opt-in. Every SQL statement runs in its own short read-only transaction

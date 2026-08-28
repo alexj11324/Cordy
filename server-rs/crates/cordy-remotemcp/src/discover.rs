@@ -1,6 +1,6 @@
 //! MCP JSON-RPC discovery over the secure HTTP stack.
 //!
-//! Port of the discovery half of `server/pkg/remotemcp/client.go`
+//! Discovery operations
 //! (`Discover`, `call`, `notify`, `readResponse`, `canonicalJSON`,
 //! `ToolSetDigest`, `SupportedProtocolVersions`). The endpoint validation
 //! and client construction halves already live in

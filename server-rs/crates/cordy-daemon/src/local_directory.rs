@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/local_directory.go` (537 lines).
+//! Local-directory task assignment and worktree handling.
 //!
 //! S9-integration: entry points are wired by the daemon-runner lane.
 //!

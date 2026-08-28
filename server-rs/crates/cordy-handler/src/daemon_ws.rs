@@ -1,6 +1,4 @@
-//! Daemon WebSocket pump — port of `Handler.DaemonWebSocket`
-//! (server/internal/handler/daemon_ws.go) plus the axum socket lane for the
-//! daemon hub (`internal/daemonws` readPump/writePump).
+//! Daemon WebSocket pump and axum socket lane for the daemon hub.
 //!
 //! Contract notes (must stay identical with Go):
 //! - Query params: deduped `runtime_id` / `runtime_ids` (comma-split), 400 when
@@ -124,7 +122,7 @@ pub async fn daemon_ws_handler(
 // Re-use the shared helpers from the daemon module.
 use crate::daemon::{daemon_id_of, request_user_id, require_daemon_runtime_access, Access};
 
-/// Port of Go `Hub.HandleWebSocket` + client readPump/writePump on axum's split
+/// Runs the hub WebSocket and client read/write pumps on axum's split
 /// sink/stream.
 async fn serve_daemon_socket(hub: Arc<DaemonHub>, identity: ClientIdentity, socket: WebSocket) {
     if let Err(err) = DaemonHub::validate_identity(&identity) {

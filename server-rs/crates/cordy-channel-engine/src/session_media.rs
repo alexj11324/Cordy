@@ -1,8 +1,7 @@
 //! Inline-media body composition helpers from the shared chat-session
 //! service.
 //!
-//! Port of the pure half of
-//! `server/internal/integrations/channel/engine/session.go`
+//! Pure media composition helpers
 //! (composeInlineMediaBody / composeIssueCommandMediaDescription /
 //! nthSubstringIndex / inlineAttachmentMarkdown / defaultMediaFilename).
 //! The DB transactional half (EnsureSession / AppendUserMessage /

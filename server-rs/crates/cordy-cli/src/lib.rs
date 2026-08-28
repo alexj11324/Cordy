@@ -1,8 +1,7 @@
-//! Cordy CLI — incremental Rust replacement for `server/cmd/cordy`.
+//! Cordy command-line client.
 //!
-//! The S10 migration deliberately registers only fully functional commands.
-//! Shared configuration, API, error, and safe text-input behavior is ported
-//! with each vertical slice rather than exposing placeholder command trees.
+//! Only fully functional commands are registered; placeholder command trees
+//! are never exposed.
 #[cfg(test)]
 mod agent_command_tests;
 mod agent_commands;

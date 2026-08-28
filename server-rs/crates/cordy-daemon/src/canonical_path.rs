@@ -1,6 +1,3 @@
-//! Port of `server/internal/daemon/canonical_path.go` (lines 1–61) and
-//! `server/internal/daemon/canonical_path_windows.go` (lines 1–127).
-//!
 //! Canonicalizes agent executable paths. Ordinary symlinks resolve to their
 //! final target, but entrypoints backed by a name-dispatching shim (Volta's
 //! `volta-shim`, Vite Plus's `vp`) keep the invoked basename — spawning the

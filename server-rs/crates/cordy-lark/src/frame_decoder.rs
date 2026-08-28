@@ -1,5 +1,4 @@
-//! JSON event decoder — port of
-//! `server/internal/integrations/lark/ws_frame_decoder.go`.
+//! JSON event decoder.
 //!
 //! LarkJSONFrameDecoder decodes the JSON event payload Lark nests inside a
 //! long-conn data Frame. The outer binary Frame envelope ([`crate::ws_frame`])

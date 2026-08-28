@@ -1,5 +1,4 @@
-//! Event-triggered hooks — port of `server/internal/service/plugin_event_dispatch.go`
-//! and `plugin_event_bridge.go`.
+//! Event-triggered plugin hooks and their event bridge.
 //!
 //! The rule this file exists to keep: an event hook NEVER blocks the host. The
 //! event bus is synchronous — `Bus::publish` runs its listeners inline, on the

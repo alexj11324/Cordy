@@ -1,6 +1,4 @@
-//! Autopilot run event listeners — port of
-//! `server/cmd/server/autopilot_listeners.go`.
-
+//! Autopilot run event listeners.
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;

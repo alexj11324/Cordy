@@ -1,7 +1,6 @@
 //! Shared primitives for the Cordy Rust backend.
 //!
-//! Ported from `server/internal/util` and `server/pkg/...` as the migration
-//! progresses. Keep this crate dependency-light: it is linked by everything.
+//! Keep this crate dependency-light: it is linked by everything.
 
 pub mod channel_media;
 pub mod logging;
@@ -110,7 +109,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Decodes the literal two-character `\n` / `\r` / `\t` / `\\` sequences that
 /// agent CLIs emit into their real control characters.
 ///
-/// Port of `util.UnescapeBackslashEscapes` (server/internal/util/text.go).
+/// Unescapes the supported backslash escape sequences.
 /// Everything else — including any other backslash pair and a trailing lone
 /// backslash — passes through byte-for-byte. Callers that need a literal
 /// 4-char sequence intact must bypass this helper entirely (the CLI exposes

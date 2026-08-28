@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemonws/notifier.go` — the daemon wakeup
+//! The daemon wakeup
 //! publisher that bridges process events to the local hub and, when Redis is
 //! configured, to the shared realtime relay.
 //!

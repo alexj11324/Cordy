@@ -1,6 +1,6 @@
 [package]
 name = "cordy-composio"
-description = "Composio integration (port of server/internal/integrations/composio): dispatch, service, state"
+description = "Composio integration: dispatch, service, state"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

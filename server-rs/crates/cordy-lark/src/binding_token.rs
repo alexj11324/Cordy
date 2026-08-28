@@ -1,5 +1,4 @@
-//! Binding tokens — port of
-//! `server/internal/integrations/lark/binding_token.go`.
+//! Binding tokens.
 //!
 //! BindingTokenService mints and redeems binding tokens for the "you're not
 //! bound yet, click here" flow. The TTL is fixed at

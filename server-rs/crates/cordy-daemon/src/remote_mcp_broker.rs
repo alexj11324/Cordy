@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/remote_mcp_broker.go` (475 lines).
+//! Per-task Remote MCP broker lifecycle and validation.
 //!
 //! Symbol map (Go → Rust):
 //! - `remoteMCPMaxRequestBytes` / `remoteMCPMaxCalls` / `remoteMCPMaxConcurrency`

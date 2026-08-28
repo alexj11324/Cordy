@@ -1,6 +1,4 @@
-//! Redis-backed workspace-membership cache — port of
-//! `server/internal/auth/membership_cache.go`.
-
+//! Redis-backed workspace-membership cache.
 use cordy_redis::RecoveringConnection;
 
 const MEMBERSHIP_CACHE_PREFIX: &str = "mul:auth:member:";

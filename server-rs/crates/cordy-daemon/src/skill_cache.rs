@@ -1,5 +1,5 @@
 #![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/skill_cache.go` — on-disk cache of
+//! On-disk cache of
 //! downloaded skill bundles keyed by (workspace, source, id, hash), with a
 //! per-key reference lock and atomic directory swap.
 //!
@@ -12,8 +12,8 @@
 //! - `safeSkillFilePath` → [`safe_skill_file_path`]
 //! - `safeCacheSegment` → [`safe_cache_segment`]
 //!
-//! The manifest hash construction is inlined from `server/pkg/skillbundle`
-//! (`cordy_service::skill_bundle` is not a daemon dependency): length-prefixed
+//! The manifest hash construction matches `cordy_service::skill_bundle`
+//! without introducing a service-crate dependency: length-prefixed
 //! parts (`%d:%s\n`) over the sorted file list. It must stay byte-identical.
 
 use std::collections::HashMap;

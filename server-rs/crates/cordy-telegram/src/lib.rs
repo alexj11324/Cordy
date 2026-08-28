@@ -1,4 +1,4 @@
-//! Telegram adapter (port of server/internal/integrations/telegram):
+//! Telegram adapter:
 //! Bot API long-poll link, markdown→HTML conversion, inbound
 //! normalization, sender chunking, resolver set, install service.
 

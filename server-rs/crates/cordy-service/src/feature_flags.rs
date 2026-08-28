@@ -1,5 +1,4 @@
-//! Feature-flag key vocabulary and evaluation helpers — port of
-//! `server/internal/featureflags/keys.go`.
+//! Feature-flag key vocabulary and evaluation helpers.
 //!
 //! The concrete flag service (`pkg/featureflag`, env/static/chain providers)
 //! is a separate porting unit; until it lands, call sites inject any

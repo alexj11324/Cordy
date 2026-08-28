@@ -1,5 +1,5 @@
 #![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/agents_probe.go` — discovery of installed
+//! Discovery of installed
 //! built-in agent CLIs (PATH lookup + login-shell fallback + Codex Desktop
 //! app-bundle probe + DSH profile probe).
 //!

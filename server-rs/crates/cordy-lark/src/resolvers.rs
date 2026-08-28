@@ -1,5 +1,4 @@
-//! The Feishu ResolverSet — port of
-//! `server/internal/integrations/lark/feishu_resolvers.go`.
+//! The Feishu ResolverSet.
 //!
 //! The platform-specific implementations the channel-agnostic engine Router
 //! runs the inbound pipeline through. Each resolver translates between the

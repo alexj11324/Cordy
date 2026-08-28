@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/identity.go` (lines 1–243).
+//! Machine-scoped daemon identity management.
 //!
 //! Machine-scoped daemon identity: a stable UUID persisted at
 //! `~/.cordy/daemon.id`, shared by every profile on the machine, with

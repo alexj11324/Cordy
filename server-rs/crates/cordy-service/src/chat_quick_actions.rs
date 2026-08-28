@@ -1,5 +1,4 @@
-//! Chat quick-actions suggestion pass — port of
-//! `server/internal/service/chat_quick_actions_generate.go`.
+//! Chat quick-actions suggestion pass.
 //!
 //! One bounded LLM pass per completed chat turn renders three follow-up
 //! suggestion pills. The whole call is a nicety attached to a reply the user

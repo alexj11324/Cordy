@@ -1,6 +1,5 @@
-//! WebSocket pump layer — port of `HandleWebSocket`, `readPump`, `writePump`,
-//! `authenticateToken` and the first-message auth handshake from
-//! `server/internal/realtime/hub.go`, on axum's WS upgrade.
+//! WebSocket pump, token authentication, and first-message auth handshake on
+//! axum's WS upgrade.
 //!
 //! Contract notes (must stay byte-identical with Go):
 //! - Query params: `workspace_id`, or `workspace_slug` resolved via DB.
@@ -313,7 +312,7 @@ async fn post_upgrade(
 
 // ---- pumps ---------------------------------------------------------------
 
-/// Port of Go `Client.readPump`: parses frames and dispatches
+/// Parses client frames and dispatches
 /// subscribe/unsubscribe/ping. Any transport close breaks the loop.
 async fn read_pump<S>(hub: &Arc<Hub>, client: &Arc<ClientHandle>, stream: &mut S)
 where
@@ -406,7 +405,7 @@ fn handle_frame(hub: &Arc<Hub>, client: &Arc<ClientHandle>, raw: &str) {
     }
 }
 
-/// Port of Go `Client.handleSubscribe`: implicit-scope identity guard +
+/// Handles subscriptions with an implicit-scope identity guard and
 /// authorizer wiring + ack/error payloads.
 fn handle_subscribe(hub: &Arc<Hub>, client: &Arc<ClientHandle>, scope: &str, id: &str) {
     match scope {

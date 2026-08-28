@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/plugin_hook_mcp.go` (246 lines).
+//! Plugin-hook MCP server lifecycle and request handling.
 //!
 //! Symbol map (Go → Rust):
 //! - `pluginHookMCPProtocolVersion` / `pluginHookMCPMaxRequestBytes` /

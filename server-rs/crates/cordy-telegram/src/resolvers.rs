@@ -1,7 +1,6 @@
 //! The Telegram ResolverSet: DB-backed installation/identity/dedup/
 //! session seams the shared Router consumes.
 //!
-//! Port of `server/internal/integrations/telegram/resolvers.go`.
 
 use std::sync::Arc;
 

@@ -1,4 +1,4 @@
-//! User-facing error classification ported from `server/internal/cli/errors.go`.
+//! User-facing error classification.
 
 use crate::api::{ErrorKind, HttpError, NetworkError};
 use crate::config::Environment;

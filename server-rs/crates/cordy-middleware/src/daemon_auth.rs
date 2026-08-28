@@ -1,4 +1,4 @@
-//! Daemon auth middleware — port of `server/internal/middleware/daemon_auth.go`.
+//! Daemon auth middleware.
 //!
 //! Validates daemon auth tokens (`mdt_` prefix) or falls back to JWT/PAT
 //! validation for backward compatibility with daemons that authenticate via

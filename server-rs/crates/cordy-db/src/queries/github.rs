@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/github.sql (generated github.sql.go).
+//! Typed SQL queries for github records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

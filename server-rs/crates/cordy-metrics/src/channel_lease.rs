@@ -1,4 +1,4 @@
-//! Channel lease metrics — port of `server/internal/metrics/channel_lease.go`.
+//! Channel lease metrics.
 //!
 //! Exposes the ownership signals needed to verify a Redis lease cutover
 //! without putting installation IDs into metric labels.

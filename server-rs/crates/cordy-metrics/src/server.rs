@@ -1,4 +1,4 @@
-//! Standalone /metrics HTTP server — port of `server/internal/metrics/server.go`.
+//! Standalone /metrics HTTP server.
 
 use std::sync::Arc;
 

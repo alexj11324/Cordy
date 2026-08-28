@@ -1,4 +1,4 @@
-//! Core migration loop — port of `runMigrations` in `server/cmd/migrate/main.go`.
+//! Core database migration loop.
 
 use std::path::PathBuf;
 use std::time::Duration;

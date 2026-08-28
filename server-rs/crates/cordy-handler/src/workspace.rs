@@ -1,7 +1,6 @@
 //! Workspace domain handlers — first slice of the route port (S8).
 //!
-//! Port of `server/internal/handler/workspace.go` (ListWorkspaces /
-//! GetWorkspace) and `share_link.go` GetShareLinkInfo. Wire shapes match the
+//! Implements workspace listing/detail and share-link lookup. Wire shapes match the
 //! Go structs field-for-field: UUIDs as hyphenated strings, timestamps as
 //! RFC3339, nullable columns as absent-or-null JSON.
 

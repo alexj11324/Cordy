@@ -1,5 +1,5 @@
 //! Plugin contract: manifest parsing, config field types, and host
-//! capabilities. Rust port of `server/pkg/plugincontract/`.
+//! capabilities.
 //!
 //! A plugin relates to Cordy in exactly three ways:
 //!

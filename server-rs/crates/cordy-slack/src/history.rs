@@ -1,6 +1,6 @@
 //! On-demand Slack conversation history — the pull side of the unified
 //! `cordy chat history` (channel overview) and `cordy chat thread [id]` (one
-//! thread) commands. Port of `server/internal/integrations/slack/history.go`.
+//! thread) commands.
 
 use sqlx::PgPool;
 use uuid::Uuid;

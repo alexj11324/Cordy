@@ -1,5 +1,5 @@
 #![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/prompt.go` — per-turn prompt assembly for
+//! Per-turn prompt assembly for
 //! issue / comment / chat / autopilot / quick-create tasks, plus the
 //! run-scoped context blocks (MUL-5377) appended after the cached prefix.
 //!

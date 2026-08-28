@@ -1,6 +1,4 @@
-//! In-process synchronous pub/sub event bus — port of
-//! `server/internal/events/bus.go`.
-
+//! In-process synchronous pub/sub event bus.
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, RwLock};

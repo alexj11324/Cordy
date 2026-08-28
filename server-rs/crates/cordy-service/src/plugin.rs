@@ -1,11 +1,6 @@
-//! PluginService core — port of `server/internal/service/plugin.go` +
-//! `plugin_hook.go`, Slice 1: the error taxonomy, the pure-function anchors,
-//! and the HMAC hook-signing family.
-//!
-//! Later slices add install/lifecycle (InstallPlugin/SetConfig/Uninstall) and
-//! the hook engine (InvokeHook/callHookEndpoint plus the DB-backed rate
-//! limiter and circuit breaker). The free functions here take their inputs as
-//! parameters (deployment key, manifest JSON, recent counts) so those slices
+//! Plugin service error taxonomy, pure-function anchors, and HMAC hook signing.
+//! The free functions here take their inputs as
+//! parameters (deployment key, manifest JSON, recent counts) so callers
 //! can wrap them in a service struct without reshaping this layer.
 
 use std::error::Error as StdError;
@@ -60,7 +55,7 @@ impl fmt::Display for PluginErrorKind {
     }
 }
 
-/// Port of Go's `PluginError`: a classified message with an optional wrapped
+/// Classified plugin error with an optional wrapped
 /// cause. `Display` renders `"message"` or `"message: source"`, matching Go's
 /// `Error()`.
 #[derive(Debug)]

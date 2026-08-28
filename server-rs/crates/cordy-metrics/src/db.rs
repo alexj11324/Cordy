@@ -1,4 +1,4 @@
-//! DB pool gauges — port of `server/internal/metrics/db.go`.
+//! DB pool gauges.
 //!
 //! sqlx does not expose the same pool statistics as pgxpool; the port maps
 //! what sqlx exposes onto the same metric names and reports unknown values as

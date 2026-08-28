@@ -1,7 +1,7 @@
 //! Core issue routes — S8 authenticated issue-domain slice.
 //!
 //! Ports the stable list/query, detail, create/update/batch-update, children,
-//! and issue-label contracts from `server/internal/handler/issue.go` and `label.go`. The
+//! and issue-label contracts. The
 //! workspace middleware resolves slugs/ids, verifies membership, and stamps a
 //! `WorkspaceContext` before these handlers run.
 

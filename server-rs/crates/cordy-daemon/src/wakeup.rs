@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/wakeup.go` (lines 20–97, 278–333, 335–526).
+//! Daemon task-wakeup WebSocket lifecycle.
 //!
 //! The daemon-side task-wakeup WebSocket: connection lifecycle policy
 //! (backoff/jitter/runtime-set reset), the per-runtime heartbeat sender, and

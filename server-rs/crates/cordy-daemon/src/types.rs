@@ -1,5 +1,4 @@
-//! Port of `server/internal/daemon/types.go` (lines 1–316) — daemon-side wire
-//! types for the claim/report protocol.
+//! Daemon-side wire types for the claim/report protocol.
 //!
 //! Symbol map (Go → Rust):
 //! - `AgentEntry` → [`AgentEntry`]

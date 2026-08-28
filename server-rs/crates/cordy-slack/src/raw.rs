@@ -1,6 +1,5 @@
-//! Slack-specific raw event envelope — port of the shared types from
-//! `server/internal/integrations/slack/inbound.go` that the resolvers and the
-//! media resolver read back out of [`cordy_channel::InboundMessage::raw`].
+//! Slack-specific raw event envelope shared by the resolvers and media resolver
+//! through [`cordy_channel::InboundMessage::raw`].
 //!
 //! Per the boundary rule, these fields are read ONLY inside this adapter; the
 //! core never inspects `raw`.

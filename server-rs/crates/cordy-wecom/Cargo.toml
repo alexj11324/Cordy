@@ -1,6 +1,6 @@
 [package]
 name = "cordy-wecom"
-description = "WeCom adapter (port of server/internal/integrations/wecom): callback crypto, media stream, resolvers"
+description = "WeCom adapter: callback crypto, media streams, and resolvers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

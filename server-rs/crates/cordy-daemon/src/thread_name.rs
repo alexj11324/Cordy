@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/thread_name.go` (lines 1–40).
+//! Task thread-name derivation.
 //!
 //! Derives the Codex thread name shown for a task: the first non-empty
 //! candidate among the task's thread name, autopilot title, quick-create

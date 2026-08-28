@@ -1,6 +1,5 @@
 //! Redis implementation of the token-fenced channel lease store.
 //!
-//! Port of `server/internal/integrations/channel/engine/redis_lease_store.go`.
 //! Every mutation is a single Lua operation, so compare + expiry
 //! update/delete cannot be interleaved by another replica.
 //!

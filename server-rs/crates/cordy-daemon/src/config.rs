@@ -1,8 +1,4 @@
-//! Port of `server/internal/daemon/config.go` (in progress — lane A2).
-//!
-//! Chunk 1 seeded first so `canonical_path.rs` compiles: the executable-path
-//! helpers (config.go:815–855). The full `Config` struct + loader
-//! (config.go:1–814, 857–1143) lands as later chunks in this same file.
+//! Daemon configuration and executable-path resolution.
 
 // S9-integration: consumed by daemon bootstrap wiring that lands with
 // integration; silence dead-code until then.

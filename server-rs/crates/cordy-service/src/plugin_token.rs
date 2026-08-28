@@ -1,4 +1,4 @@
-//! Plugin credentials — port of `server/internal/service/plugin_token.go`.
+//! Plugin credentials.
 //!
 //! Two credentials, moving in opposite directions.
 //!

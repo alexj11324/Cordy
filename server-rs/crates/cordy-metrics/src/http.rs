@@ -1,4 +1,4 @@
-//! HTTP instrumentation — port of `server/internal/metrics/http.go`.
+//! HTTP instrumentation.
 //!
 //! The Go version is chi middleware; the Rust port is a tower/axum middleware
 //! that records request count, duration, and in-flight gauges. Route labels

@@ -1,5 +1,5 @@
 #![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/claude_plugins.go` — resolves the
+//! Resolves the
 //! user-scope Claude Code plugin installs that Claude Code itself enabled,
 //! and projects a manifest's skill/MCP component paths.
 //!

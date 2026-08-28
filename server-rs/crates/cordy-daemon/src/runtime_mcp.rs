@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/runtime_mcp.go` (547 lines).
+//! Runtime-local MCP configuration discovery and normalization.
 //!
 //! Symbol map (Go → Rust):
 //! - `runtimeLocalMcpServerSummary` → [`RuntimeLocalMcpServerSummary`]

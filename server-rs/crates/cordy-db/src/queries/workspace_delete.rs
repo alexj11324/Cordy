@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/workspace_delete.sql (generated workspace_delete.sql.go).
+//! Typed SQL queries for workspace_delete records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

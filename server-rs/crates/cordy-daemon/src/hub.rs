@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemonws/hub.go` — the daemon-facing WebSocket hub.
+//! The daemon-facing WebSocket hub.
 //!
 //! This is the second WebSocket face of the server (the user-realtime twin
 //! lives in `cordy-realtime::hub`). The daemon hub indexes connections by

@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/notification_preference.sql (generated notification_preference.sql.go).
+//! Typed SQL queries for notification_preference records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/openclaw_runtime_config.go` (86 lines).
+//! OpenClaw runtime configuration decoding.
 //!
 //! S9-integration: consumed by dispatch wiring that lands with integration.
 //!

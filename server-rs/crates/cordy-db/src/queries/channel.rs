@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/channel.sql (generated channel.sql.go).
+//! Typed SQL queries for channel records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

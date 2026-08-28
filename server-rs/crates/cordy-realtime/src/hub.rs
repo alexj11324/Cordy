@@ -1,5 +1,4 @@
 //! WebSocket hub — port of the core state management and fanout logic in
-//! `server/internal/realtime/hub.go`.
 //!
 //! Port notes vs Go:
 //! - Go serialises mutations through a single Run() goroutine fed by

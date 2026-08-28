@@ -1,4 +1,4 @@
-//! The hook engine — port of `server/internal/service/plugin_hook.go`.
+//! The hook engine.
 //!
 //! The one place Cordy calls OUT to a plugin's own server.
 //!

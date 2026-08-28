@@ -1,4 +1,4 @@
-//! User queries — port of `server/pkg/db/queries/user.sql`.
+//! User queries.
 //!
 //! Compile-time checked via `query_as!`: every statement is verified against
 //! the live schema at build time (or `.sqlx` offline cache in CI), so any

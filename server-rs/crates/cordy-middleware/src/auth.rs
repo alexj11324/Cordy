@@ -1,4 +1,4 @@
-//! Auth middleware — port of `server/internal/middleware/auth.go`.
+//! Auth middleware.
 //!
 //! Validates JWT tokens or Personal Access Tokens. Token sources (in
 //! priority order):

@@ -1,7 +1,6 @@
 //! Inbound normalization: Telegram Update → the engine's normalized
 //! channel::InboundMessage.
 //!
-//! Port of `server/internal/integrations/telegram/inbound.go`.
 
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,5 @@
-//! Port of `server/internal/daemon/diskusage.go` (lines 1–514). The
-//! `artifactMatcher` half it depends on lives in [`crate::artifact_matcher`]
-//! — the crate's single copy (CORD-12 consolidation).
+//! Disk-usage scanning and reporting. Artifact matching is shared through
+//! [`crate::artifact_matcher`] (CORD-12).
 //!
 //! Symbol map (Go → Rust):
 //! - `TaskDiskUsage` / `WorkspaceDiskUsage` / `DiskUsageReport` /

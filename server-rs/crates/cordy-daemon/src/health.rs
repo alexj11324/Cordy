@@ -1,5 +1,4 @@
-//! Port of `server/internal/daemon/health.go` (lines 19–184, 179–406) — the
-//! daemon's local health endpoint surface.
+//! The daemon's local health endpoint surface.
 //!
 //! Symbol map (Go → Rust):
 //! - `HealthResponse` / `healthWorkspace` → [`HealthResponse`] /

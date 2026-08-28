@@ -1,4 +1,4 @@
-//! Inbound drop-audit seam — port of `server/internal/integrations/lark/chat.go`.
+//! Inbound drop-audit seam.
 //!
 //! The chat-session ensure/append/`/issue` machinery that used to live in the
 //! Go chat.go has moved to the channel-agnostic engine ChatSession

@@ -1,6 +1,6 @@
 //! Type→Factory registry with last-writer-wins semantics.
 //!
-//! Port of `server/internal/integrations/channel/registry.go`. Adding a
+//! Adding a
 //! platform is "register a factory here", never "edit the core". The
 //! Registry is safe for concurrent use.
 

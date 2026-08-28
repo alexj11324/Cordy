@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/share_link.sql (generated share_link.sql.go).
+//! Typed SQL queries for share_link records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

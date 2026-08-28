@@ -1,4 +1,4 @@
-//! Squad leader briefing — port of `server/internal/handler/squad_briefing.go`.
+//! Squad leader briefing.
 //! Composes the full system briefing appended to a squad leader's Instructions
 //! when it claims a task on a squad-assigned issue: Operating Protocol (system
 //! rules), Squad Roster (data, with literal mention markdown), and the squad's
@@ -306,7 +306,7 @@ async fn build_squad_roster(pool: &PgPool, squad: &Squad) -> String {
     out
 }
 
-/// Port of Go `buildSquadLeaderBriefing`. The returned string contains three
+/// Builds the squad leader briefing. The returned string contains three
 /// sections: Squad Operating Protocol (constant), Squad Roster (data), and
 /// Squad Instructions (user-defined, omitted when empty).
 ///

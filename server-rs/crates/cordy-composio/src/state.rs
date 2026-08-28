@@ -1,6 +1,5 @@
 //! Signed connect-state tokens.
 //!
-//! Port of `server/internal/integrations/composio/state.go`.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

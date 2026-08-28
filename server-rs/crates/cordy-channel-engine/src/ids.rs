@@ -1,7 +1,6 @@
 //! Process-identity and id-coercion helpers.
 //!
 //! Port of `newNodeID` / `uuidString` from
-//! `server/internal/integrations/channel/engine/supervisor.go`.
 
 /// Returns a 16-byte hex random string unique to this process. Stored in
 /// `channel_installation.ws_lease_token`; matching tokens on a subsequent

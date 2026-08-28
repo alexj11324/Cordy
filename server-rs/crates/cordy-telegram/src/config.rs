@@ -1,7 +1,6 @@
 //! Installation config decoding: the encrypted bot token blob and the
 //! public (non-secret) projection.
 //!
-//! Port of `server/internal/integrations/telegram/config.go`.
 
 use anyhow::{anyhow, Result};
 use base64::Engine as _;

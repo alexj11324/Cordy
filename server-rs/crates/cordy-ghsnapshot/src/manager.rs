@@ -1,6 +1,6 @@
 //! Manager — the outbound GitHub API refresh pipeline orchestration.
 //!
-//! Port of `server/internal/integrations/ghsnapshot/refresh.go`. The manager
+//! The manager
 //! owns the queue / worker pool, the per-address dedup + single-in-flight +
 //! trailing-edge state machine, installation-scoped rate-limit pauses, the
 //! bounded chase-window backoff, and the TTL sweeper.

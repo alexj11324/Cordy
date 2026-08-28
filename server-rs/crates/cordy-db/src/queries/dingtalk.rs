@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/dingtalk.sql (generated dingtalk.sql.go).
+//! Typed SQL queries for dingtalk records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

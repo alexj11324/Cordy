@@ -1,4 +1,4 @@
-//! HTTP client foundation ported from `server/internal/cli/client.go`.
+//! HTTP client foundation.
 
 use anyhow::{Context, Result};
 use reqwest::{header::HeaderMap, Client, Method, RequestBuilder, Response, StatusCode};

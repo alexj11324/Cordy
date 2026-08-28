@@ -1,5 +1,4 @@
-//! Production data layer for the Feishu integration — port of
-//! `server/internal/integrations/lark/channel_store.go`.
+//! Production data layer for the Feishu integration.
 //!
 //! ChannelStore is the Feishu-flavored facade over the channel_* queries
 //! (MUL-3515 generalized lark_* into channel_*). It adds the feishu-specific

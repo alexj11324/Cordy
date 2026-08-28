@@ -1,7 +1,6 @@
 //! Reply-origin check: did a completed chat task take its input from an
 //! external channel?
 //!
-//! Port of `server/internal/integrations/channel/engine/provenance.go`.
 
 use cordy_db::queries::chat::task_has_channel_ingested_messages;
 

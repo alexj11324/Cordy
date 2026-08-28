@@ -1,6 +1,6 @@
 [package]
 name = "cordy-channel-engine"
-description = "Channel-agnostic runtime driving IM integrations: installation supervisor, WS lease CAS, inbound router pipeline, session management (port of server/internal/integrations/channel/engine)"
+description = "Channel-agnostic runtime driving IM integrations: installation supervisor, WS lease CAS, inbound router pipeline, session management"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

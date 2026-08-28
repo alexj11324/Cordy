@@ -1,5 +1,5 @@
 #![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/artifact_matcher.go` — combines
+//! Combines
 //! operator-configured basename matches with exact daemon-managed paths.
 //! Exact paths take precedence so a broad basename such as `.sandbox-bin`
 //! cannot double-count a managed directory.

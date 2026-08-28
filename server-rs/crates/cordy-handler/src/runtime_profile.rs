@@ -1,6 +1,6 @@
 //! Workspace custom runtime-profile handlers.
 //!
-//! This is the HTTP counterpart of `server/internal/handler/runtime_profile.go`.
+//! HTTP handlers for runtime profile reads and mutations.
 //! Profile mutations are mounted behind the workspace admin guard; reads are
 //! mounted behind the member guard.
 

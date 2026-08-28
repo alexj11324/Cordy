@@ -1,9 +1,8 @@
 //! Token-fenced, per-installation WebSocket lease types and the store
 //! seam.
 //!
-//! Port of the lease vocabulary from
-//! `server/internal/integrations/channel/engine/supervisor.go` plus its
-//! Redis implementation `redis_lease_store.go`. The interfaces live here
+//! Lease vocabulary shared with the Redis implementation in
+//! `redis_lease_store`. The interfaces live here
 //! so supervisor/router/session modules share one dependency-free spot.
 
 use std::collections::HashSet;

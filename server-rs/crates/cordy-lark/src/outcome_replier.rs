@@ -1,5 +1,4 @@
-//! The verdict-driven outbound replier — port of
-//! `server/internal/integrations/lark/outcome_replier.go`.
+//! The verdict-driven outbound replier.
 //!
 //! Reacts to the Dispatcher's verdict by posting the appropriate Lark-side
 //! reply card. NeedsBinding sends the binding prompt to the sender's open_id,

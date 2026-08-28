@@ -1,5 +1,4 @@
-//! Content flattening — port of
-//! `server/internal/integrations/lark/content_flatten.go`.
+//! Content flattening.
 //!
 //! Renders a Lark message's body.content — the raw, JSON-encoded string Lark
 //! double-encodes — into plain text, dispatching on msg_type. It is the

@@ -1,5 +1,4 @@
-//! WS long-conn bootstrap — port of
-//! `server/internal/integrations/lark/ws_endpoint.go`.
+//! WS long-conn bootstrap.
 //!
 //! The bootstrap host for the long-conn `/callback/ws/endpoint` request is
 //! the installation's open-platform host — open.feishu.cn for Feishu

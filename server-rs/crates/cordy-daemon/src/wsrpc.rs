@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/wsrpc.go` (lines 1–305).
+//! Daemon-side WebSocket request/response transport.
 //!
 //! The daemon-side half of the generic WS request/response transport
 //! (MUL-4257). It correlates responses to requests by request_id over the

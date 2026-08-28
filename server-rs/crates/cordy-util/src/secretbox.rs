@@ -9,9 +9,8 @@
 //!
 //! # Wire compatibility
 //!
-//! This layout is byte-identical to the Go implementation in
-//! `server/internal/util/secretbox`: Go's `Seal` appends ciphertext+tag
-//! to a freshly generated 12-byte nonce, and `Open` splits at the same
+//! This layout is part of the persisted ciphertext contract: sealing appends
+//! ciphertext and tag to a freshly generated 12-byte nonce, and opening splits at the same
 //! offset with no associated data. Existing ciphertexts in production
 //! databases remain readable; do not change the layout.
 //!

@@ -1,4 +1,4 @@
-//! The formatMrkdwn function below is a Rust port of the Markdown-to-mrkdwn
+//! The `format_mrkdwn` function implements the Markdown-to-mrkdwn
 //! converter (format_message) from Nous Research's Hermes Agent, used under the
 //! MIT License. Source:
 //! https://github.com/NousResearch/hermes-agent/blob/main/plugins/platforms/slack/adapter.py

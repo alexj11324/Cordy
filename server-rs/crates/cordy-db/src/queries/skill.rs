@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/skill.sql (generated skill.sql.go).
+//! Typed SQL queries for skill records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

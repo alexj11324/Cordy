@@ -1,5 +1,4 @@
 //! Relay envelopes and stream key naming — port of the envelope section of
-//! `server/internal/realtime/redis_relay.go`.
 //!
 //! The envelope is what gets serialised into each XADD message. It is opaque
 //! to the hub: the relay decodes `payload_json` before fanning out. Field

@@ -1,4 +1,4 @@
-//! Plugin key/value storage — port of `server/internal/service/plugin_storage.go`.
+//! Plugin key/value storage.
 //!
 //! Scopes: there are exactly two, and adding a third is a product decision,
 //! not a configuration knob.

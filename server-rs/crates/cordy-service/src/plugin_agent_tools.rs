@@ -1,4 +1,4 @@
-//! The `agent` trigger — port of `server/internal/service/plugin_agent_tools.go`.
+//! The `agent` trigger.
 //!
 //! A plugin hook offered to an agent as an MCP tool.
 //!

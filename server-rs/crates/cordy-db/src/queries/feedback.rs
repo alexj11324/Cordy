@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/feedback.sql (generated feedback.sql.go).
+//! Typed SQL queries for feedback records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

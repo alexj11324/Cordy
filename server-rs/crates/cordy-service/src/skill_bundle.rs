@@ -1,4 +1,4 @@
-//! Skill manifest hashing — port of `server/pkg/skillbundle/hash.go`.
+//! Skill manifest hashing.
 //!
 //! The daemon verifies skill bundles against this manifest, so the hash
 //! construction must stay byte-identical to the Go implementation: length-

@@ -1,5 +1,4 @@
-//! Mints primary keys for rows the application inserts — port of
-//! `server/pkg/dbid`.
+//! Mints primary keys for rows the application inserts.
 //!
 //! Every id is a UUIDv7: a 48-bit millisecond timestamp followed by random
 //! bits, so consecutive inserts cluster in a narrow key range instead of

@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/reaction.sql (generated reaction.sql.go).
+//! Typed SQL queries for reaction records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

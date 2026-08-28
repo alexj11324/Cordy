@@ -1,5 +1,4 @@
 //! The Slack `/issue` SLASH COMMAND. Port of
-//! `server/internal/integrations/slack/slash_command.go`.
 //!
 //! Deliberately separate from the message-based `/issue` (engine
 //! ParseIssueCommand): on Slack a message whose first character is `/` is

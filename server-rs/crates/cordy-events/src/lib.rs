@@ -1,4 +1,4 @@
-//! In-process pub/sub event bus — port of `server/internal/events`.
+//! In-process pub/sub event bus.
 
 pub mod bus;
 

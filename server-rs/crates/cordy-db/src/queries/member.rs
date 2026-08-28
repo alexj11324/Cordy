@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/member.sql (generated member.sql.go).
+//! Typed SQL queries for member records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

@@ -1,7 +1,6 @@
 //! OAuth primitives for remote MCP authorization.
 //!
-//! The network flows in this module are migrated from
-//! `server/pkg/remotemcp/oauth.go`.  The public value types intentionally only
+//! The public value types intentionally only
 //! contain discovery data and token response fields; client secrets and
 //! access tokens must not be placed in discovery metadata.
 

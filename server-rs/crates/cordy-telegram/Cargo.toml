@@ -1,6 +1,6 @@
 [package]
 name = "cordy-telegram"
-description = "Telegram adapter (port of server/internal/integrations/telegram): long-poll link, resolver set, markdown conversion, outbound"
+description = "Telegram adapter: long-poll link, resolver set, markdown conversion, and outbound delivery"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

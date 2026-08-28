@@ -1,4 +1,4 @@
-//! Domain value types — port of `server/internal/integrations/lark/types.go`.
+//! Domain value types.
 //!
 //! Open string newtypes mirror the Go aliases so unknown future wire
 //! values round-trip without a schema change.

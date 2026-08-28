@@ -1,5 +1,4 @@
-//! Shared agent concurrency validation — port of
-//! `server/internal/agentconfig/concurrency.go`.
+//! Shared agent concurrency validation.
 //!
 //! The API handler and CLI must agree on this contract. Keeping the bounds in
 //! the configuration crate prevents one entry point from silently accepting a

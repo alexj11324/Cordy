@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/local_skills.go` — discovery and import of
+//! Discovery and import of
 //! runtime-local skill directories (per-provider roots, the universal
 //! `~/.agents/skills` root, and Claude plugin-contributed skills).
 //!

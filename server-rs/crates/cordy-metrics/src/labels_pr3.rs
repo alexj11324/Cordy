@@ -1,5 +1,4 @@
-//! PR3 metric-label normalizers — port of
-//! `server/internal/metrics/labels_pr3.go`.
+//! PR3 metric-label normalizers.
 //!
 //! All inputs go through fixed allow-lists so a misbehaving caller cannot
 //! inflate metric cardinality. Every "unknown"/"other" bucket keeps the series

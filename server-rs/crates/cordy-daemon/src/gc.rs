@@ -1,5 +1,5 @@
-//! Port of `server/internal/daemon/gc.go` (1,509 lines) plus the unix
-//! `processtree/{run.go,controller_unix.go}` inlined as [`processtree`].
+//! Workspace and repository-cache garbage collection with process-tree-safe
+//! command execution in [`processtree`].
 //!
 //! Deviations from Go:
 //! - `*Daemon` receiver → [`GcHost`] trait; config fields live in
@@ -32,7 +32,7 @@ use crate::repocache::{CancelCause, Ctx};
 // processtree (inlined port of processtree/run.go + controller_unix.go).
 // ---------------------------------------------------------------------------
 
-/// Port of `server/internal/daemon/processtree`: runs bounded helper commands
+/// Runs bounded helper commands
 /// whose descendants must not survive cancellation. Uses a Unix process group
 /// (`setpgid`) — unix only, matching the Go build tag.
 #[cfg(unix)]

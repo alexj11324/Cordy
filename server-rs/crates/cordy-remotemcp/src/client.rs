@@ -1,6 +1,6 @@
 //! Secure HTTP client construction for validated remote MCP endpoints.
 //!
-//! Ported from `NewSecureHTTPClient` in `server/pkg/remotemcp/client.go`:
+//! Secure HTTP client contract:
 //! no proxy, no redirects (hyper follows none), 30s overall call timeout,
 //! and every connection dialed through [`PinnedConnector`] — re-resolved at
 //! dial time, pinned to the endpoint host, re-checked against the

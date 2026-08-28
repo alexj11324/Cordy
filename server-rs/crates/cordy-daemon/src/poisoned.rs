@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/poisoned.go` (lines 1–217).
+//! Poisoned-session failure classification.
 //!
 //! Failure-reason classifiers for tasks whose session is "poisoned" — i.e.
 //! resuming the same conversation on a follow-up task would deterministically

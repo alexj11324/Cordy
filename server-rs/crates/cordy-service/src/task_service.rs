@@ -1,9 +1,5 @@
-//! TaskService core — port of `server/internal/service/task.go` Slices 1–2
-//! (lines 1–2186): the service struct, attribution resolution, analytics
-//! context cache, metrics capture helpers, and the enqueue family.
-//!
-//! Later slices add cancel/claim (Slice3) and terminal transitions + retry
-//! (Slice4).
+//! Task service core: attribution resolution, analytics context caching,
+//! metrics capture, enqueueing, cancellation, claims, and terminal transitions.
 
 use std::collections::HashMap;
 use std::future::Future;

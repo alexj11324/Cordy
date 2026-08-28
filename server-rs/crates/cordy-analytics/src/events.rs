@@ -1,5 +1,4 @@
-//! Event catalog and typed builders — port of
-//! `server/internal/analytics/events.go`.
+//! Event catalog and typed builders.
 //!
 //! This file is the source-of-truth catalog; keep the frontend analytics
 //! package in sync with it.

@@ -1,5 +1,4 @@
-//! Port of `server/internal/daemon/client.go` (lines 1–1184) — HTTP
-//! communication with the Cordy server daemon API.
+//! HTTP communication with the Cordy server daemon API.
 //!
 //! Symbol map (Go → Rust):
 //! - `requestError` → [`RequestError`] (a distinct error type so Go's

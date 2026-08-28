@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 // S9-integration: strategy half of agents_refresh.go; loop bodies wire in with daemon.go core (lane-B final)
-//! Port of `server/internal/daemon/agents_refresh.go` — the discovery loop
+//! Discovery-loop
 //! policy that keeps the registered runtime set converged on the agent CLIs
 //! actually installed on this machine (MUL-5439).
 //!

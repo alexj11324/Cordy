@@ -1,6 +1,4 @@
-//! Daemon control-plane handlers — port of `server/internal/handler/daemon.go`,
-//! `daemon_ws.go`, `daemon_workspace.go`, `runtime_update.go`, `runtime_models.go`
-//! and `runtime_local_skills.go` (S8 slice 2: the `/api/daemon` route group).
+//! Daemon control-plane handlers for the `/api/daemon` route group.
 //!
 //! Wire contracts are preserved byte-for-byte with the Go handlers:
 //! - error bodies `{"error": msg}` (see [`crate::error`]);
@@ -1933,7 +1931,7 @@ enum RepairOutcome {
 /// issue lives in another workspace is cancelled outright — its overlay still
 /// belongs to a deleted author.
 ///
-/// Port of Go `repairStaleCommentPlanIfNeeded`. Returns NotApplicable whenever
+/// Repairs a stale comment plan when applicable. Returns NotApplicable whenever
 /// the guard does not fire so callers can fall through.
 async fn repair_stale_comment_plan(
     state: &DaemonClaimServices,

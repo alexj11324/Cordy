@@ -1,5 +1,4 @@
-//! Metric label vocabulary and input normalization — port of
-//! `server/internal/metrics/labels.go`.
+//! Metric label vocabulary and input normalization.
 //!
 //! All inputs go through fixed allow-lists so a misbehaving caller cannot
 //! inflate metric cardinality; every "unknown"/"other" bucket keeps the series

@@ -1,5 +1,4 @@
-//! Installation config + credential decoding — port of
-//! `server/internal/integrations/slack/config.go`.
+//! Installation config + credential decoding.
 //!
 //! `installConfig` is the JSON shape stored in
 //! `channel_installation.config` for a Slack installation. The cross-platform

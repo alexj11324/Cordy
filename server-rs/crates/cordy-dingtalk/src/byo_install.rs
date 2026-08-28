@@ -1,5 +1,4 @@
-//! Bring-your-own-app install — port of
-//! `server/internal/integrations/dingtalk/byo_install.go`.
+//! Bring-your-own-app install.
 //!
 //! The user creates their own DingTalk Stream-mode robot and pastes its AppKey
 //! (client id) + AppSecret (client secret). There is NO OAuth code exchange:

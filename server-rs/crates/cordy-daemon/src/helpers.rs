@@ -1,5 +1,4 @@
-//! Port of `server/internal/daemon/helpers.go` (lines 1–111) — env-var and
-//! duration/sleep helpers shared by the daemon package.
+//! Environment-variable, duration, and sleep helpers shared by the daemon.
 //!
 //! Symbol map (Go → Rust):
 //! - `envOrDefault` → [`env_or_default`]

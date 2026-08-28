@@ -1,4 +1,4 @@
-//! Port of server/internal/daemon/execenv — module map mirrors the Go files
+//! Execution-environment modules
 //! one-to-one. Lane E1 owns the foundation + codex family; the remaining
 //! provider work is migrated as complete capabilities (Reasonix and QwenPaw
 //! are now production paths, while Hermes/OpenClaw still have explicit

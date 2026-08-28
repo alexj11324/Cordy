@@ -1,8 +1,6 @@
 //! Wire types shared by Remote MCP discovery and the daemon broker.
 //!
-//! Ported from `server/pkg/remotemcp/types.go`. JSON field names match the Go
-//! struct tags byte-for-byte; both implementations must stay wire-compatible
-//! across the migration window.
+//! JSON field names are part of the stable wire contract.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};

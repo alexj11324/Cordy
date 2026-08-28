@@ -1,5 +1,4 @@
-//! Channel media reconciler metrics — port of
-//! `server/internal/metrics/channel_media.go`.
+//! Channel media reconciler metrics.
 //!
 //! Observes the media intent-ledger reconciler: how many unreferenced objects
 //! it deletes, how many rows it clears because a durable attachment reference

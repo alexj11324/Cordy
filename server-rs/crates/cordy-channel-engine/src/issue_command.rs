@@ -1,6 +1,5 @@
 //! Shared `/issue` command parsing.
 //!
-//! Port of `server/internal/integrations/channel/engine/issue_command.go`.
 
 /// The literal command token. We match exactly — `/Issue` or `/ISSUE` do
 /// NOT trigger creation. The case sensitivity is product-intentional: it

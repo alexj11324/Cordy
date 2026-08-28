@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/task_message.sql (generated task_message.sql.go).
+//! Typed SQL queries for task_message records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]
