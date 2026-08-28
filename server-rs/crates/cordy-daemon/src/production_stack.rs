@@ -54,16 +54,48 @@ const CHECKOUT_MODE_ISOLATED: &str = "isolated";
 /// its transport. Keeping this assembly in one entry point prevents the
 /// production stack from accidentally dropping the event receiver or running
 /// the transport without its lifecycle consumer.
-pub(crate) fn spawn_control_owner<H: DaemonControlLifecycle>(
-    owners: &mut JoinSet<()>,
-    root_ctx: &Ctx,
+pub(crate) struct ControlOwnerAssembly<H: DaemonControlLifecycle> {
     lifecycle: Arc<H>,
     control: Arc<DaemonControl>,
     events: tokio::sync::mpsc::UnboundedReceiver<ControlEvent>,
     task_wakeups: tokio::sync::mpsc::Sender<crate::wakeup::TaskWakeup>,
     reconcile: Arc<ReconcileBroadcaster>,
     workspace_changes: Arc<WorkspaceChangeSignal>,
+}
+
+impl<H: DaemonControlLifecycle> ControlOwnerAssembly<H> {
+    pub(crate) fn new(
+        lifecycle: Arc<H>,
+        control: Arc<DaemonControl>,
+        events: tokio::sync::mpsc::UnboundedReceiver<ControlEvent>,
+        task_wakeups: tokio::sync::mpsc::Sender<crate::wakeup::TaskWakeup>,
+        reconcile: Arc<ReconcileBroadcaster>,
+        workspace_changes: Arc<WorkspaceChangeSignal>,
+    ) -> Self {
+        Self {
+            lifecycle,
+            control,
+            events,
+            task_wakeups,
+            reconcile,
+            workspace_changes,
+        }
+    }
+}
+
+pub(crate) fn spawn_control_owner<H: DaemonControlLifecycle>(
+    owners: &mut JoinSet<()>,
+    root_ctx: &Ctx,
+    assembly: ControlOwnerAssembly<H>,
 ) {
+    let ControlOwnerAssembly {
+        lifecycle,
+        control,
+        events,
+        task_wakeups,
+        reconcile,
+        workspace_changes,
+    } = assembly;
     let consumer = Arc::new(ControlEventConsumer::new(
         lifecycle,
         task_wakeups,
@@ -370,12 +402,14 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         spawn_control_owner(
             &mut owners,
             &root_ctx,
-            Arc::clone(&host),
-            control,
-            events_rx,
-            task_wakeups_tx,
-            Arc::clone(&reconcile),
-            Arc::clone(&workspace_changes),
+            ControlOwnerAssembly::new(
+                Arc::clone(&host),
+                control,
+                events_rx,
+                task_wakeups_tx,
+                Arc::clone(&reconcile),
+                Arc::clone(&workspace_changes),
+            ),
         );
         let task_ctx = root_ctx.child();
         let task_root = root_ctx.clone();

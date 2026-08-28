@@ -82,6 +82,7 @@ pub(crate) struct DaemonControl {
 }
 
 impl DaemonControl {
+    #[cfg(test)]
     pub(crate) fn new(
         client: Arc<Client>,
         server_base_url: impl Into<String>,
@@ -123,6 +124,7 @@ impl DaemonControl {
 
     /// Replaces the authenticated runtime set. Sorting and deduplication make
     /// identity stable and prevent reconnects for equivalent updates.
+    #[cfg(test)]
     pub(crate) fn set_runtime_ids(&self, runtime_ids: impl IntoIterator<Item = String>) {
         self.runtimes.replace(runtime_ids);
     }

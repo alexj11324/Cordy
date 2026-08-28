@@ -1209,30 +1209,6 @@ impl ProductionProviderAdapter {
     }
 }
 
-fn apply_task_mcp_config(
-    task: &Task,
-    target: &RuntimeExecutionTarget,
-    inputs: &mut ProviderExecutionInputs,
-) {
-    let Some(agent_mcp_config) = task
-        .agent
-        .as_ref()
-        .and_then(|agent| agent.mcp_config.as_ref())
-    else {
-        return;
-    };
-    match crate::runtime_mcp::merge_runtime_and_agent_mcp_config(&target.provider, agent_mcp_config)
-    {
-        Ok(effective) => inputs.effective_mcp_config = effective,
-        Err(error) => tracing::warn!(
-            task = %task.id,
-            provider = %target.provider,
-            %error,
-            "mcp_config: runtime merge failed; using agent configuration only"
-        ),
-    }
-}
-
 #[async_trait::async_trait]
 impl ProviderRuntimeAdapter for ProductionProviderAdapter {
     async fn handle_non_update_heartbeat_actions(
@@ -2594,6 +2570,7 @@ fn prepared_environment_inputs(
     }
 }
 
+#[cfg(test)]
 fn launch_for_environment(
     launch: &RuntimeLaunchSpec,
     provider: &str,

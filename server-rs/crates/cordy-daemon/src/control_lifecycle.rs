@@ -326,12 +326,14 @@ mod tests {
         crate::production_stack::spawn_control_owner(
             &mut owners,
             &ctx,
-            Arc::clone(&lifecycle),
-            Arc::clone(&control),
-            events_rx,
-            wakeup_tx,
-            reconcile,
-            Arc::new(WorkspaceChangeSignal::new()),
+            crate::production_stack::ControlOwnerAssembly::new(
+                Arc::clone(&lifecycle),
+                Arc::clone(&control),
+                events_rx,
+                wakeup_tx,
+                reconcile,
+                Arc::new(WorkspaceChangeSignal::new()),
+            ),
         );
 
         assert_eq!(

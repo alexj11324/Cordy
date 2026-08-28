@@ -233,11 +233,6 @@ impl WsRpcClient {
         }
     }
 
-    /// `currentGeneration` (wsrpc.go:139).
-    pub(crate) fn current_generation(&self) -> u64 {
-        self.inner.lock().unwrap().attach.generation
-    }
-
     /// `supportsRPCV1` (wsrpc.go:152): reports whether the live connection
     /// explicitly negotiated rpc-v1. [`Self::call_if_rpc_v1_supported`] repeats
     /// this check while capturing the sender under the same mutex, so this
@@ -245,26 +240,6 @@ impl WsRpcClient {
     pub(crate) fn supports_rpc_v1(&self) -> bool {
         let inner = self.inner.lock().unwrap();
         inner.attach.send_frame.is_some() && inner.attach.rpc_v1_supported
-    }
-
-    /// `Call` (wsrpc.go:163): issues an RPC on any attached connection.
-    /// Transport-level tests and callers that have their own negotiation
-    /// contract use this directly. Returns the response status (0 when the
-    /// call never reached the server) so the caller can distinguish transport
-    /// failure (→ HTTP fallback) from a server-side error.
-    pub(crate) async fn call<Q, R>(
-        &self,
-        ctx: &crate::repocache::Ctx,
-        method: &str,
-        server_timeout: Duration,
-        req_body: Option<&Q>,
-    ) -> Result<(u16, Option<R>), WsRpcError>
-    where
-        Q: Serialize + Send + Sync,
-        R: DeserializeOwned + Send,
-    {
-        self.call_inner(ctx, method, server_timeout, req_body, false)
-            .await
     }
 
     /// `CallIfRPCV1Supported` (wsrpc.go:171): issues an RPC only when the

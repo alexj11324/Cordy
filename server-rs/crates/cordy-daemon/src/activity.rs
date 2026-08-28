@@ -56,10 +56,12 @@ impl DaemonActivity {
         self.state.lock().unwrap().active_tasks
     }
 
+    #[cfg(test)]
     pub(crate) fn claims_in_flight(&self) -> usize {
         self.state.lock().unwrap().claims_in_flight
     }
 
+    #[cfg(test)]
     pub(crate) fn claims_paused(&self) -> bool {
         self.state.lock().unwrap().pause_claims
     }
