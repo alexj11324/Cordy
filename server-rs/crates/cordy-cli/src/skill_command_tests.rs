@@ -294,11 +294,9 @@ async fn skill_create_matches_go_content_config_and_output_contracts() {
     )
     .await
     .expect_err("invalid config");
-    assert!(
-        error
-            .to_string()
-            .starts_with("--config must be valid JSON:")
-    );
+    assert!(error
+        .to_string()
+        .starts_with("--config must be valid JSON:"));
     server.abort();
 }
 
@@ -704,12 +702,10 @@ async fn skill_import_legacy_conflict_is_structured_and_nonzero() {
     let result: Value = serde_json::from_str(&output.stdout).expect("conflict JSON");
     assert_eq!(result["status"], "conflict");
     assert_eq!(result["existing_skill"]["id"], "skill-1");
-    assert!(
-        result["reason"]
-            .as_str()
-            .expect("reason")
-            .contains("--on-conflict overwrite")
-    );
+    assert!(result["reason"]
+        .as_str()
+        .expect("reason")
+        .contains("--on-conflict overwrite"));
     assert_eq!(crate::error::exit_code(&error), 1);
     server.abort();
 }

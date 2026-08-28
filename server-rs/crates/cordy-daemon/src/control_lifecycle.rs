@@ -202,9 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn real_control_owner_routes_websocket_and_claim_rpc_until_cancelled() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let app = axum::Router::new()
             .route(

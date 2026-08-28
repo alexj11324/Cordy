@@ -8,11 +8,11 @@
 pub mod acp;
 pub mod acp_mcp;
 pub mod antigravity;
+pub mod claude;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod codex;
 pub(crate) mod codex_usage;
-pub mod claude;
 pub mod command;
 pub mod contract;
 pub mod copilot;
@@ -41,10 +41,10 @@ pub use acp_mcp::{
     AcpMcpCapabilityDeclaration, AcpMcpServer,
 };
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
-pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
-pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
+pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use codex::{build_codex_args, CodexBackend, CodexConfig};
+pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
@@ -67,7 +67,5 @@ pub use qoder::{
 };
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};
-pub use registry::{
-    builtin_runtime, filter_launch_prefix_for_provider, protocol_family, provider,
-};
+pub use registry::{builtin_runtime, filter_launch_prefix_for_provider, protocol_family, provider};
 pub use version::{check_provider_minimum, extract_version_line};

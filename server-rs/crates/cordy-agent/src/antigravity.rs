@@ -34,23 +34,24 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_DISCOVERY_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_LOG_LINE_BYTES: usize = 64 * 1024;
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("-p", BlockedArgMode::WithValue),
-        ("--print", BlockedArgMode::WithValue),
-        ("--prompt", BlockedArgMode::WithValue),
-        ("-i", BlockedArgMode::Standalone),
-        ("--prompt-interactive", BlockedArgMode::Standalone),
-        ("-c", BlockedArgMode::Standalone),
-        ("--continue", BlockedArgMode::Standalone),
-        ("--conversation", BlockedArgMode::WithValue),
-        ("--model", BlockedArgMode::WithValue),
-        ("--print-timeout", BlockedArgMode::WithValue),
-        ("--dangerously-skip-permissions", BlockedArgMode::Standalone),
-        ("--log-file", BlockedArgMode::WithValue),
-        ("--settings", BlockedArgMode::WithValue),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("-p", BlockedArgMode::WithValue),
+            ("--print", BlockedArgMode::WithValue),
+            ("--prompt", BlockedArgMode::WithValue),
+            ("-i", BlockedArgMode::Standalone),
+            ("--prompt-interactive", BlockedArgMode::Standalone),
+            ("-c", BlockedArgMode::Standalone),
+            ("--continue", BlockedArgMode::Standalone),
+            ("--conversation", BlockedArgMode::WithValue),
+            ("--model", BlockedArgMode::WithValue),
+            ("--print-timeout", BlockedArgMode::WithValue),
+            ("--dangerously-skip-permissions", BlockedArgMode::Standalone),
+            ("--log-file", BlockedArgMode::WithValue),
+            ("--settings", BlockedArgMode::WithValue),
+        ])
+    });
 
 static CONVERSATION_ID: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"conversation=([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})")

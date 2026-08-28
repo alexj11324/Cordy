@@ -298,8 +298,8 @@ pub fn filter_launch_prefix_for_provider(provider_id: &str, prefix: &[String]) -
         "openclaw" => Some(&*crate::openclaw::BLOCKED_ARGS),
         "opencode" => Some(&*crate::opencode::BLOCKED_ARGS),
         "qwen" => Some(&*crate::qwen::BLOCKED_ARGS),
-        "qoder" | "qoderclicn" | "traecli" | "kiro" | "kimi" | "qwenpaw" | "grok"
-        | "mcode" | "dim" | "reasonix" => Some(crate::qoder::blocked_args(family)),
+        "qoder" | "qoderclicn" | "traecli" | "kiro" | "kimi" | "qwenpaw" | "grok" | "mcode"
+        | "dim" | "reasonix" => Some(crate::qoder::blocked_args(family)),
         "pi" => {
             return crate::command::filter_launch_prefix(prefix, &crate::pi::pi_blocked_args())
                 .args;
@@ -441,8 +441,8 @@ pub async fn discover_models(
             env,
             builtin_runtime,
         })
-            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
-            .await),
+        .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+        .await),
         "dim" => Ok(DimBackend::new(DimConfig { command, env })
             .discover_models(cache, cancellation, timeout)
             .await),

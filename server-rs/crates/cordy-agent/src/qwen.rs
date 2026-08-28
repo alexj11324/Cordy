@@ -30,29 +30,30 @@ const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("-p", BlockedArgMode::WithValue),
-        ("--prompt", BlockedArgMode::WithValue),
-        ("-i", BlockedArgMode::WithValue),
-        ("--prompt-interactive", BlockedArgMode::WithValue),
-        ("-o", BlockedArgMode::WithValue),
-        ("--output-format", BlockedArgMode::WithValue),
-        ("-m", BlockedArgMode::WithValue),
-        ("--model", BlockedArgMode::WithValue),
-        ("-r", BlockedArgMode::WithValue),
-        ("--resume", BlockedArgMode::WithValue),
-        ("-c", BlockedArgMode::Standalone),
-        ("--continue", BlockedArgMode::Standalone),
-        ("--chat-recording", BlockedArgMode::WithValue),
-        ("--mcp-config", BlockedArgMode::WithValue),
-        ("--safe-mode", BlockedArgMode::Standalone),
-        ("--yolo", BlockedArgMode::Standalone),
-        ("-y", BlockedArgMode::Standalone),
-        ("--approval-mode", BlockedArgMode::WithValue),
-        ("--core-tools", BlockedArgMode::WithValue),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("-p", BlockedArgMode::WithValue),
+            ("--prompt", BlockedArgMode::WithValue),
+            ("-i", BlockedArgMode::WithValue),
+            ("--prompt-interactive", BlockedArgMode::WithValue),
+            ("-o", BlockedArgMode::WithValue),
+            ("--output-format", BlockedArgMode::WithValue),
+            ("-m", BlockedArgMode::WithValue),
+            ("--model", BlockedArgMode::WithValue),
+            ("-r", BlockedArgMode::WithValue),
+            ("--resume", BlockedArgMode::WithValue),
+            ("-c", BlockedArgMode::Standalone),
+            ("--continue", BlockedArgMode::Standalone),
+            ("--chat-recording", BlockedArgMode::WithValue),
+            ("--mcp-config", BlockedArgMode::WithValue),
+            ("--safe-mode", BlockedArgMode::Standalone),
+            ("--yolo", BlockedArgMode::Standalone),
+            ("-y", BlockedArgMode::Standalone),
+            ("--approval-mode", BlockedArgMode::WithValue),
+            ("--core-tools", BlockedArgMode::WithValue),
+        ])
+    });
 
 #[derive(Debug, Clone, Default)]
 pub struct QwenConfig {

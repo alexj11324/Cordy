@@ -397,14 +397,10 @@ mod tests {
     #[tokio::test]
     async fn started_server_exposes_claim_tool_through_its_overlay_url() {
         let ctx = crate::repocache::Ctx::new();
-        let (config, server) = start_task_plugin_hook_mcp(
-            &ctx,
-            "task-1",
-            &fixture_tools(),
-            ok_invoke(),
-        )
-        .await
-        .unwrap();
+        let (config, server) =
+            start_task_plugin_hook_mcp(&ctx, "task-1", &fixture_tools(), ok_invoke())
+                .await
+                .unwrap();
         let url = config.unwrap()["mcpServers"]["cordy-plugins"]["url"]
             .as_str()
             .unwrap()

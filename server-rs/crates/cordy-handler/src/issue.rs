@@ -1403,10 +1403,7 @@ fn push_table_keyset(
     let last_expression = expression.replace("i.", "last_i.");
     let primary_comparison = if descending { "<" } else { ">" };
     builder.push(" AND (");
-    builder
-        .push("(")
-        .push(expression)
-        .push(" IS NULL AND ");
+    builder.push("(").push(expression).push(" IS NULL AND ");
     push_table_last_value(builder, &last_expression, last_id);
     builder.push(" IS NOT NULL)");
     builder.push(" OR (");
@@ -1422,12 +1419,14 @@ fn push_table_keyset(
     builder.push(")");
     builder.push(")");
     builder.push(" OR (");
-    builder
-        .push(expression)
-        .push(" IS NOT NULL AND ");
+    builder.push(expression).push(" IS NOT NULL AND ");
     push_table_last_value(builder, &last_expression, last_id);
     builder.push(" IS NOT NULL AND ");
-    builder.push(expression).push(' ').push(primary_comparison).push(' ');
+    builder
+        .push(expression)
+        .push(' ')
+        .push(primary_comparison)
+        .push(' ');
     push_table_last_value(builder, &last_expression, last_id);
     builder.push(")");
     builder.push(")");
@@ -1455,8 +1454,7 @@ async fn table_base_rows(
     let fingerprint = table_fingerprint(request);
     let (limit, last_id) = table_row_cursor(request, &fingerprint)?;
     let order = table_order(state, workspace_id, request).await?;
-    let (sort_expression, descending) =
-        table_sort_expression(state, workspace_id, request).await?;
+    let (sort_expression, descending) = table_sort_expression(state, workspace_id, request).await?;
     let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
     push_table_filters(&mut count, request, workspace_id, user_id)?;
     push_table_branch(&mut count, request)?;
@@ -1495,7 +1493,10 @@ async fn table_base_rows(
             )
         })?;
     let next = (rows.len() as i64 == limit)
-        .then(|| rows.last().map(|row| encode_table_row_cursor(request, &fingerprint, row.id)))
+        .then(|| {
+            rows.last()
+                .map(|row| encode_table_row_cursor(request, &fingerprint, row.id))
+        })
         .flatten();
     Ok((rows, total, next))
 }

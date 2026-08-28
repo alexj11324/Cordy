@@ -36,20 +36,21 @@ const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(5);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("-p", BlockedArgMode::WithValue),
-        ("--output-format", BlockedArgMode::WithValue),
-        ("--allow-all", BlockedArgMode::Standalone),
-        ("--allow-all-tools", BlockedArgMode::Standalone),
-        ("--allow-all-paths", BlockedArgMode::Standalone),
-        ("--allow-all-urls", BlockedArgMode::Standalone),
-        ("--yolo", BlockedArgMode::Standalone),
-        ("--no-ask-user", BlockedArgMode::Standalone),
-        ("--resume", BlockedArgMode::WithValue),
-        ("--acp", BlockedArgMode::Standalone),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("-p", BlockedArgMode::WithValue),
+            ("--output-format", BlockedArgMode::WithValue),
+            ("--allow-all", BlockedArgMode::Standalone),
+            ("--allow-all-tools", BlockedArgMode::Standalone),
+            ("--allow-all-paths", BlockedArgMode::Standalone),
+            ("--allow-all-urls", BlockedArgMode::Standalone),
+            ("--yolo", BlockedArgMode::Standalone),
+            ("--no-ask-user", BlockedArgMode::Standalone),
+            ("--resume", BlockedArgMode::WithValue),
+            ("--acp", BlockedArgMode::Standalone),
+        ])
+    });
 
 #[derive(Debug, Clone, Default)]
 pub struct CopilotConfig {

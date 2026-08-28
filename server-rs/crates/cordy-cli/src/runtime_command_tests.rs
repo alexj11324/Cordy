@@ -335,11 +335,9 @@ async fn runtime_update_timeout_reports_last_status() {
     )
     .await
     .expect_err("runtime update timeout");
-    assert!(
-        error
-            .to_string()
-            .starts_with("timed out waiting for update (last status:")
-    );
+    assert!(error
+        .to_string()
+        .starts_with("timed out waiting for update (last status:"));
     server.abort();
 }
 
@@ -620,11 +618,9 @@ async fn runtime_profile_path_mutation_fails_closed_in_task_context() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("task context denied");
-    assert!(
-        error
-            .to_string()
-            .contains("not available inside a daemon-managed task")
-    );
+    assert!(error
+        .to_string()
+        .contains("not available inside a daemon-managed task"));
     assert_eq!(
         fs::read(config_dir.join("config.json")).expect("owner config"),
         owner

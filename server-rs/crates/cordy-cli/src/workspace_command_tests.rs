@@ -97,11 +97,9 @@ async fn workspace_list_empty_and_missing_auth_match_go_messages() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("missing token");
-    assert!(
-        error
-            .to_string()
-            .contains("not authenticated: run 'cordy login' first")
-    );
+    assert!(error
+        .to_string()
+        .contains("not authenticated: run 'cordy login' first"));
     server.abort();
 }
 
@@ -182,12 +180,10 @@ fn workspace_reference_reports_ambiguous_and_missing_targets() {
     assert!(ambiguous.contains("ambiguous workspace id prefix \"abcd\""));
     assert!(ambiguous.contains("Alpha (alpha)"));
     assert!(ambiguous.contains("Beta (beta)"));
-    assert!(
-        resolve_workspace_reference(&workspaces, "gamma")
-            .expect_err("missing slug")
-            .to_string()
-            .contains("run 'cordy workspace list'")
-    );
+    assert!(resolve_workspace_reference(&workspaces, "gamma")
+        .expect_err("missing slug")
+        .to_string()
+        .contains("run 'cordy workspace list'"));
     assert_eq!(
         resolve_workspace_reference(&workspaces, "ALPHA")
             .expect("case-insensitive slug")
@@ -326,15 +322,13 @@ fn workspace_create_validates_required_and_safe_input_flags() {
         "--context-stdin",
     ])
     .expect("dual stdin CLI");
-    assert!(
-        build_workspace_create_body(
-            create_workspace_args(&dual_stdin),
-            &mut Cursor::new(b"ambiguous".to_vec())
-        )
-        .expect_err("dual stdin")
-        .to_string()
-        .contains("a single stdin cannot feed both fields")
-    );
+    assert!(build_workspace_create_body(
+        create_workspace_args(&dual_stdin),
+        &mut Cursor::new(b"ambiguous".to_vec())
+    )
+    .expect_err("dual stdin")
+    .to_string()
+    .contains("a single stdin cannot feed both fields"));
 
     let empty_prefix = Cli::try_parse_from([
         "cordy",
@@ -348,15 +342,13 @@ fn workspace_create_validates_required_and_safe_input_flags() {
         "   ",
     ])
     .expect("empty prefix CLI");
-    assert!(
-        build_workspace_create_body(
-            create_workspace_args(&empty_prefix),
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("empty issue prefix")
-        .to_string()
-        .contains("omit it to use the server-generated prefix")
-    );
+    assert!(build_workspace_create_body(
+        create_workspace_args(&empty_prefix),
+        &mut Cursor::new(Vec::<u8>::new())
+    )
+    .expect_err("empty issue prefix")
+    .to_string()
+    .contains("omit it to use the server-generated prefix"));
 }
 
 #[tokio::test]
@@ -502,28 +494,24 @@ fn workspace_update_supports_safe_files_and_rejects_ambiguous_or_empty_changes()
         "context.md",
     ])
     .expect("ambiguous CLI");
-    assert!(
-        build_workspace_update_body(
-            update_workspace_args(&ambiguous),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("ambiguous description")
-        .to_string()
-        .contains("mutually exclusive")
-    );
+    assert!(build_workspace_update_body(
+        update_workspace_args(&ambiguous),
+        &environment,
+        &mut Cursor::new(Vec::<u8>::new())
+    )
+    .expect_err("ambiguous description")
+    .to_string()
+    .contains("mutually exclusive"));
 
     let empty =
         Cli::try_parse_from(["cordy", "workspace", "update", "workspace-id"]).expect("empty CLI");
-    assert!(
-        build_workspace_update_body(
-            update_workspace_args(&empty),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect("empty body")
-        .is_empty()
-    );
+    assert!(build_workspace_update_body(
+        update_workspace_args(&empty),
+        &environment,
+        &mut Cursor::new(Vec::<u8>::new())
+    )
+    .expect("empty body")
+    .is_empty());
 
     let empty_prefix = Cli::try_parse_from([
         "cordy",
@@ -534,16 +522,14 @@ fn workspace_update_supports_safe_files_and_rejects_ambiguous_or_empty_changes()
         " ",
     ])
     .expect("empty prefix CLI");
-    assert!(
-        build_workspace_update_body(
-            update_workspace_args(&empty_prefix),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("empty issue prefix")
-        .to_string()
-        .contains("clearing the prefix is not supported")
-    );
+    assert!(build_workspace_update_body(
+        update_workspace_args(&empty_prefix),
+        &environment,
+        &mut Cursor::new(Vec::<u8>::new())
+    )
+    .expect_err("empty issue prefix")
+    .to_string()
+    .contains("clearing the prefix is not supported"));
 }
 
 #[test]
@@ -575,18 +561,14 @@ fn workspace_member_parser_and_role_validation_match_go_contract() {
         normalize_workspace_invite_role(&args.role).expect("admin"),
         "admin"
     );
-    assert!(
-        normalize_workspace_invite_role("owner")
-            .expect_err("owner rejected")
-            .to_string()
-            .contains("cannot invite as owner")
-    );
-    assert!(
-        normalize_workspace_invite_role("viewer")
-            .expect_err("unknown role")
-            .to_string()
-            .contains("expected member or admin")
-    );
+    assert!(normalize_workspace_invite_role("owner")
+        .expect_err("owner rejected")
+        .to_string()
+        .contains("cannot invite as owner"));
+    assert!(normalize_workspace_invite_role("viewer")
+        .expect_err("unknown role")
+        .to_string()
+        .contains("expected member or admin"));
 }
 
 #[tokio::test]
@@ -763,12 +745,10 @@ fn workspace_mcp_config_validation_is_secret_safe_and_rejects_non_objects() {
             .to_string(),
         "--server-config must be a JSON object, not null"
     );
-    assert!(
-        parse_workspace_mcp_server_config("[]")
-            .expect_err("array")
-            .to_string()
-            .contains("must be a JSON object")
-    );
+    assert!(parse_workspace_mcp_server_config("[]")
+        .expect_err("array")
+        .to_string()
+        .contains("must be a JSON object"));
 }
 
 #[tokio::test]

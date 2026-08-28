@@ -24,11 +24,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, TaskMessageData};
 use crate::config::Config;
+use crate::execenv::codex_home::codex_resume_rollout_present;
 use crate::execenv::context::{
     cleanup_sidecars, write_context_files, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
     TASK_CONTEXT_MARKER_REL_PATH,
 };
-use crate::execenv::codex_home::codex_resume_rollout_present;
 use crate::execenv::execenv::{
     ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, reuse,
     Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
@@ -53,8 +53,7 @@ use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext}
 use crate::prompt::build_prompt;
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::remote_mcp_broker::{
-    merge_task_remote_mcp_config, start_task_remote_mcp_brokers,
-    RemoteMCPCredentialResolver,
+    merge_task_remote_mcp_config, start_task_remote_mcp_brokers, RemoteMCPCredentialResolver,
 };
 use crate::repocache::{CancelCause, Ctx};
 use crate::runtime_registry::RuntimeRegistry;
@@ -466,12 +465,7 @@ impl ProductionProviderAdapter {
         .await
         {
             Ok(startup) => startup,
-            Err(error) => {
-                return failed(
-                    error.context("prepare Remote MCP broker"),
-                    None,
-                )
-            }
+            Err(error) => return failed(error.context("prepare Remote MCP broker"), None),
         };
         for diagnostic in &remote_mcp.diagnostics {
             tracing::warn!(task = %task.id, reason = %diagnostic, "Remote MCP degraded");
@@ -483,7 +477,11 @@ impl ProductionProviderAdapter {
             let base = inputs
                 .effective_mcp_config
                 .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .or_else(|| {
+                    task.agent
+                        .as_ref()
+                        .and_then(|agent| agent.mcp_config.as_ref())
+                })
                 .map(Value::to_string)
                 .unwrap_or_default();
             let merged = match merge_task_remote_mcp_config(&base, &overlay.to_string())
@@ -491,10 +489,7 @@ impl ProductionProviderAdapter {
             {
                 Ok(merged) => merged,
                 Err(error) => {
-                    return failed(
-                        error.context("merge Remote MCP broker configuration"),
-                        None,
-                    )
+                    return failed(error.context("merge Remote MCP broker configuration"), None)
                 }
             };
             inputs.effective_mcp_config = Some(merged);
@@ -505,49 +500,55 @@ impl ProductionProviderAdapter {
         let plugin_invoke: PluginHookInvoker = {
             let client = Arc::clone(&client);
             let daemon_token = task.remote_mcp_daemon_token.clone();
-            Arc::new(
-                move |call_ctx, task_id, installation_id, hook_key, input| {
-                    let client = Arc::clone(&client);
-                    let daemon_token = daemon_token.clone();
-                    let task_id = task_id.to_string();
-                    let installation_id = installation_id.to_string();
-                    let hook_key = hook_key.to_string();
-                    let input = input.clone();
-                    Box::pin(async move {
-                        client
-                            .invoke_agent_plugin_hook(
-                                call_ctx,
-                                &daemon_token,
-                                &task_id,
-                                &installation_id,
-                                &hook_key,
-                                Some(input),
-                            )
-                            .await
-                            .map(|output| output.unwrap_or(Value::Null))
-                    })
-                },
-            )
+            Arc::new(move |call_ctx, task_id, installation_id, hook_key, input| {
+                let client = Arc::clone(&client);
+                let daemon_token = daemon_token.clone();
+                let task_id = task_id.to_string();
+                let installation_id = installation_id.to_string();
+                let hook_key = hook_key.to_string();
+                let input = input.clone();
+                Box::pin(async move {
+                    client
+                        .invoke_agent_plugin_hook(
+                            call_ctx,
+                            &daemon_token,
+                            &task_id,
+                            &installation_id,
+                            &hook_key,
+                            Some(input),
+                        )
+                        .await
+                        .map(|output| output.unwrap_or(Value::Null))
+                })
+            })
         };
-        let (plugin_overlay, plugin_hook_mcp) =
-            match start_task_plugin_hook_mcp(&ctx, &task.id, &task.plugin_hook_tools, plugin_invoke)
-                .await
-            {
-                Ok(started) => started,
-                Err(error) => {
-                    tracing::warn!(
-                        task = %task.id,
-                        %error,
-                        "plugin hook tools unavailable"
-                    );
-                    (None, None)
-                }
-            };
+        let (plugin_overlay, plugin_hook_mcp) = match start_task_plugin_hook_mcp(
+            &ctx,
+            &task.id,
+            &task.plugin_hook_tools,
+            plugin_invoke,
+        )
+        .await
+        {
+            Ok(started) => started,
+            Err(error) => {
+                tracing::warn!(
+                    task = %task.id,
+                    %error,
+                    "plugin hook tools unavailable"
+                );
+                (None, None)
+            }
+        };
         if let Some(overlay) = plugin_overlay {
             let base = inputs
                 .effective_mcp_config
                 .as_ref()
-                .or_else(|| task.agent.as_ref().and_then(|agent| agent.mcp_config.as_ref()))
+                .or_else(|| {
+                    task.agent
+                        .as_ref()
+                        .and_then(|agent| agent.mcp_config.as_ref())
+                })
                 .map(Value::to_string)
                 .unwrap_or_default();
             match merge_task_remote_mcp_config(&base, &overlay.to_string())
@@ -1660,8 +1661,7 @@ async fn drain_session(
     }
     flush_transcript(client, task_id, transcript).await;
     pin_owner.cancel();
-    while pin_waiters.join_next().await.is_some() {
-    }
+    while pin_waiters.join_next().await.is_some() {}
     Ok(terminal.unwrap_or_else(|| ExecutionResult {
         status: "failed".to_string(),
         error: "provider messages closed without a terminal result".to_string(),
@@ -1751,13 +1751,7 @@ async fn execute_and_drain(
     let tools_before = transcript.tool_use_count;
     let session = backend.execute(prompt, options).await?;
     let result = drain_session(
-        ctx,
-        client,
-        task_id,
-        work_dir,
-        codex_home,
-        session,
-        transcript,
+        ctx, client, task_id, work_dir, codex_home, session, transcript,
     )
     .await?;
     Ok((
@@ -1899,7 +1893,10 @@ fn reconcile_fresh_retry_result(
     let Ok((mut retry, _retry_tools)) = retry else {
         return first;
     };
-    let usage = merge_usage(std::mem::take(&mut first.usage), std::mem::take(&mut retry.usage));
+    let usage = merge_usage(
+        std::mem::take(&mut first.usage),
+        std::mem::take(&mut retry.usage),
+    );
     if !retry.session_id.is_empty() || retry.status == "completed" {
         retry.usage = usage;
         retry
@@ -2458,9 +2455,7 @@ mod tests {
                 },
             ))
         };
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -2563,7 +2558,9 @@ mod tests {
             Some(&2),
             "a transient 500 must retry the list report"
         );
-        assert!(reports.iter().all(|(path, _)| !path.contains("ignored-singular")));
+        assert!(reports
+            .iter()
+            .all(|(path, _)| !path.contains("ignored-singular")));
         let list = reports
             .iter()
             .find(|(path, _)| path.ends_with("/local-skills/list-1/result"))
@@ -2674,9 +2671,9 @@ mod tests {
             .await;
         let failure = outcome.failure.expect("required broker failure");
         assert!(
-            failure.message.contains(
-                "Remote MCP required-tools is incompatible with provider deveco"
-            ),
+            failure
+                .message
+                .contains("Remote MCP required-tools is incompatible with provider deveco"),
             "{}",
             failure.message
         );
@@ -2807,9 +2804,7 @@ mod tests {
                 }
             }
         }));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -2909,12 +2904,8 @@ mod tests {
         .unwrap();
         assert!(requests_rx.try_recv().is_err());
         assert!(
-            withhold_missing_codex_rollout(
-                &mut missing,
-                &codex_home,
-                Duration::from_millis(5),
-            )
-            .await
+            withhold_missing_codex_rollout(&mut missing, &codex_home, Duration::from_millis(5),)
+                .await
         );
         assert!(missing.session_id.is_empty());
 
@@ -2934,9 +2925,7 @@ mod tests {
             session_id: "provider-session".to_string(),
             ..ExecutionResult::default()
         };
-        assert!(
-            !withhold_missing_codex_rollout(&mut non_codex, "", Duration::ZERO).await
-        );
+        assert!(!withhold_missing_codex_rollout(&mut non_codex, "", Duration::ZERO).await);
         assert_eq!(non_codex.session_id, "provider-session");
         server.abort();
     }
@@ -2961,9 +2950,7 @@ mod tests {
             1,
             "qwen"
         ));
-        assert!(!should_retry_with_fresh_session(
-            &rejected, "", 0, "qwen"
-        ));
+        assert!(!should_retry_with_fresh_session(&rejected, "", 0, "qwen"));
 
         let broken_history = ExecutionResult {
             status: "failed".to_string(),
@@ -3039,10 +3026,7 @@ mod tests {
             )]),
             ..ExecutionResult::default()
         };
-        let kept = reconcile_fresh_retry_result(
-            first.clone(),
-            Ok((retry_without_session, 0)),
-        );
+        let kept = reconcile_fresh_retry_result(first.clone(), Ok((retry_without_session, 0)));
         assert_eq!(kept.session_id, "old-session");
         assert_eq!(kept.usage["model"].input_tokens, 10);
         assert_eq!(kept.usage["model"].output_tokens, 3);
@@ -3059,10 +3043,7 @@ mod tests {
             )]),
             ..ExecutionResult::default()
         };
-        let completed = reconcile_fresh_retry_result(
-            first,
-            Ok((completed_without_session, 0)),
-        );
+        let completed = reconcile_fresh_retry_result(first, Ok((completed_without_session, 0)));
         assert_eq!(completed.status, "completed");
         assert!(completed.session_id.is_empty());
         assert_eq!(completed.usage["model"].input_tokens, 10);
@@ -3181,10 +3162,7 @@ mod tests {
             "session-stuck",
             "",
         );
-        assert_eq!(
-            timeout.result.failure_reason,
-            "codex_semantic_inactivity"
-        );
+        assert_eq!(timeout.result.failure_reason, "codex_semantic_inactivity");
 
         let overflow = result_outcome(
             "codex",
@@ -3198,10 +3176,7 @@ mod tests {
             "",
         );
         assert_eq!(overflow.result.failure_reason, "codex_resume_oversized");
-        assert_eq!(
-            overflow.result.retired_session_id,
-            "session-oversized"
-        );
+        assert_eq!(overflow.result.retired_session_id, "session-oversized");
     }
 
     #[test]

@@ -27,7 +27,9 @@ use crate::contract::{
 };
 use crate::env::configure_child_env;
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
+use crate::model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -39,13 +41,14 @@ const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("--acp", BlockedArgMode::Standalone),
-        ("acp", BlockedArgMode::Standalone),
-        ("--yolo", BlockedArgMode::Standalone),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("--acp", BlockedArgMode::Standalone),
+            ("acp", BlockedArgMode::Standalone),
+            ("--yolo", BlockedArgMode::Standalone),
+        ])
+    });
 static TRAECLI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| {
         BTreeMap::from([

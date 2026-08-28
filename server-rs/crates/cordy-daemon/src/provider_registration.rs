@@ -11,9 +11,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
+use crate::agents_refresh::RuntimeVerdict;
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
-use crate::agents_refresh::RuntimeVerdict;
 use crate::registration::{
     BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound, RuntimeRegistrationSource,
 };
@@ -367,14 +367,14 @@ fn exec_format_repair(exec_path: &str) -> Option<crate::client::Repair> {
         .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(str::to_string)
-        .or_else(|| root.file_name().map(|name| name.to_string_lossy().into_owned()))?;
+        .or_else(|| {
+            root.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })?;
     let root = root.to_string_lossy();
     #[cfg(windows)]
     let (command, shell) = (
-        format!(
-            "Set-Location '{}'\n{script}",
-            root.replace('\'', "''")
-        ),
+        format!("Set-Location '{}'\n{script}", root.replace('\'', "''")),
         "powershell",
     );
     #[cfg(not(windows))]
@@ -535,11 +535,7 @@ impl RuntimeLaunchRegistry {
         state.profiles.remove(workspace_id);
     }
 
-    fn builtin_refresh_needed(
-        &self,
-        workspace_id: &str,
-        incoming: &[RuntimeLaunchSpec],
-    ) -> bool {
+    fn builtin_refresh_needed(&self, workspace_id: &str, incoming: &[RuntimeLaunchSpec]) -> bool {
         self.builtin_refresh_needed_preserving(workspace_id, incoming, &BTreeSet::new())
     }
 
@@ -559,7 +555,9 @@ impl RuntimeLaunchRegistry {
             .count()
             != incoming.len()
             || incoming.iter().any(|spec| {
-                current.get(&spec.target.provider).is_none_or(|saved| saved != spec)
+                current
+                    .get(&spec.target.provider)
+                    .is_none_or(|saved| saved != spec)
             })
     }
 
@@ -839,14 +837,13 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
             .filter(|runtime| !runtime.profile_id.is_empty())
             .map(|runtime| runtime.profile_id.clone())
             .collect();
-        self.launches
-            .replace_workspace_profiles(
-                workspace_id,
-                specs
-                    .into_iter()
-                    .filter(|spec| accepted_profiles.contains(&spec.target.profile_id))
-                    .collect(),
-            );
+        self.launches.replace_workspace_profiles(
+            workspace_id,
+            specs
+                .into_iter()
+                .filter(|spec| accepted_profiles.contains(&spec.target.profile_id))
+                .collect(),
+        );
     }
 }
 
@@ -1162,10 +1159,8 @@ mod tests {
 
     #[test]
     fn not_executable_requires_two_sightings_even_with_zero_window() {
-        let catalog = LocalProviderCatalog::with_probe_windows(
-            Duration::from_secs(1),
-            Duration::ZERO,
-        );
+        let catalog =
+            LocalProviderCatalog::with_probe_windows(Duration::from_secs(1), Duration::ZERO);
         let now = Instant::now();
         assert!(!catalog.confirm_not_executable("codex", now));
         assert!(catalog.confirm_not_executable("codex", now));

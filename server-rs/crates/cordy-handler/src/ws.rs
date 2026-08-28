@@ -986,7 +986,10 @@ mod tests {
         wait_for_client_close(&mut malformed).await;
         wait_for_disconnect(&hub).await;
 
-        let mut outsider_cookie = ws_url.clone().into_client_request().expect("outsider cookie request");
+        let mut outsider_cookie = ws_url
+            .clone()
+            .into_client_request()
+            .expect("outsider cookie request");
         outsider_cookie.headers_mut().insert(
             header::COOKIE,
             HeaderValue::from_str(&format!("{AUTH_COOKIE_NAME}={outsider_token}"))
@@ -1079,10 +1082,15 @@ mod tests {
             br#"{"type":"foreign-workspace:event"}"#,
             "",
         );
-        assert!(tokio::time::timeout(Duration::from_millis(100), socket_two.next())
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), socket_two.next())
+                .await
+                .is_err()
+        );
+        socket_two
+            .close(None)
             .await
-            .is_err());
-        socket_two.close(None).await.expect("close second workspace socket");
+            .expect("close second workspace socket");
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 if hub.snapshot()["connections"] == 1 {
@@ -1219,7 +1227,10 @@ mod tests {
             ))
             .await
             .expect("oversized-frame auth");
-        assert_eq!(client_json(&mut oversized).await, json!({"type":"auth_ack"}));
+        assert_eq!(
+            client_json(&mut oversized).await,
+            json!({"type":"auth_ack"})
+        );
         let oversized_payload = "x".repeat(INBOUND_READ_LIMIT + 1);
         let _ = oversized
             .send(ClientMessage::Text(oversized_payload.into()))
@@ -1270,7 +1281,10 @@ mod tests {
             ))
             .await
             .expect("send JWT auth");
-        assert_eq!(client_json(&mut jwt_socket).await, json!({"type":"auth_ack"}));
+        assert_eq!(
+            client_json(&mut jwt_socket).await,
+            json!({"type":"auth_ack"})
+        );
         jwt_socket.close(None).await.expect("close JWT socket");
         wait_for_disconnect(&hub).await;
 

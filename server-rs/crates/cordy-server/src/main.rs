@@ -21,8 +21,8 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 mod channel_runtime;
-mod profiling;
 mod http_serve;
+mod profiling;
 mod realtime_runtime;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);

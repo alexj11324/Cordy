@@ -755,15 +755,16 @@ mod tests {
                         .await
                         .unwrap();
                     request_tx
-                        .send((path, serde_json::from_slice::<serde_json::Value>(&body).unwrap()))
+                        .send((
+                            path,
+                            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+                        ))
                         .unwrap();
                     axum::http::StatusCode::NO_CONTENT
                 }
             },
         ));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;

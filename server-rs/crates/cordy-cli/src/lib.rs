@@ -3,75 +3,41 @@
 //! The S10 migration deliberately registers only fully functional commands.
 //! Shared configuration, API, error, and safe text-input behavior is ported
 //! with each vertical slice rather than exposing placeholder command trees.
+#[cfg(test)]
+mod agent_command_tests;
 mod agent_commands;
 mod agent_helpers;
 mod api;
-mod cli_command_schema;
-#[cfg(test)]
-mod root_command_tests;
-#[cfg(test)]
-mod daemon_command_tests;
-#[cfg(test)]
-mod disk_usage_command_tests;
-#[cfg(test)]
-mod setup_command_tests;
-#[cfg(test)]
-mod login_command_tests;
-#[cfg(test)]
-mod runtime_command_tests;
-#[cfg(test)]
-mod agent_command_tests;
-#[cfg(test)]
-mod skill_command_tests;
-#[cfg(test)]
-mod autopilot_command_tests;
-#[cfg(test)]
-mod workspace_command_tests;
-#[cfg(test)]
-mod squad_command_tests;
-#[cfg(test)]
-mod property_command_tests;
-#[cfg(test)]
-mod issue_search_command_tests;
-#[cfg(test)]
-mod issue_subscriber_command_tests;
-#[cfg(test)]
-mod issue_label_command_tests;
-#[cfg(test)]
-mod issue_metadata_command_tests;
-#[cfg(test)]
-mod issue_timeline_command_tests;
-#[cfg(test)]
-mod chat_command_tests;
-#[cfg(test)]
-mod repo_command_tests;
 #[cfg(test)]
 mod attachment_command_tests;
-#[cfg(test)]
-mod project_command_tests;
-#[cfg(test)]
-mod project_resource_command_tests;
-#[cfg(test)]
-mod config_command_tests;
-#[cfg(test)]
-mod auth_command_tests;
-#[cfg(test)]
-mod user_profile_command_tests;
 mod attachment_input;
 mod auth_command_schema;
+#[cfg(test)]
+mod auth_command_tests;
 mod auth_commands;
+#[cfg(test)]
+mod autopilot_command_tests;
 mod autopilot_commands;
 mod autopilot_output;
 mod autopilot_resolver;
+#[cfg(test)]
+mod chat_command_tests;
 mod chat_commands;
+mod cli_command_schema;
 mod client_factory;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
+#[cfg(test)]
+mod config_command_tests;
 mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
+#[cfg(test)]
+mod daemon_command_tests;
 mod daemon_commands;
+#[cfg(test)]
+mod disk_usage_command_tests;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -89,10 +55,14 @@ mod issue_comment_mutation_commands;
 mod issue_create_commands;
 mod issue_description;
 mod issue_get_commands;
+#[cfg(test)]
+mod issue_label_command_tests;
 mod issue_label_commands;
 mod issue_label_schema;
 mod issue_list_commands;
 mod issue_list_schema;
+#[cfg(test)]
+mod issue_metadata_command_tests;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
 mod issue_property_schema;
@@ -102,11 +72,17 @@ mod issue_reference;
 mod issue_reorder_commands;
 mod issue_rerun_commands;
 mod issue_safety;
+#[cfg(test)]
+mod issue_search_command_tests;
 mod issue_search_commands;
 mod issue_status_commands;
+#[cfg(test)]
+mod issue_subscriber_command_tests;
 mod issue_subscriber_commands;
 mod issue_subscriber_schema;
 mod issue_task_commands;
+#[cfg(test)]
+mod issue_timeline_command_tests;
 mod issue_timeline_commands;
 mod issue_timeline_schema;
 mod issue_update_commands;
@@ -117,24 +93,44 @@ mod label_command_schema;
 mod label_commands;
 mod label_reference;
 mod login;
+#[cfg(test)]
+mod login_command_tests;
 mod output_helpers;
 mod path_safety;
 mod project_command_schema;
+#[cfg(test)]
+mod project_command_tests;
 mod project_commands;
+#[cfg(test)]
+mod project_resource_command_tests;
 mod project_resource_commands;
+#[cfg(test)]
+mod property_command_tests;
 mod property_commands;
+#[cfg(test)]
+mod repo_command_tests;
 mod repo_commands;
 mod root_command_schema;
+#[cfg(test)]
+mod root_command_tests;
+#[cfg(test)]
+mod runtime_command_tests;
 mod runtime_commands;
 mod runtime_delete;
 mod runtime_output;
 mod runtime_profile;
 mod runtime_update;
 mod setup_command_schema;
+#[cfg(test)]
+mod setup_command_tests;
 mod setup_commands;
 mod skill_command_schema;
+#[cfg(test)]
+mod skill_command_tests;
 mod skill_commands;
 mod squad_command_schema;
+#[cfg(test)]
+mod squad_command_tests;
 mod squad_commands;
 mod task_reference;
 mod text_input;
@@ -142,14 +138,18 @@ mod update_commands;
 mod url_helpers;
 mod user_command_schema;
 mod user_commands;
+#[cfg(test)]
+mod user_profile_command_tests;
 mod version_output;
 mod workspace_command_schema;
+#[cfg(test)]
+mod workspace_command_tests;
 mod workspace_commands;
 mod workspace_mcp_commands;
 
 use anyhow::{bail, Context, Result};
-use api::{http_timeout, ApiClient, HealthProbeError};
 pub(crate) use api::HttpError;
+use api::{http_timeout, ApiClient, HealthProbeError};
 use chrono::{DateTime, FixedOffset};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
@@ -171,9 +171,8 @@ pub(crate) use agent_commands::{
     run_agent_mcp_mutation, run_agent_skills_list, run_agent_skills_mutation, run_agent_tasks,
     run_agent_update, AgentArgs, AgentCommand, AgentCopyArgs, AgentCreateArgs, AgentEnvArgs,
     AgentEnvCommand, AgentEnvSetArgs, AgentMcpAction, AgentMcpArgs, AgentMcpCommand,
-    AgentMcpListArgs,
-    AgentMcpMutationArgs, AgentSkillsArgs, AgentSkillsCommand, AgentSkillsMutationArgs,
-    AgentUpdateArgs,
+    AgentMcpListArgs, AgentMcpMutationArgs, AgentSkillsArgs, AgentSkillsCommand,
+    AgentSkillsMutationArgs, AgentUpdateArgs,
 };
 pub(crate) use agent_helpers::{
     apply_agent_permission_args, copied_agent_max_concurrent_tasks, format_agent_details_table,
@@ -328,8 +327,7 @@ use label_reference::{resolve_label_id, resolve_label_reference};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
     run_login, run_login_with_urls, validate_login_token, wait_for_login_callback,
-    wait_for_workspace_creation,
-    wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
+    wait_for_workspace_creation, wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
     WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };
 pub(crate) use output_helpers::{display_id, format_table, truncate_text};
@@ -384,9 +382,9 @@ use setup_commands::{
     setup_server_is_local, SetupDaemonAction,
 };
 pub(crate) use skill_command_schema::{
-    SkillArgs, SkillCommand, SkillCreateArgs, SkillDeleteArgs, SkillFilesArgs,
-    SkillFilesCommand, SkillFilesDeleteArgs, SkillFilesListArgs, SkillFilesUpsertArgs,
-    SkillGetArgs, SkillImportArgs, SkillRefreshArgs, SkillSearchArgs, SkillUpdateArgs,
+    SkillArgs, SkillCommand, SkillCreateArgs, SkillDeleteArgs, SkillFilesArgs, SkillFilesCommand,
+    SkillFilesDeleteArgs, SkillFilesListArgs, SkillFilesUpsertArgs, SkillGetArgs, SkillImportArgs,
+    SkillRefreshArgs, SkillSearchArgs, SkillUpdateArgs,
 };
 use skill_commands::{
     format_skill_files_table, format_skill_import_table, format_skill_list_table,
@@ -421,16 +419,16 @@ use user_commands::{
 };
 use version_output::run_version;
 pub(crate) use workspace_command_schema::{
-    CreateWorkspaceArgs, UpdateWorkspaceArgs, WorkspaceArgs, WorkspaceCommand,
-    WorkspaceMemberArgs, WorkspaceMemberCommand, WorkspaceMemberInviteArgs, WorkspaceMcpAddArgs,
-    WorkspaceMcpArgs, WorkspaceMcpCommand, WorkspaceMcpUpdateArgs,
+    CreateWorkspaceArgs, UpdateWorkspaceArgs, WorkspaceArgs, WorkspaceCommand, WorkspaceMcpAddArgs,
+    WorkspaceMcpArgs, WorkspaceMcpCommand, WorkspaceMcpUpdateArgs, WorkspaceMemberArgs,
+    WorkspaceMemberCommand, WorkspaceMemberInviteArgs,
 };
 use workspace_commands::{
     build_workspace_create_body, build_workspace_update_body, format_workspace_details_table,
     format_workspace_members, format_workspace_table, normalize_workspace_invite_role,
-    resolve_workspace_reference, run_workspace_create, run_workspace_get, run_workspace_list,
-    run_workspace_member_invite, run_workspace_member_list, run_workspace_switch,
-    resolve_workspace_arg, run_workspace_update, WorkspaceSummary,
+    resolve_workspace_arg, resolve_workspace_reference, run_workspace_create, run_workspace_get,
+    run_workspace_list, run_workspace_member_invite, run_workspace_member_list,
+    run_workspace_switch, run_workspace_update, WorkspaceSummary,
 };
 use workspace_mcp_commands::{
     format_workspace_mcp_servers, parse_workspace_mcp_server_config,
@@ -503,9 +501,9 @@ struct IssueListResponse {
 
 #[cfg(test)]
 pub(crate) use tests::{
-    create_workspace_args, issue_cancel_task_args, issue_list_args, issue_run_messages_args,
-    issue_runs_args, issue_rerun_args, issue_search_args, issue_status_args, issue_update_args,
-    patch_test_server, test_server, update_args, update_workspace_args,
+    create_workspace_args, issue_cancel_task_args, issue_list_args, issue_rerun_args,
+    issue_run_messages_args, issue_runs_args, issue_search_args, issue_status_args,
+    issue_update_args, patch_test_server, test_server, update_args, update_workspace_args,
 };
 
 #[cfg(test)]
@@ -573,10 +571,6 @@ mod tests {
         assert!(!handled);
         assert!(output.is_empty());
     }
-
-
-
-
 
     pub(crate) async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
         let app = Router::new().route(
@@ -3390,6 +3384,4 @@ mod tests {
         assert_eq!(deleted["deleted"], true);
         task.abort();
     }
-
-
 }

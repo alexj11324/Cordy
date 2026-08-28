@@ -82,7 +82,10 @@ async fn fetch_issue_actors(
     [members, agents, squads]
 }
 
-pub(super) async fn retry_actor_get<T: DeserializeOwned>(client: &ApiClient, path: &str) -> Result<T> {
+pub(super) async fn retry_actor_get<T: DeserializeOwned>(
+    client: &ApiClient,
+    path: &str,
+) -> Result<T> {
     let delays = [100_u64, 250];
     for (attempt, delay) in [0_u64, 100, 250].into_iter().enumerate() {
         if delay > 0 {

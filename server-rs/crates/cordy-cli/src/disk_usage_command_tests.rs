@@ -51,12 +51,10 @@ fn daemon_disk_usage_validation_rejects_unsafe_or_incomplete_modes() {
         workspaces_root: None,
         all_profiles: false,
     };
-    assert!(
-        validate_disk_usage_args(&cli, &environment, &both, false)
-            .expect_err("conflicting views")
-            .to_string()
-            .contains("mutually exclusive")
-    );
+    assert!(validate_disk_usage_args(&cli, &environment, &both, false)
+        .expect_err("conflicting views")
+        .to_string()
+        .contains("mutually exclusive"));
 
     let negative = DaemonDiskUsageArgs {
         by_workspace: false,
@@ -89,24 +87,22 @@ fn daemon_disk_usage_validation_rejects_unsafe_or_incomplete_modes() {
     );
 
     environment.set("CORDY_TASK_WORKSPACES_ROOT", "/srv/cordy/workspaces");
-    assert!(
-        validate_disk_usage_args(
-            &cli,
-            &environment,
-            &DaemonDiskUsageArgs {
-                by_workspace: false,
-                by_task: false,
-                top: 0,
-                output: OutputFormat::Json,
-                workspaces_root: None,
-                all_profiles: true,
-            },
-            true
-        )
-        .expect_err("task cannot enumerate owner profiles")
-        .to_string()
-        .contains("--all-profiles")
-    );
+    assert!(validate_disk_usage_args(
+        &cli,
+        &environment,
+        &DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: false,
+            top: 0,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: true,
+        },
+        true
+    )
+    .expect_err("task cannot enumerate owner profiles")
+    .to_string()
+    .contains("--all-profiles"));
 }
 
 #[test]

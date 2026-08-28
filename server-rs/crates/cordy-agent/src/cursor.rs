@@ -34,13 +34,14 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 
 type SharedStdin = Arc<Mutex<Option<ChildStdin>>>;
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("-p", BlockedArgMode::Standalone),
-        ("--output-format", BlockedArgMode::WithValue),
-        ("--yolo", BlockedArgMode::Standalone),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("-p", BlockedArgMode::Standalone),
+            ("--output-format", BlockedArgMode::WithValue),
+            ("--yolo", BlockedArgMode::Standalone),
+        ])
+    });
 
 #[derive(Debug, Clone, Default)]
 pub struct CursorConfig {

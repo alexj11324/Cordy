@@ -77,11 +77,8 @@ mod tests {
 
     #[test]
     fn local_time_layout_matches_the_operator_contract() {
-        let time = chrono::NaiveTime::from_hms_milli_opt(14, 3, 2, 7)
-            .unwrap_or_else(|| unreachable!());
-        assert_eq!(
-            time.format(LOCAL_TIME_FORMAT).to_string(),
-            "14:03:02.007"
-        );
+        let time =
+            chrono::NaiveTime::from_hms_milli_opt(14, 3, 2, 7).unwrap_or_else(|| unreachable!());
+        assert_eq!(time.format(LOCAL_TIME_FORMAT).to_string(), "14:03:02.007");
     }
 }

@@ -1379,11 +1379,7 @@ mod tests {
             // advisory lock; otherwise a normal create can pass its lookup
             // while this transaction is blocked on the counter row.
             first_params.allow_duplicate = true;
-            create(
-                &first_service,
-                first_params,
-            )
-            .await
+            create(&first_service, first_params).await
         });
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let second_service = service.clone();

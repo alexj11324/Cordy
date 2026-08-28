@@ -3122,10 +3122,7 @@ async fn ack_task_cancelled(
     if delivered {
         state.tasks.rebroadcast_cancelled_task(task.id).await;
     }
-    let _ = state
-        .tasks
-        .finalize_deferred_cancelled_chat(task.id)
-        .await;
+    let _ = state.tasks.finalize_deferred_cancelled_chat(task.id).await;
     Json(json!({ "status": "ok" })).into_response()
 }
 

@@ -48,16 +48,17 @@ static EFFORT_RE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap_or_else(|error| panic!("invalid Claude effort regex: {error}"))
 });
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("-p", BlockedArgMode::Standalone),
-        ("--output-format", BlockedArgMode::WithValue),
-        ("--input-format", BlockedArgMode::WithValue),
-        ("--permission-mode", BlockedArgMode::WithValue),
-        ("--mcp-config", BlockedArgMode::WithValue),
-        ("--effort", BlockedArgMode::WithValue),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("-p", BlockedArgMode::Standalone),
+            ("--output-format", BlockedArgMode::WithValue),
+            ("--input-format", BlockedArgMode::WithValue),
+            ("--permission-mode", BlockedArgMode::WithValue),
+            ("--mcp-config", BlockedArgMode::WithValue),
+            ("--effort", BlockedArgMode::WithValue),
+        ])
+    });
 
 #[derive(Debug, Clone, Default)]
 pub struct ClaudeConfig {

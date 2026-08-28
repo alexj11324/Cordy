@@ -41,14 +41,15 @@ const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 const DISCOVERY_OUTPUT_MAX: u64 = 4 * 1024 * 1024;
 const DEFAULT_TAIL_BYTES: usize = 16 * 1024;
 
-pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("--format", BlockedArgMode::WithValue),
-        ("--dir", BlockedArgMode::WithValue),
-        ("--variant", BlockedArgMode::WithValue),
-        ("--dangerously-skip-permissions", BlockedArgMode::Standalone),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("--format", BlockedArgMode::WithValue),
+            ("--dir", BlockedArgMode::WithValue),
+            ("--variant", BlockedArgMode::WithValue),
+            ("--dangerously-skip-permissions", BlockedArgMode::Standalone),
+        ])
+    });
 
 #[derive(Debug, Clone, Default)]
 pub struct OpencodeConfig {

@@ -1032,11 +1032,12 @@ mod tests {
             refreshed_sweeper.sweep_stale_runtimes(stale_before).await,
             0
         );
-        let refreshed_row = sqlx::query("SELECT status, last_seen_at FROM agent_runtime WHERE id = $1")
-            .bind(refreshed.id)
-            .fetch_one(&rows.pool)
-            .await
-            .expect("read heartbeat race row");
+        let refreshed_row =
+            sqlx::query("SELECT status, last_seen_at FROM agent_runtime WHERE id = $1")
+                .bind(refreshed.id)
+                .fetch_one(&rows.pool)
+                .await
+                .expect("read heartbeat race row");
         assert_eq!(refreshed_row.get::<String, _>("status"), "online");
         assert!(
             refreshed_row

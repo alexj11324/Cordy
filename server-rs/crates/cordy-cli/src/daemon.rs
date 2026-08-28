@@ -284,7 +284,10 @@ mod tests {
             Ok(_) => panic!("foreground assembly must require profile credentials"),
         };
         let message = format!("{error:#}");
-        assert!(message.contains("cordy login"), "unexpected error: {message}");
+        assert!(
+            message.contains("cordy login"),
+            "unexpected error: {message}"
+        );
         assert!(!root.exists());
     }
 }

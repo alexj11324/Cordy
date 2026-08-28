@@ -173,30 +173,27 @@ pub(crate) async fn start_task_remote_mcp_brokers(
         let mut headers = empty_headers;
         if !connection.credential_header.is_empty() {
             match &resolve_credential {
-                Some(resolver) => match resolver(
-                    setup_ctx.child(),
-                    connection.contribution_id.clone(),
-                )
-                .await
-                {
-                    Ok(resolved) => headers = resolved,
-                    Err(resolve_err) => {
-                        let message = format!(
-                            "Remote MCP {} credential is unavailable",
-                            connection.contribution_key
-                        );
-                        match degrade(message.clone(), &mut diagnostics) {
-                            None => continue,
-                            Some(_) => {
-                                return finish_err(
-                                    set,
-                                    diagnostics,
-                                    anyhow!("{message}: {resolve_err}"),
-                                )
+                Some(resolver) => {
+                    match resolver(setup_ctx.child(), connection.contribution_id.clone()).await {
+                        Ok(resolved) => headers = resolved,
+                        Err(resolve_err) => {
+                            let message = format!(
+                                "Remote MCP {} credential is unavailable",
+                                connection.contribution_key
+                            );
+                            match degrade(message.clone(), &mut diagnostics) {
+                                None => continue,
+                                Some(_) => {
+                                    return finish_err(
+                                        set,
+                                        diagnostics,
+                                        anyhow!("{message}: {resolve_err}"),
+                                    )
+                                }
                             }
                         }
                     }
-                },
+                }
                 None => {
                     let message = format!(
                         "Remote MCP {} credential resolver is unavailable",

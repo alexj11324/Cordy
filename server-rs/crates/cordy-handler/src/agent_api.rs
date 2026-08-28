@@ -24,8 +24,8 @@ use crate::HandlerState;
 
 const ENV_SENTINEL: &str = "****";
 const AGENT_EMOJI_AVATARS: &[&str] = &[
-    "🐙", "🦊", "🦉", "🐝", "🐼", "🐸", "🐯", "🦁", "🐨", "🐵", "🐧", "🐳", "🦋",
-    "🌞", "🌙", "⭐", "🔥", "⚡", "🍀", "🌈", "🚀", "🤖", "👾", "🧠",
+    "🐙", "🦊", "🦉", "🐝", "🐼", "🐸", "🐯", "🦁", "🐨", "🐵", "🐧", "🐳", "🦋", "🌞", "🌙", "⭐",
+    "🔥", "⚡", "🍀", "🌈", "🚀", "🤖", "👾", "🧠",
 ];
 
 fn random_agent_avatar() -> String {
@@ -1571,15 +1571,16 @@ async fn create_mika(
             Ok(v) => v,
             Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
         };
-        let runtime = match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
-            Ok(Some(v)) => v,
-            _ => {
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "runtime not found in this workspace",
-                )
-            }
-        };
+        let runtime =
+            match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
+                Ok(Some(v)) => v,
+                _ => {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "runtime not found in this workspace",
+                    )
+                }
+            };
         if runtime.owner_id.is_none()
             || runtime.visibility != "public" && runtime.owner_id != Some(context.member.user_id)
         {
@@ -1683,7 +1684,11 @@ async fn create_mika(
             target
         }
     };
-    if created_now && runtime.as_ref().is_some_and(|runtime| runtime.status == "online") {
+    if created_now
+        && runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.status == "online")
+    {
         state.tasks.reconcile_agent_status(target.id).await;
         if let Ok(Some(reconciled)) = agent::get_agent(&state.pool, target.id).await {
             target = reconciled;
@@ -1998,10 +2003,7 @@ async fn attach_label(
                 labels_response(&state, &target).await
             }
             Ok(Some(_)) | Ok(None) => error_response(StatusCode::NOT_FOUND, "label not found"),
-            Err(_) => error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to verify label",
-            ),
+            Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to verify label"),
         },
         Ok(_) => {
             publish_label_updated(

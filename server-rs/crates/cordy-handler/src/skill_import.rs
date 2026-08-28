@@ -1272,15 +1272,13 @@ async fn add_tree_files(
             "import bundle is {total} bytes, exceeding the {MAX_TOTAL_SIZE} byte limit"
         )));
     }
-    let mut downloads = stream::iter(
-        files
-            .into_iter()
-            .map(|(repo_path, relative, _)| async move {
-                let url = raw_url_for(prefix, &repo_path)?;
-                let bytes = fetch_bytes(client, url, true).await?;
-                Ok::<_, ImportError>((relative, String::from_utf8_lossy(&bytes).into_owned()))
-            }),
-    )
+    let mut downloads = stream::iter(files.into_iter().map(
+        |(repo_path, relative, _)| async move {
+            let url = raw_url_for(prefix, &repo_path)?;
+            let bytes = fetch_bytes(client, url, true).await?;
+            Ok::<_, ImportError>((relative, String::from_utf8_lossy(&bytes).into_owned()))
+        },
+    ))
     .buffered(DOWNLOAD_CONCURRENCY);
     while let Some(result) = downloads.next().await {
         match result {

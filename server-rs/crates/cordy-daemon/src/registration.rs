@@ -486,8 +486,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .workspace_runtimes(&workspace.id)
                 .into_iter()
                 .filter(|runtime| {
-                    runtime.profile_id.is_empty()
-                        && preserved_providers.contains(&runtime.provider)
+                    runtime.profile_id.is_empty() && preserved_providers.contains(&runtime.provider)
                 })
                 .map(|runtime| runtime.id)
                 .collect();
@@ -507,13 +506,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             )?;
             let accepted = registry.workspace_runtimes(&workspace.id);
             round.registration_applied(&workspace.id, &accepted);
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.dropped,
-                HashMap::new(),
-            )
-            .await?;
+            self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+                .await?;
             tracing::info!(
                 workspace_id = %workspace.id,
                 dropped = delta.dropped.len(),
@@ -553,8 +547,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .workspace_runtimes(&workspace.id)
                 .into_iter()
                 .filter(|runtime| {
-                    runtime.profile_id.is_empty()
-                        && preserved_providers.contains(&runtime.provider)
+                    runtime.profile_id.is_empty() && preserved_providers.contains(&runtime.provider)
                 })
                 .map(|runtime| runtime.id),
         );
@@ -577,20 +570,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             )?;
             let accepted = registry.workspace_runtimes(&workspace.id);
             round.registration_applied(&workspace.id, &accepted);
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.dropped,
-                HashMap::new(),
-            )
-            .await?;
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.revived.ids,
-                delta.revived.reasons,
-            )
-            .await?;
+            self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+                .await?;
+            self.deregister_dropped(&ctx, registry, &delta.revived.ids, delta.revived.reasons)
+                .await?;
         }
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
@@ -669,13 +652,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             )?;
             let accepted = registry.workspace_runtimes(&workspace.id);
             round.registration_applied(&workspace.id, &accepted);
-            self.deregister_dropped(
-                &ctx,
-                registry,
-                &delta.dropped,
-                HashMap::new(),
-            )
-            .await?;
+            self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+                .await?;
             return Ok(());
         }
         let response = self
@@ -707,20 +685,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         )?;
         let accepted = registry.workspace_runtimes(&workspace.id);
         round.registration_applied(&workspace.id, &accepted);
-        self.deregister_dropped(
-            &ctx,
-            registry,
-            &delta.dropped,
-            HashMap::new(),
-        )
-        .await?;
-        self.deregister_dropped(
-            &ctx,
-            registry,
-            &delta.revived.ids,
-            delta.revived.reasons,
-        )
-        .await?;
+        self.deregister_dropped(&ctx, registry, &delta.dropped, HashMap::new())
+            .await?;
+        self.deregister_dropped(&ctx, registry, &delta.revived.ids, delta.revived.reasons)
+            .await?;
         Ok(())
     }
 
