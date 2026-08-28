@@ -582,7 +582,9 @@ function ChatMessageShell({
   const locale = useLocale();
   const isUser = role === "user";
   const time = formatMessageTime(createdAt, locale);
-  const showHeader = !!actorId || !!actorName || !!time;
+  // A timestamp-only header is hidden until hover, so without an identity it
+  // reserves an unreachable blank row for touch and keyboard users.
+  const showHeader = !!actorId || !!actorName;
 
   return (
     <article
@@ -621,7 +623,12 @@ function ChatMessageShell({
           )}
         </header>
       )}
-      <div className={cn("max-w-full overflow-hidden", !isUser && "w-full")}>
+      <div
+        className={cn(
+          "w-full max-w-full overflow-hidden",
+          isUser && "flex justify-end",
+        )}
+      >
         {children}
       </div>
     </article>
@@ -686,6 +693,7 @@ function AssistantMessage({
     () => transformTimeline(buildTimeline(taskMessages ?? []), transformContent),
     [taskMessages, transformContent],
   );
+  const hasVisibleTimeline = getVisibleTimelineBlocks(timeline).length > 0;
 
   // Content is settled once the persisted message exists; until then text is
   // still arriving and a trailing fence may be half-written.
@@ -713,7 +721,7 @@ function AssistantMessage({
 
   return (
     <div className="w-full space-y-1.5">
-      {timeline.length > 0 && (
+      {hasVisibleTimeline && (
         <TimelineView
           items={timeline}
           attachments={message?.attachments}
@@ -723,7 +731,7 @@ function AssistantMessage({
       )}
       {isNoResponse ? (
         <NoResponseNotice />
-      ) : message && timeline.length === 0 ? (
+      ) : message && !hasVisibleTimeline ? (
         <RichContent
           content={message.content}
           attachments={message.attachments}
@@ -1286,12 +1294,18 @@ function ThinkingBlock({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="ml-8 mt-1 max-h-[min(40vh,20rem)] overflow-y-auto pr-2 text-caption text-muted-foreground">
-          <RichContent
-            content={content}
-            density="compact"
-            phase={phase}
-            className="leading-relaxed text-muted-foreground [&_*]:text-muted-foreground"
-          />
+          {isStreaming ? (
+            <div className="whitespace-pre-wrap break-words leading-relaxed">
+              {content}
+            </div>
+          ) : (
+            <RichContent
+              content={content}
+              density="compact"
+              phase={phase}
+              className="leading-relaxed text-muted-foreground [&_*]:text-muted-foreground"
+            />
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>

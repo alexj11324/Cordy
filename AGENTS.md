@@ -65,7 +65,7 @@ make check            # Product-wide local helper; not an agent/default migratio
 - Add reusable visual primitives to `packages/ui`; keep business logic in
   `packages/core` and shared product screens in `packages/views`.
 - All user-facing strings must use the repository i18n layer. Update the
-  English, Chinese, Japanese, and French locale files together.
+  English, Chinese, Japanese, and Korean locale files together.
 - Use kebab-case filenames, PascalCase components, camelCase functions, and
   `use-*.ts` for hooks.
 

@@ -152,6 +152,57 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
     expect(screen.queryByText("ok")).not.toBeInTheDocument();
   });
 
+  it("renders growing reasoning as plain text until the turn settles", async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
+      taskMsg(0, "thinking", { content: "**Inspecting** the repository." }),
+    ]);
+
+    const view = render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[]}
+            pendingTask={{ task_id: TASK_ID, status: "running" }}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByText("**Inspecting** the repository."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Inspecting")).not.toBeInTheDocument();
+
+    view.rerender(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "assistant-markdown",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "Finished.",
+                task_id: TASK_ID,
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.click(await screen.findByText("Thought process"));
+    expect(await screen.findByText("Inspecting")).toHaveProperty(
+      "tagName",
+      "STRONG",
+    );
+  });
+
   it("collapses reasoning when the live turn becomes a persisted reply", async () => {
     const qc = new QueryClient();
     const view = renderList(qc);
@@ -244,6 +295,74 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
 
     expect(await screen.findByText("Draft ready.")).toBeInTheDocument();
     expect(screen.queryByText(/Hidden suggestion/)).not.toBeInTheDocument();
+  });
+
+  it("uses persisted content when a task timeline contains only tools", async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
+      taskMsg(0, "tool_use", { tool: "Bash", input: { command: "pwd" } }),
+      taskMsg(1, "tool_result", { tool: "Bash", output: "/workspace" }),
+    ]);
+
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "assistant-tool-only",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "Persisted fallback reply.",
+                task_id: TASK_ID,
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByText("Persisted fallback reply."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Bash")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatMessageList message geometry", () => {
+  it("keeps user width relative to the full column and omits an identity-less header", async () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "user-1",
+                chat_session_id: "session-1",
+                role: "user",
+                content: "Short user message",
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    const article = (await screen.findByText("Short user message")).closest(
+      "article",
+    );
+    expect(article?.querySelector("header")).toBeNull();
+    expect(article?.lastElementChild).toHaveClass(
+      "w-full",
+      "flex",
+      "justify-end",
+    );
   });
 });
 
