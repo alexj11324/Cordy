@@ -12,14 +12,7 @@ hex = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
 hyper = { workspace = true }
-# Pinned directly instead of workspace-inherited: the workspace table requests
-# a `runtime` feature this toolchain's hyper-util does not provide; these are
-# the equivalent features on the locked 0.1 line.
-hyper-util = { version = "0.1.20", default-features = false, features = [
-    "client-legacy",
-    "http1",
-    "tokio",
-] }
+hyper-util = { workspace = true }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 rustls-pemfile = { workspace = true }

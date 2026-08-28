@@ -3127,18 +3127,19 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   执行，主 agent 不运行长编译/测试。
 - owner：主 agent 负责必要的生产入口/发布接线；独立 verification/reviewer/fixer 负责完整矩阵、 finding 和
   回归修复。
-- 验收矩阵（一次执行、一次记录，不拆 per-provider/per-command PR）：
+- 验收矩阵（一次执行、一次记录，不拆 per-provider/per-command PR；除显式子目录命令外均从 repository root 运行）：
   1. **锁定输入与构建**：记录 HEAD、Rust/Cargo 版本、`Cargo.lock` SHA 和环境；运行
-     `cargo metadata --locked --offline --no-deps --format-version 1`、
-     `cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins`、
+     `(cd server-rs && cargo metadata --locked --offline --format-version 1)`、
+     `(cd server-rs && cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins)`、
      `make rust-build`；记录六个 `server/bin` 产物的 SHA256、`--help`/version 输出和每个退出码。
   2. **本地 Rust 默认入口**：在 disposable fresh PostgreSQL 上运行 `make migrate-up`，以 `make start`/`make rust-server`
      启动，记录 `/health`、`/healthz`、`/readyz` 状态、migration lock/失败退出与干净 shutdown；以 `cordy daemon start`
      完成 registration→claim→execute→reconcile→shutdown smoke，并记录 matched/executed/blocked。
-  3. **发布、CI 与安装入口**：运行 `docker build -f Dockerfile` 和
+  3. **发布、CI 与安装入口**：运行 `docker build -f Dockerfile .` 和
      `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`，记录镜像
      digest、entrypoint `migrate up`、backend healthcheck 与 `/readyz`；运行 `helm lint deploy/helm/cordy`、
-     `helm template`。验证 `.github/workflows/release.yml` 的 required Rust build/test、RustSec、仅限 release tag 的
+     `helm template cordy deploy/helm/cordy`。验证 `.github/workflows/release.yml` 的 required Rust build/test、
+     RustSec、仅限 release tag 的
      bypass，以及 backend aggregate CI 对 changed/unchanged/missing-invalid classifier 的 fail-closed 结果；对 CLI
      release archive 与 checksum 逐项核对后执行 Homebrew 安装/升级 smoke，并验证 Desktop 内嵌 CLI 与 desktop smoke。
      在 Linux/macOS/Windows runner 上分别执行 `scripts/install.sh`/`scripts/install.ps1` 的 main、严格 release
@@ -3155,10 +3156,15 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   5. **升级与回滚**：使用两个 immutable image/tag 和 disposable DB 记录迁移前后 schema、服务可用性、向后/向前
      兼容边界、`cordy-migrate up/down`（或已支持 operator rollback）退出码、exact-image rollback 后的
      `/readyz` 与数据完整性；不得把局部 route parity 或静态编译当作回滚通过。
-- 证据/PR：T-60 是一个生产验收切片；本分支仅登记上述矩阵，不新增脚本/抽象。Ready PR、产物 SHA、每个命令的
-  matched/executed/blocked、日志与回滚记录由主 agent 在提交后回写；长编译、测试、DB、Docker、Helm、systemd
+- 证据/PR：T-60 是一个生产验收切片，已创建 Ready PR #589；本分支仅登记上述矩阵并修复阻断该矩阵的 dependency
+  resolver 配置，不新增脚本/抽象。产物 SHA、每个命令的 matched/executed/blocked、日志与回滚记录仍待实际执行后
+  回写；长编译、测试、DB、Docker、Helm、systemd
   和真实 provider smoke 由独立 verifier 执行，reviewer 检查默认生产边界，fixer 只处理 scoped finding。任何环境
-  阻塞必须原样记录，未执行不计为通过。
+  阻塞必须原样记录，未执行不计为通过。Fixer 在修正 `hyper-util` feature 并由 Cargo offline 重建 lock 后运行
+  `(cd server-rs && cargo metadata --locked --offline --format-version 1)` 与
+  `(cd server-rs && cargo check --locked --offline -p cordy-remotemcp)` 均通过；组合 daemon check 已越过 resolver，但因
+  `manager.rs` 1 个 E0502 和 `gc.rs` 7 个 `GcMetaKind` E0433 以 exit 101 失败，因此 daemon/runtime 矩阵仍是 0 executed，
+  不能标记通过。
 
 ## 76. [ ] AUDIT-009 运维文档与新鲜产物复核（T-61）
 
