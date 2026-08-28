@@ -1578,8 +1578,14 @@ mod wire_compatibility_tests {
     fn assert_type_field<T: Serialize>(value: &T) {
         let json = serde_json::to_value(value).expect("model serializes");
         let object = json.as_object().expect("model is an object");
-        assert!(object.get("type").is_some(), "Go wire key `type` is present");
-        assert!(object.get("type_").is_none(), "Rust field name must not leak");
+        assert!(
+            object.get("type").is_some(),
+            "Go wire key `type` is present"
+        );
+        assert!(
+            object.get("type_").is_none(),
+            "Rust field name must not leak"
+        );
     }
 
     #[test]
@@ -1693,7 +1699,11 @@ mod wire_compatibility_tests {
 
         let item_json = serde_json::to_value(item).expect("inbox item serializes");
         let message_json = serde_json::to_value(message).expect("task message serializes");
-        assert!(item_json.get("details").is_some_and(serde_json::Value::is_null));
-        assert!(message_json.get("input").is_some_and(serde_json::Value::is_null));
+        assert!(item_json
+            .get("details")
+            .is_some_and(serde_json::Value::is_null));
+        assert!(message_json
+            .get("input")
+            .is_some_and(serde_json::Value::is_null));
     }
 }
