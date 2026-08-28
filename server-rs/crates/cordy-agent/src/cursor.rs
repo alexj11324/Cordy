@@ -1457,9 +1457,7 @@ mod tests {
                 }
             }
         }))
-        .unwrap_or_else(|error| {
-            panic!("valid tool call event: {error}")
-        });
+        .unwrap_or_else(|error| panic!("valid tool call event: {error}"));
 
         let call = parse_tool_call(&event);
         assert_eq!(call.call_id, "call-42");

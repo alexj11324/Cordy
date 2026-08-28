@@ -747,9 +747,7 @@ mod tests {
             Duration::ZERO,
         )
         .await
-        .unwrap_or_else(|error| {
-            panic!("catalogless runtime discovery is supported: {error}")
-        });
+        .unwrap_or_else(|error| panic!("catalogless runtime discovery is supported: {error}"));
         assert_eq!(catalog, Catalog::default());
     }
 
