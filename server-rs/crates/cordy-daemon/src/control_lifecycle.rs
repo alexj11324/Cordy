@@ -254,9 +254,18 @@ mod tests {
                                         .await
                                         .unwrap();
                                 }
-                                let rpc = socket.next().await.unwrap().unwrap();
-                                let rpc: cordy_protocol::Message =
-                                    serde_json::from_slice(rpc.into_data().as_ref()).unwrap();
+                                let rpc = loop {
+                                    let message = socket.next().await.unwrap().unwrap();
+                                    let message: cordy_protocol::Message =
+                                        serde_json::from_slice(message.into_data().as_ref())
+                                            .unwrap();
+                                    if message.r#type
+                                        == cordy_protocol::EVENT_DAEMON_HEARTBEAT
+                                    {
+                                        continue;
+                                    }
+                                    break message;
+                                };
                                 assert_eq!(rpc.r#type, cordy_protocol::EVENT_DAEMON_RPC_REQUEST);
                                 assert_eq!(rpc.payload["method"], "tasks.claim");
                                 socket
