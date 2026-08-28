@@ -2,15 +2,13 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use base64::Engine as _;
-use rand::RngCore as _;
-use sha2::{Digest, Sha256};
-use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
-
 use cordy_channel::InboundMessage;
 use cordy_channel_engine::resolvers::{
     OutboundReplier as ReplierSeam, Outcome, ResolvedInstallation, Result as EngineResult,
 };
+use rand::RngCore as _;
+use sha2::{Digest, Sha256};
+use tokio_util::sync::CancellationToken;
 
 use crate::api::Client;
 use crate::config::{decode_credentials, DecrypterFn};

@@ -110,7 +110,7 @@ impl Outbound {
 }
 
 fn parse_uuid(value: &str) -> Option<Uuid> {
-    value.parse().ok().filter(|id| !id.is_nil())
+    value.parse::<Uuid>().ok().filter(|id| !id.is_nil())
 }
 
 fn payload_uuid(value: &serde_json::Value, key: &str) -> Option<Uuid> {
