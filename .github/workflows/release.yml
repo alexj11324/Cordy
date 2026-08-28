@@ -190,14 +190,16 @@ jobs:
             exit 1
           fi
 
-          echo "tag_name=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${commit_sha:0:7}" >> "$GITHUB_OUTPUT"
+          is_stable=true
           if [[ "$REQUESTED_TAG" == *-* ]]; then
-            echo "is_stable=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+            is_stable=false
           fi
+          {
+            echo "tag_name=$REQUESTED_TAG"
+            echo "commit_sha=$commit_sha"
+            echo "short_sha=${commit_sha:0:7}"
+            echo "is_stable=$is_stable"
+          } >> "$GITHUB_OUTPUT"
 
   rust-cli-build:
     name: Build Rust CLI (${{ matrix.os }}-${{ matrix.arch }})
