@@ -12,6 +12,11 @@ on:
         required: true
         default: false
         type: boolean
+      include_x64:
+        description: Also package the Intel macOS build
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -24,6 +29,7 @@ jobs:
     uses: ./.github/workflows/macos-release.yml
     with:
       tag: ${{ inputs.tag }}
+      include_x64: ${{ inputs.include_x64 }}
     secrets: inherit
 
   macos-release-preflight:

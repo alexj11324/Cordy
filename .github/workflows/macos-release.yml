@@ -7,12 +7,22 @@ on:
         description: Existing version tag to package and publish (for example, v0.2.1)
         required: true
         type: string
+      include_x64:
+        description: Also package the Intel macOS build
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       tag:
         description: Existing version tag to package and publish (for example, v0.2.1)
         required: true
         type: string
+      include_x64:
+        description: Also package the Intel macOS build
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -133,16 +143,7 @@ jobs:
     needs: prepare
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15-intel
-            arch: x64
-            rust_target: x86_64-apple-darwin
-            metadata: latest-x64-mac.yml
-          - runner: macos-14
-            arch: arm64
-            rust_target: aarch64-apple-darwin
-            metadata: latest-mac.yml
+      matrix: ${{ fromJSON(inputs.include_x64 && '{"include":[{"runner":"macos-14","arch":"arm64","rust_target":"aarch64-apple-darwin","metadata":"latest-mac.yml"},{"runner":"macos-15-intel","arch":"x64","rust_target":"x86_64-apple-darwin","metadata":"latest-x64-mac.yml"}]}' || '{"include":[{"runner":"macos-14","arch":"arm64","rust_target":"aarch64-apple-darwin","metadata":"latest-mac.yml"}]}') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout requested version tag
