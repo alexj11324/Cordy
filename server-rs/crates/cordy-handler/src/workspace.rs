@@ -468,10 +468,8 @@ fn reserved_slug(slug: &str) -> bool {
     struct Group {
         slugs: Vec<String>,
     }
-    let file: File = serde_json::from_str(include_str!(
-        "../../../../server/internal/handler/reserved_slugs.json"
-    ))
-    .expect("reserved_slugs.json must be valid");
+    let file: File = serde_json::from_str(include_str!("../assets/reserved_slugs.json"))
+        .expect("reserved_slugs.json must be valid");
     file.groups
         .iter()
         .any(|group| group.slugs.iter().any(|item| item == slug))

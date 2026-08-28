@@ -1,4 +1,4 @@
-//! Built-in system agents — port of `server/internal/service/builtin_agents.go`.
+//! Built-in system agents.
 
 /// Marks the workspace's built-in Chief of Staff agent. It is the agent's
 /// identity for every server-side decision — never its display name, which
@@ -22,10 +22,10 @@ const MIKA_NAME_PLACEHOLDER: &str = "{{AGENT_NAME}}";
 /// agent's current display name — a placeholder rather than a format verb so
 /// a stray % in the prompt can never turn into a formatting error.
 ///
-/// Single source of truth: the file lives on the Go side and is included by
-/// relative path, so prompt edits deploy to both runtimes together.
+/// Single source of truth: the file is packaged with this crate and embedded
+/// in the service binary at compile time.
 const MIKA_INSTRUCTIONS_MD: &str =
-    include_str!("../../../../server/internal/service/builtin_agents/mika/INSTRUCTIONS.md");
+    include_str!("../assets/builtin_agents/mika/INSTRUCTIONS.md");
 
 /// Introduces the workspace's own additions and states how they rank against
 /// the system half.

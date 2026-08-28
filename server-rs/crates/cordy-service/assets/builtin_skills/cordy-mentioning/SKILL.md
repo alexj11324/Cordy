@@ -18,13 +18,14 @@ document, the source map is where to re-check it.
 
 ## A mention link is built from a real UUID
 
-The backend recognizes a mention only through this Markdown shape:
+Use this Markdown shape for a mention:
 
     [@Label](mention://<type>/<id>)
 
-The parser (`util.MentionRe` in `server/internal/util/mention.go`) accepts
-exactly four `<type>` values plus the `all` sentinel, and the `<id>` group
-accepts only hex characters and dashes, OR the literal string `all`:
+The Rust comment trigger extracts `agent`, `squad`, and `member` references by
+their `mention://<type>/<uuid>` marker and accepts an id only when it parses as
+a UUID. It detects the `all` sentinel separately. Together with render-only
+`issue` references, the supported shapes are:
 
     (member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)
 
@@ -66,18 +67,17 @@ match, or the link resolves to the wrong entity (or to nothing).
 | link a person        | `member` | member.user_id  | renders a link; enqueues NOTHING — no agent run          |
 | reference an issue   | `issue`  | issue.id        | renders a link; enqueues NOTHING — always safe           |
 
-The mention trigger set is computed by `computeMentionedAgentCommentTriggers`
-(`server/internal/handler/comment.go`); the comment path folds that result into
-`computeCommentAgentTriggers` and enqueues it via `enqueueCommentAgentTriggers`.
-It acts on two types only: the `squad` branch resolves the squad and adds its
-leader to the trigger set; everything that is not `agent` after that is skipped
-(`if m.Type != "agent" { continue }`), then the `agent` branch adds that agent.
-A `member` or `issue` mention reaches neither branch, so it enqueues no task.
+The mention trigger set is computed by `compute_comment_agent_triggers` in
+`server-rs/crates/cordy-handler/src/comment_trigger.rs` and enqueued by
+`enqueue_comment_triggers`. It acts on two types only: the `squad` branch
+resolves the squad and adds its leader to the trigger set, while the `agent`
+branch adds that agent. A `member` or `issue` mention reaches neither branch,
+so it enqueues no task.
 
 A `member` mention therefore does NOT make a person "run", and this skill does
-NOT claim it delivers a notification through the Go comment handler — there is
-no such code path in that handler (see the source map). What is verified is the
-contract above: only `agent` and `squad` mentions enqueue work.
+NOT claim that the comment trigger delivers a member notification — there is
+no such path in the trigger implementation (see the source map). What is
+verified is the contract above: only `agent` and `squad` mentions enqueue work.
 
 ## Preview and per-comment suppression
 
@@ -116,8 +116,8 @@ assignee.
 mention in the same comment still fires normally (MUL-5411): a comment reading
 `[@all](mention://all/all) heads up — [@Preflight](mention://agent/<uuid>)
 please take this` enqueues Preflight and nobody else. Explicit mentions win over
-the broadcast; see `computeCommentAgentTriggers` in
-`server/internal/handler/comment.go`, where the explicit-mention branch is
+the broadcast; see `compute_comment_agent_triggers` in
+`server-rs/crates/cordy-handler/src/comment_trigger.rs`, where explicit mentions are
 evaluated BEFORE the `@all` short-circuit.
 
 ## What does NOT happen (so the result doesn't surprise you)
@@ -208,15 +208,11 @@ Correct:
 @all broadcast: `[@all](mention://all/all) heads up` — addresses everyone,
 runs no specific agent, and suppresses the assignee auto-trigger.
 
-These exact shapes are pinned by a Go behavior test
-(`TestMentioningSkillTeachesTheParserContract`) that feeds them through
-`util.ParseMentions`: the name form parses to nothing, the real-UUID form
-parses, `@all` parses to `{all, all}`, and a wrong `type` with a real UUID
-still parses (which is why the type must match the id source).
+The Rust unit tests `mention_ids_dedupe_and_ignore_other_kinds` and
+`all_and_member_mentions_are_detectable` pin UUID parsing, type separation,
+deduplication, and the `@all` sentinel.
 
 ## References
 
-`references/mentioning-source-map.md` — file:line evidence for the regex, the
-enqueue branches, the @all suppression, and the CLI id-source mapping, plus the
-explicit note that no member-notification delivery path exists in the Go
-comment handler.
+`references/mentioning-source-map.md` — current Rust sources for mention
+extraction, enqueue branches, `@all` suppression, and CLI id-source mapping.

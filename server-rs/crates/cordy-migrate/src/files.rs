@@ -1,12 +1,12 @@
-//! Migration file discovery — port of `server/internal/migrations/migrations.go`.
+//! Migration file discovery.
 
 use std::path::{Path, PathBuf};
 
 const MAX_SEARCH_DEPTH: usize = 4;
-const CANDIDATE_LEAVES: [&str; 2] = ["migrations", "server/migrations"];
+const MIGRATIONS_DIR: &str = "migrations";
 
 /// Find the migrations directory by walking up from the current directory
-/// (then the executable's directory), matching the Go runner's resolution.
+/// and then the executable's directory.
 pub fn resolve_dir() -> anyhow::Result<PathBuf> {
     let mut roots = vec![std::env::current_dir()?];
     if let Ok(exe) = std::env::current_exe() {
@@ -19,11 +19,9 @@ pub fn resolve_dir() -> anyhow::Result<PathBuf> {
     for root in roots {
         let mut base = root;
         for _ in 0..=MAX_SEARCH_DEPTH {
-            for leaf in CANDIDATE_LEAVES {
-                let dir = base.join(leaf);
-                if seen.insert(dir.clone()) && dir.is_dir() {
-                    return Ok(dir);
-                }
+            let dir = base.join(MIGRATIONS_DIR);
+            if seen.insert(dir.clone()) && dir.is_dir() {
+                return Ok(dir);
             }
             base = match base.parent() {
                 Some(p) => p.to_path_buf(),
@@ -96,7 +94,7 @@ mod tests {
     #[test]
     fn resolve_dir_finds_repo_migrations_from_workspace() {
         // When run via `cargo test` inside server-rs/, the repo root is 1-2
-        // levels up and contains server/migrations/.
+        // levels up and contains migrations/.
         let dir = resolve_dir().expect("migrations dir should be discoverable");
         assert!(dir.join("001_init.up.sql").exists());
     }
