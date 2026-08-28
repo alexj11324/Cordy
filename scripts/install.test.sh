@@ -13,17 +13,17 @@ _setup_sandbox() {
   local payload_dir="$tmp/payload"
   mkdir -p "$stub_bin" "$install_bin" "$payload_dir"
 
-  cat >"$payload_dir/cordy" <<'STUB'
+  cat >"$payload_dir/patchbay" <<'STUB'
 #!/usr/bin/env bash
-echo "cordy v0.3.2 (commit: test)"
+echo "patchbay v0.3.2 (commit: test)"
 STUB
-  chmod +x "$payload_dir/cordy"
-  tar -czf "$tmp/cordy.tar.gz" -C "$payload_dir" cordy
+  chmod +x "$payload_dir/patchbay"
+  tar -czf "$tmp/patchbay.tar.gz" -C "$payload_dir" patchbay
 
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *"-sI"* ]]; then
-  printf 'HTTP/2 302\r\nlocation: https://github.com/alexj11324/Cordy/releases/tag/v0.3.2\r\n'
+  printf 'HTTP/2 302\r\nlocation: https://github.com/patchbay-ai/patchbay/releases/tag/v0.3.2\r\n'
   exit 0
 fi
 
@@ -50,16 +50,16 @@ if [[ -z "$out" ]]; then
   exit 2
 fi
 if [[ "$url" == */checksums.txt ]]; then
-  asset="$(cat "$CORDY_TEST_ASSET_FILE")"
+  asset="$(cat "$PATCHBAY_TEST_ASSET_FILE")"
   if command -v sha256sum >/dev/null 2>&1; then
-    checksum="$(sha256sum "$CORDY_TEST_ARCHIVE" | awk '{print $1}')"
+    checksum="$(sha256sum "$PATCHBAY_TEST_ARCHIVE" | awk '{print $1}')"
   else
-    checksum="$(shasum -a 256 "$CORDY_TEST_ARCHIVE" | awk '{print $1}')"
+    checksum="$(shasum -a 256 "$PATCHBAY_TEST_ARCHIVE" | awk '{print $1}')"
   fi
   printf '%s  %s\n' "$checksum" "$asset" >"$out"
 else
-  printf '%s' "${url##*/}" >"$CORDY_TEST_ASSET_FILE"
-  cp "$CORDY_TEST_ARCHIVE" "$out"
+  printf '%s' "${url##*/}" >"$PATCHBAY_TEST_ASSET_FILE"
+  cp "$PATCHBAY_TEST_ARCHIVE" "$out"
 fi
 STUB
   chmod +x "$stub_bin/curl"
@@ -70,9 +70,9 @@ _run_installer() {
   local out="$tmp/install.out"
   local err="$tmp/install.err"
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
-    CORDY_BIN_DIR="$tmp/install-bin" \
-    CORDY_TEST_ARCHIVE="$tmp/cordy.tar.gz" \
-    CORDY_TEST_ASSET_FILE="$tmp/release-asset" \
+    PATCHBAY_BIN_DIR="$tmp/install-bin" \
+    PATCHBAY_TEST_ARCHIVE="$tmp/patchbay.tar.gz" \
+    PATCHBAY_TEST_ASSET_FILE="$tmp/release-asset" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -80,8 +80,8 @@ _run_installer() {
     return 1
   fi
 
-  if [[ ! -x "$tmp/install-bin/cordy" ]]; then
-    echo "expected fallback binary at $tmp/install-bin/cordy" >&2
+  if [[ ! -x "$tmp/install-bin/patchbay" ]]; then
+    echo "expected fallback binary at $tmp/install-bin/patchbay" >&2
     cat "$out" >&2 || true
     cat "$err" >&2 || true
     return 1
@@ -183,7 +183,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://cordy.ai/settings?tab=tokens" "$tmp/install.out"; then
+  if ! grep -q "https://patchbay.ai/settings?tab=tokens" "$tmp/install.out"; then
     echo "expected direct API Tokens settings URL in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -193,17 +193,17 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "cordy login --token <YOUR_TOKEN>" "$tmp/install.out"; then
+  if ! grep -q "patchbay login --token <YOUR_TOKEN>" "$tmp/install.out"; then
     echo "expected token login command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "cordy config set server_url" "$tmp/install.out"; then
+  if grep -q "patchbay config set server_url" "$tmp/install.out"; then
     echo "did not expect default cloud server config command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "cordy config set app_url" "$tmp/install.out"; then
+  if grep -q "patchbay config set app_url" "$tmp/install.out"; then
     echo "did not expect default cloud app config command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -246,7 +246,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "cordy login --token <YOUR_TOKEN>" "$tmp/install.out"; then
+  if grep -q "patchbay login --token <YOUR_TOKEN>" "$tmp/install.out"; then
     echo "did not expect token login command in local installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -284,8 +284,8 @@ PORT=8080
 # SERVER_PORT=8080
 FRONTEND_PORT=3000
 JWT_SECRET=change-me-in-production
-POSTGRES_PASSWORD=cordy
-DATABASE_URL=postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+POSTGRES_PASSWORD=patchbay
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
 ENVFILE
   touch "$server_dir/docker-compose.selfhost.yml"
 
@@ -362,7 +362,7 @@ case "${1:-}" in
         for arg in "$@"; do
           if [ "$arg" = "--environment" ]; then
             printed_environment=true
-            for key in PORT BACKEND_PORT API_PORT SERVER_PORT FRONTEND_PORT CORDY_IMAGE_TAG; do
+            for key in PORT BACKEND_PORT API_PORT SERVER_PORT FRONTEND_PORT PATCHBAY_IMAGE_TAG; do
               if value="$(_resolve "$key")"; then
                 printf '%s=%s\n' "$key" "$value"
               fi
@@ -388,7 +388,7 @@ STUB
   # both fetch and detached checkout to succeed before changing image tags.
   cat >"$stub_bin/git" <<'STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"${CORDY_TEST_GIT_LOG:-/dev/null}"
+printf '%s\n' "$*" >>"${PATCHBAY_TEST_GIT_LOG:-/dev/null}"
 exit 0
 STUB
   chmod +x "$stub_bin/git"
@@ -397,8 +397,8 @@ STUB
   printf '#!/usr/bin/env bash\nexit 0\n' >"$stub_bin/brew"
   chmod +x "$stub_bin/brew"
 
-  printf '#!/usr/bin/env bash\necho "cordy v0.3.2 (commit: test)"\n' >"$stub_bin/cordy"
-  chmod +x "$stub_bin/cordy"
+  printf '#!/usr/bin/env bash\necho "patchbay v0.3.2 (commit: test)"\n' >"$stub_bin/patchbay"
+  chmod +x "$stub_bin/patchbay"
 
   # curl records every probed URL so the health-check port can be asserted.
   cat >"$stub_bin/curl" <<'STUB'
@@ -408,11 +408,11 @@ latest_request=false
 for arg in "$@"; do
   case "$arg" in
     */releases/latest) latest_request=true ;;
-    http*) printf '%s\n' "$arg" >>"$CORDY_TEST_CURL_LOG" ;;
+    http*) printf '%s\n' "$arg" >>"$PATCHBAY_TEST_CURL_LOG" ;;
   esac
 done
-if [ "$latest_request" = true ] && [ -n "${CORDY_TEST_LATEST_TAG:-}" ]; then
-  printf 'HTTP/2 302\nlocation: https://github.com/alexj11324/Cordy/releases/tag/%s\n' "$CORDY_TEST_LATEST_TAG"
+if [ "$latest_request" = true ] && [ -n "${PATCHBAY_TEST_LATEST_TAG:-}" ]; then
+  printf 'HTTP/2 302\nlocation: https://github.com/patchbay-ai/patchbay/releases/tag/%s\n' "$PATCHBAY_TEST_LATEST_TAG"
 fi
 exit 0
 STUB
@@ -434,10 +434,10 @@ _run_with_server() {
   if ! env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
-    CORDY_INSTALL_DIR="$tmp/server" \
-    CORDY_SELFHOST_REF="main" \
-    CORDY_TEST_CURL_LOG="$tmp/curl.log" \
-    CORDY_TEST_GIT_LOG="$tmp/git.log" \
+    PATCHBAY_INSTALL_DIR="$tmp/server" \
+    PATCHBAY_SELFHOST_REF="main" \
+    PATCHBAY_TEST_CURL_LOG="$tmp/curl.log" \
+    PATCHBAY_TEST_GIT_LOG="$tmp/git.log" \
     "$@" \
     bash "$ROOT_DIR/scripts/install.sh" --with-server \
     >"$tmp/install.out" 2>"$tmp/install.err"; then
@@ -563,9 +563,9 @@ test_with_server_pins_selected_release_images() {
   _setup_server_sandbox "$tmp"
   cp "$tmp/server/.env.example" "$tmp/server/.env"
 
-  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 CORDY_IMAGE_TAG=ambient || return 1
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF=v0.3.2 PATCHBAY_IMAGE_TAG=ambient || return 1
 
-  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.3.2" ]; then
+  if [ "$(grep '^PATCHBAY_IMAGE_TAG=' "$tmp/server/.env")" != "PATCHBAY_IMAGE_TAG=v0.3.2" ]; then
     echo "installer did not pin Compose images to the selected release ref" >&2
     cat "$tmp/server/.env" >&2 || true
     return 1
@@ -584,11 +584,11 @@ test_with_server_preserves_existing_image_pin_without_explicit_ref() {
 
   _setup_server_sandbox "$tmp"
   cp "$tmp/server/.env.example" "$tmp/server/.env"
-  printf '\nCORDY_IMAGE_TAG=v0.2.9\n' >>"$tmp/server/.env"
+  printf '\nPATCHBAY_IMAGE_TAG=v0.2.9\n' >>"$tmp/server/.env"
 
-  _run_with_server "$tmp" CORDY_SELFHOST_REF= || return 1
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF= || return 1
 
-  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.2.9" ]; then
+  if [ "$(grep '^PATCHBAY_IMAGE_TAG=' "$tmp/server/.env")" != "PATCHBAY_IMAGE_TAG=v0.2.9" ]; then
     echo "installer replaced an existing image pin without an explicit self-host ref" >&2
     cat "$tmp/server/.env" >&2 || true
     return 1
@@ -605,6 +605,29 @@ test_with_server_preserves_existing_image_pin_without_explicit_ref() {
   fi
 }
 
+test_with_server_preserves_legacy_image_pin_before_brand_migration() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_IMAGE_TAG=v0.2.8\n' >>"$tmp/server/.env" # legacy-brand-compat
+
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF= || return 1
+
+  if [ "$(grep '^PATCHBAY_IMAGE_TAG=' "$tmp/server/.env")" != "PATCHBAY_IMAGE_TAG=v0.2.8" ]; then
+    echo "installer did not preserve and migrate the legacy image pin" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -Fq "fetch origin v0.2.8 --depth 1" "$tmp/git.log"; then
+    echo "installer selected assets before reading the legacy image pin" >&2
+    cat "$tmp/git.log" >&2 || true
+    return 1
+  fi
+}
+
 test_with_server_resolves_latest_pin_to_matching_release_assets() {
   local tmp
   tmp="$(mktemp -d)"
@@ -612,11 +635,11 @@ test_with_server_resolves_latest_pin_to_matching_release_assets() {
 
   _setup_server_sandbox "$tmp"
   cp "$tmp/server/.env.example" "$tmp/server/.env"
-  printf '\nCORDY_IMAGE_TAG=latest\n' >>"$tmp/server/.env"
+  printf '\nPATCHBAY_IMAGE_TAG=latest\n' >>"$tmp/server/.env"
 
-  _run_with_server "$tmp" CORDY_SELFHOST_REF= CORDY_TEST_LATEST_TAG=v0.3.2 || return 1
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF= PATCHBAY_TEST_LATEST_TAG=v0.3.2 || return 1
 
-  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.3.2" ]; then
+  if [ "$(grep '^PATCHBAY_IMAGE_TAG=' "$tmp/server/.env")" != "PATCHBAY_IMAGE_TAG=v0.3.2" ]; then
     echo "installer did not replace the moving latest pin with the resolved release" >&2
     cat "$tmp/server/.env" >&2 || true
     return 1
@@ -628,27 +651,82 @@ test_with_server_resolves_latest_pin_to_matching_release_assets() {
   fi
 }
 
-test_with_server_migrates_only_legacy_image_repositories() {
+test_with_server_migrates_legacy_branding_without_overwriting_custom_repositories() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
   _setup_server_sandbox "$tmp"
   cp "$tmp/server/.env.example" "$tmp/server/.env"
-  printf '\nCORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend\nCORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web\n' >>"$tmp/server/.env"
+  printf '\nCORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend\nCORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web\n' >>"$tmp/server/.env" # legacy-brand-compat
 
-  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 || return 1
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF=v0.3.2 || return 1
 
-  grep -Fxq 'CORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend' "$tmp/server/.env" || return 1
-  grep -Fxq 'CORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_BACKEND_IMAGE=ghcr.io/patchbay-ai/patchbay-backend' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_WEB_IMAGE=ghcr.io/patchbay-ai/patchbay-web' "$tmp/server/.env" || return 1
 
   cp "$tmp/server/.env.example" "$tmp/server/.env"
-  printf '\nCORDY_BACKEND_IMAGE=registry.example/custom-backend\nCORDY_WEB_IMAGE=registry.example/custom-web\n' >>"$tmp/server/.env"
+  printf '\nCORDY_BACKEND_IMAGE=registry.example/custom-backend\nCORDY_WEB_IMAGE=registry.example/custom-web\n' >>"$tmp/server/.env" # legacy-brand-compat
 
-  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 || return 1
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF=v0.3.2 || return 1
 
-  grep -Fxq 'CORDY_BACKEND_IMAGE=registry.example/custom-backend' "$tmp/server/.env" || return 1
-  grep -Fxq 'CORDY_WEB_IMAGE=registry.example/custom-web' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_BACKEND_IMAGE=registry.example/custom-backend' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_WEB_IMAGE=registry.example/custom-web' "$tmp/server/.env" || return 1
+}
+
+test_default_home_migrates_legacy_systemd_unit() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "skipping Linux-only legacy systemd migration test on $(uname -s)"
+    return 0
+  fi
+
+  local tmp legacy_home unit_dir legacy_unit legacy_compose legacy_description
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  legacy_home="$tmp/.cordy" # legacy-brand-compat
+  mv "$tmp/server" "$legacy_home"
+  unit_dir="$tmp/.config/systemd/user"
+  legacy_unit="$unit_dir/cordy-selfhost.service" # legacy-brand-compat
+  legacy_compose="$legacy_home/server/.cordy-systemd.compose.yml" # legacy-brand-compat
+  legacy_description="Cordy self-hosted Rust services" # legacy-brand-compat
+  mkdir -p "$unit_dir" "$legacy_home/server"
+  touch "$legacy_compose"
+  {
+    printf '%s\n' '[Unit]'
+    printf 'Description=%s\n' "$legacy_description"
+    printf '%s\n' '[Service]'
+    printf 'WorkingDirectory=%s\n' "$legacy_home/server"
+    printf 'ExecStart=docker compose -f %s up -d\n' "$legacy_compose"
+  } >"$legacy_unit"
+  : >"$tmp/systemctl.log"
+
+  cat >"$tmp/stub-bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$PATCHBAY_TEST_SYSTEMCTL_LOG"
+exit 0
+STUB
+  chmod +x "$tmp/stub-bin/systemctl"
+
+  if ! env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    PATCHBAY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    bash "$ROOT_DIR/scripts/install.sh" \
+    >"$tmp/legacy-systemd.out" 2>"$tmp/legacy-systemd.err"; then
+    cat "$tmp/legacy-systemd.out" >&2 || true
+    cat "$tmp/legacy-systemd.err" >&2 || true
+    return 1
+  fi
+
+  [ ! -e "$legacy_home" ] || return 1
+  [ -f "$tmp/.patchbay/server/.patchbay-systemd.compose.yml" ] || return 1
+  [ -f "$unit_dir/patchbay-selfhost.service" ] || return 1
+  grep -Fq "WorkingDirectory=$tmp/.patchbay/server" "$unit_dir/patchbay-selfhost.service" || return 1
+  grep -Fq 'Description=Patchbay self-hosted Rust services' "$unit_dir/patchbay-selfhost.service" || return 1
+  grep -Fq -- '--user disable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1 # legacy-brand-compat
+  grep -Fq -- '--user enable --now patchbay-selfhost.service' "$tmp/systemctl.log" || return 1
 }
 
 test_systemd_preflight_fails_before_server_mutation() {
@@ -673,14 +751,14 @@ STUB
   if env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
-    CORDY_INSTALL_DIR="$tmp/server" \
-    CORDY_SELFHOST_REF="v0.3.2" \
+    PATCHBAY_INSTALL_DIR="$tmp/server" \
+    PATCHBAY_SELFHOST_REF="v0.3.2" \
     bash "$ROOT_DIR/scripts/install.sh" --with-server --systemd \
     >"$tmp/preflight.out" 2>"$tmp/preflight.err"; then
     echo "systemd installation unexpectedly passed a failed preflight" >&2
     return 1
   fi
-  if grep -q '^CORDY_IMAGE_TAG=' "$tmp/server/.env"; then
+  if grep -q '^PATCHBAY_IMAGE_TAG=' "$tmp/server/.env"; then
     echo "systemd preflight ran after mutating the server environment" >&2
     cat "$tmp/server/.env" >&2 || true
     return 1
@@ -705,15 +783,15 @@ test_with_server_systemd_owns_compose_lifecycle() {
 
   cat >"$tmp/stub-bin/systemctl" <<'STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"$CORDY_TEST_SYSTEMCTL_LOG"
-if [ "${CORDY_TEST_SYSTEMCTL_FAIL_DISABLE:-}" = "1" ] && [[ "$*" == *"disable --now"* ]]; then
+printf '%s\n' "$*" >>"$PATCHBAY_TEST_SYSTEMCTL_LOG"
+if [ "${PATCHBAY_TEST_SYSTEMCTL_FAIL_DISABLE:-}" = "1" ] && [[ "$*" == *"disable --now"* ]]; then
   exit 1
 fi
 exit 0
 STUB
   cat >"$tmp/stub-bin/loginctl" <<'STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"$CORDY_TEST_LOGINCTL_LOG"
+printf '%s\n' "$*" >>"$PATCHBAY_TEST_LOGINCTL_LOG"
 exit 0
 STUB
   chmod +x "$tmp/stub-bin/systemctl" "$tmp/stub-bin/loginctl"
@@ -723,14 +801,14 @@ STUB
     env -i \
       PATH="$tmp/stub-bin:/usr/bin:/bin" \
       HOME="$tmp" \
-      USER="cordy-test" \
-      CORDY_INSTALL_DIR="server" \
-      CORDY_SELFHOST_REF="v0.3.2" \
+      USER="patchbay-test" \
+      PATCHBAY_INSTALL_DIR="server" \
+      PATCHBAY_SELFHOST_REF="v0.3.2" \
       BACKEND_PORT="9000" \
       FRONTEND_PORT="4000" \
-      CORDY_TEST_CURL_LOG="$tmp/curl.log" \
-      CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
-      CORDY_TEST_LOGINCTL_LOG="$tmp/loginctl.log" \
+      PATCHBAY_TEST_CURL_LOG="$tmp/curl.log" \
+      PATCHBAY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+      PATCHBAY_TEST_LOGINCTL_LOG="$tmp/loginctl.log" \
       bash "$ROOT_DIR/scripts/install.sh" --with-server --systemd \
       >"$tmp/systemd-install.out" 2>"$tmp/systemd-install.err"
   ); then
@@ -739,40 +817,40 @@ STUB
     return 1
   fi
 
-  unit="$tmp/.config/systemd/user/cordy-selfhost.service"
+  unit="$tmp/.config/systemd/user/patchbay-selfhost.service"
   [ -f "$unit" ] || { echo "expected generated systemd user unit" >&2; return 1; }
   grep -Fq "WorkingDirectory=\"$tmp/server\"" "$unit" || return 1
-  grep -Fq "ExecStart=\"$tmp/stub-bin/docker\" compose -f \"$tmp/server/.cordy-systemd.compose.yml\" up -d --remove-orphans" "$unit" || return 1
-  grep -Fq '127.0.0.1:9000:8080' "$tmp/server/.cordy-systemd.compose.yml" || return 1
-  grep -Fq '127.0.0.1:4000:3000' "$tmp/server/.cordy-systemd.compose.yml" || return 1
-  grep -Fq -- '--user enable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1
-  grep -Fq 'enable-linger cordy-test' "$tmp/loginctl.log" || return 1
+  grep -Fq "ExecStart=\"$tmp/stub-bin/docker\" compose -f \"$tmp/server/.patchbay-systemd.compose.yml\" up -d --remove-orphans" "$unit" || return 1
+  grep -Fq '127.0.0.1:9000:8080' "$tmp/server/.patchbay-systemd.compose.yml" || return 1
+  grep -Fq '127.0.0.1:4000:3000' "$tmp/server/.patchbay-systemd.compose.yml" || return 1
+  grep -Fq -- '--user enable --now patchbay-selfhost.service' "$tmp/systemctl.log" || return 1
+  grep -Fq 'enable-linger patchbay-test' "$tmp/loginctl.log" || return 1
 
   if ! env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
-    CORDY_INSTALL_DIR="$tmp/server" \
-    CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    PATCHBAY_INSTALL_DIR="$tmp/server" \
+    PATCHBAY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
     bash "$ROOT_DIR/scripts/install.sh" --stop \
     >"$tmp/systemd-stop.out" 2>"$tmp/systemd-stop.err"; then
     cat "$tmp/systemd-stop.out" >&2 || true
     cat "$tmp/systemd-stop.err" >&2 || true
     return 1
   fi
-  grep -Fq -- '--user disable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1
+  grep -Fq -- '--user disable --now patchbay-selfhost.service' "$tmp/systemctl.log" || return 1
 
   if env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
-    CORDY_INSTALL_DIR="$tmp/server" \
-    CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
-    CORDY_TEST_SYSTEMCTL_FAIL_DISABLE=1 \
+    PATCHBAY_INSTALL_DIR="$tmp/server" \
+    PATCHBAY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    PATCHBAY_TEST_SYSTEMCTL_FAIL_DISABLE=1 \
     bash "$ROOT_DIR/scripts/install.sh" --stop \
     >"$tmp/systemd-stop-failure.out" 2>"$tmp/systemd-stop-failure.err"; then
     echo "stop unexpectedly succeeded when systemd could not disable the unit" >&2
     return 1
   fi
-  grep -q "Could not stop and disable cordy-selfhost.service" "$tmp/systemd-stop-failure.err" || return 1
+  grep -q "Could not stop and disable patchbay-selfhost.service" "$tmp/systemd-stop-failure.err" || return 1
 }
 
 test_container_entrypoint_forwards_migration_signal() {
@@ -816,8 +894,10 @@ test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
 test_with_server_pins_selected_release_images
 test_with_server_preserves_existing_image_pin_without_explicit_ref
+test_with_server_preserves_legacy_image_pin_before_brand_migration
 test_with_server_resolves_latest_pin_to_matching_release_assets
-test_with_server_migrates_only_legacy_image_repositories
+test_with_server_migrates_legacy_branding_without_overwriting_custom_repositories
+test_default_home_migrates_legacy_systemd_unit
 test_systemd_preflight_fails_before_server_mutation
 test_with_server_systemd_owns_compose_lifecycle
 test_container_entrypoint_forwards_migration_signal

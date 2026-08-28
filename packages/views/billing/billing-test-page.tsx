@@ -36,21 +36,21 @@ import {
   useCreateCloudBillingCheckoutSession,
   useCreateCloudBillingPortalSession,
   useInvalidateBillingDataAfterCredit,
-} from "@cordy/core/billing";
+} from "@patchbay/core/billing";
 import type {
   BillingBatch,
   BillingPriceTier,
   BillingTopup,
   BillingTransaction,
-} from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@cordy/ui/components/ui/card";
+} from "@patchbay/ui/components/ui/card";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 

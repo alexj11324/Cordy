@@ -4,10 +4,10 @@ import { ChangelogPageClient } from "@/features/landing/components/changelog-pag
 export const metadata: Metadata = {
   title: "Changelog",
   description:
-    "See what's new in Cordy — latest features, improvements, and fixes.",
+    "See what's new in Patchbay — latest features, improvements, and fixes.",
   openGraph: {
-    title: "Changelog | Cordy",
-    description: "Latest updates and releases from Cordy.",
+    title: "Changelog | Patchbay",
+    description: "Latest updates and releases from Patchbay.",
     url: "/changelog",
   },
   alternates: {

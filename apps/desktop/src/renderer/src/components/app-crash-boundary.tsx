@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { ErrorBoundary } from "@cordy/ui/components/common/error-boundary";
-import { Button } from "@cordy/ui/components/ui/button";
-import { captureException } from "@cordy/core/analytics";
-import { DragStrip } from "@cordy/views/platform";
+import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { captureException } from "@patchbay/core/analytics";
+import { DragStrip } from "@patchbay/views/platform";
 
 /**
  * Last-resort boundary around the entire desktop renderer.
@@ -68,7 +68,7 @@ function CrashFallback({ error }: { error: Error }) {
         <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
           <h1 className="text-title font-semibold">Something went wrong</h1>
           <p className="mt-3 text-body text-muted-foreground">
-            Cordy Desktop hit an unexpected error and could not keep
+            Patchbay Desktop hit an unexpected error and could not keep
             rendering. Reloading usually recovers — your work is stored on the
             server.
           </p>

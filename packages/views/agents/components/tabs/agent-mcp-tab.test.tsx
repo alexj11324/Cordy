@@ -4,10 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent } from "@cordy/core/types";
-import { configStore } from "@cordy/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@cordy/core/feature-flags";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import type { Agent } from "@patchbay/core/types";
+import { configStore } from "@patchbay/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 
@@ -47,19 +47,19 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@cordy/core/composio", () => ({
+vi.mock("@patchbay/core/composio", () => ({
   composioConnectionsOptions: () => ({ queryKey: ["composio", "connections"] }),
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
 }));
 
-vi.mock("@cordy/core/agents", () => ({
+vi.mock("@patchbay/core/agents", () => ({
   useUpdateAgentAllowlist: () => ({
     mutate: mutateSpy,
     isPending: isPendingRef.current,
   }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({ settings: () => "/ws/settings" }),
 }));
 

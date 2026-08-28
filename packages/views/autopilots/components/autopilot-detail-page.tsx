@@ -7,8 +7,8 @@ import {
   Webhook, RotateCw, Server,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { autopilotDetailOptions, autopilotRunsOptions, autopilotRunOptions } from "@cordy/core/autopilots/queries";
-import { projectDetailOptions } from "@cordy/core/projects/queries";
+import { autopilotDetailOptions, autopilotRunsOptions, autopilotRunOptions } from "@patchbay/core/autopilots/queries";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import {
   useUpdateAutopilot,
   useDeleteAutopilot,
@@ -16,25 +16,25 @@ import {
   useCreateAutopilotTrigger,
   useDeleteAutopilotTrigger,
   useRotateAutopilotTriggerWebhookToken,
-} from "@cordy/core/autopilots/mutations";
-import { buildAutopilotWebhookUrl } from "@cordy/core/autopilots";
-import { api, clientErrorMessage, dispatchReasonCode } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { useActorName } from "@cordy/core/workspace/hooks";
+} from "@patchbay/core/autopilots/mutations";
+import { buildAutopilotWebhookUrl } from "@patchbay/core/autopilots";
+import { api, clientErrorMessage, dispatchReasonCode } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Switch } from "@cordy/ui/components/ui/switch";
-import { cn } from "@cordy/ui/lib/utils";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Switch } from "@patchbay/ui/components/ui/switch";
+import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +44,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";
 import { WebhookUrlField } from "./webhook-url-field";
 import { getDefaultScheduleConfig, type ScheduleConfig } from "./schedule-editor/model";
@@ -59,8 +59,8 @@ import type {
   AutopilotRun,
   AutopilotSubscriber,
   AutopilotTrigger,
-} from "@cordy/core/types";
-import type { AgentTask } from "@cordy/core/types/agent";
+} from "@patchbay/core/types";
+import type { AgentTask } from "@patchbay/core/types/agent";
 import { ReadonlyContent } from "../../editor";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AutopilotDialog } from "./autopilot-dialog";

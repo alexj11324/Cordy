@@ -15,14 +15,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
-import { copyText } from "@cordy/ui/lib/clipboard";
-import { Button } from "@cordy/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
+import { copyText } from "@patchbay/ui/lib/clipboard";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { toast } from "sonner";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import {

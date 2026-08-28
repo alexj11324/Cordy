@@ -15,22 +15,22 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { NumberFlow } from "@cordy/ui/components/ui/number-flow";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+} from "@patchbay/ui/components/ui/tooltip";
+import { NumberFlow } from "@patchbay/ui/components/ui/number-flow";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, AgentTask, Issue } from "@cordy/core/types";
+import type { Agent, AgentTask, Issue } from "@patchbay/core/types";
 import {
   type AgentActivity,
   agentTaskSnapshotOptions,
   agentTasksOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
-} from "@cordy/core/agents";
-import { api } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { issueDetailOptions } from "@cordy/core/issues/queries";
+} from "@patchbay/core/agents";
+import { api } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { issueDetailOptions } from "@patchbay/core/issues/queries";
 import { AppLink } from "../../../navigation";
 import { TranscriptButton } from "../../../common/task-transcript";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";

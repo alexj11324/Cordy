@@ -26,28 +26,28 @@ import type {
   Skill,
   SkillFile,
   UpdateSkillRequest,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import { useTimeAgo } from "../../i18n";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillDetailOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
+} from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
-} from "@cordy/core/runtimes";
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
-import { Button, buttonVariants } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/runtimes";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -55,21 +55,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
+} from "@patchbay/ui/components/ui/dialog";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/tooltip";
+import { cn } from "@patchbay/ui/lib/utils";
 import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useCanEditSkill } from "../hooks/use-can-edit-skill";
-import { useSkillPermissions } from "@cordy/core/permissions";
-import { CapabilityBanner } from "@cordy/ui/components/common/capability-banner";
+import { useSkillPermissions } from "@patchbay/core/permissions";
+import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
 import {
   isRefreshableOrigin,
   originSourceUrl,

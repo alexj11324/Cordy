@@ -1,9 +1,9 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@cordy/core/api";
-import { configStore } from "@cordy/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@cordy/core/feature-flags";
+import { ApiError } from "@patchbay/core/api";
+import { configStore } from "@patchbay/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
 import { renderWithI18n } from "../../test/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -81,7 +81,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => mocks.useQuery(options),
 }));
 
-vi.mock("@cordy/core/billing", () => ({
+vi.mock("@patchbay/core/billing", () => ({
   workspaceSubscriptionEntitlementsOptions: (wsId: string) => ({
     queryKey: ["workspace-subscriptions", wsId, "entitlements"],
   }),
@@ -105,13 +105,13 @@ vi.mock("@cordy/core/billing", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/autopilots", () => ({
+vi.mock("@patchbay/core/autopilots", () => ({
   autopilotQuotaUsageOptions: (wsId: string) => ({
     queryKey: ["autopilots", wsId, "usage"],
   }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({
     id: mocks.workspaceId,
     slug: "acme",
@@ -119,7 +119,7 @@ vi.mock("@cordy/core/paths", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/permissions", () => ({
+vi.mock("@patchbay/core/permissions", () => ({
   useCurrentMember: () => ({ role: mocks.role, isLoading: false }),
 }));
 

@@ -6,16 +6,16 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   AGENT_MAX_CONCURRENT_TASKS_MAX,
   AGENT_MAX_CONCURRENT_TASKS_MIN,
-} from "@cordy/core/agents";
-import { runtimeModelsOptions } from "@cordy/core/runtimes";
-import { isImeComposing } from "@cordy/core/utils";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
+} from "@patchbay/core/agents";
+import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import { isImeComposing } from "@patchbay/core/utils";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import {
   SettingsCard,

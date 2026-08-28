@@ -33,8 +33,8 @@ export const PWA_START_URL = "/inbox";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Cordy",
-    short_name: "Cordy",
+    name: "Patchbay",
+    short_name: "Patchbay",
     description:
       "Assign tasks to coding agents, track progress, and keep your team's work in one place.",
     start_url: PWA_START_URL,

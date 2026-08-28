@@ -8,15 +8,15 @@ import {
   stripBuilderDraft,
   type AgentDraft,
   type BuilderRestore,
-} from "@cordy/core/agents";
-import { isRuntimeUsableForUser } from "@cordy/core/runtimes";
+} from "@patchbay/core/agents";
+import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
 import type {
   ChatMessage,
   MemberWithUser,
   RuntimeDevice,
-} from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
 import { ChatInput } from "../../chat/components/chat-input";
 import {
   ChatMessageList,

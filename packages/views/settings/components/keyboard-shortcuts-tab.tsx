@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Keyboard, RotateCcw, Search, X } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,8 +13,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   findShortcutConflict,
   createShortcutChord,
@@ -29,8 +29,8 @@ import {
   type ShortcutActionId,
   type ShortcutCategory,
   type ShortcutChord,
-} from "@cordy/core/shortcuts";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/core/shortcuts";
+import { isImeComposing } from "@patchbay/core/utils";
 import { useT } from "../../i18n";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import {

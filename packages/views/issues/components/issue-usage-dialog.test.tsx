@@ -2,7 +2,7 @@
 
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask, TaskUsage } from "@cordy/core/types";
+import type { AgentTask, TaskUsage } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 vi.mock("../../common/actor-avatar", () => ({

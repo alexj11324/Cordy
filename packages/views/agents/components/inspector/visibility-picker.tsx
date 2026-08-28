@@ -6,8 +6,8 @@ import {
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
   VISIBILITY_TOOLTIP,
-} from "@cordy/core/agents";
-import type { AgentVisibility } from "@cordy/core/types";
+} from "@patchbay/core/agents";
+import type { AgentVisibility } from "@patchbay/core/types";
 import {
   PickerItem,
   PropertyPicker,

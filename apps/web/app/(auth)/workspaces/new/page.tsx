@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@cordy/core/auth";
-import { paths } from "@cordy/core/paths";
-import { workspaceListOptions } from "@cordy/core/workspace/queries";
-import { CliInstallInstructions, OnboardingFlow } from "@cordy/views/onboarding";
+import { useAuthStore } from "@patchbay/core/auth";
+import { paths } from "@patchbay/core/paths";
+import { workspaceListOptions } from "@patchbay/core/workspace/queries";
+import { CliInstallInstructions, OnboardingFlow } from "@patchbay/views/onboarding";
 
 /**
  * Creating a workspace runs the onboarding flow, entered at the workspace

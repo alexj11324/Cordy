@@ -53,7 +53,7 @@ fi
 bash scripts/ensure-postgres.sh "$ENV_FILE"
 
 echo "==> Running migrations..."
-./scripts/run-rust.sh run --locked -p cordy-migrate -- up
+./scripts/run-rust.sh run --locked -p patchbay-migrate -- up
 
 # ---------- Start services ----------
 echo ""
@@ -63,10 +63,10 @@ echo "  Frontend: http://localhost:${FRONTEND_PORT:-3000}"
 echo ""
 
 trap 'kill 0' EXIT
-CORDY_BUILD_VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)" \
-CORDY_BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
-CORDY_BUILD_DATE="$(git show -s --format=%cI HEAD 2>/dev/null || echo unknown)" \
-CORDY_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
-./scripts/run-rust.sh run --locked -p cordy-server &
+PATCHBAY_BUILD_VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)" \
+PATCHBAY_BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+PATCHBAY_BUILD_DATE="$(git show -s --format=%cI HEAD 2>/dev/null || echo unknown)" \
+PATCHBAY_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+./scripts/run-rust.sh run --locked -p patchbay-server &
 pnpm dev:web &
 wait

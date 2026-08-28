@@ -6,13 +6,13 @@ import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@cordy/ui/components/ui/popover";
+} from "@patchbay/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/ui/components/ui/tooltip";
+import { isImeComposing } from "@patchbay/core/utils";
 import { useT } from "../../../i18n";
 
 const HIGHLIGHT_CLASS = "bg-accent";

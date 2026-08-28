@@ -3,7 +3,7 @@
  *
  * Stays at the HTTP layer (auth → upload-file → send-chat-message → DB
  * check) so the test doesn't depend on a real agent runtime being online.
- * The UI wiring is covered by `chat-input.test.tsx` in @cordy/views; this
+ * The UI wiring is covered by `chat-input.test.tsx` in @patchbay/views; this
  * spec is the end-to-end contract proof: the backend really does persist
  * chat_session_id at upload and back-fill chat_message_id at send.
  */
@@ -16,7 +16,7 @@ import type { TestApiClient } from "./fixtures";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || `http://localhost:${process.env.PORT || "8080"}`;
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
+  process.env.DATABASE_URL ?? "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
 
 interface UploadRow {
   id: string;

@@ -41,11 +41,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.cordy.ai/docs/agents",
+      canonical: "https://www.patchbay.ai/docs/agents",
       languages: {
-        en: "https://www.cordy.ai/docs/agents",
-        zh: "https://www.cordy.ai/docs/zh/agents",
-        "x-default": "https://www.cordy.ai/docs/agents",
+        en: "https://www.patchbay.ai/docs/agents",
+        zh: "https://www.patchbay.ai/docs/zh/agents",
+        "x-default": "https://www.patchbay.ai/docs/agents",
       },
     });
   });
@@ -61,12 +61,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.cordy.ai/docs/agents",
+      canonical: "https://www.patchbay.ai/docs/agents",
       languages: {
-        en: "https://www.cordy.ai/docs/agents",
-        zh: "https://www.cordy.ai/docs/zh/agents",
-        ko: "https://www.cordy.ai/docs/ko/agents",
-        "x-default": "https://www.cordy.ai/docs/agents",
+        en: "https://www.patchbay.ai/docs/agents",
+        zh: "https://www.patchbay.ai/docs/zh/agents",
+        ko: "https://www.patchbay.ai/docs/ko/agents",
+        "x-default": "https://www.patchbay.ai/docs/agents",
       },
     });
   });
@@ -76,12 +76,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.cordy.ai/docs/agents",
+      canonical: "https://www.patchbay.ai/docs/agents",
       languages: {
-        en: "https://www.cordy.ai/docs/agents",
-        zh: "https://www.cordy.ai/docs/zh/agents",
-        ja: "https://www.cordy.ai/docs/ja/agents",
-        "x-default": "https://www.cordy.ai/docs/agents",
+        en: "https://www.patchbay.ai/docs/agents",
+        zh: "https://www.patchbay.ai/docs/zh/agents",
+        ja: "https://www.patchbay.ai/docs/ja/agents",
+        "x-default": "https://www.patchbay.ai/docs/agents",
       },
     });
   });
@@ -90,11 +90,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates([])).toEqual({
-      canonical: "https://www.cordy.ai/docs",
+      canonical: "https://www.patchbay.ai/docs",
       languages: {
-        en: "https://www.cordy.ai/docs",
-        zh: "https://www.cordy.ai/docs/zh",
-        "x-default": "https://www.cordy.ai/docs",
+        en: "https://www.patchbay.ai/docs",
+        zh: "https://www.patchbay.ai/docs/zh",
+        "x-default": "https://www.patchbay.ai/docs",
       },
     });
   });

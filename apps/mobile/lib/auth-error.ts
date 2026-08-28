@@ -17,7 +17,7 @@ export function mapAuthError(err: unknown, fallback: string): string {
     return "Too many attempts. Wait a moment and try again.";
   }
   if (/network|fetch|timeout|unreachable/.test(msg)) {
-    return "Can't reach Cordy. Check your connection and retry.";
+    return "Can't reach Patchbay. Check your connection and retry.";
   }
   return fallback;
 }

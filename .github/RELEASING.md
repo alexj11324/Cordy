@@ -7,7 +7,7 @@ version tag such as `v0.18.4`. A tag push publishes the Rust CLI archives and
 desktop installers. It does not build self-hosted container images or the Helm
 chart, so desktop downloads are not blocked by server-image publication.
 
-The verification job applies migrations with `cordy-migrate`, runs every Rust
+The verification job applies migrations with `patchbay-migrate`, runs every Rust
 workspace target, builds the server, CLI, migration runner, and all three
 backfill binaries, and runs RustSec before any publishing job starts. The Rust
 CLI build matrix then packages release assets for every supported
@@ -74,6 +74,6 @@ vulnerability.
    tag from inheriting the bypass.
 
 The release and container assets are Rust binaries and the release workflow no
-longer installs or executes Go. Audit a downloaded CLI artifact with `cordy
+longer installs or executes Go. Audit a downloaded CLI artifact with `patchbay
 version --output json`; it reports the release version, commit, build time,
 target OS, and target architecture.

@@ -146,7 +146,7 @@ DM이나 Bot을 @멘션한 채널 메시지에 파일을 그대로 첨부하세�
 Patchbay Cloud에는 추가 설정이 필요 없습니다. 자체 호스팅 환경에서는 Slack token 암호화에 사용할 키를 먼저 설정해야 합니다.
 
 ```dotenv
-CORDY_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
+PATCHBAY_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
 ```
 
 다음과 같이 생성할 수 있습니다.
@@ -157,7 +157,7 @@ openssl rand -base64 32
 
 API 서비스를 다시 시작한 뒤 Slack app을 연결하세요. 이 키는 장기간 보관해야 합니다. 키를 바꾸거나 잃어버리면 기존 token을 복호화할 수 없으므로 다시 연결해야 합니다.
 
-계정 연결 링크는 `CORDY_APP_URL`을 사용하고, 설정되지 않으면 `FRONTEND_ORIGIN`을 사용합니다. 멤버가 접근할 수 있는 Patchbay 주소를 지정해야 합니다.
+계정 연결 링크는 `PATCHBAY_APP_URL`을 사용하고, 설정되지 않으면 `FRONTEND_ORIGIN`을 사용합니다. 멤버가 접근할 수 있는 Patchbay 주소를 지정해야 합니다.
 
 ## 자주 묻는 문제
 

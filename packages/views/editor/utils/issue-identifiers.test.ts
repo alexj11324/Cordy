@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   preprocessIssueIdentifiers,
   isIssueIdentifier,
-} from "@cordy/ui/markdown";
+} from "@patchbay/ui/markdown";
 
 /**
  * Pure detector for the Linear-style issue-identifier autolink. Lives in
- * @cordy/ui/markdown (no test runner there), exercised here where views'
+ * @patchbay/ui/markdown (no test runner there), exercised here where views'
  * vitest can reach it.
  */
 describe("preprocessIssueIdentifiers", () => {

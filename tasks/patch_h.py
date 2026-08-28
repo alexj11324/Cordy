@@ -2,7 +2,7 @@
 """⑧-a: extract prepare phase from enqueue_issue_task_with_comment_plan and
 add the tx-scoped deferred-channel variant for IssueService::create."""
 
-P = "/Users/alexjiang/Desktop/vibe/Cordy/server-rs/crates/cordy-service/src/task_service.rs"
+P = "/Users/alexjiang/Desktop/vibe/Patchbay/server-rs/crates/patchbay-service/src/task_service.rs"
 s = open(P).read()
 
 START = "    /// Shared implementation behind EnqueueTaskForIssue and the manual rerun"
@@ -185,7 +185,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
         }
         // Order matters: broadcast first, notify daemon second — see Go
         // comment on observe-order correctness.
-        self.broadcast_task_event(cordy_protocol::EVENT_TASK_QUEUED, &task, Default::default())
+        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
             .await;
         self.notify_task_enqueued(&task).await;
         Ok(task)

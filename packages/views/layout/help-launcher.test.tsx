@@ -1,7 +1,7 @@
 import { cloneElement, type ReactElement, type ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configStore } from "@cordy/core/config";
+import { configStore } from "@patchbay/core/config";
 import enLayout from "../locales/en/layout.json";
 import { isDesktopShell } from "../platform/local-directory";
 import { HelpLauncher } from "./help-launcher";
@@ -40,7 +40,7 @@ vi.mock("../i18n", () => ({
 // DropdownMenuGroup crashed the whole app (no error boundary above the sidebar)
 // the moment the Help menu opened. Mirroring the throw here keeps the guard.
 // The group context lives inside the factory so it survives vi.mock hoisting.
-vi.mock("@cordy/ui/components/ui/dropdown-menu", async () => {
+vi.mock("@patchbay/ui/components/ui/dropdown-menu", async () => {
   const { createContext, useContext } = await import("react");
   const GroupContext = createContext(false);
   return {
@@ -109,7 +109,7 @@ describe("HelpLauncher", () => {
   it("links to the download page on web", () => {
     render(<HelpLauncher />);
     const link = screen.getByRole("link", { name: /Desktop app/ });
-    expect(link).toHaveAttribute("href", "https://cordy.ai/download");
+    expect(link).toHaveAttribute("href", "https://patchbay.ai/download");
   });
 
   // AppSidebar is shared: apps/desktop renders the same component tree. Without

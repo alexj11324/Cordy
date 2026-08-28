@@ -29,25 +29,25 @@ import {
   type ProjectListFilters,
   type ProjectSortField,
   type ProjectViewMode,
-} from "@cordy/core/projects";
+} from "@patchbay/core/projects";
 import {
   pinListOptions,
   useCreatePin,
   useDeletePin,
-} from "@cordy/core/pins";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { useAuthStore } from "@cordy/core/auth";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { useModalStore } from "@cordy/core/modals";
+} from "@patchbay/core/pins";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useModalStore } from "@patchbay/core/modals";
 import { AppLink, useIntentNavigate, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
-import { Input } from "@cordy/ui/components/ui/input";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +55,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -70,7 +70,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   ListGrid,
   ListGridCell,
@@ -79,25 +79,25 @@ import {
   ListGridRow,
   LIST_GRID_BOTTOM_CLEARANCE,
   type ListGridSortDirection,
-} from "@cordy/ui/components/ui/list-grid";
+} from "@patchbay/ui/components/ui/list-grid";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/popover";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import type {
   MemberWithUser,
   Project,
   ProjectPriority,
   ProjectStatus,
   UpdateProjectRequest,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   CollectionPageHeader,
   CollectionPageHeaderAction,
@@ -110,7 +110,7 @@ import { useFormatRelativeDate } from "./labels";
 import { ProjectStatusBadge, ProjectPriorityBadge } from "./project-badge";
 import { ProjectLeadPicker } from "./project-lead-picker";
 import { PAGE_GUTTER, PAGE_TOOLBAR } from "../../layout/page-header";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
 // Sort order maps for the enum columns (header sort needs a total order).
 const PRIORITY_ORDER: Record<ProjectPriority, number> = {

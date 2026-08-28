@@ -16,7 +16,7 @@ import {
 import type { LatestRelease } from "@/features/landing/utils/github-release";
 
 const ALL_RELEASES_URL =
-  "https://github.com/alexj11324/Cordy/releases";
+  "https://github.com/patchbay-ai/patchbay/releases";
 
 export function DownloadClient({ release }: { release: LatestRelease }) {
   const [detected, setDetected] = useState<DetectResult | null>(null);
@@ -38,7 +38,7 @@ export function DownloadClient({ release }: { release: LatestRelease }) {
   return (
     <>
       {/* Positioning context for the dark-variant LandingHeader —
-          mirrors cordy-landing.tsx. The header is `absolute top-0
+          mirrors patchbay-landing.tsx. The header is `absolute top-0
           inset-x-0`, so it anchors to this `relative` wrapper and
           scrolls off together with the dark hero below. Without the
           wrapper, `absolute` would escape to the initial containing

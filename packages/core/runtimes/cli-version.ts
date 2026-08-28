@@ -1,7 +1,7 @@
 /**
  * Frontend mirror of the server's MinQuickCreateCLIVersion gate. The
  * agent-create flow (Quick Create modal) requires the daemon's bundled
- * cordy CLI to be at least this version — older daemons either
+ * patchbay CLI to be at least this version — older daemons either
  * double-create issues on partial CLI failures, drop quick-create attachment
  * bindings, or mishandle pasted screenshot URLs (see PR #1851 / PB-1496).
  *
@@ -91,7 +91,7 @@ export function readRuntimeCliVersion(metadata: Record<string, unknown> | undefi
 /**
  * Frontend mirror of the server's `MinHandoffCLIVersion` soft gate
  * in the Rust agent-version module. The assignment handoff note is only rendered
- * into the run's opening prompt by daemons at or above this cordy CLI version
+ * into the run's opening prompt by daemons at or above this patchbay CLI version
  * (PB-3375); older daemons silently drop it. Unlike the quick-create gate this
  * never blocks the assignment — the UI just grays out the note box and warns.
  *

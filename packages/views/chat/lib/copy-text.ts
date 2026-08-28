@@ -1,5 +1,5 @@
-import type { ChatMessage } from "@cordy/core/types";
-import type { ChatTimelineItem } from "@cordy/core/chat";
+import type { ChatMessage } from "@patchbay/core/types";
+import type { ChatTimelineItem } from "@patchbay/core/chat";
 
 /**
  * Markdown source the Copy action puts on the clipboard. By design this is

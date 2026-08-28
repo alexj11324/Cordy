@@ -19,11 +19,11 @@
  * just slot HtmlPreviewBody as the body.
  */
 
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   PreviewTooLargeError,
   PreviewUnsupportedError,
-} from "@cordy/core/api";
+} from "@patchbay/core/api";
 import { useT } from "../i18n";
 import { CodeBlockIframe } from "./code-block-iframe";
 import { withFragmentNavShim } from "./utils/iframe-fragment-nav";

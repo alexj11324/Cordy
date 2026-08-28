@@ -19,12 +19,12 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headlineLine1: "\u4f60\u7684\u4e0b\u4e00\u6279\u5458\u5de5",
     headlineLine2: "\u4e0d\u662f\u4eba\u7c7b\u3002",
     subheading:
-      "Cordy \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u5206\u914d\u4efb\u52a1\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
+      "Patchbay \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u5206\u914d\u4efb\u52a1\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
     cta: "免费开始",
     downloadDesktop: "下载桌面端",
     talkToSales: "联系商务",
     worksWith: "支持",
-    imageAlt: "Cordy \u770b\u677f\u89c6\u56fe\u2014\u2014\u4eba\u7c7b\u548c 智能体 \u534f\u540c\u7ba1\u7406\u4efb\u52a1",
+    imageAlt: "Patchbay \u770b\u677f\u89c6\u56fe\u2014\u2014\u4eba\u7c7b\u548c 智能体 \u534f\u540c\u7ba1\u7406\u4efb\u52a1",
   },
 
   features: {
@@ -116,7 +116,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         {
           title: "\u9996\u6b21\u542f\u52a8\u81ea\u52a8\u6ce8\u518c",
           description:
-            "Cordy \u626b\u63cf\u672c\u673a\u7684 23 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
+            "Patchbay \u626b\u63cf\u672c\u673a\u7684 23 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
         },
       ],
     },
@@ -136,7 +136,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         title: "\u5b89\u88c5 CLI \u5e76\u8fde\u63a5\u4f60\u7684\u673a\u5668",
         description:
-          "运行 cordy setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 23 款支持的 AI 编程工具（Antigravity、Claude Code、CodeBuddy、Codex、Copilot、Cursor、DeepSeek Harness、DevEco Code、Dim、Grok、Hermes、Kimi、Kiro CLI、Oh-My-Pi、OpenClaw、OpenCode、Pi、Qoder、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI）。本机已安装的工具会被自动注册成运行时。",
+          "运行 patchbay setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 23 款支持的 AI 编程工具（Antigravity、Claude Code、CodeBuddy、Codex、Copilot、Cursor、DeepSeek Harness、DevEco Code、Dim、Grok、Hermes、Kimi、Kiro CLI、Oh-My-Pi、OpenClaw、OpenCode、Pi、Qoder、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI）。本机已安装的工具会被自动注册成运行时。",
       },
       {
         title: "\u521b\u5efa\u4f60\u7684\u7b2c\u4e00\u4e2a 智能体",
@@ -159,13 +159,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headlineLine1: "\u5f00\u6e90",
     headlineLine2: "\u4e3a\u6240\u6709\u4eba\u3002",
     description:
-      "Cordy \u5b8c\u5168\u5f00\u6e90\u3002\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6309\u4f60\u7684\u65b9\u5f0f\u81ea\u6258\u7ba1\uff0c\u5851\u9020\u4eba\u7c7b + 智能体 \u534f\u4f5c\u7684\u672a\u6765\u3002",
+      "Patchbay \u5b8c\u5168\u5f00\u6e90\u3002\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6309\u4f60\u7684\u65b9\u5f0f\u81ea\u6258\u7ba1\uff0c\u5851\u9020\u4eba\u7c7b + 智能体 \u534f\u4f5c\u7684\u672a\u6765\u3002",
     cta: "\u5728 GitHub \u4e0a Star",
     highlights: [
       {
         title: "\u968f\u5904\u81ea\u6258\u7ba1",
         description:
-          "\u5728\u4f60\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u8fd0\u884c Cordy\u3002Docker Compose\u3001\u5355\u4e2a\u4e8c\u8fdb\u5236\u6216 Kubernetes\u2014\u2014\u4f60\u7684\u6570\u636e\u6c38\u8fdc\u4e0d\u4f1a\u79bb\u5f00\u4f60\u7684\u7f51\u7edc\u3002",
+          "\u5728\u4f60\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u8fd0\u884c Patchbay\u3002Docker Compose\u3001\u5355\u4e2a\u4e8c\u8fdb\u5236\u6216 Kubernetes\u2014\u2014\u4f60\u7684\u6570\u636e\u6c38\u8fdc\u4e0d\u4f1a\u79bb\u5f00\u4f60\u7684\u7f51\u7edc\u3002",
       },
       {
         title: "\u65e0\u4f9b\u5e94\u5546\u9501\u5b9a",
@@ -190,30 +190,30 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headline: "\u95ee\u4e0e\u7b54\u3002",
     items: [
       {
-        question: "Cordy \u652f\u6301\u54ea\u4e9b\u7f16\u7801 智能体\uff1f",
+        question: "Patchbay \u652f\u6301\u54ea\u4e9b\u7f16\u7801 智能体\uff1f",
         answer:
-          "Cordy \u5f00\u7bb1\u5373\u7528\u652f\u6301 23 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
+          "Patchbay \u5f00\u7bb1\u5373\u7528\u652f\u6301 23 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
       },
       {
         question: "\u9700\u8981\u81ea\u6258\u7ba1\u5417\uff0c\u8fd8\u662f\u6709\u4e91\u7248\u672c\uff1f",
         answer:
-          "\u4e24\u8005\u90fd\u6709\u3002\u4f60\u53ef\u4ee5\u7528 Docker Compose \u6216 Kubernetes \u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u81ea\u6258\u7ba1 Cordy\uff0c\u4e5f\u53ef\u4ee5\u4f7f\u7528\u6211\u4eec\u7684\u6258\u7ba1\u4e91\u7248\u672c\u3002\u4f60\u7684\u6570\u636e\uff0c\u4f60\u9009\u62e9\u3002",
+          "\u4e24\u8005\u90fd\u6709\u3002\u4f60\u53ef\u4ee5\u7528 Docker Compose \u6216 Kubernetes \u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u81ea\u6258\u7ba1 Patchbay\uff0c\u4e5f\u53ef\u4ee5\u4f7f\u7528\u6211\u4eec\u7684\u6258\u7ba1\u4e91\u7248\u672c\u3002\u4f60\u7684\u6570\u636e\uff0c\u4f60\u9009\u62e9\u3002",
       },
       {
         question:
           "\u8fd9\u548c\u76f4\u63a5\u7528\u7f16\u7801 智能体 \u6709\u4ec0\u4e48\u533a\u522b\uff1f",
         answer:
-          "\u7f16\u7801 智能体 \u64c5\u957f\u6267\u884c\u3002Cordy \u6dfb\u52a0\u7684\u662f\u7ba1\u7406\u5c42\uff1a\u4efb\u52a1\u961f\u5217\u3001\u56e2\u961f\u534f\u4f5c\u3001\u6280\u80fd\u590d\u7528\u3001\u8fd0\u884c\u65f6\u76d1\u63a7\uff0c\u4ee5\u53ca\u6bcf\u4e2a 智能体 \u5728\u505a\u4ec0\u4e48\u7684\u7edf\u4e00\u89c6\u56fe\u3002\u628a\u5b83\u60f3\u8c61\u6210\u4f60\u7684 智能体 \u7684\u9879\u76ee\u7ecf\u7406\u3002",
+          "\u7f16\u7801 智能体 \u64c5\u957f\u6267\u884c\u3002Patchbay \u6dfb\u52a0\u7684\u662f\u7ba1\u7406\u5c42\uff1a\u4efb\u52a1\u961f\u5217\u3001\u56e2\u961f\u534f\u4f5c\u3001\u6280\u80fd\u590d\u7528\u3001\u8fd0\u884c\u65f6\u76d1\u63a7\uff0c\u4ee5\u53ca\u6bcf\u4e2a 智能体 \u5728\u505a\u4ec0\u4e48\u7684\u7edf\u4e00\u89c6\u56fe\u3002\u628a\u5b83\u60f3\u8c61\u6210\u4f60\u7684 智能体 \u7684\u9879\u76ee\u7ecf\u7406\u3002",
       },
       {
         question: "智能体 \u80fd\u81ea\u4e3b\u5904\u7406\u957f\u65f6\u95f4\u4efb\u52a1\u5417\uff1f",
         answer:
-          "\u53ef\u4ee5\u3002Cordy \u7ba1\u7406\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f\u2014\u2014\u5165\u961f\u3001\u9886\u53d6\u3001\u6267\u884c\u3001\u5b8c\u6210\u6216\u5931\u8d25\u3002智能体 \u4e3b\u52a8\u62a5\u544a\u963b\u585e\u5e76\u5b9e\u65f6\u63a8\u9001\u8fdb\u5ea6\u3002\u4f60\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\uff0c\u4e5f\u53ef\u4ee5\u8ba9\u5b83\u4eec\u8fd0\u884c\u6574\u665a\u3002",
+          "\u53ef\u4ee5\u3002Patchbay \u7ba1\u7406\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f\u2014\u2014\u5165\u961f\u3001\u9886\u53d6\u3001\u6267\u884c\u3001\u5b8c\u6210\u6216\u5931\u8d25\u3002智能体 \u4e3b\u52a8\u62a5\u544a\u963b\u585e\u5e76\u5b9e\u65f6\u63a8\u9001\u8fdb\u5ea6\u3002\u4f60\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\uff0c\u4e5f\u53ef\u4ee5\u8ba9\u5b83\u4eec\u8fd0\u884c\u6574\u665a\u3002",
       },
       {
         question: "\u6211\u7684\u4ee3\u7801\u5b89\u5168\u5417\uff1f智能体 \u5728\u54ea\u91cc\u6267\u884c\uff1f",
         answer:
-          "智能体 \u5728\u4f60\u7684\u673a\u5668\uff08\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\uff09\u6216\u4f60\u81ea\u5df1\u7684\u4e91\u57fa\u7840\u8bbe\u65bd\u4e0a\u6267\u884c\u3002\u4ee3\u7801\u6c38\u8fdc\u4e0d\u4f1a\u7ecf\u8fc7 Cordy \u670d\u52a1\u5668\u3002\u5e73\u53f0\u53ea\u534f\u8c03\u4efb\u52a1\u72b6\u6001\u548c\u5e7f\u64ad\u4e8b\u4ef6\u3002",
+          "智能体 \u5728\u4f60\u7684\u673a\u5668\uff08\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\uff09\u6216\u4f60\u81ea\u5df1\u7684\u4e91\u57fa\u7840\u8bbe\u65bd\u4e0a\u6267\u884c\u3002\u4ee3\u7801\u6c38\u8fdc\u4e0d\u4f1a\u7ecf\u8fc7 Patchbay \u670d\u52a1\u5668\u3002\u5e73\u53f0\u53ea\u534f\u8c03\u4efb\u52a1\u72b6\u6001\u548c\u5e7f\u64ad\u4e8b\u4ef6\u3002",
       },
       {
         question: "\u6211\u53ef\u4ee5\u8fd0\u884c\u591a\u5c11\u4e2a 智能体\uff1f",
@@ -243,7 +243,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "\u6587\u6863", href: "/docs/zh" },
           { label: "API", href: githubUrl },
-          { label: "X (Twitter)", href: "https://x.com/CordyAI" },
+          { label: "X (Twitter)", href: "https://x.com/PatchbayAI" },
           { label: "Discord", href: discordUrl },
         ],
       },
@@ -257,7 +257,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
       },
     },
-    copyright: "\u00a9 {year} Cordy. \u4fdd\u7559\u6240\u6709\u6743\u5229\u3002",
+    copyright: "\u00a9 {year} Patchbay. \u4fdd\u7559\u6240\u6709\u6743\u5229\u3002",
   },
 
   about: {
@@ -275,7 +275,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
 
   changelog: {
     title: "\u66f4\u65b0\u65e5\u5fd7",
-    subtitle: "Cordy \u7684\u6700\u65b0\u66f4\u65b0\u548c\u6539\u8fdb\u3002",
+    subtitle: "Patchbay \u7684\u6700\u65b0\u66f4\u65b0\u548c\u6539\u8fdb\u3002",
     toc: "\u5386\u53f2\u7248\u672c",
     categories: {
       features: "新功能",
@@ -374,7 +374,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "你可以生成一个分享链接，让别人直接加入工作区。",
           "运行记录改成按步骤看，配双轨时间线和结果概览。",
           "Slack 消息里发的文件现在会作为附件出现在对话里。",
-          "手机上可以把 Cordy 添加到主屏幕，像应用一样打开。",
+          "手机上可以把 Patchbay 添加到主屏幕，像应用一样打开。",
           "浏览器标签页会显示你正打开的工作区页面名。",
           "导入的技能现在会显示它来自哪里。",
           "提到你正在看的这个 Issue 时，会显示成「本 Issue」。",
@@ -420,7 +420,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "跑不起来的智能体 CLI 会直接告诉你怎么修好。",
           "别人的私有运行时不会再被 API 或 CLI 拿去用。",
-          "任务残留不会再让整个目录里的 cordy 命令失效。",
+          "任务残留不会再让整个目录里的 patchbay 命令失效。",
           "用 Volta 或 Vite Plus 装的智能体现在能被识别了。",
           "对话里最后一条回复和输入框之间的间距回来了。",
           "深色模式下当前标签页不再出现暗色方块，悬停圆角也完整了。",
@@ -442,7 +442,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "自托管时可以把任务临时文件放到更大的磁盘上。",
         ],
         improvements: [
-          "`cordy daemon logs` 会直接告诉你日志文件在哪。",
+          "`patchbay daemon logs` 会直接告诉你日志文件在哪。",
           "Hermes 任务现在会说清读的是哪个 HERMES_HOME。",
         ],
         fixes: [
@@ -481,7 +481,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "中文、日文、韩文里紧贴标点的加粗又能正常显示了。",
           "安卓上发送或停止消息后，键盘不会再收起来。",
           "自托管的 Hermes 对话不会再每隔一条就报错。",
-          "残留的端口设置不会再让 `cordy login` 失败。",
+          "残留的端口设置不会再让 `patchbay login` 失败。",
           "Cursor 任务现在能用上你配好的 MCP 服务。",
           "在 Slack 里建 Issue，标题里的链接不再被改写。",
           "PR 不会再关掉另一个工作区里编号相同的 Issue。",
@@ -532,7 +532,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Oh-My-Pi 现在也能跑你的智能体了。",
           "企业微信里的语音留言，智能体现在也听得懂。",
           "Kimi 和 Pi 的智能体现在可以选思考强度了。",
-          "Cordy 里的任意链接，Cmd/Ctrl 或中键点击就能在新标签页打开。",
+          "Patchbay 里的任意链接，Cmd/Ctrl 或中键点击就能在新标签页打开。",
           "企业微信连不上时，页面会说清是被拒绝还是根本连不通。",
         ],
         improvements: [
@@ -601,7 +601,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "执行记录里能看到每次运行的花费，以及整个任务的合计。",
           "静音评论通知后，@ 到你的消息依然会送达。",
           "手机上聊天以全屏打开，输入框会浮在键盘上方。",
-          "手动替换 cordy 或 Agent CLI 后自动生效，不用重启。",
+          "手动替换 patchbay 或 Agent CLI 后自动生效，不用重启。",
         ],
         improvements: [
           "智能体每次运行读取的说明更短，留给工作的空间更多。",
@@ -825,7 +825,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "粘贴超长文本时，现在会自动变成文本附件。",
           "每个上传只显示一次，完成后才会写入草稿。",
           "Webhook URL 现在默认隐藏，可按需显示。",
-          "工作区很多时，Cordy 启动不再反复检查智能体工具。",
+          "工作区很多时，Patchbay 启动不再反复检查智能体工具。",
           "用量排名现在先聚焦前十名，失败排序也更清楚。",
           "发送后，光标现在会停在各编辑器预期的位置。",
         ],
@@ -1000,7 +1000,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "重新打开设置面板后，你的设置现在能可靠保存。",
           "恢复的 Codex task 现在会准确报告用量。",
           "评论不再把不该变成链接的文字变成链接。",
-          "私聊的回复现在会留在 Cordy 里。",
+          "私聊的回复现在会留在 Patchbay 里。",
           "AI 辅助创建现在始终可用。",
           "任务页面首次打开时不再卡顿。",
           "Linux 上的 Codex 智能体现在能正确保存 Git 信息。",
@@ -1067,7 +1067,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "创建任务时选择的标签，现在每次都会和任务一起保存。",
           "把带格式的文本粘贴进评论，不会再留下多余的 ++ 符号。",
           "鼠标只是从头像上划过时，不会再弹出悬浮卡片。",
-          "Linux 桌面应用现在会以 cordy-desktop 的名字安装。",
+          "Linux 桌面应用现在会以 patchbay-desktop 的名字安装。",
         ],
       },
       {
@@ -1304,7 +1304,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "task 日志（Transcript）会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
-          "自托管（Helm）：新增 `postgres.external.enabled` 开关，可将 Cordy 指向外部托管的 PostgreSQL（RDS、CNPG、Cloud SQL、Neon 等），跳过内置数据库。",
+          "自托管（Helm）：新增 `postgres.external.enabled` 开关，可将 Patchbay 指向外部托管的 PostgreSQL（RDS、CNPG、Cloud SQL、Neon 等），跳过内置数据库。",
         ],
         fixes: [
           "评论草稿里有空的 `1. ` 列表项时，重新加载后光标不再卡在下方块。",
@@ -1358,8 +1358,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Slack /issue 斜杠命令、字节跳动 TRAE CLI 智能体运行时、接入 Claude Sonnet 5",
         changes: [],
         features: [
-          "Slack 里可以直接用原生 /issue 斜杠命令创建 Cordy 任务，机器人只会向你私发一条包含任务链接的确认消息。",
-          "同一 Slack 工作区里已经和某个 Cordy 机器人绑定过的用户，遇到新加入的第二个机器人时无需再走一次绑定流程。",
+          "Slack 里可以直接用原生 /issue 斜杠命令创建 Patchbay 任务，机器人只会向你私发一条包含任务链接的确认消息。",
+          "同一 Slack 工作区里已经和某个 Patchbay 机器人绑定过的用户，遇到新加入的第二个机器人时无需再走一次绑定流程。",
           "Slack 频道场景的上下文阅读拆成两条命令：一条查看频道概览，一条精读单个线程。",
           "字节跳动 TRAE CLI（traecli）通过标准 ACP 协议接入为内置智能体运行时之一。",
           "Anthropic 模型清单接入 Claude Sonnet 5，并已挂上介绍期价格。",
@@ -1373,9 +1373,9 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Slack 聊天智能体不再逐句解说自己在读历史，改为静默阅读、直接给出正式回复。",
           "自托管的本地磁盘部署中，附件预览（PDF / HTML）恢复正常显示。（社区反馈）",
           "修复了 Cursor 与 Kiro 运行时结束时 task 结果不入库的问题，最终回复不再丢失。",
-          "自托管的 docker-compose.selfhost.yml 现在会把 CORDY_SLACK_SECRET_KEY 透传到后端容器。（社区反馈）",
+          "自托管的 docker-compose.selfhost.yml 现在会把 PATCHBAY_SLACK_SECRET_KEY 透传到后端容器。（社区反馈）",
           "任务面板顶部「N 个任务正在处理中」的胶囊改为按任务数去重。",
-          "自托管匿名来源统计的上报地址恢复到正式的 Cordy API。",
+          "自托管匿名来源统计的上报地址恢复到正式的 Patchbay API。",
           "评论的定位高亮改为纯背景色，根评论和回复的行为保持一致。",
         ],
       },
@@ -1386,10 +1386,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Autopilot 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 Autopilot 的写权限授予指定成员。",
-          "Slack 频道可以把过往对话回灌到 Cordy，智能体一进入频道即拥有完整上下文。",
+          "Slack 频道可以把过往对话回灌到 Patchbay，智能体一进入频道即拥有完整上下文。",
           "Slack 智能体处理消息期间会在用户消息上加 👀 反应表情，处理结束后稳定清除，不再出现卡死。",
           "技能包支持从本地 .skill / .zip 归档导入。",
-          "cordy issue 命令不再接受短 UUID 前缀，请使用任务 Key（PB-123）或完整 UUID。",
+          "patchbay issue 命令不再接受短 UUID 前缀，请使用任务 Key（PB-123）或完整 UUID。",
           "Agents 页面适配移动端。",
         ],
         improvements: [
@@ -1629,7 +1629,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "智能体、自动任务、项目、运行环境、技能和小队的列表体验更快也更一致，行内容、筛选、选择和操作都更清楚",
           "命令行现在可以管理工作区仓库，本地智能体更容易拿到项目仓库上下文",
-          "Cursor 和 OpenClaw 更容易配置：Cursor 连接设置可以由 Cordy 托管，OpenClaw 也可以连接已有网关",
+          "Cursor 和 OpenClaw 更容易配置：Cursor 连接设置可以由 Patchbay 托管，OpenClaw 也可以连接已有网关",
           "编辑评论时，可以在保存前预览并控制哪些智能体或小队会开始运行",
         ],
         improvements: [
@@ -1651,7 +1651,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "CodeBuddy Runtime",
         changes: [],
         features: [
-          "CodeBuddy 现在可以驱动本地 Cordy 智能体，并会自动显示可用的模型和投入强度选项",
+          "CodeBuddy 现在可以驱动本地 Patchbay 智能体，并会自动显示可用的模型和投入强度选项",
           "快速创建任务时上传的文件现在会从草稿一直带到最终创建的任务里",
         ],
         improvements: [
@@ -1693,15 +1693,15 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "评论输入框现在会在发送前显示哪些智能体或小队会开始工作，也可以避免误触发运行",
           "智能体运行记录现在会显示时间点，回看进度和交接信息更清楚",
           "自动任务详情页现在会显示创建人",
-          "Claude Fable 5 现在已加入 Cordy 支持的模型和价格列表",
+          "Claude Fable 5 现在已加入 Patchbay 支持的模型和价格列表",
           "任务讨论可以把某一条回复设为解决结论，长讨论收起后也能直接看到最终答案",
-          "在 Lark 和飞书里和 Cordy 对话时，会显示等待中的输入状态，回复发出后自动清除",
+          "在 Lark 和飞书里和 Patchbay 对话时，会显示等待中的输入状态，回复发出后自动清除",
           "每次智能体 task 都会带上真实发起人信息，交接、审计和权限判断更准确",
           "OpenClaw 可以从本地配置中读取自定义程序位置和数据目录",
         ],
         improvements: [
           "评论触发提示更安静、更清楚，遇到较长的智能体名称时也不容易拥挤",
-          "桌面端在守护进程由 Cordy 之外的环境管理时，会禁用启动和停止控制，例如 WSL2 场景",
+          "桌面端在守护进程由 Patchbay 之外的环境管理时，会禁用启动和停止控制，例如 WSL2 场景",
           "任务顶部的智能体状态更容易区分：运行中才显示动效，等待中会明确显示排队状态",
           "命令行会直接说明常见错误、登录问题和项目配置问题的处理方式",
         ],
@@ -1725,7 +1725,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "网页版消息通知和 /note 指令",
         changes: [],
         features: [
-          "网页端现在可以显示浏览器原生通知横幅，即使 Cordy 在后台，也更容易及时看到工作区动态",
+          "网页端现在可以显示浏览器原生通知横幅，即使 Patchbay 在后台，也更容易及时看到工作区动态",
           "以 /note 开头的评论现在可以记录上下文，但不会唤醒已分配的智能体，团队可以留下协作备注而不触发运行",
           "Antigravity 现在可以作为每个智能体单独选择的模型",
           "命令行现在会用更容易理解的语言解释常见请求失败，并提示下一步该怎么处理",
@@ -1783,10 +1783,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Lark Bot 集成",
         changes: [],
         features: [
-          "支持 Lark 第三方集成，扫码就能把 Cordy 智能体创建成一个 Lark Bot",
+          "支持 Lark 第三方集成，扫码就能把 Patchbay 智能体创建成一个 Lark Bot",
           "聊天现在支持可搜索的智能体选择器和明确的上下文选择器，更容易指定谁来回复、需要看哪些内容",
           "描述和评论现在支持勾选式待办清单，任务里的轻量计划更好整理",
-          "智能体现在内置 Cordy 技能，可以更稳定地遵循工作区工作流",
+          "智能体现在内置 Patchbay 技能，可以更稳定地遵循工作区工作流",
         ],
         improvements: [
           "聊天上下文会以清晰的提及形式呈现，交接和后续回看更容易理解",
@@ -1830,7 +1830,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "日语支持和 /skill command",
         changes: [],
         features: [
-          "Cordy 现在支持日语界面、官网和文档",
+          "Patchbay 现在支持日语界面、官网和文档",
           "聊天现在支持 /skill command，用来选择智能体技能",
           "工作区现在可以显示自定义 Logo",
           "可以给智能体追加技能，不会覆盖已有技能",
@@ -1886,7 +1886,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "智能体在任务评论区继续工作时，会接着之前的会话继续，不再新开会话，task 上下文可以保留下来",
-          "Cordy 现在支持韩语界面、官网和文档，包含完整韩语文档与本地化日期显示",
+          "Patchbay 现在支持韩语界面、官网和文档，包含完整韩语文档与本地化日期显示",
           "任务页面会在标题附近固定显示正在工作的智能体，多智能体同时工作时也能更清楚地查看",
           "智能体读取任务讨论时可以先看到线程摘要、回复数量和最近活跃时间，更快找到需要跟进的上下文",
           "OpenClaw 运行环境现在可以使用智能体里保存的 MCP 设置，Claude Opus 4.8 也可用于模型选择和用量估算",
@@ -1984,8 +1984,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "iOS 客户端、Helm 自托管与更顺畅的协作体验",
         changes: [],
         features: [
-          "Cordy iOS 客户端发布官方首个可用版本，覆盖登录、工作区、收件箱、任务、项目、聊天、评论、表情回应、在线状态和实时更新；目前暂未上架 App Store，需要用户自行打包安装",
-          "自托管团队现在可以通过 Helm 将 Cordy 部署到 Kubernetes，Docker 安装也有更清晰的端口和 URL 配置",
+          "Patchbay iOS 客户端发布官方首个可用版本，覆盖登录、工作区、收件箱、任务、项目、聊天、评论、表情回应、在线状态和实时更新；目前暂未上架 App Store，需要用户自行打包安装",
+          "自托管团队现在可以通过 Helm 将 Patchbay 部署到 Kubernetes，Docker 安装也有更清晰的端口和 URL 配置",
           "项目资源选择器新增仓库搜索，工作区仓库设置也可以保存描述，帮助智能体理解每个代码库",
           "运行时用量现在可以更准确识别 DeepSeek、Kimi K2.6、Zhipu GLM 和长上下文 Claude Opus 的费用",
           "官网新增使用场景页面能力，并让文档、更新日志和开始使用入口更清晰",
@@ -2128,7 +2128,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "任务操作失败时会显示更明确的错误原因，团队不用翻日志也能理解发生了什么",
-          "关联 GitHub 的 Pull Request 会在 Cordy 内展示 CI 和合并冲突状态",
+          "关联 GitHub 的 Pull Request 会在 Patchbay 内展示 CI 和合并冲突状态",
           "自托管部署获得更安全的默认配置，并补充反向代理、登录限制和本地服务的说明",
           "搜索结果排序更准确，也会展示更有帮助的摘要片段",
         ],
@@ -2220,7 +2220,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "GitHub 集成、聊天附件与任务定位优化",
         changes: [],
         features: [
-          "接入 GitHub 后，关联的 Pull Request 会显示在 Cordy 任务中，状态会同步到 Cordy，关闭 PR 后会自动关闭对应任务",
+          "接入 GitHub 后，关联的 Pull Request 会显示在 Patchbay 任务中，状态会同步到 Patchbay，关闭 PR 后会自动关闭对应任务",
           "聊天消息支持添加文件附件和图片预览",
           "Agent 和 runtime 可以设置公开或私有，方便控制团队可见范围",
           "停止单个 agent task 前会先弹出确认，避免误操作",
@@ -2231,7 +2231,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "很长的任务时间线滚动更顺畅",
           "反馈入口更明确地引导用户到 GitHub 参与讨论和反馈",
           "自托管 Caddy 配置文档补充实时连接要求",
-          "Linux 桌面端安装包恢复显示 Cordy 应用图标",
+          "Linux 桌面端安装包恢复显示 Patchbay 应用图标",
         ],
         fixes: [
           "下载附件时保留原始文件名",
@@ -2317,7 +2317,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Daemon 磁盘占用 CLI、Timeline 打磨与 task 用量聚合提速",
         changes: [],
         features: [
-          "新增 `cordy daemon disk-usage` CLI，按 task / workspace 维度查看磁盘占用",
+          "新增 `patchbay daemon disk-usage` CLI，按 task / workspace 维度查看磁盘占用",
           "Skill Picker 弹窗新增搜索框，Agent 设置里挑技能更快",
           "Daemon GC 覆盖扩展到 chat、autopilot、quick-create task",
           "任务详情页面包屑直接显示 PB-xxxx identifier",
@@ -2333,7 +2333,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Linux 上 daemon self-restart 改走 `brew prefix` 软链，Homebrew Cellar 删除后不再让 runtime 失联",
           "CLI 短 ID 现在可以正确路由，复制粘贴的短前缀不再 404",
           "Windows 上非 ASCII 字符评论 / 描述输入新增 `--content-file` / `--description-file`",
-          "Windows / Linux 桌面端用 Cordy asterisk 替换 Electron 默认占位图标",
+          "Windows / Linux 桌面端用 Patchbay 应用图标替换 Electron 默认占位图标",
           "Timeline 中孤立的 reply 现在会被正确捞回展示",
           "Timeline 评论分页预算不再把 activity 算进去，避免活动多时挤掉真实评论",
         ],
@@ -2401,8 +2401,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Repo Checkout `--ref`、Hermes 历史回放修复与多副本 Model Picker",
         changes: [],
         features: [
-          "`cordy repo checkout --ref` 支持按分支、tag 或指定 commit 拉取仓库",
-          "`cordy agent avatar` 命令支持直接通过 CLI 上传 Agent 头像",
+          "`patchbay repo checkout --ref` 支持按分支、tag 或指定 commit 拉取仓库",
+          "`patchbay agent avatar` 命令支持直接通过 CLI 上传 Agent 头像",
           "Inbox 中已完成 task 新增 archive 按钮，移除冗余的 mark-as-done 悬浮按钮",
         ],
         improvements: [
@@ -2414,7 +2414,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "新创建的 Agent 立刻在各处可见 —— 创建时即 hydrate Agent 缓存",
           "Hermes 在新一轮对话开始时不再重放上一轮答案 —— 历史 chunk 受单轮门禁限制",
           "Codex runtime 模型选择器开放 GPT-5.5 系列",
-          "`cordy login --token <PAT>` 正确接收 PAT 作为参数值",
+          "`patchbay login --token <PAT>` 正确接收 PAT 作为参数值",
           "CLI update 完成状态上报更可靠",
           "Session resume 按 runtime 正确守卫，避免跨 runtime 复用 session",
           "看板拖拽任务时显示设置不再丢失",
@@ -2437,7 +2437,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Daemon `/tasks/claim` 轮询走 Redis 空认领 fast-path，空闲态 DB 压力下降，长期 open 的任务自动回收磁盘",
-          "Cordy Agent 的 Git 提交自动追加 `Co-authored-by` trailer，归属更清晰",
+          "Patchbay Agent 的 Git 提交自动追加 `Co-authored-by` trailer，归属更清晰",
           "Desktop 拦截 Cmd+R / Ctrl+R / F5 防止意外刷新，开发模式与 Updates 设置中均展示真实版本号",
         ],
         fixes: [
@@ -2460,7 +2460,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Server 用 Redis 缓存 PAT / Daemon Token 校验，大型团队不再让 DB 抗下每次请求",
-          "后端支持通过 `CORDY_CLAUDE_ARGS` / `CORDY_CODEX_ARGS` 配置 Agent CLI 默认参数",
+          "后端支持通过 `PATCHBAY_CLAUDE_ARGS` / `PATCHBAY_CODEX_ARGS` 配置 Agent CLI 默认参数",
           "Manual 与 Agent 创建任务共享同一个 Dialog 外壳，picker Agent 会被默认设为 assignee",
         ],
         fixes: [
@@ -2521,9 +2521,9 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Agent 自定义环境变量、更清晰的失败信息与一系列稳定性修复",
         changes: [],
         features: [
-          "`cordy agent create/update --custom-env KEY=VALUE` 支持为 Agent 注入自定义环境变量",
+          "`patchbay agent create/update --custom-env KEY=VALUE` 支持为 Agent 注入自定义环境变量",
           "Agent 失败信息会带上 Runtime CLI 的 stderr 末尾片段，排查 Runtime 报错更直接",
-          "CLI 更新下载超时支持配置，弱网下 `cordy update` 不再被默认超时切断",
+          "CLI 更新下载超时支持配置，弱网下 `patchbay update` 不再被默认超时切断",
         ],
         improvements: [
           "Daemon 把取消的 task 上报为 `cancelled` 而非 `timeout`，并在按任务取消 task 时同步对齐 Agent 状态",
@@ -2600,7 +2600,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "桌面应用跨平台打包——同一条发布流水线产出 macOS、Windows 和 Linux 安装包",
-          "新增 `cordy update` 自更新命令——无需重装即可升级 CLI 和本地 Daemon",
+          "新增 `patchbay update` 自更新命令——无需重装即可升级 CLI 和本地 Daemon",
           "任务看板所有状态列都支持分页（不再只是 Done 列），大积压下依然流畅",
         ],
         fixes: [
@@ -2617,7 +2617,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Agent 模型选择、Kimi Runtime 与自部署登录",
         changes: [],
         features: [
-          "Agent 新增 `model` 字段及按 Provider 聚合的模型下拉框——可在界面或通过 `cordy agent create/update --model` 为每个 Agent 选择 LLM 模型，并从各 Runtime CLI 实时发现可用模型",
+          "Agent 新增 `model` 字段及按 Provider 聚合的模型下拉框——可在界面或通过 `patchbay agent create/update --model` 为每个 Agent 选择 LLM 模型，并从各 Runtime CLI 实时发现可用模型",
           "新增 Kimi CLI Agent Runtime（Moonshot AI 的 `kimi-cli`，基于 ACP），支持模型选择、自动授权工具权限以及流式工具调用渲染",
           "评论和回复编辑器新增放大按钮，便于撰写长文本",
         ],
@@ -2765,7 +2765,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "一键安装、自部署与稳定性",
         changes: [],
         features: [
-          "一键安装与配置——`curl | bash` 安装 CLI，`--with-server` 完整自部署，`cordy setup` 配置连接环境",
+          "一键安装与配置——`curl | bash` 安装 CLI，`--with-server` 完整自部署，`patchbay setup` 配置连接环境",
           "自部署存储——无 S3 时本地文件存储回退，支持自定义 S3 端点（MinIO）",
           "项目列表页支持行内编辑属性（优先级、状态、负责人）",
         ],
@@ -2911,7 +2911,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "打开的任务不再分页限制全量加载，已关闭的任务滚动分页",
           "JWT 和 CloudFront Cookie 有效期从 72 小时延长至 30 天",
           "重新登录后记住上次选择的工作区",
-          "守护进程确保 Agent task 环境中 cordy CLI 在 PATH 上",
+          "守护进程确保 Agent task 环境中 patchbay CLI 在 PATH 上",
           "新增 PR 模板和面向 Agent 的 CLI 安装指南",
         ],
       },
@@ -3040,29 +3040,29 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   download: {
     hero: {
       macArm64: {
-        title: "Cordy for macOS",
+        title: "Patchbay for macOS",
         sub: "Apple Silicon · 内置 daemon，无需配置",
         primary: "下载 (.dmg)",
         altZip: "或下载 .zip",
       },
       macIntel: {
-        title: "Cordy for macOS",
+        title: "Patchbay for macOS",
         sub: "Intel · 内置守护进程，无需配置",
         primary: "下载 (.dmg)",
         altZip: "或下载 .zip",
       },
       winX64: {
-        title: "Cordy for Windows",
+        title: "Patchbay for Windows",
         sub: "内置 daemon，无需配置",
         primary: "下载 (.exe)",
       },
       winArm64: {
-        title: "Cordy for Windows",
+        title: "Patchbay for Windows",
         sub: "ARM · 内置 daemon，无需配置",
         primary: "下载 (.exe)",
       },
       linux: {
-        title: "Cordy for Linux",
+        title: "Patchbay for Linux",
         sub: "内置 daemon，无需配置",
         primary: "下载 AppImage",
         altFormats: "或 .deb / .rpm",
@@ -3113,7 +3113,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   contactSales: {
     pageTitle: "联系商务",
     pageDescription:
-      "了解如何在你的团队中落地 Cordy 的人类 + 智能体协作工作流。",
+      "了解如何在你的团队中落地 Patchbay 的人类 + 智能体协作工作流。",
     eyebrow: "联系商务",
     title: "先了解你的需求",
     subtitle: "在正式沟通之前，让我们为你定制最合适的方案。",
@@ -3130,10 +3130,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       companyName: "公司名称",
       companySize: "公司规模",
       countryRegion: "国家 / 地区",
-      useCase: "你打算如何使用 Cordy 或与我们合作？",
+      useCase: "你打算如何使用 Patchbay 或与我们合作？",
       goals: "你的目标或挑战",
       goalsHint:
-        "告诉我们你希望借助 Cordy 达成什么目标，或正在面临的挑战。信息越详细，我们越能给到合适的支持。",
+        "告诉我们你希望借助 Patchbay 达成什么目标，或正在面临的挑战。信息越详细，我们越能给到合适的支持。",
       selectPlaceholder: "请选择",
       submit: "提交",
       submitting: "正在提交…",
@@ -3147,7 +3147,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       { value: "1000+", label: "1,000 人以上" },
     ],
     useCases: [
-      { value: "evaluate", label: "正在为团队评估 Cordy" },
+      { value: "evaluate", label: "正在为团队评估 Patchbay" },
       { value: "adopt_team", label: "希望在团队 / 公司内推广使用" },
       { value: "self_host", label: "需要在自有基础设施上自托管" },
       { value: "integrate", label: "希望与现有工具集成" },
@@ -3199,22 +3199,22 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     ],
     consent: {
       intro:
-        "Cordy, Inc. 尊重你的隐私。我们仅会将你的个人信息用于管理账户，以及提供你所请求的产品或服务。我们偶尔也希望与你分享产品更新、最佳实践或行业洞察，如果你愿意接收，请在下方勾选。",
+        "Patchbay, Inc. 尊重你的隐私。我们仅会将你的个人信息用于管理账户，以及提供你所请求的产品或服务。我们偶尔也希望与你分享产品更新、最佳实践或行业洞察，如果你愿意接收，请在下方勾选。",
       outreach:
-        "我希望接收来自 Cordy, Inc. 的一对一沟通，包括服务更新、支持咨询以及业务相关的跟进。",
+        "我希望接收来自 Patchbay, Inc. 的一对一沟通，包括服务更新、支持咨询以及业务相关的跟进。",
       updates:
-        "我希望接收 Cordy 的产品更新、洞察以及活动邀请。",
+        "我希望接收 Patchbay 的产品更新、洞察以及活动邀请。",
       unsubscribe:
         "你可以随时取消订阅我们的邮件。关于我们如何处理你的数据以及隐私权利，请参阅",
       submitConsent:
-        "点击「提交」即表示你同意 Cordy, Inc. 存储并处理你提交的信息，以便交付你请求的内容。",
+        "点击「提交」即表示你同意 Patchbay, Inc. 存储并处理你提交的信息，以便交付你请求的内容。",
       privacyLinkLabel: "隐私政策。",
       privacyLinkHref: "/about",
     },
     success: {
       title: "已收到，谢谢！",
       message:
-        "Cordy 团队会在三个工作日内回复你。在此期间，欢迎查看我们的文档，或在 GitHub 上为我们点个 Star。",
+        "Patchbay 团队会在三个工作日内回复你。在此期间，欢迎查看我们的文档，或在 GitHub 上为我们点个 Star。",
       cta: "返回首页",
     },
     errors: {

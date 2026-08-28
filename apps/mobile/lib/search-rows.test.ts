@@ -3,7 +3,7 @@ import type {
   Issue,
   SearchIssueResult,
   SearchProjectResult,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { buildSearchRows } from "./search-rows";
 
 function issue(

@@ -24,15 +24,15 @@ import {
   Image as ImageIcon,
   X,
 } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
-import { copyText } from "@cordy/ui/lib/clipboard";
-import { Dialog, DialogContent, DialogTitle } from "@cordy/ui/components/ui/dialog";
+import { cn } from "@patchbay/ui/lib/utils";
+import { copyText } from "@patchbay/ui/lib/clipboard";
+import { Dialog, DialogContent, DialogTitle } from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { useT } from "../i18n";
 import { CodeBlockStatic } from "./code-block-static";
 import { useZoomCanvas } from "./hooks/use-zoom-canvas";

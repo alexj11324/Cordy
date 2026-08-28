@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { isAgentRuntimeBound } from "@cordy/core/agents";
-import { agentListOptions, squadListOptions } from "@cordy/core/workspace/queries";
-import type { AutopilotAssigneeType } from "@cordy/core/types";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { isAgentRuntimeBound } from "@patchbay/core/agents";
+import { agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import type { AutopilotAssigneeType } from "@patchbay/core/types";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
   PropertyPicker,

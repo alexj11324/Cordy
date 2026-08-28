@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { RuntimeModel } from "@cordy/core/types";
+import type { RuntimeModel } from "@patchbay/core/types";
 import {
   findModelCapabilityEntry,
   modelIdForCapabilityLookup,

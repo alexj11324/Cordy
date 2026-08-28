@@ -33,25 +33,25 @@ import type { Editor } from "@tiptap/core";
 import { posToDOMRect } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
-import { useCreateIssue } from "@cordy/core/issues/mutations";
+import { useCreateIssue } from "@patchbay/core/issues/mutations";
 import { useT } from "../i18n";
-import { createShortcutChord, type ShortcutChord } from "@cordy/core/shortcuts";
+import { createShortcutChord, type ShortcutChord } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { Toggle } from "@cordy/ui/components/ui/toggle";
-import { Separator } from "@cordy/ui/components/ui/separator";
+import { Toggle } from "@patchbay/ui/components/ui/toggle";
+import { Separator } from "@patchbay/ui/components/ui/separator";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@cordy/ui/components/ui/popover";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/ui/components/ui/popover";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Bold,
   Italic,

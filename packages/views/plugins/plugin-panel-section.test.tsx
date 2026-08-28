@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enIssues from "../locales/en/issues.json";
 
@@ -13,9 +13,9 @@ const data = vi.hoisted(() => ({
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: data.installed, isLoading: false, isError: false }),
 }));
-vi.mock("@cordy/core/plugins", () => ({ pluginInstallationsOptions: () => ({ queryKey: ["plugins"] }) }));
-vi.mock("@cordy/core/paths", () => ({ useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }) }));
-vi.mock("@cordy/core/config", () => ({ useFeatureEnabled: () => data.flagEnabled }));
+vi.mock("@patchbay/core/plugins", () => ({ pluginInstallationsOptions: () => ({ queryKey: ["plugins"] }) }));
+vi.mock("@patchbay/core/paths", () => ({ useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }) }));
+vi.mock("@patchbay/core/config", () => ({ useFeatureEnabled: () => data.flagEnabled }));
 vi.mock("../platform/local-directory", () => ({ isDesktopShell: () => false }));
 
 import { PluginPanelSection } from "./plugin-panel-section";
@@ -32,7 +32,7 @@ function installation(overrides: Record<string, unknown> = {}) {
     plugin_key: "com.example.hello",
     name: "Hello Panel",
     version: "1.0.0",
-    source_url: "https://example.com/plugin/cordy.plugin.json",
+    source_url: "https://example.com/plugin/patchbay.plugin.json",
     enabled: true,
     granted_scopes: ["issues:read"],
     config_schema: [],

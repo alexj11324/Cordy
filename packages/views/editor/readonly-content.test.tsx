@@ -27,13 +27,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
   }),
@@ -328,13 +328,13 @@ describe("ReadonlyContent CJK emphasis", () => {
 
   it("repairs a trailing space before a CJK strong closing delimiter", () => {
     const { container } = render(
-      <ReadonlyContent content="**为什么做，收益是什么。 **Cordy 的能力边界" />,
+      <ReadonlyContent content="**为什么做，收益是什么。 **Patchbay 的能力边界" />,
     );
 
     expect(container.querySelector("strong")?.textContent).toBe(
       "为什么做，收益是什么。",
     );
-    expect(container.textContent).toBe("为什么做，收益是什么。 Cordy 的能力边界");
+    expect(container.textContent).toBe("为什么做，收益是什么。 Patchbay 的能力边界");
   });
 
   it.each([
@@ -757,7 +757,7 @@ describe("ReadonlyContent bare URL autolinking (PB-4242)", () => {
   // shared linkify now drops a trailing markdown-delimiter run from the URL, so
   // the closing `**` stays as emphasis outside a clean [url](url).
   it("renders a bold-wrapped bare URL as bold plus a clean link", () => {
-    const url = "https://github.com/alexj11324/Cordy/pull/5081";
+    const url = "https://github.com/patchbay-ai/patchbay/pull/5081";
     const { container } = render(<ReadonlyContent content={`**PR：${url}**`} />);
 
     const strong = container.querySelector("strong");
@@ -772,7 +772,7 @@ describe("ReadonlyContent bare URL autolinking (PB-4242)", () => {
   it("bolds a bare URL even when a CJK punctuation immediately follows (variant B)", () => {
     // `**url**（PB）` — the closing `**` is glued to a fullwidth paren. gfm
     // autolink swallowed the `**` here; the shared string linkify does not.
-    const url = "https://github.com/alexj11324/Cordy/pull/5133";
+    const url = "https://github.com/patchbay-ai/patchbay/pull/5133";
     const { container } = render(
       <ReadonlyContent content={`PR：**${url}**（PB-4277）。`} />,
     );

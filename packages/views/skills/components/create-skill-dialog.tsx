@@ -14,30 +14,30 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import type { Skill } from "@cordy/core/types";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { isImeComposing } from "@cordy/core/utils";
+import { api } from "@patchbay/core/api";
+import type { Skill } from "@patchbay/core/types";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { isImeComposing } from "@patchbay/core/utils";
 import {
   skillDetailOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/tooltip";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { cn } from "@patchbay/ui/lib/utils";
 import { openExternal } from "../../platform";
 import { RuntimeLocalSkillImportPanel } from "./runtime-local-skill-import-panel";
 import { useT } from "../../i18n";

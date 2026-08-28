@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useUpdateRuntime } from "@cordy/core/runtimes/mutations";
+import { useUpdateRuntime } from "@patchbay/core/runtimes/mutations";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { useT } from "../../i18n";
 
 // RenameMachineDialog names a whole machine (PB-4217). A machine hosts one

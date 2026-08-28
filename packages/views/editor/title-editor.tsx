@@ -11,8 +11,8 @@ import {
   getShortcut,
   isPlainShortcut,
   type ShortcutChord,
-} from "@cordy/core/shortcuts";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/core/shortcuts";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../i18n";
 import { createSubmitShortcutExtension } from "./extensions/submit-shortcut";
 import "./title-editor.css";

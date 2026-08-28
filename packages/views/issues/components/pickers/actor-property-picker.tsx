@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { IssueProperty, IssuePropertyValue } from "@cordy/core/types";
+import type { IssueProperty, IssuePropertyValue } from "@patchbay/core/types";
 import {
   actorRefsFromValue,
   actorRefValuesFromValue,
   formatActorRef,
   MAX_ISSUE_PROPERTY_ACTOR_VALUES,
-} from "@cordy/core/types";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { useWorkspaceId } from "@cordy/core/hooks";
+} from "@patchbay/core/types";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 import { matchesPinyin } from "../../../editor/extensions/pinyin-match";

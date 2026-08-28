@@ -3,15 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Cpu, Loader2, Plus, Check, Info } from "lucide-react";
-import { runtimeModelsOptions } from "@cordy/core/runtimes";
-import type { RuntimeModel } from "@cordy/core/types";
+import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import type { RuntimeModel } from "@patchbay/core/types";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@cordy/ui/components/ui/popover";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
+} from "@patchbay/ui/components/ui/popover";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
 import { useT } from "../../i18n";
 
 // ModelDropdown renders a searchable, creatable model picker for an agent.

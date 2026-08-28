@@ -2,9 +2,9 @@ import {
   matchLocale,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@cordy/core/i18n";
+} from "@patchbay/core/i18n";
 
-export const CORDY_LOCALE_HEADER = "x-cordy-locale";
+export const PATCHBAY_LOCALE_HEADER = "x-patchbay-locale";
 
 export function isSupportedLocale(
   value: string | null,

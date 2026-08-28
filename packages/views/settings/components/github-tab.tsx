@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ExternalLink, GitCommitHorizontal, Link2, PanelRight } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { Label } from "@cordy/ui/components/ui/label";
-import { Switch } from "@cordy/ui/components/ui/switch";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,17 +17,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { memberListOptions, workspaceKeys } from "@cordy/core/workspace/queries";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { memberListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
 import {
   deriveGitHubSettings,
   githubInstallationsOptions,
-} from "@cordy/core/github";
-import { api } from "@cordy/core/api";
-import type { Workspace } from "@cordy/core/types";
+} from "@patchbay/core/github";
+import { api } from "@patchbay/core/api";
+import type { Workspace } from "@patchbay/core/types";
 import { AppLink, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
@@ -280,7 +280,7 @@ export function GitHubTab() {
                 <p className="text-body text-muted-foreground">
                   {t(($) => $.github.feature_co_author_description_prefix)}{" "}
                   <code className="rounded bg-muted px-1 py-0.5 text-caption">
-                    {"Co-authored-by: cordy-agent <github@cordy.ai>"}
+                    {"Co-authored-by: patchbay-agent <github@patchbay.ai>"}
                   </code>{" "}
                   {t(($) => $.github.feature_co_author_description_suffix)}
                 </p>

@@ -67,7 +67,7 @@ Safari 登录成功后仍然停留在登录页。
 Patchbay Cloud 无需额外配置。自托管部署需要先设置一个用于加密 Bot 凭据的密钥：
 
 ```dotenv
-CORDY_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
 ```
 
 可以这样生成：
@@ -78,7 +78,7 @@ openssl rand -base64 32
 
 重启 API 服务后，再从智能体的 **集成** 页面连接 Bot。该密钥需要长期保存：更换或丢失后，已有凭据无法解密，需要重新连接。
 
-`CORDY_LARK_HTTP_BASE_URL` 和 `CORDY_LARK_CALLBACK_BASE_URL` 只用于代理、测试等特殊部署，正常情况下不需要设置。
+`PATCHBAY_LARK_HTTP_BASE_URL` 和 `PATCHBAY_LARK_CALLBACK_BASE_URL` 只用于代理、测试等特殊部署，正常情况下不需要设置。
 
 ## 常见问题
 

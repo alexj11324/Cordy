@@ -7,7 +7,7 @@ const { getAttachmentTextContentMock } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -50,10 +50,10 @@ vi.mock("../navigation", () => ({
 }));
 
 // Slug is required for the new-tab path to be built. The component reads
-// it from useWorkspaceSlug() on @cordy/core/paths — stub to return a
+// it from useWorkspaceSlug() on @patchbay/core/paths — stub to return a
 // fixed slug so the tests do not need a WorkspaceSlugProvider tree.
-vi.mock("@cordy/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@cordy/core/paths")>();
+vi.mock("@patchbay/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

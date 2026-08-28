@@ -8,7 +8,7 @@
 
 **End to End Multi agent system Control panel for long-Horizon tasks**
 
-[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
+[![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
 
 **English | [简体中文](README.zh.md)**
 
@@ -64,7 +64,7 @@ Patchbay is an open-source control panel for orchestrating multi-agent systems o
 - Docker with Docker Compose for PostgreSQL
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git patchbay
+git clone https://github.com/patchbay-ai/patchbay.git patchbay
 cd patchbay
 make dev
 ```
@@ -87,10 +87,10 @@ pnpm build
 - [Contributing](CONTRIBUTING.md)
 - [Advanced self-hosting configuration](SELF_HOSTING_ADVANCED.md)
 
-Some internal package, executable, environment-variable, and storage names
-still use the previous product identifier. They are retained where changing a
-public or persisted contract would be unsafe and will be handled as a separate
-rename boundary.
+The CLI, package scope, Rust crates, deployment artifacts, environment
+variables, storage keys, and application identifiers all use the Patchbay
+name. Existing local configuration and authenticated browser sessions are
+migrated at their compatibility boundaries during the upgrade.
 
 ## License
 

@@ -25,7 +25,7 @@ New connections are currently open only for mainland-China Feishu; existing inte
 
 Each Bot is bound to one Patchbay agent. To use several agents on the same chat platform, connect a separate Bot for each.
 
-DingTalk, WeCom, and Telegram are [community-maintained](/community-maintained): they ship in every release, but carry no official support SLA. Report problems in [GitHub issues](https://github.com/alexj11324/Cordy/issues).
+DingTalk, WeCom, and Telegram are [community-maintained](/community-maintained): they ship in every release, but carry no official support SLA. Report problems in [GitHub issues](https://github.com/alexj11324/Patchbay/issues).
 
 WeCom handles text messages today. Voice, image, and file messages get a short reply explaining that, and are not passed to the agent.
 
@@ -82,12 +82,12 @@ After disconnecting, the Bot stops receiving new messages. Existing Patchbay con
 A self-hosted deployment must configure a 32-byte encryption key for each platform before Patchbay opens its connection entry point:
 
 ```dotenv
-CORDY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
-CORDY_WEIXIN_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_WEIXIN_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 These keys encrypt stored Bot credentials and WeChat context tokens. See [Environment variables](/environment-variables) for how to generate and store them. Patchbay Cloud already has this configured.

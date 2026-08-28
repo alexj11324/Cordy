@@ -1,20 +1,20 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@cordy/core/types";
-import { useAgentPresenceDetail } from "@cordy/core/agents";
-import { useWorkspaceId } from "@cordy/core/hooks";
+import type { Agent, AgentRuntime } from "@patchbay/core/types";
+import { useAgentPresenceDetail } from "@patchbay/core/agents";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   deriveRuntimeHealth,
   runtimeDisplayLabel,
   type RuntimeHealth,
-} from "@cordy/core/runtimes";
-import { agentListOptions, memberListOptions } from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { runtimeListOptions } from "@cordy/core/runtimes/queries";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+} from "@patchbay/core/runtimes";
+import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { HealthIcon } from "../../runtimes/components/shared";
 import { availabilityConfig } from "../presence";

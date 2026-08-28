@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.repository == 'alexj11324/Cordy'
+    if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
@@ -183,9 +183,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
-          app_path="$(find dist -type d -name 'Cordy.app' -print -quit)"
+          app_path="$(find dist -type d -name 'Patchbay.app' -print -quit)"
           if [ -z "$app_path" ]; then
-            echo "::error::Packaged Cordy.app was not found."
+            echo "::error::Packaged Patchbay.app was not found."
             exit 1
           fi
 
@@ -193,11 +193,11 @@ jobs:
           signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
           printf '%s\n' "$signature_details"
           grep -Fq 'Authority=Developer ID Application:' <<< "$signature_details" || {
-            echo "::error::Cordy.app is not signed with a Developer ID Application identity."
+            echo "::error::Patchbay.app is not signed with a Developer ID Application identity."
             exit 1
           }
           grep -Fq "TeamIdentifier=$APPLE_TEAM_ID" <<< "$signature_details" || {
-            echo "::error::Cordy.app was signed by an unexpected Apple team."
+            echo "::error::Patchbay.app was signed by an unexpected Apple team."
             exit 1
           }
 
@@ -205,7 +205,7 @@ jobs:
           assessment="$(spctl --assess --type execute --verbose=4 "$app_path" 2>&1)"
           printf '%s\n' "$assessment"
           grep -Fq 'source=Notarized Developer ID' <<< "$assessment" || {
-            echo "::error::Gatekeeper did not recognize Cordy.app as notarized Developer ID software."
+            echo "::error::Gatekeeper did not recognize Patchbay.app as notarized Developer ID software."
             exit 1
           }
 
@@ -218,8 +218,8 @@ jobs:
         shell: bash
         run: |
           required_assets=(
-            "dist/cordy-desktop-$VERSION-mac-${{ matrix.arch }}.dmg"
-            "dist/cordy-desktop-$VERSION-mac-${{ matrix.arch }}.zip"
+            "dist/patchbay-desktop-$VERSION-mac-${{ matrix.arch }}.dmg"
+            "dist/patchbay-desktop-$VERSION-mac-${{ matrix.arch }}.zip"
             "dist/${{ matrix.metadata }}"
           )
           for asset in "${required_assets[@]}"; do
@@ -229,7 +229,7 @@ jobs:
             fi
           done
 
-          blockmap="dist/cordy-desktop-$VERSION-mac-${{ matrix.arch }}.zip.blockmap"
+          blockmap="dist/patchbay-desktop-$VERSION-mac-${{ matrix.arch }}.zip.blockmap"
           if [ -f "$blockmap" ]; then
             required_assets+=("$blockmap")
           fi
@@ -240,7 +240,7 @@ jobs:
 
   publish:
     needs: [prepare, package-macos]
-    if: github.repository == 'alexj11324/Cordy'
+    if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
       - name: Verify macOS draft assets
@@ -255,10 +255,10 @@ jobs:
             --json assets \
             --jq '.assets[].name')"
           for asset in \
-            "cordy-desktop-$VERSION-mac-arm64.dmg" \
-            "cordy-desktop-$VERSION-mac-arm64.zip" \
-            "cordy-desktop-$VERSION-mac-x64.dmg" \
-            "cordy-desktop-$VERSION-mac-x64.zip" \
+            "patchbay-desktop-$VERSION-mac-arm64.dmg" \
+            "patchbay-desktop-$VERSION-mac-arm64.zip" \
+            "patchbay-desktop-$VERSION-mac-x64.dmg" \
+            "patchbay-desktop-$VERSION-mac-x64.zip" \
             latest-mac.yml \
             latest-x64-mac.yml; do
             grep -Fxq "$asset" <<< "$published_assets" || {

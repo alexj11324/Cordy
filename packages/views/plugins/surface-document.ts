@@ -1,4 +1,4 @@
-import type { PluginInstallation, PluginSurface } from "@cordy/core/types";
+import type { PluginInstallation, PluginSurface } from "@patchbay/core/types";
 
 /**
  * The host generates the document a surface runs in. That is the point: CSP is
@@ -161,7 +161,7 @@ body {
 </head>
 <body>
 <div id="root"></div>
-<script src="${escapeAttribute(entryUrl)}" onerror="parent.postMessage({type:'cordy:plugin-surface-error'},'*')"></script>
+<script src="${escapeAttribute(entryUrl)}" onerror="parent.postMessage({type:'patchbay:plugin-surface-error'},'*')"></script>
 </body>
 </html>`;
 }

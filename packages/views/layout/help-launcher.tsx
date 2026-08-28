@@ -16,20 +16,20 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { useModalStore } from "@cordy/core/modals";
-import { useConfigStore } from "@cordy/core/config";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { useModalStore } from "@patchbay/core/modals";
+import { useConfigStore } from "@patchbay/core/config";
 import { isDesktopShell } from "../platform/local-directory";
 import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";
 
-const DOCS_URL = "https://cordy.ai/docs";
-const CHANGELOG_URL = "https://cordy.ai/changelog";
+const DOCS_URL = "https://patchbay.ai/docs";
+const CHANGELOG_URL = "https://patchbay.ai/changelog";
 // Absolute, including on self-hosted deployments: the installers we ship are
 // the same binaries either way, and the desktop client can point at a
 // self-hosted backend once installed. A self-host-relative /download would
 // only serve a copy of this page that still has to reach our release assets.
-const DOWNLOAD_URL = "https://cordy.ai/download";
+const DOWNLOAD_URL = "https://patchbay.ai/download";
 
 export function HelpLauncher() {
   const { t } = useT("layout");

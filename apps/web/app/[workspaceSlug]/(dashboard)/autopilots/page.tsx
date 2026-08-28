@@ -1,6 +1,6 @@
 "use client";
 
-import { AutopilotsPage } from "@cordy/views/autopilots/components";
+import { AutopilotsPage } from "@patchbay/views/autopilots/components";
 
 export default function Page() {
   return <AutopilotsPage />;

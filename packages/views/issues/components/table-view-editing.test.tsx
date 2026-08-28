@@ -20,17 +20,17 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setApiInstance } from "@cordy/core/api";
-import { useModalStore } from "@cordy/core/modals";
-import type { ApiClient } from "@cordy/core/api/client";
-import { issueKeys } from "@cordy/core/issues/queries";
-import { ViewStoreProvider } from "@cordy/core/issues/stores/view-store-context";
-import { getIssueSurfaceViewStore } from "@cordy/core/issues/stores/surface-view-store";
+import { setApiInstance } from "@patchbay/core/api";
+import { useModalStore } from "@patchbay/core/modals";
+import type { ApiClient } from "@patchbay/core/api/client";
+import { issueKeys } from "@patchbay/core/issues/queries";
+import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
+import { getIssueSurfaceViewStore } from "@patchbay/core/issues/stores/surface-view-store";
 import type {
   Issue,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueSurfaceSelectionProvider } from "../surface/selection-context";
 import type { IssueSurfaceSelection } from "../surface/selection-context";
@@ -38,7 +38,7 @@ import type { IssueCreateDefaults } from "../surface/types";
 import type { ChildProgress } from "./list-row";
 import { TableView, useReleaseEditingCellOnUnmount } from "./table-view";
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -64,7 +64,7 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Someone" }),
   buildActorNameResolver: () => () => "Someone",
 }));
@@ -77,7 +77,7 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 
 const mockAuthUser = { id: "user-1", email: "t@t.co", name: "Tester" };
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: unknown) => unknown) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -138,9 +138,9 @@ vi.mock("../../navigation", async () => {
   };
 });
 
-vi.mock("@cordy/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
-    "@cordy/core/paths",
+vi.mock("@patchbay/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
+    "@patchbay/core/paths",
   );
   return {
     ...actual,

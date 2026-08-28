@@ -1,8 +1,8 @@
 "use client";
 
-import type { IssueProperty } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
-import { cn } from "@cordy/ui/lib/utils";
+import type { IssueProperty } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   Bookmark,
   BriefcaseBusiness,

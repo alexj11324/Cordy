@@ -1,11 +1,11 @@
 {
-  "title": "Cordy 文档",
+  "title": "Patchbay 文档",
   "pages": [
     "---开始使用---",
     "index",
     "cloud-quickstart",
     "concepts",
-    "how-cordy-works",
+    "how-patchbay-works",
     "tutorial",
     "self-host-quickstart",
     "---工作区---",

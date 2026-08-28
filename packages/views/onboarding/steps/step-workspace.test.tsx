@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import enWorkspace from "../../locales/en/workspace.json";
-import type { Workspace } from "@cordy/core/types";
+import type { Workspace } from "@patchbay/core/types";
 
 const TEST_RESOURCES = {
   en: {
@@ -31,18 +31,18 @@ vi.mock("../../auth", () => ({
   useLogout: () => mockLogout,
 }));
 
-vi.mock("@cordy/core/config", () => ({
+vi.mock("@patchbay/core/config", () => ({
   useConfigStore: (selector: (state: MockConfigState) => unknown) =>
     mockUseConfigStore(selector),
 }));
 
 const mockCreateMutate = vi.hoisted(() => vi.fn());
 
-vi.mock("@cordy/core/workspace/mutations", () => ({
+vi.mock("@patchbay/core/workspace/mutations", () => ({
   useCreateWorkspace: () => ({ mutate: mockCreateMutate, isPending: false }),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getBaseUrl: () => "http://127.0.0.1:8080" },
 }));
 
@@ -147,21 +147,21 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
 });
 
 // #4263: the workspace URL prefix must reflect the deployment's own host on
-// self-hosted instances instead of the hardcoded `cordy.ai`.
+// self-hosted instances instead of the hardcoded `patchbay.ai`.
 describe("StepWorkspace — workspace URL prefix", () => {
   it("shows the brand host when no app URL is configured", () => {
     renderStep({ existing: null, disabled: false });
-    expect(screen.getByText("cordy.ai/")).toBeInTheDocument();
+    expect(screen.getByText("patchbay.ai/")).toBeInTheDocument();
   });
 
   it("shows the deployment host for self-hosted instances", () => {
     renderStep({
       existing: null,
       disabled: false,
-      daemonAppUrl: "https://cordy.example.com",
+      daemonAppUrl: "https://patchbay.example.com",
     });
-    expect(screen.getByText("cordy.example.com/")).toBeInTheDocument();
-    expect(screen.queryByText("cordy.ai/")).not.toBeInTheDocument();
+    expect(screen.getByText("patchbay.example.com/")).toBeInTheDocument();
+    expect(screen.queryByText("patchbay.ai/")).not.toBeInTheDocument();
   });
 });
 

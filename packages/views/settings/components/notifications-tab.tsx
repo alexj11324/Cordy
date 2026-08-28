@@ -1,11 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { notificationPreferenceOptions } from "@cordy/core/notification-preferences/queries";
-import { useUpdateNotificationPreferences } from "@cordy/core/notification-preferences/mutations";
-import type { NotificationGroupKey, NotificationPreferences } from "@cordy/core/types";
-import { Switch } from "@cordy/ui/components/ui/switch";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { notificationPreferenceOptions } from "@patchbay/core/notification-preferences/queries";
+import { useUpdateNotificationPreferences } from "@patchbay/core/notification-preferences/mutations";
+import type { NotificationGroupKey, NotificationPreferences } from "@patchbay/core/types";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";

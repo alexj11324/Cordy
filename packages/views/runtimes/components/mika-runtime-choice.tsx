@@ -1,6 +1,6 @@
 "use client";
 
-import type { AgentRuntime } from "@cordy/core/types";
+import type { AgentRuntime } from "@patchbay/core/types";
 import { ModelDropdown } from "../../agents/components/model-dropdown";
 import { RuntimePicker } from "../../agents/components/runtime-picker";
 import { CompactRuntimeRow } from "./compact-runtime-row";
@@ -22,7 +22,7 @@ export interface MikaRuntimeSelection {
  *
  * `layout` exists because the presentation genuinely differs, not because the
  * logic does. The CLI dialog lists machines because that is the moment they
- * appear one at a time after `cordy setup`, and a collapsed dropdown hides
+ * appear one at a time after `patchbay setup`, and a collapsed dropdown hides
  * exactly the feedback that dialog is there to give.
  */
 export function MikaRuntimeChoice({

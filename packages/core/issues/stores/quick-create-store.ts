@@ -51,7 +51,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
       setKeepOpen: (v) => set({ keepOpen: v }),
     }),
     {
-      name: "cordy_quick_create",
+      name: "patchbay_quick_create",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),
@@ -60,7 +60,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
 registerForWorkspaceRehydration(() => useQuickCreateStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "cordy_quick_create",
+  storageKey: "patchbay_quick_create",
   workspaceScoped: true,
   // Reset the per-user picker memory so it does not survive into the next
   // login on the same tab. (The prompt draft lives in draft-store now.)

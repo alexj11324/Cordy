@@ -2,8 +2,8 @@ import { act, type ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import { WORKSPACE_PAGES } from "@cordy/core/paths";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { WORKSPACE_PAGES } from "@patchbay/core/paths";
 import { SearchCommand } from "./search-command";
 import { useSearchStore } from "./search-store";
 import enCommon from "../locales/en/common.json";
@@ -64,7 +64,7 @@ const {
   mockSetTheme: vi.fn(),
   mockTheme: { current: "system" as "light" | "dark" | "system" },
   mockPathname: { current: "/ws-test/issues" as string },
-  mockGetShareableUrl: vi.fn((p: string) => `https://app.cordy/${p}`),
+  mockGetShareableUrl: vi.fn((p: string) => `https://app.patchbay/${p}`),
   mockMembers: {
     current: [] as Array<{
       id: string;
@@ -101,7 +101,7 @@ const {
   mockResolvedExpandAll: vi.fn(),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     searchIssues: mockSearchIssues,
@@ -134,7 +134,7 @@ vi.mock("../common/actor-avatar", () => ({
   },
 }));
 
-vi.mock("@cordy/core/issues/stores", () => {
+vi.mock("@patchbay/core/issues/stores", () => {
   const EMPTY: Array<{ id: string; visitedAt: number }> = [];
   return {
     useRecentIssuesStore: (
@@ -166,14 +166,14 @@ vi.mock("@cordy/core/issues/stores", () => {
   };
 });
 
-vi.mock("@cordy/core", () => ({
+vi.mock("@patchbay/core", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@cordy/core/paths", async (importOriginal) => ({
+vi.mock("@patchbay/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used to
   // derive each nav page's icon from its href) stay intact.
-  ...(await importOriginal<typeof import("@cordy/core/paths")>()),
+  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
   useWorkspacePaths: () => ({
     inbox: () => "/ws-test/inbox",
     chat: () => "/ws-test/chat",
@@ -195,7 +195,7 @@ vi.mock("@cordy/core/paths", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("@cordy/core/issues/queries", () => ({
+vi.mock("@patchbay/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, id: string) => ({
     queryKey: ["issues", "ws-test", "detail", id],
   }),
@@ -204,13 +204,13 @@ vi.mock("@cordy/core/issues/queries", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["workspaces", "ws-test", "members"] }),
   agentListOptions: () => ({ queryKey: ["workspaces", "ws-test", "agents"] }),
   squadListOptions: () => ({ queryKey: ["workspaces", "ws-test", "squads"] }),
 }));
 
-vi.mock("@cordy/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockOpenModal }),
   }),
@@ -265,7 +265,7 @@ vi.mock("../navigation/context", () => {
   };
 });
 
-vi.mock("@cordy/ui/components/common/theme-provider", () => ({
+vi.mock("@patchbay/ui/components/common/theme-provider", () => ({
   useTheme: () => ({ theme: mockTheme.current, setTheme: mockSetTheme }),
 }));
 
@@ -285,7 +285,7 @@ describe("SearchCommand", () => {
     mockSetTheme.mockReset();
     mockTheme.current = "system";
     mockPathname.current = "/ws-test/issues";
-    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.cordy/${p}`);
+    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.patchbay/${p}`);
     mockMembers.current = [];
     mockOpenModal.mockReset();
     mockToastSuccess.mockReset();
@@ -432,7 +432,7 @@ describe("SearchCommand", () => {
     fireEvent.click(settingsItem, { metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.cordy//ws-test/settings",
+      "https://app.patchbay//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -452,7 +452,7 @@ describe("SearchCommand", () => {
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.cordy//ws-test/settings",
+      "https://app.patchbay//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -607,7 +607,7 @@ describe("SearchCommand", () => {
     await user.click(linkItem);
 
     expect(mockGetShareableUrl).toHaveBeenCalledWith("/ws-test/issues/issue-1");
-    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.cordy//ws-test/issues/issue-1");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.patchbay//ws-test/issues/issue-1");
     expect(mockToastSuccess).toHaveBeenCalledWith("Link copied");
 
     // Reopen palette and test identifier copy

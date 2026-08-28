@@ -3,16 +3,16 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Card } from "@cordy/ui/components/ui/card";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Card } from "@patchbay/ui/components/ui/card";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,24 +22,24 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { ReactionBar } from "@cordy/ui/components/common/reaction-bar";
-import { cn } from "@cordy/ui/lib/utils";
-import { copyText } from "@cordy/ui/lib/clipboard";
-import { useActorName } from "@cordy/core/workspace/hooks";
+import { ReactionBar } from "@patchbay/ui/components/common/reaction-bar";
+import { cn } from "@patchbay/ui/lib/utils";
+import { copyText } from "@patchbay/ui/lib/clipboard";
+import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useTimeAgo } from "../../i18n";
 import { ContentEditor, type ContentEditorRef, ReadonlyContent, useFileDropZone, FileDropOverlay, Attachment as AttachmentRenderer, AttachmentDownloadProvider, useUploadGate, useComposerSubmit } from "../../editor";
 import { useCommentUploads } from "./use-comment-uploads";
-import { FileUploadButton } from "@cordy/ui/components/common/file-upload-button";
-import { api, dispatchReasonCode, errorCode } from "@cordy/core/api";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+import { api, dispatchReasonCode, errorCode } from "@patchbay/core/api";
 import { ReplyInput } from "./reply-input";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";
-import type { TimelineEntry, Attachment } from "@cordy/core/types";
-import { contentReferencesAttachment } from "@cordy/core/types";
-import { selectStandaloneAttachments } from "@cordy/core/attachments/image-sequence";
-import { useCommentCollapseStore, useCommentDraftStore } from "@cordy/core/issues/stores";
+import type { TimelineEntry, Attachment } from "@patchbay/core/types";
+import { contentReferencesAttachment } from "@patchbay/core/types";
+import { selectStandaloneAttachments } from "@patchbay/core/attachments/image-sequence";
+import { useCommentCollapseStore, useCommentDraftStore } from "@patchbay/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentsFoldBar } from "./resolved-thread-bar";
 import { deriveThreadResolution } from "./thread-utils";

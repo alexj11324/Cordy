@@ -25,8 +25,8 @@
 import { useMemo } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, Issue, MemberWithUser, Squad } from "@cordy/core/types";
-import { canAssignAgentToIssue } from "@cordy/core/permissions";
+import type { Agent, Issue, MemberWithUser, Squad } from "@patchbay/core/types";
+import { canAssignAgentToIssue } from "@patchbay/core/permissions";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { StatusIcon } from "@/components/ui/status-icon";

@@ -29,27 +29,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { Profiler } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setApiInstance } from "@cordy/core/api";
-import type { ApiClient } from "@cordy/core/api/client";
-import { ViewStoreProvider } from "@cordy/core/issues/stores/view-store-context";
-import { getIssueSurfaceViewStore } from "@cordy/core/issues/stores/surface-view-store";
+import { setApiInstance } from "@patchbay/core/api";
+import type { ApiClient } from "@patchbay/core/api/client";
+import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
+import { getIssueSurfaceViewStore } from "@patchbay/core/issues/stores/surface-view-store";
 import type {
   Issue,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueSurfaceSelectionProvider } from "../surface/selection-context";
 import type { IssueSurfaceSelection } from "../surface/selection-context";
 import { TableView } from "./table-view";
 
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 
 const actorNames = vi.hoisted(() => {
   const getActorName = () => "Someone";
   return { getActorName, result: { getActorName } };
 });
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => actorNames.result,
   buildActorNameResolver: () => actorNames.getActorName,
 }));
@@ -60,7 +60,7 @@ const authState = vi.hoisted(() => ({
     isAuthenticated: true,
   },
 }));
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: unknown) => unknown) =>
       selector ? selector(authState.value) : authState.value,
@@ -85,10 +85,10 @@ vi.mock("../../navigation", () => ({
   useIntentNavigate: () => () => {},
 }));
 
-vi.mock("@cordy/core/paths", async () => {
+vi.mock("@patchbay/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@cordy/core/paths")>(
-      "@cordy/core/paths",
+    await vi.importActual<typeof import("@patchbay/core/paths")>(
+      "@patchbay/core/paths",
     );
   const workspacePaths = actual.paths.workspace("test");
   return { ...actual, useWorkspacePaths: () => workspacePaths };

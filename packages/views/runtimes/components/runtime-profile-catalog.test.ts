@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { RuntimeProfile } from "@cordy/core/types";
+import type { RuntimeProfile } from "@patchbay/core/types";
 import {
   buildRuntimeCatalog,
   formatCommandLine,

@@ -25,24 +25,24 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useAuthStore } from "@cordy/core/auth";
-import { useFeatureEnabled } from "@cordy/core/config";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { issueStatusColor, issueStatusListOptions } from "@cordy/core/issue-statuses/queries";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { issueStatusColor, issueStatusListOptions } from "@patchbay/core/issue-statuses/queries";
 import {
   useArchiveIssueStatus,
   useCreateIssueStatus,
   useReorderIssueStatuses,
   useUpdateIssueStatus,
-} from "@cordy/core/issue-statuses/mutations";
-import { ALL_STATUSES } from "@cordy/core/issues/config";
-import type { IssueStatusCategory, IssueStatusEntry } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@cordy/ui/components/ui/label";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/core/issue-statuses/mutations";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import type { IssueStatusCategory, IssueStatusEntry } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -50,7 +50,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,25 +60,25 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
+} from "@patchbay/ui/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { useStatusLabel } from "../../issues/utils/status-label";

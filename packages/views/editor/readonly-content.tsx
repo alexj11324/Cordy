@@ -15,7 +15,7 @@
  */
 
 import { memo } from "react";
-import type { Attachment } from "@cordy/core/types";
+import type { Attachment } from "@patchbay/core/types";
 import { RichContent } from "../rich-content";
 
 interface ReadonlyContentProps {

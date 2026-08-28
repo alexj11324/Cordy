@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { IssueProperty } from "@cordy/core/types";
+import type { IssueProperty } from "@patchbay/core/types";
 import { isCustomPropertyReadOnly } from "./custom-property-picker";
 
 const MEMBER = "member:11111111-1111-4111-8111-111111111111";

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { GitBranch, Pencil, TriangleAlert } from "lucide-react";
-import type { LocalDirectoryExecutionMode } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
+import type { LocalDirectoryExecutionMode } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { useT } from "../../i18n/use-t";
 
 /**

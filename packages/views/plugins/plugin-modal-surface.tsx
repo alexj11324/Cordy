@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
-import { useFeatureEnabled } from "@cordy/core/config";
-import { PLUGINS_V1_FLAG } from "@cordy/core/feature-flags";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { pluginInstallationsOptions } from "@cordy/core/plugins";
-import type { PluginInstallation, PluginSurface } from "@cordy/core/types";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { pluginInstallationsOptions } from "@patchbay/core/plugins";
+import type { PluginInstallation, PluginSurface } from "@patchbay/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";
 
 /**

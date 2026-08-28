@@ -10,7 +10,7 @@
  *      (CloudFront, no auth on the client side) or a new authenticated proxy.
  */
 
-import { isImageAttachment } from "@cordy/core/attachments/image-sequence";
+import { isImageAttachment } from "@patchbay/core/attachments/image-sequence";
 
 export type PreviewKind =
   | "image"
@@ -136,7 +136,7 @@ const VIDEO_EXTS = new Set<string>([
 const AUDIO_EXTS = new Set<string>([
   "mp3", "wav", "m4a", "ogg", "oga", "flac", "aac", "opus",
 ]);
-// Image detection lives in @cordy/core/attachments/image-sequence — the
+// Image detection lives in @patchbay/core/attachments/image-sequence — the
 // gallery sequence builder needs the same answer and is shared with mobile,
 // which cannot import from packages/views.
 

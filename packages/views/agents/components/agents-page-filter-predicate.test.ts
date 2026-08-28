@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   effectiveAccessScope,
   type AccessScope,
-} from "@cordy/core/agents";
+} from "@patchbay/core/agents";
 import {
   EMPTY_AGENT_FILTERS,
   type AgentListFilters,
-} from "@cordy/core/agents/stores";
+} from "@patchbay/core/agents/stores";
 import { rowMatchesFilters, type AgentListRow } from "./agents-page";
 
 function makeRow(

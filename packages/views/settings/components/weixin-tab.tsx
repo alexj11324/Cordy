@@ -5,20 +5,20 @@ import { QRCode } from "react-qr-code";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Input } from "@cordy/ui/components/ui/input";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useAuthStore } from "@cordy/core/auth";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { api } from "@cordy/core/api";
-import { weixinInstallationsOptions, weixinKeys } from "@cordy/core/weixin";
+} from "@patchbay/ui/components/ui/dialog";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useAuthStore } from "@patchbay/core/auth";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { api } from "@patchbay/core/api";
+import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
 import { useT } from "../../i18n";
 
@@ -65,7 +65,7 @@ export function WeixinTab() {
           <p className="text-body font-medium">
             {t(($) => $.weixin.not_enabled)}
           </p>
-          <code className="text-micro">CORDY_WEIXIN_SECRET_KEY</code>
+          <code className="text-micro">PATCHBAY_WEIXIN_SECRET_KEY</code>
         </CardContent>
       </Card>
     );

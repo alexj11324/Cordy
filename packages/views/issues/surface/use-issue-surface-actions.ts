@@ -2,14 +2,14 @@
 
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import type { UpdateIssueRequest } from "@cordy/core/types";
+import type { UpdateIssueRequest } from "@patchbay/core/types";
 import {
   useBatchDeleteIssues,
   useBatchUpdateIssues,
   useUpdateIssue,
-} from "@cordy/core/issues/mutations";
-import { errorCode } from "@cordy/core/api";
-import { useModalStore } from "@cordy/core/modals";
+} from "@patchbay/core/issues/mutations";
+import { errorCode } from "@patchbay/core/api";
+import { useModalStore } from "@patchbay/core/modals";
 import {
   type IssueSurfaceActions,
   type IssueSurfaceMutationOptions,

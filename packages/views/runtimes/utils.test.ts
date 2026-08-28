@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { useCustomPricingStore } from "@cordy/core/runtimes/custom-pricing-store";
-import type { AgentRuntime, RuntimeUsage } from "@cordy/core/types";
+import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
+import type { AgentRuntime, RuntimeUsage } from "@patchbay/core/types";
 
 import {
   addDaysIso,

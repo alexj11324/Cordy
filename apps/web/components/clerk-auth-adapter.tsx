@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
-import { useAuthStore } from "@cordy/core/auth";
+import { useAuthStore } from "@patchbay/core/auth";
 
 /**
  * Bridges Clerk's auth state into the existing Zustand AuthState store.

@@ -23,9 +23,9 @@ describe("bundle-cli Rust target selection", () => {
   });
 
   it("uses the Windows executable suffix only for Windows targets", () => {
-    expect(binaryNameForPlatform("win32")).toBe("cordy.exe");
-    expect(binaryNameForPlatform("linux")).toBe("cordy");
-    expect(binaryNameForPlatform("darwin")).toBe("cordy");
+    expect(binaryNameForPlatform("win32")).toBe("patchbay.exe");
+    expect(binaryNameForPlatform("linux")).toBe("patchbay");
+    expect(binaryNameForPlatform("darwin")).toBe("patchbay");
   });
 
   it("rejects unsupported target combinations", () => {
@@ -45,7 +45,7 @@ describe("bundle-cli Rust target selection", () => {
       cargoTargetDirectory({ CARGO_TARGET_DIR: "../cargo-cache" }, serverRs),
     ).toBe(resolve(serverRs, "../cargo-cache"));
     expect(
-      cargoTargetDirectory({ CARGO_TARGET_DIR: "/var/cache/cordy" }, serverRs),
-    ).toBe(resolve("/var/cache/cordy"));
+      cargoTargetDirectory({ CARGO_TARGET_DIR: "/var/cache/patchbay" }, serverRs),
+    ).toBe(resolve("/var/cache/patchbay"));
   });
 });

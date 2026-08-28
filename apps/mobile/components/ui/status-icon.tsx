@@ -19,7 +19,7 @@
  */
 import * as React from "react";
 import Svg, { Circle, G, Line, Path } from "react-native-svg";
-import type { IssueStatus, IssueStatusCategory } from "@cordy/core/types";
+import type { IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
 import { statusCategoryOfKey } from "@/lib/issue-status";
 
 const CX = 7;

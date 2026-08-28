@@ -1,15 +1,15 @@
 ---
 title: GitHub integration
-description: Link pull requests to Cordy issues and watch development progress from the issue.
+description: Link pull requests to Patchbay issues and watch development progress from the issue.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Once GitHub is connected, Cordy automatically links pull requests based on issue identifiers. Issue detail shows PR state, change size, CI results, and merge conflicts in place.
+Once GitHub is connected, Patchbay automatically links pull requests based on issue identifiers. Issue detail shows PR state, change size, CI results, and merge conflicts in place.
 
 The GitHub integration only reads the repositories authorized at install time; it never pushes commits, comments, or status checks.
 
-Self-hosted Cordy can also connect self-hosted Forgejo, Gitea, or GitLab instances in parallel, with the same PR auto-linking, merge-to-Done, and CI display. The entry point is **Settings → Integrations → Git hosting**; see [Self-hosted Git hosting](/vcs-integration). Cordy Cloud does not offer this entry point.
+Self-hosted Patchbay can also connect self-hosted Forgejo, Gitea, or GitLab instances in parallel, with the same PR auto-linking, merge-to-Done, and CI display. The entry point is **Settings → Integrations → Git hosting**; see [Self-hosted Git hosting](/vcs-integration). Patchbay Cloud does not offer this entry point.
 
 ## Connect GitHub
 
@@ -19,12 +19,12 @@ A workspace owner or admin can complete the connection:
 2. Turn on the GitHub integration master switch.
 3. Click **Connect GitHub**.
 4. In GitHub, pick the account or organization and authorize all repositories or a chosen subset.
-5. Return to Cordy after the installation completes.
+5. Return to Patchbay after the installation completes.
 
 The connection status shows on the same page. Regular members can view the status but can't connect, disconnect, or change the switches.
 
 <Callout type="info">
-The **GitHub connection** decides which repositories Cordy receives PR events from; the **code repositories** setting decides which repositories agents can pick when running tasks. They serve different purposes and are configured separately.
+The **GitHub connection** decides which repositories Patchbay receives PR events from; the **code repositories** setting decides which repositories agents can pick when running tasks. They serve different purposes and are configured separately.
 </Callout>
 
 ## Feature switches
@@ -35,9 +35,9 @@ The **GitHub connection** decides which repositories Cordy receives PR events fr
 |---|---|
 | GitHub integration | Master switch. When off, the three below stop working, but the GitHub App stays connected. |
 | PR sidebar | Shows linked pull requests in issue detail. |
-| Co-authored-by | Adds `Co-authored-by: cordy-agent <github@cordy.ai>` to commits created by agents. |
+| Co-authored-by | Adds `Co-authored-by: patchbay-agent <github@patchbay.ai>` to commits created by agents. |
 | Auto-link PRs | Detects issue identifiers in a PR's branch name, title, and body. |
-| **PR card → CI & mergeability** | For each linked PR, Cordy fetches an authenticated GitHub API snapshot and mirrors its **CI status** and **mergeability** onto the card (see **What the PR card shows** below). |
+| **PR card → CI & mergeability** | For each linked PR, Patchbay fetches an authenticated GitHub API snapshot and mirrors its **CI status** and **mergeability** onto the card (see **What the PR card shows** below). |
 
 
 
@@ -53,7 +53,7 @@ pb-123-fix-login-redirect
 PB-123 Fix the redirect after login
 ```
 
-Cordy ignores case and only matches the current workspace's issue prefix. One PR can link to multiple issues.
+Patchbay ignores case and only matches the current workspace's issue prefix. One PR can link to multiple issues.
 
 If the identifier appears only in the PR body, use one of GitHub's close intents:
 
@@ -70,11 +70,11 @@ A reference-only mention in the body, such as `Related to PB-123`, is not shown 
 Identifier scanning runs on GitHub webhooks, so it needs the GitHub App connected. There is a second path that works everywhere: whoever opens a PR already knows its URL and can attach it to the issue immediately.
 
 ```bash
-cordy issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
+patchbay issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
 ```
 
 - Works without any GitHub App installation — the sidebar then shows at least the PR number and a clickable URL.
-- With an installation present, Cordy pulls the full metadata (title, state, branch, head) through the App API itself; you don't need `--url` extras.
+- With an installation present, Patchbay pulls the full metadata (title, state, branch, head) through the App API itself; you don't need `--url` extras.
 - Optional flags (`--title`, `--state`, `--branch`, `--head-sha`) accept what `gh pr view --json` prints when no installation exists.
 - Attaching never creates close intent: merging still auto-closes only via `Closes` / `Fixes` / `Resolves` in the title or body. If the webhook already recorded that intent, re-attaching preserves it.
 
@@ -90,13 +90,13 @@ Once linked, PRs appear in the **Pull requests** block of issue detail. Each ent
 - CI status: all passed (with a count), some failed (naming the failing checks), or some in progress; PRs with no checks configured don't show this item — "no checks" is never treated as passing;
 - mergeability: mergeable (only when GitHub reports a clean merge state), conflicting, blocked, or behind.
 
-CI status and mergeability come from snapshots Cordy pulls from the GitHub API, and the two are independent; merged or closed PRs no longer show either. When GitHub is temporarily unavailable, the card keeps the last snapshot and marks it stale instead of going blank.
+CI status and mergeability come from snapshots Patchbay pulls from the GitHub API, and the two are independent; merged or closed PRs no longer show either. When GitHub is temporarily unavailable, the card keeps the last snapshot and marks it stale instead of going blank.
 
 Click an entry to open the PR on GitHub. Turning off the **PR sidebar** only hides this block; it doesn't disconnect anything.
 
 ## When a merged PR moves an issue to Done
 
-A merged PR doesn't necessarily mean the issue is finished. Cordy only moves an issue to `Done` when all of the following hold:
+A merged PR doesn't necessarily mean the issue is finished. Patchbay only moves an issue to `Done` when all of the following hold:
 
 1. at least one merged linked PR used a close intent immediately followed by the identifier, such as `Closes PB-123` (forms with words in between, like `Closes login PB-123`, don't count);
 2. the issue has no other working PR still `Open` or `Draft` (reference-only mentions in the body don't count);
@@ -108,19 +108,19 @@ The status change is written to the timeline as a system action, and members sub
 
 ## Multiple workspaces
 
-The same GitHub App installation can be connected to multiple Cordy workspaces. GitHub events flow into each workspace separately and are matched against each workspace's own issue prefix.
+The same GitHub App installation can be connected to multiple Patchbay workspaces. GitHub events flow into each workspace separately and are matched against each workspace's own issue prefix.
 
 For example, a PR that references both `PB-1` and `ENG-2` can link in two workspaces with different prefixes. Workspaces never see each other's issues.
 
 ## Disconnect
 
-Clicking **Disconnect** in **Settings → GitHub** only removes the relationship between the current Cordy workspace and the installation; it does not uninstall the App from GitHub for you. Existing PR records are kept, and new events stop flowing into that workspace.
+Clicking **Disconnect** in **Settings → GitHub** only removes the relationship between the current Patchbay workspace and the installation; it does not uninstall the App from GitHub for you. Existing PR records are kept, and new events stop flowing into that workspace.
 
-To revoke repository authorization on the GitHub side, uninstall the App or adjust its repository scope from your personal or organization GitHub App installations page. After uninstalling, every Cordy workspace linked to that installation stops receiving events.
+To revoke repository authorization on the GitHub side, uninstall the App or adjust its repository scope from your personal or organization GitHub App installations page. After uninstalling, every Patchbay workspace linked to that installation stops receiving events.
 
 ## Self-hosting setup
 
-Cordy Cloud doesn't need this section. Self-hosting requires creating your own GitHub App first.
+Patchbay Cloud doesn't need this section. Self-hosting requires creating your own GitHub App first.
 
 ### 1. Create a GitHub App
 
@@ -128,7 +128,7 @@ Create the App under GitHub's **Developer settings → GitHub Apps** and fill in
 
 | Field | Value |
 |---|---|
-| Homepage URL | Your Cordy frontend address, e.g. `https://cordy.example.com` |
+| Homepage URL | Your Patchbay frontend address, e.g. `https://patchbay.example.com` |
 | Callback URL | Leave blank |
 | Setup URL | `https://<api-host>/api/github/setup`, with **Redirect on update** enabled |
 | Webhook URL | `https://<api-host>/api/webhooks/github` |
@@ -148,7 +148,7 @@ Subscribe to these events:
 - **Pull request**;
 - **Check suite**, **Check run**, and **Status**, which trigger CI and mergeability refreshes.
 
-If you don't need CI shown in Cordy, you can skip the Checks and Commit statuses permissions and their events.
+If you don't need CI shown in Patchbay, you can skip the Checks and Commit statuses permissions and their events.
 
 <Callout type="warning">
 This is the **Webhook secret**, not the OAuth Client secret. If the two sides have different webhook secrets, GitHub deliveries return `401 invalid signature`.
@@ -156,17 +156,17 @@ This is the **Webhook secret**, not the OAuth Client secret. If the two sides ha
 
 ### 2. Set environment variables
 
-Take the slug from the App's public URL. For example, the slug of `https://github.com/apps/cordy-acme` is `cordy-acme`.
+Take the slug from the App's public URL. For example, the slug of `https://github.com/apps/patchbay-acme` is `patchbay-acme`.
 
 ```dotenv
-GITHUB_APP_SLUG=cordy-acme
+GITHUB_APP_SLUG=patchbay-acme
 GITHUB_WEBHOOK_SECRET=<the webhook secret you entered when creating the App>
-FRONTEND_ORIGIN=https://cordy.example.com
+FRONTEND_ORIGIN=https://patchbay.example.com
 ```
 
 If either `GITHUB_APP_SLUG` or `GITHUB_WEBHOOK_SECRET` is missing, the connect button is disabled and the webhook endpoint refuses to process events.
 
-The next two variables are required for the PR card to show CI status and mergeability — Cordy uses them to authenticate as the App and pull snapshots:
+The next two variables are required for the PR card to show CI status and mergeability — Patchbay uses them to authenticate as the App and pull snapshots:
 
 ```dotenv
 GITHUB_APP_ID=<the GitHub App's numeric ID>

@@ -55,7 +55,7 @@ function initCore(
   const api = new ApiClient(apiBaseUrl, {
     logger: createLogger("api"),
     onUnauthorized: () => {
-      storage.removeItem("cordy_token");
+      storage.removeItem("patchbay_token");
     },
     identity,
   });
@@ -63,7 +63,7 @@ function initCore(
   setSchemaLogger(createLogger("api-schema"));
 
   if (!cookieAuth && !clerkAuth) {
-    const token = storage.getItem("cordy_token");
+    const token = storage.getItem("patchbay_token");
     if (token) api.setToken(token);
   }
 

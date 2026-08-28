@@ -1,19 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import { configStore } from "@cordy/core/config";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { configStore } from "@patchbay/core/config";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 
 const TEST_RESOURCES = { en: { common: enCommon, runtimes: enRuntimes } };
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   paths: {
     workspace: () => ({
       agents: () => "/agents",
@@ -27,7 +27,7 @@ const wsEventState = vi.hoisted(() => ({
   handler: null as ((payload: unknown) => void) | null,
 }));
 
-vi.mock("@cordy/core/realtime", () => ({
+vi.mock("@patchbay/core/realtime", () => ({
   useWSEvent: (_event: string, handler: (payload: unknown) => void) => {
     wsEventState.handler = handler;
   },
@@ -79,13 +79,13 @@ describe("ConnectRemoteDialog", () => {
   it("uses cloud setup commands by default", () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("cordy setup");
-    expect(baseElement).not.toHaveTextContent("cordy setup self-host");
+    expect(baseElement).toHaveTextContent("patchbay setup");
+    expect(baseElement).not.toHaveTextContent("patchbay setup self-host");
     expect(baseElement).toHaveTextContent(
-      "cordy config set server_url https://api.cordy.ai",
+      "patchbay config set server_url https://api.patchbay.ai",
     );
     expect(baseElement).toHaveTextContent(
-      "cordy config set app_url https://cordy.ai",
+      "patchbay config set app_url https://patchbay.ai",
     );
   });
 
@@ -96,13 +96,13 @@ describe("ConnectRemoteDialog", () => {
     });
 
     expect(baseElement).toHaveTextContent(
-      "cordy setup self-host --server-url https://api.example.com --app-url https://app.example.com",
+      "patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "cordy config set server_url https://api.example.com",
+      "patchbay config set server_url https://api.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "cordy config set app_url https://app.example.com",
+      "patchbay config set app_url https://app.example.com",
     );
   });
 
@@ -110,7 +110,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const setupCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("cordy setup"),
+      node.textContent?.includes("patchbay setup"),
     );
 
     expect(setupCode).toHaveClass(...ligatureClasses);
@@ -120,7 +120,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const tokenCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("cordy login --token <YOUR_TOKEN>"),
+      node.textContent?.includes("patchbay login --token <YOUR_TOKEN>"),
     );
 
     expect(tokenCode).toHaveClass(...ligatureClasses);
@@ -129,7 +129,7 @@ describe("ConnectRemoteDialog", () => {
   it("transitions from setup instructions to the connected state", async () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("cordy setup");
+    expect(baseElement).toHaveTextContent("patchbay setup");
     act(() => {
       wsEventState.handler?.({ runtime_id: "rt-test" });
     });
@@ -140,6 +140,6 @@ describe("ConnectRemoteDialog", () => {
         screen.getByRole("button", { name: "Create an agent" }),
       ).toBeInTheDocument();
     });
-    expect(baseElement).not.toHaveTextContent("cordy setup");
+    expect(baseElement).not.toHaveTextContent("patchbay setup");
   });
 });

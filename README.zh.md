@@ -8,7 +8,7 @@
 
 **让编码智能体的工作从需求顺畅流转到审核，全程不丢上下文。**
 
-[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
+[![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
 
 **[English](README.md) | 简体中文**
 
@@ -68,7 +68,7 @@ Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
 - Docker 与 Docker Compose，用于 PostgreSQL
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git patchbay
+git clone https://github.com/patchbay-ai/patchbay.git patchbay
 cd patchbay
 make dev
 ```
@@ -90,7 +90,7 @@ pnpm build
 - [高级自部署配置](SELF_HOSTING_ADVANCED.md)
 - [迁移审计台账](tasks/go-to-rust-migration-audit.md)
 
-部分内部 package、可执行文件、环境变量和存储名称仍使用之前的产品标识。涉及公开契约或持久化数据时暂不强行修改，后续会按独立的重命名边界处理。
+CLI、package scope、Rust crate、部署产物、环境变量、存储键和应用标识现已统一使用 Patchbay。升级时会在兼容边界迁移现有本地配置与浏览器登录会话。
 
 ## 开源协议
 

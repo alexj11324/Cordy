@@ -4,24 +4,24 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
+import { cn } from "@patchbay/ui/lib/utils";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
+} from "@patchbay/ui/components/ui/dialog";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
+} from "@patchbay/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,19 +31,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { agentListOptions, memberListOptions } from "@cordy/core/workspace/queries";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
 import { DingTalkMark } from "./dingtalk-mark";
-import { useActorName } from "@cordy/core/workspace/hooks";
+import { useActorName } from "@patchbay/core/workspace/hooks";
 import {
   dingtalkGroupRoutesOptions,
   dingtalkInstallationsOptions,
   dingtalkKeys,
-} from "@cordy/core/dingtalk";
-import { api } from "@cordy/core/api";
-import type { DingTalkGroupRoute, DingTalkInstallation } from "@cordy/core/types";
+} from "@patchbay/core/dingtalk";
+import { api } from "@patchbay/core/api";
+import type { DingTalkGroupRoute, DingTalkInstallation } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
@@ -154,7 +154,7 @@ export function DingTalkTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.dingtalk.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                CORDY_DINGTALK_SECRET_KEY
+                PATCHBAY_DINGTALK_SECRET_KEY
               </code>{" "}
               {t(($) => $.dingtalk.not_enabled_description_suffix)}{" "}
               {t(($) => $.dingtalk.not_enabled_self_host_hint)}
@@ -476,7 +476,7 @@ function dingtalkDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://cordy.ai/docs${prefix}/dingtalk-bot-integration`;
+  return `https://patchbay.ai/docs${prefix}/dingtalk-bot-integration`;
 }
 
 // DingTalkAgentBindButton is the per-agent CTA exposed from the agent detail

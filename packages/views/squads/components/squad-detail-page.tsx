@@ -2,34 +2,34 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
-import { useCurrentWorkspace, useWorkspacePaths } from "@cordy/core/paths";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { isImeComposing } from "@cordy/core/utils";
-import { getShortcut, shortcutMatchesEvent } from "@cordy/core/shortcuts";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { isImeComposing } from "@patchbay/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
 import { useTimeAgo } from "../../i18n";
-import { agentListOptions, memberListOptions, squadMemberStatusOptions, workspaceKeys } from "@cordy/core/workspace/queries";
+import { agentListOptions, memberListOptions, squadMemberStatusOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
 import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
 import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
+} from "@patchbay/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,8 +47,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { ContentEditor } from "../../editor/content-editor";
@@ -59,7 +59,7 @@ import {
 } from "../../issues/components/pickers/property-picker";
 import { ChevronDown, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, MemberWithUser } from "@cordy/core/types";
+import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, MemberWithUser } from "@patchbay/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 

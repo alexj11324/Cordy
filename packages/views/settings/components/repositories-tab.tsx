@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LoaderCircle, Plus, Search, Trash2 } from "lucide-react";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -13,14 +13,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
+} from "@patchbay/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,27 +30,27 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { memberListOptions, workspaceKeys } from "@cordy/core/workspace/queries";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { memberListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
 import {
   githubInstallationRepositoriesOptions,
   githubInstallationsOptions,
-} from "@cordy/core/github";
-import { api } from "@cordy/core/api";
+} from "@patchbay/core/github";
+import { api } from "@patchbay/core/api";
 import type {
   GitHubRepository,
   Workspace,
   WorkspaceRepo,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import {

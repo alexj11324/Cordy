@@ -6,8 +6,8 @@ import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
   type WebNotificationPermission,
-} from "@cordy/core/platform";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/platform";
+import { Button } from "@patchbay/ui/components/ui/button";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsRow } from "./settings-layout";

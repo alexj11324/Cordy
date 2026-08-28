@@ -12,12 +12,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@cordy/ui/components/ui/resizable";
+} from "@patchbay/ui/components/ui/resizable";
 import {
   applyDraftRuntimeChange,
   decodeBuilderInput,
@@ -25,12 +25,12 @@ import {
   mergeBuilderDraft,
   parseBuilderDraft,
   stripBuilderDraft,
-} from "@cordy/core/agents";
+} from "@patchbay/core/agents";
 import {
   runtimeDisplayLabel,
   runtimeModelsOptions,
-} from "@cordy/core/runtimes";
-import type { AgentBuilderSessionSummary } from "@cordy/core/types";
+} from "@patchbay/core/runtimes";
+import type { AgentBuilderSessionSummary } from "@patchbay/core/types";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { BuilderConversation } from "./builder-conversation";
 import { CreateAgentFooter } from "./create-agent-footer";
@@ -76,7 +76,7 @@ export function BuilderWorkspace({
 }) {
   const { t } = useT("agents");
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "cordy_agent_builder_layout",
+    id: "patchbay_agent_builder_layout",
   });
 
   // Resuming: the conversation already runs somewhere, and only the server

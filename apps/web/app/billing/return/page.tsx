@@ -1,4 +1,4 @@
-import { BillingReturnPage } from "@cordy/views/billing";
+import { BillingReturnPage } from "@patchbay/views/billing";
 
 /**
  * `/billing/return` — where Stripe Checkout and Billing Portal send the browser.

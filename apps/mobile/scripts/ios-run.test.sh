@@ -8,7 +8,7 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cordy-ios-run.XXXXXX")
+TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/patchbay-ios-run.XXXXXX")
 BIN_DIR="$TEST_DIR/bin"
 CALLS_FILE="$TEST_DIR/pnpm-calls.log"
 
@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$BIN_DIR"
-export CORDY_TEST_PNPM_CALLS="$CALLS_FILE"
+export PATCHBAY_TEST_PNPM_CALLS="$CALLS_FILE"
 
 # Stub pnpm: record every invocation, and optionally fail the prebuild so the
 # abort-before-run case can be exercised.
@@ -26,9 +26,9 @@ cat >"$BIN_DIR/pnpm" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 
-printf '%s\n' "$*" >>"$CORDY_TEST_PNPM_CALLS"
+printf '%s\n' "$*" >>"$PATCHBAY_TEST_PNPM_CALLS"
 
-if [ -n "${CORDY_TEST_FAIL_PREBUILD:-}" ]; then
+if [ -n "${PATCHBAY_TEST_FAIL_PREBUILD:-}" ]; then
   case "$*" in
     *prebuild*)
       echo "stub prebuild failure" >&2
@@ -72,7 +72,7 @@ expected_prebuild='exec expo prebuild -p ios --no-install'
 # --- a failed prebuild aborts before run:ios --------------------------------
 : >"$CALLS_FILE"
 set +e
-CORDY_TEST_FAIL_PREBUILD=1 "$SCRIPT_DIR/ios-run.sh" >/dev/null 2>&1
+PATCHBAY_TEST_FAIL_PREBUILD=1 "$SCRIPT_DIR/ios-run.sh" >/dev/null 2>&1
 status=$?
 set -e
 

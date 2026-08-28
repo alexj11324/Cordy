@@ -41,9 +41,9 @@ describe("worktree-dev-env", () => {
   });
 
   it("never reuses 5173 even when the offset is 0", () => {
-    expect(offsetForPath("/tmp/cordy-452")).toBe(0);
-    expect(rendererPortForPath("/tmp/cordy-452")).toBe(5174);
-    expect(rendererPortForPath("/tmp/cordy-452")).not.toBe(5173);
+    expect(offsetForPath("/tmp/patchbay-3030")).toBe(0);
+    expect(rendererPortForPath("/tmp/patchbay-3030")).toBe(5174);
+    expect(rendererPortForPath("/tmp/patchbay-3030")).not.toBe(5173);
   });
 
   it("skips 6000, which Chromium refuses to load (ERR_UNSAFE_PORT)", () => {
@@ -83,11 +83,11 @@ describe("worktree-dev-env", () => {
   });
 
   it("disambiguates worktrees that share a folder name at different paths", () => {
-    // Same basename "cordy", different parent dirs → different offsets/suffixes,
+    // Same basename "patchbay", different parent dirs → different offsets/suffixes,
     // so each gets its own single-instance lock.
-    expect(offsetForPath("/tmp/a/cordy")).not.toBe(offsetForPath("/tmp/b/cordy"));
-    expect(appSuffixForPath("/tmp/a/cordy")).not.toBe(
-      appSuffixForPath("/tmp/b/cordy"),
+    expect(offsetForPath("/tmp/a/patchbay")).not.toBe(offsetForPath("/tmp/b/patchbay"));
+    expect(appSuffixForPath("/tmp/a/patchbay")).not.toBe(
+      appSuffixForPath("/tmp/b/patchbay"),
     );
   });
 

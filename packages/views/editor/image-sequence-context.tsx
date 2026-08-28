@@ -40,7 +40,7 @@ import { toast } from "sonner";
 import {
   indexOfImageKey,
   type ImageSequenceItem,
-} from "@cordy/core/attachments/image-sequence";
+} from "@patchbay/core/attachments/image-sequence";
 import { useT } from "../i18n";
 import {
   AttachmentPreviewModal,

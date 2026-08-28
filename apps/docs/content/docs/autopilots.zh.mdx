@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 自动化用来执行反复发生的工作，例如每天汇总进展、定期检查依赖，或在外部系统发来事件时启动智能体。
 
-每条自动化保存一份 Runbook、一个执行方和一个或多个触发器。触发后，Cordy 会创建 issue 或直接运行智能体，并保留每一次运行记录。
+每条自动化保存一份 Runbook、一个执行方和一个或多个触发器。触发后，Patchbay 会创建 issue 或直接运行智能体，并保留每一次运行记录。
 
 ## 创建自动化
 
@@ -58,10 +58,10 @@ Cron 不包含秒，时区使用 `Asia/Shanghai` 这样的 IANA 名称。保存�
 
 ## 通过 Webhook 运行
 
-添加 Webhook 触发器后，Cordy 会生成一个唯一 URL。向它发送 JSON 对象或数组，即可触发自动化：
+添加 Webhook 触发器后，Patchbay 会生成一个唯一 URL。向它发送 JSON 对象或数组，即可触发自动化：
 
 ```bash
-curl -X POST "$CORDY_WEBHOOK_URL" \
+curl -X POST "$PATCHBAY_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"event":"build.completed","eventPayload":{"status":"success"}}'
@@ -73,14 +73,14 @@ Webhook 请求的约束：
 
 - Body 必须是有效的 JSON 对象或数组，最大 256 KiB；
 - `Idempotency-Key` 可以避免发送方重试时重复运行；GitHub 也会使用 `X-GitHub-Delivery` 去重；
-- 没有稳定幂等键时，Cordy 无法保证重复请求只运行一次；
+- 没有稳定幂等键时，Patchbay 无法保证重复请求只运行一次；
 - 触发器已禁用或事件不匹配时，投递会记录为"已忽略"，不会创建运行。
 
 ### 过滤事件
 
 同一个来源会发送多种事件时，可以为触发器添加事件过滤。每行包含一个事件名，以及可选的 action 列表；任意一行命中即可运行，全部留空则接收所有事件。
 
-例如，事件名填写 `workflow_run`，Actions 填写 `completed, failed`，只会接收这两类 `workflow_run` 结果。Cordy 会从常见请求头和 payload 中识别事件与 action，包括 GitHub 的 `X-GitHub-Event` 和 body 中的 `action`。
+例如，事件名填写 `workflow_run`，Actions 填写 `completed, failed`，只会接收这两类 `workflow_run` 结果。Patchbay 会从常见请求头和 payload 中识别事件与 action，包括 GitHub 的 `X-GitHub-Event` 和 body 中的 `action`。
 
 ### 保护 Webhook URL
 
@@ -92,7 +92,7 @@ Webhook URL 中的 token 就是调用凭证。不要把完整 URL 放进公开�
 
 ### Webhook 响应速查
 
-调试发送方时，可以对照下表理解 Cordy 的响应：
+调试发送方时，可以对照下表理解 Patchbay 的响应：
 
 | HTTP 状态 | 响应状态 | 含义 |
 |---|---|---|
@@ -105,7 +105,7 @@ Webhook URL 中的 token 就是调用凭证。不要把完整 URL 放进公开�
 | 404 | 错误信息 | URL 中的 token 无效或已被重新生成。 |
 | 413 | 错误信息 | Body 超过 256 KiB。 |
 | 429 | 错误信息 | 请求过于频繁，按响应头 `Retry-After` 稍后重试。 |
-| 500 | 错误信息 | Cordy 内部错误，发送方可稍后重试。 |
+| 500 | 错误信息 | Patchbay 内部错误，发送方可稍后重试。 |
 
 暂停、归档和事件过滤这类业务性忽略返回的是 200 而不是 4xx，避免发送方反复重试。
 
@@ -128,7 +128,7 @@ Webhook URL 中的 token 就是调用凭证。不要把完整 URL 放进公开�
 
 仅运行模式中的执行任务失败后不会自动重试；下一次时间表仍会按原计划触发。创建 issue 模式产生的是普通 issue 的执行任务，基础设施故障按照[执行任务](/tasks#失败与自动重试)中的规则处理。
 
-Cordy 会定期检查近期运行是否持续失败：过去 7 天内已完成或失败的运行不少于 50 次且失败率达到 90% 时，系统会暂停这条自动化并通知创建者；修复原因后可以手动恢复。
+Patchbay 会定期检查近期运行是否持续失败：过去 7 天内已完成或失败的运行不少于 50 次且失败率达到 90% 时，系统会暂停这条自动化并通知创建者；修复原因后可以手动恢复。
 
 手动暂停会停止时间表、Webhook 和"立即运行"。删除实际是归档：停止后续触发，运行和投递历史保留。
 
@@ -143,9 +143,9 @@ Cordy 会定期检查近期运行是否持续失败：过去 7 天内已完成�
 ## 使用 CLI
 
 ```bash
-cordy autopilot trigger <autopilot-id>
-cordy autopilot runs <autopilot-id>
-cordy autopilot trigger-rotate-url <autopilot-id> <trigger-id>
+patchbay autopilot trigger <autopilot-id>
+patchbay autopilot runs <autopilot-id>
+patchbay autopilot trigger-rotate-url <autopilot-id> <trigger-id>
 ```
 
 完整参数见[使用 CLI](/cli)。

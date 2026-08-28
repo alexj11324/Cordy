@@ -3,20 +3,20 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, ApiError } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { chatKeys } from "@cordy/core/chat/queries";
+import { api, ApiError } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { chatKeys } from "@patchbay/core/chat/queries";
 import {
   prioritizePendingChatTask,
   removePendingChatTask,
-} from "@cordy/core/chat/pending";
-import { removeChatMessageFromCaches } from "@cordy/core/realtime";
-import { createLogger } from "@cordy/core/logger";
+} from "@patchbay/core/chat/pending";
+import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
+import { createLogger } from "@patchbay/core/logger";
 import type {
   Attachment,
   CancelTaskResponse,
   ChatPendingTask,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { useT } from "../../i18n";
 
 const apiLogger = createLogger("chat.api");

@@ -50,8 +50,8 @@ import type {
   ChatPendingTask,
   ChatQuickAction,
   TaskMessagePayload,
-} from "@cordy/core/types";
-import type { AgentAvailability } from "@cordy/core/agents";
+} from "@patchbay/core/types";
+import type { AgentAvailability } from "@patchbay/core/agents";
 import { taskMessagesOptions } from "@/data/queries/chat";
 import { Text } from "@/components/ui/text";
 import { Markdown } from "@/lib/markdown";

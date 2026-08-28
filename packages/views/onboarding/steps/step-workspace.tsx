@@ -3,22 +3,22 @@
 import { type ReactNode, useRef, useEffect, useState } from "react";
 import { Dices, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "@cordy/ui/components/ui/field";
-import { cn } from "@cordy/ui/lib/utils";
-import { useCreateWorkspace } from "@cordy/core/workspace/mutations";
-import type { Workspace } from "@cordy/core/types";
-import { isImeComposing } from "@cordy/core/utils";
-import { matchLocale } from "@cordy/core/i18n";
-import { useConfigStore } from "@cordy/core/config";
-import { workspaceUrlHost } from "@cordy/core/workspace/workspace-url";
+} from "@patchbay/ui/components/ui/field";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useCreateWorkspace } from "@patchbay/core/workspace/mutations";
+import type { Workspace } from "@patchbay/core/types";
+import { isImeComposing } from "@patchbay/core/utils";
+import { matchLocale } from "@patchbay/core/i18n";
+import { useConfigStore } from "@patchbay/core/config";
+import { workspaceUrlHost } from "@patchbay/core/workspace/workspace-url";
 import { useLogout } from "../../auth";
 import {
   StepFooter,
@@ -33,7 +33,7 @@ import {
   nameToWorkspaceSlug,
   randomCelestialWorkspaceIdentity,
 } from "../../workspace/slug";
-import { isReservedSlug } from "@cordy/core/paths";
+import { isReservedSlug } from "@patchbay/core/paths";
 
 /**
  * Step 2 — create your first workspace, or continue with one set up in

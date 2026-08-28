@@ -24,7 +24,7 @@ export interface Attachment {
    * The Rust file handler
    * computes this per deployment policy:
    *   - public CDN path when storage URL is itself absolute and unsigned;
-   *   - otherwise `<CORDY_PUBLIC_URL>/api/attachments/<id>/download`,
+   *   - otherwise `<PATCHBAY_PUBLIC_URL>/api/attachments/<id>/download`,
    *     which the server self-resigns / proxies on every request.
    *
    * Distinct from `url` (raw storage URL — may be private / site-relative)

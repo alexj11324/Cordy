@@ -29,7 +29,7 @@ import {
   type CSSProperties,
 } from "react";
 import { Check, Copy, Maximize2 } from "lucide-react";
-import { copyText } from "@cordy/ui/lib/clipboard";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import { useT } from "../i18n";
 import { useDragToScroll } from "./hooks/use-drag-to-scroll";
 import { MermaidViewer } from "./mermaid-viewer";
@@ -148,7 +148,7 @@ function getMermaidLayout(svg: string): Size | null {
 // excessive empty space; web.dev's CLS guidance recommends reserving any
 // such space upfront so async content doesn't shift surrounding layout.
 export const MERMAID_SKELETON_HEIGHT_PX = 280;
-const MERMAID_LAYOUT_CACHE_PREFIX = "cordy:mermaid:layout:";
+const MERMAID_LAYOUT_CACHE_PREFIX = "patchbay:mermaid:layout:";
 
 // DJB2 — small, fast, sufficient for sessionStorage cache keys. The chart
 // text itself is too unwieldy as a key (length, special chars), and a

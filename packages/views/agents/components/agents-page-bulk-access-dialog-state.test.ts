@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAccessChangeReady } from "@cordy/core/agents";
+import { isAccessChangeReady } from "@patchbay/core/agents";
 import type { AccessChange } from "./inspector/access-picker";
 
 function change(

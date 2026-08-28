@@ -5,8 +5,8 @@ import {
   isPlainShortcut,
   shortcutMatchesEvent,
   type ShortcutChord,
-} from "@cordy/core/shortcuts";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/core/shortcuts";
+import { isImeComposing } from "@patchbay/core/utils";
 
 export function shouldHandleSubmitShortcut(
   event: KeyboardEvent,

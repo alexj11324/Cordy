@@ -73,7 +73,7 @@ export const useIssueCreateSettingsStore = create<IssueCreateSettingsState>()(
         })),
     }),
     {
-      name: "cordy_issue_create_settings",
+      name: "patchbay_issue_create_settings",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueCreateSettingsState>;

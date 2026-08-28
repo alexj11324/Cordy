@@ -5,7 +5,7 @@ import type {
   ChatMessage,
   ChatPendingTask,
   ChatQuickActionsPayload,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 import {
   applyChatDoneToCache,

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { AiBuilderSessionPage } from "@cordy/views/agents";
+import { AiBuilderSessionPage } from "@patchbay/views/agents";
 
 export default function NewAgentAiSessionRoute({
   params,

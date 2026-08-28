@@ -2,10 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode, typ
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import type { UploadResult } from "@cordy/core/hooks/use-file-upload";
-import type { Attachment } from "@cordy/core/types";
-import { useCommentComposerStore, useCommentDraftStore } from "@cordy/core/issues/stores";
-import { WorkspaceSlugProvider } from "@cordy/core/paths";
+import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
+import type { Attachment } from "@patchbay/core/types";
+import { useCommentComposerStore, useCommentDraftStore } from "@patchbay/core/issues/stores";
+import { WorkspaceSlugProvider } from "@patchbay/core/paths";
 import { renderWithI18n } from "../../test/i18n";
 import { CommentInput } from "./comment-input";
 import { ReplyInput } from "./reply-input";
@@ -53,7 +53,7 @@ const editorUploadSignal = vi.hoisted(
 // the same or the two records drift apart only in tests.
 let mockUploadIdSeq = 0;
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     uploadFile: apiUploadFile,
     listWorkspaces: apiListWorkspaces,
@@ -62,9 +62,9 @@ vi.mock("@cordy/core/api", () => ({
   },
 }));
 
-vi.mock("@cordy/core/hooks/use-file-upload", async () => ({
-  ...(await vi.importActual<typeof import("@cordy/core/hooks/use-file-upload")>(
-    "@cordy/core/hooks/use-file-upload",
+vi.mock("@patchbay/core/hooks/use-file-upload", async () => ({
+  ...(await vi.importActual<typeof import("@patchbay/core/hooks/use-file-upload")>(
+    "@patchbay/core/hooks/use-file-upload",
   )),
   useFileUpload: () => ({ uploadWithToast }),
 }));

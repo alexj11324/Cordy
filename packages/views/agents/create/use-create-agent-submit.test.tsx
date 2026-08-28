@@ -4,20 +4,20 @@ import type { ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EMPTY_AGENT_DRAFT } from "@cordy/core/agents";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import type { Agent } from "@cordy/core/types";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
+import { EMPTY_AGENT_DRAFT } from "@patchbay/core/agents";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@patchbay/core/types";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import enAgents from "../../locales/en/agents.json";
 
 const mockCreateAgent = vi.hoisted(() => vi.fn());
 const mockPush = vi.hoisted(() => vi.fn());
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     agentDetail: (agentId: string) => `/acme/agents/${agentId}`,
     squadDetail: (squadId: string) => `/acme/squads/${squadId}`,
@@ -28,7 +28,7 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({ push: mockPush }),
 }));
 
-vi.mock("@cordy/core/api", () => {
+vi.mock("@patchbay/core/api", () => {
   class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {

@@ -1,36 +1,36 @@
 ---
 title: 환경 변수
-description: 자체 호스팅 Cordy에서 자주 사용하는 서버, 저장소, 연동, 런타임 설정입니다.
+description: 자체 호스팅 Patchbay에서 자주 사용하는 서버, 저장소, 연동, 런타임 설정입니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy는 프로세스를 시작할 때 환경 변수를 읽습니다. 수정 후에는 보통 해당 API, Web 또는 데몬을 다시 시작해야 합니다. Docker Compose의 `docker compose restart`는 `.env`를 다시 읽지 않으므로 `up -d`로 컨테이너를 다시 만들어야 적용됩니다.
+Patchbay는 프로세스를 시작할 때 환경 변수를 읽습니다. 수정 후에는 보통 해당 API, Web 또는 데몬을 다시 시작해야 합니다. Docker Compose의 `docker compose restart`는 `.env`를 다시 읽지 않으므로 `up -d`로 컨테이너를 다시 만들어야 적용됩니다.
 
 이 페이지에는 배포자를 위한 설정만 나열하며 테스트 변수와 내부 태스크 변수는 다루지 않습니다. 여기서는 그룹별 참조를 제공하고 전체 배포 단계는 [자체 호스팅 빠른 시작](/self-host-quickstart)을 참고하세요.
 
 ## 프로덕션 최소 설정
 
 ```dotenv
-DATABASE_URL=postgres://user:password@postgres:5432/cordy?sslmode=require
+DATABASE_URL=postgres://user:password@postgres:5432/patchbay?sslmode=require
 JWT_SECRET=<long-random-secret>
 APP_ENV=production
-FRONTEND_ORIGIN=https://cordy.example.com
-CORDY_APP_URL=https://cordy.example.com
-CORDY_PUBLIC_URL=https://api.cordy.example.com
+FRONTEND_ORIGIN=https://patchbay.example.com
+PATCHBAY_APP_URL=https://patchbay.example.com
+PATCHBAY_PUBLIC_URL=https://api.patchbay.example.com
 ```
 
 이메일 서비스도 하나 선택해야 합니다. 설정하지 않으면 인증 코드와 초대가 서버 로그에만 기록됩니다.
 
 <Callout type="warning">
-`JWT_SECRET`은 프로덕션에서 필수입니다. `APP_ENV=production`일 때 비어 있거나 알려진 자리표시자 값이면 백엔드가 부팅을 거부합니다(`openssl rand -hex 32`로 생성). `CORDY_DEV_VERIFICATION_CODE`도 설정하지 마세요.
+`JWT_SECRET`은 프로덕션에서 필수입니다. `APP_ENV=production`일 때 비어 있거나 알려진 자리표시자 값이면 백엔드가 부팅을 거부합니다(`openssl rand -hex 32`로 생성). `PATCHBAY_DEV_VERIFICATION_CODE`도 설정하지 마세요.
 </Callout>
 
 ## API와 데이터베이스
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `DATABASE_URL` | 로컬 `cordy` 데이터베이스 | PostgreSQL 연결 주소 |
+| `DATABASE_URL` | 로컬 `patchbay` 데이터베이스 | PostgreSQL 연결 주소 |
 | `DATABASE_MAX_CONNS` | `25` | API 프로세스 하나의 최대 데이터베이스 연결 수 |
 | `DATABASE_MIN_CONNS` | `5` | API 프로세스 하나가 유지하는 최소 연결 수 |
 | `PORT` | `8080` | API listen port |
@@ -38,8 +38,8 @@ CORDY_PUBLIC_URL=https://api.cordy.example.com
 | `APP_ENV` | 비어 있음 | 프로덕션 환경에서는 `production`으로 설정 |
 | `AUTH_TOKEN_TTL` | `720h`(30일) | 브라우저 JWT와 cookie 유효 기간. duration 또는 양의 정수 초 허용 |
 | `LOG_LEVEL` | 앱 기본값 | 로그 수준 |
-| `CORDY_SHUTDOWN_HOLD_DURATION` | `0` | 종료 신호를 받은 뒤 graceful shutdown을 시작하기 전 대기 시간 |
-| `CORDY_RUNTIME_RECONNECT_GRACE` | `3h` | 오프라인 런타임이 진행 중인 작업을 실패시키지 않고 재연결할 수 있는 유예 시간. `150s` 미만은 `150s`로 조정됨 |
+| `PATCHBAY_SHUTDOWN_HOLD_DURATION` | `0` | 종료 신호를 받은 뒤 graceful shutdown을 시작하기 전 대기 시간 |
+| `PATCHBAY_RUNTIME_RECONNECT_GRACE` | `3h` | 오프라인 런타임이 진행 중인 작업을 실패시키지 않고 재연결할 수 있는 유예 시간. `150s` 미만은 `150s`로 조정됨 |
 
 Kubernetes에서 shutdown hold를 설정하면 `terminationGracePeriodSeconds`가 hold와 실제 종료에 필요한 시간의 합보다 커야 합니다.
 
@@ -48,8 +48,8 @@ Kubernetes에서 shutdown hold를 설정하면 `terminationGracePeriodSeconds`�
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `FRONTEND_ORIGIN` | 비어 있음 | 사용자가 접근하는 프런트엔드 origin. CORS, cookie, 초대 링크에 사용 |
-| `CORDY_APP_URL` | `FRONTEND_ORIGIN`으로 fallback | 사용자가 접근할 수 있는 Web 주소. CLI 로그인과 계정 연결 링크에 사용 |
-| `CORDY_PUBLIC_URL` | 비어 있음 | 공개 API 주소. webhook URL과 런타임 연결 안내에 사용 |
+| `PATCHBAY_APP_URL` | `FRONTEND_ORIGIN`으로 fallback | 사용자가 접근할 수 있는 Web 주소. CLI 로그인과 계정 연결 링크에 사용 |
+| `PATCHBAY_PUBLIC_URL` | 비어 있음 | 공개 API 주소. webhook URL과 런타임 연결 안내에 사용 |
 | `CORS_ALLOWED_ORIGINS` | 비어 있음 | 추가로 허용할 HTTP origin, 쉼표로 구분 |
 | `ALLOWED_ORIGINS` | CORS 또는 프런트엔드 주소로 fallback | WebSocket origin allowlist, 쉼표로 구분 |
 | `COOKIE_DOMAIN` | 비어 있음 | 프런트엔드와 backend의 host가 다르고 브라우저가 API 도메인에 직접 접근할 때 필수. 단일 도메인 배포에서는 비워 둠 |
@@ -67,7 +67,7 @@ Kubernetes에서 shutdown hold를 설정하면 `terminationGracePeriodSeconds`�
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `RESEND_API_KEY` | 비어 있음 | 설정하면 Resend 활성화 |
-| `RESEND_FROM_EMAIL` | `noreply@cordy.ai` | 발신 주소. 인증된 도메인에 속해야 함 |
+| `RESEND_FROM_EMAIL` | `noreply@patchbay.ai` | 발신 주소. 인증된 도메인에 속해야 함 |
 
 ### SMTP
 
@@ -100,13 +100,13 @@ Kubernetes에서 shutdown hold를 설정하면 `terminationGracePeriodSeconds`�
 | `ALLOWED_EMAILS` | 비어 있음 | 가입을 허용할 전체 이메일 주소, 쉼표로 구분 |
 | `ALLOWED_EMAIL_DOMAINS` | 비어 있음 | 가입을 허용할 이메일 도메인, 쉼표로 구분 |
 | `DISABLE_WORKSPACE_CREATION` | `false` | 모든 사용자의 새 워크스페이스 생성을 금지. owner/admin 예외 없음 |
-| `CORDY_DEV_VERIFICATION_CODE` | 비어 있음 | production이 아닌 환경에서 사용하는 고정 6자리 테스트 인증 코드 |
+| `PATCHBAY_DEV_VERIFICATION_CODE` | 비어 있음 | production이 아닌 환경에서 사용하는 고정 6자리 테스트 인증 코드 |
 
 allowlist의 정확한 판단 순서는 [로그인과 가입](/auth-setup#가입-범위-제어)을 참고하세요.
 
 ## 첨부 파일 저장소
 
-`S3_BUCKET`을 설정하지 않으면 Cordy가 로컬 디스크를 사용합니다.
+`S3_BUCKET`을 설정하지 않으면 Patchbay가 로컬 디스크를 사용합니다.
 
 ### S3 또는 호환 저장소
 
@@ -151,7 +151,7 @@ allowlist의 정확한 판단 순서는 [로그인과 가입](/auth-setup#가입
 | `RATE_LIMIT_INVITATION_WORKSPACE_24H` | `50` | 워크스페이스의 모든 관리자가 24시간 슬라이딩 윈도 내 생성할 수 있는 총 초대 수. `0`이면 이 제한을 비활성화 |
 | `RATE_LIMIT_INVITATION_RECIPIENT_24H` | `6` | 정규화된 동일 수신 이메일이 워크스페이스 전체에서 24시간 슬라이딩 윈도 내 받을 수 있는 초대 수. `0`이면 이 제한을 비활성화 |
 | `RATE_LIMIT_TRUSTED_PROXIES` | 비어 있음 | `X-Forwarded-For`를 제공하도록 허용할 proxy CIDR, 쉼표로 구분 |
-| `CORDY_TRUSTED_PROXIES` | 비어 있음 | 자동화 webhook과 실시간 연결에서 사용할 신뢰 proxy CIDR |
+| `PATCHBAY_TRUSTED_PROXIES` | 비어 있음 | 자동화 webhook과 실시간 연결에서 사용할 신뢰 proxy CIDR |
 
 reverse proxy 뒤에 배포한다면 실제 proxy 네트워크를 입력해야 합니다. 모든 출처를 그대로 신뢰하지 마세요. 클라이언트가 전달 IP를 위조할 수 있습니다.
 
@@ -165,15 +165,15 @@ reverse proxy 뒤에 배포한다면 실제 proxy 네트워크를 입력해야 �
 | GitHub | `GITHUB_WEBHOOK_SECRET` | Webhook HMAC 및 연결 state 서명 키 |
 | GitHub | `GITHUB_APP_ID` | PR 카드의 CI 상태, merge 가능 여부, "GitHub에서 선택" 저장소에 필요 |
 | GitHub | `GITHUB_APP_PRIVATE_KEY` | App ID와 짝을 이루는 전체 PEM private key. 용도는 위와 같음 |
-| Feishu | `CORDY_LARK_SECRET_KEY` | base64로 인코딩한 32바이트 자격 증명 암호화 키 |
-| Slack | `CORDY_SLACK_SECRET_KEY` | base64로 인코딩한 32바이트 token 암호화 키 |
-| Telegram | `CORDY_TELEGRAM_SECRET_KEY` | base64로 인코딩한 32바이트 Bot token 암호화 키 |
-| 개인 WeChat | `CORDY_WEIXIN_SECRET_KEY` | base64로 인코딩한 32바이트 iLink token 및 대화 컨텍스트 암호화 키 |
+| Feishu | `PATCHBAY_LARK_SECRET_KEY` | base64로 인코딩한 32바이트 자격 증명 암호화 키 |
+| Slack | `PATCHBAY_SLACK_SECRET_KEY` | base64로 인코딩한 32바이트 token 암호화 키 |
+| Telegram | `PATCHBAY_TELEGRAM_SECRET_KEY` | base64로 인코딩한 32바이트 Bot token 암호화 키 |
+| 개인 WeChat | `PATCHBAY_WEIXIN_SECRET_KEY` | base64로 인코딩한 32바이트 iLink token 및 대화 컨텍스트 암호화 키 |
 | Composio | `COMPOSIO_API_KEY` | Composio 도구 연결 활성화 |
-| Composio | `COMPOSIO_CALLBACK_BASE_URL` | callback API 주소. `CORDY_PUBLIC_URL`로 fallback 가능 |
+| Composio | `COMPOSIO_CALLBACK_BASE_URL` | callback API 주소. `PATCHBAY_PUBLIC_URL`로 fallback 가능 |
 | Composio | `COMPOSIO_STATE_SECRET` | OAuth state 서명 키. `JWT_SECRET`에서 파생 가능 |
-| 자체 호스팅 Git | `CORDY_VCS_INTEGRATION_ENABLED` | Forgejo/Gitea/GitLab 연동 스위치. compose에서는 기본 활성화 |
-| 자체 호스팅 Git | `CORDY_VCS_SECRET_KEY` | base64로 인코딩한 32바이트 암호화 키(`openssl rand -base64 32`). 없으면 전체 기능을 사용할 수 없음 |
+| 자체 호스팅 Git | `PATCHBAY_VCS_INTEGRATION_ENABLED` | Forgejo/Gitea/GitLab 연동 스위치. compose에서는 기본 활성화 |
+| 자체 호스팅 Git | `PATCHBAY_VCS_SECRET_KEY` | base64로 인코딩한 32바이트 암호화 키(`openssl rand -base64 32`). 없으면 전체 기능을 사용할 수 없음 |
 
 `GITHUB_APP_ID`와 private key를 설정하지 않아도 PR 연결, 미러링, merge 시 done 전환은 정상적으로 작동합니다. 다만 카드에 CI와 merge 가능 상태가 표시되지 않고 "GitHub에서 선택" 저장소 메뉴도 비활성화됩니다.
 
@@ -185,12 +185,12 @@ reverse proxy 뒤에 배포한다면 실제 proxy 네트워크를 입력해야 �
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `CORDY_LLM_API_KEY` | 비어 있음 | OpenAI 호환 API key |
-| `CORDY_LLM_BASE_URL` | 비어 있음 | OpenAI 호환 endpoint |
-| `CORDY_LLM_DEFAULT_MODEL` | `gpt-5.6-luna` | 요청에 모델이 지정되지 않았을 때 사용 |
-| `CORDY_LLM_MAX_RETRIES` | `2` | 호출당 재시도 상한. `0`은 재시도 비활성화, `1`–`5`는 최대 N회 |
+| `PATCHBAY_LLM_API_KEY` | 비어 있음 | OpenAI 호환 API key |
+| `PATCHBAY_LLM_BASE_URL` | 비어 있음 | OpenAI 호환 endpoint |
+| `PATCHBAY_LLM_DEFAULT_MODEL` | `gpt-5.6-luna` | 요청에 모델이 지정되지 않았을 때 사용 |
+| `PATCHBAY_LLM_MAX_RETRIES` | `2` | 호출당 재시도 상한. `0`은 재시도 비활성화, `1`–`5`는 최대 N회 |
 
-`CORDY_LLM_MAX_RETRIES`는 재시도 정책의 유일한 설정 소스입니다. 설정하지 않으면 기본값 2회, `0`이면 호출당 요청을 정확히 한 번만 보내고, 1–5면 재시도를 최대 그 횟수까지만 합니다. 할당량이 아니라 상한입니다. 재시도 대상 실패만 이를 소모하며, 성공하거나 호출자 자신의 데드라인에 걸리면 더 일찍 끝납니다. 그 밖의 값(음수, 숫자가 아닌 값, 5 초과)은 조용히 보정되지 않고 시작에 실패합니다. 상한은 지연 예산입니다. 백오프는 0.5초에서 시작해 8초 상한까지 두 배씩 늘어나므로, 더 큰 예산은 호출자 자신의 타임아웃을 넘겨 재시도 가능한 실패를 타임아웃으로 바꿉니다. 재시도는 연결 실패와 HTTP 408, 409, 429, 5xx를 대상으로 하며 그 외 4xx는 그대로 반환됩니다. 서버는 시작 시 유효한 정책을 `llm retry policy`로 기록하며 해당 줄에는 자격 증명이 포함되지 않습니다.
+`PATCHBAY_LLM_MAX_RETRIES`는 재시도 정책의 유일한 설정 소스입니다. 설정하지 않으면 기본값 2회, `0`이면 호출당 요청을 정확히 한 번만 보내고, 1–5면 재시도를 최대 그 횟수까지만 합니다. 할당량이 아니라 상한입니다. 재시도 대상 실패만 이를 소모하며, 성공하거나 호출자 자신의 데드라인에 걸리면 더 일찍 끝납니다. 그 밖의 값(음수, 숫자가 아닌 값, 5 초과)은 조용히 보정되지 않고 시작에 실패합니다. 상한은 지연 예산입니다. 백오프는 0.5초에서 시작해 8초 상한까지 두 배씩 늘어나므로, 더 큰 예산은 호출자 자신의 타임아웃을 넘겨 재시도 가능한 실패를 타임아웃으로 바꿉니다. 재시도는 연결 실패와 HTTP 408, 409, 429, 5xx를 대상으로 하며 그 외 4xx는 그대로 반환됩니다. 서버는 시작 시 유효한 정책을 `llm retry policy`로 기록하며 해당 줄에는 자격 증명이 포함되지 않습니다.
 
 이 레이어를 사용하는 기능은 두 가지이며, 둘 다 설정한 endpoint로 채팅 내용을 전송합니다.
 
@@ -200,7 +200,7 @@ reverse proxy 뒤에 배포한다면 실제 proxy 네트워크를 입력해야 �
 API key와 base URL이 모두 비어 있으면 이 레이어가 꺼지고 업스트림 요청을 전혀 보내지 않습니다. 위 두 기능 모두 아무것도 전송하지 않습니다. 이 레이어가 채팅 내용을 배포 환경 밖으로 보내면 안 되는 정책이라면 이것이 지원되는 구성입니다. 세션은 클라이언트가 첫 메시지에서 만든 제목을 그대로 사용하고, 후속 질문 버튼은 표시되지 않으며, 나머지 기능은 영향을 받지 않습니다.
 
 <Callout type="info">
-이는 보조 생성 레이어에만 해당합니다. 에이전트 실행은 별도의 데이터 경로입니다. 에이전트가 채팅에 답변할 때 데몬은 해당 에이전트의 AI 코딩 도구를 그 도구 자체의 자격 증명으로 실행하며, 위의 `CORDY_LLM_*` 설정을 도구에 전달하지 않습니다. (에이전트 자체에 필요한 태스크 범위의 Cordy 연결 변수는 데몬이 별도로 주입합니다.) 위 변수를 비워 두어도 이 경로에는 영향이 없으므로, 에이전트의 런타임 설정에서 관리하세요.
+이는 보조 생성 레이어에만 해당합니다. 에이전트 실행은 별도의 데이터 경로입니다. 에이전트가 채팅에 답변할 때 데몬은 해당 에이전트의 AI 코딩 도구를 그 도구 자체의 자격 증명으로 실행하며, 위의 `PATCHBAY_LLM_*` 설정을 도구에 전달하지 않습니다. (에이전트 자체에 필요한 태스크 범위의 Patchbay 연결 변수는 데몬이 별도로 주입합니다.) 위 변수를 비워 두어도 이 경로에는 영향이 없으므로, 에이전트의 런타임 설정에서 관리하세요.
 </Callout>
 
 ## 데몬 설정
@@ -209,49 +209,49 @@ API key와 base URL이 모두 비어 있으면 이 레이어가 꺼지고 업스
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `CORDY_SERVER_URL` | `ws://localhost:8080/ws` | Cordy API / WebSocket 주소. `http(s)`도 허용 |
-| `CORDY_DAEMON_DEVICE_NAME` | host 이름 | 런타임 목록의 기기 이름 |
-| `CORDY_AGENT_RUNTIME_NAME` | `Local Agent` | 런타임 표시 이름 |
-| `CORDY_DAEMON_POLL_INTERVAL` | `30s` | wakeup 이벤트가 없을 때 실행 태스크 polling 간격 |
-| `CORDY_DAEMON_HEARTBEAT_INTERVAL` | `15s` | heartbeat 간격 |
-| `CORDY_DAEMON_MAX_CONCURRENT_TASKS` | `20` | 데몬 하나의 동시 실행 태스크 상한 |
-| `CORDY_AGENT_TIMEOUT` | `0` | 단일 실행의 절대 시간 제한. `0`은 제한 없음 |
-| `CORDY_AGENT_IDLE_WATCHDOG` | `30m` | 출력과 도구 실행이 모두 없을 때의 무응답 상한 |
-| `CORDY_AGENT_TOOL_WATCHDOG` | `2h` | 단일 도구 호출이 계속 무응답인 시간 상한 |
-| `CORDY_OPENCODE_IDLE_WATCHDOG` | `10m` | OpenCode 전용 무응답 기준값 |
-| `CORDY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` | `10m` | Codex 의미 활동 없음 기준값 |
-| `CORDY_CODEX_FIRST_TURN_TIMEOUT` | `0` | Codex 첫 턴 무진행 상한의 명시적 재정의; `0` 은 기본값 유지. 실제 첫 턴 대기는 여전히 `CORDY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` 및 전체 실행 타임아웃으로 제한됨 — `CORDY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` 을 이 값보다 엄격히 크게(여유를 두고) 설정해야 하며, 그렇지 않으면 대기가 그 값으로 잘리고 모델 카탈로그 시작 재시도가 건너뛰어짐. 값이 같으면 충분하지 않음: 의미 타이머가 먼저 시작되므로 값이 같을 때도 재시도가 손실될 수 있음 |
-| `CORDY_CODEX_HANDSHAKE_TIMEOUT` | `30s` | Codex app-server 시작 handshake 상한 |
-| `CORDY_DAEMON_AUTO_UPDATE` | Cloud `true`, 자체 호스팅 `false` | CLI 자동 확인 및 업데이트 여부 |
-| `CORDY_DAEMON_AUTO_UPDATE_INTERVAL` | `6h` | 업데이트 확인 간격 |
-| `CORDY_DAEMON_AUTO_RELOAD` | `true` | 외부에서 교체된 `cordy` 바이너리(`brew upgrade`, 재다운로드, 로컬 빌드)로 재시작할지 여부. `CORDY_DAEMON_AUTO_UPDATE`와 독립적 |
-| `CORDY_WORKSPACES_ROOT` | `~/cordy_workspaces` | 실행 태스크 작업 디렉터리의 루트 |
-| `CORDY_AGENT_TEMP_BASE` | `/tmp`(Linux/macOS) | Linux/macOS 전용. 작업별 비공개 임시 디렉터리의 상위 디렉터리입니다. 기존의 쓰기 가능한 절대 경로여야 하며, 값이 잘못되면 `/tmp`로 대체하지 않고 작업 시작에 실패합니다. 짧은 경로를 선택하세요. 하위 도구가 그 아래에 AF_UNIX 소켓을 만들 수 있으며 `sun_path` 제한은 Linux에서 108바이트, macOS에서 104바이트입니다 |
-| `CORDY_KEEP_ENV_AFTER_TASK` | `false` | 디버깅을 위해 실행 태스크 디렉터리 유지 |
+| `PATCHBAY_SERVER_URL` | `ws://localhost:8080/ws` | Patchbay API / WebSocket 주소. `http(s)`도 허용 |
+| `PATCHBAY_DAEMON_DEVICE_NAME` | host 이름 | 런타임 목록의 기기 이름 |
+| `PATCHBAY_AGENT_RUNTIME_NAME` | `Local Agent` | 런타임 표시 이름 |
+| `PATCHBAY_DAEMON_POLL_INTERVAL` | `30s` | wakeup 이벤트가 없을 때 실행 태스크 polling 간격 |
+| `PATCHBAY_DAEMON_HEARTBEAT_INTERVAL` | `15s` | heartbeat 간격 |
+| `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS` | `20` | 데몬 하나의 동시 실행 태스크 상한 |
+| `PATCHBAY_AGENT_TIMEOUT` | `0` | 단일 실행의 절대 시간 제한. `0`은 제한 없음 |
+| `PATCHBAY_AGENT_IDLE_WATCHDOG` | `30m` | 출력과 도구 실행이 모두 없을 때의 무응답 상한 |
+| `PATCHBAY_AGENT_TOOL_WATCHDOG` | `2h` | 단일 도구 호출이 계속 무응답인 시간 상한 |
+| `PATCHBAY_OPENCODE_IDLE_WATCHDOG` | `10m` | OpenCode 전용 무응답 기준값 |
+| `PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` | `10m` | Codex 의미 활동 없음 기준값 |
+| `PATCHBAY_CODEX_FIRST_TURN_TIMEOUT` | `0` | Codex 첫 턴 무진행 상한의 명시적 재정의; `0` 은 기본값 유지. 실제 첫 턴 대기는 여전히 `PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` 및 전체 실행 타임아웃으로 제한됨 — `PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` 을 이 값보다 엄격히 크게(여유를 두고) 설정해야 하며, 그렇지 않으면 대기가 그 값으로 잘리고 모델 카탈로그 시작 재시도가 건너뛰어짐. 값이 같으면 충분하지 않음: 의미 타이머가 먼저 시작되므로 값이 같을 때도 재시도가 손실될 수 있음 |
+| `PATCHBAY_CODEX_HANDSHAKE_TIMEOUT` | `30s` | Codex app-server 시작 handshake 상한 |
+| `PATCHBAY_DAEMON_AUTO_UPDATE` | Cloud `true`, 자체 호스팅 `false` | CLI 자동 확인 및 업데이트 여부 |
+| `PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL` | `6h` | 업데이트 확인 간격 |
+| `PATCHBAY_DAEMON_AUTO_RELOAD` | `true` | 외부에서 교체된 `patchbay` 바이너리(`brew upgrade`, 재다운로드, 로컬 빌드)로 재시작할지 여부. `PATCHBAY_DAEMON_AUTO_UPDATE`와 독립적 |
+| `PATCHBAY_WORKSPACES_ROOT` | `~/patchbay_workspaces` | 실행 태스크 작업 디렉터리의 루트 |
+| `PATCHBAY_AGENT_TEMP_BASE` | `/tmp`(Linux/macOS) | Linux/macOS 전용. 작업별 비공개 임시 디렉터리의 상위 디렉터리입니다. 기존의 쓰기 가능한 절대 경로여야 하며, 값이 잘못되면 `/tmp`로 대체하지 않고 작업 시작에 실패합니다. 짧은 경로를 선택하세요. 하위 도구가 그 아래에 AF_UNIX 소켓을 만들 수 있으며 `sun_path` 제한은 Linux에서 108바이트, macOS에서 104바이트입니다 |
+| `PATCHBAY_KEEP_ENV_AFTER_TASK` | `false` | 디버깅을 위해 실행 태스크 디렉터리 유지 |
 
-각 AI 코딩 도구는 `CORDY_<PROVIDER>_PATH`로 명령 경로를 덮어쓸 수 있으며 모델 재정의를 지원하는 도구는 `CORDY_<PROVIDER>_MODEL`도 사용할 수 있습니다. QwenPaw와 MiniMax Code에는 모델 변수가 없고 MiniMax Code의 경로 변수는 `CORDY_MCODE_PATH`입니다. 자세한 내용은 [AI 코딩 도구 비교](/providers#모델-출처)를 참고하세요. DeepSeek Harness는 `CORDY_DSH_PATH`와 `CORDY_DSH_MODEL`을 지원합니다(값은 dsh 모델 카탈로그의 모델 ID, 예: `deepseek-official/deepseek-chat`). 컴퓨터 전체 기본 인수 `CORDY_<PROVIDER>_ARGS`는 현재 Claude Code, Codex, CodeBuddy, Qwen Code, QwenPaw 다섯 도구를 지원합니다. 해당 변수는 `CORDY_CLAUDE_ARGS`, `CORDY_CODEX_ARGS`, `CORDY_CODEBUDDY_ARGS`, `CORDY_QWEN_ARGS`, `CORDY_QWENPAW_ARGS`입니다. 예시:
+각 AI 코딩 도구는 `PATCHBAY_<PROVIDER>_PATH`로 명령 경로를 덮어쓸 수 있으며 모델 재정의를 지원하는 도구는 `PATCHBAY_<PROVIDER>_MODEL`도 사용할 수 있습니다. QwenPaw와 MiniMax Code에는 모델 변수가 없고 MiniMax Code의 경로 변수는 `PATCHBAY_MCODE_PATH`입니다. 자세한 내용은 [AI 코딩 도구 비교](/providers#모델-출처)를 참고하세요. DeepSeek Harness는 `PATCHBAY_DSH_PATH`와 `PATCHBAY_DSH_MODEL`을 지원합니다(값은 dsh 모델 카탈로그의 모델 ID, 예: `deepseek-official/deepseek-chat`). 컴퓨터 전체 기본 인수 `PATCHBAY_<PROVIDER>_ARGS`는 현재 Claude Code, Codex, CodeBuddy, Qwen Code, QwenPaw 다섯 도구를 지원합니다. 해당 변수는 `PATCHBAY_CLAUDE_ARGS`, `PATCHBAY_CODEX_ARGS`, `PATCHBAY_CODEBUDDY_ARGS`, `PATCHBAY_QWEN_ARGS`, `PATCHBAY_QWENPAW_ARGS`입니다. 예시:
 
 ```dotenv
-CORDY_CLAUDE_PATH=/opt/bin/claude
-CORDY_CLAUDE_ARGS=--max-turns 40
+PATCHBAY_CLAUDE_PATH=/opt/bin/claude
+PATCHBAY_CLAUDE_ARGS=--max-turns 40
 ```
 
-우선순위는 명령줄 flag → 환경 변수 → `~/.cordy/config.json` → 내장 기본값입니다. watchdog 동작은 [데몬과 런타임](/daemon-runtimes)을 참고하세요.
+우선순위는 명령줄 flag → 환경 변수 → `~/.patchbay/config.json` → 내장 기본값입니다. watchdog 동작은 [데몬과 런타임](/daemon-runtimes)을 참고하세요.
 
 ### 데몬 설정 영속화
 
-자주 사용하는 데몬 측 설정은 shell 환경 변수에 의존하지 않고 `~/.cordy/config.json`에 기록할 수도 있습니다. 이름 있는 profile의 설정 파일은 `~/.cordy/profiles/<name>/config.json`에 있습니다.
+자주 사용하는 데몬 측 설정은 shell 환경 변수에 의존하지 않고 `~/.patchbay/config.json`에 기록할 수도 있습니다. 이름 있는 profile의 설정 파일은 `~/.patchbay/profiles/<name>/config.json`에 있습니다.
 
 ```bash
-cordy config set poll_interval 10s
-cordy config show
+patchbay config set poll_interval 10s
+patchbay config show
 ```
 
 지원되는 key:
 
 | key | 기본값 | 설명 |
 |---|---|---|
-| `server_url` | `ws://localhost:8080/ws` | Cordy API / WebSocket 주소 |
+| `server_url` | `ws://localhost:8080/ws` | Patchbay API / WebSocket 주소 |
 | `app_url` | 비어 있음 | 브라우저 로그인에 사용할 Web 주소 |
 | `workspace_id` | 비어 있음 | 기본 워크스페이스 |
 | `device_name` | host 이름 | 런타임 목록의 기기 이름 |
@@ -270,7 +270,7 @@ cordy config show
 값에는 다음 규칙이 적용됩니다.
 
 - duration key는 양의 duration(예: `10s`, `2h`)을 허용하며 `0s`와 음수는 거부합니다. 유일한 예외는 `agent_timeout`입니다. `0s`가 유효하며 실행 시간 제한을 명시적으로 끕니다.
-- 빈 문자열을 전달하면 저장된 값을 지우고 환경 변수 또는 내장 기본값으로 돌아갑니다. 예: `cordy config set poll_interval ""`
+- 빈 문자열을 전달하면 저장된 값을 지우고 환경 변수 또는 내장 기본값으로 돌아갑니다. 예: `patchbay config set poll_interval ""`
 - `max_concurrent_tasks`는 0 이상의 정수여야 합니다.
 - 상대 `workspaces_root` 값은 저장할 때 절대 경로로 변환됩니다.
 

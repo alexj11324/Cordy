@@ -1,6 +1,6 @@
 "use client";
 
-import { issueStatusCategory } from "@cordy/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -26,42 +26,42 @@ import type {
   MemberWithUser,
   SearchIssueResult,
   SearchProjectResult,
-} from "@cordy/core/types";
-import { api } from "@cordy/core/api";
-import { partitionAggregatedSearchResults } from "@cordy/core/search/cancelled-rank";
+} from "@patchbay/core/types";
+import { api } from "@patchbay/core/api";
+import { partitionAggregatedSearchResults } from "@patchbay/core/search/cancelled-rank";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
   useCommentCollapseStore,
   useRecentIssuesStore,
   useResolvedExpandStore,
-} from "@cordy/core/issues/stores";
-import { issueDetailOptions, issueTimelineOptions } from "@cordy/core/issues/queries";
-import { useWorkspaceId } from "@cordy/core";
-import { useWorkspacePaths, WORKSPACE_PAGES } from "@cordy/core/paths";
-import type { WorkspacePageKey, WorkspacePaths } from "@cordy/core/paths";
-import { useModalStore } from "@cordy/core/modals";
-import { createShortcutChord } from "@cordy/core/shortcuts";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
+} from "@patchbay/core/issues/stores";
+import { issueDetailOptions, issueTimelineOptions } from "@patchbay/core/issues/queries";
+import { useWorkspaceId } from "@patchbay/core";
+import { useWorkspacePaths, WORKSPACE_PAGES } from "@patchbay/core/paths";
+import type { WorkspacePageKey, WorkspacePaths } from "@patchbay/core/paths";
+import { useModalStore } from "@patchbay/core/modals";
+import { createShortcutChord } from "@patchbay/core/shortcuts";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { StatusIcon } from "../issues/components";
 import { resolvedThreadRootIds, rootCommentIds } from "../issues/components/thread-utils";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { routeIconForPath } from "../layout/route-icon-components";
-import { PROJECT_STATUS_CONFIG } from "@cordy/core/projects/config";
-import type { ProjectStatus } from "@cordy/core/types";
+import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
+import type { ProjectStatus } from "@patchbay/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@cordy/ui/components/ui/dialog";
-import { useTheme } from "@cordy/ui/components/common/theme-provider";
-import { copyText } from "@cordy/ui/lib/clipboard";
+} from "@patchbay/ui/components/ui/dialog";
+import { useTheme } from "@patchbay/ui/components/common/theme-provider";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import {
   resolveClickIntent,
   useIntentNavigate,

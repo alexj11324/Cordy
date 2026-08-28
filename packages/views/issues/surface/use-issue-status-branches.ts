@@ -12,21 +12,21 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import { ALL_STATUSES } from "@cordy/core/issues/config";
-import { issueColumnCategory } from "@cordy/core/issues";
-import type { IssueStatusCatalog } from "@cordy/core/issue-statuses";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { issueColumnCategory } from "@patchbay/core/issues";
+import type { IssueStatusCatalog } from "@patchbay/core/issue-statuses";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import {
   issueKeys,
   issueTableRowPageOptions,
-} from "@cordy/core/issues/queries";
+} from "@patchbay/core/issues/queries";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableFacetsResponse,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 export interface IssueStatusPageState {
   total: number;

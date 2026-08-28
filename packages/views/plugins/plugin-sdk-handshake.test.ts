@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Lives here rather than beside the SDK on purpose: @cordy/plugin-sdk ships
+// Lives here rather than beside the SDK on purpose: @patchbay/plugin-sdk ships
 // as TypeScript source to third parties and carries no test runner of its own,
 // and packages/views is its only consumer in this repo.
 //
@@ -32,12 +32,12 @@ async function loadSdk() {
   // The SDK writes theme tokens to documentElement when a host sends them; no
   // theme is sent here, so a document is never touched.
   vi.stubGlobal("document", undefined);
-  return import("@cordy/plugin-sdk");
+  return import("@patchbay/plugin-sdk");
 }
 
 function initFrom(source: unknown, port: MessagePort) {
   const event = new MessageEvent("message", {
-    data: { type: "cordy:plugin-bridge-init", version: 1 },
+    data: { type: "patchbay:plugin-bridge-init", version: 1 },
   });
   Object.defineProperty(event, "source", { value: source, configurable: true });
   Object.defineProperty(event, "ports", { value: [port], configurable: true });
@@ -59,7 +59,7 @@ describe("surface bridge handshake", () => {
   });
 
   it("accepts a port from the embedder and answers on it", async () => {
-    const { cordy } = await loadSdk();
+    const { patchbay } = await loadSdk();
     const channel = new MessageChannel();
     const asked: unknown[] = [];
     channel.port2.onmessage = (event) => {
@@ -70,14 +70,14 @@ describe("surface bridge handshake", () => {
     channel.port2.start();
 
     initFrom(fakeWindow.parent, channel.port1);
-    await cordy.context.get(true);
+    await patchbay.context.get(true);
 
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ kind: "action", method: "GET", path: "/context" });
   });
 
   it("ignores an init from a window that is not the embedder", async () => {
-    const { cordy } = await loadSdk();
+    const { patchbay } = await loadSdk();
     const hostile = new MessageChannel();
     const seen: unknown[] = [];
     hostile.port2.onmessage = (event) => seen.push(event.data);
@@ -85,14 +85,14 @@ describe("surface bridge handshake", () => {
 
     // A sibling plugin frame shouting an init with its own port.
     initFrom(new FakeWindow(), hostile.port1);
-    void cordy.context.get(true);
+    void patchbay.context.get(true);
     await settle();
 
     expect(seen).toHaveLength(0);
   });
 
   it("keeps the first port when a second init arrives", async () => {
-    const { cordy } = await loadSdk();
+    const { patchbay } = await loadSdk();
     const real = new MessageChannel();
     const hijack = new MessageChannel();
     const onReal: unknown[] = [];
@@ -106,7 +106,7 @@ describe("surface bridge handshake", () => {
     // Even from the embedder's own window: a hijacker that lost the race must
     // not be able to take the channel over afterwards.
     initFrom(fakeWindow.parent, hijack.port1);
-    void cordy.context.get(true);
+    void patchbay.context.get(true);
     // The request arriving on the first port is the barrier: until it does,
     // "the hijacker got nothing" is true of a channel nobody has used yet.
     await vi.waitFor(() => expect(onReal.length).toBeGreaterThan(0));

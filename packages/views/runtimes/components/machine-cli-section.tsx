@@ -1,4 +1,4 @@
-import type { AgentRuntime } from "@cordy/core/types";
+import type { AgentRuntime } from "@patchbay/core/types";
 import type { RuntimeMachine } from "./runtime-machines";
 import { UpdateSection } from "./update-section";
 

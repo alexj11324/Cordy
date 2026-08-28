@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { RuntimeDetailPage } from "@cordy/views/runtimes";
+import { RuntimeDetailPage } from "@patchbay/views/runtimes";
 
 export default function RuntimeDetailRoute({
   params,

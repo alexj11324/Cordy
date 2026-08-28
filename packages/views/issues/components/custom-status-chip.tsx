@@ -1,9 +1,9 @@
 "use client";
 
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
-import type { IssueStatusCatalog } from "@cordy/core/issue-statuses";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import type { IssueStatus } from "@cordy/core/types";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import type { IssueStatusCatalog } from "@patchbay/core/issue-statuses";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import type { IssueStatus } from "@patchbay/core/types";
 import { StatusIcon } from "./status-icon";
 
 /**

@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server rust-server daemon cli cordy rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -8,27 +8,27 @@ ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
 endif
 
-POSTGRES_DB ?= cordy
-POSTGRES_USER ?= cordy
-POSTGRES_PASSWORD ?= cordy
+POSTGRES_DB ?= patchbay
+POSTGRES_USER ?= patchbay
+POSTGRES_PASSWORD ?= patchbay
 POSTGRES_PORT ?= 5432
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
-ifeq ($(origin CORDY_PUBLIC_URL), undefined)
-CORDY_PUBLIC_URL := http://localhost:$(PORT)
+ifeq ($(origin PATCHBAY_PUBLIC_URL), undefined)
+PATCHBAY_PUBLIC_URL := http://localhost:$(PORT)
 endif
 FRONTEND_PORT ?= 3000
 FRONTEND_ORIGIN ?= http://localhost:$(FRONTEND_PORT)
-CORDY_APP_URL ?= $(FRONTEND_ORIGIN)
+PATCHBAY_APP_URL ?= $(FRONTEND_ORIGIN)
 DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
 GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback
-CORDY_SERVER_URL ?= ws://localhost:$(PORT)/ws
+PATCHBAY_SERVER_URL ?= ws://localhost:$(PORT)/ws
 LOCAL_UPLOAD_BASE_URL ?= http://localhost:$(PORT)
 
 export
 
-CORDY_ARGS ?= $(ARGS)
+PATCHBAY_ARGS ?= $(ARGS)
 
 COMPOSE := docker compose
 
@@ -43,8 +43,8 @@ endef
 # The Rust workspace is the source/runtime entrypoint. The wrapper keeps
 # Cargo's workspace working directory during local development.
 RUST_RUNNER := ./scripts/run-rust.sh
-RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" $(RUST_RUNNER) run --locked -p cordy-server
-RUST_MIGRATE_CMD = $(RUST_RUNNER) run --locked -p cordy-migrate --
+RUST_SERVER_CMD = PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(RUST_BUILD_DATE)" PATCHBAY_GIT_COMMIT="$(COMMIT)" PATCHBAY_SHUTDOWN_HOLD_DURATION="$(PATCHBAY_SHUTDOWN_HOLD_DURATION)" $(RUST_RUNNER) run --locked -p patchbay-server
+RUST_MIGRATE_CMD = $(RUST_RUNNER) run --locked -p patchbay-migrate --
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -97,24 +97,24 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^CORDY_VCS_SECRET_KEY=.*#CORDY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^CORDY_VCS_SECRET_KEY=.*#CORDY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and CORDY_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and PATCHBAY_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Pulling official Cordy images..."
+	@echo "==> Pulling official Patchbay images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml pull; then \
 		echo ""; \
-		echo "Official images for tag '$${CORDY_IMAGE_TAG:-latest}' are not published yet."; \
+		echo "Official images for tag '$${PATCHBAY_IMAGE_TAG:-latest}' are not published yet."; \
 		echo "If this is before the first GHCR release, build from the current checkout:"; \
 		echo "  make selfhost-build"; \
 		exit 1; \
 	fi
-	@echo "==> Starting Cordy via Docker Compose..."
+	@echo "==> Starting Patchbay via Docker Compose..."
 	$(COMPOSE) -f docker-compose.selfhost.yml up -d
 	@bash scripts/selfhost-wait.sh official
 
@@ -130,22 +130,22 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^CORDY_VCS_SECRET_KEY=.*#CORDY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^CORDY_VCS_SECRET_KEY=.*#CORDY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and CORDY_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and PATCHBAY_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Building Cordy from the current checkout..."
+	@echo "==> Building Patchbay from the current checkout..."
 	$(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build
 	@bash scripts/selfhost-wait.sh build
 
 selfhost-stop: ## Stop the self-hosted Docker Compose stack
 	$(REQUIRE_COMPOSE)
-	@echo "==> Stopping Cordy services..."
+	@echo "==> Stopping Patchbay services..."
 	$(COMPOSE) -f docker-compose.selfhost.yml down
 	@echo "✓ All services stopped."
 
@@ -267,7 +267,7 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
 	@bash scripts/dev.sh
 
-daemon: CORDY_ARGS := daemon restart --profile local
+daemon: PATCHBAY_ARGS := daemon restart --profile local
 daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
 
 server: ## Run only the Rust server for the current checkout
@@ -277,15 +277,15 @@ server: ## Run only the Rust server for the current checkout
 
 rust-server: server ## Run the migrated Rust server entrypoint
 
-cli: rust-cli ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
+cli: rust-cli ## Run the Rust patchbay CLI with ARGS or PATCHBAY_ARGS from source
 
-cordy: rust-cli ## Run the Rust cordy CLI entrypoint
+patchbay: rust-cli ## Run the Rust patchbay CLI entrypoint
 
-rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
-	CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" $(RUST_RUNNER) run --locked -p cordy-cli -- $(CORDY_ARGS)
+rust-cli: ## Run the migrated Rust CLI slice with ARGS or PATCHBAY_ARGS
+	PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(RUST_BUILD_DATE)" $(RUST_RUNNER) run --locked -p patchbay-cli -- $(PATCHBAY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
-	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" $(RUST_RUNNER) build --release --locked -p cordy-cli
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(DATE)" $(RUST_RUNNER) build --release --locked -p patchbay-cli
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -299,10 +299,10 @@ build: rust-build ## Build Rust server, CLI, migration, and backfill binaries in
 
 rust-build: ## Build native Rust server, CLI, migration, and backfill binaries into bin
 	@mkdir -p bin
-	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_GIT_COMMIT="$(COMMIT)" $(RUST_RUNNER) build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
-	cp "$(RUST_TARGET_DIR)/release/cordy-server$(RUST_EXE)" "bin/server$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/cordy$(RUST_EXE)" "bin/cordy$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/cordy-migrate$(RUST_EXE)" "bin/migrate$(RUST_EXE)"
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(DATE)" PATCHBAY_GIT_COMMIT="$(COMMIT)" $(RUST_RUNNER) build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins
+	cp "$(RUST_TARGET_DIR)/release/patchbay-server$(RUST_EXE)" "bin/server$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/patchbay$(RUST_EXE)" "bin/patchbay$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/patchbay-migrate$(RUST_EXE)" "bin/migrate$(RUST_EXE)"
 	cp "$(RUST_TARGET_DIR)/release/backfill_task_usage_hourly$(RUST_EXE)" "bin/backfill_task_usage_hourly$(RUST_EXE)"
 	cp "$(RUST_TARGET_DIR)/release/backfill_issue_last_activity$(RUST_EXE)" "bin/backfill_issue_last_activity$(RUST_EXE)"
 	cp "$(RUST_TARGET_DIR)/release/backfill_codex_usage_cache$(RUST_EXE)" "bin/backfill_codex_usage_cache$(RUST_EXE)"

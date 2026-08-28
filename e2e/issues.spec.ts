@@ -4,7 +4,7 @@ import { loginAsDefault, createTestApi, preferManualCreateMode, reloadAppPage } 
 import type { TestApiClient } from "./fixtures";
 
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable";
+  process.env.DATABASE_URL ?? "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
 
 async function setIssueTimestamps(
   issueId: string,
@@ -181,7 +181,7 @@ test.describe("Issues", () => {
     // The browser tab must name the issue, so several open at once stay
     // distinguishable without clicking into each (PB-6222).
     await expect(page).toHaveTitle(
-      `${issue.identifier}: ${issue.title} | Cordy`,
+      `${issue.identifier}: ${issue.title} | Patchbay`,
     );
   });
 

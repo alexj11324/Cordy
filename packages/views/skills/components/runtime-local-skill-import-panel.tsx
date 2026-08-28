@@ -19,28 +19,28 @@ import type {
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
   Skill,
-} from "@cordy/core/types";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
+} from "@patchbay/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
   runtimeLocalSkillsKeys,
   runtimeLocalSkillsOptions,
   resolveRuntimeLocalSkillImport,
-} from "@cordy/core/runtimes";
+} from "@patchbay/core/runtimes";
 import {
   memberListOptions,
   skillDetailOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Label } from "@cordy/ui/components/ui/label";
-import { Progress } from "@cordy/ui/components/ui/progress";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
+} from "@patchbay/core/workspace/queries";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Progress } from "@patchbay/ui/components/ui/progress";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -49,13 +49,13 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@cordy/ui/components/ui/select";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
+} from "@patchbay/ui/components/ui/select";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@cordy/ui/lib/motion";
+} from "@patchbay/ui/lib/motion";
 import { useT } from "../../i18n";
 import { HighlightText } from "../../search/highlight-text";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";

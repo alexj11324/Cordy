@@ -1,13 +1,13 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
-import { FileUploadButton } from "@cordy/ui/components/common/file-upload-button";
-import { SubmitButton } from "@cordy/ui/components/common/submit-button";
-import { contentReferencesAttachment } from "@cordy/core/types";
-import { formatShortcut, useShortcut } from "@cordy/core/shortcuts";
-import { useCommentDraftStore } from "@cordy/core/issues/stores";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
+import { contentReferencesAttachment } from "@patchbay/core/types";
+import { formatShortcut, useShortcut } from "@patchbay/core/shortcuts";
+import { useCommentDraftStore } from "@patchbay/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";

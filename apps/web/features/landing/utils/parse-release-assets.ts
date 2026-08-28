@@ -5,9 +5,9 @@
  * installer artifacts are relevant on the /download page.
  *
  * Desktop artifact naming (see apps/desktop/electron-builder.yml):
- *   cordy-desktop-{version}-mac-{arch}.{dmg|zip}
- *   cordy-desktop-{version}-windows-{arch}.exe
- *   cordy-desktop-{version}-linux-{arch}.{AppImage|deb|rpm}
+ *   patchbay-desktop-{version}-mac-{arch}.{dmg|zip}
+ *   patchbay-desktop-{version}-windows-{arch}.exe
+ *   patchbay-desktop-{version}-linux-{arch}.{AppImage|deb|rpm}
  *
  * Linux arch appears as amd64 / x86_64 / arm64 / aarch64 depending
  * on the format; we normalize to amd64 and arm64.
@@ -34,7 +34,7 @@ export interface DownloadAssets {
 }
 
 const DESKTOP_ARTIFACT_RE =
-  /^cordy-desktop-[^-]+-(mac|windows|linux)-([a-z0-9_]+)\.(dmg|zip|exe|AppImage|deb|rpm)$/i;
+  /^patchbay-desktop-[^-]+-(mac|windows|linux)-([a-z0-9_]+)\.(dmg|zip|exe|AppImage|deb|rpm)$/i;
 
 function normalizeLinuxArch(arch: string): "amd64" | "arm64" | null {
   const a = arch.toLowerCase();

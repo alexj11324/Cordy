@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: Set up a local Cordy development environment, run tests, and submit changes using the repository conventions.
+description: Set up a local Patchbay development environment, run tests, and submit changes using the repository conventions.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy is a Rust backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
+Patchbay is a Rust backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
 
 ## Requirements
 
@@ -20,8 +20,8 @@ Treat the root `package.json`, `server-rs/Cargo.toml`, `server-rs/Cargo.lock`, a
 ## First start
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd cordy
+git clone https://github.com/patchbay-ai/patchbay.git
+cd patchbay
 make dev
 ```
 
@@ -41,8 +41,8 @@ The fixed local verification code comes from the development configuration. Do n
 The repository supports running the primary checkout and multiple worktrees at the same time. They share one PostgreSQL container but use separate databases and ports.
 
 ```bash
-git worktree add ../cordy-feature -b feat/my-change main
-cd ../cordy-feature
+git worktree add ../patchbay-feature -b feat/my-change main
+cd ../patchbay-feature
 make setup-worktree
 make start-worktree
 ```
@@ -124,14 +124,14 @@ When adding or changing an API, update the zod schema in `packages/core/api/` an
 
 ## Changing the database
 
-Migrations live in `migrations/`; production query modules live in `server-rs/crates/cordy-db/src/queries/`.
+Migrations live in `migrations/`; production query modules live in `server-rs/crates/patchbay-db/src/queries/`.
 
 1. Use the next unused numeric prefix and create both `.up.sql` and `.down.sql`.
 2. Do not add database foreign keys, cascade deletes, or cascade updates. Enforce relationships and cleanup in the application layer.
 3. Every new index must use `CREATE INDEX CONCURRENTLY` or `CREATE UNIQUE INDEX CONCURRENTLY`.
 4. Put each concurrent index in a migration file containing only that statement.
 5. Edit the relevant handwritten SQLx query module directly; the Rust path has no generated sqlc layer.
-6. Run the closest `cordy-db` test first, then `make test` for the locked Rust workspace.
+6. Run the closest `patchbay-db` test first, then `make test` for the locked Rust workspace.
 
 Use an application transaction in the service layer when multiple writes must succeed or roll back together.
 
@@ -148,7 +148,7 @@ Use an application transaction in the service layer when multiple writes must su
 Run the check closest to the change first, then expand the scope. For a Docs-only change:
 
 ```bash
-pnpm --filter @cordy/docs typecheck
+pnpm --filter @patchbay/docs typecheck
 ```
 
 For shared frontend changes:

@@ -12,18 +12,18 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 import {
   chatKeys,
   mergeTaskMessagesBySeq,
-} from "@cordy/core/chat/queries";
-import type { AgentTask } from "@cordy/core/types/agent";
-import type { TaskMessagePayload } from "@cordy/core/types/events";
+} from "@patchbay/core/chat/queries";
+import type { AgentTask } from "@patchbay/core/types/agent";
+import type { TaskMessagePayload } from "@patchbay/core/types/events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptButton } from "./transcript-button";
 import type { TimelineItem } from "./build-timeline";
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     listTaskMessages: vi.fn(),
   },
@@ -119,7 +119,7 @@ describe("TranscriptButton", () => {
 
     act(() => {
       window.dispatchEvent(
-        new CustomEvent("cordy:navigate", {
+        new CustomEvent("patchbay:navigate", {
           detail: { path: "/acme/inbox?issue=PB-123" },
         }),
       );

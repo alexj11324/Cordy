@@ -16,7 +16,7 @@ Two resource types are supported today:
 
 ## How resources enter a run
 
-When an agent works an issue inside the project, Cordy adds the project name, project description, and resource list to the run's context, and writes `.cordy/project/resources.json` into the working directory.
+When an agent works an issue inside the project, Patchbay adds the project name, project description, and resource list to the run's context, and writes `.patchbay/project/resources.json` into the working directory.
 
 The workspace's linked repository list is always included in the run context. Repositories linked to the project additionally specify the code and default ref this body of work uses.
 
@@ -26,7 +26,7 @@ A local directory only applies to the daemon it is bound to. When the daemon run
 
 Open the project and choose "Add resource" under **Resources**. Pick a repository already linked to the workspace, or paste a Git URL. Workspace repositories are managed in **Settings → Repositories**; once GitHub is connected, the same page offers **Pick from GitHub** to import repositories the App is authorized for.
 
-Repositories are not limited to GitHub: any Git URL the runtime can reach works as a repository resource. Self-hosted Cordy can also connect self-hosted Forgejo, Gitea, or GitLab under **Settings → Integrations → Git hosting**; see [Self-hosted Git hosting](/vcs-integration).
+Repositories are not limited to GitHub: any Git URL the runtime can reach works as a repository resource. Self-hosted Patchbay can also connect self-hosted Forgejo, Gitea, or GitLab under **Settings → Integrations → Git hosting**; see [Self-hosted Git hosting](/vcs-integration).
 
 When creating a project, you can also pick repositories directly under **Repos**. One project can link multiple GitHub repositories.
 
@@ -55,7 +55,7 @@ The directory must be an absolute path, must already exist, and must be readable
 Each project can link at most one local directory per daemon. Different computers on a team can each link their own directory for the same project.
 
 <Callout type="warning">
-In the default `in_place` mode a local directory is not an isolated environment: the agent directly sees and modifies your current branch and uncommitted files, and Cordy does not automatically switch branches, stash, commit, push, or open PRs. Worktree mode changes this — see "How tasks share the directory" below.
+In the default `in_place` mode a local directory is not an isolated environment: the agent directly sees and modifies your current branch and uncommitted files, and Patchbay does not automatically switch branches, stash, commit, push, or open PRs. Worktree mode changes this — see "How tasks share the directory" below.
 </Callout>
 
 ## How tasks share the directory
@@ -72,12 +72,12 @@ Waiting does not modify the directory. A waiting task can be cancelled; otherwis
 
 Each task gets its own [git worktree](https://git-scm.com/docs/git-worktree) of your repo, created inside the runtime's own workspace directory. **Tasks on the same directory run concurrently — none of them wait**, and none of them write to your working copy.
 
-Requires the directory to be a git repository with at least one commit. If it is not, tasks fail with an explicit error rather than quietly falling back to serial execution. The runtime on that machine must also implement the mode. It declares that when it connects, and Cordy gates on the declaration rather than on a version number — a development build can carry a version string that looks new enough while having none of the implementation. The declaration is checked twice: saving the resource is refused, with a hint to update the app on that machine, while its runtime does not declare the capability; and each task is checked again against the runtime that actually claims it — so a machine downgraded after the resource was saved has its tasks cancelled with a reason instead of silently running them in place. Asking for `worktree` is asking for isolation; editing your working copy instead is never the fallback.
+Requires the directory to be a git repository with at least one commit. If it is not, tasks fail with an explicit error rather than quietly falling back to serial execution. The runtime on that machine must also implement the mode. It declares that when it connects, and Patchbay gates on the declaration rather than on a version number — a development build can carry a version string that looks new enough while having none of the implementation. The declaration is checked twice: saving the resource is refused, with a hint to update the app on that machine, while its runtime does not declare the capability; and each task is checked again against the runtime that actually claims it — so a machine downgraded after the resource was saved has its tasks cancelled with a reason instead of silently running them in place. Asking for `worktree` is asking for isolation; editing your working copy instead is never the fallback.
 
 What the agent sees, and what you get back:
 
 - **The agent starts from what you see, not from `HEAD`.** Your uncommitted edits and your untracked files are replayed into the worktree, so the agent is not reviewing code you no longer have. Your own working copy, index, and stash list are never touched. If that state cannot be reproduced faithfully — including when there is more untracked content than the replay covers (2000 files / 200 MiB) — the task fails instead of starting from a tree you would not recognise. The usual fix is to gitignore or clean up build output that is not already ignored.
-- **The result is a branch in your repo**, named `agent/<agent>/<task>`. The run's **Run details** panel shows the branch name (and lets you copy it); you can also find it with `git branch`. Review it with `git log` / `git diff`, and merge or cherry-pick it yourself. Cordy never merges it for you. A run that failed partway still reports its branch, because it still committed whatever the agent had produced.
+- **The result is a branch in your repo**, named `agent/<agent>/<task>`. The run's **Run details** panel shows the branch name (and lets you copy it); you can also find it with `git branch`. Review it with `git log` / `git diff`, and merge or cherry-pick it yourself. Patchbay never merges it for you. A run that failed partway still reports its branch, because it still committed whatever the agent had produced.
 - **Nothing is silently dropped.** Anything the agent leaves uncommitted is committed to that branch before the worktree is removed, including when the task fails partway. In the rare case that commit itself cannot be made — for example a repo with `commit.gpgSign` and no signing key available to the runtime — the worktree is deliberately kept instead of removed, the task is reported as failed, and `git worktree list` in your repo points at the directory holding the work.
 - **A task that changes nothing leaves nothing behind.** Its branch is deleted rather than left as an empty entry in `git branch`.
 
@@ -93,44 +93,44 @@ Worktree mode covers git repositories. A plain non-git directory still runs seri
 
 ## What gets written during a run
 
-Beyond the code changes the agent makes, the runtime may also write into the directory the instruction files the current AI coding tool needs, plus `.cordy/project/resources.json`. Add them to `.gitignore` if you do not want them under version control.
+Beyond the code changes the agent makes, the runtime may also write into the directory the instruction files the current AI coding tool needs, plus `.patchbay/project/resources.json`. Add them to `.gitignore` if you do not want them under version control.
 
-Cordy never deletes a linked local directory when cleaning up run environments. The agent's changes to the directory are the same kind of changes as running an AI coding tool in your terminal yourself, and need the same review.
+Patchbay never deletes a linked local directory when cleaning up run environments. The agent's changes to the directory are the same kind of changes as running an AI coding tool in your terminal yourself, and need the same review.
 
 ## Manage resources with the CLI
 
 ```bash
 # Link a repository when creating a project
-cordy project create \
+patchbay project create \
   --title "Agent UX" \
-  --repo https://github.com/alexj11324/Cordy
+  --repo https://github.com/patchbay-ai/patchbay
 
 # List and add resources
-cordy project resource list <project-id>
-cordy project resource add <project-id> \
+patchbay project resource list <project-id>
+patchbay project resource add <project-id> \
   --type github_repo \
-  --url https://github.com/alexj11324/Cordy \
+  --url https://github.com/patchbay-ai/patchbay \
   --ref main
 
 # Link a local directory on a specific daemon
-cordy project resource add <project-id> \
+patchbay project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id>
 
 # Link a local git repo and let tasks run concurrently in their own worktrees
-cordy project resource add <project-id> \
+patchbay project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id> \
   --execution-mode worktree
 
 # Switch an existing local directory between modes
-cordy project resource update <project-id> <resource-id> --execution-mode worktree
-cordy project resource update <project-id> <resource-id> --execution-mode in_place
+patchbay project resource update <project-id> <resource-id> --execution-mode worktree
+patchbay project resource update <project-id> <resource-id> --execution-mode in_place
 
 # Remove a resource
-cordy project resource remove <project-id> <resource-id>
+patchbay project resource remove <project-id> <resource-id>
 ```
 
 Resource changes affect tasks created afterwards; they do not rewrite records of runs that already ended.

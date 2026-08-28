@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
-import { getOrCreateInstallId, utcDay } from "@cordy/core/client-usage";
-import { defaultStorage } from "@cordy/core/platform";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { getOrCreateInstallId, utcDay } from "@patchbay/core/client-usage";
+import { defaultStorage } from "@patchbay/core/platform";
 import type { LocalRuntimeProbe } from "../../../shared/daemon-types";
 
-const LAST_RUNTIME_PREFIX = "cordy_runtime_probe_last_reported";
+const LAST_RUNTIME_PREFIX = "patchbay_runtime_probe_last_reported";
 
 export function runtimeProbeSignature(probe: LocalRuntimeProbe): string {
   if (probe.probeResult === "error") return "error";

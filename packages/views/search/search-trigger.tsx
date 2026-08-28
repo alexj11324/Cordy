@@ -1,10 +1,10 @@
 "use client";
 
 import { Search } from "lucide-react";
-import { SidebarMenuButton } from "@cordy/ui/components/ui/sidebar";
+import { SidebarMenuButton } from "@patchbay/ui/components/ui/sidebar";
 import {
   useShortcut,
-} from "@cordy/core/shortcuts";
+} from "@patchbay/core/shortcuts";
 import { useSearchStore } from "./search-store";
 import { useT } from "../i18n";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";

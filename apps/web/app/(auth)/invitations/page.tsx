@@ -2,9 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@cordy/core/auth";
-import { paths } from "@cordy/core/paths";
-import { InvitationsPage } from "@cordy/views/invitations";
+import { useAuthStore } from "@patchbay/core/auth";
+import { paths } from "@patchbay/core/paths";
+import { InvitationsPage } from "@patchbay/views/invitations";
 
 export default function InvitationsRoutePage() {
   const router = useRouter();

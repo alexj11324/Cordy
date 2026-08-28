@@ -146,7 +146,7 @@ DM、または Bot を @ メンションしたチャンネルのメッセージ�
 Patchbay Cloud では追加設定は不要です。セルフホスト環境では、Slack token を暗号化するキーを先に設定してください。
 
 ```dotenv
-CORDY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 次のコマンドで生成できます。
@@ -157,7 +157,7 @@ openssl rand -base64 32
 
 API サービスを再起動してから Slack app を接続します。このキーは継続して保管してください。変更または紛失すると既存の token を復号できなくなり、app の再接続が必要になります。
 
-アカウント連携用リンクには `CORDY_APP_URL` が使われ、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Patchbay のアドレスを指定してください。
+アカウント連携用リンクには `PATCHBAY_APP_URL` が使われ、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Patchbay のアドレスを指定してください。
 
 ## よくある問題
 

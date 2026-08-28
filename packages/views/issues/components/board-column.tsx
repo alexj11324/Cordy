@@ -10,16 +10,16 @@ import type {
   IssueAssigneeType,
   IssueStatusCategory,
   Project,
-} from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { STATUS_CONFIG } from "@cordy/core/issues/config";
-import { useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { STATUS_CONFIG } from "@patchbay/core/issues/config";
+import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
 import { DraggableBoardCard } from "./board-card";

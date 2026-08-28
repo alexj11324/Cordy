@@ -23,7 +23,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 每个 Bot 绑定一个 Patchbay 智能体。需要在同一个聊天平台中使用多个智能体时，要分别连接多个 Bot。
 
-钉钉、企业微信和 Telegram [由社区维护](/community-maintained)：随每个版本发布，但没有官方支持 SLA。遇到问题请提交 [GitHub issue](https://github.com/alexj11324/Cordy/issues)。
+钉钉、企业微信和 Telegram [由社区维护](/community-maintained)：随每个版本发布，但没有官方支持 SLA。遇到问题请提交 [GitHub issue](https://github.com/alexj11324/Patchbay/issues)。
 
 企业微信目前只处理文字消息。语音、图片和文件消息会收到一句说明，不会转交给智能体。
 
@@ -79,12 +79,12 @@ Telegram 目前只处理文字消息。不支持的媒体消息会收到一句�
 自托管部署需要先为对应平台配置一个 32 字节加密密钥，Patchbay 才会开放连接入口：
 
 ```dotenv
-CORDY_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
-CORDY_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
-CORDY_DINGTALK_SECRET_KEY=<base64 编码的 32 字节密钥>
-CORDY_WECOM_SECRET_KEY=<base64 编码的 32 字节密钥>
-CORDY_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
-CORDY_WEIXIN_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_DINGTALK_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_WECOM_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_WEIXIN_SECRET_KEY=<base64 编码的 32 字节密钥>
 ```
 
 这些密钥用于加密保存 Bot 凭据。生成和保存方法见[环境变量](/environment-variables)。Patchbay Cloud 已完成这项配置。

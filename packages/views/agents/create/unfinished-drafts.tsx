@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { ChevronRight, MessageSquare } from "lucide-react";
-import { decodeBuilderInput, stripBuilderDraft } from "@cordy/core/agents";
-import type { AgentBuilderSessionSummary } from "@cordy/core/types";
+import { decodeBuilderInput, stripBuilderDraft } from "@patchbay/core/agents";
+import type { AgentBuilderSessionSummary } from "@patchbay/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dialog";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 
 /**

@@ -12,7 +12,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 
 export function useAttachmentHtmlText(attachmentId: string | null | undefined) {
   return useQuery({

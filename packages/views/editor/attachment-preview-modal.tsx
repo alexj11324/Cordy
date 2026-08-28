@@ -45,7 +45,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   PreviewTooLargeError,
   PreviewUnsupportedError,
-} from "@cordy/core/api";
+} from "@patchbay/core/api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -55,14 +55,14 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import type { Attachment } from "@cordy/core/types";
-import { paths, useWorkspaceSlug } from "@cordy/core/paths";
-import { cn } from "@cordy/ui/lib/utils";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
+import type { Attachment } from "@patchbay/core/types";
+import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
+import { cn } from "@patchbay/ui/lib/utils";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@cordy/ui/lib/motion";
+} from "@patchbay/ui/lib/motion";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { openExternal } from "../platform";

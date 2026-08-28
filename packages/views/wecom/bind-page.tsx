@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { Button } from "@cordy/ui/components/ui/button";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";
 
@@ -15,10 +15,10 @@ type RedeemState =
   | { kind: "needs-auth" }
   | { kind: "error"; reason: string };
 
-// WecomBindPage is the destination the WeCom smart-bot's "link your Cordy
+// WecomBindPage is the destination the WeCom smart-bot's "link your Patchbay
 // account" prompt points at. Same shape as SlackBindPage — the user lands
 // here logged out OR logged in; we require auth before redeeming because
-// the redeemer's Cordy identity is taken from the session (the token
+// the redeemer's Patchbay identity is taken from the session (the token
 // alone never proves who is binding — see wecom.BindingTokenService.
 // RedeemAndBind).
 //

@@ -7,7 +7,7 @@ import { loadRuntimeConfig } from "./runtime-config-loader";
 
 describe("loadRuntimeConfig", () => {
   it("uses dev env and ignores desktop.json during electron-vite dev", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "cordy-desktop-config-"));
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     const configPath = join(dir, "desktop.json");
     await writeFile(
       configPath,
@@ -36,7 +36,7 @@ describe("loadRuntimeConfig", () => {
   });
 
   it("uses cloud defaults when packaged config is absent", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "cordy-desktop-config-"));
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     await expect(
       loadRuntimeConfig({
         isDev: false,
@@ -47,15 +47,15 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://api.cordy.ai",
-        wsUrl: "wss://api.cordy.ai/ws",
-        appUrl: "https://cordy.ai",
+        apiUrl: "https://api.patchbay.ai",
+        wsUrl: "wss://api.patchbay.ai/ws",
+        appUrl: "https://patchbay.ai",
       },
     });
   });
 
   it("parses a valid packaged desktop.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "cordy-desktop-config-"));
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     const configPath = join(dir, "desktop.json");
     await writeFile(
       configPath,
@@ -76,7 +76,7 @@ describe("loadRuntimeConfig", () => {
   });
 
   it("fails closed when packaged desktop.json is invalid", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "cordy-desktop-config-"));
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     const configPath = join(dir, "desktop.json");
     await writeFile(configPath, "{");
 

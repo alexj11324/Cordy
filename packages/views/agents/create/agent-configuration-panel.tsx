@@ -7,12 +7,12 @@ import {
   applyDraftRuntimeChange,
   type AgentDraft,
   type AgentPermissionScope,
-} from "@cordy/core/agents";
-import type { MemberWithUser, RuntimeDevice } from "@cordy/core/types";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/core/agents";
+import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";

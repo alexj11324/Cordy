@@ -2,13 +2,13 @@
 
 import { ChevronRight, UserRound } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { MemberRole } from "@cordy/core/types";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import type { MemberRole } from "@patchbay/core/types";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { PageHeader } from "../layout/page-header";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { ActorIssuesPanel } from "../common/actor-issues-panel";

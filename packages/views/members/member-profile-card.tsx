@@ -1,14 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, MemberRole } from "@cordy/core/types";
-import { useWorkspaceId } from "@cordy/core";
-import { agentRunCounts30dOptions } from "@cordy/core/agents";
-import { agentListOptions, memberListOptions } from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import type { Agent, MemberRole } from "@patchbay/core/types";
+import { useWorkspaceId } from "@patchbay/core";
+import { agentRunCounts30dOptions } from "@patchbay/core/agents";
+import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { ActorAvatar } from "../common/actor-avatar";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";

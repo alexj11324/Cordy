@@ -1,10 +1,10 @@
 "use client";
 
 import { Suspense } from "react";
-import { DashboardLayout } from "@cordy/views/layout";
-import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
-import { SearchCommand, SearchTrigger } from "@cordy/views/search";
-import { FloatingChat } from "@cordy/views/chat";
+import { DashboardLayout } from "@patchbay/views/layout";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
+import { FloatingChat } from "@patchbay/views/chat";
 import { WebNotificationBridge } from "@/components/web-notification-bridge";
 import { WorkspaceDocumentTitle } from "@/platform/workspace-document-title";
 
@@ -18,7 +18,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <WorkspaceDocumentTitle />
       </Suspense>
       <DashboardLayout
-        loadingIndicator={<CordyIcon className="size-6" />}
+        loadingIndicator={<PatchbayIcon className="size-6" />}
         searchSlot={<SearchTrigger />}
         extra={
           <>

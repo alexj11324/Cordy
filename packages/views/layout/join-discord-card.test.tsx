@@ -20,7 +20,7 @@ vi.mock("../i18n", () => ({
 }));
 
 const userId = { current: "user-1" as string | undefined };
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (selector: (s: { user?: { id?: string } }) => unknown) =>
     selector({ user: userId.current ? { id: userId.current } : undefined }),
 }));

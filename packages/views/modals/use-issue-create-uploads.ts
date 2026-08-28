@@ -16,9 +16,9 @@
  */
 
 import { useMemo, type RefObject } from "react";
-import { attachmentToDraftUpload, type DraftUpload } from "@cordy/core/drafts";
-import { useIssueDraftStore } from "@cordy/core/issues/stores";
-import type { CreateMode } from "@cordy/core/issues/stores";
+import { attachmentToDraftUpload, type DraftUpload } from "@patchbay/core/drafts";
+import { useIssueDraftStore } from "@patchbay/core/issues/stores";
+import type { CreateMode } from "@patchbay/core/issues/stores";
 import type { UploadGate } from "../editor/use-upload-gate";
 import type { ContentEditorRef } from "../editor/content-editor";
 import {

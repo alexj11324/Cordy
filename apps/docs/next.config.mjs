@@ -48,6 +48,26 @@ const config = {
         destination: "/zh/cli",
         permanent: true,
       },
+      {
+        source: "/how-cordy-works", // legacy-brand-compat
+        destination: "/how-patchbay-works",
+        permanent: true,
+      },
+      {
+        source: "/zh/how-cordy-works", // legacy-brand-compat
+        destination: "/zh/how-patchbay-works",
+        permanent: true,
+      },
+      {
+        source: "/ja/how-cordy-works", // legacy-brand-compat
+        destination: "/ja/how-patchbay-works",
+        permanent: true,
+      },
+      {
+        source: "/ko/how-cordy-works", // legacy-brand-compat
+        destination: "/ko/how-patchbay-works",
+        permanent: true,
+      },
     ];
   },
 };

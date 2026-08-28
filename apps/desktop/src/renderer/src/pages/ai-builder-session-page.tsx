@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { AiBuilderSessionPage as SharedAiBuilderSessionPage } from "@cordy/views/agents";
+import { AiBuilderSessionPage as SharedAiBuilderSessionPage } from "@patchbay/views/agents";
 
 export function AiBuilderSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();

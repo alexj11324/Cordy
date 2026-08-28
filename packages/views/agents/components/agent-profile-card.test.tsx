@@ -2,23 +2,23 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     agentDetail: (id: string) => `/test/agents/${id}`,
   }),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
   },
@@ -73,10 +73,10 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@cordy/core/agents", async () => {
+vi.mock("@patchbay/core/agents", async () => {
   const actual =
-    await vi.importActual<typeof import("@cordy/core/agents")>(
-      "@cordy/core/agents",
+    await vi.importActual<typeof import("@patchbay/core/agents")>(
+      "@patchbay/core/agents",
     );
   return {
     ...actual,

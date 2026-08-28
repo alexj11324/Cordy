@@ -88,7 +88,7 @@ import {
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, TimelineEntry } from "@cordy/core/types";
+import type { Issue, TimelineEntry } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { IssueHeaderCard } from "./issue-header-card";
 import { IssueDescription } from "./issue-description";
@@ -101,7 +101,7 @@ import { buildTimelineRows, type TimelineRow } from "@/lib/timeline-thread";
 import { ImageSequenceProvider } from "@/lib/markdown/image-sequence";
 import { issueAttachmentsOptions } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
-import type { ImageSequenceBlock } from "@cordy/core/attachments/image-sequence";
+import type { ImageSequenceBlock } from "@patchbay/core/attachments/image-sequence";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { useCommentSelectStore } from "@/data/comment-select-store";

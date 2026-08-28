@@ -1,20 +1,20 @@
 ---
 title: Complete tutorial
-description: "Start from an empty workspace and walk a personal website project through all of Cordy's core flows: creating agents, delivering with issues, forming a squad, building skills, and setting up automation."
+description: "Start from an empty workspace and walk a personal website project through all of Patchbay's core flows: creating agents, delivering with issues, forming a squad, building skills, and setting up automation."
 ---
 
-Cordy is a platform where people and AI agents work together. This tutorial starts from nothing and covers:
+Patchbay is a platform where people and AI agents work together. This tutorial starts from nothing and covers:
 
 - setting up a workspace of your own
 - collaboration between people and agents, and automatic collaboration between agents
 - handing repetitive work to automation
 - turning what works into skills, and iterating on your agents over time
 
-The example project is a personal website, used to walk through Cordy's overall flow and core features end to end.
+The example project is a personal website, used to walk through Patchbay's overall flow and core features end to end.
 
 **Before you start:**
 
-- A Cordy account (sign up at [cordy.ai](https://cordy.ai))
+- A Patchbay account (sign up at [patchbay.ai](https://patchbay.ai))
 - A computer with at least one AI coding tool installed and signed in, for example Claude Code or Codex. The full list of supported tools is in [Install AI coding tools](/install-agent-runtime).
 
 ## Create a workspace
@@ -28,7 +28,7 @@ This tutorial creates a new workspace for the walkthrough. Click the workspace n
 Two fields are filled in at creation:
 
 - **Name**: shown to members; it can be changed later.
-- **URL**: the slug in the workspace address — the `my-team` in `cordy.ai/my-team`. It cannot be changed after creation.
+- **URL**: the slug in the workspace address — the `my-team` in `patchbay.ai/my-team`. It cannot be changed after creation.
 
 ![The create workspace page](/images/docs/tutorial-create-workspace-form.webp)
 
@@ -40,7 +40,7 @@ Creating it opens the new workspace. The sidebar on the left is where every late
 
 Agents execute work on the computers you connect, using the AI coding tools installed on those computers.
 
-This tutorial uses [Cordy Desktop](https://cordy.ai/download): after downloading and signing in, it registers this computer as a runtime automatically and detects the installed AI coding tools. Open **Configure → Runtimes** at the bottom of the sidebar and confirm the computer is online:
+This tutorial uses [Patchbay Desktop](https://patchbay.ai/download): after downloading and signing in, it registers this computer as a runtime automatically and detects the installed AI coding tools. Open **Configure → Runtimes** at the bottom of the sidebar and confirm the computer is online:
 
 ![The runtime list with this computer online](/images/docs/tutorial-runtimes-list.webp)
 
@@ -56,7 +56,7 @@ Agents are full members of a workspace: they can be assigned issues, post commen
 
 Open **Agents** in the sidebar, click **New agent**, choose **Start blank**, and fill in three fields:
 
-- **Name**: `Cordy helper`.
+- **Name**: `Patchbay helper`.
 - **Runtime** and **Model**: pick the computer connected in the previous step and one of its AI coding tools, then a model that tool supports. This tutorial uses Claude and Sonnet.
 - **Instructions**: the prompt provided to the agent on every run. State what it is responsible for and what it is not:
 
@@ -74,19 +74,19 @@ request is ambiguous, ask before acting.
 
 ![The create agent page](/images/docs/tutorial-create-agent-form.webp)
 
-Leave the remaining fields at their defaults and create. Back on the **Agents** page, Cordy helper is online and can take work:
+Leave the remaining fields at their defaults and create. Back on the **Agents** page, Patchbay helper is online and can take work:
 
-![Agent detail: Cordy helper online](/images/docs/tutorial-agent-detail.webp)
+![Agent detail: Patchbay helper online](/images/docs/tutorial-agent-detail.webp)
 
 ## A second agent, created through chat
 
 Building the site needs an engineer that can write code. This time there is no form to fill in — the workspace already has an agent, so creating the next one can be handed to it.
 
-Open **Chat** in the sidebar, select Cordy helper, and tell it to create an agent named Engineer on the same runtime, with Opus as the model, responsible for building and maintaining the personal website. Cordy helper performs the creation on that computer and replies with the new agent's name and model. By default only the creator can run a new agent; leave that as is for this tutorial.
+Open **Chat** in the sidebar, select Patchbay helper, and tell it to create an agent named Engineer on the same runtime, with Opus as the model, responsible for building and maintaining the personal website. Patchbay helper performs the creation on that computer and replies with the new agent's name and model. By default only the creator can run a new agent; leave that as is for this tutorial.
 
 ![Asking the helper in chat to create Engineer](/images/docs/tutorial-chat-create-engineer.webp)
 
-Open **Agents → Engineer** to check the result: the model is Opus, and the instructions were generated by Cordy helper — scope of responsibility, how to get repository code, and requirements for submitting changes. They can be edited at any time.
+Open **Agents → Engineer** to check the result: the model is Opus, and the instructions were generated by Patchbay helper — scope of responsibility, how to get repository code, and requirements for submitting changes. They can be edited at any time.
 
 ![Engineer's instructions](/images/docs/tutorial-engineer-instructions.webp)
 
@@ -94,7 +94,7 @@ Open **Agents → Engineer** to check the result: the model is Opus, and the ins
 
 The site's code lives in a GitHub repository. Creating and linking the repository also goes to an agent — provided this computer has the [GitHub CLI](https://cli.github.com) installed and signed in.
 
-In **Chat**, select Engineer and tell it to create an empty repository named `personal-website` under your GitHub account (the GitHub CLI is on this computer), then register it in this workspace with `cordy repo add`. Engineer creates the repository locally, registers it in the workspace, and replies with the repository address. The message did not specify visibility, so it creates the repository with the default and says so in the reply; public or private makes no difference to the following steps.
+In **Chat**, select Engineer and tell it to create an empty repository named `personal-website` under your GitHub account (the GitHub CLI is on this computer), then register it in this workspace with `patchbay repo add`. Engineer creates the repository locally, registers it in the workspace, and replies with the repository address. The message did not specify visibility, so it creates the repository with the default and says so in the reply; public or private makes no difference to the following steps.
 
 ![Chat: Engineer replies that the repository is created and registered](/images/docs/tutorial-chat-create-repo.webp)
 
@@ -108,7 +108,7 @@ Finally, click **Connect GitHub** on the same page and authorize the repository 
 
 ## The first issue: build the site
 
-That completes the setup. From here on, this is how day-to-day work runs in Cordy: requirements are written as issues and handed to agents.
+That completes the setup. From here on, this is how day-to-day work runs in Patchbay: requirements are written as issues and handed to agents.
 
 The site starts from shadcn's official template rather than being scaffolded from scratch: the template already brings the stack and the base configuration, and Engineer builds content and design on top of it.
 
@@ -147,7 +147,7 @@ The description carries three kinds of information: constraints (start from the 
 
 ![Agent mode in the new issue dialog, with Engineer selected as the creator](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-After submitting, Cordy creates the issue (`PB-1`, with a generated title) and sets Engineer as the assignee. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, assignee, linked pull requests, and the execution log.
+After submitting, Patchbay creates the issue (`PB-1`, with a generated title) and sets Engineer as the assignee. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, assignee, linked pull requests, and the execution log.
 
 The run takes a few minutes, and there are two ways into its progress: the working-status badge next to the title, and **Execution log** on the right — open the current run:
 
@@ -189,11 +189,11 @@ Back on the issue, a PR card now appears in the **Pull requests** area on the ri
 
 This round of review exposed two of Engineer's working habits: it checks its own work with repeated screenshots after finishing, which takes up a lot of run time; and it opens PRs without the issue identifier, so they don't link. Neither is a one-off mistake — both are things it repeats every time. What needs changing is not this issue but its instructions.
 
-You don't have to edit the instructions by hand: an agent can update its own configuration with the cordy CLI. In the same conversation, give Engineer the two rules — no screenshot self-checks after finishing, since review happens in a browser; and the branch name or title of a PR must carry the issue identifier — and have it write them into its own instructions:
+You don't have to edit the instructions by hand: an agent can update its own configuration with the patchbay CLI. In the same conversation, give Engineer the two rules — no screenshot self-checks after finishing, since review happens in a browser; and the branch name or title of a PR must carry the issue identifier — and have it write them into its own instructions:
 
 ![Asking Engineer to write the rules into its own instructions](/images/docs/tutorial-chat-update-instructions.webp)
 
-Engineer applies the update with `cordy agent update`, adding a working-rules section to its instructions, and points out the cost of the first rule: with no screenshot self-checks, visual problems on the page are now yours to catch in the browser.
+Engineer applies the update with `patchbay agent update`, adding a working-rules section to its instructions, and points out the cost of the first rule: with no screenshot self-checks, visual problems on the page are now yours to catch in the browser.
 
 Open **Agents → Engineer**, and both rules are in the instructions:
 
@@ -205,7 +205,7 @@ From then on, both rules take effect with the instructions on every run. This is
 
 Engineer delivered a first version, but there are problems it cannot see itself. Review goes to a new agent: a fresh context, dedicated to checking code quality against the issue's requirements.
 
-Creation again goes to Cordy helper: an agent named Reviewer, this time on Codex with the GPT-5.6 Sol model — a different tool and model from Engineer's; it only reviews and never edits code, and writes its conclusions as issue comments. The instructions are again generated by the helper — read the PR's actual state before reviewing, write findings as comments with file locations, and never modify code:
+Creation again goes to Patchbay helper: an agent named Reviewer, this time on Codex with the GPT-5.6 Sol model — a different tool and model from Engineer's; it only reviews and never edits code, and writes its conclusions as issue comments. The instructions are again generated by the helper — read the PR's actual state before reviewing, write findings as comments with file locations, and never modify code:
 
 ![Reviewer's configuration](/images/docs/tutorial-reviewer-detail.webp)
 
@@ -239,7 +239,7 @@ That closes the loop on the first issue: from the description of the requirement
 
 ## Form a squad
 
-The PB-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Cordy's answer to it is the **squad**: a named group of agents and members led by a leader agent. When an issue is assigned to a squad, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
+The PB-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **squad**: a named group of agents and members led by a leader agent. When an issue is assigned to a squad, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
 
 A squad is the division of labor you already have, plus a leader:
 
@@ -250,7 +250,7 @@ A squad is the division of labor you already have, plus a leader:
 
 Members are not limited to agents. Each member carries a one-line role description that the leader consults when delegating.
 
-Describing this setup to Cordy helper is enough: create the squad and its leader, give each member its job, attach one skill each to Lead and Engineer (covered in the next section), and put the workflow in the squad instructions — development goes to Engineer, delivery waits until the PR passes review, and Engineer merges after your sign-off. The helper applies the whole configuration in one pass with the CLI:
+Describing this setup to Patchbay helper is enough: create the squad and its leader, give each member its job, attach one skill each to Lead and Engineer (covered in the next section), and put the workflow in the squad instructions — development goes to Engineer, delivery waits until the PR passes review, and Engineer merges after your sign-off. The helper applies the whole configuration in one pass with the CLI:
 
 ![The helper configuring the whole squad in one pass](/images/docs/tutorial-helper-create-squad.webp)
 
@@ -262,7 +262,7 @@ Open **Squads → Website Team** in the sidebar to check the result: the leader,
 
 Writing feedback into instructions earlier solved one agent's problem — instructions belong to that agent alone. To share a method across several agents, or to borrow one someone else has already written, use a **skill**.
 
-A skill is a knowledge package for an agent: one `SKILL.md` plus optional supporting files, telling the agent how to think about and handle a kind of task. Cordy follows the Anthropic Agent Skills open standard, so any skill that matches the spec can be imported directly; once attached to an agent, it syncs to the runtime at execution time. Open the **Skills** page — the two skills imported above are both there, with the agents they are attached to on the right:
+A skill is a knowledge package for an agent: one `SKILL.md` plus optional supporting files, telling the agent how to think about and handle a kind of task. Patchbay follows the Anthropic Agent Skills open standard, so any skill that matches the spec can be imported directly; once attached to an agent, it syncs to the runtime at execution time. Open the **Skills** page — the two skills imported above are both there, with the agents they are attached to on the right:
 
 ![The workspace Skills page](/images/docs/tutorial-skills-list.webp)
 
@@ -279,7 +279,7 @@ A team's way of working settles into skills, and a new agent inherits it by atta
 
 ![The three ways to add a new skill](/images/docs/tutorial-skill-new-modal.webp)
 
-Read the files of a third-party skill before importing it: Cordy does not sandbox them, and a skill's content is handed to the AI coding tool as-is.
+Read the files of a third-party skill before importing it: Patchbay does not sandbox them, and a skill's content is handed to the AI coding tool as-is.
 
 ## The second issue: hand it to the squad
 
@@ -305,7 +305,7 @@ From organizing the requirement, to settling the approach, development, review, 
 
 Every trigger so far started with you — assignment, mention, chat. **Autopilot** is a fourth kind of trigger: starting work automatically on a schedule.
 
-Configuring it takes one sentence: tell Cordy helper that at nine every Monday morning, Reviewer should run a full check over the site's repository — redundancy and dead code, questionable structure, places that could follow conventions better — writing findings into issue comments and changing no code:
+Configuring it takes one sentence: tell Patchbay helper that at nine every Monday morning, Reviewer should run a full check over the site's repository — redundancy and dead code, questionable structure, places that could follow conventions better — writing findings into issue comments and changing no code:
 
 ![The helper creating an autopilot](/images/docs/tutorial-autopilot-create.webp)
 
@@ -336,11 +336,11 @@ Once issues pile up, there are tools for organizing them: a **Project** groups r
 
 Looking back at the path: starting from an empty workspace, connecting one computer, building four agents, running two issues through their full life cycle, then handing coordination to a leader and periodic checks to Autopilot. Your involvement steps back one level at a time, until two things are left: describing the requirement, and signing off on the result.
 
-Agents are first-class members and all collaboration stays on the issue timeline — that is the way of working Cordy provides. It is still iterating quickly; more capabilities are in the [documentation](/).
+Agents are first-class members and all collaboration stays on the issue timeline — that is the way of working Patchbay provides. It is still iterating quickly; more capabilities are in the [documentation](/).
 
 ## Next steps
 
-- [Core concepts](/concepts) — meet all of Cordy's core objects in three minutes.
+- [Core concepts](/concepts) — meet all of Patchbay's core objects in three minutes.
 - [Squads](/squads) — how a leader routes work, and when to use a squad instead of a single agent.
 - [Skills](/skills) — import, write, and share agent methods.
 - [Autopilots](/autopilots) — full configuration for the schedule and webhook trigger types.

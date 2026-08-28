@@ -17,15 +17,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
     name: isProd
-      ? "Cordy"
+      ? "Patchbay"
       : isStaging
-        ? "Cordy (Staging)"
-        : "Cordy (Dev)",
-    slug: "cordy-mobile",
+        ? "Patchbay (Staging)"
+        : "Patchbay (Dev)",
+    slug: "patchbay-mobile",
     version: "0.1.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    scheme: "cordy",
+    scheme: ["patchbay", "cordy"], // legacy-brand-compat
     // 1024x1024 source shared with the desktop client
     // (apps/desktop/build/icon.png). Expo prebuild generates every required
     // iOS icon size from this single PNG.
@@ -45,7 +45,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       appleTeamId: process.env.EXPO_APPLE_TEAM_ID,
       // Per-variant bundle id overrides exist for one reason: an Apple ID
       // can only sign bundle prefixes it owns, so contributors not on the
-      // Cordy Apple Developer team (and external users self-building a
+      // Patchbay Apple Developer team (and external users self-building a
       // personal copy against production) need to swap to a reverse-domain
       // they control. Each variant has its own `_<VARIANT>` suffix and is
       // only read inside that variant's branch — a generic
@@ -53,10 +53,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // auto-loads `.env.<mode>.local` regardless of APP_ENV) and collapse
       // dev / staging / prod onto a single id.
       bundleIdentifier: isProd
-        ? (process.env.EXPO_BUNDLE_IDENTIFIER_PROD ?? "ai.cordy.mobile")
+        ? (process.env.EXPO_BUNDLE_IDENTIFIER_PROD ?? "ai.patchbay.mobile")
         : isStaging
-          ? "ai.cordy.mobile.staging"
-          : (process.env.EXPO_BUNDLE_IDENTIFIER_DEV ?? "ai.cordy.mobile.dev"),
+          ? "ai.patchbay.mobile.staging"
+          : (process.env.EXPO_BUNDLE_IDENTIFIER_DEV ?? "ai.patchbay.mobile.dev"),
     },
     plugins: [
       "expo-router",
@@ -71,7 +71,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           // iOS 14+. Camera + microphone are disabled — we only ever read
           // from the existing photo library.
           photosPermission:
-            "Allow Cordy to access your photos to attach images to issues and comments.",
+            "Allow Patchbay to access your photos to attach images to issues and comments.",
           cameraPermission: false,
           microphonePermission: false,
         },

@@ -52,9 +52,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DataTable } from "@cordy/ui/components/ui/data-table";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+import { DataTable } from "@patchbay/ui/components/ui/data-table";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,38 +64,38 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   TableCell,
   TableRow,
-} from "@cordy/ui/components/ui/table";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { cn } from "@cordy/ui/lib/utils";
-import { ApiError } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
-import { useModalStore } from "@cordy/core/modals";
+} from "@patchbay/ui/components/ui/table";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { cn } from "@patchbay/ui/lib/utils";
+import { ApiError } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { useModalStore } from "@patchbay/core/modals";
 import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@cordy/core/issues/queries";
+} from "@patchbay/core/issues/queries";
 import {
   TABLE_SYSTEM_COLUMNS,
   propertyIdFromViewKey,
   type SortField,
   type TableColumnKey,
   type TableSystemColumnKey,
-} from "@cordy/core/issues/stores/view-store";
-import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
-import { propertyListOptions } from "@cordy/core/properties";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { buildActorNameResolver, useActorName } from "@cordy/core/workspace/hooks";
+} from "@patchbay/core/issues/stores/view-store";
+import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+import { propertyListOptions } from "@patchbay/core/properties";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { buildActorNameResolver, useActorName } from "@patchbay/core/workspace/hooks";
 import {
   agentListOptions,
   memberListOptions,
   squadListOptions,
-} from "@cordy/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 import type {
   Issue,
   IssueProperty,
@@ -106,12 +106,12 @@ import type {
   IssueTableRowsResponse,
   Project,
   UpdateIssueRequest,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   actorRefsFromValue,
   formatActorRef,
   isActorPropertyType,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   useInfiniteQuery,
   useQueries,

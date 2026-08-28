@@ -2,8 +2,8 @@
 
 import { use } from "react";
 import { useSearchParams } from "next/navigation";
-import { AttachmentPreviewPage } from "@cordy/views/attachments";
-import { ErrorBoundary } from "@cordy/ui/components/common/error-boundary";
+import { AttachmentPreviewPage } from "@patchbay/views/attachments";
+import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
 
 // Lives at /:slug/attachments/:id/preview — OUTSIDE the (dashboard) group on
 // purpose. The dashboard layout adds a left sidebar + top chrome; this page

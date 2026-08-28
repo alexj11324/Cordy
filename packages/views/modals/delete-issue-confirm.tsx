@@ -11,8 +11,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { useDeleteIssue } from "@cordy/core/issues/mutations";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { useDeleteIssue } from "@patchbay/core/issues/mutations";
 import { useBackOrReplace } from "../navigation";
 import { useT } from "../i18n";
 

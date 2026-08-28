@@ -22,7 +22,7 @@ import type {
   IssueStatus,
   IssueStatusCategory,
   IssueStatusEntry,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 /**
  * The 7 categories in canonical display order. Mirrors `ALL_STATUSES` in

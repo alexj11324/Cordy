@@ -17,22 +17,22 @@ import type {
   MemberWithUser,
   Skill,
   SkillSummary,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillListOptions,
-} from "@cordy/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@cordy/core/runtimes";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Checkbox } from "@cordy/ui/components/ui/checkbox";
+} from "@patchbay/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import {
   LIST_GRID_BOTTOM_CLEARANCE,
   ListGrid,
@@ -42,14 +42,14 @@ import {
   ListGridHeaderCell,
   ListGridRow,
   type ListGridSortDirection,
-} from "@cordy/ui/components/ui/list-grid";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+} from "@patchbay/ui/components/ui/list-grid";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
+} from "@patchbay/ui/components/ui/tooltip";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
 import {
   rowLinkInteractiveProps,
   useNavigation,
@@ -68,7 +68,7 @@ import {
   DEFAULT_HIDDEN_COLUMNS,
   type SkillColumnKey,
   type SkillSortField,
-} from "@cordy/core/skills/stores";
+} from "@patchbay/core/skills/stores";
 import { SkillListToolbar } from "./skill-list-toolbar";
 import {
   SkillBatchToolbar,
@@ -149,7 +149,7 @@ function columnTrackVars(
 }
 
 // Sort/filter/column types and defaults live in the core view store
-// (@cordy/core/skills/stores/view-store) so the persisted state and the
+// (@patchbay/core/skills/stores/view-store) so the persisted state and the
 // UI share one definition. Re-exported here for the toolbar's convenience.
 export type SortField = SkillSortField;
 
@@ -182,7 +182,7 @@ function PageHeaderBar({
       count={totalCount}
       description={t(($) => $.page.tagline)}
       learnMore={{
-        href: "https://cordy.ai/docs/skills",
+        href: "https://patchbay.ai/docs/skills",
         label: t(($) => $.page.learn_more),
       }}
       actions={

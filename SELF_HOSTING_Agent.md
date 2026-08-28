@@ -1,6 +1,6 @@
 # Self-Hosting Setup (for AI Agents)
 
-This document is designed for AI agents to execute. Follow these steps exactly to deploy a local Cordy instance and connect to it.
+This document is designed for AI agents to execute. Follow these steps exactly to deploy a local Patchbay instance and connect to it.
 
 ## Prerequisites
 
@@ -12,30 +12,30 @@ This document is designed for AI agents to execute. Follow these steps exactly t
 
 ```bash
 # Install CLI + provision self-host server
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
 
 # Configure CLI for localhost, authenticate, and start daemon
-cordy setup self-host
+patchbay setup self-host
 ```
 
-Wait for the server output `✓ Cordy server is running and CLI is ready!` before running `cordy setup self-host`.
+Wait for the server output `✓ Patchbay server is running and CLI is ready!` before running `patchbay setup self-host`.
 
 **Expected result:**
 - Frontend at http://localhost:3000
 - Backend at http://localhost:8080
-- `cordy` CLI installed and configured for localhost
+- `patchbay` CLI installed and configured for localhost
 
 ## Alternative: Manual Setup
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd cordy
+git clone https://github.com/patchbay-ai/patchbay.git
+cd patchbay
 make selfhost
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
-cordy setup self-host
+curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+patchbay setup self-host
 ```
 
-The `cordy setup self-host` command will:
+The `patchbay setup self-host` command will:
 1. Configure CLI to connect to localhost:8080 / localhost:3000
 2. Open a browser for login — use the emailed code, or the generated code printed in backend logs when Resend is unset
 3. Discover workspaces automatically
@@ -44,7 +44,7 @@ The `cordy setup self-host` command will:
 ## Verification
 
 ```bash
-cordy daemon status
+patchbay daemon status
 ```
 
 Should show `running` with detected agents.
@@ -53,10 +53,10 @@ Should show `running` with detected agents.
 
 ```bash
 # Stop the daemon
-cordy daemon stop
+patchbay daemon stop
 
 # Stop all Docker services
-cd cordy
+cd patchbay
 make selfhost-stop
 ```
 
@@ -67,7 +67,7 @@ If the default ports (8080/3000) are in use:
 1. Edit `.env` and change `PORT` and `FRONTEND_PORT`. These are host ports; the
    containers keep listening on 8080/3000 internally, so no rebuild is needed.
 2. Run `make selfhost`
-3. Run `cordy setup self-host --port <PORT> --frontend-port <FRONTEND_PORT>`
+3. Run `patchbay setup self-host --port <PORT> --frontend-port <FRONTEND_PORT>`
 
 Edit the file rather than relying on environment variables: `make` `include`s
 `.env`, so a value in the file outranks the same variable from your shell
@@ -84,5 +84,5 @@ one the stack is actually published on.
 
 - **Backend not ready:** `docker compose -f docker-compose.selfhost.yml logs backend`
 - **Frontend not ready:** `docker compose -f docker-compose.selfhost.yml logs frontend`
-- **Daemon issues:** `cordy daemon logs`
+- **Daemon issues:** `patchbay daemon logs`
 - **Health checks:** `curl http://localhost:8080/health` for liveness, `curl http://localhost:8080/readyz` for dependency-aware readiness

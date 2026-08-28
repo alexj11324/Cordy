@@ -17,7 +17,7 @@
  * free on the network (React Query dedupes) but not on re-renders.
  */
 import { View } from "react-native";
-import type { IssueStatus } from "@cordy/core/types";
+import type { IssueStatus } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { isCustomStatus, type IssueStatusCatalog } from "@/lib/issue-status";

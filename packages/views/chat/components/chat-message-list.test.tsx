@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import { chatKeys } from "@cordy/core/chat/queries";
-import type { TaskMessagePayload } from "@cordy/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { chatKeys } from "@patchbay/core/chat/queries";
+import type { TaskMessagePayload } from "@patchbay/core/types";
 import type { ReactElement } from "react";
 import enChat from "../../locales/en/chat.json";
 
@@ -42,7 +42,7 @@ vi.mock("react-virtuoso", () => ({
 }));
 
 // Canvas animation behavior belongs to thinking-orbs itself. Keep these DOM
-// tests focused on Cordy's disclosure state and accessible label.
+// tests focused on Patchbay's disclosure state and accessible label.
 vi.mock("thinking-orbs", () => ({
   ThinkingOrb: ({ "aria-label": label }: { "aria-label"?: string }) => (
     <span data-testid="thinking-orb" aria-label={label} />

@@ -1,4 +1,4 @@
-import type { InboxItem } from "@cordy/core/types";
+import type { InboxItem } from "@patchbay/core/types";
 
 function singleLine(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();

@@ -3,13 +3,13 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { useAuthStore } from "@cordy/core/auth";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
-import type { ShareLinkInfo, Workspace } from "@cordy/core/types";
+import { api } from "@patchbay/core/api";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { useAuthStore } from "@patchbay/core/auth";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import type { ShareLinkInfo, Workspace } from "@patchbay/core/types";
 
 function JoinInner() {
   const router = useRouter();

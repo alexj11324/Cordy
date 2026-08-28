@@ -51,13 +51,13 @@ vi.mock("../i18n", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({ useCurrentWorkspace: () => ({ id: "ws1" }) }));
-vi.mock("@cordy/core/hooks/use-file-upload", () => ({
+vi.mock("@patchbay/core/paths", () => ({ useCurrentWorkspace: () => ({ id: "ws1" }) }));
+vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn() }),
 }));
-vi.mock("@cordy/core/api", () => ({ api: {} }));
+vi.mock("@patchbay/core/api", () => ({ api: {} }));
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), error: vi.fn(), success: vi.fn() } }));
-vi.mock("@cordy/core/feedback", () => ({
+vi.mock("@patchbay/core/feedback", () => ({
   FEEDBACK_KINDS: ["bug", "feature", "general", "praise"] as const,
   isFeedbackContext: (value: unknown) =>
     typeof value === "object" &&

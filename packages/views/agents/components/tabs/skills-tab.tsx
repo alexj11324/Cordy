@@ -16,29 +16,29 @@ import type {
   AgentRuntime,
   DisabledRuntimeSkill,
   RuntimeLocalSkillSummary,
-} from "@cordy/core/types";
-import { api, ApiError } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
+} from "@patchbay/core/types";
+import { api, ApiError } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@cordy/core/runtimes";
+} from "@patchbay/core/runtimes";
 import {
   skillDetailOptions,
   skillListOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/workspace/queries";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Switch } from "@cordy/ui/components/ui/switch";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dialog";
+import { Switch } from "@patchbay/ui/components/ui/switch";
+import { cn } from "@patchbay/ui/lib/utils";
 import { SkillAddDialog } from "../skill-add-dialog";
 import { useT } from "../../../i18n";
 

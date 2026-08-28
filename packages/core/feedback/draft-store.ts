@@ -5,7 +5,7 @@ interface FeedbackDraft {
 }
 
 export const useFeedbackDraftStore = createDraftStore<FeedbackDraft>({
-  storageKey: "cordy_feedback_draft",
+  storageKey: "patchbay_feedback_draft",
   emptyData: { message: "" },
   hasMeaningful: (d) => !!d.message,
 });

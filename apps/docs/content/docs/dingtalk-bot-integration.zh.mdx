@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 把任意[智能体](/agents)接入一个钉钉 Bot，团队就能在钉钉里直接使用它——私聊 Bot、在群里 @ 它、发截图给它，或者输入 `/issue` 直接创建一个 [Patchbay issue](/issues)，不用打开应用。
 
-钉钉集成[由社区维护](/community-maintained)：每个版本都会随包发布，但不附带官方支持 SLA。遇到问题请提到 [GitHub issues](https://github.com/alexj11324/Cordy/issues)。
+钉钉集成[由社区维护](/community-maintained)：每个版本都会随包发布，但不附带官方支持 SLA。遇到问题请提到 [GitHub issues](https://github.com/patchbay-ai/patchbay/issues)。
 
 钉钉走的是**自带应用（bring-your-own-app，BYO）**模式：工作区管理员创建一个钉钉 app，给它加一个 Stream 模式的机器人，再把凭证粘贴进 Patchbay。设置时选择的智能体是机器人的默认智能体，负责私聊和刚发现的群聊。同一个机器人可以加入多个群，每个群之后都能分别路由到不同智能体。（这一点和 [Lark](/lark-bot-integration) 不同，Lark 的绑定是扫码安装流程。）
 
@@ -120,7 +120,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 1. 生成一个 32 字节的密钥并设置到 API 服务器：
 
    ```dotenv
-   CORDY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+   PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
    ```
 
    例如：`openssl rand -base64 32`。
@@ -128,7 +128,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 2. 重启 API。在密钥设置好之前，**Settings → Integrations** 会显示一条「DingTalk integration not enabled」提示，**Connect DingTalk** 入口也会保持隐藏。
 
 <Callout type="info">
-这个密钥必须正好解码出 32 字节——`openssl rand -base64 32` 就能做到。把它当成一个长期有效的密钥：轮换或丢失它会让已存储的凭证无法解密，迫使每个 Bot 重新连接。「绑定你的账号」链接是用你的 Web 应用地址（`CORDY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`）拼出来的——正常部署里这个值本来就有，不需要额外配置。
+这个密钥必须正好解码出 32 字节——`openssl rand -base64 32` 就能做到。把它当成一个长期有效的密钥：轮换或丢失它会让已存储的凭证无法解密，迫使每个 Bot 重新连接。「绑定你的账号」链接是用你的 Web 应用地址（`PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`）拼出来的——正常部署里这个值本来就有，不需要额外配置。
 </Callout>
 
 ## 下一步

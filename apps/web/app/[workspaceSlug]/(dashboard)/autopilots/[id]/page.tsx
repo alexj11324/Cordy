@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { AutopilotDetailPage } from "@cordy/views/autopilots/components";
+import { AutopilotDetailPage } from "@patchbay/views/autopilots/components";
 
 export default function Page({
   params,

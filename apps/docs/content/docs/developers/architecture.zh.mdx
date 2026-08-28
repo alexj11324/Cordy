@@ -1,9 +1,9 @@
 ---
 title: 项目架构
-description: 了解 Cordy 的客户端、Rust 服务、执行守护进程和共享前端包如何协作。
+description: 了解 Patchbay 的客户端、Rust 服务、执行守护进程和共享前端包如何协作。
 ---
 
-Cordy 由一个 Rust backend、多种客户端和运行在执行电脑上的守护进程组成。PostgreSQL 保存协作数据；守护进程领取 task，并调用本机的 AI 编程工具。
+Patchbay 由一个 Rust backend、多种客户端和运行在执行电脑上的守护进程组成。PostgreSQL 保存协作数据；守护进程领取 task，并调用本机的 AI 编程工具。
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
      本机守护进程 ─── AI 编程工具
 ```
 
-面向产品用户的解释见 [Cordy 的工作方式](/how-cordy-works)。本页关注代码如何分层。
+面向产品用户的解释见 [Patchbay 的工作方式](/how-patchbay-works)。本页关注代码如何分层。
 
 ## 仓库结构
 
@@ -55,7 +55,7 @@ apps/web/platform/         Next.js 路由适配
 apps/desktop/.../platform/ Electron 路由适配
 ```
 
-Mobile 不复用这些 React 页面。它可以导入 `@cordy/core` 的类型和纯函数，但拥有自己的 UI、query key、状态、实时订阅和发布流程。
+Mobile 不复用这些 React 页面。它可以导入 `@patchbay/core` 的类型和纯函数，但拥有自己的 UI、query key、状态、实时订阅和发布流程。
 
 ## 前端状态
 
@@ -76,32 +76,32 @@ API 返回值在 `packages/core/api/` 边界通过 zod schema 解析。已安装
 
 | 入口 | 作用 |
 | --- | --- |
-| `server-rs/crates/cordy-server` | 启动 HTTP API、WebSocket、调度器和集成 worker |
-| `server-rs/crates/cordy-cli`（`cordy`） | CLI 与本机守护进程 |
-| `server-rs/crates/cordy-migrate` | 执行 `migrations/` 中的数据库 migration |
-| `cordy-migrate` 的 `backfill_*` 二进制 | 特定版本的数据回填工具 |
+| `server-rs/crates/patchbay-server` | 启动 HTTP API、WebSocket、调度器和集成 worker |
+| `server-rs/crates/patchbay-cli`（`patchbay`） | CLI 与本机守护进程 |
+| `server-rs/crates/patchbay-migrate` | 执行 `migrations/` 中的数据库 migration |
+| `patchbay-migrate` 的 `backfill_*` 二进制 | 特定版本的数据回填工具 |
 
 请求通常按以下方向流动：
 
 ```text
-cordy-server router → cordy-middleware → cordy-handler → cordy-service → cordy-db query module → PostgreSQL
+patchbay-server router → patchbay-middleware → patchbay-handler → patchbay-service → patchbay-db query module → PostgreSQL
 ```
 
-- `cordy-middleware` 处理认证、工作区和请求边界；
-- `cordy-handler` 解析 HTTP/WebSocket 输入、生成响应并接入附件存储；
-- `cordy-service` 负责跨查询的业务流程和事务；
-- `cordy-db/src/queries/` 保存手写 SQLx query module；Rust 路径没有生成的 sqlc 层；
-- `cordy-lark`、`cordy-wecom`、`cordy-dingtalk`、`cordy-slack`、`cordy-telegram`、`cordy-composio`、`cordy-vcs` 和 `cordy-ghsnapshot` 等 integration crate 负责外部边界；
-- `cordy-realtime`、`cordy-redis` 和 `cordy-daemon` 分别负责 realtime fanout、可选 Redis 协调和本机执行生命周期。
+- `patchbay-middleware` 处理认证、工作区和请求边界；
+- `patchbay-handler` 解析 HTTP/WebSocket 输入、生成响应并接入附件存储；
+- `patchbay-service` 负责跨查询的业务流程和事务；
+- `patchbay-db/src/queries/` 保存手写 SQLx query module；Rust 路径没有生成的 sqlc 层；
+- `patchbay-lark`、`patchbay-wecom`、`patchbay-dingtalk`、`patchbay-slack`、`patchbay-telegram`、`patchbay-composio`、`patchbay-vcs` 和 `patchbay-ghsnapshot` 等 integration crate 负责外部边界；
+- `patchbay-realtime`、`patchbay-redis` 和 `patchbay-daemon` 分别负责 realtime fanout、可选 Redis 协调和本机执行生命周期。
 
 PostgreSQL 是业务数据的权威来源。Redis 是可选组件，用于跨实例实时事件、缓存或临时协调；没有配置时，单实例开发环境使用进程内实现。
 
 ## 实时连接
 
-Cordy 有两条不同的 WebSocket 路径：
+Patchbay 有两条不同的 WebSocket 路径：
 
-- `cordy-realtime` 与 `server-rs/crates/cordy-server/src/realtime_runtime.rs` 把 issue、评论、收件箱等变化推送给用户客户端；
-- `cordy-handler` 的 daemon WebSocket route 与 `cordy-daemon` 连接执行电脑，用于唤醒运行时和执行 daemon RPC。
+- `patchbay-realtime` 与 `server-rs/crates/patchbay-server/src/realtime_runtime.rs` 把 issue、评论、收件箱等变化推送给用户客户端；
+- `patchbay-handler` 的 daemon WebSocket route 与 `patchbay-daemon` 连接执行电脑，用于唤醒运行时和执行 daemon RPC。
 
 WebSocket 负责降低延迟，数据库仍然是最终状态。客户端重连后需要通过查询重新校准；守护进程也保留轮询路径，避免一次断线让 queued task 永久停住。
 
@@ -111,7 +111,7 @@ WebSocket 负责降低延迟，数据库仍然是最终状态。客户端重连�
 2. `TaskService` 创建 queued task，并通知对应运行时；
 3. 守护进程通过 daemon API 领取 task；
 4. 服务端签发绑定 task 和智能体的临时凭据；
-5. 守护进程准备本地目录，通过 `cordy-agent` 与 production provider adapter 调用对应的 provider backend；
+5. 守护进程准备本地目录，通过 `patchbay-agent` 与 production provider adapter 调用对应的 provider backend；
 6. 工具在本地运行，守护进程上传进度、消息和最终状态；
 7. 服务端更新 task 与 issue，并通过实时事件刷新客户端。
 

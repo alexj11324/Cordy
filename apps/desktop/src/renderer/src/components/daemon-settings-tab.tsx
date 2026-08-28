@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Switch } from "@cordy/ui/components/ui/switch";
-import { cn } from "@cordy/ui/lib/utils";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Switch } from "@patchbay/ui/components/ui/switch";
+import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import {
   SettingsCard,
   SettingsRow,
   SettingsSection,
   SettingsTab,
-} from "@cordy/views/settings";
+} from "@patchbay/views/settings";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonPrefs, DaemonStatus } from "../../../shared/daemon-types";
 import {
@@ -126,8 +126,8 @@ export function DaemonSettingsTab() {
             This device&apos;s daemon runs outside the app — for example inside
             WSL2 — so the app can&apos;t start or stop it. Start or stop it from
             that environment with{" "}
-            <code className="font-mono text-caption">cordy daemon start</code> /{" "}
-            <code className="font-mono text-caption">cordy daemon stop</code>.
+            <code className="font-mono text-caption">patchbay daemon start</code> /{" "}
+            <code className="font-mono text-caption">patchbay daemon stop</code>.
           </p>
         </div>
       )}
@@ -161,8 +161,8 @@ export function DaemonSettingsTab() {
             cliInstalled === null
               ? "Checking…"
               : cliInstalled
-                ? "cordy CLI is installed and available in PATH."
-                : "cordy CLI not found. Install it to enable daemon management."
+                ? "patchbay CLI is installed and available in PATH."
+                : "patchbay CLI not found. Install it to enable daemon management."
           }
         >
           {cliInstalled === false && (
@@ -171,7 +171,7 @@ export function DaemonSettingsTab() {
               size="sm"
               onClick={() =>
                 window.desktopAPI.openExternal(
-                  "https://github.com/alexj11324/Cordy#cli-installation",
+                  "https://github.com/patchbay-ai/patchbay#cli-installation",
                 )
               }
             >

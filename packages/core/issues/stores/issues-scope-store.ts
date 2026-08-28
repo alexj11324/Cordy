@@ -28,7 +28,7 @@ export const useIssuesScopeStore = create<IssuesScopeState>()(
         set((state) => ({ scopes: { ...state.scopes, [page]: scope } })),
     }),
     {
-      name: "cordy_issues_scope",
+      name: "patchbay_issues_scope",
       version: 1,
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       migrate: (persisted, version) => {

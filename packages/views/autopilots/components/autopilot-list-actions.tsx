@@ -11,13 +11,13 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Autopilot } from "@cordy/core/types";
+import type { Autopilot } from "@patchbay/core/types";
 import {
   useDeleteAutopilot,
   useUpdateAutopilot,
-} from "@cordy/core/autopilots";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/autopilots";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -25,14 +25,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { useT } from "../../i18n";
 import { useIntentNavigate } from "../../navigation";
 

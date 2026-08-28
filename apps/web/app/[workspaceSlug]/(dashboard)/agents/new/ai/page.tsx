@@ -1,4 +1,4 @@
-import { AiCreateAgentPage } from "@cordy/views/agents";
+import { AiCreateAgentPage } from "@patchbay/views/agents";
 
 export default function NewAgentAiRoute() {
   return <AiCreateAgentPage />;

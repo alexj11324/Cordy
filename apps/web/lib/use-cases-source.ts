@@ -1,6 +1,6 @@
 import { loader } from "fumadocs-core/source";
 import { defineI18n } from "fumadocs-core/i18n";
-import type { SupportedLocale } from "@cordy/core/i18n";
+import type { SupportedLocale } from "@patchbay/core/i18n";
 import { useCases } from "@/.source";
 import { mergeUseCasePagesWithEnglishFallback } from "./use-case-locale-fallback";
 

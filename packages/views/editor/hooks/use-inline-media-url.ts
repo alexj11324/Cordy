@@ -11,8 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { attachmentIdFromDownloadURL } from "@cordy/core/types/attachment-url";
+import { api } from "@patchbay/core/api";
+import { attachmentIdFromDownloadURL } from "@patchbay/core/types/attachment-url";
 
 // Keep refetches well inside the server's signed-URL TTL (30 min default,
 // the Rust file handler) so a re-render never serves an expired

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@cordy/ui/styles/tokens.css";
-@import "@cordy/ui/styles/base.css";
+@import "@patchbay/ui/styles/tokens.css";
+@import "@patchbay/ui/styles/base.css";
 
 @custom-variant dark (&:is(.dark *));
 

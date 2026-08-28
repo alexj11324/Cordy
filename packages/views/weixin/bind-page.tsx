@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { Button } from "@cordy/ui/components/ui/button";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 

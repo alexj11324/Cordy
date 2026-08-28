@@ -1,14 +1,14 @@
 "use client";
 
-import { statusCategoryOfKey } from "@cordy/core/issues";
+import { statusCategoryOfKey } from "@patchbay/core/issues";
 import { useState } from "react";
 import { ArrowRight, Download, Loader2 } from "lucide-react";
-import { Button, buttonVariants } from "@cordy/ui/components/ui/button";
-import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
-import { cn } from "@cordy/ui/lib/utils";
-import { DragStrip } from "@cordy/views/platform";
-import { STATUS_CONFIG } from "@cordy/core/issues/config";
-import type { IssueStatus } from "@cordy/core/types";
+import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { cn } from "@patchbay/ui/lib/utils";
+import { DragStrip } from "@patchbay/views/platform";
+import { STATUS_CONFIG } from "@patchbay/core/issues/config";
+import type { IssueStatus } from "@patchbay/core/types";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
@@ -79,7 +79,7 @@ export function StepWelcome({
         <div className="flex flex-1 flex-col justify-center px-6 pb-12 sm:px-10 md:px-20 lg:px-20 xl:px-24">
           <div className="flex w-full max-w-[540px] flex-col gap-8">
             <div className="flex items-center gap-2.5">
-              <CordyIcon className="size-5 text-foreground" noSpin />
+              <PatchbayIcon className="size-5 text-foreground" noSpin />
               <span className="font-serif text-title-lg font-medium tracking-tight">
                 {t(($) => $.welcome.wordmark)}
               </span>

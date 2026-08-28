@@ -2,8 +2,8 @@ import type {
   AgentRuntime,
   RuntimeUsage,
   RuntimeUsageByAgent,
-} from "@cordy/core/types";
-import { getCustomPricing } from "@cordy/core/runtimes/custom-pricing-store";
+} from "@patchbay/core/types";
+import { getCustomPricing } from "@patchbay/core/runtimes/custom-pricing-store";
 
 // A live local daemon re-registers itself within seconds of a server-side
 // delete (daemon self-heal, #2404), so deleting an online local runtime from

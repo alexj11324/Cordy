@@ -27,11 +27,11 @@ import {
   Coins,
   GitBranch,
 } from "lucide-react";
-import { cn } from "@cordy/ui/lib/utils";
-import { copyText } from "@cordy/ui/lib/clipboard";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@cordy/ui/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@cordy/ui/components/ui/popover";
+import { cn } from "@patchbay/ui/lib/utils";
+import { copyText } from "@patchbay/ui/lib/clipboard";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@patchbay/ui/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@patchbay/ui/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -39,21 +39,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { ActorAvatar } from "../actor-avatar";
 import { AttributionBadge } from "../../issues/components/attribution-badge";
 import { cancelReasonLabel } from "../../agents/components/tabs/task-failure";
 import { RichContent } from "../../rich-content";
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 import {
   useTranscriptViewStore,
   type TranscriptFilterKey,
   type TranscriptSortDirection,
-} from "@cordy/core/agents/stores";
-import type { AgentTask, Agent, AgentRuntime } from "@cordy/core/types/agent";
-import { resolveWorkdirCopyTarget } from "@cordy/core/issues";
-import { runtimeDisplayName, providerDisplayName } from "@cordy/core/runtimes";
-import { useCustomPricingStore } from "@cordy/core/runtimes/custom-pricing-store";
+} from "@patchbay/core/agents/stores";
+import type { AgentTask, Agent, AgentRuntime } from "@patchbay/core/types/agent";
+import { resolveWorkdirCopyTarget } from "@patchbay/core/issues";
+import { runtimeDisplayName, providerDisplayName } from "@patchbay/core/runtimes";
+import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
 import { redactSecrets } from "./redact";
 import {
   createNewestFirstFollow,

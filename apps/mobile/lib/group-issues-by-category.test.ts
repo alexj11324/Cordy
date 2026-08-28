@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@cordy/core/types";
+import type { Issue } from "@patchbay/core/types";
 import { groupIssuesByCategory } from "./group-issues-by-category";
 
 function issue(id: string, status: string, statusCategory?: string): Issue {

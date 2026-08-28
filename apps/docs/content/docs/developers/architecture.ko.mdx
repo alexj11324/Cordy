@@ -1,9 +1,9 @@
 ---
 title: 프로젝트 아키텍처
-description: Cordy의 클라이언트, Rust 서비스, 실행 데몬, 공유 프런트엔드 패키지가 함께 작동하는 방식을 알아봅니다.
+description: Patchbay의 클라이언트, Rust 서비스, 실행 데몬, 공유 프런트엔드 패키지가 함께 작동하는 방식을 알아봅니다.
 ---
 
-Cordy는 Rust backend, 여러 클라이언트, 실행 컴퓨터에서 동작하는 데몬으로 구성됩니다. PostgreSQL이 협업 데이터를 저장하고 데몬이 태스크를 가져가 로컬 AI 코딩 도구를 호출합니다.
+Patchbay는 Rust backend, 여러 클라이언트, 실행 컴퓨터에서 동작하는 데몬으로 구성됩니다. PostgreSQL이 협업 데이터를 저장하고 데몬이 태스크를 가져가 로컬 AI 코딩 도구를 호출합니다.
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
       로컬 데몬 ─── AI 코딩 도구
 ```
 
-제품 사용자 관점의 설명은 [Cordy의 작동 방식](/how-cordy-works)을 참고하세요. 이 페이지에서는 코드의 계층 구조를 설명합니다.
+제품 사용자 관점의 설명은 [Patchbay의 작동 방식](/how-patchbay-works)을 참고하세요. 이 페이지에서는 코드의 계층 구조를 설명합니다.
 
 ## 저장소 구조
 
@@ -55,7 +55,7 @@ apps/web/platform/         Next.js 라우팅 adapter
 apps/desktop/.../platform/ Electron 라우팅 adapter
 ```
 
-Mobile은 이 React 페이지를 재사용하지 않습니다. `@cordy/core`의 유형과 순수 함수를 import할 수 있지만 UI, query key, 상태, 실시간 구독, 출시 절차는 별도로 소유합니다.
+Mobile은 이 React 페이지를 재사용하지 않습니다. `@patchbay/core`의 유형과 순수 함수를 import할 수 있지만 UI, query key, 상태, 실시간 구독, 출시 절차는 별도로 소유합니다.
 
 ## 프런트엔드 상태
 
@@ -76,32 +76,32 @@ production entry point는 `server-rs/crates/`의 Cargo package입니다.
 
 | entry point | 역할 |
 | --- | --- |
-| `server-rs/crates/cordy-server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
-| `server-rs/crates/cordy-cli`(`cordy`) | CLI와 로컬 데몬 |
-| `server-rs/crates/cordy-migrate` | `migrations/`의 데이터베이스 migration 실행 |
-| `cordy-migrate`의 `backfill_*` binary | 특정 버전의 데이터 backfill 도구 |
+| `server-rs/crates/patchbay-server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
+| `server-rs/crates/patchbay-cli`(`patchbay`) | CLI와 로컬 데몬 |
+| `server-rs/crates/patchbay-migrate` | `migrations/`의 데이터베이스 migration 실행 |
+| `patchbay-migrate`의 `backfill_*` binary | 특정 버전의 데이터 backfill 도구 |
 
 요청은 일반적으로 다음 방향으로 흐릅니다.
 
 ```text
-cordy-server router → cordy-middleware → cordy-handler → cordy-service → cordy-db query module → PostgreSQL
+patchbay-server router → patchbay-middleware → patchbay-handler → patchbay-service → patchbay-db query module → PostgreSQL
 ```
 
-- `cordy-middleware`는 인증, 워크스페이스, 요청 경계를 처리합니다.
-- `cordy-handler`는 HTTP/WebSocket 입력을 해석하고 응답 및 첨부 storage wiring을 담당합니다.
-- `cordy-service`는 여러 query에 걸친 비즈니스 흐름과 transaction을 담당합니다.
-- `cordy-db/src/queries/`에는 직접 작성한 SQLx query module이 있으며 Rust 경로에는 생성된 sqlc 계층이 없습니다.
-- `cordy-lark`, `cordy-wecom`, `cordy-dingtalk`, `cordy-slack`, `cordy-telegram`, `cordy-composio`, `cordy-vcs`, `cordy-ghsnapshot` 같은 integration crate가 외부 경계를 담당합니다.
-- `cordy-realtime`, `cordy-redis`, `cordy-daemon`은 realtime fanout, 선택적 Redis 조율, 로컬 실행 lifecycle을 담당합니다.
+- `patchbay-middleware`는 인증, 워크스페이스, 요청 경계를 처리합니다.
+- `patchbay-handler`는 HTTP/WebSocket 입력을 해석하고 응답 및 첨부 storage wiring을 담당합니다.
+- `patchbay-service`는 여러 query에 걸친 비즈니스 흐름과 transaction을 담당합니다.
+- `patchbay-db/src/queries/`에는 직접 작성한 SQLx query module이 있으며 Rust 경로에는 생성된 sqlc 계층이 없습니다.
+- `patchbay-lark`, `patchbay-wecom`, `patchbay-dingtalk`, `patchbay-slack`, `patchbay-telegram`, `patchbay-composio`, `patchbay-vcs`, `patchbay-ghsnapshot` 같은 integration crate가 외부 경계를 담당합니다.
+- `patchbay-realtime`, `patchbay-redis`, `patchbay-daemon`은 realtime fanout, 선택적 Redis 조율, 로컬 실행 lifecycle을 담당합니다.
 
 PostgreSQL은 비즈니스 데이터의 신뢰할 수 있는 원본입니다. Redis는 선택 컴포넌트이며 여러 인스턴스 간 실시간 이벤트, cache, 임시 조율에 사용합니다. 설정하지 않으면 단일 인스턴스 개발 환경이 프로세스 내부 구현을 사용합니다.
 
 ## 실시간 연결
 
-Cordy에는 서로 다른 두 WebSocket 경로가 있습니다.
+Patchbay에는 서로 다른 두 WebSocket 경로가 있습니다.
 
-- `cordy-realtime`과 `server-rs/crates/cordy-server/src/realtime_runtime.rs`는 이슈, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
-- `cordy-handler`의 daemon WebSocket route와 `cordy-daemon`은 실행 컴퓨터를 연결해 런타임을 깨우고 daemon RPC를 실행합니다.
+- `patchbay-realtime`과 `server-rs/crates/patchbay-server/src/realtime_runtime.rs`는 이슈, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
+- `patchbay-handler`의 daemon WebSocket route와 `patchbay-daemon`은 실행 컴퓨터를 연결해 런타임을 깨우고 daemon RPC를 실행합니다.
 
 WebSocket은 지연을 줄이지만 최종 상태는 데이터베이스에 있습니다. 클라이언트는 재연결 후 query로 다시 동기화해야 합니다. 데몬도 polling 경로를 유지해 한 번의 연결 끊김으로 queued 태스크가 영구히 멈추지 않게 합니다.
 
@@ -111,7 +111,7 @@ WebSocket은 지연을 줄이지만 최종 상태는 데이터베이스에 있�
 2. `TaskService`가 queued 태스크를 만들고 해당 런타임에 알립니다.
 3. 데몬이 daemon API를 통해 태스크를 가져갑니다.
 4. 서버가 태스크와 에이전트에 연결된 임시 자격 증명을 발급합니다.
-5. 데몬이 로컬 디렉터리를 준비하고 `cordy-agent`와 production provider adapter를 통해 해당 provider backend를 호출합니다.
+5. 데몬이 로컬 디렉터리를 준비하고 `patchbay-agent`와 production provider adapter를 통해 해당 provider backend를 호출합니다.
 6. 도구가 로컬에서 실행되고 데몬이 진행 상황, 메시지, 최종 상태를 업로드합니다.
 7. 서버가 태스크와 이슈를 업데이트하고 실시간 이벤트로 클라이언트를 새로 고칩니다.
 

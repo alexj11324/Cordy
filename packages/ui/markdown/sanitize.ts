@@ -61,7 +61,7 @@ export const markdownSanitizeSchema: Options = {
 }
 
 /**
- * Allows Cordy internal protocols and inline images through react-markdown's
+ * Allows Patchbay internal protocols and inline images through react-markdown's
  * URL gate while keeping default security for everything else.
  */
 export function markdownUrlTransform(url: string): string {

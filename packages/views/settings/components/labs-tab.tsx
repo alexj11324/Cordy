@@ -7,7 +7,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@cordy/ui/components/ui/empty";
+} from "@patchbay/ui/components/ui/empty";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsTab } from "./settings-layout";
 

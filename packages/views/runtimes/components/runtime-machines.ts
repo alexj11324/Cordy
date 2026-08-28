@@ -1,5 +1,5 @@
-import { deriveRuntimeHealth, type RuntimeHealth } from "@cordy/core/runtimes";
-import type { AgentRuntime } from "@cordy/core/types";
+import { deriveRuntimeHealth, type RuntimeHealth } from "@patchbay/core/runtimes";
+import type { AgentRuntime } from "@patchbay/core/types";
 import { formatDeviceInfo } from "../utils";
 
 export type RuntimeMachineSection = "local" | "remote" | "cloud";

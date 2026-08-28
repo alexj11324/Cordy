@@ -1,18 +1,18 @@
 "use client";
 
-import { issueStatusCategory } from "@cordy/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import { useStatusLabel } from "./../utils/status-label";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { childIssueProgressOptions, issueDetailOptions } from "@cordy/core/issues/queries";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useActorName } from "@cordy/core/workspace/hooks";
+import { childIssueProgressOptions, issueDetailOptions } from "@patchbay/core/issues/queries";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useActorName } from "@patchbay/core/workspace/hooks";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@cordy/ui/components/ui/hover-card";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+} from "@patchbay/ui/components/ui/hover-card";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { descriptionPreview } from "./description-preview";

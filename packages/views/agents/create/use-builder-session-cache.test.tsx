@@ -27,9 +27,9 @@ const h = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@cordy/core/api", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/api")>(
-    "@cordy/core/api",
+vi.mock("@patchbay/core/api", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/api")>(
+    "@patchbay/core/api",
   );
   return {
     ...actual,
@@ -43,17 +43,17 @@ vi.mock("@cordy/core/api", async () => {
     },
   };
 });
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@cordy/core/chat", () => ({
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@patchbay/core/chat", () => ({
   useChatStore: Object.assign((sel: (s: typeof h.store) => unknown) => sel(h.store), {
     getState: () => h.store,
   }),
 }));
-// `@cordy/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
+// `@patchbay/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
 // is the behaviour under test.
 
-import { chatKeys } from "@cordy/core/chat/queries";
-import type { ChatMessage, ChatMessagesPage } from "@cordy/core/types";
+import { chatKeys } from "@patchbay/core/chat/queries";
+import type { ChatMessage, ChatMessagesPage } from "@patchbay/core/types";
 import { useBuilderSession } from "./use-builder-session";
 
 const sessionId = "session-1";

@@ -12,10 +12,10 @@ import {
   ALL_ACCESS_SCOPES,
   effectiveAccessScope,
   type AgentAvailability,
-} from "@cordy/core/agents";
-import type { MemberWithUser } from "@cordy/core/types";
-import { runtimeDisplayLabel } from "@cordy/core/runtimes";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
+} from "@patchbay/core/agents";
+import type { MemberWithUser } from "@patchbay/core/types";
+import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
   AGENT_SCOPES,
   type AgentColumnKey,
@@ -23,9 +23,9 @@ import {
   type AgentsScope,
   type AgentSortDirection,
   type AgentSortField,
-} from "@cordy/core/agents/stores";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
+} from "@patchbay/core/agents/stores";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -36,25 +36,25 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/popover";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
+} from "@patchbay/ui/components/ui/tooltip";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { availabilityConfig } from "../presence";
 import { useT } from "../../i18n";
 import type { AgentListRow } from "./agents-page";
 import { PAGE_GUTTER } from "../../layout/page-header";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
 const COLUMN_KEYS: AgentColumnKey[] = [
   "status",

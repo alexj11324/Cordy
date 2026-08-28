@@ -2,9 +2,9 @@
 
 import { Suspense, useMemo, useState } from "react";
 import { SignIn, useAuth } from "@clerk/nextjs";
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 import { useSearchParams } from "next/navigation";
-import { redirectToCliCallback, validateCliCallback } from "@cordy/views/auth";
+import { redirectToCliCallback, validateCliCallback } from "@patchbay/views/auth";
 
 export default function LoginPage() {
   return (
@@ -44,9 +44,9 @@ function LoginContent() {
       try {
         // The managed web identity boundary authenticates the Clerk session
         // supplied by the ApiClient. The backend then exchanges that identity
-        // for the native Cordy bearer understood by the CLI and Rust API.
+        // for the native Patchbay bearer understood by the CLI and Rust API.
         const { token } = await api.issueCliToken();
-        if (!token) throw new Error("Cordy CLI token unavailable");
+        if (!token) throw new Error("Patchbay CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);
       } catch {
         setError("Could not authorize the CLI. Please try again.");
@@ -56,7 +56,7 @@ function LoginContent() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <p>Authorize Cordy CLI for this signed-in account?</p>
+          <p>Authorize Patchbay CLI for this signed-in account?</p>
           <button
             type="button"
             onClick={authorize}

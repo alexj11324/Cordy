@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hashKey, keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
+import { api } from "@patchbay/core/api";
 import type {
   Issue,
   IssueStatusCategory,
@@ -12,28 +12,28 @@ import type {
   IssueTableQuerySpec,
   Project,
   WorkingAgentSummary,
-} from "@cordy/core/types";
-import { workspaceWorkingAgentsOptions } from "@cordy/core/agents";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useModalStore } from "@cordy/core/modals";
-import { ALL_STATUSES } from "@cordy/core/issues/config";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
-import { statusFilterColumns } from "@cordy/core/issues";
-import { dateOnlyToLocalDate } from "@cordy/core/issues/date";
-import type { IssueSortParam } from "@cordy/core/issues/queries";
-import { issueTableFacetsOptions } from "@cordy/core/issues/queries";
+} from "@patchbay/core/types";
+import { workspaceWorkingAgentsOptions } from "@patchbay/core/agents";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useModalStore } from "@patchbay/core/modals";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { statusFilterColumns } from "@patchbay/core/issues";
+import { dateOnlyToLocalDate } from "@patchbay/core/issues/date";
+import type { IssueSortParam } from "@patchbay/core/issues/queries";
+import { issueTableFacetsOptions } from "@patchbay/core/issues/queries";
 import {
   buildIssueSurfaceQueryPlan,
   type IssueSurfaceQueryPlan,
-} from "@cordy/core/issues/surface/query-plan";
+} from "@patchbay/core/issues/surface/query-plan";
 import {
   assigneeTypesForActorKind,
   type IssueScope,
-} from "@cordy/core/issues/surface/scope";
-import type { IssueDateFilter, SortField } from "@cordy/core/issues/stores/view-store";
-import { propertyListOptions } from "@cordy/core/properties";
-import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
-import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
+} from "@patchbay/core/issues/surface/scope";
+import type { IssueDateFilter, SortField } from "@patchbay/core/issues/stores/view-store";
+import { propertyListOptions } from "@patchbay/core/properties";
+import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
+import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import type { IssueFilters } from "../utils/filter";
 import type { ChildProgress } from "../components/list-row";
 import { runConfirmIntent } from "../actions/run-confirm-gate";

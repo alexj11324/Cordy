@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AutopilotTrigger } from "@cordy/core/types";
+import type { AutopilotTrigger } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 // Regression cover for PB-5649: editing a manual-only autopilot (no triggers)
@@ -18,10 +18,10 @@ const mockUpdateAutopilot = vi.hoisted(() => vi.fn());
 const mockCreateTrigger = vi.hoisted(() => vi.fn());
 const mockUpdateTrigger = vi.hoisted(() => vi.fn());
 
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@cordy/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@patchbay/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
 
-vi.mock("@cordy/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: async () => [
@@ -40,14 +40,14 @@ vi.mock("@cordy/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/projects/queries", () => ({
+vi.mock("@patchbay/core/projects/queries", () => ({
   projectListOptions: (wsId: string) => ({
     queryKey: ["projects", wsId],
     queryFn: async () => [],
   }),
 }));
 
-vi.mock("@cordy/core/autopilots/queries", () => ({
+vi.mock("@patchbay/core/autopilots/queries", () => ({
   cronPreviewOptions: (wsId: string, expr: string, tz: string) => ({
     queryKey: ["cron-preview", wsId, expr, tz],
     queryFn: async () => ({ next_runs: ["2126-07-14T01:00:00Z"] }),
@@ -55,7 +55,7 @@ vi.mock("@cordy/core/autopilots/queries", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/autopilots/mutations", () => ({
+vi.mock("@patchbay/core/autopilots/mutations", () => ({
   useCreateAutopilot: () => ({ mutateAsync: vi.fn() }),
   useCreateAutopilotTrigger: () => ({ mutateAsync: mockCreateTrigger }),
   useUpdateAutopilot: () => ({ mutateAsync: mockUpdateAutopilot }),

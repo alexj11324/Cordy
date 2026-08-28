@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@cordy/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   useNavigationInputBindings,
   useTabHistory,
@@ -11,23 +11,23 @@ import {
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from "@cordy/ui/components/ui/sidebar";
-import { ModalRegistry } from "@cordy/views/modals/registry";
+} from "@patchbay/ui/components/ui/sidebar";
+import { ModalRegistry } from "@patchbay/views/modals/registry";
 import {
   AppSidebar,
   GlobalShortcuts,
   NavigationProgress,
-} from "@cordy/views/layout";
-import { SearchCommand, SearchTrigger } from "@cordy/views/search";
-import { FloatingChat } from "@cordy/views/chat";
-import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@cordy/core/paths";
-import { workspaceListOptions } from "@cordy/core/workspace";
+} from "@patchbay/views/layout";
+import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
+import { FloatingChat } from "@patchbay/views/chat";
+import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@patchbay/core/paths";
+import { workspaceListOptions } from "@patchbay/core/workspace";
 import {
   useNavigation,
   type LinkClickIntent,
-} from "@cordy/views/navigation";
-import { getCurrentSlug, subscribeToCurrentSlug } from "@cordy/core/platform";
-import { useDesktopUnreadBadge } from "@cordy/views/platform";
+} from "@patchbay/views/navigation";
+import { getCurrentSlug, subscribeToCurrentSlug } from "@patchbay/core/platform";
+import { useDesktopUnreadBadge } from "@patchbay/views/platform";
 import {
   DesktopNavigationProvider,
   routeContentLinkPath,
@@ -171,8 +171,8 @@ function useInternalLinkHandler() {
       if (!detail?.path) return;
       routeContentLinkPath(detail.path, detail.disposition);
     };
-    window.addEventListener("cordy:navigate", handler);
-    return () => window.removeEventListener("cordy:navigate", handler);
+    window.addEventListener("patchbay:navigate", handler);
+    return () => window.removeEventListener("patchbay:navigate", handler);
   }, []);
 }
 
@@ -192,7 +192,7 @@ function useInternalLinkHandler() {
  *      covers both click-to-select and URL-param-select paths.
  *
  * The click routes through `useNavigation().push` — NOT the
- * `cordy:navigate` event, whose handler `openTab`s into the ACTIVE
+ * `patchbay:navigate` event, whose handler `openTab`s into the ACTIVE
  * workspace's tab group. The navigation adapter detects a cross-workspace
  * path and translates it into `switchWorkspace(slug, path)`, so clicking a
  * workspace-A notification while B is active performs a real workspace

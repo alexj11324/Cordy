@@ -11,23 +11,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Textarea } from "@cordy/ui/components/ui/textarea";
-import { Spinner } from "@cordy/ui/components/ui/spinner";
-import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@cordy/core/types";
+} from "@patchbay/ui/components/ui/dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Spinner } from "@patchbay/ui/components/ui/spinner";
+import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
 import {
   useUpdateIssue,
   useBatchUpdateIssues,
   type UpdateIssueMutationInput,
-} from "@cordy/core/issues/mutations";
-import { errorCode } from "@cordy/core/api";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { agentListOptions, squadListOptions } from "@cordy/core/workspace/queries";
-import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@cordy/core/runtimes";
-import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@cordy/core/shortcuts";
-import { isImeComposing } from "@cordy/core/utils";
+} from "@patchbay/core/issues/mutations";
+import { errorCode } from "@patchbay/core/api";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@patchbay/core/runtimes";
+import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@patchbay/core/shortcuts";
+import { isImeComposing } from "@patchbay/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { ActorAvatar } from "../common/actor-avatar";
 import { AssigneePicker } from "../issues/components/pickers/assignee-picker";

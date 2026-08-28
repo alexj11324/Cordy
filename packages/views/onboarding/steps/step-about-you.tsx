@@ -17,8 +17,8 @@ import {
   Settings2,
   User,
 } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import type { QuestionnaireAnswers, Role, UseCase } from "@cordy/core/onboarding";
+import { Button } from "@patchbay/ui/components/ui/button";
+import type { QuestionnaireAnswers, Role, UseCase } from "@patchbay/core/onboarding";
 import {
   StepFooter,
   StepHeading,

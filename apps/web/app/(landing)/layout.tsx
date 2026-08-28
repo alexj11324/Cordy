@@ -19,13 +19,13 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "Organization",
-      name: "Cordy",
-      url: "https://www.cordy.ai",
-      sameAs: ["https://github.com/alexj11324/Cordy"],
+      name: "Patchbay",
+      url: "https://www.patchbay.ai",
+      sameAs: ["https://github.com/patchbay-ai/patchbay"],
     },
     {
       "@type": "SoftwareApplication",
-      name: "Cordy",
+      name: "Patchbay",
       applicationCategory: "ProjectManagement",
       operatingSystem: "Web",
       description:

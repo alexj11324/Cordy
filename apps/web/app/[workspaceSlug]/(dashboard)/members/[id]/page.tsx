@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { MemberDetailPage } from "@cordy/views/members";
+import { MemberDetailPage } from "@patchbay/views/members";
 
 export default function MemberDetailRoute({
   params,

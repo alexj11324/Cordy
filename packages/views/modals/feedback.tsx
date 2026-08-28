@@ -7,9 +7,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { Button } from "@cordy/ui/components/ui/button";
-import { FileUploadButton } from "@cordy/ui/components/common/file-upload-button";
+} from "@patchbay/ui/components/ui/dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
 import {
   ContentEditor,
   type ContentEditorRef,
@@ -24,10 +24,10 @@ import {
   FEEDBACK_KINDS,
   isFeedbackContext,
   type FeedbackKind,
-} from "@cordy/core/feedback";
-import { useCurrentWorkspace } from "@cordy/core/paths";
+} from "@patchbay/core/feedback";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
 import { useT } from "../i18n";
-import { useShortcut } from "@cordy/core/shortcuts";
+import { useShortcut } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 
 const MAX_MESSAGE_LEN = 10000;
@@ -136,7 +136,7 @@ export function FeedbackModal({
           <p className="mt-1 text-caption text-muted-foreground">
             {t(($) => $.feedback.github_hint_prefix)}
             <a
-              href="https://github.com/alexj11324/Cordy/issues"
+              href="https://github.com/patchbay-ai/patchbay/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="text-brand underline decoration-brand/40 underline-offset-2 hover:decoration-brand"

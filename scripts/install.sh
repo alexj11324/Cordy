@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
-# Cordy installer — installs the CLI and optionally provisions a self-host server.
+# Patchbay installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
-#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
 #
 # Install CLI + provision self-host server:
-#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
+#   curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
 #
-# After installation, run `cordy setup` to configure your environment.
+# After installation, run `patchbay setup` to configure your environment.
 #
 set -euo pipefail
+
+if [ -z "${PATCHBAY_INSTALL_DIR+x}" ] && [ -n "${CORDY_INSTALL_DIR+x}" ]; then # legacy-brand-compat
+  export PATCHBAY_INSTALL_DIR="$CORDY_INSTALL_DIR" # legacy-brand-compat
+fi
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-REPO_URL="https://github.com/alexj11324/Cordy.git"
-REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
-INSTALL_DIR="${CORDY_INSTALL_DIR:-$HOME/.cordy/server}"
-BREW_PACKAGE="alexj11324/tap/cordy"
+REPO_URL="https://github.com/patchbay-ai/patchbay.git"
+REPO_WEB_URL="https://github.com/patchbay-ai/patchbay"  # without .git, for GitHub web APIs
+INSTALL_DIR="${PATCHBAY_INSTALL_DIR:-$HOME/.patchbay/server}"
+LEGACY_PATCHBAY_HOME="$HOME/.cordy" # legacy-brand-compat
+BREW_PACKAGE="patchbay-ai/tap/patchbay"
 
 # Host ports Compose reported after `up -d`; set by setup_server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -55,6 +60,72 @@ normalize_install_dir() {
   esac
 }
 
+migrate_legacy_patchbay_home() {
+  local patchbay_home="$HOME/.patchbay"
+  if [ -z "${PATCHBAY_INSTALL_DIR:-}" ] && [ ! -e "$patchbay_home" ] && [ -d "$LEGACY_PATCHBAY_HOME" ]; then
+    local unit_dir legacy_unit new_unit legacy_compose new_compose
+    local legacy_compose_pattern legacy_description
+    local systemd_available=false was_enabled=false
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    legacy_unit="$unit_dir/cordy-selfhost.service" # legacy-brand-compat
+    new_unit="$unit_dir/patchbay-selfhost.service"
+    legacy_compose_pattern='\.cordy-systemd\.compose\.yml' # legacy-brand-compat
+    legacy_description='Cordy self-hosted' # legacy-brand-compat
+
+    if command_exists systemctl && systemctl --user show-environment >/dev/null 2>&1; then
+      systemd_available=true
+    fi
+
+    if [ -f "$legacy_unit" ] && [ "$systemd_available" = true ]; then
+      if systemctl --user is-enabled cordy-selfhost.service >/dev/null 2>&1; then # legacy-brand-compat
+        was_enabled=true
+      fi
+      systemctl --user disable --now cordy-selfhost.service || # legacy-brand-compat
+        fail "Could not stop the legacy Patchbay systemd service before migrating its home directory."
+    fi
+
+    mv -- "$LEGACY_PATCHBAY_HOME" "$patchbay_home"
+    ok "Migrated the existing Patchbay home directory to $patchbay_home"
+
+    legacy_compose="$patchbay_home/server/.cordy-systemd.compose.yml" # legacy-brand-compat
+    new_compose="$patchbay_home/server/.patchbay-systemd.compose.yml"
+    if [ -f "$legacy_compose" ] && [ ! -e "$new_compose" ]; then
+      mv -- "$legacy_compose" "$new_compose"
+    fi
+
+    if [ -f "$legacy_unit" ]; then
+      if [ -e "$new_unit" ]; then
+        fail "Both legacy and Patchbay systemd units exist; remove the duplicate unit and retry."
+      fi
+      if [ "$(uname -s)" = "Darwin" ]; then
+        sed -i '' \
+          -e "s#$LEGACY_PATCHBAY_HOME/server#$patchbay_home/server#g" \
+          -e "s#$legacy_compose_pattern#.patchbay-systemd.compose.yml#g" \
+          -e "s#$legacy_description#Patchbay self-hosted#g" \
+          "$legacy_unit" # legacy-brand-compat
+      else
+        sed -i \
+          -e "s#$LEGACY_PATCHBAY_HOME/server#$patchbay_home/server#g" \
+          -e "s#$legacy_compose_pattern#.patchbay-systemd.compose.yml#g" \
+          -e "s#$legacy_description#Patchbay self-hosted#g" \
+          "$legacy_unit" # legacy-brand-compat
+      fi
+      mv -- "$legacy_unit" "$new_unit"
+
+      if [ "$systemd_available" = true ]; then
+        systemctl --user daemon-reload || fail "Could not reload systemd after migrating the Patchbay unit."
+        if [ "$was_enabled" = true ]; then
+          systemctl --user enable --now patchbay-selfhost.service ||
+            fail "Could not enable the migrated patchbay-selfhost.service."
+        fi
+      else
+        warn "Migrated the Patchbay systemd unit file; run 'systemctl --user daemon-reload' before using it."
+      fi
+      ok "Migrated the existing systemd unit to patchbay-selfhost.service"
+    fi
+  fi
+}
+
 sha256_file() {
   local path="$1"
   if command_exists sha256sum; then
@@ -77,11 +148,11 @@ print_remote_server_token_hint() {
 
   printf "  ${BOLD}Looks like a remote/SSH session.${RESET} Browser login may not be able to call back to this machine's localhost.\n"
   printf "  Token login is usually simpler here:\n"
-  printf "     1. On your local computer, open ${CYAN}https://cordy.ai/settings?tab=tokens${RESET}\n"
+  printf "     1. On your local computer, open ${CYAN}https://patchbay.ai/settings?tab=tokens${RESET}\n"
   printf "        and create a token under ${BOLD}Settings > API Tokens${RESET}.\n"
   printf "     2. On this server, run:\n"
-  printf "        ${CYAN}cordy login --token <YOUR_TOKEN>${RESET}\n"
-  printf "        ${CYAN}cordy daemon start${RESET}\n"
+  printf "        ${CYAN}patchbay login --token <YOUR_TOKEN>${RESET}\n"
+  printf "        ${CYAN}patchbay daemon start${RESET}\n"
   printf "\n"
 }
 
@@ -113,8 +184,8 @@ detect_os() {
     Linux)  OS="linux" ;;
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
-  irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex" ;;
-    *)      fail "Unsupported operating system: $(uname -s). Cordy supports macOS, Linux, and Windows." ;;
+  irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex" ;;
+    *)      fail "Unsupported operating system: $(uname -s). Patchbay supports macOS, Linux, and Windows." ;;
   esac
 
   ARCH="$(uname -m)"
@@ -138,10 +209,10 @@ _dump_brew_log() {
 }
 
 install_cli_brew() {
-  info "Installing Cordy CLI via Homebrew..."
+  info "Installing Patchbay CLI via Homebrew..."
   local brew_log
   brew_log=$(mktemp)
-  if ! brew tap alexj11324/tap >"$brew_log" 2>&1; then
+  if ! brew tap patchbay-ai/tap >"$brew_log" 2>&1; then
     warn "Failed to add Homebrew tap. Falling back to GitHub Releases binary install."
     _dump_brew_log "$brew_log"
     rm -f "$brew_log"
@@ -151,21 +222,21 @@ install_cli_brew() {
   if ! brew install "$BREW_PACKAGE" >"$brew_log" 2>&1; then
     if brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       rm -f "$brew_log"
-      ok "Cordy CLI already installed via Homebrew"
+      ok "Patchbay CLI already installed via Homebrew"
     else
-      warn "Failed to install cordy via Homebrew. Falling back to GitHub Releases binary install."
+      warn "Failed to install patchbay via Homebrew. Falling back to GitHub Releases binary install."
       _dump_brew_log "$brew_log"
       rm -f "$brew_log"
       return 1
     fi
   else
     rm -f "$brew_log"
-    ok "Cordy CLI installed via Homebrew"
+    ok "Patchbay CLI installed via Homebrew"
   fi
 }
 
 install_cli_binary() {
-  info "Installing Cordy CLI from GitHub Releases..."
+  info "Installing Patchbay CLI from GitHub Releases..."
 
   # Get latest release tag
   local latest
@@ -175,19 +246,19 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/alexj11324/Cordy/releases/download/${latest}/cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/patchbay-ai/patchbay/releases/download/${latest}/patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
   info "Downloading $url ..."
-  if ! curl -fsSL "$url" -o "$tmp_dir/cordy.tar.gz"; then
+  if ! curl -fsSL "$url" -o "$tmp_dir/patchbay.tar.gz"; then
     rm -rf "$tmp_dir"
     fail "Failed to download CLI binary."
   fi
 
   local checksum_file="$tmp_dir/checksums.txt"
-  local asset_name="cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
-  if ! curl -fsSL "https://github.com/alexj11324/Cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
+  local asset_name="patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
+  if ! curl -fsSL "https://github.com/patchbay-ai/patchbay/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
     rm -rf "$tmp_dir"
     fail "Failed to download the CLI checksum manifest; refusing to install an unverified binary."
   fi
@@ -206,26 +277,26 @@ install_cli_binary() {
     fail "CLI checksum manifest has no unique valid entry for ${asset_name}."
   fi
   local actual_checksum
-  actual_checksum=$(sha256_file "$tmp_dir/cordy.tar.gz")
+  actual_checksum=$(sha256_file "$tmp_dir/patchbay.tar.gz")
   if [ "$actual_checksum" != "$expected_checksum" ]; then
     rm -rf "$tmp_dir"
     fail "CLI checksum verification failed for ${asset_name}."
   fi
 
-  tar -xzf "$tmp_dir/cordy.tar.gz" -C "$tmp_dir" cordy
+  tar -xzf "$tmp_dir/patchbay.tar.gz" -C "$tmp_dir" patchbay
 
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
-  # installs can override the first choice with CORDY_BIN_DIR.
-  local bin_dir="${CORDY_BIN_DIR:-/usr/local/bin}"
+  # installs can override the first choice with PATCHBAY_BIN_DIR.
+  local bin_dir="${PATCHBAY_BIN_DIR:-/usr/local/bin}"
   if [ -w "$bin_dir" ]; then
-    mv "$tmp_dir/cordy" "$bin_dir/cordy"
+    mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
   elif command_exists sudo; then
-    sudo mv "$tmp_dir/cordy" "$bin_dir/cordy"
+    sudo mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
   else
     bin_dir="$HOME/.local/bin"
     mkdir -p "$bin_dir"
-    mv "$tmp_dir/cordy" "$bin_dir/cordy"
-    chmod +x "$bin_dir/cordy"
+    mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
+    chmod +x "$bin_dir/patchbay"
     # Add to PATH if not already there
     if ! echo "$PATH" | tr ':' '\n' | grep -q "^$bin_dir$"; then
       export PATH="$bin_dir:$PATH"
@@ -234,7 +305,7 @@ install_cli_binary() {
   fi
 
   rm -rf "$tmp_dir"
-  ok "Cordy CLI installed to $bin_dir/cordy"
+  ok "Patchbay CLI installed to $bin_dir/patchbay"
 }
 
 add_to_path() {
@@ -242,7 +313,7 @@ add_to_path() {
   local line="export PATH=\"$dir:\$PATH\""
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$rc" ] && ! grep -qF "$dir" "$rc"; then
-      printf '\n# Added by Cordy installer\n%s\n' "$line" >> "$rc"
+      printf '\n# Added by Patchbay installer\n%s\n' "$line" >> "$rc"
     fi
   done
 }
@@ -257,7 +328,10 @@ existing_selfhost_image_pin() {
   [ -f "$INSTALL_DIR/.env" ] || return 1
 
   local image_tag
-  image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)"
+  image_tag="$(sed -n 's/^PATCHBAY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)"
+  if [ -z "$image_tag" ]; then
+    image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)" # legacy-brand-compat
+  fi
   [ -n "$image_tag" ] || return 1
   printf '%s' "$image_tag"
 }
@@ -275,8 +349,8 @@ validate_selfhost_image_tag() {
 }
 
 get_selfhost_ref() {
-  if [ -n "${CORDY_SELFHOST_REF:-}" ]; then
-    printf '%s' "$CORDY_SELFHOST_REF"
+  if [ -n "${PATCHBAY_SELFHOST_REF:-}" ]; then
+    printf '%s' "$PATCHBAY_SELFHOST_REF"
     return
   fi
 
@@ -290,7 +364,7 @@ get_selfhost_ref() {
       latest)
         latest="$(get_latest_version)"
         if [ -z "$latest" ]; then
-          fail "Existing self-host image pin 'latest' cannot be mapped to a published release. Set CORDY_SELFHOST_REF explicitly."
+          fail "Existing self-host image pin 'latest' cannot be mapped to a published release. Set PATCHBAY_SELFHOST_REF explicitly."
         fi
         validate_selfhost_image_tag "$latest"
         printf '%s' "$latest"
@@ -298,7 +372,7 @@ get_selfhost_ref() {
       sha-*)
         local commit_ref="${existing_pin#sha-}"
         if ! printf '%s' "$commit_ref" | grep -Eq '^[0-9A-Fa-f]{40}$'; then
-          fail "Existing self-host image pin '$existing_pin' cannot be mapped reliably to a full Git commit. Set CORDY_SELFHOST_REF explicitly."
+          fail "Existing self-host image pin '$existing_pin' cannot be mapped reliably to a full Git commit. Set PATCHBAY_SELFHOST_REF explicitly."
         fi
         printf '%s' "$commit_ref"
         ;;
@@ -324,32 +398,52 @@ checkout_server_ref() {
   git checkout --force --detach FETCH_HEAD || fail "Could not check out self-host ref '$ref'."
 }
 
-migrate_legacy_selfhost_image_repositories() {
+migrate_legacy_selfhost_branding() {
   local migrated=false
-  local legacy_backend="ghcr.io/cordy-ai/cordy-backend"
-  local legacy_web="ghcr.io/cordy-ai/cordy-web"
-  local canonical_backend="ghcr.io/alexj11324/cordy-backend"
-  local canonical_web="ghcr.io/alexj11324/cordy-web"
+  local canonical_backend="ghcr.io/patchbay-ai/patchbay-backend"
+  local canonical_web="ghcr.io/patchbay-ai/patchbay-web"
+  local legacy_backend legacy_web
+  local legacy_backends=(
+    "ghcr.io/cordy-ai/cordy-backend" # legacy-brand-compat
+    "ghcr.io/alexj11324/cordy-backend" # legacy-brand-compat
+  )
+  local legacy_webs=(
+    "ghcr.io/cordy-ai/cordy-web" # legacy-brand-compat
+    "ghcr.io/alexj11324/cordy-web" # legacy-brand-compat
+  )
 
-  if grep -Fxq "CORDY_BACKEND_IMAGE=$legacy_backend" .env; then
+  if grep -q '^CORDY_' .env; then # legacy-brand-compat
     if [ "$(uname -s)" = "Darwin" ]; then
-      sed -i '' "s#^CORDY_BACKEND_IMAGE=$legacy_backend\$#CORDY_BACKEND_IMAGE=$canonical_backend#" .env
+      sed -i '' 's/^CORDY_/PATCHBAY_/' .env # legacy-brand-compat
     else
-      sed -i "s#^CORDY_BACKEND_IMAGE=$legacy_backend\$#CORDY_BACKEND_IMAGE=$canonical_backend#" .env
+      sed -i 's/^CORDY_/PATCHBAY_/' .env # legacy-brand-compat
     fi
     migrated=true
   fi
-  if grep -Fxq "CORDY_WEB_IMAGE=$legacy_web" .env; then
-    if [ "$(uname -s)" = "Darwin" ]; then
-      sed -i '' "s#^CORDY_WEB_IMAGE=$legacy_web\$#CORDY_WEB_IMAGE=$canonical_web#" .env
-    else
-      sed -i "s#^CORDY_WEB_IMAGE=$legacy_web\$#CORDY_WEB_IMAGE=$canonical_web#" .env
+
+  for legacy_backend in "${legacy_backends[@]}"; do
+    if grep -Fxq "PATCHBAY_BACKEND_IMAGE=$legacy_backend" .env; then
+      if [ "$(uname -s)" = "Darwin" ]; then
+        sed -i '' "s#^PATCHBAY_BACKEND_IMAGE=$legacy_backend\$#PATCHBAY_BACKEND_IMAGE=$canonical_backend#" .env
+      else
+        sed -i "s#^PATCHBAY_BACKEND_IMAGE=$legacy_backend\$#PATCHBAY_BACKEND_IMAGE=$canonical_backend#" .env
+      fi
+      migrated=true
     fi
-    migrated=true
-  fi
+  done
+  for legacy_web in "${legacy_webs[@]}"; do
+    if grep -Fxq "PATCHBAY_WEB_IMAGE=$legacy_web" .env; then
+      if [ "$(uname -s)" = "Darwin" ]; then
+        sed -i '' "s#^PATCHBAY_WEB_IMAGE=$legacy_web\$#PATCHBAY_WEB_IMAGE=$canonical_web#" .env
+      else
+        sed -i "s#^PATCHBAY_WEB_IMAGE=$legacy_web\$#PATCHBAY_WEB_IMAGE=$canonical_web#" .env
+      fi
+      migrated=true
+    fi
+  done
 
   if [ "$migrated" = true ]; then
-    ok "Migrated legacy Cordy image repositories to ghcr.io/alexj11324"
+    ok "Migrated the existing self-host configuration to Patchbay identifiers"
   fi
 }
 
@@ -357,10 +451,10 @@ pin_selfhost_image_tag() {
   local ref="$1" image_tag preserve_existing=false
 
   # A durable pin in an existing installation is an operator choice. Only an
-  # explicit CORDY_SELFHOST_REF is allowed to replace it; otherwise rerunning
+  # explicit PATCHBAY_SELFHOST_REF is allowed to replace it; otherwise rerunning
   # the installer could unexpectedly start a newer image and its migrations.
-  if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
-    image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' .env | tail -n 1)"
+  if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${PATCHBAY_SELFHOST_REF:-}" ] && grep -q '^PATCHBAY_IMAGE_TAG=.' .env; then
+    image_tag="$(sed -n 's/^PATCHBAY_IMAGE_TAG=//p' .env | tail -n 1)"
     if [ "$image_tag" = "latest" ]; then
       # `latest` is a moving channel rather than a durable version boundary.
       # Resolve it to the same stable release ref selected for the deployment
@@ -378,22 +472,22 @@ pin_selfhost_image_tag() {
   validate_selfhost_image_tag "$image_tag"
 
   if [ "$preserve_existing" = true ]; then
-    export CORDY_IMAGE_TAG="$image_tag"
+    export PATCHBAY_IMAGE_TAG="$image_tag"
     ok "Preserved existing backend and web image pin $image_tag"
     return
-  elif grep -q '^CORDY_IMAGE_TAG=' .env; then
+  elif grep -q '^PATCHBAY_IMAGE_TAG=' .env; then
     if [ "$(uname -s)" = "Darwin" ]; then
-      sed -i '' "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
+      sed -i '' "s/^PATCHBAY_IMAGE_TAG=.*/PATCHBAY_IMAGE_TAG=$image_tag/" .env
     else
-      sed -i "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
+      sed -i "s/^PATCHBAY_IMAGE_TAG=.*/PATCHBAY_IMAGE_TAG=$image_tag/" .env
     fi
   else
-    printf '\nCORDY_IMAGE_TAG=%s\n' "$image_tag" >>.env
+    printf '\nPATCHBAY_IMAGE_TAG=%s\n' "$image_tag" >>.env
   fi
 
   # Compose gives the calling environment precedence over .env. Export the
-  # selected ref so an ambient CORDY_IMAGE_TAG cannot silently defeat rollback.
-  export CORDY_IMAGE_TAG="$image_tag"
+  # selected ref so an ambient PATCHBAY_IMAGE_TAG cannot silently defeat rollback.
+  export PATCHBAY_IMAGE_TAG="$image_tag"
   ok "Pinned backend and web images to $image_tag"
 }
 
@@ -414,8 +508,8 @@ preflight_selfhost_systemd() {
 }
 
 persist_systemd_compose_configuration() {
-  local configuration_path="$INSTALL_DIR/.cordy-systemd.compose.yml" temporary_path
-  temporary_path="$(mktemp "$INSTALL_DIR/.cordy-systemd.compose.yml.XXXXXX")" ||
+  local configuration_path="$INSTALL_DIR/.patchbay-systemd.compose.yml" temporary_path
+  temporary_path="$(mktemp "$INSTALL_DIR/.patchbay-systemd.compose.yml.XXXXXX")" ||
     fail "Could not create the resolved systemd Compose file."
 
   if ! docker compose -f docker-compose.selfhost.yml config >"$temporary_path"; then
@@ -429,14 +523,15 @@ persist_systemd_compose_configuration() {
 install_selfhost_systemd() {
   preflight_selfhost_systemd
 
-  local account docker_path unit_dir unit_path install_dir_q docker_q configuration_q
+  local account docker_path unit_dir unit_path legacy_unit_path install_dir_q docker_q configuration_q
   account="${USER:-$(id -un)}"
   docker_path="$(command -v docker)"
   unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-  unit_path="$unit_dir/cordy-selfhost.service"
+  unit_path="$unit_dir/patchbay-selfhost.service"
+  legacy_unit_path="$unit_dir/cordy-selfhost.service" # legacy-brand-compat
   install_dir_q="$(systemd_quote "$INSTALL_DIR")"
   docker_q="$(systemd_quote "$docker_path")"
-  configuration_q="$(systemd_quote "$INSTALL_DIR/.cordy-systemd.compose.yml")"
+  configuration_q="$(systemd_quote "$INSTALL_DIR/.patchbay-systemd.compose.yml")"
 
   persist_systemd_compose_configuration
 
@@ -446,7 +541,7 @@ install_selfhost_systemd() {
   mkdir -p "$unit_dir"
   {
     printf '%s\n' '[Unit]'
-    printf '%s\n' 'Description=Cordy self-hosted Rust services'
+    printf '%s\n' 'Description=Patchbay self-hosted Rust services'
     printf '%s\n' 'Wants=network-online.target'
     printf '%s\n' 'After=network-online.target'
     printf '\n%s\n' '[Service]'
@@ -465,10 +560,15 @@ install_selfhost_systemd() {
   } >"$unit_path"
   chmod 0644 "$unit_path"
 
+  if [ -f "$legacy_unit_path" ]; then
+    systemctl --user disable --now cordy-selfhost.service || # legacy-brand-compat
+      fail "Could not retire the legacy Patchbay systemd service."
+    rm -f -- "$legacy_unit_path"
+  fi
   systemctl --user daemon-reload || fail "Could not reload the systemd user manager."
-  systemctl --user enable --now cordy-selfhost.service ||
-    fail "Could not enable and start cordy-selfhost.service."
-  ok "Enabled cordy-selfhost.service for boot and login-independent operation"
+  systemctl --user enable --now patchbay-selfhost.service ||
+    fail "Could not enable and start patchbay-selfhost.service."
+  ok "Enabled patchbay-selfhost.service for boot and login-independent operation"
 }
 
 pull_official_selfhost_images() {
@@ -485,21 +585,21 @@ pull_official_selfhost_images() {
 }
 
 upgrade_cli_brew() {
-  info "Upgrading Cordy CLI via Homebrew..."
+  info "Upgrading Patchbay CLI via Homebrew..."
   brew update 2>/dev/null || true
   if brew upgrade "$BREW_PACKAGE" 2>/dev/null; then
-    ok "Cordy CLI upgraded via Homebrew"
+    ok "Patchbay CLI upgraded via Homebrew"
   else
     # brew upgrade exits non-zero if already up to date
-    ok "Cordy CLI is already the latest version"
+    ok "Patchbay CLI is already the latest version"
   fi
 }
 
 install_cli() {
-  if command_exists cordy; then
+  if command_exists patchbay; then
     local current_ver
-    # `cordy version` outputs "cordy 0.3.23 (commit: f46b929eb, built: 2026-06-16T10:11:56Z)" — extract just the version
-    current_ver=$(cordy version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
+    # `patchbay version` outputs "patchbay 0.3.23 (commit: f46b929eb, built: 2026-06-16T10:11:56Z)" — extract just the version
+    current_ver=$(patchbay version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
 
     local latest_ver
     latest_ver=$(get_latest_version)
@@ -509,11 +609,11 @@ install_cli() {
     local latest_cmp="${latest_ver#v}"
 
     if [ -z "$latest_ver" ] || [ "$current_cmp" = "$latest_cmp" ]; then
-      ok "Cordy CLI is up to date ($current_ver)"
+      ok "Patchbay CLI is up to date ($current_ver)"
       return 0
     fi
 
-    info "Cordy CLI $current_ver installed, latest is $latest_ver — upgrading..."
+    info "Patchbay CLI $current_ver installed, latest is $latest_ver — upgrading..."
     if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       upgrade_cli_brew
     else
@@ -521,8 +621,8 @@ install_cli() {
     fi
 
     local new_ver
-    new_ver=$(cordy version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
-    ok "Cordy CLI upgraded ($current_ver → $new_ver)"
+    new_ver=$(patchbay version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
+    ok "Patchbay CLI upgraded ($current_ver → $new_ver)"
     return 0
   fi
 
@@ -533,8 +633,8 @@ install_cli() {
   fi
 
   # Verify
-  if ! command_exists cordy; then
-    fail "CLI installed but 'cordy' not found on PATH. You may need to restart your shell."
+  if ! command_exists patchbay; then
+    fail "CLI installed but 'patchbay' not found on PATH. You may need to restart your shell."
   fi
 }
 
@@ -544,7 +644,7 @@ install_cli() {
 check_docker() {
   if ! command_exists docker; then
     printf "\n"
-    fail "Docker is not installed. Cordy self-hosting requires Docker and Docker Compose.
+    fail "Docker is not installed. Patchbay self-hosting requires Docker and Docker Compose.
 
 Install Docker:
   macOS:  https://docs.docker.com/desktop/install/mac-install/
@@ -564,7 +664,7 @@ After installing Docker, re-run this script with --with-server."
 # Server setup (self-host / --with-server)
 # ---------------------------------------------------------------------------
 setup_server() {
-  info "Setting up Cordy server..."
+  info "Setting up Patchbay server..."
   local server_ref
   if [ -d "$INSTALL_DIR/.git" ] && [ -f "$INSTALL_DIR/.env" ]; then
     SELFHOST_ENV_EXISTED=true
@@ -576,7 +676,7 @@ setup_server() {
     info "Updating existing installation at $INSTALL_DIR..."
     cd "$INSTALL_DIR"
   else
-    info "Cloning Cordy repository..."
+    info "Cloning Patchbay repository..."
     if ! command_exists git; then
       fail "Git is not installed. Please install git and re-run."
     fi
@@ -616,13 +716,13 @@ setup_server() {
     ok "Using existing .env"
   fi
 
-  migrate_legacy_selfhost_image_repositories
+  migrate_legacy_selfhost_branding
   pin_selfhost_image_tag "$server_ref"
 
   # Start Docker Compose
-  info "Pulling official Cordy images..."
+  info "Pulling official Patchbay images..."
   pull_official_selfhost_images
-  info "Starting Cordy services (this may take a few minutes on first run)..."
+  info "Starting Patchbay services (this may take a few minutes on first run)..."
   docker compose -f docker-compose.selfhost.yml up -d
 
   # Read the ports Compose actually published, once, and reuse them for both the
@@ -648,7 +748,7 @@ setup_server() {
   done
 
   if [ "$ready" = true ]; then
-    ok "Cordy server is running"
+    ok "Patchbay server is running"
   else
     warn "Server is still starting. You can check logs with:"
     echo "  cd $INSTALL_DIR && docker compose -f docker-compose.selfhost.yml logs"
@@ -662,7 +762,7 @@ setup_server() {
 # ---------------------------------------------------------------------------
 run_default() {
   printf "\n"
-  printf "${BOLD}  Cordy — Installer${RESET}\n"
+  printf "${BOLD}  Patchbay — Installer${RESET}\n"
   printf "\n"
 
   detect_os
@@ -670,17 +770,17 @@ run_default() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Cordy CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Patchbay CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}cordy setup${RESET}                # Connect to Cordy Cloud (cordy.ai)\n"
-  printf "     ${CYAN}cordy setup self-host${RESET}       # Connect to a self-hosted server\n"
+  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud (patchbay.ai)\n"
+  printf "     ${CYAN}patchbay setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   print_remote_server_token_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
 
@@ -689,7 +789,7 @@ run_default() {
 # ---------------------------------------------------------------------------
 run_with_server() {
   printf "\n"
-  printf "${BOLD}  Cordy — Self-Host Installer${RESET}\n"
+  printf "${BOLD}  Patchbay — Self-Host Installer${RESET}\n"
   printf "  Provisioning server infrastructure + installing CLI\n"
   printf "\n"
 
@@ -706,7 +806,7 @@ run_with_server() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Cordy server is running and CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Patchbay server is running and CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Frontend:${RESET}  http://localhost:%s\n" "$SELFHOST_FRONTEND_PORT"
@@ -715,13 +815,13 @@ run_with_server() {
   printf "\n"
   printf "  ${BOLD}Next: configure your CLI to connect${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}cordy setup self-host${RESET}   # Configure + authenticate + start daemon\n"
+  printf "     ${CYAN}patchbay setup self-host${RESET}   # Configure + authenticate + start daemon\n"
   printf "\n"
   printf "  ${BOLD}Login:${RESET} configure ${CYAN}RESEND_API_KEY${RESET} in .env for email codes,\n"
   printf "  or read the generated code from backend logs when Resend is unset.\n"
   printf "\n"
   printf "  ${BOLD}To stop all services:${RESET}\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --stop\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --stop\n"
   printf "\n"
 }
 
@@ -730,15 +830,24 @@ run_with_server() {
 # ---------------------------------------------------------------------------
 run_stop() {
   printf "\n"
-  info "Stopping Cordy services..."
+  info "Stopping Patchbay services..."
 
-  local unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cordy-selfhost.service"
+  local unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/patchbay-selfhost.service"
   if [ -f "$unit_path" ]; then
     command_exists systemctl ||
-      fail "cordy-selfhost.service exists, but systemctl is unavailable; refusing to report the service stopped."
-    systemctl --user disable --now cordy-selfhost.service ||
-      fail "Could not stop and disable cordy-selfhost.service; it may restart the stack on the next login or boot."
+      fail "patchbay-selfhost.service exists, but systemctl is unavailable; refusing to report the service stopped."
+    systemctl --user disable --now patchbay-selfhost.service ||
+      fail "Could not stop and disable patchbay-selfhost.service; it may restart the stack on the next login or boot."
     ok "Systemd service stopped and disabled"
+  fi
+
+  local legacy_unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cordy-selfhost.service" # legacy-brand-compat
+  if [ -f "$legacy_unit_path" ]; then
+    command_exists systemctl ||
+      fail "The legacy Patchbay systemd service exists, but systemctl is unavailable; refusing to report the service stopped."
+    systemctl --user disable --now cordy-selfhost.service || # legacy-brand-compat
+      fail "Could not stop and disable the legacy Patchbay systemd service."
+    ok "Legacy systemd service stopped and disabled"
   fi
 
   if [ -d "$INSTALL_DIR" ]; then
@@ -750,11 +859,11 @@ run_stop() {
       warn "No docker-compose.selfhost.yml found at $INSTALL_DIR"
     fi
   else
-    warn "No Cordy installation found at $INSTALL_DIR"
+    warn "No Patchbay installation found at $INSTALL_DIR"
   fi
 
-  if command_exists cordy; then
-    cordy daemon stop 2>/dev/null && ok "Daemon stopped" || true
+  if command_exists patchbay; then
+    patchbay daemon stop 2>/dev/null && ok "Daemon stopped" || true
   fi
 
   printf "\n"
@@ -775,21 +884,21 @@ main() {
       --help|-h)
         echo "Usage: install.sh [--with-server [--systemd] | --stop]"
         echo ""
-        echo "  (default)       Install / upgrade the Cordy CLI"
+        echo "  (default)       Install / upgrade the Patchbay CLI"
         echo "  --with-server   Install CLI + provision a self-host server (Docker)"
         echo "  --systemd       With --with-server, enable the Linux user service"
         echo "  --stop          Stop a self-hosted installation"
         echo ""
         echo "Environment variables:"
-        echo "  CORDY_INSTALL_DIR   Self-host server install directory"
-        echo "                        (default: \$HOME/.cordy/server)"
-        echo "  CORDY_BIN_DIR       Target directory for the CLI binary when"
+        echo "  PATCHBAY_INSTALL_DIR   Self-host server install directory"
+        echo "                        (default: \$HOME/.patchbay/server)"
+        echo "  PATCHBAY_BIN_DIR       Target directory for the CLI binary when"
         echo "                        installing from GitHub Releases"
         echo "                        (default: /usr/local/bin, then \$HOME/.local/bin)"
-        echo "  CORDY_SELFHOST_REF  Git ref to check out for self-host assets"
+        echo "  PATCHBAY_SELFHOST_REF  Git ref to check out for self-host assets"
         echo "                        (default: latest release tag, falling back to main)"
         echo ""
-        echo "After installation, run 'cordy setup' to configure your environment."
+        echo "After installation, run 'patchbay setup' to configure your environment."
         exit 0
         ;;
       *) warn "Unknown option: $1" ;;
@@ -801,6 +910,7 @@ main() {
     fail "--systemd requires --with-server."
   fi
 
+  migrate_legacy_patchbay_home
   normalize_install_dir
 
   case "$mode" in

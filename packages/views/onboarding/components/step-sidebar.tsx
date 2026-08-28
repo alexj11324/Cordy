@@ -5,11 +5,11 @@ import { ArrowLeft, Check } from "lucide-react";
 import {
   ONBOARDING_STEP_ORDER,
   type OnboardingStep,
-} from "@cordy/core/onboarding";
-import { cn } from "@cordy/ui/lib/utils";
-import { Button } from "@cordy/ui/components/ui/button";
-import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
-import { DotSphere } from "@cordy/ui/components/ui/dot-sphere";
+} from "@patchbay/core/onboarding";
+import { cn } from "@patchbay/ui/lib/utils";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { DotSphere } from "@patchbay/ui/components/ui/dot-sphere";
 import {
   Stepper,
   StepperDescription,
@@ -18,7 +18,7 @@ import {
   StepperNav,
   StepperSeparator,
   StepperTitle,
-} from "@cordy/ui/components/ui/stepper";
+} from "@patchbay/ui/components/ui/stepper";
 import { useT } from "../../i18n";
 
 /**
@@ -165,7 +165,7 @@ export function StepSidebar({
         <div className="relative flex min-h-0 flex-1 flex-col pt-5">
           <header className="flex min-h-9 shrink-0 items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
-              <CordyIcon className="size-5 shrink-0 text-foreground" noSpin />
+              <PatchbayIcon className="size-5 shrink-0 text-foreground" noSpin />
               <span className="truncate text-label font-medium text-foreground">
                 {t(($) => $.step_nav.wordmark)}
               </span>

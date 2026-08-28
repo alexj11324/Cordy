@@ -2,7 +2,7 @@
 
 import { cleanup, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkingAgentSummary } from "@cordy/core/types";
+import type { WorkingAgentSummary } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockState = vi.hoisted(() => ({
@@ -10,7 +10,7 @@ const mockState = vi.hoisted(() => ({
   buttonVariant: undefined as string | undefined,
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) => `Agent ${id}`,
     getActorInitials: () => "AG",
@@ -28,7 +28,7 @@ vi.mock("../../agents/components/agent-avatar-stack", () => ({
 // The real hover card renders its body only while open. Render it inline so the
 // chip's own wiring to the hover body is observable: the PB-5525 follow-up bug
 // was in that wiring (`agents ?? []`), not in the body's rendering.
-vi.mock("@cordy/ui/components/ui/hover-card", () => ({
+vi.mock("@patchbay/ui/components/ui/hover-card", () => ({
   HoverCard: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   HoverCardTrigger: ({ render }: { render: React.ReactElement }) => render,
   HoverCardContent: ({ children }: { children: React.ReactNode }) => (
@@ -36,10 +36,10 @@ vi.mock("@cordy/ui/components/ui/hover-card", () => ({
   ),
 }));
 
-vi.mock("@cordy/ui/components/ui/button", async () => {
+vi.mock("@patchbay/ui/components/ui/button", async () => {
   const actual =
-    await vi.importActual<typeof import("@cordy/ui/components/ui/button")>(
-      "@cordy/ui/components/ui/button",
+    await vi.importActual<typeof import("@patchbay/ui/components/ui/button")>(
+      "@patchbay/ui/components/ui/button",
     );
   return {
     ...actual,

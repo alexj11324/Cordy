@@ -7,8 +7,8 @@ import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import { FileText, Download } from 'lucide-react'
-import { cn } from '@cordy/ui/lib/utils'
-import { CODE_LIGATURE_CLASS } from '@cordy/ui/lib/code-style'
+import { cn } from '@patchbay/ui/lib/utils'
+import { CODE_LIGATURE_CLASS } from '@patchbay/ui/lib/code-style'
 import { CodeBlock, InlineCode } from './CodeBlock'
 import { isAllowedFileCardHref, preprocessFileCards } from './file-cards'
 import { preprocessLinks } from './linkify'
@@ -59,7 +59,7 @@ export interface MarkdownProps {
    */
   renderMention?: (props: { type: string; id: string }) => React.ReactNode
   /**
-   * CDN hostname for file card detection (e.g. "cordy-static.copilothub.ai").
+   * CDN hostname for file card detection (e.g. "patchbay-static.copilothub.ai").
    * When provided, enables file card preprocessing and rendering.
    */
   cdnDomain?: string

@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef, type ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
-import { issueKeys, PAGINATED_CATEGORIES } from "@cordy/core/issues/queries";
-import { I18nProvider } from "@cordy/core/i18n/react";
-import type { IssueStatusCategory, ListIssuesCache } from "@cordy/core/types";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { issueKeys, PAGINATED_CATEGORIES } from "@patchbay/core/issues/queries";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { IssueStatusCategory, ListIssuesCache } from "@patchbay/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
 import enAuth from "../../locales/en/auth.json";
@@ -31,14 +31,14 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 }
 
 // Mock the workspace id singleton — items() reads it imperatively.
-vi.mock("@cordy/core/platform", () => ({
+vi.mock("@patchbay/core/platform", () => ({
   getCurrentWsId: () => "ws-1",
 }));
 
 // Mock the API so we control search responses + observe calls.
 const searchIssuesMock = vi.fn();
 const searchProjectsMock = vi.fn();
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     get searchIssues() {
       return searchIssuesMock;
@@ -52,7 +52,7 @@ vi.mock("@cordy/core/api", () => ({
 // Mock the auth store: items() reads `useAuthStore.getState()` imperatively
 // to identify the current user when filtering personal agents.
 const authState = { user: { id: "u1" } as { id: string } | null };
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: { getState: () => authState },
 }));
 

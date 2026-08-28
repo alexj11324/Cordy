@@ -11,24 +11,24 @@ import {
   type TabTitleSpec,
   type TabEntityData,
   type TabLabelKey,
-} from "@cordy/core/paths";
-import { issueDetailOptions } from "@cordy/core/issues/queries";
-import { projectDetailOptions } from "@cordy/core/projects/queries";
-import { autopilotDetailOptions } from "@cordy/core/autopilots/queries";
+} from "@patchbay/core/paths";
+import { issueDetailOptions } from "@patchbay/core/issues/queries";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
+import { autopilotDetailOptions } from "@patchbay/core/autopilots/queries";
 import {
   skillDetailOptions,
   agentListOptions,
   memberListOptions,
   squadListOptions,
-} from "@cordy/core/workspace/queries";
-import { runtimeListOptions } from "@cordy/core/runtimes/queries";
-import { runtimeDisplayName } from "@cordy/core/runtimes";
-import { chatSessionsOptions } from "@cordy/core/chat/queries";
+} from "@patchbay/core/workspace/queries";
+import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
+import { runtimeDisplayName } from "@patchbay/core/runtimes";
+import { chatSessionsOptions } from "@patchbay/core/chat/queries";
 import {
   inboxListOptions,
   archivedInboxListOptions,
-} from "@cordy/core/inbox/queries";
-import { cn } from "@cordy/ui/lib/utils";
+} from "@patchbay/core/inbox/queries";
+import { cn } from "@patchbay/ui/lib/utils";
 import { StatusIcon } from "../issues/components";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { ActorAvatar } from "../common/actor-avatar";
@@ -39,7 +39,7 @@ import { ROUTE_ICON_COMPONENTS } from "./route-icon-components";
 /**
  * Desktop tab presentation: turn a tab URL into a leading visual and a title,
  * live from the query cache. This is the view half of the contract whose pure
- * core is `@cordy/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
+ * core is `@patchbay/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
  *
  * Cache-only reads: every query in `useTabEntityData` is `enabled: false`. It
  * observes whatever the pages/directory already loaded and re-renders when that

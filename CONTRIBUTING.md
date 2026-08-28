@@ -1,6 +1,6 @@
 # Contributing Guide
 
-This guide documents the local development workflow for contributors working on the Cordy codebase.
+This guide documents the local development workflow for contributors working on the Patchbay codebase.
 
 It covers:
 
@@ -14,15 +14,15 @@ It covers:
 
 ## Contribution Terms
 
-By submitting a contribution to Cordy — a pull request, a patch, or any
-other work — you agree to condition 2 of the [Cordy License](LICENSE):
+By submitting a contribution to Patchbay — a pull request, a patch, or any
+other work — you agree to condition 2 of the [Patchbay License](LICENSE):
 
-- your contribution is submitted under the Cordy License as a whole (the
+- your contribution is submitted under the Patchbay License as a whole (the
   additional conditions in Part I together with the incorporated Apache
   License 2.0 text in Part II), not under the Apache License 2.0 alone;
 - your contributed code may be used for commercial purposes, including the
   producer's cloud business operations;
-- the producer can adjust the Cordy License to be more strict or relaxed
+- the producer can adjust the Patchbay License to be more strict or relaxed
   as deemed necessary.
 
 See the [LICENSE](LICENSE) file for the full terms.
@@ -31,7 +31,7 @@ See the [LICENSE](LICENSE) file for the full terms.
 
 Local development uses one shared PostgreSQL container and one database per checkout.
 
-- the main checkout usually uses `.env` and `POSTGRES_DB=cordy`
+- the main checkout usually uses `.env` and `POSTGRES_DB=patchbay`
 - each Git worktree uses its own `.env.worktree`
 - every checkout connects to the same PostgreSQL host: `localhost:5432`
 - isolation happens at the database level, not by starting a separate Docker Compose project
@@ -70,9 +70,9 @@ cp .env.example .env
 By default, `.env` points to:
 
 ```bash
-POSTGRES_DB=cordy
+POSTGRES_DB=patchbay
 POSTGRES_PORT=5432
-DATABASE_URL=postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
 PORT=8080
 FRONTEND_PORT=3000
 ```
@@ -88,11 +88,11 @@ make worktree-env
 That generates values like:
 
 ```bash
-POSTGRES_DB=cordy_my_feature_702
+POSTGRES_DB=patchbay_my_feature_702
 POSTGRES_PORT=5432
 PORT=18782
 FRONTEND_PORT=13702
-DATABASE_URL=postgres://cordy:cordy@localhost:5432/cordy_my_feature_702?sslmode=disable
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_my_feature_702?sslmode=disable
 ```
 
 Notes:
@@ -178,8 +178,8 @@ make check-main
 Use a worktree when you want isolated data and separate app ports.
 
 ```bash
-git worktree add ../cordy-feature -b feat/my-change main
-cd ../cordy-feature
+git worktree add ../patchbay-feature -b feat/my-change main
+cd ../patchbay-feature
 make dev
 ```
 
@@ -198,7 +198,7 @@ from another checkout so database cleanup happens before Git removes the
 worktree directory:
 
 ```bash
-make remove-worktree WORKTREE=../cordy-feature
+make remove-worktree WORKTREE=../patchbay-feature
 ```
 
 The command refuses to remove the primary checkout, the current checkout, a
@@ -217,11 +217,11 @@ This is a first-class workflow.
 Example:
 
 - main checkout
-  - database: `cordy`
+  - database: `patchbay`
   - backend: `8080`
   - frontend: `3000`
 - worktree checkout
-  - database: `cordy_my_feature_702`
+  - database: `patchbay_my_feature_702`
   - backend: generated worktree port such as `18782`
   - frontend: generated worktree port such as `13702`
 
@@ -340,7 +340,7 @@ Run the local daemon:
 make daemon
 ```
 
-The daemon authenticates using the CLI's stored token (`cordy login`).
+The daemon authenticates using the CLI's stored token (`patchbay login`).
 It registers runtimes for all watched workspaces from the CLI config.
 
 ## Full-Stack Isolated Testing
@@ -353,7 +353,7 @@ human intervention.
 ### Why Not Just `make daemon`?
 
 `make daemon` uses the system-installed CLI's stored token and connects to
-whatever server is configured in `~/.cordy/config.json`. That's fine for
+whatever server is configured in `~/.patchbay/config.json`. That's fine for
 day-to-day development against a shared server, but for fully isolated testing
 you need:
 
@@ -378,8 +378,8 @@ OFFSET=$((HASH % 1000))
 PROFILE="dev-${SLUG}-${OFFSET}"
 ```
 
-Example: worktree at `../cordy-feat-auth` produces profile
-`dev-cordy_feat_auth-347`, matching that worktree's port and database
+Example: worktree at `../patchbay-feat-auth` produces profile
+`dev-patchbay_feat_auth-347`, matching that worktree's port and database
 allocation.
 
 ### Start the Isolated Environment
@@ -407,7 +407,7 @@ done
 
 #### 2. Create a test user and token (automated auth)
 
-For deterministic local automation, set `CORDY_DEV_VERIFICATION_CODE=888888`
+For deterministic local automation, set `PATCHBAY_DEV_VERIFICATION_CODE=888888`
 in your env file before starting the backend:
 
 ```bash
@@ -447,7 +447,7 @@ PROFILE="dev-${SLUG}-${OFFSET}"
 FRONTEND_PORT=$(grep '^FRONTEND_PORT=' .env.worktree 2>/dev/null || grep '^FRONTEND_PORT=' .env | head -1 | cut -d= -f2)
 FRONTEND_PORT=${FRONTEND_PORT:-3000}
 
-CONFIG_DIR="$HOME/.cordy/profiles/$PROFILE"
+CONFIG_DIR="$HOME/.patchbay/profiles/$PROFILE"
 mkdir -p "$CONFIG_DIR"
 
 cat > "$CONFIG_DIR/config.json" << EOF
@@ -467,8 +467,8 @@ EOF
 make cli ARGS="daemon start --profile $PROFILE"
 ```
 
-The daemon runs from the current worktree's Rust `cordy-cli` package, connecting
-to the local backend. Agent-executed `cordy` commands automatically use the
+The daemon runs from the current worktree's Rust `patchbay-cli` package, connecting
+to the local backend. Agent-executed `patchbay` commands automatically use the
 same binary (the daemon prepends its own directory to `PATH`).
 
 ### Stop the Isolated Environment
@@ -491,7 +491,7 @@ make db-down
 make clean
 
 # 5. (Optional) Remove profile config
-rm -rf "$HOME/.cordy/profiles/$PROFILE"
+rm -rf "$HOME/.patchbay/profiles/$PROFILE"
 ```
 
 ### Desktop App Local Testing
@@ -505,15 +505,15 @@ pnpm dev:desktop
 
 This automatically:
 
-1. Compiles the `cordy` CLI from the Rust `cordy-cli` package in the
+1. Compiles the `patchbay` CLI from the Rust `patchbay-cli` package in the
    `server-rs` Cargo workspace into
-   `apps/desktop/resources/bin/cordy`
+   `apps/desktop/resources/bin/patchbay`
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance
 4. Connects to the local backend
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
-backend logs. If you set `CORDY_DEV_VERIFICATION_CODE=888888` before starting
+backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting
 the backend, you can use `888888` instead.
 
 If the backend runs on a non-default port (worktree), create
@@ -536,28 +536,28 @@ frontend ports in `.env.worktree`):
   one offset that would land on `6000` gets `6174` instead: Chromium treats
   `6000` as a restricted port and fails the load with `ERR_UNSAFE_PORT`
 - `DESKTOP_APP_SUFFIX` = `<folder>-<offset>` — its own single-instance lock /
-  `userData`, and an app named `Cordy Canary <folder>-<offset>` so it is
+  `userData`, and an app named `Patchbay Canary <folder>-<offset>` so it is
   distinguishable in Cmd+Tab. The offset keeps it unique across worktrees that
   share a folder name at different paths.
 
-The primary checkout is left untouched (`5173`, `Cordy Canary`). Set either
+The primary checkout is left untouched (`5173`, `Patchbay Canary`). Set either
 env var explicitly to override the derived value. Which backend each instance
 talks to is still controlled only by `apps/desktop/.env*` above — point each
 worktree's desktop at its own backend to also isolate the daemon profile.
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `cordy` or the default
-`~/.cordy/config.json`:
+Nothing in this flow touches the system-installed `patchbay` or the default
+`~/.patchbay/config.json`:
 
 | Resource | System / Production | Local Dev (per-worktree) |
 |---|---|---|
-| Config | `~/.cordy/config.json` | `~/.cordy/profiles/dev-<slug>-<hash>/config.json` |
-| Daemon PID | `~/.cordy/daemon.pid` | `~/.cordy/profiles/dev-<slug>-<hash>/daemon.pid` |
+| Config | `~/.patchbay/config.json` | `~/.patchbay/profiles/dev-<slug>-<hash>/config.json` |
+| Daemon PID | `~/.patchbay/daemon.pid` | `~/.patchbay/profiles/dev-<slug>-<hash>/daemon.pid` |
 | Health port | `19514` | `19514 + 1 + (name_hash % 1000)` |
-| Workspaces dir | `~/cordy_workspaces/` | `~/cordy_workspaces_dev-<slug>-<hash>/` |
-| Database | remote / production | local Docker: `cordy_<slug>_<hash>` |
-| Desktop profile | `desktop-api.cordy.ai` | `desktop-localhost-<port>` |
+| Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<hash>/` |
+| Database | remote / production | local Docker: `patchbay_<slug>_<hash>` |
+| Desktop profile | `desktop-api.patchbay.ai` | `desktop-localhost-<port>` |
 
 Multiple worktrees can run simultaneously without conflict.
 
@@ -610,7 +610,7 @@ Look for:
 ### List All Local Databases in Shared PostgreSQL
 
 ```bash
-docker compose exec -T postgres psql -U cordy -d postgres -At -c "select datname from pg_database order by datname;"
+docker compose exec -T postgres psql -U patchbay -d postgres -At -c "select datname from pg_database order by datname;"
 ```
 
 ### Worktree Is Accidentally Using the Main Database
@@ -673,7 +673,7 @@ make db-drop ENV_FILE=.env.worktree
 The command prints the selected database and environment file, then requires a
 `y/N` confirmation. It only operates on the local Docker PostgreSQL service,
 protects PostgreSQL system databases, and refuses to drop the default main
-database `cordy` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
+database `patchbay` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
 Declining the confirmation is a successful no-op; when called by
 `make remove-worktree`, it also leaves the worktree in place.
 
@@ -700,15 +700,15 @@ make dev
 ### Feature Worktree
 
 ```bash
-git worktree add ../cordy-feature -b feat/my-change main
-cd ../cordy-feature
+git worktree add ../patchbay-feature -b feat/my-change main
+cd ../patchbay-feature
 make dev
 ```
 
 ### Return to a Previously Configured Worktree
 
 ```bash
-cd ../cordy-feature
+cd ../patchbay-feature
 make start-worktree
 ```
 

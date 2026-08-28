@@ -16,7 +16,7 @@
  * currently painted.
  *
  * Pure — no React, no DOM, no platform APIs. Mobile shares it (see
- * apps/mobile/AGENTS.md: pure functions from @cordy/core are importable).
+ * apps/mobile/AGENTS.md: pure functions from @patchbay/core are importable).
  */
 
 import type { Attachment } from "../types/attachment";

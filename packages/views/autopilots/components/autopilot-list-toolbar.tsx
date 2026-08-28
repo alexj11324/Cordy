@@ -7,7 +7,7 @@ import {
   Filter,
   X,
 } from "lucide-react";
-import type { Autopilot } from "@cordy/core/types";
+import type { Autopilot } from "@patchbay/core/types";
 import {
   AUTOPILOT_SCOPES,
   type AutopilotColumnKey,
@@ -15,9 +15,9 @@ import {
   type AutopilotScope,
   type AutopilotSortDirection,
   type AutopilotSortField,
-} from "@cordy/core/autopilots/stores";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/autopilots/stores";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -28,18 +28,18 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/popover";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { useT } from "../../i18n";

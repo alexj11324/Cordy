@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHART_DIR="$ROOT_DIR/deploy/helm/cordy"
+CHART_DIR="$ROOT_DIR/deploy/helm/patchbay"
 
 require_rendered_value() {
   local rendered=$1
@@ -29,35 +29,35 @@ reject_rendered_value() {
 helm lint "$CHART_DIR"
 
 default_config="$(
-  helm template cordy "$CHART_DIR" \
+  helm template patchbay "$CHART_DIR" \
     --show-only templates/configmap.yaml
 )"
-require_rendered_value "$default_config" 'CORDY_VCS_INTEGRATION_ENABLED: "true"'
-require_rendered_value "$default_config" 'CORDY_ENTITLEMENT_POLICY_ENABLED: "false"'
-require_rendered_value "$default_config" 'CORDY_ENTITLEMENT_POLICY_URL: ""'
-reject_rendered_value "$default_config" 'CORDY_ENTITLEMENT_SERVICE_TOKEN'
+require_rendered_value "$default_config" 'PATCHBAY_VCS_INTEGRATION_ENABLED: "true"'
+require_rendered_value "$default_config" 'PATCHBAY_ENTITLEMENT_POLICY_ENABLED: "false"'
+require_rendered_value "$default_config" 'PATCHBAY_ENTITLEMENT_POLICY_URL: ""'
+reject_rendered_value "$default_config" 'PATCHBAY_ENTITLEMENT_SERVICE_TOKEN'
 
 disabled_config="$(
-  helm template cordy "$CHART_DIR" \
+  helm template patchbay "$CHART_DIR" \
     --show-only templates/configmap.yaml \
     --set backend.config.vcsIntegrationEnabled=false
 )"
-require_rendered_value "$disabled_config" 'CORDY_VCS_INTEGRATION_ENABLED: "false"'
+require_rendered_value "$disabled_config" 'PATCHBAY_VCS_INTEGRATION_ENABLED: "false"'
 
 entitlement_config="$(
-  helm template cordy "$CHART_DIR" \
+  helm template patchbay "$CHART_DIR" \
     --show-only templates/configmap.yaml \
     --set backend.config.entitlementPolicy.enabled=true \
-    --set-string backend.config.entitlementPolicy.url=https://cordy-cloud.internal \
+    --set-string backend.config.entitlementPolicy.url=https://patchbay-cloud.internal \
     --set-string backend.config.entitlementPolicy.timeout=2s \
     --set-string backend.config.entitlementPolicy.staleGrace=10m \
     --set backend.config.entitlementPolicy.emergencyDisabled=false
 )"
-require_rendered_value "$entitlement_config" 'CORDY_ENTITLEMENT_POLICY_ENABLED: "true"'
-require_rendered_value "$entitlement_config" 'CORDY_ENTITLEMENT_POLICY_URL: "https://cordy-cloud.internal"'
-require_rendered_value "$entitlement_config" 'CORDY_ENTITLEMENT_POLICY_TIMEOUT: "2s"'
-require_rendered_value "$entitlement_config" 'CORDY_ENTITLEMENT_STALE_GRACE: "10m"'
-require_rendered_value "$entitlement_config" 'CORDY_ENTITLEMENT_EMERGENCY_DISABLED: "false"'
-reject_rendered_value "$entitlement_config" 'CORDY_ENTITLEMENT_SERVICE_TOKEN'
+require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_POLICY_ENABLED: "true"'
+require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_POLICY_URL: "https://patchbay-cloud.internal"'
+require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_POLICY_TIMEOUT: "2s"'
+require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_STALE_GRACE: "10m"'
+require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_EMERGENCY_DISABLED: "false"'
+reject_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_SERVICE_TOKEN'
 
 echo "helm config rendering ok"

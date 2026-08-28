@@ -17,15 +17,15 @@ import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@cordy/core/issues/queries";
-import { issueStatusCategory } from "@cordy/core/issues";
+} from "@patchbay/core/issues/queries";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import type {
   Issue,
   IssueTableGroupDescriptor,
   IssueTableGroupsRequest,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 export interface IssueGroupPageState {
   total: number;

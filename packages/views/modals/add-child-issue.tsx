@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   issueDetailOptions,
   childIssuesOptions,
-} from "@cordy/core/issues/queries";
-import { useUpdateIssue } from "@cordy/core/issues/mutations";
+} from "@patchbay/core/issues/queries";
+import { useUpdateIssue } from "@patchbay/core/issues/mutations";
 import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
 

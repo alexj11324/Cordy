@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
-import { Card, CardContent } from "@cordy/ui/components/ui/card";
-import { cn } from "@cordy/ui/lib/utils";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@patchbay/ui/lib/utils";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
 

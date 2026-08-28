@@ -1,6 +1,6 @@
 "use client";
 
-import { useModalStore } from "@cordy/core/modals";
+import { useModalStore } from "@patchbay/core/modals";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import { CreateProjectModal } from "./create-project";
 import { CreateSquadModal } from "./create-squad";

@@ -3,20 +3,20 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { api } from "@cordy/core/api";
-import { useAuthStore } from "@cordy/core/auth";
-import { issueKeys } from "@cordy/core/issues/queries";
-import { useWelcomeStore } from "@cordy/core/onboarding";
-import { paths, useCurrentWorkspace } from "@cordy/core/paths";
-import type { CreateIssueRequest, Issue } from "@cordy/core/types";
-import { workspaceKeys } from "@cordy/core/workspace/queries";
-import { Button } from "@cordy/ui/components/ui/button";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { issueKeys } from "@patchbay/core/issues/queries";
+import { useWelcomeStore } from "@patchbay/core/onboarding";
+import { paths, useCurrentWorkspace } from "@patchbay/core/paths";
+import type { CreateIssueRequest, Issue } from "@patchbay/core/types";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import {

@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay 使用你通过 Telegram 官方 [@BotFather](https://t.me/BotFather) 创建的 Bot。一个 Bot 对应一个 Patchbay 智能体；需要多个独立 Bot 身份时，为每个智能体分别创建。
 
-Telegram 集成[由社区维护](/community-maintained)：每个版本都会随包发布，但不附带官方支持 SLA。遇到问题请提到 [GitHub issues](https://github.com/alexj11324/Cordy/issues)。
+Telegram 集成[由社区维护](/community-maintained)：每个版本都会随包发布，但不附带官方支持 SLA。遇到问题请提到 [GitHub issues](https://github.com/patchbay-ai/patchbay/issues)。
 
 ## 开始前
 
@@ -73,12 +73,12 @@ Bot 通过发送并编辑 Telegram 消息来流式展示文字回复，引用触
 启动 API 服务器前配置一个长期稳定的 32 字节加密密钥：
 
 ```dotenv
-CORDY_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
+PATCHBAY_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
 ```
 
 可用 `openssl rand -base64 32` 生成。丢失或轮换此密钥后，已有 Bot token 无法解密，需要逐个重新连接。
 
-绑定链接使用 `CORDY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；生成的地址必须能被成员访问。服务器网络或代理还必须允许 HTTPS 访问 `api.telegram.org`；Rust HTTP client 会读取标准的 `HTTPS_PROXY` 和 `NO_PROXY` 环境变量。
+绑定链接使用 `PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；生成的地址必须能被成员访问。服务器网络或代理还必须允许 HTTPS 访问 `api.telegram.org`；Rust HTTP client 会读取标准的 `HTTPS_PROXY` 和 `NO_PROXY` 环境变量。
 
 ## 故障排查
 

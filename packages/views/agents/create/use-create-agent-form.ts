@@ -12,19 +12,19 @@ import {
   EMPTY_AGENT_DRAFT,
   isDraftDescriptionWithinLimit,
   type AgentDraft,
-} from "@cordy/core/agents";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { isRuntimeUsableForUser, runtimeListOptions } from "@cordy/core/runtimes";
+} from "@patchbay/core/agents";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { isRuntimeUsableForUser, runtimeListOptions } from "@patchbay/core/runtimes";
 import type {
   MemberWithUser,
   RuntimeDevice,
   SkillSummary,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   memberListOptions,
   skillListOptions,
-} from "@cordy/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 
 interface CreateAgentForm {
   draft: AgentDraft;

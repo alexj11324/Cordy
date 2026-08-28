@@ -18,17 +18,17 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { GripVertical, Layers, Pencil, Trash2 } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Switch } from "@cordy/ui/components/ui/switch";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { cn } from "@cordy/ui/lib/utils";
-import type { IssueView } from "@cordy/core/api/schemas";
+} from "@patchbay/ui/components/ui/dialog";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { IssueView } from "@patchbay/core/api/schemas";
 import {
   DeleteViewConfirm,
   type ViewBarItem,

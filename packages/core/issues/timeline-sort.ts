@@ -1,4 +1,4 @@
-import type { TimelineEntry } from "@cordy/core/types";
+import type { TimelineEntry } from "@patchbay/core/types";
 
 /**
  * Stable-ascending sort for flat TimelineEntry[] caches.

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { ALL_STATUSES } from "@cordy/core/issues/config";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
 import { BoardColumn } from "./board-column";
 import { ListView } from "./list-view";
 import type { IssueStatusPagination } from "../surface/use-issue-status-branches";
@@ -29,17 +29,17 @@ function emptyStatusPagination(): IssueStatusPagination {
   ) as unknown as IssueStatusPagination;
 }
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@cordy/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: {
     getState: () => ({ open: openModal }),
   },
 }));
 
-vi.mock("@cordy/core/issues/stores/view-store-context", () => ({
+vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
   useViewStore: (selector?: any) => {
     const state = {
       grouping: "status",
@@ -54,7 +54,7 @@ vi.mock("@cordy/core/issues/stores/view-store-context", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) => id,
   }),

@@ -71,7 +71,7 @@ describe("scroll bridge runtime", () => {
     );
     expect(ready).toBeTruthy();
     expect(ready?.[0]).toMatchObject({
-      __cordy: "__cordy",
+      __patchbay: "__patchbay",
       token: TOKEN,
       y: expect.any(Number),
       height: expect.any(Number),
@@ -102,7 +102,7 @@ describe("scroll bridge runtime", () => {
     postMessage.mockClear();
     window.dispatchEvent(
       new MessageEvent("message", {
-        data: { __cordy: "__cordy", kind: "request-sync", token: TOKEN },
+        data: { __patchbay: "__patchbay", kind: "request-sync", token: TOKEN },
       }),
     );
     expect(
@@ -115,7 +115,7 @@ describe("scroll bridge runtime", () => {
     scrollTo.mockClear();
     window.dispatchEvent(
       new MessageEvent("message", {
-        data: { __cordy: "__cordy", kind: "restore", y: 100, token: "old" },
+        data: { __patchbay: "__patchbay", kind: "restore", y: 100, token: "old" },
       }),
     );
     expect(scrollTo).not.toHaveBeenCalled();
@@ -156,7 +156,7 @@ describe("scroll bridge runtime", () => {
       window.dispatchEvent(
         new MessageEvent("message", {
           data: {
-            __cordy: "__cordy",
+            __patchbay: "__patchbay",
             kind: "restore",
             y,
             token: TOKEN,

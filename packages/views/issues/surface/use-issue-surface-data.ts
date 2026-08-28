@@ -2,15 +2,15 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, Project } from "@cordy/core/types";
-import { ALL_STATUSES } from "@cordy/core/issues/config";
-import { projectListOptions } from "@cordy/core/projects/queries";
-import { childIssueProgressOptions } from "@cordy/core/issues/queries";
-import { issueSurfaceGanttOptions } from "@cordy/core/issues/surface/repository";
-import type { IssueSurfaceQueryPlan } from "@cordy/core/issues/surface/query-plan";
-import type { IssueStatus, IssueStatusCategory } from "@cordy/core/types";
-import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
-import { issueBehavesAsAny, statusFilterColumns } from "@cordy/core/issues";
+import type { Issue, Project } from "@patchbay/core/types";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { projectListOptions } from "@patchbay/core/projects/queries";
+import { childIssueProgressOptions } from "@patchbay/core/issues/queries";
+import { issueSurfaceGanttOptions } from "@patchbay/core/issues/surface/repository";
+import type { IssueSurfaceQueryPlan } from "@patchbay/core/issues/surface/query-plan";
+import type { IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { issueBehavesAsAny, statusFilterColumns } from "@patchbay/core/issues";
 import {
   applyIssueFilters,
   type IssueFilterState,

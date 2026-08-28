@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
-import type { TimelineEntry } from "@cordy/core/types";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import { cn } from "@cordy/ui/lib/utils";
+import type { TimelineEntry } from "@patchbay/core/types";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 // ---------------------------------------------------------------------------

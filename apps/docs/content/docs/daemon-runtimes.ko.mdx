@@ -1,22 +1,22 @@
 ---
 title: 데몬과 런타임
-description: Cordy가 컴퓨터를 연결하고 AI 코딩 도구를 찾아 태스크를 실행하는 방식을 알아봅니다.
+description: Patchbay가 컴퓨터를 연결하고 AI 코딩 도구를 찾아 태스크를 실행하는 방식을 알아봅니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy는 작업을 기록하고 조율하며 연결된 컴퓨터가 실행을 담당합니다. 컴퓨터의 **데몬**(daemon)이 태스크를 가져간 뒤 로컬에 설치된 AI 코딩 도구를 호출합니다.
+Patchbay는 작업을 기록하고 조율하며 연결된 컴퓨터가 실행을 담당합니다. 컴퓨터의 **데몬**(daemon)이 태스크를 가져간 뒤 로컬에 설치된 AI 코딩 도구를 호출합니다.
 
 ## 개념 구분
 
-- **데몬**은 한 컴퓨터에서 실행되는 Cordy 백그라운드 프로그램입니다. 서버 연결, 로컬 도구 검색, 태스크 수령, 결과 반환을 담당합니다.
+- **데몬**은 한 컴퓨터에서 실행되는 Patchbay 백그라운드 프로그램입니다. 서버 연결, 로컬 도구 검색, 태스크 수령, 결과 반환을 담당합니다.
 - **런타임**은 워크스페이스가 사용할 수 있는 구체적인 실행 환경을 나타냅니다. 컴퓨터 한 대와 그 컴퓨터의 AI 코딩 도구 하나 또는 사용자 지정 런타임 설정의 조합입니다.
 
 예를 들어 한 컴퓨터에 Claude Code와 Codex가 모두 설치되어 있고 두 워크스페이스에 연결되어 있다면 데몬이 각 워크스페이스에 Claude Code와 Codex 런타임을 각각 등록합니다. 데몬을 다시 시작하면 기존 기록이 업데이트되며 같은 조합의 런타임이 계속 새로 생기지 않습니다.
 
 ## 실행 위치와 데이터 경계
 
-로컬 런타임이 호출하는 AI 코딩 도구, 도구 자체의 로그인 자격 증명, 로컬 코드 디렉터리는 연결된 컴퓨터에 남습니다. Cordy 서버가 로컬 도구를 대신해 명령을 실행하거나 전체 작업 디렉터리를 자동으로 업로드하지 않습니다.
+로컬 런타임이 호출하는 AI 코딩 도구, 도구 자체의 로그인 자격 증명, 로컬 코드 디렉터리는 연결된 컴퓨터에 남습니다. Patchbay 서버가 로컬 도구를 대신해 명령을 실행하거나 전체 작업 디렉터리를 자동으로 업로드하지 않습니다.
 
 팀 협업을 위해 서버에는 이슈, 댓글, 에이전트 설정, 태스크 컨텍스트, 실행 기록, 에이전트가 반환한 결과가 저장됩니다. 이 내용에는 에이전트가 직접 읽고 답변에 포함한 코드 조각이나 다른 프로젝트 컨텍스트가 들어갈 수 있습니다.
 
@@ -26,25 +26,25 @@ Cordy는 작업을 기록하고 조율하며 연결된 컴퓨터가 실행을 �
 
 ## 데몬 시작
 
-Cordy Desktop을 사용하면 앱이 데몬을 자동으로 시작하므로 별도 명령을 실행할 필요가 없습니다.
+Patchbay Desktop을 사용하면 앱이 데몬을 자동으로 시작하므로 별도 명령을 실행할 필요가 없습니다.
 
-Web, 원격 컴퓨터, 화면 없는 환경에서는 먼저 [Cordy CLI를 설치](/cli)한 뒤 다음을 실행합니다.
+Web, 원격 컴퓨터, 화면 없는 환경에서는 먼저 [Patchbay CLI를 설치](/cli)한 뒤 다음을 실행합니다.
 
 ```bash
-cordy daemon start
+patchbay daemon start
 ```
 
 데몬은 기본적으로 백그라운드에서 실행됩니다. 자주 사용하는 명령은 다음과 같습니다.
 
 | 명령 | 역할 |
 | --- | --- |
-| `cordy daemon status` | 데몬과 연결 상태 확인 |
-| `cordy daemon logs -f` | 로그 계속 보기 |
-| `cordy daemon restart` | 데몬을 다시 시작하고 로컬 도구 다시 감지 |
-| `cordy daemon stop` | 데몬 중지 |
-| `cordy daemon start --foreground` | 디버깅을 위해 현재 터미널에서 실행 |
+| `patchbay daemon status` | 데몬과 연결 상태 확인 |
+| `patchbay daemon logs -f` | 로그 계속 보기 |
+| `patchbay daemon restart` | 데몬을 다시 시작하고 로컬 도구 다시 감지 |
+| `patchbay daemon stop` | 데몬 중지 |
+| `patchbay daemon start --foreground` | 디버깅을 위해 현재 터미널에서 실행 |
 
-태스크 작업 디렉터리를 다른 디스크에 두려면 `cordy config set workspaces_root <path>`로 현재 profile의 루트를 저장하거나 `daemon start` 또는 `daemon restart`에 `--workspaces-root <path>`를 전달합니다. flag는 `CORDY_WORKSPACES_ROOT`보다 우선하고, 환경 변수는 profile 설정보다 우선합니다. 루트를 변경해도 기존 태스크 디렉터리는 이동되지 않습니다.
+태스크 작업 디렉터리를 다른 디스크에 두려면 `patchbay config set workspaces_root <path>`로 현재 profile의 루트를 저장하거나 `daemon start` 또는 `daemon restart`에 `--workspaces-root <path>`를 전달합니다. flag는 `PATCHBAY_WORKSPACES_ROOT`보다 우선하고, 환경 변수는 profile 설정보다 우선합니다. 루트를 변경해도 기존 태스크 디렉터리는 이동되지 않습니다.
 
 시작할 때 데몬은 `PATH`에서 지원되는 AI 코딩 도구를 감지하고 사용자가 연결할 권한이 있는 워크스페이스에 런타임을 등록합니다. 도구를 방금 설치하거나 로그인했다면 데몬을 다시 시작해 다시 감지할 수 있습니다.
 
@@ -71,7 +71,7 @@ cordy daemon start
 
 데몬 한 대는 기본적으로 태스크를 최대 20개까지 동시에 실행하며, 에이전트 한 명은 기본적으로 최대 6개까지 동시에 실행합니다. 실제 동시 실행 수에는 둘 중 더 작은 값이 적용됩니다.
 
-상한에 도달하면 새 태스크는 계속 큐에서 기다립니다. 에이전트 설정에서 개별 에이전트의 동시 실행 수를 조정할 수 있고 `CORDY_DAEMON_MAX_CONCURRENT_TASKS`로 컴퓨터 전체 상한을 조정할 수도 있습니다. 병렬 실행은 컴퓨터 성능, 도구 계정 사용량, 같은 작업 디렉터리를 동시에 사용합니다.
+상한에 도달하면 새 태스크는 계속 큐에서 기다립니다. 에이전트 설정에서 개별 에이전트의 동시 실행 수를 조정할 수 있고 `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS`로 컴퓨터 전체 상한을 조정할 수도 있습니다. 병렬 실행은 컴퓨터 성능, 도구 계정 사용량, 같은 작업 디렉터리를 동시에 사용합니다.
 
 ## 비공개와 공개
 
@@ -83,7 +83,7 @@ cordy daemon start
 
 팀에서 내부 wrapper, 고정 버전 실행 파일을 사용하거나 호환 도구에 고정 인수를 추가해야 한다면 **사용자 지정 런타임 설정**을 만들 수 있습니다.
 
-사용자 지정 설정이 새 통신 프로토콜을 추가하지는 않습니다. 만들 때 Cordy가 이미 지원하는 프로토콜 계열 중 하나를 선택해야 하며(도구 연동 프로토콜 유형은 [AI 코딩 도구 비교](/providers) 참고), 명령 자체도 해당 프로토콜과 호환되어야 합니다.
+사용자 지정 설정이 새 통신 프로토콜을 추가하지는 않습니다. 만들 때 Patchbay가 이미 지원하는 프로토콜 계열 중 하나를 선택해야 하며(도구 연동 프로토콜 유형은 [AI 코딩 도구 비교](/providers) 참고), 명령 자체도 해당 프로토콜과 호환되어야 합니다.
 
 ### 설정 만들기
 
@@ -101,13 +101,13 @@ cordy daemon start
 Desktop이 시작한 데몬에서 터미널에서는 실행되는 명령을 찾지 못한다면 현재 컴퓨터에 절대 경로를 설정할 수 있습니다.
 
 ```bash
-cordy runtime profile set-path <profile-id> --path /absolute/path/to/command
+patchbay runtime profile set-path <profile-id> --path /absolute/path/to/command
 ```
 
 경로 덮어쓰기를 제거하려면 다음을 실행합니다.
 
 ```bash
-cordy runtime profile unset-path <profile-id>
+patchbay runtime profile unset-path <profile-id>
 ```
 
 설정 변경은 이후 가져가는 태스크에만 적용됩니다. 설정을 삭제하기 전에 해당 런타임에 계속 연결된 활성 에이전트를 먼저 처리해야 합니다. 특정 컴퓨터의 런타임 인스턴스만 삭제해도 설정은 삭제되지 않으며 실행 중인 데몬이 다시 등록합니다.
@@ -116,11 +116,11 @@ cordy runtime profile unset-path <profile-id>
 
 다음 순서로 확인하세요.
 
-1. `cordy daemon status`를 실행해 데몬이 시작되었는지 확인합니다.
-2. `cordy daemon logs -f`를 실행해 로그인, 네트워크, 도구 감지 오류를 확인합니다.
+1. `patchbay daemon status`를 실행해 데몬이 시작되었는지 확인합니다.
+2. `patchbay daemon logs -f`를 실행해 로그인, 네트워크, 도구 감지 오류를 확인합니다.
 3. 같은 실행 환경에서 `command -v <도구 명령>`을 실행해 데몬이 도구를 찾을 수 있는지 확인합니다.
-4. Cordy의 **런타임** 페이지를 열고 대상 컴퓨터와 해당 AI 코딩 도구가 온라인으로 표시되는지 확인합니다.
-5. 도구를 방금 설치했거나 경로 또는 설정을 변경했다면 `cordy daemon restart`를 실행합니다.
+4. Patchbay의 **런타임** 페이지를 열고 대상 컴퓨터와 해당 AI 코딩 도구가 온라인으로 표시되는지 확인합니다.
+5. 도구를 방금 설치했거나 경로 또는 설정을 변경했다면 `patchbay daemon restart`를 실행합니다.
 
 그래도 해결되지 않으면 [문제 해결](/troubleshooting)을 참고하세요.
 

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import type { ChatMessage } from "@cordy/core/types";
-import type { ChatTimelineItem } from "@cordy/core/chat";
+import type { ChatMessage } from "@patchbay/core/types";
+import type { ChatTimelineItem } from "@patchbay/core/chat";
 import { extractCopyText } from "./copy-text";
 
 const text = (seq: number, content: string): ChatTimelineItem => ({

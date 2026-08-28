@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Builds the Rust `cordy` CLI from server-rs and copies the binary
+// Builds the Rust `patchbay` CLI from server-rs and copies the binary
 // into apps/desktop/resources/bin/ so electron-vite (dev) and electron-
 // builder (prod) pick it up. Running this on every dev/build/package
 // invocation guarantees the bundled CLI always matches the current Rust
 // source — no more stale binary surprises. Cargo's build cache makes the
 // no-op case (nothing changed) effectively free.
 //
-// Build environment variables mirror `make build` so `cordy --version`
+// Build environment variables mirror `make build` so `patchbay --version`
 // reports a meaningful version / commit / date.
 //
 // Graceful: if `cargo` is not installed (e.g. frontend-only contributor), we
@@ -79,7 +79,7 @@ export function normalizeRuntimeArch(arch) {
 }
 
 export function binaryNameForPlatform(platform) {
-  return platform === "win32" ? "cordy.exe" : "cordy";
+  return platform === "win32" ? "patchbay.exe" : "patchbay";
 }
 
 export function rustTargetFor(platform, arch) {
@@ -167,7 +167,7 @@ async function main() {
         "--release",
         "--locked",
         "-p",
-        "cordy-cli",
+        "patchbay-cli",
         "--target",
         rustTarget,
       ],
@@ -177,10 +177,10 @@ async function main() {
         env: {
           ...process.env,
           CARGO_TARGET_DIR: cargoTargetDir,
-          CORDY_BUILD_VERSION: version,
-          CORDY_BUILD_COMMIT: commit,
-          CORDY_BUILD_DATE: date,
-          CORDY_GIT_COMMIT: commit,
+          PATCHBAY_BUILD_VERSION: version,
+          PATCHBAY_BUILD_COMMIT: commit,
+          PATCHBAY_BUILD_DATE: date,
+          PATCHBAY_GIT_COMMIT: commit,
         },
       },
     );

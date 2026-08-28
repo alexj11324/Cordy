@@ -3,14 +3,14 @@
 import { use, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, usePathname } from "next/navigation";
-import { WorkspaceSlugProvider, paths } from "@cordy/core/paths";
-import { workspaceBySlugOptions } from "@cordy/core/workspace";
-import { setCurrentWorkspace } from "@cordy/core/platform";
-import { useAuthStore } from "@cordy/core/auth";
-import { NoAccessPage } from "@cordy/views/workspace/no-access-page";
-import { WelcomeAfterOnboarding } from "@cordy/views/workspace/welcome-after-onboarding";
-import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
-import { useWorkspaceSeen } from "@cordy/views/workspace/use-workspace-seen";
+import { WorkspaceSlugProvider, paths } from "@patchbay/core/paths";
+import { workspaceBySlugOptions } from "@patchbay/core/workspace";
+import { setCurrentWorkspace } from "@patchbay/core/platform";
+import { useAuthStore } from "@patchbay/core/auth";
+import { NoAccessPage } from "@patchbay/views/workspace/no-access-page";
+import { WelcomeAfterOnboarding } from "@patchbay/views/workspace/welcome-after-onboarding";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { useWorkspaceSeen } from "@patchbay/views/workspace/use-workspace-seen";
 import { workspaceSlugFromPathname } from "@/lib/workspace-slug-from-pathname";
 
 export default function WorkspaceLayout({
@@ -97,7 +97,7 @@ export default function WorkspaceLayout({
 
   const loadingIndicator = (
     <div className="flex h-svh items-center justify-center">
-      <CordyIcon className="size-6 animate-pulse" />
+      <PatchbayIcon className="size-6 animate-pulse" />
     </div>
   );
 

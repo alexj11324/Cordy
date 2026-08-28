@@ -2,12 +2,12 @@
 
 import type { ReactNode, SyntheticEvent } from "react";
 import { ArrowUp, Loader2, Square } from "lucide-react";
-import { Button } from "@cordy/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 
 interface SubmitButtonProps {
   onClick: () => void;
@@ -28,7 +28,7 @@ interface SubmitButtonProps {
    * Tooltip shown over the send button when idle. Pass a string or a node
    * (e.g. `Send · ⌘↵`). Omit to render no tooltip.
    * Callers compose the shortcut hint themselves to keep this component
-   * free of `@cordy/core` (platform-detection) and i18n imports.
+   * free of `@patchbay/core` (platform-detection) and i18n imports.
    */
   tooltip?: ReactNode;
   /** Accessible name for the icon-only submit button. */

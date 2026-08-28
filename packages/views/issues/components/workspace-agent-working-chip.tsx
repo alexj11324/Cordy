@@ -1,14 +1,14 @@
 "use client";
 
-import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
-import { Button } from "@cordy/ui/components/ui/button";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@cordy/ui/components/ui/hover-card";
-import { useActorName } from "@cordy/core/workspace/hooks";
-import type { WorkingAgentSummary } from "@cordy/core/types";
+} from "@patchbay/ui/components/ui/hover-card";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import type { WorkingAgentSummary } from "@patchbay/core/types";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { useT } from "../../i18n";
 

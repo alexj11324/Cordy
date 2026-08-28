@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { SkillDetailPage } from "@cordy/views/skills";
+import { SkillDetailPage } from "@patchbay/views/skills";
 
 export default function SkillDetailRoute({
   params,

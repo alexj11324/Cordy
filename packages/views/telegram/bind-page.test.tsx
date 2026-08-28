@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 
 const TEST_RESOURCES = { en: { common: enCommon } };
@@ -13,7 +13,7 @@ const mockAuthState = vi.hoisted(() => ({
 const mockNavigatePush = vi.hoisted(() => vi.fn());
 const mockRedeemToken = vi.hoisted(() => vi.fn());
 
-vi.mock("@cordy/core/auth", () => {
+vi.mock("@patchbay/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: typeof mockAuthState) => unknown) =>
       selector ? selector(mockAuthState) : mockAuthState,
@@ -27,7 +27,7 @@ vi.mock("../navigation/context", () => ({
   useOptionalNavigation: () => ({ push: mockNavigatePush }),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { redeemTelegramBindingToken: mockRedeemToken },
 }));
 

@@ -2,15 +2,15 @@ import { forwardRef, useEffect, useRef, useState, useImperativeHandle } from "re
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@cordy/core/types";
-import { issueStatusKeys } from "@cordy/core/issue-statuses";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@patchbay/core/types";
+import { issueStatusKeys } from "@patchbay/core/issue-statuses";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import { toast } from "sonner";
-import { useResolvedExpandStore } from "@cordy/core/issues/stores/resolved-expand-store";
+import { useResolvedExpandStore } from "@patchbay/core/issues/stores/resolved-expand-store";
 import {
   DEFAULT_SUB_ISSUE_ROW_PROPERTIES,
   useSubIssueDisplayStore,
-} from "@cordy/core/issues/stores/sub-issue-display-store";
+} from "@patchbay/core/issues/stores/sub-issue-display-store";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -26,15 +26,15 @@ const contentEditorMounts = vi.hoisted(() => ({ count: 0 }));
 // stable identity. A fresh `[]` per call would loop useSyncExternalStore.
 const emptyDraftAttachments = vi.hoisted(() => [] as unknown[]);
 
-vi.mock("@cordy/ui/hooks/use-mobile", () => ({
+vi.mock("@patchbay/ui/hooks/use-mobile", () => ({
   useIsMobile: () => mockViewport.isMobile,
 }));
 
 // useWorkspaceId() derives from useCurrentWorkspace (relative import inside
-// @cordy/core/hooks.tsx). vi.mock("@cordy/core/paths") only intercepts
+// @patchbay/core/hooks.tsx). vi.mock("@patchbay/core/paths") only intercepts
 // the bare-specifier, not the internal relative import. Mock the hooks module
 // directly so the bridge hook returns the test UUID.
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -42,9 +42,9 @@ vi.mock("@cordy/core/hooks", () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock @cordy/core/auth
+// Mock @patchbay/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@cordy/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -56,8 +56,8 @@ vi.mock("@cordy/core/auth", () => ({
   createAuthStore: vi.fn(),
 }));
 
-// Mock @cordy/core/workspace/hooks
-vi.mock("@cordy/core/workspace/hooks", () => ({
+// Mock @patchbay/core/workspace/hooks
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
     getAgentName: (id: string) =>
@@ -74,7 +74,7 @@ vi.mock("@cordy/core/workspace/hooks", () => ({
 }));
 
 // Mock workspace queries
-vi.mock("@cordy/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () => Promise.resolve([{ user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" }]),
@@ -97,12 +97,12 @@ vi.mock("@cordy/core/workspace/queries", () => ({
   }),
 }));
 
-// Mock @cordy/core/paths — after the URL-driven workspace refactor,
+// Mock @patchbay/core/paths — after the URL-driven workspace refactor,
 // useCurrentWorkspace / useWorkspacePaths derive from the workspace slug in
 // URL Context. Tests don't mount a real route, so we short-circuit to fixtures.
-vi.mock("@cordy/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
-    "@cordy/core/paths",
+vi.mock("@patchbay/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
+    "@patchbay/core/paths",
   );
   return {
     ...actual,
@@ -121,7 +121,7 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({
     push: vi.fn(),
     pathname: "/issues/issue-1",
-    getShareableUrl: (p: string) => `https://app.cordy.com${p}`,
+    getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
   }),
   useBackOrReplace: () => vi.fn(),
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -325,7 +325,7 @@ const mockApiObj = vi.hoisted(() => ({
   listProjects: vi.fn().mockResolvedValue({ projects: [] }),
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: mockApiObj,
   getApi: () => mockApiObj,
   setApiInstance: vi.fn(),
@@ -336,7 +336,7 @@ vi.mock("@cordy/core/api", () => ({
 }));
 
 // Mock issue config
-vi.mock("@cordy/core/issues/config", () => ({
+vi.mock("@patchbay/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -361,23 +361,23 @@ vi.mock("@cordy/core/issues/config", () => ({
 
 // Mock recent issues store
 const mockRecordVisit = vi.fn();
-vi.mock("@cordy/core/issues/stores", async () => ({
+vi.mock("@patchbay/core/issues/stores", async () => ({
   // Real store, not a stub: resolved-thread expand/collapse behavior under
   // test runs through it. Deep import keeps the persisted sibling stores
   // (which need localStorage) out of this mock.
   ...(await vi.importActual<
-    typeof import("@cordy/core/issues/stores/resolved-expand-store")
-  >("@cordy/core/issues/stores/resolved-expand-store")),
+    typeof import("@patchbay/core/issues/stores/resolved-expand-store")
+  >("@patchbay/core/issues/stores/resolved-expand-store")),
   // Real store: sub-issue display tests drive it with setState, and the
   // component reads it through the barrel — both must hit the same instance.
   ...(await vi.importActual<
-    typeof import("@cordy/core/issues/stores/sub-issue-display-store")
-  >("@cordy/core/issues/stores/sub-issue-display-store")),
+    typeof import("@patchbay/core/issues/stores/sub-issue-display-store")
+  >("@patchbay/core/issues/stores/sub-issue-display-store")),
   // Real store, in-memory (no localStorage): backs the sub-issues section's
   // collapsed state.
   ...(await vi.importActual<
-    typeof import("@cordy/core/issues/stores/sub-issues-collapse-store")
-  >("@cordy/core/issues/stores/sub-issues-collapse-store")),
+    typeof import("@patchbay/core/issues/stores/sub-issues-collapse-store")
+  >("@patchbay/core/issues/stores/sub-issues-collapse-store")),
   useRecentIssuesStore: Object.assign(
     (selector?: any) => {
       const state = { byWorkspace: {}, recordVisit: mockRecordVisit, pruneWorkspaces: vi.fn() };
@@ -498,7 +498,7 @@ beforeEach(() => {
 });
 
 // Mock modals
-vi.mock("@cordy/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },
@@ -506,12 +506,12 @@ vi.mock("@cordy/core/modals", () => ({
 }));
 
 // Mock core/hooks/use-file-upload
-vi.mock("@cordy/core/hooks/use-file-upload", () => ({
+vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn().mockResolvedValue("https://example.com/file.png") }),
 }));
 
 // Mock realtime
-vi.mock("@cordy/core/realtime", () => ({
+vi.mock("@patchbay/core/realtime", () => ({
   useWSEvent: vi.fn(),
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
@@ -524,7 +524,7 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-// Mock react-resizable-panels (used by @cordy/ui/components/ui/resizable)
+// Mock react-resizable-panels (used by @patchbay/ui/components/ui/resizable)
 vi.mock("react-resizable-panels", () => ({
   Group: ({ children, ...props }: any) => <div data-testid="panel-group" {...props}>{children}</div>,
   Panel: ({ children, ...props }: any) => <div data-testid="panel" {...props}>{children}</div>,

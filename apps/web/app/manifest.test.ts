@@ -7,7 +7,7 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
   return {
     ...actual,
     getAuth: async (request: NextRequest) => ({
-      userId: request.cookies.has("cordy_logged_in") ? "user-1" : null,
+      userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
     }),
   };
 });
@@ -17,7 +17,7 @@ import manifest, { PWA_START_URL } from "./manifest";
 
 async function launch(
   cookies: Record<string, string>,
-  host = "www.cordy.ai",
+  host = "www.patchbay.ai",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -59,7 +59,7 @@ describe("web app manifest", () => {
 
   it("launches into the last workspace for a signed-in session", async () => {
     expect(
-      await launch({ cordy_logged_in: "1", last_workspace_slug: "acme" }),
+      await launch({ patchbay_logged_in: "1", last_workspace_slug: "acme" }),
     ).toContain("/acme/inbox");
   });
 
@@ -68,10 +68,10 @@ describe("web app manifest", () => {
   });
 
   it("never launches onto the marketing site for a session with no known workspace", async () => {
-    const target = await launch({ cordy_logged_in: "1" });
+    const target = await launch({ patchbay_logged_in: "1" });
 
     expect(target).toContain("/login");
-    expect(new URL(target ?? "", "https://www.cordy.ai").pathname).not.toBe(
+    expect(new URL(target ?? "", "https://www.patchbay.ai").pathname).not.toBe(
       "/",
     );
   });
@@ -83,7 +83,7 @@ describe("web app manifest", () => {
     for (const shortcut of shortcuts) {
       const resolve = async (cookie: string) => {
         const response = await proxy(
-          new NextRequest(`https://www.cordy.ai${shortcut.url}`, {
+          new NextRequest(`https://www.patchbay.ai${shortcut.url}`, {
             headers: { cookie },
           }),
         );
@@ -91,9 +91,9 @@ describe("web app manifest", () => {
       };
 
       expect(
-        await resolve("cordy_logged_in=1; last_workspace_slug=acme"),
+        await resolve("patchbay_logged_in=1; last_workspace_slug=acme"),
       ).toContain(`/acme${shortcut.url}`);
-      expect(await resolve("cordy_logged_in=1")).toContain("/login");
+      expect(await resolve("patchbay_logged_in=1")).toContain("/login");
       expect(await resolve("")).toContain("/login");
     }
   });

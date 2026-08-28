@@ -3,16 +3,16 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   bucketDiagnosticPath,
   setDiagnosticRoute,
-} from "@cordy/core/diagnostics";
+} from "@patchbay/core/diagnostics";
 import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@cordy/views/navigation";
+} from "@patchbay/views/navigation";
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 /**
- * Answer the `cordy:navigate` event inside a dedicated issue window (PB-5208).
+ * Answer the `patchbay:navigate` event inside a dedicated issue window (PB-5208).
  *
  * The event is what a link in content (comment, description) fires once it
  * resolves to an in-app destination, including an absolute URL on this
@@ -55,8 +55,8 @@ function useContentLinkHandler(
         `${runtimeConfig.config.appUrl}${path}`,
       );
     };
-    window.addEventListener("cordy:navigate", handler);
-    return () => window.removeEventListener("cordy:navigate", handler);
+    window.addEventListener("patchbay:navigate", handler);
+    return () => window.removeEventListener("patchbay:navigate", handler);
   }, [navigate, runtimeConfig]);
 }
 

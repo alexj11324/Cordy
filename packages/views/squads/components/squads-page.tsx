@@ -16,17 +16,17 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useCurrentWorkspace, useWorkspacePaths } from "@cordy/core/paths";
+import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   squadListOptions,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
-import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
-import { useAuthStore } from "@cordy/core/auth";
-import { api } from "@cordy/core/api";
-import { useModalStore } from "@cordy/core/modals";
+} from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { useAuthStore } from "@patchbay/core/auth";
+import { api } from "@patchbay/core/api";
+import { useModalStore } from "@patchbay/core/modals";
 import {
   useSquadsViewStore,
   SQUAD_SCOPES,
@@ -35,9 +35,9 @@ import {
   type SquadListFilters,
   type SquadsScope,
   type SquadSortField,
-} from "@cordy/core/squads/stores";
-import type { Agent, MemberWithUser, Squad } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/core/squads/stores";
+import type { Agent, MemberWithUser, Squad } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -58,7 +58,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@cordy/ui/components/ui/dropdown-menu";
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import {
   ListGrid,
   ListGridCell,
@@ -67,20 +67,20 @@ import {
   ListGridRow,
   LIST_GRID_BOTTOM_CLEARANCE,
   type ListGridSortDirection,
-} from "@cordy/ui/components/ui/list-grid";
+} from "@patchbay/ui/components/ui/list-grid";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@cordy/ui/components/ui/popover";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Switch } from "@cordy/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/popover";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@cordy/ui/components/ui/tooltip";
-import { ActorAvatar as ActorAvatarBase } from "@cordy/ui/components/common/actor-avatar";
+} from "@patchbay/ui/components/ui/tooltip";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { useIntentNavigate, useRowLink } from "../../navigation";

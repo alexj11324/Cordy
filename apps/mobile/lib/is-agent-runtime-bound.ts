@@ -1,4 +1,4 @@
-import type { Agent } from "@cordy/core/types";
+import type { Agent } from "@patchbay/core/types";
 
 /**
  * Mobile-owned mirror of packages/core/agents/runtime-binding.ts.

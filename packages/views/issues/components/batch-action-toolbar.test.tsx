@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import type { Issue } from "@cordy/core/types";
+import type { Issue } from "@patchbay/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // Mutable selection state shared with the store mock below. The real toolbar
@@ -11,21 +11,21 @@ const selection = vi.hoisted(() => ({
   clear: () => {},
 }));
 
-vi.mock("@cordy/core/issues/stores/selection-store", () => ({
+vi.mock("@patchbay/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: (selector: (s: typeof selection) => unknown) =>
     selector(selection),
 }));
 
-vi.mock("@cordy/core/issues/mutations", () => ({
+vi.mock("@patchbay/core/issues/mutations", () => ({
   useBatchUpdateIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useBatchDeleteIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@cordy/core/issue-statuses/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
 }));
-vi.mock("@cordy/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: (selector: (state: { open: () => void }) => unknown) =>
     selector({ open: vi.fn() }),
 }));

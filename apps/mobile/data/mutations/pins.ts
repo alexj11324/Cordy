@@ -9,7 +9,7 @@
  * because the cache itself is per-user-per-workspace (see pinKeys).
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PinnedItem, PinnedItemType } from "@cordy/core/types";
+import type { PinnedItem, PinnedItemType } from "@patchbay/core/types";
 import { api } from "@/data/api";
 import { pinKeys } from "@/data/queries/pins";
 import { useAuthStore } from "@/data/auth-store";

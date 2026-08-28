@@ -1,7 +1,7 @@
 import type {
   LocalDirectoryResourceRef,
   ProjectResource,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 /**
  * Display name for a local_directory row.

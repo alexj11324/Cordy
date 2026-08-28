@@ -43,7 +43,7 @@ export const useCustomPricingStore = create<CustomPricingState>()(
         }),
     }),
     {
-      name: "cordy_runtime_custom_pricing",
+      name: "patchbay_runtime_custom_pricing",
       storage: createJSONStorage(() => stateStorage),
     },
   ),

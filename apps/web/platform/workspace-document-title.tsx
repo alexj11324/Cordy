@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { parseTabSubject } from "@cordy/core/paths";
-import { useTabPresentation } from "@cordy/views/layout";
+import { parseTabSubject } from "@patchbay/core/paths";
+import { useTabPresentation } from "@patchbay/views/layout";
 import { SITE_TITLE, formatDocumentTitle } from "./document-title";
 
 /**
  * Names the browser tab after whatever the workspace route has open, e.g.
- * `PB-123: Fix login | Cordy` (PB-6222). Without it every open dashboard
+ * `PB-123: Fix login | Patchbay` (PB-6222). Without it every open dashboard
  * tab renders the root metadata title, so several issues side by side are
  * indistinguishable until you click into each one.
  *

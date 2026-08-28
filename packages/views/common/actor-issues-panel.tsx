@@ -7,14 +7,14 @@ import type {
   Issue,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   actorIssuesViewStore,
   type ActorIssuesScope,
-} from "@cordy/core/issues/stores/actor-issues-view-store";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Input } from "@cordy/ui/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/core/issues/stores/actor-issues-view-store";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
 import {
   IssueDisplayControls,
   ViewRefreshIndicator,

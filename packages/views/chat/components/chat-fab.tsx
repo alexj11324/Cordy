@@ -2,21 +2,21 @@
 
 import { MessageCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@cordy/ui/lib/utils";
-import { useChatStore } from "@cordy/core/chat";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useChatStore } from "@patchbay/core/chat";
 import {
   chatSessionsOptions,
   countUnreadChatSessions,
   hasPendingChatTasksOptions,
-} from "@cordy/core/chat/queries";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { createLogger } from "@cordy/core/logger";
-import { useShortcut } from "@cordy/core/shortcuts";
+} from "@patchbay/core/chat/queries";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { createLogger } from "@patchbay/core/logger";
+import { useShortcut } from "@patchbay/core/shortcuts";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@cordy/ui/components/ui/tooltip";
+} from "@patchbay/ui/components/ui/tooltip";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useT } from "../../i18n";
 

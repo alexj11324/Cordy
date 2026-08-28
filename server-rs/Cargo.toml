@@ -1,40 +1,40 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/cordy-agent",
-    "crates/cordy-analytics",
-    "crates/cordy-auth",
-    "crates/cordy-channel",
-    "crates/cordy-daemon",
-    "crates/cordy-channel-engine",
-    "crates/cordy-cli",
-    "crates/cordy-composio",
-    "crates/cordy-config",
-    "crates/cordy-db",
-    "crates/cordy-dingtalk",
-    "crates/cordy-events",
-    "crates/cordy-handler",
-    "crates/cordy-ghsnapshot",
-    "crates/cordy-lark",
-    "crates/cordy-llm",
-    "crates/cordy-metrics",
-    "crates/cordy-protocol",
-    "crates/cordy-realtime",
-    "crates/cordy-redis",
-    "crates/cordy-scheduler",
-    "crates/cordy-service",
-    "crates/cordy-slack",
-    "crates/cordy-task-failure",
-    "crates/cordy-plugincontract",
-    "crates/cordy-remotemcp",
-    "crates/cordy-telegram",
-    "crates/cordy-util",
-    "crates/cordy-vcs",
-    "crates/cordy-wecom",
-    "crates/cordy-weixin",
-    "crates/cordy-migrate",
-    "crates/cordy-middleware",
-    "crates/cordy-server",
+    "crates/patchbay-agent",
+    "crates/patchbay-analytics",
+    "crates/patchbay-auth",
+    "crates/patchbay-channel",
+    "crates/patchbay-daemon",
+    "crates/patchbay-channel-engine",
+    "crates/patchbay-cli",
+    "crates/patchbay-composio",
+    "crates/patchbay-config",
+    "crates/patchbay-db",
+    "crates/patchbay-dingtalk",
+    "crates/patchbay-events",
+    "crates/patchbay-handler",
+    "crates/patchbay-ghsnapshot",
+    "crates/patchbay-lark",
+    "crates/patchbay-llm",
+    "crates/patchbay-metrics",
+    "crates/patchbay-protocol",
+    "crates/patchbay-realtime",
+    "crates/patchbay-redis",
+    "crates/patchbay-scheduler",
+    "crates/patchbay-service",
+    "crates/patchbay-slack",
+    "crates/patchbay-task-failure",
+    "crates/patchbay-plugincontract",
+    "crates/patchbay-remotemcp",
+    "crates/patchbay-telegram",
+    "crates/patchbay-util",
+    "crates/patchbay-vcs",
+    "crates/patchbay-wecom",
+    "crates/patchbay-weixin",
+    "crates/patchbay-migrate",
+    "crates/patchbay-middleware",
+    "crates/patchbay-server",
 ]
 
 [workspace.package]
@@ -102,7 +102,7 @@ flate2 = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 httpdate = "1"
 structured-email-address = { version = "0.0.16", default-features = false }
-# Cordy's direct TLS clients use Ring. aws-config's rustls client also enables
+# Patchbay's direct TLS clients use Ring. aws-config's rustls client also enables
 # AWS-LC, so every production binary explicitly installs Ring before any
 # ClientConfig::builder() call rather than relying on ambiguous auto-selection.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }

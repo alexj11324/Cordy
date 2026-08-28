@@ -3,9 +3,9 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@cordy/core/api";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import { quickActionListOptions } from "@cordy/core/quick-actions";
+import { api } from "@patchbay/core/api";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { quickActionListOptions } from "@patchbay/core/quick-actions";
 
 /**
  * Supplies the comment composer's `/` menu with this workspace's quick actions

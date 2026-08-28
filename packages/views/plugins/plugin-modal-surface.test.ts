@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginInstallation } from "@cordy/core/types";
+import type { PluginInstallation } from "@patchbay/core/types";
 import { collectModalSurfaces, pluginModalKey } from "./plugin-modal-surface";
 
 // Canonical matrix for which surfaces become modal menu entries. The component
@@ -12,7 +12,7 @@ function installation(overrides: Partial<PluginInstallation> = {}): PluginInstal
     plugin_key: "com.example.one",
     name: "Example",
     version: "1.0.0",
-    source_url: "https://example.com/cordy.plugin.json",
+    source_url: "https://example.com/patchbay.plugin.json",
     enabled: true,
     granted_scopes: [],
     config_schema: [],

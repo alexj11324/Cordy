@@ -5,8 +5,8 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@cordy/core/types";
-import { runtimeDisplayLabel } from "@cordy/core/runtimes";
+} from "@patchbay/core/types";
+import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { VisibilityBadge } from "./visibility-badge";

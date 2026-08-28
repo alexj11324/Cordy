@@ -5,7 +5,7 @@ description: A leader coordinates multiple agents or members and hands work to t
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-A squad consists of one leader agent and any number of members. Assigning an issue to a squad does not run every agent at once. Cordy wakes the leader first; it reads the context and decides who takes the next step.
+A squad consists of one leader agent and any number of members. Assigning an issue to a squad does not run every agent at once. Patchbay wakes the leader first; it reads the context and decides who takes the next step.
 
 Squads solve the question of who the work goes to. They don't merge multiple agents into a new agent, and they don't automatically raise concurrency.
 
@@ -28,12 +28,12 @@ Creating a squad requires a name and a leader. The squad leader automatically be
 
 ## Execution flow after assignment
 
-When a non-Backlog issue is assigned to a squad, Cordy immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
+When a non-Backlog issue is assigned to a squad, Patchbay immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
 
 1. **Leader claims the task.** The agent runtime picks up the task on its next poll, same as any other agent assignment.
-2. **Leader is briefed.** On claim, Cordy appends three sections to the leader's system prompt — see [What the leader sees on every turn](#what-the-leader-sees-on-every-turn) below.
+2. **Leader is briefed.** On claim, Patchbay appends three sections to the leader's system prompt — see [What the leader sees on every turn](#what-the-leader-sees-on-every-turn) below.
 3. **Leader posts one delegation comment.** The comment `@`-mentions the chosen member(s) using the exact mention markdown from the roster — that mention triggers a new `task` for each mentioned agent.
-4. **Leader records its evaluation** via `cordy squad activity <issue-id> action --reason "..."`. This writes an entry to the issue's activity timeline so humans can see the leader actually evaluated the trigger.
+4. **Leader records its evaluation** via `patchbay squad activity <issue-id> action --reason "..."`. This writes an entry to the issue's activity timeline so humans can see the leader actually evaluated the trigger.
 5. **The dispatch turn leaves the parent `in_progress`.** Same agent-managed status contract as a direct agent assignment — coordinating the squad is working the parent's ask, so the parent moves from `todo` to `in_progress`, and dispatching members is not delivery, so it stays there while the squad works.
 6. **Leader stops.** The leader does not do the implementation itself. When the delegated member posts back — or when a sub-issue / stage barrier closes — the leader is re-triggered to read the update and either delegate the next step, escalate, move the parent to `in_review` once the overall goal is met, or stay silent. `done` is left to a human reviewer or existing integrations (for example a PR with close intent that merges).
 
@@ -47,7 +47,7 @@ On each squad-leader run, three blocks are appended to the leader's instructions
 
   The status half of that protocol is **scoped to issues actually assigned to this squad**. A leader woken by an `@squad` mention on someone else's issue gets the same roster and delegation rules, but is told explicitly **not** to touch that issue's status — status stays with the issue's own assignee.
 - **Squad Roster** — the leader's self-row plus one row per non-archived member. Each row carries the exact mention markdown (`[@Name](mention://agent/<uuid>)` or `[@Name](mention://member/<uuid>)`) the leader should paste — typing a plain `@name` won't trigger anyone.
-- **Squad Instructions** — your custom guidance for this squad (set on the squad detail page or via `cordy squad update --instructions`). Use this for routing rules ("send DB work to Alice, frontend to Bob"), escalation policies, or anything else the leader needs to know that isn't already in the issue.
+- **Squad Instructions** — your custom guidance for this squad (set on the squad detail page or via `patchbay squad update --instructions`). Use this for routing rules ("send DB work to Alice, frontend to Bob"), escalation policies, or anything else the leader needs to know that isn't already in the issue.
 
 ## Leader re-trigger rules
 
@@ -74,7 +74,7 @@ Dedup applies on top of these rules: if the leader already has a `queued` or `di
 | **Assign an issue to a squad** | Yes | The squad becomes the assignee and the leader is triggered. |
 | **@-mention a squad in a comment** | No | The leader handles that comment only; the current assignee is unchanged. |
 
-@-mentioning a specific member directly hands the work to that member. Cordy also dedupes repeated triggers and prevents the leader's comments from re-triggering itself, avoiding execution loops.
+@-mentioning a specific member directly hands the work to that member. Patchbay also dedupes repeated triggers and prevents the leader's comments from re-triggering itself, avoiding execution loops.
 
 ## Squads and Access
 
@@ -101,8 +101,8 @@ Archiving cannot be undone.
 ## Using the CLI
 
 ```bash
-cordy squad create --name "Product Delivery" --leader delivery-lead
-cordy squad member add <squad-id> \
+patchbay squad create --name "Product Delivery" --leader delivery-lead
+patchbay squad member add <squad-id> \
   --member-id <agent-or-member-id> \
   --type agent \
   --role "Owns frontend implementation"

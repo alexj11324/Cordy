@@ -11,8 +11,8 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { ApiError } from "@cordy/core/api";
-import { autopilotQuotaUsageOptions } from "@cordy/core/autopilots";
+import { ApiError } from "@patchbay/core/api";
+import { autopilotQuotaUsageOptions } from "@patchbay/core/autopilots";
 import {
   useCreateWorkspaceSubscriptionCheckout,
   useCreateWorkspaceSubscriptionPortal,
@@ -20,17 +20,17 @@ import {
   workspaceSubscriptionEntitlementsOptions,
   workspaceSubscriptionPricesOptions,
   workspaceSubscriptionSummaryOptions,
-} from "@cordy/core/billing";
-import { useFeatureEnabled } from "@cordy/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@cordy/core/feature-flags";
-import { useCurrentMember } from "@cordy/core/permissions";
-import { useCurrentWorkspace } from "@cordy/core/paths";
-import type { WorkspaceSubscriptionInterval } from "@cordy/core/types";
+} from "@patchbay/core/billing";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
+import { useCurrentMember } from "@patchbay/core/permissions";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import type { WorkspaceSubscriptionInterval } from "@patchbay/core/types";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@cordy/ui/components/ui/alert";
+} from "@patchbay/ui/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,15 +40,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@cordy/ui/components/ui/alert-dialog";
-import { Badge } from "@cordy/ui/components/ui/badge";
-import { Button } from "@cordy/ui/components/ui/button";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
-} from "@cordy/ui/components/ui/progress";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+} from "@patchbay/ui/components/ui/progress";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";

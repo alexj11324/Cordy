@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { memberListOptions } from "@cordy/core/workspace/queries";
-import { cn } from "@cordy/ui/lib/utils";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   PropertyPicker,

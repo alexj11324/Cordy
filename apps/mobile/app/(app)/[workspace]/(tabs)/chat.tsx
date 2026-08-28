@@ -44,13 +44,13 @@ import type {
   Agent,
   ChatMessage,
   ChatPendingTask,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   enqueuePendingChatTask,
   hideQueuedChatMessages,
   removePendingChatTask,
-} from "@cordy/core/chat/pending";
-import { canAssignAgentToIssue } from "@cordy/core/permissions";
+} from "@patchbay/core/chat/pending";
+import { canAssignAgentToIssue } from "@patchbay/core/permissions";
 import { api } from "@/data/api";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";

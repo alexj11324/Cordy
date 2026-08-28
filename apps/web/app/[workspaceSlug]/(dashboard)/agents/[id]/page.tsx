@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { AgentDetailPage } from "@cordy/views/agents";
+import { AgentDetailPage } from "@patchbay/views/agents";
 
 export default function AgentDetailRoute({
   params,

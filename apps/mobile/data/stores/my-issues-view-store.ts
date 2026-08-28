@@ -15,7 +15,7 @@
  * AsyncStorage persistence if cross-restart filter survival is desired.
  */
 import { create } from "zustand";
-import type { IssuePriority, IssueStatus } from "@cordy/core/types";
+import type { IssuePriority, IssueStatus } from "@patchbay/core/types";
 import type { MyIssuesScope } from "@/data/queries/issue-keys";
 
 interface MyIssuesViewState {

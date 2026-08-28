@@ -3,10 +3,10 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "@cordy/core/api";
-import { chatKeys } from "@cordy/core/chat/queries";
-import type { AgentTask } from "@cordy/core/types";
-import type { TaskMessagePayload } from "@cordy/core/types/events";
+import { api } from "@patchbay/core/api";
+import { chatKeys } from "@patchbay/core/chat/queries";
+import type { AgentTask } from "@patchbay/core/types";
+import type { TaskMessagePayload } from "@patchbay/core/types/events";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockState = vi.hoisted(() => ({
@@ -17,13 +17,13 @@ const mockState = vi.hoisted(() => ({
   triggerProps: undefined as Record<string, unknown> | undefined,
 }));
 
-vi.mock("@cordy/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     listTaskMessages: vi.fn(),
   },
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) =>
       ({
@@ -39,9 +39,9 @@ vi.mock("@cordy/core/workspace/hooks", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/chat/queries", async () => {
-  const actual = await vi.importActual<typeof import("@cordy/core/chat/queries")>(
-    "@cordy/core/chat/queries",
+vi.mock("@patchbay/core/chat/queries", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/chat/queries")>(
+    "@patchbay/core/chat/queries",
   );
   return {
     ...actual,
@@ -52,7 +52,7 @@ vi.mock("@cordy/core/chat/queries", async () => {
   };
 });
 
-vi.mock("@cordy/ui/components/ui/popover", async () => {
+vi.mock("@patchbay/ui/components/ui/popover", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {
     Popover: ({ children }: { children: React.ReactNode }) => (

@@ -5,7 +5,7 @@ import type {
   AutopilotQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import {
   canPurchaseWorkspaceSubscription,
   hasManagedWorkspaceSubscription,

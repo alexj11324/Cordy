@@ -1,7 +1,7 @@
 "use client";
 
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import type { AgentPresenceDetail } from "@cordy/core/agents";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import type { AgentPresenceDetail } from "@patchbay/core/agents";
 import { availabilityConfig, workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 

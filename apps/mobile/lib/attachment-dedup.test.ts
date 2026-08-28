@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Attachment } from "@cordy/core/types";
+import type { Attachment } from "@patchbay/core/types";
 import { standaloneAttachments } from "./attachment-dedup";
 
 function att(over: Partial<Attachment> = {}): Attachment {

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { isBridgeEvent, isBridgeRequest, isBridgeResponse } from "@cordy/plugin-sdk/protocol";
+import { isBridgeEvent, isBridgeRequest, isBridgeResponse } from "@patchbay/plugin-sdk/protocol";
 
 // Beside plugin-sdk-handshake.test.ts, and here for the same reason.
 //

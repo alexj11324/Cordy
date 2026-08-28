@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay는 Telegram 공식 [@BotFather](https://t.me/BotFather)에서 만든 Bot을 사용합니다. Bot 하나는 Patchbay 에이전트 하나에 연결됩니다.
 
-Telegram 연동은 [커뮤니티가 유지관리](/community-maintained)합니다. 매 릴리스에 포함되지만 공식 지원 SLA는 제공되지 않습니다. 문제가 있으면 [GitHub issues](https://github.com/alexj11324/Cordy/issues)에 보고해 주세요.
+Telegram 연동은 [커뮤니티가 유지관리](/community-maintained)합니다. 매 릴리스에 포함되지만 공식 지원 SLA는 제공되지 않습니다. 문제가 있으면 [GitHub issues](https://github.com/patchbay-ai/patchbay/issues)에 보고해 주세요.
 
 ## 시작하기 전에
 
@@ -58,10 +58,10 @@ Bot은 Telegram 메시지를 보내고 편집해 텍스트 응답을 스트리�
 자체 호스팅 환경에서는 API 서버 시작 전에 고정된 32-byte 암호화 키를 설정합니다.
 
 ```dotenv
-CORDY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
-`openssl rand -base64 32`로 생성할 수 있습니다. 바인딩 링크는 `CORDY_APP_URL`을 사용하며, 없으면 `FRONTEND_ORIGIN`으로 대체합니다. 서버는 `api.telegram.org`에 HTTPS로 접속할 수 있어야 하며 표준 `HTTPS_PROXY` / `NO_PROXY`를 사용할 수 있습니다.
+`openssl rand -base64 32`로 생성할 수 있습니다. 바인딩 링크는 `PATCHBAY_APP_URL`을 사용하며, 없으면 `FRONTEND_ORIGIN`으로 대체합니다. 서버는 `api.telegram.org`에 HTTPS로 접속할 수 있어야 하며 표준 `HTTPS_PROXY` / `NO_PROXY`를 사용할 수 있습니다.
 
 ## 문제 해결
 

@@ -2,7 +2,7 @@
 //
 // Stored under `agent.runtime_config` as freeform JSONB; only meaningful for
 // agents whose runtime provider is openclaw. The daemon decodes the same
-// schema in `server-rs/crates/cordy-daemon/src/execenv/openclaw.rs` — keep both
+// schema in `server-rs/crates/patchbay-daemon/src/execenv/openclaw.rs` — keep both
 // sides in lockstep when changing field names.
 
 export type OpenclawRoutingMode = "local" | "gateway";

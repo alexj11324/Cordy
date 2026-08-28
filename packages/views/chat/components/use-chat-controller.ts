@@ -7,17 +7,17 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useAuthStore } from "@cordy/core/auth";
-import { agentListOptions, memberListOptions } from "@cordy/core/workspace/queries";
-import { projectListOptions } from "@cordy/core/projects/queries";
-import { canAssignAgent } from "@cordy/views/issues/components";
-import { api, dispatchReasonCode } from "@cordy/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useAuthStore } from "@patchbay/core/auth";
+import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
+import { projectListOptions } from "@patchbay/core/projects/queries";
+import { canAssignAgent } from "@patchbay/views/issues/components";
+import { api, dispatchReasonCode } from "@patchbay/core/api";
 import {
   isAgentRuntimeBound as hasAgentRuntime,
   useAgentPresenceDetail,
   useWorkspaceAgentAvailability,
-} from "@cordy/core/agents";
+} from "@patchbay/core/agents";
 import {
   chatSessionsOptions,
   chatMessagesPageOptions,
@@ -25,29 +25,29 @@ import {
   chatKeys,
   isTaskMessageTaskId,
   sortChatSessions,
-} from "@cordy/core/chat/queries";
+} from "@patchbay/core/chat/queries";
 import {
   useCreateChatSession,
   useMarkChatSessionRead,
   useSetChatSessionProject,
   useSetChatSessionArchived,
-} from "@cordy/core/chat/mutations";
-import { useChatStore } from "@cordy/core/chat";
-import { upsertChatMessageToCaches } from "@cordy/core/chat/message-cache";
+} from "@patchbay/core/chat/mutations";
+import { useChatStore } from "@patchbay/core/chat";
+import { upsertChatMessageToCaches } from "@patchbay/core/chat/message-cache";
 import {
   enqueuePendingChatTask,
   hideQueuedChatMessages,
-} from "@cordy/core/chat/pending";
+} from "@patchbay/core/chat/pending";
 import { useChatDraftRestore } from "./use-chat-draft-restore";
 import { useChatTaskActions } from "./use-chat-task-actions";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
-import { createLogger } from "@cordy/core/logger";
+import { createLogger } from "@patchbay/core/logger";
 import type {
   Agent,
   Attachment,
   ChatMessage,
   ChatPendingTask,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { useT } from "../../i18n";
 import { useAppForeground } from "../../common/use-app-foreground";
 

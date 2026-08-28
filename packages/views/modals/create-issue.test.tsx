@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@cordy/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
@@ -153,7 +153,7 @@ vi.mock("../navigation/context", () => ({
   useNavigation: () => ({ push: mockPush }),
 }));
 
-vi.mock("@cordy/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
@@ -161,15 +161,15 @@ vi.mock("@cordy/core/paths", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@cordy/core/issue-statuses/hooks", () => ({
+vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
 }));
 
-vi.mock("@cordy/core/issues/queries", () => ({
+vi.mock("@patchbay/core/issues/queries", () => ({
   issueDetailOptions: (wsId: string, id: string) => ({
     queryKey: ["issues", wsId, "detail", id],
     queryFn: () => Promise.resolve(null),
@@ -192,7 +192,7 @@ vi.mock("../issues/hooks/use-issue-trigger-preview", () => ({
   }),
 }));
 
-vi.mock("@cordy/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Agent" }),
 }));
 
@@ -203,7 +203,7 @@ vi.mock("../common/actor-avatar", () => ({
   ActorAvatar: () => null,
 }));
 
-vi.mock("@cordy/core/issues/stores/draft-store", () => ({
+vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: Object.assign(
     (selector?: (state: typeof mockDraftStore) => unknown) =>
       (selector ? selector(mockDraftStore) : mockDraftStore),
@@ -211,28 +211,28 @@ vi.mock("@cordy/core/issues/stores/draft-store", () => ({
   ),
 }));
 
-vi.mock("@cordy/core/issues/stores/quick-create-store", () => ({
+vi.mock("@patchbay/core/issues/stores/quick-create-store", () => ({
   useQuickCreateStore: (selector?: (state: typeof mockQuickCreateStore) => unknown) =>
     (selector ? selector(mockQuickCreateStore) : mockQuickCreateStore),
 }));
 
-vi.mock("@cordy/core/issues/stores/issue-create-settings-store", () => ({
+vi.mock("@patchbay/core/issues/stores/issue-create-settings-store", () => ({
   useIssueCreateSettingsStore: (
     selector?: (state: typeof mockCreateSettingsStore) => unknown,
   ) => (selector ? selector(mockCreateSettingsStore) : mockCreateSettingsStore),
 }));
 
-vi.mock("@cordy/core/issues/mutations", () => ({
+vi.mock("@patchbay/core/issues/mutations", () => ({
   useCreateIssue: () => ({ mutateAsync: mockCreateIssue }),
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@cordy/core/labels", () => ({
+vi.mock("@patchbay/core/labels", () => ({
   useAttachLabelToIssue: () => ({ mutateAsync: mockAttachLabel }),
 }));
 
-vi.mock("@cordy/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@cordy/core/properties")>();
+vi.mock("@patchbay/core/properties", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/properties")>();
   return {
     ...actual,
     useSetIssueProperty: () => ({
@@ -266,18 +266,18 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError: ApiErrorImpl };
 });
 
-vi.mock("@cordy/core/api", async () => {
+vi.mock("@patchbay/core/api", async () => {
   // Pull real `parseWithFallback` + `DuplicateIssueErrorBodySchema` from the
   // schema modules so the drift-fallback branch in create-issue.tsx runs the
   // actual validation logic (not a stub). Only `ApiError` is local — the
   // component imports it from this module and the cross-realm `instanceof`
   // check requires a single class identity.
-  const { parseWithFallback } = await vi.importActual<typeof import("@cordy/core/api/schema")>(
-    "@cordy/core/api/schema",
+  const { parseWithFallback } = await vi.importActual<typeof import("@patchbay/core/api/schema")>(
+    "@patchbay/core/api/schema",
   );
   const { DuplicateIssueErrorBodySchema } = await vi.importActual<
-    typeof import("@cordy/core/api/schemas")
-  >("@cordy/core/api/schemas");
+    typeof import("@patchbay/core/api/schemas")
+  >("@patchbay/core/api/schemas");
   return {
     api: {
       listProperties: mockListProperties,
@@ -454,7 +454,7 @@ vi.mock("../projects/components/project-picker", () => ({
   ),
 }));
 
-vi.mock("@cordy/ui/components/ui/dialog", () => ({
+vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-root">{children}</div>,
   DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -464,7 +464,7 @@ vi.mock("@cordy/ui/components/ui/dialog", () => ({
   ),
 }));
 
-vi.mock("@cordy/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -495,14 +495,14 @@ vi.mock("./issue-picker-modal", () => ({
   IssuePickerModal: () => null,
 }));
 
-vi.mock("@cordy/ui/components/ui/tooltip", () => ({
+vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@cordy/ui/components/ui/button", () => ({
+vi.mock("@patchbay/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -524,7 +524,7 @@ vi.mock("@cordy/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@cordy/ui/components/ui/switch", () => ({
+vi.mock("@patchbay/ui/components/ui/switch", () => ({
   Switch: ({
     checked,
     onCheckedChange,
@@ -541,7 +541,7 @@ vi.mock("@cordy/ui/components/ui/switch", () => ({
   ),
 }));
 
-vi.mock("@cordy/ui/components/common/file-upload-button", () => ({
+vi.mock("@patchbay/ui/components/common/file-upload-button", () => ({
   FileUploadButton: ({ onSelect }: { onSelect: (file: File) => void }) => (
     <button type="button" onClick={() => onSelect(new File(["test"], "test.txt"))}>
       Upload file
@@ -549,7 +549,7 @@ vi.mock("@cordy/ui/components/common/file-upload-button", () => ({
   ),
 }));
 
-vi.mock("@cordy/ui/lib/utils", () => ({
+vi.mock("@patchbay/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 
@@ -616,7 +616,7 @@ describe("CreateIssueModal", () => {
       filename: "shot.png",
       url: "https://cdn.example.test/shot.png",
       download_url: "https://cdn.example.test/shot.png?Signature=fresh",
-      markdown_url: "https://cordy-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://patchbay-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -891,7 +891,7 @@ describe("CreateIssueModal", () => {
       filename: "shot.png",
       url: "https://cdn.example.test/shot.png",
       download_url: "",
-      markdown_url: "https://cordy-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://patchbay-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -941,7 +941,7 @@ describe("CreateIssueModal", () => {
       filename: "kept.png",
       url: "https://cdn.example.test/kept.png",
       download_url: "",
-      markdown_url: "https://cordy-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
+      markdown_url: "https://patchbay-api.copilothub.ai/api/attachments/11111111-2222-3333-4444-555555555555/download",
       content_type: "image/png",
       size_bytes: 123,
       created_at: "2026-06-12T00:00:00Z",
@@ -951,7 +951,7 @@ describe("CreateIssueModal", () => {
       id: "99999999-8888-7777-6666-555555555555",
       filename: "deleted.png",
       url: "https://cdn.example.test/deleted.png",
-      markdown_url: "https://cordy-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
+      markdown_url: "https://patchbay-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
     };
     const wrap = (att: typeof referenced): DraftUploadEntry => ({
       clientUploadId: att.id,
@@ -991,7 +991,7 @@ describe("CreateIssueModal", () => {
       filename: "orphan.png",
       url: "https://cdn.example.test/orphan.png",
       download_url: "",
-      markdown_url: "https://cordy-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
+      markdown_url: "https://patchbay-api.copilothub.ai/api/attachments/99999999-8888-7777-6666-555555555555/download",
       content_type: "image/png",
       size_bytes: 5,
       created_at: "2026-06-12T00:00:00Z",

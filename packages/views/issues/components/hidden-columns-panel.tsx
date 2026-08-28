@@ -1,16 +1,16 @@
 "use client";
 
-import { statusCategoryOfKey } from "@cordy/core/issues";
+import { statusCategoryOfKey } from "@patchbay/core/issues";
 import { Eye, MoreHorizontal } from "lucide-react";
-import type { IssueStatusCategory } from "@cordy/core/types";
-import { Button } from "@cordy/ui/components/ui/button";
+import type { IssueStatusCategory } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@cordy/ui/components/ui/dropdown-menu";
-import { useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
 import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
 

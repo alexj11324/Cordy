@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
+import { existsSync, renameSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -100,7 +101,7 @@ const BUNDLED_ICON_PATH = join(__dirname, "../../resources/icon.png").replace(
 // macOS/Linux GUI launches inherit a minimal PATH from launchd that omits
 // the user's shell config (~/.zshrc, Homebrew, nvm, ~/.local/bin, etc.).
 // Run the user's login shell once to recover the real PATH so the bundled
-// cordy CLI can find agent binaries like claude/codex/opencode. Must run
+// patchbay CLI can find agent binaries like claude/codex/opencode. Must run
 // before any child_process.spawn / execFile call in the main process —
 // ES module imports are hoisted, so this block executes before createWindow
 // or any daemon-manager spawn.
@@ -117,7 +118,20 @@ if (process.platform !== "win32") {
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
 }
 
-const PROTOCOL = "cordy";
+const PROTOCOL = "patchbay";
+const LEGACY_PROTOCOL = "cordy"; // legacy-brand-compat
+
+function migrateDataDirectory(source: string, destination: string): void {
+  if (!existsSync(source) || existsSync(destination)) return;
+  try {
+    renameSync(source, destination);
+  } catch (error) {
+    console.warn(
+      `[brand-migration] could not move ${source} to ${destination}:`,
+      error,
+    );
+  }
+}
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
 
 // Where the main process parks a freeze/crash breadcrumb until the next
@@ -184,16 +198,21 @@ function dispatchToMainRenderer(
 function handleDeepLink(url: string): void {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== `${PROTOCOL}:`) return;
+    if (
+      parsed.protocol !== `${PROTOCOL}:` &&
+      parsed.protocol !== `${LEGACY_PROTOCOL}:`
+    ) {
+      return;
+    }
 
-    // cordy://auth/callback?token=<jwt>
+    // patchbay://auth/callback?token=<jwt>
     if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
       const token = parsed.searchParams.get("token");
       if (token) dispatchToMainRenderer("auth:token", token);
       return;
     }
 
-    // cordy://invite/<invitationId>
+    // patchbay://invite/<invitationId>
     // Dispatched from the web invite page when the user chooses "Open in
     // desktop app". The renderer opens the invite overlay — no tab, no
     // route persistence, so deep-linking the same invite twice stays safe.
@@ -241,7 +260,7 @@ function loadRenderer(window: BrowserWindow): void {
 }
 
 function installLocaleRefresh(window: BrowserWindow): void {
-  // Electron has no dedicated OS-language event. Check whenever any Cordy
+  // Electron has no dedicated OS-language event. Check whenever any Patchbay
   // window regains focus, then broadcast so all open windows remain aligned.
   window.on("focus", () => {
     const current = getSystemLocale();
@@ -546,23 +565,40 @@ function createIssueWindow(context: IssueWindowContext): void {
 // without fighting for the shared single-instance lock. The suffix is
 // appended to the app name + userData path, so each worktree gets its own
 // lock file. Default (no env var) keeps behavior unchanged — the common
-// single-worktree case still lands at "Cordy Canary".
+// single-worktree case still lands at "Patchbay Canary".
 const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Cordy Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Cordy Canary";
+  ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
+  : "Patchbay Canary";
 
 if (is.dev) {
+  if (!process.env.DESKTOP_APP_SUFFIX) {
+    migrateDataDirectory(
+      join(app.getPath("appData"), "Cordy Canary"), // legacy-brand-compat
+      join(app.getPath("appData"), DEV_APP_NAME),
+    );
+  }
   app.setName(DEV_APP_NAME);
   app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
 } else {
+  const patchbayUserData = join(app.getPath("appData"), "Patchbay");
+  migrateDataDirectory(
+    join(app.getPath("appData"), "Cordy"), // legacy-brand-compat
+    patchbayUserData,
+  );
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
   // from app.getName() when the first BrowserWindow is realized; the
   // packaged ASAR's package.json `productName` already steers app.getName()
-  // to "Cordy", but anchoring it here makes WM_CLASS ↔ StartupWMClass
+  // to "Patchbay", but anchoring it here makes WM_CLASS ↔ StartupWMClass
   // (declared in electron-builder.yml) survive a regression in
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
-  app.setName("Cordy");
+  app.setName("Patchbay");
+  app.setPath("userData", patchbayUserData);
 }
+
+migrateDataDirectory(
+  join(homedir(), ".cordy"), // legacy-brand-compat
+  join(homedir(), ".patchbay"),
+);
 
 // --- Protocol registration -----------------------------------------------
 
@@ -574,6 +610,7 @@ if (process.defaultApp) {
 } else {
   app.setAsDefaultProtocolClient(PROTOCOL);
 }
+app.setAsDefaultProtocolClient(LEGACY_PROTOCOL);
 
 // --- Single instance lock ------------------------------------------------
 
@@ -596,15 +633,21 @@ if (!gotTheLock) {
     if (window) focusMainWindow(window);
 
     // On Windows the deep link URL is the last argv entry
-    const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    const deepLinkUrl = argv.find(
+      (arg) =>
+        arg.startsWith(`${PROTOCOL}://`) ||
+        arg.startsWith(`${LEGACY_PROTOCOL}://`),
+    );
     if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   });
 
   // Windows/Linux cold-start deep links are safe to parse now. Delivery is
   // queued because desktopInitialized remains false until runtime config and
   // IPC handlers are ready.
-  const coldStartDeepLink = process.argv.find((arg) =>
-    arg.startsWith(`${PROTOCOL}://`),
+  const coldStartDeepLink = process.argv.find(
+    (arg) =>
+      arg.startsWith(`${PROTOCOL}://`) ||
+      arg.startsWith(`${LEGACY_PROTOCOL}://`),
   );
   if (coldStartDeepLink) handleDeepLink(coldStartDeepLink);
 
@@ -628,7 +671,7 @@ if (!gotTheLock) {
     });
 
     electronApp.setAppUserModelId(
-      is.dev ? "ai.cordy.desktop.dev" : "ai.cordy.desktop",
+      is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
     );
 
     // macOS: replace the default Electron dock icon with the bundled logo

@@ -3,15 +3,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { buildCreateAgentRequest, type AgentDraft } from "@cordy/core/agents";
-import { api, ApiError } from "@cordy/core/api";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { useWorkspacePaths } from "@cordy/core/paths";
-import type { Agent } from "@cordy/core/types";
+import { buildCreateAgentRequest, type AgentDraft } from "@patchbay/core/agents";
+import { api, ApiError } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import type { Agent } from "@patchbay/core/types";
 import {
   cacheAgentResponse,
   workspaceKeys,
-} from "@cordy/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 

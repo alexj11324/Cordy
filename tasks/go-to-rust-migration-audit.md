@@ -18,8 +18,8 @@ comments 全部处理且 head SHA 未变化后才允许合并。Agent 不在本�
 
 - `server-rs/`：唯一生产 backend、daemon、CLI、migration runner 与 backfills。
 - `migrations/`：Rust migration runner 使用的唯一生产 SQL migration 目录。
-- `server-rs/crates/cordy-service/assets/`：内嵌 agents 与 skills。
-- `server-rs/crates/cordy-handler/assets/reserved_slugs.json`：reserved slug 单一来源。
+- `server-rs/crates/patchbay-service/assets/`：内嵌 agents 与 skills。
+- `server-rs/crates/patchbay-handler/assets/reserved_slugs.json`：reserved slug 单一来源。
 - `bin/`：开发构建产物目录；发布产物由 Rust release workflows 生成。
 - `AGENTS.md`：Agent 规则单一来源；`CLAUDE.md` 只保留指向该文件的兼容引用。
 

@@ -1,16 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent } from "@cordy/core/types";
-import { useAuthStore } from "@cordy/core/auth";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { larkInstallationsOptions } from "@cordy/core/lark";
-import { slackInstallationsOptions } from "@cordy/core/slack";
-import { dingtalkInstallationsOptions } from "@cordy/core/dingtalk";
-import { wecomInstallationsOptions } from "@cordy/core/wecom";
-import { telegramInstallationsOptions } from "@cordy/core/telegram";
-import { weixinInstallationsOptions } from "@cordy/core/weixin";
-import { memberListOptions } from "@cordy/core/workspace/queries";
+import type { Agent } from "@patchbay/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { larkInstallationsOptions } from "@patchbay/core/lark";
+import { slackInstallationsOptions } from "@patchbay/core/slack";
+import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
+import { wecomInstallationsOptions } from "@patchbay/core/wecom";
+import { telegramInstallationsOptions } from "@patchbay/core/telegram";
+import { weixinInstallationsOptions } from "@patchbay/core/weixin";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { LarkAgentBindButton } from "../../../settings/components/lark-tab";
 import { LarkMark } from "../../../settings/components/lark-mark";
 import { SlackAgentBindButton } from "../../../settings/components/slack-tab";

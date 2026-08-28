@@ -22,7 +22,7 @@ import { ActionSheetIOS, Alert } from "react-native";
 import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import type { Reaction, TimelineEntry } from "@cordy/core/types";
+import type { Reaction, TimelineEntry } from "@patchbay/core/types";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useCommentSelectStore } from "@/data/comment-select-store";

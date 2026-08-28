@@ -114,7 +114,7 @@ def route_calls(source: str):
 def normalize_route(route: str) -> str:
     if route != "/":
         route = route.rstrip("/")
-    wildcard = "__CORDY_ROUTE_WILDCARD__"
+    wildcard = "__PATCHBAY_ROUTE_WILDCARD__"
     route = WILDCARD_PARAMETER_PATTERN.sub(wildcard, route)
     route = re.sub(r"/\*(?=/|$)", f"/{wildcard}", route)
     return PARAMETER_PATTERN.sub("{}", route).replace(wildcard, "{*}")
@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--rust-source",
         type=Path,
-        default=server_rs / "crates" / "cordy-handler" / "src",
+        default=server_rs / "crates" / "patchbay-handler" / "src",
     )
     parser.add_argument(
         "--require-complete",

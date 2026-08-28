@@ -24,7 +24,7 @@ import type {
   Reaction,
   TimelineEntry,
   UpdateIssueRequest,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 import { api } from "@/data/api";
 import { isIssueStatusCategory } from "@/lib/issue-status";
 import { issueKeys } from "@/data/queries/issues";

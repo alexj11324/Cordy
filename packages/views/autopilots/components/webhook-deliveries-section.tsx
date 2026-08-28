@@ -18,25 +18,25 @@ import {
   autopilotDeliveriesOptions,
   autopilotDeliveryOptions,
   useReplayAutopilotDelivery,
-} from "@cordy/core/autopilots";
-import { useWorkspaceId } from "@cordy/core/hooks";
-import { Skeleton } from "@cordy/ui/components/ui/skeleton";
-import { Button } from "@cordy/ui/components/ui/button";
-import { Badge } from "@cordy/ui/components/ui/badge";
+} from "@patchbay/core/autopilots";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@cordy/ui/components/ui/dialog";
-import { cn } from "@cordy/ui/lib/utils";
-import { copyText } from "@cordy/ui/lib/clipboard";
+} from "@patchbay/ui/components/ui/dialog";
+import { cn } from "@patchbay/ui/lib/utils";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import type {
   WebhookDelivery,
   WebhookDeliveryStatus,
   WebhookSignatureStatus,
-} from "@cordy/core/types";
+} from "@patchbay/core/types";
 
 // --- Status visuals -------------------------------------------------------
 
