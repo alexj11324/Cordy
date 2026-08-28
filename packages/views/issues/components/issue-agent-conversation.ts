@@ -8,7 +8,7 @@ import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
 
 export type IssueConversationActor = {
   actorType: "member" | "agent";
-  actorId: string;
+  actorId?: string | null;
 };
 
 export type IssueAgentConversation = {
@@ -86,10 +86,12 @@ export function buildIssueAgentConversation({
     (entry) => entry.type === "comment" && typeof entry.content === "string",
   );
   const commentsById = new Map(comments.map((comment) => [comment.id, comment]));
-  const assistantCommentByTask = new Map<string, TimelineEntry>();
+  const assistantCommentsByTask = new Map<string, TimelineEntry[]>();
   for (const comment of comments) {
     if (comment.source_task_id && taskIds.has(comment.source_task_id)) {
-      assistantCommentByTask.set(comment.source_task_id, comment);
+      const taskComments = assistantCommentsByTask.get(comment.source_task_id) ?? [];
+      taskComments.push(comment);
+      assistantCommentsByTask.set(comment.source_task_id, taskComments);
     }
   }
 
@@ -133,32 +135,64 @@ export function buildIssueAgentConversation({
         task.handoff_note?.trim() ||
         task.trigger_summary?.trim() ||
         initialRunPrompt;
+      const syntheticPromptId = `task-prompt:${task.id}`;
       messages.push({
-        id: `task-prompt:${task.id}`,
+        id: syntheticPromptId,
         chat_session_id: conversationId,
         role: "user",
         content,
         task_id: null,
         created_at: task.created_at,
       });
+      // An assignment or legacy run may not have a source comment. Use its
+      // recorded originator when available; the explicit null override keeps
+      // unattributed prompts neutral instead of borrowing the current viewer.
+      messageActors[syntheticPromptId] = {
+        actorType: "member",
+        actorId: task.attribution?.originator?.id || null,
+      };
     }
 
     if (isActiveTask(task)) continue;
 
-    const comment = assistantCommentByTask.get(task.id);
-    const content = comment?.content ?? taskResultText(task);
-    messages.push({
-      id: comment?.id ?? `task-result:${task.id}`,
-      chat_session_id: conversationId,
-      role: "assistant",
-      content,
-      task_id: task.id,
-      created_at: comment?.created_at ?? task.completed_at ?? task.created_at,
-      attachments: comment?.attachments,
-      failure_reason: task.status === "failed" ? task.failure_reason || "agent_error" : null,
-      elapsed_ms: elapsedMs(task),
-      message_kind: content.trim() ? "message" : "no_response",
-    });
+    const assistantComments = assistantCommentsByTask.get(task.id) ?? [];
+    if (assistantComments.length > 0) {
+      assistantComments.forEach((comment, index) => {
+        const isLastComment = index === assistantComments.length - 1;
+        const content = comment.content ?? "";
+        messages.push({
+          id: comment.id,
+          chat_session_id: conversationId,
+          role: "assistant",
+          content,
+          // Attach run reasoning/tool history only once. Earlier issue replies
+          // remain ordinary assistant messages rather than duplicating it.
+          task_id: isLastComment ? task.id : null,
+          created_at: comment.created_at,
+          attachments: comment.attachments,
+          failure_reason:
+            isLastComment && task.status === "failed"
+              ? task.failure_reason || "agent_error"
+              : null,
+          elapsed_ms: isLastComment ? elapsedMs(task) : null,
+          message_kind: content.trim() ? "message" : "no_response",
+        });
+      });
+    } else {
+      const content = taskResultText(task);
+      messages.push({
+        id: `task-result:${task.id}`,
+        chat_session_id: conversationId,
+        role: "assistant",
+        content,
+        task_id: task.id,
+        created_at: task.completed_at ?? task.created_at,
+        failure_reason:
+          task.status === "failed" ? task.failure_reason || "agent_error" : null,
+        elapsed_ms: elapsedMs(task),
+        message_kind: content.trim() ? "message" : "no_response",
+      });
+    }
   }
 
   const activeTasks = agentTasks

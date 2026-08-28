@@ -140,4 +140,67 @@ describe("buildIssueAgentConversation", () => {
       expect.objectContaining({ task_id: "main", status: "running" }),
     ]);
   });
+
+  it("preserves every assistant comment emitted by one task", () => {
+    const conversation = buildIssueAgentConversation({
+      issueId: "issue-1",
+      agentId: "agent-1",
+      tasks: [task("task-1")],
+      timeline: [
+        comment("answer-1", "First thread reply", "2026-08-28T10:00:08Z", {
+          actor_type: "agent",
+          actor_id: "agent-1",
+          source_task_id: "task-1",
+        }),
+        comment("answer-2", "Second thread reply", "2026-08-28T10:00:10Z", {
+          actor_type: "agent",
+          actor_id: "agent-1",
+          source_task_id: "task-1",
+        }),
+      ],
+      initialRunPrompt: "Work on this issue.",
+    });
+
+    expect(conversation.messages.map((message) => message.id)).toEqual([
+      "task-prompt:task-1",
+      "answer-1",
+      "answer-2",
+    ]);
+    expect(conversation.messages[1]?.task_id).toBeNull();
+    expect(conversation.messages[2]?.task_id).toBe("task-1");
+  });
+
+  it("attributes synthetic prompts to the originator or leaves them neutral", () => {
+    const attributed = buildIssueAgentConversation({
+      issueId: "issue-1",
+      agentId: "agent-1",
+      tasks: [
+        task("task-attributed", {
+          attribution: {
+            source: "direct_human",
+            precise: true,
+            originator: { id: "member-author" },
+          },
+        }),
+      ],
+      timeline: [],
+      initialRunPrompt: "Work on this issue.",
+    });
+    const neutral = buildIssueAgentConversation({
+      issueId: "issue-1",
+      agentId: "agent-1",
+      tasks: [task("task-neutral")],
+      timeline: [],
+      initialRunPrompt: "Work on this issue.",
+    });
+
+    expect(attributed.messageActors["task-prompt:task-attributed"]).toEqual({
+      actorType: "member",
+      actorId: "member-author",
+    });
+    expect(neutral.messageActors["task-prompt:task-neutral"]).toEqual({
+      actorType: "member",
+      actorId: null,
+    });
+  });
 });

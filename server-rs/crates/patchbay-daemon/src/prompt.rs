@@ -188,7 +188,7 @@ fn build_side_chat_prompt(task: &Task, provider: &str) -> String {
     b.push_str("- If this is discussion, analysis, or a question, answer it only in this Side Chat. Do not contact the main task.\n");
     b.push_str("- If the conversation clearly requires a code or workspace edit, formulate the concrete next-step instruction yourself and immediately send it to the @mentioned Agent's main task. Do not ask the user to copy it, relay it, click a button, or run a command.\n\n");
     b.push_str(&format!(
-        "To deliver that confirmed edit instruction, run exactly once: `patchbay issue message-main {} --content \"<concise, actionable instruction>\"`. This queues the next turn of the @mentioned Agent's main conversation at a safe boundary; it does not inject work into this Side Chat.\n\n",
+        "To deliver that confirmed edit instruction, invoke `patchbay issue message-main {} --content-stdin` exactly once and pass the instruction verbatim through the command's stdin. Never interpolate the instruction into a shell argument. This queues the next turn of the @mentioned Agent's main conversation at a safe boundary; it does not inject work into this Side Chat.\n\n",
         task.side_chat_parent_task_id
     ));
     b.push_str(&format!(
@@ -817,7 +817,12 @@ mod tests {
         assert!(out.contains("Patchbay Side Chat"));
         assert!(out.contains("Do not modify files"));
         assert!(out.contains("--thread thread-root-1 --full --output json"));
-        assert!(out.contains("patchbay issue message-main main-task-1"));
+        assert!(out.contains(
+            "patchbay issue message-main main-task-1 --content-stdin"
+        ));
+        assert!(out.contains(
+            "pass the instruction verbatim through the command's stdin"
+        ));
         assert!(out.contains("Do not ask the user to copy it"));
     }
 

@@ -438,6 +438,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "364_plugin_invocation_created_at_index",
         "idx_plugin_invocation_created_at",
     ),
+    (
+        "384_agent_task_queue_side_chat_pending_unique_v3",
+        "idx_one_pending_task_per_issue_agent_v3",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -472,6 +476,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "302_drop_redundant_channel_chat_session_binding_index",
         "idx_channel_chat_session_binding_session",
+    ),
+    (
+        "385_drop_pending_issue_agent_v2",
+        "idx_one_pending_task_per_issue_agent_v2",
     ),
     (
         "303_drop_redundant_lark_chat_session_binding_index",

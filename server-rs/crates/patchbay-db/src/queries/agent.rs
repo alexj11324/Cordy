@@ -2035,6 +2035,7 @@ pub async fn create_agent_task(
     trigger_evidence_kind: Option<&str>,
     trigger_evidence_ref_id: Uuid,
     id: Uuid,
+    initial_context: &serde_json::Value,
 ) -> anyhow::Result<Option<AgentTaskQueue>> {
     let row = sqlx::query(
         r#"INSERT INTO agent_task_queue (
@@ -2053,11 +2054,15 @@ SELECT
     COALESCE($9::boolean, FALSE),
     $10,
     NULLIF($11::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
-    CASE
-        WHEN COALESCE($12::text, '') <> ''
-        THEN jsonb_build_object('head_sha', $12::text)
-        ELSE NULL
-    END,
+    NULLIF(
+        COALESCE(NULLIF($24::jsonb, 'null'::jsonb), '{}'::jsonb) ||
+            CASE
+                WHEN COALESCE($12::text, '') <> ''
+                THEN jsonb_build_object('head_sha', $12::text)
+                ELSE '{}'::jsonb
+            END,
+        '{}'::jsonb
+    ),
     NULLIF($13::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     NULLIF($14::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $15,
@@ -2095,6 +2100,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         .bind(trigger_evidence_kind)
         .bind(trigger_evidence_ref_id)
         .bind(id)
+        .bind(initial_context)
         .fetch_optional(executor)
         .await?;
     let Some(row) = row else { return Ok(None) };
@@ -6481,29 +6487,6 @@ LIMIT 1"#,
         id: row.try_get(0)?,
         status: row.try_get(1)?,
     }))
-}
-
-pub async fn set_task_side_chat(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    task_id: Uuid,
-    source_task_id: Uuid,
-    root_comment_id: Uuid,
-) -> anyhow::Result<bool> {
-    let result = sqlx::query(
-        r#"UPDATE agent_task_queue
-SET context = COALESCE(context, '{}'::jsonb) || jsonb_build_object(
-        'side_chat_parent_task_id', $2::text,
-        'side_chat_root_comment_id', $3::text
-    )
-WHERE id = $1
-  AND status = 'queued'"#,
-    )
-    .bind(task_id)
-    .bind(source_task_id)
-    .bind(root_comment_id)
-    .execute(executor)
-    .await?;
-    Ok(result.rows_affected() == 1)
 }
 
 /// Serializes Message Bus writes for one main task. The row lock closes the

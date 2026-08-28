@@ -278,6 +278,7 @@ impl ProviderExecutionPlan {
         // later adapter accidentally splicing profile fixed args into the
         // backend-only ExtraArgs region.
         extra_args.shrink_to_fit();
+        let is_side_chat = !task.side_chat_parent_task_id.is_empty();
 
         let prepare = PrepareParams {
             workspaces_root: config.workspaces_root.clone(),
@@ -291,8 +292,20 @@ impl ProviderExecutionPlan {
             mcp_config: mcp_config.clone(),
             cursor_mcp_auth_source: inputs.cursor_mcp_auth_source,
             openclaw_gateway,
-            local_work_dir: inputs.local_work_dir,
-            local_worktree: inputs.local_worktree,
+            // A Side Chat only needs durable issue/task history. Never attach
+            // the main task's user checkout: direct local-directory mode would
+            // otherwise let two provider processes race in the same files,
+            // and even a read-only prompt cannot make that isolation reliable.
+            local_work_dir: if is_side_chat {
+                String::new()
+            } else {
+                inputs.local_work_dir
+            },
+            local_worktree: if is_side_chat {
+                None
+            } else {
+                inputs.local_worktree
+            },
             hermes_source_home: inputs.hermes_source_home,
             hermes_source_must_exist: inputs.hermes_source_must_exist,
             hermes_memory_store: inputs.hermes_memory_store,
@@ -383,7 +396,7 @@ impl ProviderExecutionPlan {
         Ok(Self {
             prepare,
             target: target.clone(),
-            prior_work_dir: if task.side_chat_parent_task_id.is_empty() {
+            prior_work_dir: if !is_side_chat {
                 task.prior_work_dir.clone()
             } else {
                 String::new()
@@ -408,7 +421,7 @@ impl ProviderExecutionPlan {
                 // A Side Chat is an application-level Patchbay thread. It reads
                 // durable issue/task history and never mutates a provider's
                 // main session, so every adapter starts it fresh.
-                resume_session_id: if task.side_chat_parent_task_id.is_empty() {
+                resume_session_id: if !is_side_chat {
                     task.prior_session_id.clone()
                 } else {
                     String::new()
@@ -979,6 +992,31 @@ mod tests {
             prepare.codex_custom_args,
             vec!["--sandbox", "workspace-write", "--agent-flag", "secret-arg"]
         );
+    }
+
+    #[test]
+    fn side_chat_never_attaches_the_main_tasks_local_checkout() {
+        let mut side_chat_task = task();
+        side_chat_task.side_chat_parent_task_id = "main-task-1".to_string();
+        let mut side_chat_inputs = inputs();
+        side_chat_inputs.local_work_dir = "/user/project".to_string();
+        side_chat_inputs.local_worktree = Some(LocalWorktreeParams {
+            local_path: "/user/project".to_string(),
+            ..LocalWorktreeParams::default()
+        });
+
+        let plan = ProviderExecutionPlan::build(
+            &config(),
+            &side_chat_task,
+            &target(),
+            side_chat_inputs,
+        )
+        .unwrap();
+
+        assert!(plan.prepare_params().local_work_dir.is_empty());
+        assert!(plan.prepare_params().local_worktree.is_none());
+        assert!(plan.prior_work_dir().is_empty());
+        assert!(plan.resume_session_id().is_empty());
     }
 
     #[test]

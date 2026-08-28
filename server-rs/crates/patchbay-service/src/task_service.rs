@@ -29,7 +29,7 @@ use patchbay_db::queries::agent::{
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
     reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
     requeue_agent_task_after_claim_failure, set_deferred_channel_issue_task_runtime_overlay,
-    set_task_delivered_comment_i_ds, set_task_side_chat, start_agent_task,
+    set_task_delivered_comment_i_ds, start_agent_task,
 };
 use patchbay_db::queries::attachment::detach_attachments_from_user_chat_message_by_task;
 use patchbay_db::queries::attachment::link_attachments_to_chat_message;
@@ -1776,6 +1776,7 @@ impl TaskService {
                 prep.attr_evidence_kind.as_deref(),
                 prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 new_v7(),
+                &serde_json::Value::Null,
             )
             .await
         };
@@ -2252,9 +2253,19 @@ impl TaskService {
         let head_sha = self.resolve_issue_review_sha(issue.id).await;
 
         // Side Chat linkage must commit atomically with the queued row. A
-        // daemon must never be able to claim the row in the small interval
-        // before its isolation/fork context is attached.
+        // daemon must never be able to claim the row without its isolation
+        // context, and the pending-task index must be able to distinguish the
+        // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let initial_context = side_chat
+            .as_ref()
+            .map(|side_chat| {
+                serde_json::json!({
+                    "side_chat_parent_task_id": side_chat.parent_task_id.to_string(),
+                    "side_chat_root_comment_id": side_chat.root_comment_id.to_string(),
+                })
+            })
+            .unwrap_or(serde_json::Value::Null);
         let created = create_agent_task(
             &mut *tx,
             agent_id,
@@ -2280,9 +2291,10 @@ impl TaskService {
             attr_evidence_kind.as_deref(),
             attr_evidence_ref.unwrap_or_else(Uuid::nil),
             new_v7(),
+            &initial_context,
         )
         .await;
-        let mut task = match created {
+        let task = match created {
             Ok(Some(t)) => t,
             Ok(None) => return Err(TaskServiceError::AgentNoRuntime),
             Err(e) => {
@@ -2299,31 +2311,6 @@ impl TaskService {
             }
         };
 
-        if let Some(side_chat) = side_chat {
-            let stored = set_task_side_chat(
-                &mut *tx,
-                task.id,
-                side_chat.parent_task_id,
-                side_chat.root_comment_id,
-            )
-            .await
-            .map_err(|error| {
-                TaskServiceError::Internal(format!("store Side Chat context: {error}"))
-            })?;
-            if !stored {
-                return Err(TaskServiceError::Internal(
-                    "store Side Chat context: task is no longer queued".to_string(),
-                ));
-            }
-            task = get_agent_task(&mut *tx, task.id)
-                .await
-                .map_err(|error| {
-                    TaskServiceError::Internal(format!("reload Side Chat task: {error}"))
-                })?
-                .ok_or_else(|| {
-                    TaskServiceError::Internal("reload Side Chat task: task missing".to_string())
-                })?;
-        }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         tracing::info!(
