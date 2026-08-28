@@ -3129,9 +3129,18 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   回归修复。
 - 验收矩阵（一次执行、一次记录，不拆 per-provider/per-command PR；除显式子目录命令外均从 repository root 运行）：
   1. **锁定输入与构建**：记录 HEAD、Rust/Cargo 版本、`Cargo.lock` SHA 和环境；运行
-     `(cd server-rs && cargo metadata --locked --offline --format-version 1)`、
-     `(cd server-rs && cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins)`、
-     `make rust-build`；记录六个 `server/bin` 产物的 SHA256、`--help`/version 输出和每个退出码。
+     `./scripts/run-rust.sh metadata --locked --offline --format-version 1`、
+     `./scripts/run-rust.sh fmt --all --check`、
+     `./scripts/run-rust.sh check --workspace --all-targets --locked --offline`、
+     `./scripts/run-rust.sh clippy --workspace --all-targets --locked --offline -- -D warnings`、
+     `./scripts/run-rust.sh test --workspace --all-targets --locked --offline`、
+     `./scripts/run-rust.sh build --release --locked --offline -p cordy-server -p cordy-cli -p cordy-migrate --bins`
+     和 `CARGO_NET_OFFLINE=true make rust-build`。记录六个 `server/bin` 产物的 SHA256，并按产物实际 CLI contract
+     分别探测：`server/bin/cordy` 执行 `--help` 和 `--version`；`server/bin/migrate` 与三个 backfill 只执行
+     `--help`（这些 Clap parser 没有声明 version flag）；`server/bin/server` 不解析 CLI flags，不得用 `--help`
+     或 `--version` 探测，而是在第 2 项的 disposable migrated DB 上受 30 秒外层 deadline 约束直接启动，期限内
+     验证 `/readyz` 后发送 TERM 并等待干净退出。记录每个实际探针、matched/executed/blocked 和退出码；所有会解析
+     依赖的 Cargo 调用都必须同时使用 lockfile 与 offline 模式，格式检查不解析依赖。
   2. **本地 Rust 默认入口**：在 disposable fresh PostgreSQL 上运行 `make migrate-up`，以 `make start`/`make rust-server`
      启动，记录 `/health`、`/healthz`、`/readyz` 状态、migration lock/失败退出与干净 shutdown；以 `cordy daemon start`
      完成 registration→claim→execute→reconcile→shutdown smoke，并记录 matched/executed/blocked。
@@ -3153,9 +3162,12 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
      production storage 的初始化、读写、错误隔离与 shutdown/flush 生命周期，同样覆盖 valid、missing、malformed、
      network failure 与 shutdown/cancellation；运行
      `/debug/pprof/{,profile,heap,trace,cmdline,symbol}` 和 metrics listener 的可达性、public-router 隔离与关闭回收。
-  5. **升级与回滚**：使用两个 immutable image/tag 和 disposable DB 记录迁移前后 schema、服务可用性、向后/向前
-     兼容边界、`cordy-migrate up/down`（或已支持 operator rollback）退出码、exact-image rollback 后的
-     `/readyz` 与数据完整性；不得把局部 route parity 或静态编译当作回滚通过。
+  5. **升级与回滚**：使用两个 immutable image/tag，并严格分开两套 disposable DB。schema teardown DB 只用于记录
+     `cordy-migrate up`、`status`、`down` 的退出码与 teardown 结果，之后不承载服务或镜像回滚证据；exact-image
+     rollback DB 用于记录迁移前后 schema、服务可用性和向后/向前兼容边界，升级后保留已升级 schema，确认旧镜像
+     与该 schema 兼容（或恢复匹配的升级前备份）后只切回旧 immutable image，绝不在这套 DB 上执行
+     `cordy-migrate down`。仅在 rollback DB 上记录切回后的 `/readyz` 与数据完整性；不得把 teardown、局部 route
+     parity 或静态编译当作 exact-image rollback 通过。
 - 证据/PR：T-60 是一个生产验收切片，已创建 Ready PR #589；本分支登记上述矩阵，并修复阻断该矩阵的 dependency
   resolver 及 daemon/workspace all-targets 检查暴露的编译 blockers，不新增脚本/抽象。产物 SHA、每个命令的
   matched/executed/blocked、日志与回滚记录仍待实际执行后
