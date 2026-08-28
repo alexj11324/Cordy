@@ -482,11 +482,9 @@ mod tests {
         let mut client = AcpClient::new(BufReader::new(client_read), client_write);
         let mut notifications = Vec::new();
         client
-            .drain_notifications(
-                Duration::ZERO,
-                Duration::from_secs(1),
-                |notification| notifications.push(notification),
-            )
+            .drain_notifications(Duration::ZERO, Duration::from_secs(1), |notification| {
+                notifications.push(notification)
+            })
             .await
             .unwrap_or_else(|error| panic!("drain: {error}"));
         agent

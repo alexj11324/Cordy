@@ -4966,7 +4966,11 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Dim requests: {error}"));
         assert_eq!(requests.matches("session/load").count(), 2);
-        assert!(requests_contain_config(&requests, "permission", "full-access"));
+        assert!(requests_contain_config(
+            &requests,
+            "permission",
+            "full-access"
+        ));
         assert!(requests_contain_config(&requests, "mode", "agent"));
         assert!(requests_contain_config(&requests, "thought_level", "high"));
         assert!(requests.contains("session/close"));
