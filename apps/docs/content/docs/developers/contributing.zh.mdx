@@ -5,17 +5,17 @@ description: 配置 Cordy 本地开发环境，运行测试，并按仓库约定
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
+Cordy 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
 
 ## 环境要求
 
 - Node.js 22；
 - pnpm 10.28.2；
-- Go 1.26.6；
+- Rust stable 与 Cargo；
 - Docker Engine 或 Docker Desktop；
 - Git 和 Make。
 
-版本以根目录 `package.json`、`server/go.mod` 和 CI workflow 为准。
+版本和依赖以根目录 `package.json`、`server-rs/Cargo.toml`、`Cargo.lock` 和 CI workflow 为准。
 
 ## 第一次启动
 
@@ -99,7 +99,7 @@ make daemon
 make test
 make migrate-up
 make migrate-down
-make sqlc
+make rust-build
 ```
 
 从源码运行某条 CLI 命令：
@@ -124,14 +124,14 @@ Web 与 Desktop 都需要的功能按职责放置：
 
 ## 修改数据库
 
-Migration 位于 `server/migrations/`，查询位于 `server/pkg/db/queries/`。
+Migration 仍位于 `server/migrations/`；生产 query module 位于 `server-rs/crates/cordy-db/src/queries/`。
 
 1. 使用下一个未占用的数字前缀，同时创建 `.up.sql` 和 `.down.sql`；
 2. 不添加数据库 foreign key、级联删除或级联更新；关系检查和清理由应用层完成；
 3. 每个新索引都使用 `CREATE INDEX CONCURRENTLY` 或 `CREATE UNIQUE INDEX CONCURRENTLY`；
 4. 一个 concurrent index 单独放在只包含这一条语句的 migration 文件中；
-5. 修改查询后运行 `make sqlc`，提交生成的 `server/pkg/db/generated/` 变化；
-6. 不直接编辑 sqlc 生成文件。
+5. 直接修改对应的手写 SQLx query module；Rust 路径没有生成的 sqlc 层；
+6. 先运行最接近改动的 `cordy-db` 测试，再用 `make test` 验证 locked Rust workspace。
 
 需要让多项写操作一起成功或回滚时，在 service 层使用应用事务。
 
@@ -143,7 +143,7 @@ Migration 位于 `server/migrations/`，查询位于 `server/pkg/db/queries/`。
 | 共享页面和组件 | `packages/views/*.test.tsx` |
 | Web 或 Desktop 平台 wiring | 对应 `apps/*` 目录 |
 | 端到端流程 | `e2e/*.spec.ts` |
-| Backend | 相关 Go package 的 `*_test.go` |
+| Backend | 对应 `server-rs/crates/*` package 的 `#[cfg(test)]` module 或 `tests/*.rs` |
 
 先运行与改动最接近的检查，再扩大范围。例如只改 Docs：
 
@@ -170,7 +170,7 @@ make test
 make check
 ```
 
-`make check` 会执行 TypeScript typecheck 与单元测试、Go 测试和 Playwright E2E。CI 还会按改动范围构建、lint，并运行平台或安装器专项测试。
+`make check` 会执行 TypeScript 检查、locked Rust workspace 测试、legacy Go compatibility gate 和 Playwright E2E。CI 还会按改动范围构建、lint，并运行平台或安装器专项测试。
 
 ## 重置当前开发数据库
 

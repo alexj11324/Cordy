@@ -3214,6 +3214,9 @@ Go 命令，不把文档文字更新当作生产切换证据。
     readiness response 子检查，不再引用已下线语义的 Go `router.go` 行号或虚构的 `checks.migrations` 字段。
   - `SELF_HOSTING_ADVANCED.md` 中 `go tool pprof` 仅作为可选的 profile 客户端明确标注；它读取 Rust pprof 输出，
     不构建或运行 Cordy Go 服务。迁移审计/源码映射中的 Go 路径仍是历史证据，不属于默认生产操作，保持不改。
+  - 四种 `developers/architecture*.mdx` 与四种 `developers/contributing*.mdx` 对齐当前 `server-rs` Cargo workspace、
+    `cordy-server`/`cordy-cli`/`cordy-migrate` 生产入口、Rust crate 分层、`cordy-db` 手写 SQLx query module 和 Rust tests；
+    migration 仍以 `server/migrations/` 为真实路径，legacy Go 仅保留为 `make check` 的 compatibility gate 说明。
 - 证据/PR：T-61 是一个运维文档切片，已准备 Ready PR #590（基于 T-60 最新 tip），本项只改上述直接相关文档，
   不新增脚本、安装器、抽象、任务号或运行时 fallback。主 agent 仅运行 `git diff --check`；T-60 新鲜 binary/image/unit
   的命令和版本由独立 verifier 复核，reviewer 检查文档是否与实际 Rust 产物一致，fixer 只处理 scoped finding。新鲜

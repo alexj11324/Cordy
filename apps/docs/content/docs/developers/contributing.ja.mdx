@@ -5,17 +5,17 @@ description: Cordy のローカル開発環境を構築し、テストを実行�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
+Cordy は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
 
 ## 必要な環境
 
 - Node.js 22
 - pnpm 10.28.2
-- Go 1.26.6
+- Rust stable と Cargo
 - Docker Engine または Docker Desktop
 - Git と Make
 
-バージョンについては、ルートの `package.json`、`server/go.mod`、CI workflow を信頼できる情報源としてください。
+バージョンと依存関係については、ルートの `package.json`、`server-rs/Cargo.toml`、`Cargo.lock`、CI workflow を信頼できる情報源としてください。
 
 ## 初回起動
 
@@ -99,7 +99,7 @@ make daemon
 make test
 make migrate-up
 make migrate-down
-make sqlc
+make rust-build
 ```
 
 ソースから CLI コマンドを実行するには:
@@ -124,14 +124,14 @@ API を追加または変更するときは `packages/core/api/` の zod schema 
 
 ## データベースの変更
 
-Migration は `server/migrations/`、クエリは `server/pkg/db/queries/` にあります。
+Migration は引き続き `server/migrations/` にあり、本番 query module は `server-rs/crates/cordy-db/src/queries/` にあります。
 
 1. 次の未使用の数値 prefix を使い、`.up.sql` と `.down.sql` の両方を作成します。
 2. データベースの foreign key、cascade delete、cascade update を追加しません。関係の検証とクリーンアップはアプリケーション層で行います。
 3. 新しいインデックスはすべて `CREATE INDEX CONCURRENTLY` または `CREATE UNIQUE INDEX CONCURRENTLY` を使用します。
 4. concurrent index は、その 1 文だけを含む migration ファイルに分けます。
-5. クエリ変更後に `make sqlc` を実行し、生成された `server/pkg/db/generated/` の変更をコミットします。
-6. sqlc の生成ファイルを直接編集しません。
+5. 対応する手書きの SQLx query module を直接変更します。Rust 経路に生成された sqlc 層はありません。
+6. まず変更に最も近い `cordy-db` テストを実行し、その後 `make test` で locked Rust workspace を検証します。
 
 複数の書き込みをまとめて成功またはロールバックさせる必要がある場合は、service 層でアプリケーショントランザクションを使用します。
 
@@ -143,7 +143,7 @@ Migration は `server/migrations/`、クエリは `server/pkg/db/queries/` に�
 | 共有ページとコンポーネント | `packages/views/*.test.tsx` |
 | Web または Desktop のプラットフォーム wiring | 対応する `apps/*` ディレクトリ |
 | エンドツーエンドフロー | `e2e/*.spec.ts` |
-| バックエンド | 関連する Go package の `*_test.go` |
+| バックエンド | 対応する `server-rs/crates/*` package の `#[cfg(test)]` module または `tests/*.rs` |
 
 まず変更に最も近いチェックを実行し、その後に範囲を広げます。Docs だけの変更例:
 
@@ -170,7 +170,7 @@ make test
 make check
 ```
 
-`make check` は TypeScript の typecheck とユニットテスト、Go テスト、Playwright E2E を実行します。CI は変更範囲に応じて build と lint を行い、プラットフォームまたはインストーラー専用テストも実行します。
+`make check` は TypeScript のチェック、locked Rust workspace テスト、legacy Go compatibility gate、Playwright E2E を実行します。CI は変更範囲に応じて build と lint を行い、プラットフォームまたはインストーラー専用テストも実行します。
 
 ## 現在の開発データベースをリセット
 
