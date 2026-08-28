@@ -3,10 +3,7 @@
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "@patchbay/core/api";
-import { chatKeys } from "@patchbay/core/chat/queries";
 import type { AgentTask } from "@patchbay/core/types";
-import type { TaskMessagePayload } from "@patchbay/core/types/events";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockState = vi.hoisted(() => ({

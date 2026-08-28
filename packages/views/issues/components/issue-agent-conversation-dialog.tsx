@@ -127,7 +127,7 @@ export function IssueAgentConversationDialog({
     rootCommentId: string;
   } | null>(null);
   const sideChatRootId =
-    localSideChat?.mainTaskId === activeMainTask?.id
+    localSideChat && localSideChat.mainTaskId === activeMainTask?.id
       ? localSideChat.rootCommentId
       : persistedSideChatRootId;
   const conversation = useMemo(
