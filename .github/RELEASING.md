@@ -13,6 +13,25 @@ backfill binaries, and runs RustSec before any publishing job starts. The Rust
 CLI build matrix then packages release assets for every supported
 OS/architecture pair. The vulnerability scan is fail-closed by default.
 
+### Required macOS release secrets
+
+A production release is fail-closed unless the canonical repository has all of
+these GitHub Actions secrets:
+
+- `CSC_LINK`: exported Developer ID Application certificate and private key
+  (`.p12`, or its base64-encoded contents)
+- `CSC_KEY_PASSWORD`: password protecting that export
+- `APPLE_ID`: Apple account used by `notarytool`
+- `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for that account
+- `APPLE_TEAM_ID`: Apple Developer team that owns the signing identity
+
+The macOS jobs build Intel and Apple Silicon DMG/ZIP assets without publishing
+them, verify the Developer ID signature and expected team, validate the stapled
+notarization ticket, and require Gatekeeper to report `Notarized Developer ID`.
+Only then are the macOS assets uploaded to the draft Release. The public
+Release job still waits for both macOS matrix entries, so an unsigned or
+unnotarized package cannot become the production auto-update baseline.
+
 ## Emergency vulnerability-scan bypass
 
 Use the bypass only when RustSec or its live advisory database is unavailable,

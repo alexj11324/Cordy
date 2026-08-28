@@ -10,11 +10,9 @@ import {
  * by the Next.js fetch cache for 5 minutes (Vercel ISR) so hitting
  * /download costs at most one GitHub API call per region per 5 minutes.
  *
- * Desktop assets don't all land at the same time: CI uploads Linux and
- * Windows within a minute of each other, but macOS is packaged manually
- * (notarization credentials aren't wired into CI yet) and lands tens of
- * minutes later. A packaging job can also fail outright and leave a
- * release permanently short of some platforms. Either way the newest
+ * Desktop assets don't all land at the same time because the release uses a
+ * platform/architecture matrix. A packaging job can also fail outright and
+ * leave a release permanently short of some platforms. Either way the newest
  * release is not always the newest *downloadable* one, so we pull a
  * short window of recent releases and show the newest whose desktop
  * asset set is complete — every button on the page then resolves to a
