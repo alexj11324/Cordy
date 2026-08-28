@@ -292,7 +292,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 62. `[~]` `T-57 / §72` AUDIT-008 shared HTTP error envelope framing（Ready PR #585，待异步退出证据）
 63. `[~]` `T-58 / §73` AUDIT-008 issue response projection null/empty 与 activity timestamp contract（Ready PR #586，待异步退出证据）
 64. `[~]` `T-59 / §74` AUDIT-008 DB model/query reserved-key 与 nullable legacy-row wire contract（Ready PR #588，待异步退出证据）
-65. `[~]` `T-60 / §75` AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（验收矩阵已登记，Ready PR 待提交）
+65. `[~]` `T-60 / §75` AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（Ready PR #589；locked workspace check、daemon 定向门和六个新鲜 Rust 产物通过，完整运行矩阵仍待执行）
 66. `[ ]` `T-61 / §76` AUDIT-009 运维文档与新鲜产物复核（已登记，待复核）
 67. `[ ]` `T-56` AUDIT-010 Go 源码退休（仅在 T-53、T-59、T-60、T-61、T-57、T-58 及 AUDIT-001..009 退出后）
 
@@ -3172,7 +3172,19 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   SecretBox literal wire fixture 后，`cargo check --workspace --all-targets --locked --offline` 通过（仅既有 warnings）。完整
   workspace `cargo test --workspace --all-targets --no-run` 尚未执行；较小的 handler/server all-targets `--no-run` 尝试因
   `ENOSPC` 被中断（exit 130，0 个完成结果），不能由 `cargo check` 或 daemon 定向 `--no-run` 推断为通过。其余完整
-  runtime/provider/发布矩阵尚未执行，不能由这些定向结果标记通过。
+  runtime/provider/发布矩阵尚未执行，不能由这些定向结果标记通过。磁盘恢复后首次新鲜 `make rust-build` 在
+  `cordy-db` 的四个 `sqlx::query_as!` 编译宏连接数据库时以 `Operation not permitted`/exit 101 失败；仓库已有对应四个
+  `.sqlx` query metadata，因此在现有 Cargo config 统一启用 `SQLX_OFFLINE=true`，没有在 Make/Docker/release 三处复制
+  参数。显式 offline 验证构建以 exit 0 在 14m31s 生成六个 ARM64 ELF，随后不显式传入 `SQLX_OFFLINE` 的同一
+  `make rust-build` 也以 exit 0 在 2m50s 完成并复制六个产物。SHA256 分别为：server
+  `9f275fc71c71b60b0617704b3e8ac54dfc8d76a9af1fd349d5745edded31796c`、cordy
+  `45ad118303aa2c1938d652aa1111f1bb26c13bee8f2c6492c6a233e4be103503`、migrate
+  `296422e30649d8aae802d39aa1e9f41dcc98ca197e2345dda468553436c1b80b`、三个 backfill 依次为
+  `d4e150b244c0d7c5240ca2ea33d65513249ef5b2b2c147fd9e7b2518a221e26a`、
+  `4283267816ffa1568d23c53f53acbc954881e344dc737506d62ab4b5f7bf7850`、
+  `0f2c7f0b239778710414d7b1d29e476edefcb274932aaa12a7f2f0ada36ce180`。cordy、migrate 与三个 backfill 的
+  `--help` 均 exit 0；server 会先加载生产配置，`--help` 因缺 `DATABASE_URL` exit 1。仅 cordy 支持 `--version`
+  （exit 0）；server exit 1，其余四个入口对未定义的 `--version` 均 exit 2，不把这些接口差异记为通过。
 
 ## 76. [ ] AUDIT-009 运维文档与新鲜产物复核（T-61）
 
