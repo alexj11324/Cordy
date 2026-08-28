@@ -293,7 +293,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 63. `[~]` `T-58 / §73` AUDIT-008 issue response projection null/empty 与 activity timestamp contract（Ready PR #586，待异步退出证据）
 64. `[~]` `T-59 / §74` AUDIT-008 DB model/query reserved-key 与 nullable legacy-row wire contract（Ready PR #588，待异步退出证据）
 65. `[~]` `T-60 / §75` AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（Ready PR #589；locked workspace check、daemon 定向门和六个新鲜 Rust 产物通过，完整运行矩阵仍待执行）
-66. `[~]` `T-61 / §76` AUDIT-009 运维文档与新鲜产物复核（文档对齐已提交，待新鲜产物复核）
+66. `[~]` `T-61 / §76` AUDIT-009 运维文档与新鲜产物复核（Ready PR #590；静态契约与 locked metadata 通过，运行时复核 blocked）
 67. `[ ]` `T-56` AUDIT-010 Go 源码退休（仅在 T-53、T-59、T-60、T-61、T-57、T-58 及 AUDIT-001..009 退出后）
 
 每一步都按同一个交付门执行：登记缺口 → 实现完整业务契约 → 接入唯一 Rust 生产入口 →
@@ -3218,7 +3218,11 @@ Go 命令，不把文档文字更新当作生产切换证据。
     `cordy-server`/`cordy-cli`/`cordy-migrate` 生产入口、Rust crate 分层、`cordy-db` 手写 SQLx query module 和 Rust tests；
     migration 仍以 `server/migrations/` 为真实路径；Go 1.26.6 仅标为 `make check`/`scripts/test-go.sh` 临时 compatibility
     gate 所需，不是生产 backend 依赖。
-- 证据/PR：T-61 是一个运维文档切片，已准备 Ready PR #590（基于 T-60 最新 tip），本项只改上述直接相关文档，
+- 证据/PR：T-61 是一个运维文档切片，已创建 Ready PR #590（最终 head `f61cb9e3`，基于 T-60 `60467139`），本项只改上述直接相关文档，
   不新增脚本、安装器、抽象、任务号或运行时 fallback。主 agent 仅运行 `git diff --check`；T-60 新鲜 binary/image/unit
   的命令和版本由独立 verifier 复核，reviewer 检查文档是否与实际 Rust 产物一致，fixer 只处理 scoped finding。新鲜
-  产物尚未可用前，本项保持 `[~]`，不得把静态文档 diff 当作生产验证或 Go 可删除证据。
+  产物尚未可用前，本项保持 `[~]`，不得把静态文档 diff 当作生产验证或 Go 可删除证据。最终 verifier 确认 exact
+  ancestry/range、四语言 legacy-only Go 1.26.6 边界、`server-rs/Cargo.lock`、readiness source/docs、migration 103
+  Compose override 与 locked/offline metadata 均通过；旧生产 Go path 搜索为 0。实际 `/health`、`/healthz`、`/readyz`
+  探针因没有运行中的 server 均为 exit 7/HTTP 000，backfill runtime 未执行。最终 reviewer 无 P0–P3、security、config
+  或 Ponytail finding。
