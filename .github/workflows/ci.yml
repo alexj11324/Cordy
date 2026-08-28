@@ -499,27 +499,24 @@ jobs:
         with:
           workspaces: server-rs -> target
 
-      # Temporary cloud-side lockfile refresh. Download this artifact into the
-      # branch, then remove these two steps so the locked gates remain strict.
-      - name: Resolve canonical Cargo lockfile
+      - name: Check formatting
         working-directory: server-rs
-        run: cargo metadata --format-version 1 --no-deps > /dev/null
+        run: cargo fmt --all --check
+
+      # Temporary cloud-side lockfile refresh. Download this artifact into the
+      # branch, then restore --locked so the final gates remain strict.
+      - name: Check every workspace target
+        working-directory: server-rs
+        run: cargo check --workspace --all-targets
 
       - name: Upload canonical Cargo lockfile
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: cargo-lock-${{ github.sha }}
           path: server-rs/Cargo.lock
           if-no-files-found: error
           retention-days: 1
-
-      - name: Check formatting
-        working-directory: server-rs
-        run: cargo fmt --all --check
-
-      - name: Check every workspace target
-        working-directory: server-rs
-        run: cargo check --workspace --all-targets --locked
 
       - name: Run Clippy
         working-directory: server-rs
