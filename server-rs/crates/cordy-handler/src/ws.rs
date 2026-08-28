@@ -161,7 +161,22 @@ fn check_origin(headers: &HeaderMap, remote_ip: Option<std::net::IpAddr>) -> boo
         .unwrap_or_default();
     let proxy_trusted =
         remote_ip.is_some_and(|ip| trusted.iter().any(|network| network.contains(ip)));
-    check_origin_with_policy(headers, proxy_trusted, &crate::allowed_origins())
+    check_origin_with_policy(headers, proxy_trusted, &websocket_allowed_origins())
+}
+
+fn websocket_allowed_origins() -> Vec<String> {
+    std::env::var("ALLOWED_ORIGINS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| !origin.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|origins| !origins.is_empty())
+        .unwrap_or_else(crate::allowed_origins)
 }
 
 fn check_origin_with_policy(
@@ -889,6 +904,12 @@ mod tests {
 
         let member_token = format!("mul_ws_member_{suffix}");
         let outsider_token = format!("mul_ws_outsider_{suffix}");
+        let member_jwt = cordy_auth::jwt::issue_user_jwt(
+            &user_id.to_string(),
+            &format!("ws-member-{suffix}@example.test"),
+            "ws member",
+        )
+        .expect("issue member JWT");
         for (token, owner) in [(&member_token, user_id), (&outsider_token, outsider_id)] {
             sqlx::query(
                 "INSERT INTO personal_access_token (user_id, name, token_hash, token_prefix) VALUES ($1, 'ws contract', $2, $3)",
@@ -1022,6 +1043,24 @@ mod tests {
         );
         wait_for_disconnect(&hub).await;
 
+        let (mut jwt_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("JWT websocket upgrade");
+        jwt_socket
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":member_jwt}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("send JWT auth");
+        assert_eq!(
+            client_json(&mut jwt_socket).await,
+            json!({"type":"auth_ack"})
+        );
+        jwt_socket.close(None).await.expect("close JWT websocket");
+        wait_for_disconnect(&hub).await;
+
         let (mut socket, _) = tokio_tungstenite::connect_async(&ws_url)
             .await
             .expect("member websocket upgrade");
@@ -1054,6 +1093,29 @@ mod tests {
             .execute(&pool)
             .await
             .expect("create second workspace membership");
+        let foreign_agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode) VALUES ($1, 'foreign ws agent', 'local') RETURNING id",
+        )
+        .bind(workspace_two)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace agent");
+        let foreign_issue_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number, position) VALUES ($1, 'foreign ws issue', 'todo', 'none', 'member', $2, 1, -1) RETURNING id",
+        )
+        .bind(workspace_two)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace issue");
+        let foreign_task_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_task_queue (agent_id, issue_id, status, priority) VALUES ($1, $2, 'queued', 0) RETURNING id",
+        )
+        .bind(foreign_agent_id)
+        .bind(foreign_issue_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace task");
         let ws_two_url = format!("ws://{address}/ws?workspace_id={workspace_two}");
         let (mut socket_two, _) = tokio_tungstenite::connect_async(&ws_two_url)
             .await
@@ -1145,7 +1207,7 @@ mod tests {
         assert!(!hub.has_local_subscribers(SCOPE_TASK, &task_id.to_string()));
         socket
             .send(ClientMessage::Text(
-                json!({"type":"subscribe","payload":{"scope":"task","id":Uuid::now_v7()}})
+                json!({"type":"subscribe","payload":{"scope":"task","id":foreign_task_id}})
                     .to_string()
                     .into(),
             ))

@@ -148,9 +148,16 @@ impl AttachmentDownloadSettings {
         };
         chrono::Duration::from_std(ttl)
             .map_err(|_| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
-        let cloudfront_signer = crate::cloudfront::CloudFrontSigner::from_config(config)
-            .await?
-            .map(Arc::new);
+        let cloudfront_signer = if matches!(
+            mode,
+            AttachmentDownloadMode::Auto | AttachmentDownloadMode::CloudFront
+        ) {
+            crate::cloudfront::CloudFrontSigner::from_config(config)
+                .await?
+                .map(Arc::new)
+        } else {
+            None
+        };
         anyhow::ensure!(
             mode != AttachmentDownloadMode::CloudFront || cloudfront_signer.is_some(),
             "ATTACHMENT_DOWNLOAD_MODE=cloudfront requires a usable CloudFront signing key"
@@ -290,6 +297,29 @@ mod attachment_download_tests {
         };
 
         settings.validate_presign_support(false).unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_non_cloudfront_modes_do_not_initialize_cloudfront() {
+        for mode in ["proxy", "presign"] {
+            let mut config = cordy_config::Config::default();
+            config.storage.attachment_download_mode = Some(mode.to_string());
+            config.storage.cloudfront_key_pair_id = Some("configured-but-unused".to_string());
+
+            let settings = AttachmentDownloadSettings::from_config(&config)
+                .await
+                .expect("unused CloudFront configuration must not block startup");
+
+            assert_eq!(
+                settings.mode,
+                if mode == "proxy" {
+                    AttachmentDownloadMode::Proxy
+                } else {
+                    AttachmentDownloadMode::Presign
+                }
+            );
+            assert!(settings.cloudfront_signer.is_none());
+        }
     }
 }
 
@@ -821,6 +851,14 @@ impl HandlerState {
         self
     }
 
+    pub fn with_invitation_admission(
+        mut self,
+        invitation_admission: crate::invitation::InvitationAdmission,
+    ) -> Self {
+        self.invitation_admission = invitation_admission;
+        self
+    }
+
     pub fn with_heartbeat_scheduler(
         mut self,
         scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
@@ -1163,7 +1201,7 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
 mod tests {
     use super::*;
 
-    const COMPOSIO_ENV: [&str; 7] = [
+    const COMPOSIO_ENV: [&str; 8] = [
         "COMPOSIO_API_KEY",
         "COMPOSIO_STATE_SECRET",
         "COMPOSIO_CALLBACK_BASE_URL",
@@ -1171,6 +1209,7 @@ mod tests {
         "CORDY_APP_URL",
         "FRONTEND_ORIGIN",
         "FF_COMPOSIO_MCP_APPS",
+        "JWT_SECRET",
     ];
 
     struct RestoreComposioEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);

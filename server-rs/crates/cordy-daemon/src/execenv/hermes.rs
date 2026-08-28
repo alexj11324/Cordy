@@ -688,6 +688,13 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     if !has_session_db(store) {
         migrate_session_files(overlay, store)?;
     }
+    // Windows hard links require the source to exist. A brand-new session has
+    // no SQLite file yet, so seed an empty source without claiming historical
+    // state; Hermes will initialize it through the mounted overlay path.
+    #[cfg(windows)]
+    if !store_db.exists() {
+        fs::File::create(&store_db).context("create empty Hermes session database")?;
+    }
     // Prove the link can be created before deleting a task-local database.
     let staged = Path::new(overlay).join(SESSION_LINK_STAGING);
     remove_path(&staged)?;
@@ -901,5 +908,34 @@ mod tests {
 
         fs::write(overlay.join("state.db"), b"updated").unwrap();
         assert_eq!(fs::read(session.join("state.db")).unwrap(), b"updated");
+    }
+
+    #[test]
+    fn empty_session_store_mounts_without_claiming_history() {
+        let root = tempdir().unwrap();
+        let shared = root.path().join("shared");
+        let overlay = root.path().join("overlay");
+        let session = root.path().join("session");
+        fs::create_dir_all(shared.join("skills")).unwrap();
+        fs::create_dir_all(&session).unwrap();
+
+        let sessions = prepare_hermes_home(
+            &overlay.display().to_string(),
+            &shared.display().to_string(),
+            true,
+            &[SkillContextForEnv::default()],
+            &HashMap::new(),
+            "",
+            &session.display().to_string(),
+        )
+        .unwrap();
+
+        assert!(sessions.mounted);
+        assert!(!sessions.history_present);
+        fs::write(overlay.join("state.db"), b"initialized").unwrap();
+        assert_eq!(
+            fs::read(session.join("state.db")).unwrap(),
+            b"initialized"
+        );
     }
 }

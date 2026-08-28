@@ -1190,13 +1190,17 @@ mod tests {
 
         let original = create(
             &service,
-            params(workspace_id, "  Duplicate\tTitle  ", "in_progress"),
+            params(
+                workspace_id,
+                "  Duplicate\u{00a0}Title  ",
+                "in_progress",
+            ),
         )
         .await
         .expect("original issue");
         let duplicate = create(
             &service,
-            params(workspace_id, "duplicate title", "in_progress"),
+            params(workspace_id, "duplicate\u{2003}title", "in_progress"),
         )
         .await
         .expect_err("normalized active duplicate must be rejected");

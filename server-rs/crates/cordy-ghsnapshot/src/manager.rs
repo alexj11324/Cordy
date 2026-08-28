@@ -784,22 +784,10 @@ mod tests {
     use crate::client::DEFAULT_API_BASE;
     use crate::snapshot::CheckContext;
 
-    fn generated_key() -> jsonwebtoken::EncodingKey {
-        use rand::rngs::StdRng;
-        use rand::SeedableRng;
-        use rsa::pkcs8::EncodePrivateKey;
-        let mut rng = StdRng::seed_from_u64(0xC0FFEE);
-        let key = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa generation");
-        let pem = key
-            .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
-            .expect("pem encode");
-        jsonwebtoken::EncodingKey::from_rsa_pem(pem.as_bytes()).expect("parse generated pem")
-    }
-
     fn enabled_client() -> Client {
         Client::with_encoding_key(
             "1".to_string(),
-            generated_key(),
+            crate::client::test_encoding_key(),
             DEFAULT_API_BASE.to_string(),
             Box::new(std::time::SystemTime::now),
         )

@@ -2875,3 +2875,204 @@ impl AutopilotService {
         Ok(outcome.run)
     }
 }
+
+#[cfg(test)]
+mod dispatch_contract_tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    async fn required_pool() -> PgPool {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for autopilot dispatch contracts");
+        PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL")
+    }
+
+    async fn load_run(pool: &PgPool, autopilot_id: Uuid) -> AutopilotRun {
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO autopilot_run (autopilot_id, source, status, trigger_payload) \
+             VALUES ($1, 'manual', 'issue_created', '{}'::jsonb) RETURNING id",
+        )
+        .bind(autopilot_id)
+        .fetch_one(pool)
+        .await
+        .expect("create dispatch run");
+        get_autopilot_run(pool, id)
+            .await
+            .expect("load dispatch run")
+            .expect("dispatch run exists")
+    }
+
+    async fn cleanup_dispatch_rows(pool: &PgPool, workspace_id: Uuid, user_id: Uuid) {
+        sqlx::query(
+            "DELETE FROM agent_task_queue WHERE issue_id IN \
+             (SELECT id FROM issue WHERE workspace_id = $1)",
+        )
+        .bind(workspace_id)
+        .execute(pool)
+        .await
+        .expect("delete dispatched tasks");
+        sqlx::query(
+            "DELETE FROM autopilot_run WHERE autopilot_id IN \
+             (SELECT id FROM autopilot WHERE workspace_id = $1)",
+        )
+        .bind(workspace_id)
+        .execute(pool)
+        .await
+        .expect("delete autopilot runs");
+        sqlx::query("DELETE FROM autopilot_rule_version WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .expect("delete autopilot rule versions");
+        for table in ["issue", "autopilot", "agent", "agent_runtime", "member"] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE workspace_id = $1"))
+                .bind(workspace_id)
+                .execute(pool)
+                .await
+                .unwrap_or_else(|error| panic!("delete {table}: {error}"));
+        }
+        sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .expect("delete contract user");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .expect("delete contract workspace");
+    }
+
+    #[tokio::test]
+    async fn production_create_issue_dispatch_uses_top_position_and_recent_duplicate_guard() {
+        let pool = required_pool().await;
+        let workspace_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('autopilot dispatch contract', $1) RETURNING id",
+        )
+        .bind(format!("autopilot-dispatch-{}", Uuid::now_v7().simple()))
+        .fetch_one(&pool)
+        .await
+        .expect("create contract workspace");
+        let user_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO \"user\" (name, email) VALUES ('autopilot dispatch owner', $1) RETURNING id",
+        )
+        .bind(format!("autopilot-dispatch-{}@example.test", workspace_id.simple()))
+        .fetch_one(&pool)
+        .await
+        .expect("create contract user");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create contract member");
+        let runtime_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_runtime \
+             (workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) \
+             VALUES ($1, $2, 'autopilot dispatch runtime', 'local', $3, 'online', now()) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(format!("autopilot-dispatch-{workspace_id}"))
+        .bind(format!("autopilot-dispatch-{workspace_id}"))
+        .fetch_one(&pool)
+        .await
+        .expect("create contract runtime");
+        let agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent \
+             (workspace_id, name, runtime_mode, status, owner_id, runtime_id) \
+             VALUES ($1, 'autopilot dispatch agent', 'local', 'idle', $2, $3) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(runtime_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create contract agent");
+        let autopilot_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO autopilot \
+             (workspace_id, title, assignee_type, assignee_id, status, execution_mode, \
+              issue_title_template, created_by_type, created_by_id) \
+             VALUES ($1, 'recurring work', 'agent', $2, 'active', 'create_issue', \
+                     'Recurring Work', 'member', $3) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(agent_id)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create contract autopilot");
+        let autopilot = get_autopilot(&pool, autopilot_id)
+            .await
+            .expect("load contract autopilot")
+            .expect("contract autopilot exists");
+        record_autopilot_rule_version(&pool, &autopilot, "member", Some(user_id))
+            .await
+            .expect("record contract rule owner");
+
+        sqlx::query(
+            "INSERT INTO issue \
+             (workspace_id, title, status, priority, creator_type, creator_id, number, position) \
+             VALUES ($1, 'existing top issue', 'todo', 'none', 'member', $2, 99, -40)",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("seed existing top issue");
+
+        let bus = Arc::new(cordy_events::Bus::new());
+        let tasks = Arc::new(TaskService::new(pool.clone(), bus.clone()));
+        let service = AutopilotService::new(pool.clone(), bus, tasks);
+        let mut first_run = load_run(&pool, autopilot_id).await;
+        let first = service
+            .dispatch_autopilot_run(&autopilot, Uuid::nil(), "manual", &mut first_run, None)
+            .await
+            .expect("first production dispatch creates the issue");
+        assert_eq!(first.reason_code, None);
+        let first_issue_id = first.run.issue_id.expect("first dispatch issue link");
+        let (title, position): (String, f64) =
+            sqlx::query_as("SELECT title, position FROM issue WHERE id = $1")
+                .bind(first_issue_id)
+                .fetch_one(&pool)
+                .await
+                .expect("load first dispatched issue");
+        assert_eq!(title, "Recurring Work");
+        assert_eq!(position, -41.0, "dispatch must use next_top_position");
+        let first_task_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM agent_task_queue WHERE issue_id = $1")
+                .bind(first_issue_id)
+                .fetch_one(&pool)
+                .await
+                .expect("count first dispatched task");
+        assert_eq!(first_task_count, 1);
+
+        let mut duplicate_run = load_run(&pool, autopilot_id).await;
+        let duplicate = service
+            .dispatch_autopilot_run(&autopilot, Uuid::nil(), "manual", &mut duplicate_run, None)
+            .await
+            .expect("recent duplicate is a classified dispatch skip");
+        assert_eq!(duplicate.reason_code, Some(ReasonCode::AlreadyActive));
+        assert_eq!(duplicate.run.status, "skipped");
+        assert!(duplicate
+            .run
+            .failure_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains(&first_issue_id.to_string())));
+        let autopilot_issue_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM issue \
+             WHERE workspace_id = $1 AND origin_type = 'autopilot' AND origin_id = $2",
+        )
+        .bind(workspace_id)
+        .bind(autopilot_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count autopilot issues after duplicate dispatch");
+        assert_eq!(autopilot_issue_count, 1);
+
+        cleanup_dispatch_rows(&pool, workspace_id, user_id).await;
+    }
+}

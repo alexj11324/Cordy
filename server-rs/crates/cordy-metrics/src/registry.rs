@@ -9,6 +9,12 @@ use std::sync::Arc;
 
 use prometheus::Opts;
 
+#[cfg(target_os = "linux")]
+use prometheus::{
+    core::{Collector, Desc},
+    proto::{self, MetricFamily},
+};
+
 use crate::channel_lease::ChannelLeaseMetrics;
 use crate::channel_media::ChannelMediaReconcilerMetrics;
 use crate::db::DbCollector;
@@ -49,6 +55,50 @@ fn default_label(value: &str, fallback: &str) -> String {
     }
 }
 
+#[cfg(target_os = "linux")]
+struct LinuxThreadCollector {
+    desc: Desc,
+}
+
+#[cfg(target_os = "linux")]
+impl LinuxThreadCollector {
+    fn new() -> Self {
+        Self {
+            desc: Desc::new(
+                "process_threads".to_string(),
+                "Number of OS threads in the process.".to_string(),
+                Vec::new(),
+                std::collections::HashMap::new(),
+            )
+            .expect("valid process thread descriptor"),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Collector for LinuxThreadCollector {
+    fn desc(&self) -> Vec<&Desc> {
+        vec![&self.desc]
+    }
+
+    fn collect(&self) -> Vec<MetricFamily> {
+        let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
+            return Vec::new();
+        };
+        let thread_count = tasks.filter_map(Result::ok).count() as f64;
+        let mut gauge = proto::Gauge::default();
+        gauge.set_value(thread_count);
+        let mut metric = proto::Metric::default();
+        metric.set_gauge(gauge);
+        let mut family = MetricFamily::default();
+        family.set_name(self.desc.fq_name.clone());
+        family.set_help(self.desc.help.clone());
+        family.set_field_type(proto::MetricType::GAUGE);
+        family.set_metric(vec![metric]);
+        vec![family]
+    }
+}
+
 impl Registry {
     pub fn new(opts: RegistryOptions) -> Self {
         let reg = prometheus::Registry::new();
@@ -73,6 +123,8 @@ impl Registry {
         let _ = reg.register(Box::new(
             prometheus::process_collector::ProcessCollector::for_self(),
         ));
+        #[cfg(target_os = "linux")]
+        let _ = reg.register(Box::new(LinuxThreadCollector::new()));
 
         let http = Arc::new(HttpMetrics::new());
         for c in http.collectors() {

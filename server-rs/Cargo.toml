@@ -50,10 +50,11 @@ axum = { version = "0.8", default-features = false, features = ["http1", "json",
 tower-http = { version = "0.6", features = ["cors"] }
 percent-encoding = "2.3"
 # data
-sqlx = { version = "0.8", features = [
+sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
     "postgres",
+    "macros",
     "uuid",
     "chrono",
     "json",
@@ -79,11 +80,10 @@ chrono = { version = "0.4", features = ["serde"] }
 # crypto & tokens
 rand = "0.8"
 sha2 = "0.10"
-sha1 = { version = "0.10", features = ["oid"] }
 hex = "0.4"
 hmac = "0.12"
 crc32fast = "1"
-rsa = { version = "0.9", features = ["pem"] }
+ring = "0.17"
 jsonwebtoken = "9"
 # async traits & lifecycle
 async-trait = "0.1"

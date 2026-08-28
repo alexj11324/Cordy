@@ -4,7 +4,7 @@
 //! matching the Go server's cache/rotation boundary: rotate the secret and
 //! restart the server after the new CloudFront public key is active.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, io::BufReader, sync::Arc};
 
 use aws_config::{
     default_provider::credentials::DefaultCredentialsChain, meta::region::RegionProviderChain,
@@ -20,13 +20,11 @@ use axum::{
 use base64::Engine;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
-use rand::rngs::OsRng;
-use rsa::{
-    pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts, Pkcs1v15Sign,
-    RsaPrivateKey,
+use ring::{
+    rand::SystemRandom,
+    signature::{RsaKeyPair, RSA_PKCS1_SHA256},
 };
 use serde::Deserialize;
-use sha1::Sha1;
 use sha2::{Digest, Sha256};
 use url::Url;
 
@@ -37,7 +35,7 @@ const MAX_COOKIE_TTL: chrono::Duration = chrono::Duration::hours(1);
 #[derive(Clone)]
 pub struct CloudFrontSigner {
     key_pair_id: Arc<str>,
-    private_key: Arc<RsaPrivateKey>,
+    private_key: Arc<RsaKeyPair>,
     domain: Arc<str>,
     cookie_domain: Arc<str>,
 }
@@ -80,7 +78,7 @@ impl CloudFrontSigner {
         };
         let private_key = parse_private_key(&pem)?;
         anyhow::ensure!(
-            private_key.n().bits() >= 2048,
+            private_key.public().modulus_len() >= 256,
             "CloudFront RSA private key must be at least 2048 bits"
         );
         Ok(Some(Self {
@@ -102,7 +100,7 @@ impl CloudFrontSigner {
         let signature = self.sign(&policy)?;
         let separator = if resource.contains('?') { '&' } else { '?' };
         Ok(format!(
-            "{resource}{separator}Policy={}&Signature={}&Key-Pair-Id={}",
+            "{resource}{separator}Policy={}&Signature={}&Key-Pair-Id={}&Hash-Algorithm=SHA256",
             cloudfront_base64(policy.as_bytes()),
             cloudfront_base64(&signature),
             self.key_pair_id
@@ -116,7 +114,7 @@ impl CloudFrontSigner {
     pub fn signed_cookie_headers(
         &self,
         expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<[String; 3]> {
+    ) -> anyhow::Result<[String; 4]> {
         let resource = format!("https://{}/*", self.domain);
         let policy = policy(&resource, expiry.timestamp());
         let signature = self.sign(&policy)?;
@@ -137,10 +135,11 @@ impl CloudFrontSigner {
                 suffix
             ),
             format!("CloudFront-Key-Pair-Id={}{}", self.key_pair_id, suffix),
+            format!("CloudFront-Hash-Algorithm=SHA256{suffix}"),
         ])
     }
 
-    pub fn clear_cookie_headers(&self) -> [String; 3] {
+    pub fn clear_cookie_headers(&self) -> [String; 4] {
         let suffix = format!(
             "; Domain={}; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=None",
             self.cookie_domain
@@ -149,6 +148,7 @@ impl CloudFrontSigner {
             format!("CloudFront-Policy={suffix}"),
             format!("CloudFront-Signature={suffix}"),
             format!("CloudFront-Key-Pair-Id={suffix}"),
+            format!("CloudFront-Hash-Algorithm={suffix}"),
         ]
     }
 
@@ -156,20 +156,23 @@ impl CloudFrontSigner {
     pub(crate) fn test_signer() -> Self {
         Self {
             key_pair_id: Arc::from("KTEST"),
-            private_key: Arc::new(RsaPrivateKey::new(&mut OsRng, 2048).expect("test RSA key")),
+            private_key: Arc::new(test_private_key()),
             domain: Arc::from("static.example.test"),
             cookie_domain: Arc::from(".example.test"),
         }
     }
 
     fn sign(&self, policy: &str) -> anyhow::Result<Vec<u8>> {
-        let digest = Sha1::digest(policy.as_bytes());
-        let mut rng = OsRng;
-        // rsa 0.9 has no patched release for RUSTSEC-2023-0071. Random
-        // blinding masks this network-observable private-key operation.
+        let mut signature = vec![0; self.private_key.public().modulus_len()];
         self.private_key
-            .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha1>(), &digest)
-            .map_err(|_| anyhow::anyhow!("CloudFront policy signing failed"))
+            .sign(
+                &RSA_PKCS1_SHA256,
+                &SystemRandom::new(),
+                policy.as_bytes(),
+                &mut signature,
+            )
+            .map_err(|_| anyhow::anyhow!("CloudFront policy signing failed"))?;
+        Ok(signature)
     }
 }
 
@@ -178,7 +181,9 @@ pub async fn refresh_signed_cookies(
     request: Request,
     next: Next,
 ) -> Response {
-    let refresh = signer.is_some() && !has_cookie(request.headers(), "CloudFront-Policy");
+    let refresh = signer.is_some()
+        && (!has_cookie(request.headers(), "CloudFront-Policy")
+            || !has_cookie(request.headers(), "CloudFront-Hash-Algorithm"));
     let mut response = next.run(request).await;
     if !refresh {
         return response;
@@ -325,12 +330,36 @@ fn cloudfront_base64(value: &[u8]) -> String {
         .replace('/', "~")
 }
 
-fn parse_private_key(pem: &[u8]) -> anyhow::Result<RsaPrivateKey> {
-    let pem =
-        std::str::from_utf8(pem).map_err(|_| anyhow::anyhow!("private key is not UTF-8 PEM"))?;
-    RsaPrivateKey::from_pkcs8_pem(pem)
-        .or_else(|_| RsaPrivateKey::from_pkcs1_pem(pem))
-        .map_err(|_| anyhow::anyhow!("private key is not a valid RSA PKCS8 or PKCS1 PEM"))
+fn parse_private_key(pem: &[u8]) -> anyhow::Result<RsaKeyPair> {
+    let mut reader = BufReader::new(pem);
+    let item = rustls_pemfile::read_one(&mut reader)
+        .map_err(|_| anyhow::anyhow!("private key is not valid PEM"))?
+        .ok_or_else(|| anyhow::anyhow!("private key is not valid PEM"))?;
+    anyhow::ensure!(
+        rustls_pemfile::read_one(&mut reader)
+            .map_err(|_| anyhow::anyhow!("private key is not valid PEM"))?
+            .is_none(),
+        "private key PEM must contain exactly one key"
+    );
+    match item {
+        rustls_pemfile::Item::Pkcs8Key(key) => RsaKeyPair::from_pkcs8(key.secret_pkcs8_der()),
+        rustls_pemfile::Item::Pkcs1Key(key) => RsaKeyPair::from_der(key.secret_pkcs1_der()),
+        _ => anyhow::bail!("private key is not a valid RSA PKCS8 or PKCS1 PEM"),
+    }
+    .map_err(|_| anyhow::anyhow!("private key is not a valid RSA PKCS8 or PKCS1 PEM"))
+}
+
+#[cfg(test)]
+fn test_private_key() -> RsaKeyPair {
+    // Public test-only fixture copied from ring's RSA test suite. It is not a
+    // credential and must never be used outside tests.
+    let encoded = include_str!("../../../testdata/rsa_test_private_key_2048.pk8.b64")
+        .split_whitespace()
+        .collect::<String>();
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .expect("decode test RSA key");
+    RsaKeyPair::from_pkcs8(&der).expect("parse test RSA key")
 }
 
 #[derive(Deserialize)]
@@ -517,16 +546,10 @@ fn hmac(key: &[u8], body: &[u8]) -> anyhow::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn signer() -> CloudFrontSigner {
-        CloudFrontSigner {
-            key_pair_id: Arc::from("KTEST"),
-            private_key: Arc::new(RsaPrivateKey::new(&mut OsRng, 2048).unwrap()),
-            domain: Arc::from("static.example.test"),
-            cookie_domain: Arc::from(".example.test"),
-        }
+        CloudFrontSigner::test_signer()
     }
 
     #[test]
@@ -556,6 +579,10 @@ mod tests {
         assert_eq!(
             query.get("Key-Pair-Id").map(|value| value.as_ref()),
             Some("KTEST")
+        );
+        assert_eq!(
+            query.get("Hash-Algorithm").map(|value| value.as_ref()),
+            Some("SHA256")
         );
         assert_eq!(
             query
@@ -591,8 +618,11 @@ mod tests {
         let cookies = signer()
             .signed_cookie_headers(chrono::DateTime::from_timestamp(1_893_456_000, 0).unwrap())
             .unwrap();
-        assert_eq!(cookies.len(), 3);
-        for cookie in cookies {
+        assert_eq!(cookies.len(), 4);
+        assert!(cookies
+            .iter()
+            .any(|cookie| cookie.starts_with("CloudFront-Hash-Algorithm=SHA256;")));
+        for cookie in &cookies {
             assert!(cookie.contains("Domain=.example.test"));
             assert!(cookie.contains("HttpOnly; Secure; SameSite=None"));
             let value = cookie.split_once(';').unwrap().0;

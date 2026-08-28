@@ -24,10 +24,38 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 use crate::workspace::MemberWithUserResponse;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct InvitationAdmission {
     entries: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
     redis: Option<RecoveringConnection>,
+    limits: InvitationLimits,
+}
+
+#[derive(Clone, Copy)]
+struct InvitationLimits {
+    actor: usize,
+    workspace: usize,
+    recipient: usize,
+}
+
+impl Default for InvitationLimits {
+    fn default() -> Self {
+        Self {
+            actor: 10,
+            workspace: 50,
+            recipient: 6,
+        }
+    }
+}
+
+impl Default for InvitationAdmission {
+    fn default() -> Self {
+        Self {
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            redis: None,
+            limits: InvitationLimits::default(),
+        }
+    }
 }
 
 const REDIS_CHECK_SCRIPT: &str = r#"
@@ -67,33 +95,54 @@ struct AdmissionGate {
 }
 
 impl InvitationAdmission {
+    pub fn from_env() -> Self {
+        let defaults = InvitationLimits::default();
+        Self {
+            limits: InvitationLimits {
+                actor: invitation_limit("RATE_LIMIT_INVITATION_ACTOR_10M", defaults.actor),
+                workspace: invitation_limit(
+                    "RATE_LIMIT_INVITATION_WORKSPACE_24H",
+                    defaults.workspace,
+                ),
+                recipient: invitation_limit(
+                    "RATE_LIMIT_INVITATION_RECIPIENT_24H",
+                    defaults.recipient,
+                ),
+            },
+            ..Self::default()
+        }
+    }
+
     pub fn with_redis(mut self, redis: RecoveringConnection) -> Self {
         self.redis = Some(redis);
         self
     }
 
-    fn gates(actor_id: Uuid, workspace_id: Uuid, email: &str) -> [AdmissionGate; 3] {
+    fn gates(&self, actor_id: Uuid, workspace_id: Uuid, email: &str) -> Vec<AdmissionGate> {
         let recipient = hex::encode(Sha256::digest(email.trim().to_ascii_lowercase().as_bytes()));
         [
             AdmissionGate {
                 name: "actor",
                 key: format!("mul:invitation:actor:{actor_id}"),
-                limit: 10,
+                limit: self.limits.actor,
                 window: Duration::from_secs(600),
             },
             AdmissionGate {
                 name: "workspace",
                 key: format!("mul:invitation:workspace:{workspace_id}"),
-                limit: 50,
+                limit: self.limits.workspace,
                 window: Duration::from_secs(86_400),
             },
             AdmissionGate {
                 name: "recipient",
                 key: format!("mul:invitation:recipient:{recipient}"),
-                limit: 6,
+                limit: self.limits.recipient,
                 window: Duration::from_secs(86_400),
             },
         ]
+        .into_iter()
+        .filter(|gate| gate.limit > 0)
+        .collect()
     }
 
     async fn admit(
@@ -102,7 +151,7 @@ impl InvitationAdmission {
         workspace_id: Uuid,
         email: &str,
     ) -> Result<(), AdmissionError> {
-        let gates = Self::gates(actor_id, workspace_id, email);
+        let gates = self.gates(actor_id, workspace_id, email);
         if let Some(redis) = self.redis.as_ref() {
             return Self::admit_redis(redis, &gates).await;
         }
@@ -209,6 +258,19 @@ impl InvitationAdmission {
             }
         }
         Ok(())
+    }
+}
+
+fn invitation_limit(name: &str, default: usize) -> usize {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    match raw.trim().parse() {
+        Ok(limit) => limit,
+        Err(_) => {
+            tracing::warn!(name, value = raw, default, "invalid invitation rate limit; using default");
+            default
+        }
     }
 }
 
@@ -1070,6 +1132,26 @@ mod tests {
             .admit(actor_id, workspace_id, "another@example.com")
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn zero_limit_disables_the_corresponding_gate() {
+        let admission = InvitationAdmission {
+            limits: InvitationLimits {
+                actor: 0,
+                workspace: 0,
+                recipient: 0,
+            },
+            ..InvitationAdmission::default()
+        };
+        let actor_id = Uuid::new_v4();
+        let workspace_id = Uuid::new_v4();
+        for _ in 0..100 {
+            assert!(admission
+                .admit(actor_id, workspace_id, "recipient@example.com")
+                .await
+                .is_ok());
+        }
     }
 
     #[tokio::test]

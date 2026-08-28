@@ -27,6 +27,14 @@ mod realtime_runtime;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 
+fn build_version() -> &'static str {
+    env!("CORDY_EFFECTIVE_BUILD_VERSION")
+}
+
+fn build_commit() -> &'static str {
+    env!("CORDY_EFFECTIVE_BUILD_COMMIT")
+}
+
 struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
@@ -321,6 +329,7 @@ async fn build_production_router(
         business_metrics.clone(),
     )
     .with_observability(business_metrics, http_metrics)
+    .with_invitation_admission(cordy_handler::invitation::InvitationAdmission::from_env())
     .with_autopilot_entitlements(entitlements)
     .with_github_snapshots(github_client)
     .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
@@ -350,7 +359,7 @@ async fn build_production_router(
         cfg,
         cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed,
-        env!("CARGO_PKG_VERSION").to_string(),
+        build_version().to_string(),
     ))
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
@@ -556,6 +565,7 @@ async fn main() -> anyhow::Result<()> {
         .server_addr(console_addr)
         .spawn();
     let log_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
         .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
             cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
         ))
@@ -589,10 +599,8 @@ async fn main() -> anyhow::Result<()> {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
             daemonws: Some(&cordy_daemon::hub::M),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            commit: option_env!("CORDY_GIT_COMMIT")
-                .unwrap_or("unknown")
-                .to_string(),
+            version: build_version().to_string(),
+            commit: build_commit().to_string(),
             sampler: dedicated_sampler_pool(&cfg.database),
         });
         let business = registry.business.clone();
@@ -696,6 +704,11 @@ async fn main() -> anyhow::Result<()> {
         analytics,
     } = app;
     let http_shutdown = CancellationToken::new();
+    let shutdown_hold = duration_env(
+        "CORDY_SHUTDOWN_HOLD_DURATION",
+        Duration::ZERO,
+        true,
+    );
     let mut server = std::pin::pin!(http_serve::serve_with_bounded_drain(
         listener,
         router,
@@ -707,7 +720,7 @@ async fn main() -> anyhow::Result<()> {
         result = server.as_mut() => result.map(|timed_out| {
             http_drain_timed_out = timed_out;
         }),
-        () = shutdown_signal() => {
+        () = shutdown_signal(shutdown_hold) => {
             http_shutdown.cancel();
             server.as_mut().await.map(|timed_out| {
                 http_drain_timed_out = timed_out;
@@ -880,7 +893,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn shutdown_signal() {
+async fn wait_for_shutdown_signal() {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
@@ -903,7 +916,27 @@ async fn shutdown_signal() {
         () = ctrl_c => {},
         () = terminate => {},
     }
-    tracing::info!("shutdown signal received; draining HTTP server");
+}
+
+async fn shutdown_signal(hold: Duration) {
+    wait_for_shutdown_signal().await;
+    if hold.is_zero() {
+        tracing::info!("shutdown signal received; draining HTTP server");
+        return;
+    }
+
+    tracing::info!(
+        hold_seconds = hold.as_secs_f64(),
+        "shutdown signal received; holding admission before drain"
+    );
+    tokio::select! {
+        () = tokio::time::sleep(hold) => {
+            tracing::info!("shutdown hold complete; draining HTTP server");
+        }
+        () = wait_for_shutdown_signal() => {
+            tracing::warn!("second shutdown signal received; skipping shutdown hold");
+        }
+    }
 }
 
 #[cfg(test)]

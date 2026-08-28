@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     let cancellation = CancellationToken::new();
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
-    let pool = PgPoolOptions::new().max_connections(2).connect(&db_url);
+    let pool = PgPoolOptions::new().max_connections(2).connect(db_url);
     let pool = tokio::select! {
         result = pool => result.context("connect to database")?,
         _ = &mut shutdown => anyhow::bail!("backfill interrupted by signal"),

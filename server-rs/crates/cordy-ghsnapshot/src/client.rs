@@ -150,8 +150,7 @@ impl Client {
         Self::with_encoding_key(app_id, private_key, api_base, now)
     }
 
-    /// Test constructor taking an already-parsed key (jsonwebtoken cannot
-    /// generate RSA keys, so tests build one via the `rsa` dev-dependency).
+    /// Test/ops constructor taking an already-parsed key.
     pub fn with_encoding_key(
         app_id: String,
         private_key: EncodingKey,
@@ -676,29 +675,27 @@ fn header<'a>(response: &'a reqwest::Response, name: &str) -> Option<&'a str> {
     response.headers().get(name)?.to_str().ok()
 }
 
+#[cfg(test)]
+pub(crate) fn test_encoding_key() -> EncodingKey {
+    // Public test-only fixture copied from ring's RSA test suite. It is not a
+    // credential and must never be used outside tests.
+    let pem = format!(
+        "-----BEGIN PRIVATE KEY-----\n{}-----END PRIVATE KEY-----\n",
+        include_str!("../../../testdata/rsa_test_private_key_2048.pk8.b64")
+    );
+    EncodingKey::from_rsa_pem(pem.as_bytes()).expect("parse test RSA key")
+}
+
 // JWT claim-shape test: verifies the signed token carries iat/exp/iss the
-// way Go's jwt.MapClaims did. The key is generated at test time because a
-// hardcoded PEM fixture would be a (fake) credential in the tree.
+// way Go's jwt.MapClaims did.
 #[cfg(test)]
 mod jwt_tests {
     use super::*;
 
-    fn generated_key() -> EncodingKey {
-        use rand::rngs::StdRng;
-        use rand::SeedableRng;
-        use rsa::pkcs8::EncodePrivateKey;
-        let mut rng = StdRng::seed_from_u64(0xC0FFEE);
-        let key = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa generation");
-        let pem = key
-            .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
-            .expect("pem encode");
-        EncodingKey::from_rsa_pem(pem.as_bytes()).expect("parse generated pem")
-    }
-
     fn test_client(now: SystemTime) -> Client {
         Client::with_encoding_key(
             "42".to_string(),
-            generated_key(),
+            test_encoding_key(),
             DEFAULT_API_BASE.to_string(),
             Box::new(move || now),
         )

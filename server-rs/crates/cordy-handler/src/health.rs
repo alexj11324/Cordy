@@ -28,10 +28,7 @@ async fn live() -> impl IntoResponse {
 /// Readiness — reports DB state (K8s readiness semantics): 200 when the DB
 /// answers, 503 with an error body when not.
 async fn ready(State(state): State<HandlerState>) -> Response {
-    match sqlx::query_scalar::<_, i32>("select 1")
-        .fetch_one(&state.pool)
-        .await
-    {
+    match cordy_db::check_ready(&state.pool).await {
         Ok(_) => (StatusCode::OK, Json(json!({ "status": "ready" }))).into_response(),
         Err(e) => {
             tracing::error!(error = %e, "readyz: db ping failed");

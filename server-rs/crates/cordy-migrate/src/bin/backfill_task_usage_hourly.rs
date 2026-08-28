@@ -59,10 +59,15 @@ async fn main() -> anyhow::Result<()> {
         sleep_between_slices: args.sleep_between_slices,
     };
 
-    tokio::select! {
-        result = run_standalone(&pool, options) => result,
-        _ = shutdown_signal() => Err(anyhow::anyhow!("backfill interrupted by signal")),
-    }
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let signal_shutdown = shutdown.clone();
+    let signal_task = tokio::spawn(async move {
+        shutdown_signal().await;
+        signal_shutdown.cancel();
+    });
+    let result = run_standalone(&pool, options, shutdown).await;
+    signal_task.abort();
+    result
 }
 
 async fn shutdown_signal() {

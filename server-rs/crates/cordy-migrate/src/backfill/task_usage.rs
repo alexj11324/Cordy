@@ -111,8 +111,8 @@ pub async fn hook(pool: &PgPool) -> anyhow::Result<()> {
         .await;
     drop(lock_conn);
 
-    stamp_watermark(pool).await?;
     result?;
+    stamp_watermark(pool).await?;
     Ok(())
 }
 
@@ -155,7 +155,11 @@ pub struct StandaloneOptions {
 /// Runs the standalone task-usage backfill while holding the shared session
 /// advisory lock. The migration hook and this command intentionally use the
 /// same monthly rollup primitive and watermark update.
-pub async fn run_standalone(pool: &PgPool, options: StandaloneOptions) -> anyhow::Result<()> {
+pub async fn run_standalone(
+    pool: &PgPool,
+    options: StandaloneOptions,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
     if options.months_back < 0 {
         anyhow::bail!("--months-back must be non-negative");
     }
@@ -170,7 +174,7 @@ pub async fn run_standalone(pool: &PgPool, options: StandaloneOptions) -> anyhow
         .await
         .context("acquire advisory lock 4246")?;
 
-    let result = run_standalone_locked(pool, &mut lock_conn, options).await;
+    let result = run_standalone_locked(pool, &mut *lock_conn, options, shutdown).await;
     let unlock_result = sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(ADVISORY_LOCK_KEY)
         .execute(&mut *lock_conn)
@@ -186,9 +190,12 @@ async fn run_standalone_locked(
     pool: &PgPool,
     conn: &mut PgConnection,
     options: StandaloneOptions,
+    shutdown: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
     let (min_ts, max_ts): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) =
-        sqlx::query_as("SELECT MIN(created_at), MAX(created_at) FROM task_usage")
+        sqlx::query_as(
+            "SELECT MIN(created_at), MAX(COALESCE(updated_at, created_at)) FROM task_usage",
+        )
             .fetch_one(pool)
             .await
             .context("scan task_usage time range")?;
@@ -242,6 +249,9 @@ async fn run_standalone_locked(
     let mut cursor = from;
     let mut total_rows: i64 = 0;
     while cursor < end {
+        if shutdown.is_cancelled() {
+            anyhow::bail!("backfill interrupted by signal");
+        }
         let next = add_month(cursor)?;
         if options.dry_run {
             tracing::info!(
@@ -269,7 +279,10 @@ async fn run_standalone_locked(
         );
         cursor = next;
         if !options.sleep_between_slices.is_zero() && cursor < end {
-            tokio::time::sleep(options.sleep_between_slices).await;
+            tokio::select! {
+                () = tokio::time::sleep(options.sleep_between_slices) => {}
+                () = shutdown.cancelled() => anyhow::bail!("backfill interrupted by signal"),
+            }
         }
     }
 
@@ -278,6 +291,9 @@ async fn run_standalone_locked(
         return Ok(());
     }
 
+    // Once the slice walk is complete, do not observe cancellation until the
+    // final watermark write finishes. Leaving all buckets updated with the old
+    // watermark makes the next migration/backfill repeat completed work.
     stamp_and_report(pool).await?;
     tracing::info!(total_rows_touched = total_rows, "backfill complete");
     Ok(())

@@ -1,6 +1,14 @@
 //! Shared migration backfills used by the migration runner and operator tools.
 
 pub mod backfill;
+mod files;
+
+/// Every migration version required by the current source tree, in apply
+/// order. Runtime readiness and the migration CLI share this discovery logic
+/// so neither can accidentally treat a database with an interior gap as ready.
+pub fn required_versions() -> anyhow::Result<Vec<String>> {
+    files::all_versions()
+}
 
 /// Install the same process logger for the migration runner and every
 /// backfill binary. Keeping this at the package boundary avoids four subtly

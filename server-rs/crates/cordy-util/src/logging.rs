@@ -21,13 +21,17 @@ pub fn env_filter() -> String {
 /// level parsing can be tested without mutating process-global environment.
 pub fn filter_from_values(log_level: Option<&str>, rust_log: Option<&str>) -> String {
     match log_level {
-        Some(value) => normalize_level(value).to_string(),
+        Some(value) => cordy_scoped_filter(normalize_level(value)),
         None => rust_log
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .unwrap_or(DEFAULT_LEVEL)
-            .to_string(),
+            .map(str::to_string)
+            .unwrap_or_else(|| cordy_scoped_filter(DEFAULT_LEVEL)),
     }
+}
+
+fn cordy_scoped_filter(level: &str) -> String {
+    format!("warn,cordy={level}")
 }
 
 /// Parse the values accepted by the Go logger. Unknown and empty values
@@ -61,8 +65,14 @@ mod tests {
 
     #[test]
     fn log_level_takes_precedence_over_rust_log() {
-        assert_eq!(filter_from_values(Some("warn"), Some("trace")), "warn");
-        assert_eq!(filter_from_values(Some("invalid"), Some("trace")), "debug");
+        assert_eq!(
+            filter_from_values(Some("warn"), Some("trace")),
+            "warn,cordy=warn"
+        );
+        assert_eq!(
+            filter_from_values(Some("invalid"), Some("trace")),
+            "warn,cordy=debug"
+        );
     }
 
     #[test]
@@ -71,8 +81,8 @@ mod tests {
             filter_from_values(None, Some("cordy=trace,tower=info")),
             "cordy=trace,tower=info"
         );
-        assert_eq!(filter_from_values(None, Some("  ")), "debug");
-        assert_eq!(filter_from_values(None, None), "debug");
+        assert_eq!(filter_from_values(None, Some("  ")), "warn,cordy=debug");
+        assert_eq!(filter_from_values(None, None), "warn,cordy=debug");
     }
 
     #[test]

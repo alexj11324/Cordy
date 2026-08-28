@@ -24,6 +24,4 @@ sqlx = { workspace = true }
 
 [dev-dependencies]
 base64 = "0.22"
-rand = { workspace = true }
-rsa = { version = "0.9", features = ["pem"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

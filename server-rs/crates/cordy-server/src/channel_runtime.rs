@@ -1358,13 +1358,13 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        app_url, channel_secret_box, configure_telegram, configure_wecom_security,
-        lease_backend_settings, start_media_reconciler, ChannelRouter, ChannelServices,
-        ChannelStorage, LeaseBackendSettings, RouterConfig,
+        app_url, channel_secret_box, configure_dingtalk, configure_lark, configure_telegram,
+        configure_wecom, configure_wecom_security, lease_backend_settings, start_media_reconciler,
+        ChannelRouter, ChannelRuntimeDeps, ChannelServices, ChannelStorage, LeaseBackendSettings,
+        RouterConfig,
     };
-    use cordy_lark::client::ApiClient as _;
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{Arc, OnceLock};
 
     struct TempStorageDir(PathBuf);
 
@@ -1374,63 +1374,211 @@ mod tests {
         }
     }
 
-    #[test]
-    fn lark_runtime_requires_a_valid_secret_and_uses_the_real_client() {
-        const KEY_ENV: &str = "CORDY_TEST_LARK_SECRET_KEY";
-
-        std::env::remove_var(KEY_ENV);
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
-
-        std::env::set_var(KEY_ENV, "not-base64");
-        assert!(channel_secret_box(KEY_ENV).is_err());
-
-        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
-        std::env::remove_var(KEY_ENV);
-
-        let api = cordy_lark::http_client::HttpApiClient::new(Default::default());
-        assert!(api.is_configured());
+    struct RuntimeTestSetup {
+        state: cordy_handler::HandlerState,
+        cfg: cordy_config::Config,
+        router: Arc<ChannelRouter>,
+        registry: Arc<cordy_channel::Registry>,
     }
 
-    #[test]
-    fn wecom_runtime_requires_a_valid_secret_and_constructs_the_real_dialer() {
-        const KEY_ENV: &str = "CORDY_TEST_WECOM_SECRET_KEY";
+    impl RuntimeTestSetup {
+        fn new() -> Self {
+            let state = cordy_handler::HandlerState::new(
+                sqlx::PgPool::connect_lazy("postgres://127.0.0.1:1/invalid").unwrap(),
+                cordy_auth::pat_cache::PatCache::disabled(),
+                None,
+            );
+            let services = Arc::new(ChannelServices {
+                pool: state.pool.clone(),
+                issues: state.issues.clone(),
+                tasks: state.tasks.clone(),
+            });
+            let router = ChannelRouter::new(
+                services.clone(),
+                services.clone(),
+                services,
+                RouterConfig::default(),
+            );
+            Self {
+                state,
+                cfg: cordy_config::Config::default(),
+                router,
+                registry: Arc::new(cordy_channel::Registry::new()),
+            }
+        }
 
-        std::env::remove_var(KEY_ENV);
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
+        fn deps(&self) -> ChannelRuntimeDeps<'_> {
+            ChannelRuntimeDeps {
+                state: &self.state,
+                cfg: &self.cfg,
+                router: &self.router,
+                storage: None,
+                registry: &self.registry,
+                cancel: &self.state.channel_cancel,
+                outbound_tasks: &self.state.channel_tasks,
+            }
+        }
+    }
 
-        std::env::set_var(KEY_ENV, "not-base64");
-        assert!(channel_secret_box(KEY_ENV).is_err());
+    struct EnvRestore {
+        key: &'static str,
+        original: Option<std::ffi::OsString>,
+    }
 
-        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
-        std::env::remove_var(KEY_ENV);
+    impl EnvRestore {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+    }
 
-        cordy_wecom::ws_sender::DefaultDialer::new().unwrap();
-        assert_eq!(
-            cordy_wecom::wecom_channel::DEFAULT_WS_URL,
-            "wss://openws.work.weixin.qq.com"
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match self.original.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    const ZERO_KEY: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    // SecretBox wire fixture for ZERO_KEY + a zero nonce + "123456:test-token".
+    const SEALED_TEST_SECRET: &str = "AAAAAAAAAAAAAAAA/5VzCXhWURpiPbH+zpz2fRywHKYN3+Y5+wsRBx2QX13v";
+
+    fn production_env_lock() -> &'static tokio::sync::Mutex<()> {
+        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+    }
+
+    #[tokio::test]
+    async fn lark_production_configuration_registers_real_channel_factory() {
+        let _env_lock = production_env_lock().lock().await;
+        let _env = EnvRestore::set("CORDY_LARK_SECRET_KEY", ZERO_KEY);
+        let setup = RuntimeTestSetup::new();
+
+        let backfill = configure_lark(&setup.deps(), None)
+            .expect("configure production Lark runtime")
+            .expect("valid Lark secret starts the production backfill");
+        let lark = cordy_channel::Type::feishu();
+        assert_eq!(setup.registry.types(), vec![lark.clone()]);
+
+        let channel = setup
+            .registry
+            .build(cordy_channel::Config {
+                r#type: lark.clone(),
+                raw: serde_json::json!({
+                    "app_id": "cli_test",
+                    "app_secret_encrypted": SEALED_TEST_SECRET,
+                    "region": "feishu",
+                }),
+                ..Default::default()
+            })
+            .await
+            .expect("production Lark factory builds its WebSocket channel");
+        assert_eq!(channel.r#type(), lark);
+        assert!(channel
+            .capabilities()
+            .contains(cordy_channel::Capability::TEXT));
+
+        // The backfill is ancillary to this assembly contract and must not
+        // outlive the test's intentionally disconnected pool.
+        backfill.abort();
+        let _ = backfill.await;
+    }
+
+    #[tokio::test]
+    async fn wecom_production_configuration_registers_default_websocket_factory() {
+        let _env_lock = production_env_lock().lock().await;
+        let _env = EnvRestore::set("CORDY_WECOM_SECRET_KEY", ZERO_KEY);
+        let setup = RuntimeTestSetup::new();
+
+        let runtime = configure_wecom(&setup.deps(), None).expect("configure production WeCom");
+        assert!(runtime.relay.is_none());
+        assert!(runtime.tasks.is_empty());
+        let wecom = cordy_wecom::type_wecom();
+        assert_eq!(setup.registry.types(), vec![wecom.clone()]);
+
+        let channel = setup
+            .registry
+            .build(cordy_channel::Config {
+                r#type: wecom.clone(),
+                raw: serde_json::json!({
+                    "bot_id": "bot-test",
+                    "secret_encrypted": SEALED_TEST_SECRET,
+                }),
+                handler: Some(cordy_channel::InboundHandler::new(|_, _| {
+                    Box::pin(async { Ok(()) })
+                })),
+                ..Default::default()
+            })
+            .await
+            .expect("production WeCom factory decrypts and builds the channel");
+        assert_eq!(channel.r#type(), wecom);
+
+        // Production passes no dialer or URL override. A pre-cancelled
+        // connect still enters the real default dialer and reports the exact
+        // production endpoint without making a network connection.
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        let error = channel
+            .connect(cancel)
+            .await
+            .expect_err("cancelled production WeCom dial must stop");
+        assert!(format!("{error:#}").contains(cordy_wecom::wecom_channel::DEFAULT_WS_URL));
+    }
+
+    #[tokio::test]
+    async fn dingtalk_production_configuration_registers_router_and_factory() {
+        let _env_lock = production_env_lock().lock().await;
+        let _env = EnvRestore::set("CORDY_DINGTALK_SECRET_KEY", ZERO_KEY);
+        let setup = RuntimeTestSetup::new();
+
+        configure_dingtalk(
+            &setup.state,
+            &setup.cfg,
+            &setup.router,
+            None,
+            &setup.registry,
+            &setup.state.channel_tasks,
         );
-    }
-
-    #[test]
-    fn dingtalk_runtime_requires_a_valid_secret_and_constructs_the_real_client() {
-        const KEY_ENV: &str = "CORDY_TEST_DINGTALK_SECRET_KEY";
-
-        std::env::remove_var(KEY_ENV);
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
-
-        std::env::set_var(KEY_ENV, "not-base64");
-        assert!(channel_secret_box(KEY_ENV).is_err());
-
-        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
-        std::env::remove_var(KEY_ENV);
-
-        let _client = cordy_dingtalk::client::Client::new(None, "");
+        let dingtalk = cordy_dingtalk::channel_type();
+        assert_eq!(setup.registry.types(), vec![dingtalk.clone()]);
+        let channel = setup
+            .registry
+            .build(cordy_channel::Config {
+                r#type: dingtalk.clone(),
+                raw: serde_json::json!({
+                    "app_id": "ding-test",
+                    "robot_code": "ding-test",
+                    "app_secret_encrypted": SEALED_TEST_SECRET,
+                }),
+                ..Default::default()
+            })
+            .await
+            .expect("production DingTalk factory decrypts and builds the channel");
+        assert_eq!(channel.r#type(), dingtalk.clone());
         assert_eq!(
             cordy_dingtalk::client::DEFAULT_API_BASE,
             "https://api.dingtalk.com"
+        );
+
+        let error = setup
+            .router
+            .handle(cordy_channel::InboundMessage {
+                event_id: "event-test".into(),
+                message_id: "message-test".into(),
+                source: cordy_channel::Source {
+                    channel_type: dingtalk,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
+            .expect_err("disconnected DB prevents installation resolution");
+        assert!(
+            !format!("{error:#}").contains("no resolver set"),
+            "production configure_dingtalk must register the router resolver set"
         );
     }
 
