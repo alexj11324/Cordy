@@ -46,14 +46,14 @@ const ISSUE_SLASH_COMMAND: &str = "/issue";
 const SLASH_USAGE_TEXT: &str =
     "Tell me what to file, e.g. `/issue the login button does nothing on Safari`.";
 const SLASH_QUEUED_TEXT: &str =
-    "✅ On it — I'm turning that into an issue. You'll get a Cordy notification when it's ready.";
+    "✅ On it — I'm turning that into an issue. You'll get a Patchbay notification when it's ready.";
 const SLASH_NOT_MEMBER_TEXT: &str =
-    "You're not a member of this Cordy workspace, so I can't file an issue for you.";
+    "You're not a member of this Patchbay workspace, so I can't file an issue for you.";
 const SLASH_LINK_ACCOUNT_FALLBACK: &str =
-    "Link your Slack account to Cordy first, then try `/issue` again.";
+    "Link your Slack account to Patchbay first, then try `/issue` again.";
 const SLASH_INTERNAL_ERROR_TEXT: &str =
     "⚠️ Something went wrong creating the issue. Please try again.";
-const SLASH_DISABLED_TEXT: &str = "This Slack app isn't connected to Cordy (or was disconnected). Ask a workspace admin to reconnect it.";
+const SLASH_DISABLED_TEXT: &str = "This Slack app isn't connected to Patchbay (or was disconnected). Ask a workspace admin to reconnect it.";
 
 /// The narrow slice of TaskService the slash command needs to hand the
 /// invoker's prompt to the agent. Implemented by
@@ -326,7 +326,7 @@ impl SlashCommandProcessor {
         // Wrap the URL as an explicit Slack link so the base64url token's `_`/`-`
         // are not mangled by mrkdwn (same reasoning as the replier).
         format!(
-            "👋 To file issues, link your Slack account to Cordy: <{bind_url}|link your account>\n(This link expires in 15 minutes.)"
+            "👋 To file issues, link your Slack account to Patchbay: <{bind_url}|link your account>\n(This link expires in 15 minutes.)"
         )
     }
 }

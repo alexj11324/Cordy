@@ -1255,6 +1255,7 @@ dependencies = [
  "cordy-util",
  "cordy-vcs",
  "cordy-wecom",
+ "cordy-weixin",
  "crc32fast",
  "futures-util",
  "hex",
@@ -1506,6 +1507,7 @@ dependencies = [
  "cordy-telegram",
  "cordy-util",
  "cordy-wecom",
+ "cordy-weixin",
  "flate2",
  "http-body-util",
  "hyper",
@@ -1656,6 +1658,33 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "ulid",
+ "uuid",
+]
+
+[[package]]
+name = "cordy-weixin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "chrono",
+ "cordy-channel",
+ "cordy-channel-engine",
+ "cordy-db",
+ "cordy-events",
+ "cordy-protocol",
+ "rand 0.8.7",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
  "uuid",
 ]
 

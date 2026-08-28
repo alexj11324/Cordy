@@ -87,6 +87,7 @@ impl ChannelRuntime {
             &cancel,
             &outbound_tasks,
         );
+        configure_weixin(state, cfg, &router, &registry, &outbound_tasks);
         let runtime_deps = ChannelRuntimeDeps {
             state,
             cfg,
@@ -519,6 +520,54 @@ fn configure_telegram(
             decrypt: Some(decrypt),
             api_base: String::new(),
             media_enabled,
+        },
+    );
+}
+
+fn configure_weixin(
+    state: &cordy_handler::HandlerState,
+    cfg: &cordy_config::Config,
+    router: &Arc<ChannelRouter>,
+    registry: &Arc<cordy_channel::Registry>,
+    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
+) {
+    let secret_box = match channel_secret_box("CORDY_WEIXIN_SECRET_KEY") {
+        Ok(Some(secret_box)) => Arc::new(secret_box),
+        Ok(None) => {
+            tracing::info!("weixin channel runtime disabled: CORDY_WEIXIN_SECRET_KEY not set");
+            return;
+        }
+        Err(error) => {
+            tracing::error!(%error, "weixin channel runtime disabled: invalid secret key");
+            return;
+        }
+    };
+    let decrypt_box = secret_box.clone();
+    let decrypt: Arc<cordy_weixin::config::DecrypterFn> =
+        Arc::new(move |sealed| decrypt_box.open(sealed).map_err(anyhow::Error::from));
+    let seal_box = secret_box.clone();
+    let seal: Arc<cordy_weixin::resolvers::ContextSealer> =
+        Arc::new(move |plaintext| seal_box.seal(plaintext).map_err(anyhow::Error::from));
+
+    let replier = Arc::new(cordy_weixin::replier::OutboundReplier::new(
+        state.pool.clone(),
+        Some(decrypt.clone()),
+        app_url(cfg),
+    ));
+    router.register(
+        cordy_channel::Type(cordy_weixin::TYPE_WEIXIN.to_string()),
+        cordy_weixin::resolvers::resolver_set(state.pool.clone(), Some(replier), seal),
+    );
+    Arc::new(cordy_weixin::outbound::Outbound::new(
+        state.pool.clone(),
+        Some(decrypt.clone()),
+    ))
+    .register(&state.bus, outbound_tasks.clone());
+    cordy_weixin::channel::register(
+        registry,
+        cordy_weixin::channel::ChannelDeps {
+            decrypt: Some(decrypt),
+            pool: Some(state.pool.clone()),
         },
     );
 }

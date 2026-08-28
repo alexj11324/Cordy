@@ -194,6 +194,10 @@ pub const EVENT_WECOM_INSTALLATION_REVOKED: &str = "wecom_installation:revoked";
 pub const EVENT_TELEGRAM_INSTALLATION_CREATED: &str = "telegram_installation:created";
 pub const EVENT_TELEGRAM_INSTALLATION_REVOKED: &str = "telegram_installation:revoked";
 
+// Personal WeChat iLink installation lifecycle (distinct from WeCom).
+pub const EVENT_WEIXIN_INSTALLATION_CREATED: &str = "weixin_installation:created";
+pub const EVENT_WEIXIN_INSTALLATION_REVOKED: &str = "weixin_installation:revoked";
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -42,6 +42,7 @@ cordy-task-failure = { path = "../cordy-task-failure" }
 cordy-util = { path = "../cordy-util" }
 cordy-vcs = { path = "../cordy-vcs" }
 cordy-wecom = { path = "../cordy-wecom" }
+cordy-weixin = { path = "../cordy-weixin" }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }

@@ -313,3 +313,10 @@ export type {
   WorkspaceSubscriptionSeatReconcileResult,
   CreateWorkspaceSubscriptionPortalResponse,
 } from "./billing";
+export type {
+  WeixinInstallation,
+  ListWeixinInstallationsResponse,
+  BeginWeixinInstallResponse,
+  WeixinInstallStatusResponse,
+  RedeemWeixinBindingTokenResponse,
+} from "./weixin";

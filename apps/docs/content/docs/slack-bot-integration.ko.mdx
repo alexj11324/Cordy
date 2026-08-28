@@ -5,13 +5,13 @@ description: 에이전트용 Slack Bot을 만들어 DM, 채널, /issue 명령에
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy는 사용자가 직접 만든 Slack app을 사용합니다. 연결하면 팀 멤버가 Bot과 DM을 나누고 채널에서 @멘션하거나 `/issue`로 이슈를 만들 수 있습니다.
+Patchbay는 사용자가 직접 만든 Slack app을 사용합니다. 연결하면 팀 멤버가 Bot과 DM을 나누고 채널에서 @멘션하거나 `/issue`로 이슈를 만들 수 있습니다.
 
-Slack app 하나는 Cordy 에이전트 하나에 대응합니다. 여러 에이전트를 연결하려면 에이전트마다 별도의 app을 만드세요.
+Slack app 하나는 Patchbay 에이전트 하나에 대응합니다. 여러 에이전트를 연결하려면 에이전트마다 별도의 app을 만드세요.
 
 ## 시작하기 전에
 
-연결은 워크스페이스 owner 또는 admin이 완료해야 하며 마지막에 두 자격 증명을 Cordy에 입력합니다.
+연결은 워크스페이스 owner 또는 admin이 완료해야 하며 마지막에 두 자격 증명을 Patchbay에 입력합니다.
 
 - `xoxb-`로 시작하는 Bot User OAuth Token
 - `xapp-`로 시작하는 App-level Token
@@ -22,18 +22,18 @@ Slack app 하나는 Cordy 에이전트 하나에 대응합니다. 여러 에이�
 
 ```yaml
 display_information:
-  name: Cordy
+  name: Patchbay
 features:
   app_home:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Cordy
+    display_name: Patchbay
     always_online: true
   slash_commands:
     - command: /issue
-      description: Create a Cordy issue
+      description: Create a Patchbay issue
       usage_hint: "[description]"
 oauth_config:
   scopes:
@@ -63,7 +63,7 @@ settings:
   token_rotation_enabled: false
 ```
 
-만들기 전에 두 `Cordy` 값을 에이전트 이름으로 바꿀 수 있습니다. manifest의 권한이나 이벤트를 삭제하지 마세요. 삭제하면 DM, 채널 멘션, 답글, `/issue`가 작동하지 않을 수 있습니다.
+만들기 전에 두 `Patchbay` 값을 에이전트 이름으로 바꿀 수 있습니다. manifest의 권한이나 이벤트를 삭제하지 마세요. 삭제하면 DM, 채널 멘션, 답글, `/issue`가 작동하지 않을 수 있습니다.
 
 <Callout type="warning">
 첨부 파일 지원이 추가되기 전에 이 Slack app을 설치했다면 Bot scope에 `files:read`를 추가하고 workspace에 app을 다시 설치하세요. app을 다시 설치하기 전에는 새 scope가 기존 Bot token에 적용되지 않습니다.
@@ -88,24 +88,24 @@ Bot은 Socket Mode로 Slack에 능동적으로 연결하므로 공개 Request UR
 
 ## 3. 에이전트에 연결
 
-1. Cordy에서 **에이전트**를 열고 Slack에 연결할 에이전트를 선택합니다.
+1. Patchbay에서 **에이전트**를 열고 Slack에 연결할 에이전트를 선택합니다.
 2. **연동**으로 이동해 **Slack 연결**을 클릭합니다.
 3. Bot token과 App-level token을 입력합니다.
 4. **연결**을 클릭합니다.
 
-Cordy가 두 token이 같은 app에서 발급되었는지 확인합니다. 연결에 성공하면 페이지에 **Slack에 연결됨**이 표시됩니다.
+Patchbay가 두 token이 같은 app에서 발급되었는지 확인합니다. 연결에 성공하면 페이지에 **Slack에 연결됨**이 표시됩니다.
 
 <Callout type="warning">
-두 token은 Cordy 서버에 암호화되어 저장됩니다. Token은 자격 증명이므로 이슈, 댓글, 코드 저장소에 넣지 마세요. 이미 다른 에이전트나 워크스페이스에 연결된 app은 바로 재사용할 수 없으며 기존 연결을 먼저 해제해야 합니다.
+두 token은 Patchbay 서버에 암호화되어 저장됩니다. Token은 자격 증명이므로 이슈, 댓글, 코드 저장소에 넣지 마세요. 이미 다른 에이전트나 워크스페이스에 연결된 app은 바로 재사용할 수 없으며 기존 연결을 먼저 해제해야 합니다.
 </Callout>
 
 ## 처음 사용
 
-멤버가 처음으로 Bot과 DM을 나누거나 @멘션하면 계정 연결 링크를 받습니다. 해당 워크스페이스의 Cordy 계정으로 로그인한 뒤 Slack으로 돌아가 메시지를 다시 보내세요.
+멤버가 처음으로 Bot과 DM을 나누거나 @멘션하면 계정 연결 링크를 받습니다. 해당 워크스페이스의 Patchbay 계정으로 로그인한 뒤 Slack으로 돌아가 메시지를 다시 보내세요.
 
-링크는 한 번만 사용할 수 있고 15분 뒤 만료됩니다. 만료되면 Bot에 메시지를 하나 더 보내 새 링크를 받으면 됩니다. 같은 Cordy 워크스페이스의 여러 Bot이 같은 Slack workspace에서 만들어졌다면 기존 연결을 보통 재사용할 수 있습니다.
+링크는 한 번만 사용할 수 있고 15분 뒤 만료됩니다. 만료되면 Bot에 메시지를 하나 더 보내 새 링크를 받으면 됩니다. 같은 Patchbay 워크스페이스의 여러 Bot이 같은 Slack workspace에서 만들어졌다면 기존 연결을 보통 재사용할 수 있습니다.
 
-현재 Cordy 워크스페이스의 멤버만 Bot을 사용할 수 있습니다.
+현재 Patchbay 워크스페이스의 멤버만 Bot을 사용할 수 있습니다.
 
 ## Slack에서 작업 요청
 
@@ -133,7 +133,7 @@ DM이나 Bot을 @멘션한 채널 메시지에 파일을 그대로 첨부하세�
 /issue Safari에서 로그인에 성공해도 로그인 페이지에 계속 머뭅니다.
 ```
 
-이 명령에는 Bot @멘션이 필요 없습니다. Cordy가 설명을 현재 Bot에 연결된 에이전트로 보내고 에이전트가 제목과 본문을 정리해 이슈를 만듭니다. Slack에는 먼저 나에게만 보이는 접수 메시지가 표시되며 생성이 끝나면 Cordy 인박스에 알림이 도착합니다.
+이 명령에는 Bot @멘션이 필요 없습니다. Patchbay가 설명을 현재 Bot에 연결된 에이전트로 보내고 에이전트가 제목과 본문을 정리해 이슈를 만듭니다. Slack에는 먼저 나에게만 보이는 접수 메시지가 표시되며 생성이 끝나면 Patchbay 인박스에 알림이 도착합니다.
 
 ## 연결 관리
 
@@ -143,7 +143,7 @@ DM이나 Bot을 @멘션한 채널 메시지에 파일을 그대로 첨부하세�
 
 ## 자체 호스팅 설정
 
-Cordy Cloud에는 추가 설정이 필요 없습니다. 자체 호스팅 환경에서는 Slack token 암호화에 사용할 키를 먼저 설정해야 합니다.
+Patchbay Cloud에는 추가 설정이 필요 없습니다. 자체 호스팅 환경에서는 Slack token 암호화에 사용할 키를 먼저 설정해야 합니다.
 
 ```dotenv
 CORDY_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
@@ -157,7 +157,7 @@ openssl rand -base64 32
 
 API 서비스를 다시 시작한 뒤 Slack app을 연결하세요. 이 키는 장기간 보관해야 합니다. 키를 바꾸거나 잃어버리면 기존 token을 복호화할 수 없으므로 다시 연결해야 합니다.
 
-계정 연결 링크는 `CORDY_APP_URL`을 사용하고, 설정되지 않으면 `FRONTEND_ORIGIN`을 사용합니다. 멤버가 접근할 수 있는 Cordy 주소를 지정해야 합니다.
+계정 연결 링크는 `CORDY_APP_URL`을 사용하고, 설정되지 않으면 `FRONTEND_ORIGIN`을 사용합니다. 멤버가 접근할 수 있는 Patchbay 주소를 지정해야 합니다.
 
 ## 자주 묻는 문제
 

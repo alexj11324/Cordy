@@ -208,7 +208,7 @@ describe("GitHubTab", () => {
     render(<GitHubTab />, { wrapper: I18nWrapper });
 
     await user.click(screen.getByRole("button", { name: /^Disconnect$/ }));
-    expect(screen.getByText(/Cordy will stop receiving webhooks/i)).toBeTruthy();
+    expect(screen.getByText(/Patchbay will stop receiving webhooks/i)).toBeTruthy();
     expect(mockDeleteInstallation).not.toHaveBeenCalled();
 
     const dialogConfirm = screen

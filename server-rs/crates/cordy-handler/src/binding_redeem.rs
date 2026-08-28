@@ -29,7 +29,7 @@ use crate::HandlerState;
 
 const WECOM_BODY_LIMIT: usize = 16 * 1024;
 
-/// Deployment gates for the five channel integrations. They are kept in this
+/// Deployment gates for the channel integrations. They are kept in this
 /// route-local state so the routes preserve Go's 503 behavior without making
 /// the shared handler state depend on every connector crate.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -39,6 +39,7 @@ pub struct BindingRedeemAvailability {
     pub wecom: bool,
     pub dingtalk: bool,
     pub telegram: bool,
+    pub weixin: bool,
 }
 
 impl BindingRedeemAvailability {
@@ -49,6 +50,7 @@ impl BindingRedeemAvailability {
             wecom: valid_secret_key("CORDY_WECOM_SECRET_KEY"),
             dingtalk: valid_secret_key("CORDY_DINGTALK_SECRET_KEY"),
             telegram: valid_secret_key("CORDY_TELEGRAM_SECRET_KEY"),
+            weixin: valid_secret_key("CORDY_WEIXIN_SECRET_KEY"),
         }
     }
 
@@ -60,6 +62,7 @@ impl BindingRedeemAvailability {
             wecom: true,
             dingtalk: true,
             telegram: true,
+            weixin: true,
         }
     }
 }
@@ -106,6 +109,7 @@ pub fn router() -> Router<BindingRedeemState> {
         .route("/api/wecom/binding/redeem", post(redeem_wecom))
         .route("/api/dingtalk/binding/redeem", post(redeem_dingtalk))
         .route("/api/telegram/binding/redeem", post(redeem_telegram))
+        .route("/api/weixin/binding/redeem", post(redeem_weixin))
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +124,7 @@ enum Channel {
     Wecom,
     DingTalk,
     Telegram,
+    Weixin,
 }
 
 impl Channel {
@@ -130,6 +135,7 @@ impl Channel {
             Self::Wecom => "wecom",
             Self::DingTalk => "dingtalk",
             Self::Telegram => "telegram",
+            Self::Weixin => "weixin",
         }
     }
 
@@ -140,6 +146,7 @@ impl Channel {
             Self::Wecom => availability.wecom,
             Self::DingTalk => availability.dingtalk,
             Self::Telegram => availability.telegram,
+            Self::Weixin => availability.weixin,
         }
     }
 
@@ -150,16 +157,18 @@ impl Channel {
             Self::Wecom => "wecom integration not configured",
             Self::DingTalk => "dingtalk integration not configured",
             Self::Telegram => "telegram integration not configured",
+            Self::Weixin => "weixin integration not configured",
         }
     }
 
     fn conflict_message(self) -> &'static str {
         match self {
-            Self::Lark => "this Lark account is already bound to a different Cordy user",
-            Self::Slack => "this Slack account is already bound to a different Cordy user",
-            Self::Wecom => "this WeCom user is already bound to a different Cordy user",
-            Self::DingTalk => "this DingTalk account is already bound to a different Cordy user",
-            Self::Telegram => "this Telegram account is already bound to a different Cordy user",
+            Self::Lark => "this Lark account is already bound to a different Patchbay user",
+            Self::Slack => "this Slack account is already bound to a different Patchbay user",
+            Self::Wecom => "this WeCom user is already bound to a different Patchbay user",
+            Self::DingTalk => "this DingTalk account is already bound to a different Patchbay user",
+            Self::Telegram => "this Telegram account is already bound to a different Patchbay user",
+            Self::Weixin => "this WeChat account is already bound to a different Patchbay user",
         }
     }
 
@@ -167,7 +176,10 @@ impl Channel {
         // This deliberately mirrors the authoritative Go services. The three
         // newer generic-channel adapters validate the discriminator; the
         // Lark and Slack services predate that guard.
-        matches!(self, Self::Wecom | Self::DingTalk | Self::Telegram)
+        matches!(
+            self,
+            Self::Wecom | Self::DingTalk | Self::Telegram | Self::Weixin
+        )
     }
 
     fn response_key(self) -> &'static str {
@@ -177,6 +189,7 @@ impl Channel {
             Self::Wecom => "wecom_user_id",
             Self::DingTalk => "dingtalk_user_id",
             Self::Telegram => "telegram_user_id",
+            Self::Weixin => "weixin_user_id",
         }
     }
 
@@ -252,6 +265,14 @@ async fn redeem_telegram(
     body: Bytes,
 ) -> Response {
     redeem(state, headers, body, Channel::Telegram).await
+}
+
+async fn redeem_weixin(
+    State(state): State<BindingRedeemState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    redeem(state, headers, body, Channel::Weixin).await
 }
 
 async fn redeem(
@@ -444,6 +465,7 @@ mod tests {
             ("wecom", "wecom integration not configured"),
             ("dingtalk", "dingtalk integration not configured"),
             ("telegram", "telegram integration not configured"),
+            ("weixin", "weixin integration not configured"),
         ];
         for (channel, message) in cases {
             let response = test_app(BindingRedeemAvailability::default())

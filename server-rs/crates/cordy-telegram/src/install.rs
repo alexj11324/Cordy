@@ -5,7 +5,9 @@ use uuid::Uuid;
 
 use cordy_db::models::ChannelInstallation;
 use cordy_db::queries::channel::{
-    get_channel_installation_owner_by_app_id, reclaim_dead_channel_installation_by_app_id,
+    delete_channel_installation_for_replacement, get_channel_installation_owner_by_app_id,
+    list_channel_installations_by_workspace, lock_channel_installation_agent_slot,
+    lock_channel_installation_app_id_slot, reclaim_dead_channel_installation_by_app_id,
     upsert_channel_installation,
 };
 
@@ -19,7 +21,7 @@ pub enum InstallError {
     BotOwnedBySameWorkspace,
     #[error("telegram: this bot is connected to an archived agent in this workspace")]
     BotOwnedByArchivedAgent,
-    #[error("telegram: this bot is already connected to a different Cordy workspace")]
+    #[error("telegram: this bot is already connected to a different Patchbay workspace")]
     BotOwnedByAnotherWorkspace,
 }
 
@@ -78,6 +80,14 @@ impl InstallService {
             .begin()
             .await
             .map_err(|error| anyhow::anyhow!("begin Telegram install: {error:#}"))?;
+        lock_channel_installation_agent_slot(
+            &mut *tx,
+            TYPE_TELEGRAM,
+            params.workspace_id,
+            params.agent_id,
+        )
+        .await?;
+        lock_channel_installation_app_id_slot(&mut *tx, TYPE_TELEGRAM, &params.bot_id).await?;
         reclaim_dead_channel_installation_by_app_id(
             &mut *tx,
             TYPE_TELEGRAM,
@@ -87,6 +97,18 @@ impl InstallService {
         )
         .await
         .map_err(|error| anyhow::anyhow!("reclaim dead Telegram installation: {error:#}"))?;
+
+        let current =
+            list_channel_installations_by_workspace(&mut *tx, params.workspace_id, TYPE_TELEGRAM)
+                .await?
+                .into_iter()
+                .find(|row| row.agent_id == params.agent_id);
+        if let Some(current) = current.filter(|row| {
+            row.config.get("app_id").and_then(serde_json::Value::as_str)
+                != Some(params.bot_id.as_str())
+        }) {
+            delete_channel_installation_for_replacement(&mut *tx, current.id).await?;
+        }
 
         let installation = match upsert_channel_installation(
             &mut *tx,
@@ -191,6 +213,6 @@ mod tests {
             .contains("archived agent"));
         assert!(InstallError::BotOwnedByAnotherWorkspace
             .to_string()
-            .contains("different Cordy workspace"));
+            .contains("different Patchbay workspace"));
     }
 }

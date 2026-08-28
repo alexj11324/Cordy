@@ -88,7 +88,7 @@ pub struct DefaultRenderer;
 impl CardRenderer for DefaultRenderer {
     fn render(&self, input: &RenderInput) -> anyhow::Result<String> {
         let header = if input.agent_name.is_empty() {
-            "Cordy"
+            "Patchbay"
         } else {
             &input.agent_name
         };
@@ -738,14 +738,14 @@ mod tests {
         // Unknown kind errors instead of guessing.
         assert!(r.render(&RenderInput { kind: None, ..base }).is_err());
 
-        // Header falls back to "Cordy" without an agent name.
+        // Header falls back to "Patchbay" without an agent name.
         let anonymous = r
             .render(&RenderInput {
                 kind: Some(CardKind::Running),
                 ..Default::default()
             })
             .unwrap();
-        assert!(anonymous.contains("Cordy"));
+        assert!(anonymous.contains("Patchbay"));
         assert!(anonymous.contains("Working on it…"));
     }
 

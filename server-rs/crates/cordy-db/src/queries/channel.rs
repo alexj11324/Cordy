@@ -370,6 +370,101 @@ RETURNING id, chat_session_id, installation_id, channel_type, channel_chat_id, c
     }))
 }
 
+/// Merges adapter-owned routing metadata into an existing chat binding.
+/// Secret-like, short-lived platform context belongs here rather than in the
+/// normalized message or installation config. The installation + chat key
+/// scope prevents one adapter/session from mutating another binding.
+pub async fn merge_channel_chat_session_binding_config(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    channel_chat_id: &str,
+    config: &serde_json::Value,
+) -> anyhow::Result<Option<ChannelChatSessionBinding>> {
+    let row = sqlx::query(
+        r#"UPDATE channel_chat_session_binding
+SET config = channel_chat_session_binding.config || jsonb_strip_nulls($3::jsonb)
+WHERE installation_id = $1
+  AND channel_chat_id = $2
+RETURNING id, chat_session_id, installation_id, channel_type, channel_chat_id, chat_type, last_message_id, last_thread_id, config, created_at, pending_fresh"#,
+    )
+    .bind(installation_id)
+    .bind(channel_chat_id)
+    .bind(config)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(ChannelChatSessionBinding {
+        id: row.try_get(0)?,
+        chat_session_id: row.try_get(1)?,
+        installation_id: row.try_get(2)?,
+        channel_type: row.try_get(3)?,
+        channel_chat_id: row.try_get(4)?,
+        chat_type: row.try_get(5)?,
+        last_message_id: row.try_get(6)?,
+        last_thread_id: row.try_get(7)?,
+        config: row.try_get(8)?,
+        created_at: row.try_get(9)?,
+        pending_fresh: row.try_get(10)?,
+    }))
+}
+
+pub async fn get_channel_receive_cursor(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    channel_type: &str,
+) -> anyhow::Result<Option<String>> {
+    let row = sqlx::query(
+        r#"SELECT cursor
+FROM channel_receive_state
+WHERE installation_id = $1 AND channel_type = $2
+ORDER BY updated_at DESC
+LIMIT 1"#,
+    )
+    .bind(installation_id)
+    .bind(channel_type)
+    .fetch_optional(executor)
+    .await?;
+    row.map(|row| row.try_get(0).map_err(anyhow::Error::from))
+        .transpose()
+}
+
+pub async fn replace_channel_receive_cursor(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    channel_type: &str,
+    cursor: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO channel_receive_state (installation_id, channel_type, cursor)
+VALUES ($1, $2, $3)
+ON CONFLICT (installation_id, channel_type) DO UPDATE SET
+    cursor = EXCLUDED.cursor,
+    updated_at = now()"#,
+    )
+    .bind(installation_id)
+    .bind(channel_type)
+    .bind(cursor)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_channel_receive_state(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    channel_type: &str,
+) -> anyhow::Result<u64> {
+    Ok(sqlx::query(
+        r#"DELETE FROM channel_receive_state
+WHERE installation_id = $1 AND channel_type = $2"#,
+    )
+    .bind(installation_id)
+    .bind(channel_type)
+    .execute(executor)
+    .await?
+    .rows_affected())
+}
+
 pub async fn create_channel_outbound_card_message(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     chat_session_id: Uuid,
@@ -533,6 +628,9 @@ cleared_user_bindings AS (
 ),
 cleared_inbound_dedup AS (
     DELETE FROM channel_inbound_message_dedup WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_receive_state AS (
+    DELETE FROM channel_receive_state WHERE installation_id IN (SELECT id FROM doomed)
 ),
 cleared_audit AS (
     -- Hard delete: purge audit rows rather than detaching them into permanently
@@ -1245,6 +1343,22 @@ pub async fn lock_channel_installation_app_id_slot(
     Ok(r.rows_affected())
 }
 
+pub async fn lock_channel_installation_agent_slot(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    channel_type: &str,
+    workspace_id: Uuid,
+    agent_id: Uuid,
+) -> anyhow::Result<u64> {
+    let key = format!("{workspace_id}:{agent_id}");
+    let result =
+        sqlx::query(r#"SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))"#)
+            .bind(channel_type)
+            .bind(key)
+            .execute(executor)
+            .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn mark_channel_chat_session_pending_fresh(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     chat_session_id: Uuid,
@@ -1377,6 +1491,10 @@ cleared_inbound_dedup AS (
     DELETE FROM channel_inbound_message_dedup
     WHERE installation_id IN (SELECT id FROM dead)
 ),
+cleared_receive_state AS (
+    DELETE FROM channel_receive_state
+    WHERE installation_id IN (SELECT id FROM dead)
+),
 detached_audit AS (
     -- Reclaim keeps the DETACH semantics: the workspace still exists, so a
     -- NULL-installation audit row stays meaningful for operator triage. The hard-
@@ -1394,6 +1512,58 @@ SELECT id FROM dead"#,
     .await?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(row.try_get(0)?))
+}
+
+/// Deletes the provider-owned state for an installation that is being
+/// replaced by a different upstream account. Audit rows remain available but
+/// are detached from the deleted installation.
+pub async fn delete_channel_installation_for_replacement(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query_scalar::<_, Uuid>(
+        r#"WITH doomed AS (
+    DELETE FROM channel_installation WHERE id = $1 RETURNING id
+),
+cleared_chat_sessions AS (
+    DELETE FROM channel_chat_session_binding
+    WHERE installation_id IN (SELECT id FROM doomed)
+    RETURNING chat_session_id
+),
+cleared_outbound_cards AS (
+    DELETE FROM channel_outbound_card_message
+    WHERE chat_session_id IN (SELECT chat_session_id FROM cleared_chat_sessions)
+),
+cleared_group_routes AS (
+    DELETE FROM dingtalk_group_route
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_binding_tokens AS (
+    DELETE FROM channel_binding_token
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_user_bindings AS (
+    DELETE FROM channel_user_binding
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_inbound_dedup AS (
+    DELETE FROM channel_inbound_message_dedup
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_receive_state AS (
+    DELETE FROM channel_receive_state
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+detached_audit AS (
+    UPDATE channel_inbound_audit SET installation_id = NULL
+    WHERE installation_id IN (SELECT id FROM doomed)
+)
+SELECT id FROM doomed"#,
+    )
+    .bind(installation_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
 }
 
 pub async fn record_channel_inbound_drop(

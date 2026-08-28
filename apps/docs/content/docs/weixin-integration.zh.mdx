@@ -1,0 +1,18 @@
+---
+title: 个人微信接入
+description: 通过腾讯 iLink 官方扫码授权，把 Patchbay 智能体连接到个人微信。
+---
+
+## 前置条件
+
+- 普通个人微信账号；不需要公司主体、企业微信、公众号或开放平台 AppID。
+- Patchbay 工作区所有者或管理员权限，或者是目标智能体的所有者。
+- 私有部署需设置 `CORDY_WEIXIN_SECRET_KEY`，可用 `openssl rand -base64 32` 生成。
+
+## 连接步骤
+
+1. 打开 **智能体 → 集成**，选择 **连接微信**。
+2. 使用微信扫描二维码并在微信中确认；若微信显示验证码，在连接窗口中输入。
+3. 扫码微信会自动关联到当前 Patchbay 用户。其他成员首次发消息时会收到有效期 15 分钟的账号关联链接。
+
+Patchbay 原生直连腾讯 iLink HTTP JSON 协议，使用持久化游标进行 `getupdates` 长轮询，并通过 `sendmessage` 回复。Bot token 和会话 context token 都会加密保存。目前仅承诺个人微信文字私聊，不宣传群聊和媒体能力。

@@ -12,8 +12,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use cordy_db::queries::channel::{
-    get_channel_installation_in_workspace, get_channel_installation_owner_by_app_id,
-    get_channel_installation_slot_owner_by_app_id, list_channel_installations_by_workspace,
+    delete_channel_installation_for_replacement, get_channel_installation_in_workspace,
+    get_channel_installation_owner_by_app_id, get_channel_installation_slot_owner_by_app_id,
+    list_channel_installations_by_workspace, lock_channel_installation_agent_slot,
     lock_channel_installation_app_id_slot, reclaim_dead_channel_installation_by_app_id,
     set_channel_installation_status, upsert_channel_installation,
 };
@@ -126,6 +127,14 @@ impl InstallationService {
 
         // The serialization boundary. Held until commit/rollback, so every
         // step below sees one consistent answer for who owns this bot.
+        lock_channel_installation_agent_slot(
+            &mut *tx,
+            crate::CHANNEL_TYPE_WECOM,
+            p.workspace_id,
+            p.agent_id,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("wecom: lock agent routing slot: {e}"))?;
         lock_channel_installation_app_id_slot(&mut *tx, crate::CHANNEL_TYPE_WECOM, &p.bot_id)
             .await
             .map_err(|e| anyhow::anyhow!("wecom: lock bot routing slot: {e}"))?;
@@ -182,6 +191,11 @@ impl InstallationService {
         } else {
             p.bot_display_name.clone()
         };
+        if !carried.bot_id.is_empty() && carried.bot_id != p.bot_id {
+            delete_channel_installation_for_replacement(&mut *tx, carried.id)
+                .await
+                .map_err(|e| anyhow::anyhow!("wecom: retire replaced bot state: {e}"))?;
+        }
         let cfg = encode_install_config(&crate::types::Installation {
             bot_id: p.bot_id.clone(),
             secret_encrypted: sealed,
@@ -341,7 +355,7 @@ pub enum BotOwnershipError {
     ArchivedAgent,
     /// The holder is out of sight entirely and only someone with access there
     /// can release it.
-    #[error("wecom: this bot is already connected to a different Cordy workspace")]
+    #[error("wecom: this bot is already connected to a different Patchbay workspace")]
     AnotherWorkspace,
 }
 

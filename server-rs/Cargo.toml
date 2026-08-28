@@ -31,6 +31,7 @@ members = [
     "crates/cordy-util",
     "crates/cordy-vcs",
     "crates/cordy-wecom",
+    "crates/cordy-weixin",
     "crates/cordy-migrate",
     "crates/cordy-middleware",
     "crates/cordy-server",

@@ -187,7 +187,7 @@ mod tests {
         let inst = Installation {
             bot_id: "bot-1".to_string(),
             secret_encrypted: b"sealed".to_vec(),
-            bot_display_name: "Cordy Bot".to_string(),
+            bot_display_name: "Patchbay Bot".to_string(),
             ..Default::default()
         };
         let v = encode_install_config(&inst).unwrap();
@@ -199,12 +199,12 @@ mod tests {
             v["secret_encrypted"],
             json!(base64::engine::general_purpose::STANDARD.encode(b"sealed"))
         );
-        assert_eq!(v["bot_display_name"], json!("Cordy Bot"));
+        assert_eq!(v["bot_display_name"], json!("Patchbay Bot"));
 
         let back: InstallConfig = serde_json::from_value(v).unwrap();
         assert_eq!(back.bot_id, "bot-1");
         assert_eq!(back.secret_encrypted(), b"sealed".to_vec());
-        assert_eq!(back.bot_display_name, "Cordy Bot");
+        assert_eq!(back.bot_display_name, "Patchbay Bot");
     }
 
     #[test]

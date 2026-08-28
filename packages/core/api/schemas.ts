@@ -40,6 +40,11 @@ import type {
   TelegramInstallation,
   ListTelegramInstallationsResponse,
   RedeemTelegramBindingTokenResponse,
+  WeixinInstallation,
+  ListWeixinInstallationsResponse,
+  BeginWeixinInstallResponse,
+  WeixinInstallStatusResponse,
+  RedeemWeixinBindingTokenResponse,
   GroupedIssuesResponse,
   GitHubConnectResponse,
   GitHubPullRequest,
@@ -2720,6 +2725,69 @@ export const EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE: RedeemTelegramBinding
   workspace_id: "",
   installation_id: "",
   telegram_user_id: "",
+};
+
+export const WeixinInstallationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  agent_id: z.string().default(""),
+  bot_id: z.string().default(""),
+  ilink_user_id: z.string().default(""),
+  installer_user_id: z.string().default(""),
+  status: z.string().default("revoked"),
+  installed_at: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+export const EMPTY_WEIXIN_INSTALLATION: WeixinInstallation = {
+  id: "",
+  workspace_id: "",
+  agent_id: "",
+  bot_id: "",
+  ilink_user_id: "",
+  installer_user_id: "",
+  status: "revoked",
+  installed_at: "",
+  created_at: "",
+  updated_at: "",
+};
+export const ListWeixinInstallationsResponseSchema = z.object({
+  installations: z.array(WeixinInstallationSchema).default([]),
+  configured: z.boolean().default(false),
+  install_supported: z.boolean().optional(),
+}).loose();
+export const EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE: ListWeixinInstallationsResponse = {
+  installations: [],
+  configured: false,
+};
+export const BeginWeixinInstallResponseSchema = z.object({
+  session_id: z.string(),
+  qr_code_url: z.string(),
+  expires_in_seconds: z.number(),
+  poll_interval_seconds: z.number(),
+}).loose();
+export const EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE: BeginWeixinInstallResponse = {
+  session_id: "",
+  qr_code_url: "",
+  expires_in_seconds: 0,
+  poll_interval_seconds: 2,
+};
+export const WeixinInstallStatusResponseSchema = z.object({
+  status: z.string(),
+  installation_id: z.string().optional(),
+}).loose();
+export const EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE: WeixinInstallStatusResponse = {
+  status: "pending",
+};
+export const RedeemWeixinBindingTokenResponseSchema = z.object({
+  workspace_id: z.string(),
+  installation_id: z.string(),
+  weixin_user_id: z.string(),
+}).loose();
+export const EMPTY_REDEEM_WEIXIN_BINDING_TOKEN_RESPONSE: RedeemWeixinBindingTokenResponse = {
+  workspace_id: "",
+  installation_id: "",
+  weixin_user_id: "",
 };
 
 // Skills. Introduced for `POST /api/skills/:id/refresh` (update a skill from

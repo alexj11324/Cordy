@@ -170,6 +170,10 @@ services:
       # in the database, so this single deployment-wide key is all the operator
       # needs to set here.
       CORDY_SLACK_SECRET_KEY: ${CORDY_SLACK_SECRET_KEY:-}
+      # DingTalk and Telegram were previously documented but accidentally not
+      # forwarded into the backend container, leaving valid installs disabled.
+      CORDY_DINGTALK_SECRET_KEY: ${CORDY_DINGTALK_SECRET_KEY:-}
+      CORDY_TELEGRAM_SECRET_KEY: ${CORDY_TELEGRAM_SECRET_KEY:-}
       # Self-hosted Git provider integration (Forgejo / Gitea / GitLab). This
       # is a self-host-only feature, so the compose file turns it on by default;
       # the managed cloud leaves it unset (off). It still needs a valid
@@ -183,6 +187,8 @@ services:
       # subscribe credentials at connection time, and to seal the secret when
       # an installation is created from the WeCom settings tab.
       CORDY_WECOM_SECRET_KEY: ${CORDY_WECOM_SECRET_KEY:-}
+      # Personal WeChat iLink QR authorization (distinct from enterprise WeCom).
+      CORDY_WEIXIN_SECRET_KEY: ${CORDY_WEIXIN_SECRET_KEY:-}
       # Comma-separated ranges the inbound media fetcher may dial even though
       # they look reserved. Empty (the default) keeps the SSRF guard as strict
       # as it ships; set it only behind a fake-IP proxy whose pool would

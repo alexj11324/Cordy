@@ -306,7 +306,7 @@ impl LarkOutcomeReplier {
         let creds = self.installation_credentials(inst).await?;
         let header = match self.queries.get_agent_name(inst.agent_id).await {
             Ok(name) if !name.is_empty() => name,
-            _ => "Cordy".to_string(),
+            _ => "Patchbay".to_string(),
         };
         let card_json = render_notice_card(&header, body)
             .map_err(|e| anyhow::anyhow!("render notice card: {e}"))?;
@@ -498,10 +498,10 @@ mod tests {
 
     #[test]
     fn notice_card_is_valid_lark_card_json() {
-        let raw = render_notice_card("Cordy", "hello").unwrap();
+        let raw = render_notice_card("Patchbay", "hello").unwrap();
         let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(v["header"]["template"], "grey");
-        assert_eq!(v["header"]["title"]["content"], "Cordy");
+        assert_eq!(v["header"]["title"]["content"], "Patchbay");
         assert_eq!(v["elements"][0]["text"]["content"], "hello");
         // One-shot cards stay patchable-off.
         assert!(v

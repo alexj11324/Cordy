@@ -35,6 +35,7 @@ enum Provider {
     Slack,
     Telegram,
     WeCom,
+    Weixin,
 }
 
 impl Provider {
@@ -45,6 +46,7 @@ impl Provider {
             Self::Slack => cordy_slack::TYPE_SLACK,
             Self::Telegram => cordy_telegram::TYPE_TELEGRAM,
             Self::WeCom => cordy_wecom::CHANNEL_TYPE_WECOM,
+            Self::Weixin => cordy_weixin::TYPE_WEIXIN,
         }
     }
 
@@ -55,6 +57,7 @@ impl Provider {
             Self::Slack => "CORDY_SLACK_SECRET_KEY",
             Self::Telegram => "CORDY_TELEGRAM_SECRET_KEY",
             Self::WeCom => "CORDY_WECOM_SECRET_KEY",
+            Self::Weixin => "CORDY_WEIXIN_SECRET_KEY",
         }
     }
 
@@ -65,6 +68,7 @@ impl Provider {
             Self::Slack => "slack",
             Self::Telegram => "telegram",
             Self::WeCom => "wecom",
+            Self::Weixin => "weixin",
         }
     }
 
@@ -75,6 +79,7 @@ impl Provider {
             Self::Slack => cordy_protocol::EVENT_SLACK_INSTALLATION_CREATED,
             Self::Telegram => cordy_protocol::EVENT_TELEGRAM_INSTALLATION_CREATED,
             Self::WeCom => cordy_protocol::EVENT_WECOM_INSTALLATION_CREATED,
+            Self::Weixin => cordy_protocol::EVENT_WEIXIN_INSTALLATION_CREATED,
         }
     }
 
@@ -85,6 +90,7 @@ impl Provider {
             Self::Slack => cordy_protocol::EVENT_SLACK_INSTALLATION_REVOKED,
             Self::Telegram => cordy_protocol::EVENT_TELEGRAM_INSTALLATION_REVOKED,
             Self::WeCom => cordy_protocol::EVENT_WECOM_INSTALLATION_REVOKED,
+            Self::Weixin => cordy_protocol::EVENT_WEIXIN_INSTALLATION_REVOKED,
         }
     }
 }
@@ -118,6 +124,22 @@ pub fn member_router() -> Router<HandlerState> {
             get(list_telegram),
         )
         .route("/api/workspaces/{id}/wecom/installations", get(list_wecom))
+        .route(
+            "/api/workspaces/{id}/weixin/installations",
+            get(list_weixin),
+        )
+        .route(
+            "/api/workspaces/{id}/weixin/install/{session_id}/status",
+            get(weixin_install_status),
+        )
+        .route(
+            "/api/workspaces/{id}/weixin/install/begin",
+            post(begin_weixin_install),
+        )
+        .route(
+            "/api/workspaces/{id}/weixin/installations/{installation_id}",
+            delete(revoke_weixin),
+        )
 }
 
 pub fn admin_router() -> Router<HandlerState> {
@@ -209,6 +231,10 @@ fn public_config(provider: Provider, config: &Value) -> Value {
         Provider::WeCom => {
             json!({"bot_id": config.get("bot_id").or_else(|| config.get("app_id")).and_then(Value::as_str).unwrap_or("")})
         }
+        Provider::Weixin => {
+            let value = cordy_weixin::config::decode_public_config(config);
+            json!({"bot_id": value.bot_id, "ilink_user_id": value.ilink_user_id})
+        }
     }
 }
 
@@ -278,6 +304,7 @@ list_handler!(list_lark, Provider::Lark);
 list_handler!(list_slack, Provider::Slack);
 list_handler!(list_telegram, Provider::Telegram);
 list_handler!(list_wecom, Provider::WeCom);
+list_handler!(list_weixin, Provider::Weixin);
 
 async fn list_dingtalk(
     State(state): State<HandlerState>,
@@ -380,6 +407,374 @@ fn dingtalk_installation_bindings(
         );
     }
     value
+}
+
+const WEIXIN_SESSION_PREFIX: &str = "patchbay:{weixin_install_session}:";
+const WEIXIN_SESSION_TTL: Duration = Duration::from_secs(5 * 60);
+const WEIXIN_SESSION_STORE_TIMEOUT: Duration = Duration::from_millis(250);
+const WEIXIN_SESSION_MEMORY_CAP: usize = 1024;
+
+#[derive(Clone, Serialize, Deserialize)]
+struct WeixinInstallSession {
+    workspace_id: Uuid,
+    agent_id: Uuid,
+    initiator_id: Uuid,
+    qrcode: String,
+    base_url: String,
+    status: String,
+    installation_id: Option<Uuid>,
+    error_message: Option<String>,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+struct WeixinSessionStore {
+    redis: Option<redis::Client>,
+}
+
+impl WeixinSessionStore {
+    fn from_state(state: &HandlerState) -> Self {
+        Self {
+            redis: state.rate_limit_client.clone(),
+        }
+    }
+
+    fn memory() -> &'static Mutex<HashMap<String, WeixinInstallSession>> {
+        static SESSIONS: OnceLock<Mutex<HashMap<String, WeixinInstallSession>>> = OnceLock::new();
+        SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn key(id: &str) -> String {
+        format!("{WEIXIN_SESSION_PREFIX}{id}")
+    }
+
+    async fn put(&self, id: &str, value: &WeixinInstallSession) -> Result<(), &'static str> {
+        if let Some(client) = &self.redis {
+            let key = Self::key(id);
+            let payload =
+                serde_json::to_string(value).map_err(|_| "failed to store install session")?;
+            let ttl = (value.expires_at - Utc::now()).num_seconds().max(1) as u64;
+            let operation = async {
+                let mut connection = client.get_multiplexed_async_connection().await?;
+                redis::cmd("SET")
+                    .arg(key)
+                    .arg(payload)
+                    .arg("EX")
+                    .arg(ttl)
+                    .query_async::<()>(&mut connection)
+                    .await
+            };
+            return match tokio::time::timeout(WEIXIN_SESSION_STORE_TIMEOUT, operation).await {
+                Ok(Ok(())) => Ok(()),
+                _ => Err("failed to store install session"),
+            };
+        }
+        let mut sessions = Self::memory().lock().unwrap();
+        sessions.retain(|_, session| session.expires_at > Utc::now());
+        if sessions.len() >= WEIXIN_SESSION_MEMORY_CAP && !sessions.contains_key(id) {
+            return Err("too many install sessions");
+        }
+        sessions.insert(id.to_string(), value.clone());
+        Ok(())
+    }
+
+    async fn get(&self, id: &str) -> Result<Option<WeixinInstallSession>, &'static str> {
+        if let Some(client) = &self.redis {
+            let key = Self::key(id);
+            let operation = async {
+                let mut connection = client.get_multiplexed_async_connection().await?;
+                redis::cmd("GET")
+                    .arg(key)
+                    .query_async::<Option<String>>(&mut connection)
+                    .await
+            };
+            return match tokio::time::timeout(WEIXIN_SESSION_STORE_TIMEOUT, operation).await {
+                Ok(Ok(Some(payload))) => serde_json::from_str::<WeixinInstallSession>(&payload)
+                    .map(Some)
+                    .map_err(|_| "failed to load install session"),
+                Ok(Ok(None)) => Ok(None),
+                _ => Err("failed to load install session"),
+            };
+        }
+        let mut sessions = Self::memory().lock().unwrap();
+        sessions.retain(|_, session| session.expires_at > Utc::now());
+        Ok(sessions.get(id).cloned())
+    }
+}
+
+async fn begin_weixin_install(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
+    Query(query): Query<AgentQuery>,
+) -> Response {
+    let Some(box_) = secret_box(Provider::Weixin) else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "weixin integration not configured",
+        );
+    };
+    let (workspace_id, agent_id, actor) =
+        match install_context(&state, &context, &headers, &query).await {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await {
+        Ok(Some(value)) => value,
+        _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
+    };
+    if !matches!(context.member.role.as_str(), "owner" | "admin") && target.owner_id != Some(actor)
+    {
+        return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
+    }
+    // Passing the target agent's currently stored local token lets iLink
+    // recognize a reconnect instead of returning `binded_redirect` with no
+    // usable credentials. A different account still follows the normal scan.
+    let installations = match channel::list_channel_installations_by_workspace(
+        &state.pool,
+        workspace_id,
+        cordy_weixin::TYPE_WEIXIN,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to load existing WeChat installation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to start WeChat authorization",
+            );
+        }
+    };
+    let local_tokens = installations
+        .into_iter()
+        .filter(|row| row.agent_id == agent_id)
+        .filter_map(|row| {
+            let decrypt = |sealed: &[u8]| box_.open(sealed).map_err(anyhow::Error::from);
+            cordy_weixin::config::decode_credentials(&row.config, Some(&decrypt))
+                .ok()
+                .map(|credentials| credentials.bot_token)
+        })
+        .collect::<Vec<_>>();
+    let qr = match cordy_weixin::api::Client::request_qr_code(&local_tokens).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to request WeChat QR code");
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "failed to start WeChat authorization",
+            );
+        }
+    };
+    let session_id = Uuid::new_v4().to_string();
+    let expires_at = Utc::now() + chrono::Duration::seconds(WEIXIN_SESSION_TTL.as_secs() as i64);
+    let session = WeixinInstallSession {
+        workspace_id,
+        agent_id,
+        initiator_id: actor,
+        qrcode: qr.qrcode,
+        base_url: cordy_weixin::api::DEFAULT_BASE_URL.to_string(),
+        status: "pending".into(),
+        installation_id: None,
+        error_message: None,
+        expires_at,
+    };
+    if let Err(message) = WeixinSessionStore::from_state(&state)
+        .put(&session_id, &session)
+        .await
+    {
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, message);
+    }
+    Json(json!({
+        "session_id": session_id,
+        "qr_code_url": qr.qrcode,
+        "expires_in_seconds": WEIXIN_SESSION_TTL.as_secs(),
+        "poll_interval_seconds": 2,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct WeixinStatusQuery {
+    #[serde(default)]
+    verify_code: String,
+}
+
+async fn weixin_install_status(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
+    Path((_workspace, session_id)): Path<(String, String)>,
+    Query(query): Query<WeixinStatusQuery>,
+) -> Response {
+    let actor = match user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let workspace_id = match workspace_id(&context) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let store = WeixinSessionStore::from_state(&state);
+    let mut session = match store.get(&session_id).await {
+        Ok(Some(value)) if value.workspace_id == workspace_id && value.initiator_id == actor => {
+            value
+        }
+        Ok(Some(_)) => {
+            return error_response(StatusCode::FORBIDDEN, "install session is not yours")
+        }
+        Ok(None) => return error_response(StatusCode::GONE, "install session expired"),
+        Err(message) => return error_response(StatusCode::SERVICE_UNAVAILABLE, message),
+    };
+    if let Some(id) = session.installation_id {
+        return Json(json!({"status": "success", "installation_id": id})).into_response();
+    }
+    if session.expires_at <= Utc::now() {
+        return Json(json!({"status": "expired"})).into_response();
+    }
+    let status = match cordy_weixin::api::Client::qr_status(
+        &session.base_url,
+        &session.qrcode,
+        (!query.verify_code.trim().is_empty()).then_some(query.verify_code.trim()),
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to poll WeChat QR status");
+            return Json(json!({"status": "pending"})).into_response();
+        }
+    };
+    match status.status.as_str() {
+        "wait" => return Json(json!({"status": "pending"})).into_response(),
+        "scaned" | "scanned" => return Json(json!({"status": "scanned"})).into_response(),
+        "need_verifycode" => return Json(json!({"status": "need_verify_code"})).into_response(),
+        "verify_code_blocked" | "expired" => {
+            return Json(json!({"status": "expired"})).into_response()
+        }
+        "scaned_but_redirect" | "scanned_but_redirect" => {
+            let allowed = validate_weixin_redirect(&status.redirect_host);
+            if let Some(base_url) = allowed {
+                session.base_url = base_url;
+                let _ = store.put(&session_id, &session).await;
+                return Json(json!({"status": "scanned"})).into_response();
+            }
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "WeChat returned an unsafe redirect host",
+            );
+        }
+        "binded_redirect" => return Json(json!({"status": "already_connected"})).into_response(),
+        "confirmed" => {}
+        _ => return Json(json!({"status": "pending"})).into_response(),
+    }
+    if status.bot_token.is_empty()
+        || status.ilink_bot_id.is_empty()
+        || status.ilink_user_id.is_empty()
+    {
+        return error_response(
+            StatusCode::BAD_GATEWAY,
+            "WeChat confirmation was incomplete",
+        );
+    }
+    let Some(box_) = secret_box(Provider::Weixin) else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "weixin integration not configured",
+        );
+    };
+    let sealed = match box_.seal(status.bot_token.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to encrypt WeChat token",
+            )
+        }
+    };
+    let base_url = validate_weixin_redirect(if status.baseurl.is_empty() {
+        cordy_weixin::api::DEFAULT_BASE_URL
+    } else {
+        &status.baseurl
+    })
+    .unwrap_or_else(|| cordy_weixin::api::DEFAULT_BASE_URL.to_string());
+    let config = json!({
+        "app_id": status.ilink_bot_id,
+        "ilink_user_id": status.ilink_user_id,
+        "base_url": base_url,
+        "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed),
+    });
+    let row = match cordy_weixin::install::finalize(
+        &state.pool,
+        &cordy_weixin::install::InstallParams {
+            workspace_id,
+            agent_id: session.agent_id,
+            installer_id: actor,
+            bot_id: status.ilink_bot_id.clone(),
+            ilink_user_id: status.ilink_user_id.clone(),
+            config,
+        },
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "failed to persist WeChat installation");
+            if error
+                .downcast_ref::<cordy_weixin::install::InstallError>()
+                .is_some()
+                || error.to_string().contains("bound to another Patchbay user")
+            {
+                return error_response(
+                    StatusCode::CONFLICT,
+                    "this WeChat account is already connected",
+                );
+            }
+            if error.to_string().contains("authorization changed") {
+                return error_response(
+                    StatusCode::FORBIDDEN,
+                    "authorization changed during install",
+                );
+            }
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save WeChat connection",
+            );
+        }
+    };
+    publish_created(&state, Provider::Weixin, &row, actor);
+    session.status = "success".into();
+    session.installation_id = Some(row.id);
+    let _ = store.put(&session_id, &session).await;
+    Json(json!({"status": "success", "installation_id": row.id})).into_response()
+}
+
+fn validate_weixin_redirect(value: &str) -> Option<String> {
+    let value = value.trim();
+    let normalized = if value.contains("://") {
+        value.to_string()
+    } else {
+        format!("https://{value}")
+    };
+    let parsed = url::Url::parse(&normalized).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.port().is_some_and(|port| port != 443)
+    {
+        return None;
+    }
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    if host != "ilinkai.weixin.qq.com" && !host.ends_with(".weixin.qq.com") {
+        return None;
+    }
+    Some(format!(
+        "https://{host}{}",
+        parsed
+            .port()
+            .map(|port| format!(":{port}"))
+            .unwrap_or_default()
+    ))
 }
 
 const LARK_SESSION_PREFIX: &str = "patchbay:{lark_install_session}:";
@@ -627,9 +1022,9 @@ async fn begin_lark_install(
         return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
     }
     let preset = if target.name.trim().is_empty() {
-        "Cordy".into()
+        "Patchbay".into()
     } else {
-        format!("{} - Cordy", target.name.trim())
+        format!("{} - Patchbay", target.name.trim())
     };
     let client = Arc::new(cordy_lark::registration::RegistrationClient::new(
         cordy_lark::registration::RegistrationConfig {
@@ -1046,7 +1441,7 @@ fn lark_owner_conflict_message(
 ) -> String {
     match owner {
         Some(owner) if owner.workspace_id != Some(requesting_workspace_id) => {
-            "This Feishu app is already connected to a different Cordy workspace. Disconnect it there before connecting it here."
+            "This Feishu app is already connected to a different Patchbay workspace. Disconnect it there before connecting it here."
         }
         Some(owner) if owner.agent_archived_at.is_some() => {
             "This Feishu app is connected to an archived agent in this workspace. Restore that agent, or disconnect its bot, before connecting it here."
@@ -1259,7 +1654,7 @@ async fn revoke(
             );
         }
     };
-    if matches!(provider, Provider::Lark)
+    if matches!(provider, Provider::Lark | Provider::Weixin)
         && !matches!(context.member.role.as_str(), "owner" | "admin")
     {
         let owns_agent = matches!(
@@ -1307,6 +1702,7 @@ revoke_handler!(revoke_lark, Provider::Lark);
 revoke_handler!(revoke_slack, Provider::Slack);
 revoke_handler!(revoke_telegram, Provider::Telegram);
 revoke_handler!(revoke_wecom, Provider::WeCom);
+revoke_handler!(revoke_weixin, Provider::Weixin);
 
 #[derive(Deserialize)]
 struct AgentQuery {
@@ -1399,7 +1795,7 @@ fn dingtalk_install_error(error: &anyhow::Error) -> (StatusCode, String) {
         ),
         Some(ByoError::Install(InstallError::RobotOwnedByAnotherWorkspace)) => (
             StatusCode::CONFLICT,
-            "this DingTalk robot is already connected to a different Cordy workspace — disconnect it there before connecting it here".into(),
+            "this DingTalk robot is already connected to a different Patchbay workspace — disconnect it there before connecting it here".into(),
         ),
         Some(ByoError::Install(InstallError::InstallationNotFound)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1585,7 +1981,7 @@ fn classify_wecom_install_error(error: &anyhow::Error) -> WecomInstallFailure {
             Some(BotOwnershipError::AnotherWorkspace) => (
                 StatusCode::CONFLICT,
                 "wecom_bot_owned_by_another_workspace",
-                "this bot is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+                "this bot is already connected to a different Patchbay workspace — disconnect it there before connecting it here",
                 WecomInstallLog::None,
             ),
             None if error.chain().any(|cause| {
@@ -1786,7 +2182,7 @@ fn classify_telegram_install_persist_error(error: &anyhow::Error) -> TelegramIns
         },
         Some(InstallError::BotOwnedByAnotherWorkspace) => TelegramInstallPersistFailure {
             status: StatusCode::CONFLICT,
-            message: "this Telegram bot is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+            message: "this Telegram bot is already connected to a different Patchbay workspace — disconnect it there before connecting it here",
         },
         None => TelegramInstallPersistFailure {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -2011,7 +2407,7 @@ fn classify_slack_install_persist_error(error: &anyhow::Error) -> SlackInstallPe
         },
         Some(InstallError::TeamOwnedByAnotherWorkspace) => SlackInstallPersistFailure {
             status: StatusCode::CONFLICT,
-            message: "this Slack app is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+            message: "this Slack app is already connected to a different Patchbay workspace — disconnect it there before connecting it here",
         },
         Some(InstallError::InstallationNotFound) | None => SlackInstallPersistFailure {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -2150,7 +2546,7 @@ mod tests {
             agent_archived_at: None,
         };
         assert!(lark_owner_conflict_message(workspace_id, Some(&owner))
-            .contains("different Cordy workspace"));
+            .contains("different Patchbay workspace"));
 
         owner.workspace_id = Some(workspace_id);
         assert!(lark_owner_conflict_message(workspace_id, Some(&owner))
@@ -2267,7 +2663,7 @@ mod tests {
             ),
             (
                 InstallError::BotOwnedByAnotherWorkspace,
-                "different Cordy workspace",
+                "different Patchbay workspace",
             ),
         ];
         for (error, recovery_scope) in cases {
@@ -2296,7 +2692,7 @@ mod tests {
             ),
             (
                 InstallError::TeamOwnedByAnotherWorkspace,
-                "different Cordy workspace",
+                "different Patchbay workspace",
             ),
         ];
         for (error, recovery_scope) in cases {
@@ -2344,6 +2740,21 @@ mod tests {
             LarkSessionStore::key(session_id),
             format!("patchbay:{{lark_install_session}}:{session_id}")
         );
+    }
+
+    #[test]
+    fn weixin_redirects_are_https_and_tencent_scoped() {
+        assert_eq!(
+            validate_weixin_redirect("ilinkai.weixin.qq.com"),
+            Some("https://ilinkai.weixin.qq.com".into())
+        );
+        assert_eq!(
+            validate_weixin_redirect("https://sh.ilink.weixin.qq.com/path?ignored=1"),
+            Some("https://sh.ilink.weixin.qq.com".into())
+        );
+        assert!(validate_weixin_redirect("http://ilinkai.weixin.qq.com").is_none());
+        assert!(validate_weixin_redirect("https://ilinkai.weixin.qq.com:8443").is_none());
+        assert!(validate_weixin_redirect("https://weixin.qq.com.evil.test").is_none());
     }
 
     #[tokio::test]
