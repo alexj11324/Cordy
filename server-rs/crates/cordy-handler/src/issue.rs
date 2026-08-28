@@ -5613,12 +5613,8 @@ async fn apply_issue_update(
         ));
     }
 
-    let previous_category = cordy_service::issue_status::effective(
-        &mut *tx,
-        locked.workspace_id,
-        &locked.status,
-    )
-    .await;
+    let previous_category =
+        cordy_service::issue_status::effective(&mut *tx, locked.workspace_id, &locked.status).await;
     let next_category =
         cordy_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
     if let Some(violation) = issue_workflow_violation(
@@ -6065,8 +6061,8 @@ pub(crate) async fn publish_issue_updated(
         &previous.status,
     )
     .await;
-    let assignee_changed = previous.assignee_type != issue.assignee_type
-        || previous.assignee_id != issue.assignee_id;
+    let assignee_changed =
+        previous.assignee_type != issue.assignee_type || previous.assignee_id != issue.assignee_id;
     let review_handoff = previous_category != cordy_service::issue_status::IN_REVIEW
         && category == cordy_service::issue_status::IN_REVIEW
         && assignee_changed;
@@ -6434,19 +6430,11 @@ async fn batch_update_issues(
                 _ => continue,
             };
         let previous_snapshot = previous.clone();
-        let issue = match apply_issue_update(
-            &state,
-            &context,
-            &headers,
-            previous,
-            updates,
-            false,
-        )
-        .await
-        {
-            Ok(issue) => issue,
-            Err(response) => return response,
-        };
+        let issue =
+            match apply_issue_update(&state, &context, &headers, previous, updates, false).await {
+                Ok(issue) => issue,
+                Err(response) => return response,
+            };
         if previous_snapshot.status != issue.status {
             if let Some(parent_id) = issue.parent_issue_id {
                 let replace = parent_notifications
