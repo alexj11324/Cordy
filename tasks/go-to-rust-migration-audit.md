@@ -3167,6 +3167,9 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   `manager.rs` 1 个 E0502 和 `gc.rs` 7 个 `GcMetaKind` E0433 首次以 exit 101 失败、0 tests executed。Fixer 最小修正
   borrow 长度与既有 `GCMetaKind` 名称后，组合 locked/offline check 和 daemon lib `--no-run` 均通过；GC 与 proxy 精确
   测试各 1/1 通过（proxy 首次在受限 sandbox 因 `Operation not permitted` 失败，允许 loopback 后重跑通过）。其余完整
+  workspace all-targets gate 首次又因 `ws.rs` 测试缺少 `Uuid` import 以 9 个 E0425/E0433、0 tests executed 失败；补入既有
+  测试依赖并格式化后，第二次被 `channel_runtime.rs` 测试对非直接 `base64` 依赖的 E0432/E0433 阻断，继续复用既有
+  SecretBox literal wire fixture 后，`cargo check --workspace --all-targets --locked --offline` 通过（仅既有 warnings）。其余完整
   runtime/provider/发布矩阵尚未执行，不能由这些定向结果标记通过。
 
 ## 76. [ ] AUDIT-009 运维文档与新鲜产物复核（T-61）

@@ -738,6 +738,7 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
     use tokio_tungstenite::tungstenite::Message as ClientMessage;
+    use uuid::Uuid;
 
     fn headers(host: &str, origin: &str, forwarded_host: Option<&str>) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -863,14 +864,12 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("create workspace");
-        sqlx::query(
-            "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
-        )
-        .bind(workspace_id)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .expect("create membership");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create membership");
 
         let member_token = format!("mul_ws_member_{suffix}");
         let outsider_token = format!("mul_ws_outsider_{suffix}");
@@ -928,7 +927,10 @@ mod tests {
         });
         let ws_url = format!("ws://{address}/ws?workspace_id={workspace_id}");
 
-        let mut bad_origin = ws_url.clone().into_client_request().expect("origin request");
+        let mut bad_origin = ws_url
+            .clone()
+            .into_client_request()
+            .expect("origin request");
         bad_origin.headers_mut().insert(
             header::ORIGIN,
             HeaderValue::from_static("https://foreign.example"),
@@ -947,7 +949,9 @@ mod tests {
             .await
             .expect("malformed-auth websocket upgrade");
         malformed
-            .send(ClientMessage::Text(json!({"type":"ping"}).to_string().into()))
+            .send(ClientMessage::Text(
+                json!({"type":"ping"}).to_string().into(),
+            ))
             .await
             .expect("send non-auth first frame");
         assert_eq!(
@@ -1006,7 +1010,10 @@ mod tests {
             ))
             .await
             .expect("subscribe foreign workspace");
-        assert_eq!(client_json(&mut socket).await["payload"]["error"], "forbidden");
+        assert_eq!(
+            client_json(&mut socket).await["payload"]["error"],
+            "forbidden"
+        );
 
         socket
             .send(ClientMessage::Text(
@@ -1036,10 +1043,15 @@ mod tests {
             ))
             .await
             .expect("subscribe foreign task");
-        assert_eq!(client_json(&mut socket).await["payload"]["error"], "forbidden");
+        assert_eq!(
+            client_json(&mut socket).await["payload"]["error"],
+            "forbidden"
+        );
 
         socket
-            .send(ClientMessage::Text(json!({"type":"ping"}).to_string().into()))
+            .send(ClientMessage::Text(
+                json!({"type":"ping"}).to_string().into(),
+            ))
             .await
             .expect("application ping");
         assert_eq!(client_json(&mut socket).await, json!({"type":"pong"}));
@@ -1065,14 +1077,19 @@ mod tests {
             .await
             .expect("cookie-auth websocket");
         cookie_socket
-            .send(ClientMessage::Text(json!({"type":"ping"}).to_string().into()))
+            .send(ClientMessage::Text(
+                json!({"type":"ping"}).to_string().into(),
+            ))
             .await
             .expect("cookie session ping");
         assert_eq!(
             client_json(&mut cookie_socket).await,
             json!({"type":"pong"})
         );
-        cookie_socket.close(None).await.expect("close cookie socket");
+        cookie_socket
+            .close(None)
+            .await
+            .expect("close cookie socket");
         wait_for_disconnect(&hub).await;
 
         let _ = shutdown_tx.send(());
