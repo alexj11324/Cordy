@@ -789,7 +789,9 @@ fn parse_stream_entry(
                 return None;
             }
             values
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| Some((bulk_str(&pair[0])?, bulk_str(&pair[1])?)))
                 .collect::<Option<Vec<_>>>()?
         }

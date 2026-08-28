@@ -624,7 +624,13 @@ fn ensure_pi_session_file(path: &Path) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let _file = OpenOptions::new().create(true).write(true).open(path)?;
+    // This only reserves/touches the per-run session path. If a timestamp
+    // collision finds an existing file, preserve it rather than truncating it.
+    let _file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)?;
     Ok(())
 }
 
@@ -855,6 +861,7 @@ fn handle_pi_event(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finalize_pi_result(
     run_end: PiRunEnd,
     timeout: Duration,

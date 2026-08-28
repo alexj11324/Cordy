@@ -660,7 +660,7 @@ fn write_private_codex_config(path: &Path, content: &str) -> io::Result<()> {
         // Keep the final chmod as defense in depth if another local process
         // changed the mode while the file was being regenerated.
         file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(unix))]
@@ -1055,6 +1055,7 @@ impl CodexBackend {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_codex_attempts(
     backend: CodexBackend,
     prompt: String,
@@ -1189,6 +1190,7 @@ async fn run_codex_attempts(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_codex(
     mut tree: OwnedProcessTree,
     stdin: ChildStdin,
@@ -1228,19 +1230,19 @@ async fn run_codex(
 
     let outcome = if timeout.is_zero() {
         tokio::select! {
-            result = &mut protocol => RunOutcome::Protocol(result),
+            result = &mut protocol => RunOutcome::Protocol(Box::new(result)),
             () = cancellation.cancelled() => RunOutcome::Cancelled,
         }
     } else {
         tokio::select! {
-            result = &mut protocol => RunOutcome::Protocol(result),
+            result = &mut protocol => RunOutcome::Protocol(Box::new(result)),
             () = cancellation.cancelled() => RunOutcome::Cancelled,
             () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
         }
     };
 
     let mut result = match outcome {
-        RunOutcome::Protocol(result) => result,
+        RunOutcome::Protocol(result) => *result,
         RunOutcome::Cancelled => ProtocolOutcome::terminal("aborted", "execution cancelled"),
         RunOutcome::TimedOut => ProtocolOutcome::terminal(
             "timeout",
@@ -1357,7 +1359,7 @@ async fn run_codex(
 }
 
 enum RunOutcome {
-    Protocol(ProtocolOutcome),
+    Protocol(Box<ProtocolOutcome>),
     Cancelled,
     TimedOut,
 }
@@ -2365,9 +2367,7 @@ impl CodexTurnNotificationGate {
         self.turn_id.is_empty()
             || nested_string(params, &["turnId"])
                 .or_else(|| nested_string(params, &["turn", "id"]))
-                .map_or(true, |turn_id| {
-                    turn_id.is_empty() || turn_id == self.turn_id
-                })
+                .is_none_or(|turn_id| turn_id.is_empty() || turn_id == self.turn_id)
     }
 }
 

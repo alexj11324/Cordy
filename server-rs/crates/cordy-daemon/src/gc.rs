@@ -398,13 +398,14 @@ pub(crate) mod processtree {
     /// Windows counterpart to the Unix process-group runner. `OwnedProcessTree`
     /// starts the helper suspended, assigns its complete descendant tree to a
     /// kill-on-close Job Object, and only then lets it run.
-    pub(crate) async fn combined_output(
+    async fn run_inner(
         ctx: &Ctx,
         mut cmd: Command,
         wait_delay: Duration,
-    ) -> (Vec<u8>, anyhow::Result<()>) {
+    ) -> (Vec<u8>, Vec<u8>, anyhow::Result<()>) {
         if let Some(cause) = ctx.err() {
             return (
+                Vec::new(),
                 Vec::new(),
                 Err(anyhow::Error::new(ProcessError::Cancelled(cause))),
             );
@@ -414,7 +415,13 @@ pub(crate) mod processtree {
         cmd.stderr(Stdio::piped());
         let mut tree = match cordy_agent::OwnedProcessTree::spawn(&mut cmd).await {
             Ok(tree) => tree,
-            Err(error) => return (Vec::new(), Err(anyhow::Error::new(ProcessError::Io(error)))),
+            Err(error) => {
+                return (
+                    Vec::new(),
+                    Vec::new(),
+                    Err(anyhow::Error::new(ProcessError::Io(error))),
+                )
+            }
         };
         let stdout = tree.child_mut().stdout.take();
         let stderr = tree.child_mut().stderr.take();
@@ -456,14 +463,54 @@ pub(crate) mod processtree {
             }
         };
 
-        let output = tokio::time::timeout(wait_delay, async {
-            let mut output = stdout_task.await.unwrap_or_default();
-            output.extend(stderr_task.await.unwrap_or_default());
-            output
+        let drained = tokio::time::timeout(wait_delay, async {
+            (
+                stdout_task.await.unwrap_or_default(),
+                stderr_task.await.unwrap_or_default(),
+            )
         })
-        .await
-        .unwrap_or_default();
-        (output, result)
+        .await;
+        let (stdout, stderr) = match drained {
+            Ok(output) => output,
+            Err(_) => {
+                if result.is_err() {
+                    return (Vec::new(), Vec::new(), result);
+                }
+                return (
+                    Vec::new(),
+                    Vec::new(),
+                    Err(anyhow::anyhow!(
+                        "wait for process output exceeded {}s",
+                        wait_delay.as_secs()
+                    )),
+                );
+            }
+        };
+        (stdout, stderr, result)
+    }
+
+    pub(crate) async fn combined_output(
+        ctx: &Ctx,
+        cmd: Command,
+        wait_delay: Duration,
+    ) -> (Vec<u8>, anyhow::Result<()>) {
+        let (mut stdout, stderr, result) = run_inner(ctx, cmd, wait_delay).await;
+        stdout.extend(stderr);
+        (stdout, result)
+    }
+
+    pub(crate) async fn output(
+        ctx: &Ctx,
+        cmd: Command,
+        wait_delay: Duration,
+    ) -> anyhow::Result<Vec<u8>> {
+        let (stdout, _stderr, result) = run_inner(ctx, cmd, wait_delay).await;
+        result.map(|()| stdout)
+    }
+
+    pub(crate) async fn run(ctx: &Ctx, cmd: Command, wait_delay: Duration) -> anyhow::Result<()> {
+        let (_stdout, _stderr, result) = run_inner(ctx, cmd, wait_delay).await;
+        result
     }
 }
 

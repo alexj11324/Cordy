@@ -190,11 +190,7 @@ fn parse_rollout(path: &Path, started_at: SystemTime, resumed: bool) -> Option<C
     let mut model = String::new();
     let mut after_start_boundary = false;
 
-    loop {
-        let valid = match read_bounded_line(&mut reader, &mut line) {
-            Ok(Some(valid)) => valid,
-            Ok(None) | Err(_) => break,
-        };
+    while let Ok(Some(valid)) = read_bounded_line(&mut reader, &mut line) {
         if !valid {
             continue;
         }

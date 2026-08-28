@@ -692,6 +692,7 @@ async fn read_stream(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_copilot(
     mut tree: OwnedProcessTree,
     stdout: ChildStdout,
@@ -720,12 +721,12 @@ async fn run_copilot(
         tokio::pin!(completion);
         if timeout.is_zero() {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
             }
         } else {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
                 () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
             }
@@ -733,7 +734,10 @@ async fn run_copilot(
     };
 
     let (run_end, exit, stream) = match outcome {
-        RunOutcome::Completed((exit, state)) => (RunEnd::Completed, Some(exit), state),
+        RunOutcome::Completed(completed) => {
+            let (exit, state) = *completed;
+            (RunEnd::Completed, Some(exit), state)
+        }
         RunOutcome::Cancelled => {
             let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
             (RunEnd::Cancelled, None, (&mut stdout_task).await)
@@ -858,7 +862,7 @@ fn send_message(messages: &mpsc::Sender<Message>, message: Message) {
 
 #[derive(Debug)]
 enum RunOutcome {
-    Completed((io::Result<ExitStatus>, Result<CopilotState, JoinError>)),
+    Completed(Box<(io::Result<ExitStatus>, Result<CopilotState, JoinError>)>),
     Cancelled,
     TimedOut,
 }

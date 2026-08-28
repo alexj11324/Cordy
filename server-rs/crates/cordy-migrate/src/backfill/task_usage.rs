@@ -170,7 +170,7 @@ pub async fn run_standalone(pool: &PgPool, options: StandaloneOptions) -> anyhow
         .await
         .context("acquire advisory lock 4246")?;
 
-    let result = run_standalone_locked(pool, &mut *lock_conn, options).await;
+    let result = run_standalone_locked(pool, &mut lock_conn, options).await;
     let unlock_result = sqlx::query("SELECT pg_advisory_unlock($1)")
         .bind(ADVISORY_LOCK_KEY)
         .execute(&mut *lock_conn)

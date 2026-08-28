@@ -585,6 +585,7 @@ async fn join_stdout_task(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_openclaw(
     mut tree: OwnedProcessTree,
     stdout: ChildStdout,

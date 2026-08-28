@@ -246,6 +246,7 @@ fn should_filter_inherited_env(key: &str) -> bool {
     ) || key.starts_with("CLAUDECODE_")
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_cursor(
     mut tree: OwnedProcessTree,
     stdin: SharedStdin,
@@ -277,12 +278,12 @@ async fn run_cursor(
         tokio::pin!(completion);
         if timeout.is_zero() {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
             }
         } else {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
                 () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
             }
@@ -290,16 +291,18 @@ async fn run_cursor(
     };
 
     let (run_end, exit, stream, write) = match outcome {
-        RunOutcome::Completed(CursorCompletion::Process(exit, stream)) => {
-            close_stdin(&stdin).await;
-            (RunEnd::Completed, Some(exit), stream, prompt_task.await)
-        }
-        RunOutcome::Completed(CursorCompletion::Stream(stream)) => {
-            prompt_task.abort();
-            close_stdin(&stdin).await;
-            let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-            (RunEnd::Completed, None, stream, Ok(Ok(())))
-        }
+        RunOutcome::Completed(completed) => match *completed {
+            CursorCompletion::Process(exit, stream) => {
+                close_stdin(&stdin).await;
+                (RunEnd::Completed, Some(exit), stream, prompt_task.await)
+            }
+            CursorCompletion::Stream(stream) => {
+                prompt_task.abort();
+                close_stdin(&stdin).await;
+                let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+                (RunEnd::Completed, None, stream, Ok(Ok(())))
+            }
+        },
         RunOutcome::Cancelled => {
             prompt_task.abort();
             close_stdin(&stdin).await;
@@ -810,7 +813,7 @@ fn send_message(messages: &mpsc::Sender<Message>, message: Message) {
 
 #[derive(Debug)]
 enum RunOutcome {
-    Completed(CursorCompletion),
+    Completed(Box<CursorCompletion>),
     Cancelled,
     TimedOut,
 }

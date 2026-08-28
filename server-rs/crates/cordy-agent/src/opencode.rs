@@ -925,15 +925,15 @@ fn parse_opencode_model_id_line(line: &str) -> Option<String> {
 
 fn collect_model_json(lines: &[&str], start: usize) -> (String, usize) {
     let mut raw = String::new();
-    for index in start..lines.len() {
-        let line = lines[index].trim();
+    for (index, source_line) in lines.iter().enumerate().skip(start) {
+        let line = source_line.trim();
         if index > start && parse_opencode_model_id_line(line).is_some() {
             return (raw, index);
         }
         if !raw.is_empty() {
             raw.push('\n');
         }
-        raw.push_str(lines[index]);
+        raw.push_str(source_line);
         if serde_json::from_str::<Value>(&raw).is_ok() {
             return (raw, index + 1);
         }

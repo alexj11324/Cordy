@@ -433,6 +433,7 @@ fn windows_chromium_fallback_executable() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_claude(
     mut tree: OwnedProcessTree,
     stdin: SharedStdin,
@@ -468,12 +469,12 @@ async fn run_claude(
         tokio::pin!(completion);
         if timeout.is_zero() {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
             }
         } else {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
                 () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
             }
@@ -481,7 +482,8 @@ async fn run_claude(
     };
 
     let (run_end, exit, stream, write) = match end {
-        RunOutcome::Completed((exit, stream, write)) => {
+        RunOutcome::Completed(completed) => {
+            let (exit, stream, write) = *completed;
             (RunEnd::Completed, Some(exit), stream, write)
         }
         RunOutcome::Cancelled => {
@@ -1046,14 +1048,14 @@ async fn pump_stderr(mut stderr: ChildStderr, tail: SharedDiagnosticBuffer) {
     }
 }
 
+type ClaudeCompletion = (
+    io::Result<ExitStatus>,
+    Result<ClaudeStreamState, JoinError>,
+    Result<io::Result<()>, JoinError>,
+);
+
 enum RunOutcome {
-    Completed(
-        (
-            io::Result<ExitStatus>,
-            Result<ClaudeStreamState, JoinError>,
-            Result<io::Result<()>, JoinError>,
-        ),
-    ),
+    Completed(Box<ClaudeCompletion>),
     Cancelled,
     TimedOut,
 }
