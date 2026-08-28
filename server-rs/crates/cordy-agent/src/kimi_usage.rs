@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -135,7 +135,7 @@ fn accumulate(usage: &mut BTreeMap<String, TokenUsage>, path: &Path, scan: &Kimi
     let mut line = Vec::new();
     loop {
         line.clear();
-        let Ok(bytes) = reader.read_until(b'\n', &mut line) else {
+        let Ok(bytes) = read_bounded_line(&mut reader, &mut line) else {
             return;
         };
         if bytes == 0 {

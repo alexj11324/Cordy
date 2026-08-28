@@ -1,6 +1,6 @@
 //! CodeBuddy model and effort discovery through its ACP handshake.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io;
 use std::process::Stdio;
 use std::time::Duration;

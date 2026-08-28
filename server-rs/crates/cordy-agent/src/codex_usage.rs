@@ -8,7 +8,10 @@
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(test)]
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;

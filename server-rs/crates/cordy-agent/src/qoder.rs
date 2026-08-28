@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::process::Stdio;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
@@ -3975,7 +3975,7 @@ mod tests {
         assert!(state
             .tools
             .get("tool-1")
-            .is_some_and(|tool| tool.input.is_empty() && !tool.deferred_text.is_empty()));
+            .is_some_and(|tool| tool.input.is_empty() && !tool.args_text.is_empty()));
         handle_tool_update(
             &serde_json::json!({
                 "toolCallId": "tool-1",
