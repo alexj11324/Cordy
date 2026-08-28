@@ -2045,28 +2045,29 @@ pub async fn create_agent_task(
     id
 )
 SELECT
-    $1, $2, $3, 'queued', $4, $5,
+    $1, $2, $3, 'queued', $4,
+    NULLIF($5::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE($6::uuid[], '{}'),
     $7,
     COALESCE($8::boolean, FALSE),
     COALESCE($9::boolean, FALSE),
     $10,
-    $11,
+    NULLIF($11::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     CASE
         WHEN COALESCE($12::text, '') <> ''
         THEN jsonb_build_object('head_sha', $12::text)
         ELSE NULL
     END,
-    $13,
-    $14,
+    NULLIF($13::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($14::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $15,
     $16,
     $17,
-    $18,
-    $19,
-    $20,
+    NULLIF($18::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($19::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($20::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $21,
-    $22,
+    NULLIF($22::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE($23::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, $3, $2)
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
@@ -2187,18 +2188,18 @@ pub async fn create_deferred_agent_task(
 )
 SELECT
     $4, $5, $6, 'deferred', $7,
-    $8,
+    NULLIF($8::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $9,
     COALESCE($10::boolean, FALSE),
-    $11,
+    NULLIF($11::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $12,
     $13,
-    $14,
-    $15,
+    NULLIF($14::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($15::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $16,
-    $17,
+    NULLIF($17::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $18,
-    $19,
+    NULLIF($19::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE($20::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, $3, $2)
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
@@ -2320,27 +2321,28 @@ pub async fn create_deferred_channel_issue_task(
     id
 )
 SELECT
-    $1, $2, $3, 'deferred', $4, $5,
+    $1, $2, $3, 'deferred', $4,
+    NULLIF($5::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE($6::uuid[], '{}'),
     $7,
     COALESCE($8::boolean, FALSE),
     COALESCE($9::boolean, FALSE),
     $10,
-    $11,
+    NULLIF($11::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     jsonb_strip_nulls(jsonb_build_object(
         'head_sha', NULLIF(COALESCE($12::text, ''), ''),
         'channel_issue_media_pending', TRUE
     )),
-    $13,
-    $14,
+    NULLIF($13::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($14::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $15,
     $16,
     $17,
-    $18,
-    $19,
-    $20,
+    NULLIF($18::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($19::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
+    NULLIF($20::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $21,
-    $22,
+    NULLIF($22::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $23,
     COALESCE($24::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, $3, $2)

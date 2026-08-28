@@ -1463,6 +1463,7 @@ mod tests {
                 rows.recovery_count(failed_id).await? == 0,
                 "comment creation unexpectedly enqueued a task"
             );
+            let first_comment = rows.recovery_comment(failed_id).await?;
 
             let second_failed_id = rows
                 .worker_task(
@@ -1481,6 +1482,7 @@ mod tests {
                 second_target.is_some() && second_created,
                 "second durable recovery comment was not created"
             );
+            let second_comment = rows.recovery_comment(second_failed_id).await?;
 
             let zero = svc.recover_pending_delegated_failures(0).await?;
             anyhow::ensure!(
@@ -1496,6 +1498,12 @@ mod tests {
                 rows.recovery_count(failed_id).await? == 1,
                 "outbox replay did not create one coordinator task"
             );
+            let first_recovery_task_id: Uuid = sqlx::query_scalar(
+                "SELECT id FROM agent_task_queue WHERE trigger_evidence_kind = 'delegated_failure' AND trigger_evidence_ref_id = $1",
+            )
+            .bind(failed_id)
+            .fetch_one(&rows.pool)
+            .await?;
             anyhow::ensure!(
                 rows.recovery_count(second_failed_id).await? == 0,
                 "positive limit replayed more than one row"
@@ -1506,8 +1514,32 @@ mod tests {
                 "second bounded replay = {second:?}, want one replay"
             );
             anyhow::ensure!(
-                rows.recovery_count(second_failed_id).await? == 1,
-                "second bounded replay did not create one coordinator task"
+                rows.recovery_count(second_failed_id).await? == 0,
+                "second bounded replay created a parallel coordinator task"
+            );
+            let merged = rows.failed_task(first_recovery_task_id).await?;
+            anyhow::ensure!(
+                merged.status == "queued",
+                "second bounded replay changed the pending coordinator status to {}",
+                merged.status
+            );
+            anyhow::ensure!(
+                merged.trigger_comment_id == Some(second_comment.id)
+                    && merged.coalesced_comment_ids.contains(&first_comment.id),
+                "pending coordinator did not carry both recovery comments: trigger={:?} coalesced={:?}",
+                merged.trigger_comment_id,
+                merged.coalesced_comment_ids
+            );
+            let pending_coordinators: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM agent_task_queue WHERE issue_id = $1 AND agent_id = $2 AND status IN ('queued', 'dispatched')",
+            )
+            .bind(rows.source_issue_id)
+            .bind(rows.coordinator_id)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(
+                pending_coordinators == 1,
+                "bounded replay left {pending_coordinators} parallel coordinator tasks"
             );
             let third = svc.recover_pending_delegated_failures(1).await?;
             anyhow::ensure!(

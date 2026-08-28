@@ -3029,7 +3029,13 @@ mod dispatch_contract_tests {
         let service = AutopilotService::new(pool.clone(), bus, tasks);
         let mut first_run = load_run(&pool, autopilot_id).await;
         let first = service
-            .dispatch_autopilot_run(&autopilot, Uuid::nil(), "manual", &mut first_run, None)
+            .dispatch_autopilot_run(
+                &autopilot,
+                Uuid::nil(),
+                "manual",
+                &mut first_run,
+                Some(user_id),
+            )
             .await
             .expect("first production dispatch creates the issue");
         assert_eq!(first.reason_code, None);
@@ -3049,10 +3055,31 @@ mod dispatch_contract_tests {
                 .await
                 .expect("count first dispatched task");
         assert_eq!(first_task_count, 1);
+        let (originator_user_id, accountable_user_id, originator_source): (
+            Option<Uuid>,
+            Option<Uuid>,
+            Option<String>,
+        ) = sqlx::query_as(
+            "SELECT originator_user_id, accountable_user_id, originator_source \
+             FROM agent_task_queue WHERE issue_id = $1",
+        )
+        .bind(first_issue_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load first dispatched task attribution");
+        assert_eq!(originator_user_id, Some(user_id));
+        assert_eq!(accountable_user_id, Some(user_id));
+        assert_eq!(originator_source.as_deref(), Some("direct_human"));
 
         let mut duplicate_run = load_run(&pool, autopilot_id).await;
         let duplicate = service
-            .dispatch_autopilot_run(&autopilot, Uuid::nil(), "manual", &mut duplicate_run, None)
+            .dispatch_autopilot_run(
+                &autopilot,
+                Uuid::nil(),
+                "manual",
+                &mut duplicate_run,
+                Some(user_id),
+            )
             .await
             .expect("recent duplicate is a classified dispatch skip");
         assert_eq!(duplicate.reason_code, Some(ReasonCode::AlreadyActive));

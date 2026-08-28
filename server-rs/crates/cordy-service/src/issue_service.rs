@@ -1310,10 +1310,18 @@ mod tests {
         .await
         .expect("done category does not block duplicate");
 
+        let prior_done_top: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(MIN(position), 0) FROM issue \
+             WHERE workspace_id = $1 AND status = 'done'",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load current done column top");
         let done = create(&service, params(workspace_id, "Done column", "done"))
             .await
-            .expect("independent status column");
-        assert_eq!(done.position, -1.0);
+            .expect("next issue in done column");
+        assert_eq!(done.position, prior_done_top - 1.0);
 
         let project_id: Uuid = sqlx::query_scalar(
             "INSERT INTO project (workspace_id, title) VALUES ($1, 'Scoped') RETURNING id",
