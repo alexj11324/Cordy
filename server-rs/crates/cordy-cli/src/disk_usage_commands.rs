@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -188,6 +189,7 @@ pub(super) async fn fill_disk_usage_parent_statuses(
     environment: &Environment,
     profile: &str,
     report: &mut cordy_daemon::diskusage::DiskUsageReport,
+    cancellation: &tokio_util::sync::CancellationToken,
 ) -> bool {
     if !report
         .tasks
@@ -220,8 +222,31 @@ pub(super) async fn fill_disk_usage_parent_statuses(
     let client = Arc::new(cordy_daemon::client::Client::new(server_url));
     client.set_token(&token);
     let resolver = cordy_daemon::diskusage::ClientParentStatusResolver::new(client);
-    let cancellation = tokio_util::sync::CancellationToken::new();
-    cordy_daemon::diskusage::resolve_parent_statuses(&cancellation, report, &resolver)
+    cordy_daemon::diskusage::resolve_parent_statuses(cancellation, report, &resolver)
         .await
         .is_err()
+}
+
+/// Applies the same one-shot API deadline to the complete enrichment pass.
+/// In particular, callers must put all workspace/profile/chunk lookups in
+/// `enrichment`; a new timeout per request recreates the multi-minute hang
+/// this boundary exists to prevent.
+pub(super) async fn with_disk_usage_status_deadline<F>(
+    environment: &Environment,
+    cancellation: &tokio_util::sync::CancellationToken,
+    enrichment: F,
+) -> bool
+where
+    F: Future<Output = bool>,
+{
+    let deadline = super::http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"));
+    tokio::select! {
+        failed = enrichment => failed,
+        () = tokio::time::sleep(deadline) => {
+            // Cancel before the enrichment future is dropped so an active
+            // daemon HTTP request observes the command deadline as well.
+            cancellation.cancel();
+            true
+        }
+    }
 }

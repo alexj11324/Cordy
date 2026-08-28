@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use std::fmt::Write;
+use std::io::Write as IoWrite;
 use std::time::Duration;
 
 use super::config::Environment;
@@ -22,9 +23,17 @@ pub(crate) async fn run_update(
     let download_timeout = resolve_update_download_timeout(args);
     validate_update_timeout(download_timeout)?;
 
+    write_update_progress(
+        std::io::stderr(),
+        &format!(
+            "Current version: {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\nChecking installation and latest release...\n"
+        ),
+    )?;
+
     let executor = cordy_daemon::update_executor::UpdateExecutor::detect()
         .await
         .map_err(|error| sanitize_update_error(error.into()))?;
+    write_update_progress(std::io::stderr(), "Applying update...\n")?;
     let outcome = executor
         .update_request(
             cordy_daemon::update_executor::UpdateRequest::latest()
@@ -34,12 +43,13 @@ pub(crate) async fn run_update(
         .await
         .map_err(sanitize_update_error)?;
 
-    let mut output = render_update_outcome(outcome);
-    output.stderr = format!(
-        "Current version: {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\n{}",
-        output.stderr
-    );
-    Ok(output)
+    Ok(render_update_outcome(outcome))
+}
+
+pub(crate) fn write_update_progress(mut writer: impl IoWrite, message: &str) -> Result<()> {
+    writer.write_all(message.as_bytes())?;
+    writer.flush()?;
+    Ok(())
 }
 
 pub(crate) fn resolve_update_download_timeout(args: &UpdateArgs) -> Duration {

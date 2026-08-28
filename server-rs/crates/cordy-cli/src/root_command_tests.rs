@@ -43,6 +43,25 @@ fn version_subcommand_accepts_only_go_registry_output_values() {
 }
 
 #[test]
+fn completion_command_remains_hidden_but_callable_for_supported_shells() {
+    use clap::CommandFactory;
+
+    let help = Cli::command().render_help().to_string();
+    assert!(!help.contains("completion"));
+
+    for shell in ["bash", "zsh", "fish", "powershell"] {
+        let cli = Cli::try_parse_from(["cordy", "completion", shell])
+            .unwrap_or_else(|error| panic!("parse {shell} completion: {error}"));
+        let Command::Completion { shell } = cli.command else {
+            panic!("expected completion command");
+        };
+        let output = run_completion(shell).expect("render completion");
+        assert!(!output.stdout.trim().is_empty());
+        assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
 fn update_command_parses_go_timeout_and_uses_daemon_default() {
     let default = Cli::try_parse_from(["cordy", "update"]).expect("update CLI");
     let Command::Update(args) = default.command else {
@@ -116,6 +135,32 @@ fn update_rejects_zero_timeout_before_executor_detection() {
     assert!(error
         .to_string()
         .contains("download timeout must be greater than zero"));
+}
+
+#[test]
+fn update_progress_is_written_and_flushed_before_long_running_work() {
+    #[derive(Default)]
+    struct RecordingWriter {
+        bytes: Vec<u8>,
+        flushes: usize,
+    }
+
+    impl std::io::Write for RecordingWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.flushes += 1;
+            Ok(())
+        }
+    }
+
+    let mut writer = RecordingWriter::default();
+    write_update_progress(&mut writer, "Applying update...\n").expect("progress write");
+    assert_eq!(writer.bytes, b"Applying update...\n");
+    assert_eq!(writer.flushes, 1);
 }
 
 #[tokio::test]

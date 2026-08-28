@@ -26,6 +26,7 @@ mod chat_commands;
 mod cli_command_schema;
 mod client_factory;
 mod command_dispatch;
+mod completion_commands;
 pub mod config;
 mod config_command_schema;
 #[cfg(test)]
@@ -208,6 +209,7 @@ pub(crate) use client_factory::{
     normalize_api_base_url, required_workspace_id, resolve_current_workspace_id,
 };
 pub(crate) use command_dispatch::run_with_input;
+use completion_commands::run_completion;
 pub(crate) use config_command_schema::{ConfigArgs, ConfigCommand};
 use config_commands::{
     config_display_values, format_config_table, run_config_set, run_config_show,
@@ -229,7 +231,7 @@ use daemon_commands::{
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
     fill_disk_usage_parent_statuses, limit_disk_usage_aggregate, limit_disk_usage_report,
-    resolve_disk_usage_root, validate_disk_usage_args,
+    resolve_disk_usage_root, validate_disk_usage_args, with_disk_usage_status_deadline,
 };
 use disk_usage_output::{
     append_disk_usage_warning, format_disk_ratio, format_disk_usage_aggregate_table,

@@ -604,17 +604,24 @@ pub(crate) async fn run_daemon_disk_usage(
             &cordy_daemon::diskusage::artifact_patterns_from_env(),
         )?;
         if !task_context && super::disk_usage_needs_parent_status(args) {
-            for root in &mut aggregate.roots {
-                if super::fill_disk_usage_parent_statuses(
-                    cli,
-                    environment,
-                    &root.profile,
-                    &mut root.report,
-                )
-                .await
-                {
-                    super::append_disk_usage_warning(&mut stderr);
+            let cancellation = tokio_util::sync::CancellationToken::new();
+            let enrichment = async {
+                let mut failed = false;
+                for root in &mut aggregate.roots {
+                    failed |= super::fill_disk_usage_parent_statuses(
+                        cli,
+                        environment,
+                        &root.profile,
+                        &mut root.report,
+                        &cancellation,
+                    )
+                    .await;
                 }
+                failed
+            };
+            if super::with_disk_usage_status_deadline(environment, &cancellation, enrichment).await
+            {
+                super::append_disk_usage_warning(&mut stderr);
             }
         }
         super::limit_disk_usage_aggregate(&mut aggregate, args);
@@ -632,11 +639,18 @@ pub(crate) async fn run_daemon_disk_usage(
         &root,
         &cordy_daemon::diskusage::artifact_patterns_from_env(),
     )?;
-    if !task_context
-        && super::disk_usage_needs_parent_status(args)
-        && super::fill_disk_usage_parent_statuses(cli, environment, &cli.profile, &mut report).await
-    {
-        super::append_disk_usage_warning(&mut stderr);
+    if !task_context && super::disk_usage_needs_parent_status(args) {
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let enrichment = super::fill_disk_usage_parent_statuses(
+            cli,
+            environment,
+            &cli.profile,
+            &mut report,
+            &cancellation,
+        );
+        if super::with_disk_usage_status_deadline(environment, &cancellation, enrichment).await {
+            super::append_disk_usage_warning(&mut stderr);
+        }
     }
     super::limit_disk_usage_report(&mut report, args);
     let stdout = match args.output {

@@ -96,6 +96,11 @@ export function rustTargetFor(platform, arch) {
   return target;
 }
 
+export function cargoTargetDirectory(env = process.env, cwd = serverRsDir) {
+  const configured = env.CARGO_TARGET_DIR;
+  return configured ? resolve(cwd, configured) : join(cwd, "target");
+}
+
 // Hand git arguments straight to the binary (no shell). A match pattern like
 // `v[0-9]*` must reach git as one literal argument; routing it through a shell
 // string breaks on Windows, where cmd.exe keeps the POSIX single quotes and
@@ -137,7 +142,11 @@ async function main() {
   const targetArchLabel = targetArch === "x64" ? "amd64" : targetArch;
   const rustTarget = rustTargetFor(targetPlatform, targetArch);
   const binName = binaryNameForPlatform(targetPlatform);
-  const srcBinary = join(serverRsDir, "target", rustTarget, "release", binName);
+  // Cargo resolves a relative CARGO_TARGET_DIR from its working directory.
+  // Normalize it once and give the same absolute directory to both the build
+  // and copy phases so a stale server-rs/target binary can never win.
+  const cargoTargetDir = cargoTargetDirectory(process.env, serverRsDir);
+  const srcBinary = join(cargoTargetDir, rustTarget, "release", binName);
   const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
   const destBinary = join(destDir, binName);
 
@@ -167,6 +176,7 @@ async function main() {
         stdio: "inherit",
         env: {
           ...process.env,
+          CARGO_TARGET_DIR: cargoTargetDir,
           CORDY_BUILD_VERSION: version,
           CORDY_BUILD_COMMIT: commit,
           CORDY_BUILD_DATE: date,

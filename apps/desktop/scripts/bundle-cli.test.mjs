@@ -1,6 +1,8 @@
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   binaryNameForPlatform,
+  cargoTargetDirectory,
   normalizeRuntimeArch,
   normalizeRuntimePlatform,
   rustTargetFor,
@@ -34,5 +36,16 @@ describe("bundle-cli Rust target selection", () => {
       /unsupported target architecture/,
     );
     expect(() => rustTargetFor("linux", "ia32")).toThrow(/no Rust target/);
+  });
+
+  it("uses Cargo's default, relative, and absolute target directory semantics", () => {
+    const serverRs = resolve("repo", "server-rs");
+    expect(cargoTargetDirectory({}, serverRs)).toBe(join(serverRs, "target"));
+    expect(
+      cargoTargetDirectory({ CARGO_TARGET_DIR: "../cargo-cache" }, serverRs),
+    ).toBe(resolve(serverRs, "../cargo-cache"));
+    expect(
+      cargoTargetDirectory({ CARGO_TARGET_DIR: "/var/cache/cordy" }, serverRs),
+    ).toBe(resolve("/var/cache/cordy"));
   });
 });

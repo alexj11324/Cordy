@@ -726,6 +726,7 @@ pub(super) async fn run_with_input<R: Read>(
         }) => run_daemon_disk_usage(cli, environment, args).await,
         Command::Setup(args) => run_setup(cli, environment, args, input).await,
         Command::Update(args) => run_update(cli, environment, args).await,
+        Command::Completion { shell } => run_completion(*shell),
         Command::Version { output } => run_version(*output),
     }
 }
