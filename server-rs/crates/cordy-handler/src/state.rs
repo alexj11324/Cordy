@@ -1246,8 +1246,8 @@ mod tests {
         )
     }
 
-    #[test]
-    fn production_dependencies_gate_composio_and_task_overlay() {
+    #[tokio::test]
+    async fn production_dependencies_gate_composio_and_task_overlay() {
         let _env = RestoreComposioEnv::clear();
         let build = || {
             HandlerState::new_with_production_dependencies(

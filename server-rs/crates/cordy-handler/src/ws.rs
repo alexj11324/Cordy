@@ -922,10 +922,18 @@ mod tests {
             .expect("create PAT");
         }
 
-        let agent_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO agent (workspace_id, name, runtime_mode) VALUES ($1, 'ws agent', 'local') RETURNING id",
+        let runtime_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status) VALUES ($1, 'ws runtime', 'local', 'test', 'online') RETURNING id",
         )
         .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create runtime");
+        let agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode, runtime_id) VALUES ($1, 'ws agent', 'local', $2) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(runtime_id)
         .fetch_one(&pool)
         .await
         .expect("create agent");
@@ -947,10 +955,11 @@ mod tests {
         .await
         .expect("create issue");
         let task_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO agent_task_queue (agent_id, issue_id, status, priority) VALUES ($1, $2, 'queued', 0) RETURNING id",
+            "INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, priority) VALUES ($1, $2, $3, 'queued', 0) RETURNING id",
         )
         .bind(agent_id)
         .bind(issue_id)
+        .bind(runtime_id)
         .fetch_one(&pool)
         .await
         .expect("create task");
@@ -1093,10 +1102,18 @@ mod tests {
             .execute(&pool)
             .await
             .expect("create second workspace membership");
-        let foreign_agent_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO agent (workspace_id, name, runtime_mode) VALUES ($1, 'foreign ws agent', 'local') RETURNING id",
+        let foreign_runtime_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status) VALUES ($1, 'foreign ws runtime', 'local', 'test', 'online') RETURNING id",
         )
         .bind(workspace_two)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace runtime");
+        let foreign_agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode, runtime_id) VALUES ($1, 'foreign ws agent', 'local', $2) RETURNING id",
+        )
+        .bind(workspace_two)
+        .bind(foreign_runtime_id)
         .fetch_one(&pool)
         .await
         .expect("create foreign workspace agent");
@@ -1109,10 +1126,11 @@ mod tests {
         .await
         .expect("create foreign workspace issue");
         let foreign_task_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO agent_task_queue (agent_id, issue_id, status, priority) VALUES ($1, $2, 'queued', 0) RETURNING id",
+            "INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, priority) VALUES ($1, $2, $3, 'queued', 0) RETURNING id",
         )
         .bind(foreign_agent_id)
         .bind(foreign_issue_id)
+        .bind(foreign_runtime_id)
         .fetch_one(&pool)
         .await
         .expect("create foreign workspace task");
@@ -1352,21 +1370,21 @@ mod tests {
 
         let _ = shutdown_tx.send(());
         server.await.expect("websocket server task");
-        sqlx::query("DELETE FROM agent_task_queue WHERE id = $1")
-            .bind(task_id)
+        sqlx::query("DELETE FROM agent_task_queue WHERE id = ANY($1)")
+            .bind(vec![task_id, foreign_task_id])
             .execute(&pool)
             .await
-            .expect("delete task");
-        sqlx::query("DELETE FROM issue WHERE id = $1")
-            .bind(issue_id)
+            .expect("delete tasks");
+        sqlx::query("DELETE FROM issue WHERE id = ANY($1)")
+            .bind(vec![issue_id, foreign_issue_id])
             .execute(&pool)
             .await
-            .expect("delete issue");
-        sqlx::query("DELETE FROM agent WHERE id = $1")
-            .bind(agent_id)
+            .expect("delete issues");
+        sqlx::query("DELETE FROM agent WHERE id = ANY($1)")
+            .bind(vec![agent_id, foreign_agent_id])
             .execute(&pool)
             .await
-            .expect("delete agent");
+            .expect("delete agents");
         sqlx::query("DELETE FROM personal_access_token WHERE user_id = ANY($1)")
             .bind(vec![user_id, outsider_id])
             .execute(&pool)

@@ -1844,7 +1844,7 @@ mod tests {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
-        assert_eq!(bytes, r#"{"error":"invalid workspace_id"}"#.as_bytes());
+        assert_eq!(&bytes[..], b"{\"error\":\"invalid workspace_id\"}\n");
     }
 
     #[tokio::test]

@@ -1569,10 +1569,20 @@ mod tests {
                 anyhow::ensure!(event.payload["failure_reason"].is_string(), "failure event omitted reason");
             }
             drop(failed_events);
+            let issue_events = issue_events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             anyhow::ensure!(
-                issue_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).len()
-                    > rows.active_task_ids.len(),
-                "terminal failures did not reconcile issue events"
+                issue_events.len() == 1,
+                "terminal failures reconciled {} issue events, want 1",
+                issue_events.len()
+            );
+            anyhow::ensure!(
+                issue_events[0].workspace_id == rows.workspace_id.to_string()
+                    && issue_events[0].payload["status_changed"] == true
+                    && issue_events[0].payload["prev_status"] == "in_progress"
+                    && issue_events[0].payload["issue"]["status"] == "todo",
+                "terminal failure issue reconciliation event mismatch"
             );
             Ok::<(), anyhow::Error>(())
         }
@@ -3107,17 +3117,7 @@ mod tests {
                 .unwrap_or_default();
             keys.sort_unstable();
             anyhow::ensure!(
-                keys == vec![
-                    "chat_session_id",
-                    "content",
-                    "created_at",
-                    "elapsed_ms",
-                    "initiator_user_id",
-                    "message_id",
-                    "message_kind",
-                    "outcome",
-                    "task_id",
-                ],
+                keys == vec!["chat_session_id", "message_id", "outcome", "task_id"],
                 "finalized payload keys mismatch: {keys:?}"
             );
             anyhow::ensure!(
@@ -3126,11 +3126,7 @@ mod tests {
                 "unexpected finalized payload: {payload}"
             );
             anyhow::ensure!(
-                payload
-                    .get("content")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .is_empty(),
+                payload.get("content").is_none(),
                 "restore event leaked prompt content: {payload}"
             );
             anyhow::ensure!(
