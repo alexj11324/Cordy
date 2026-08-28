@@ -104,7 +104,7 @@ describe("useRowLink", () => {
 
   // Web has no adapter, and the row is a <div> — there is no native
   // modifier-click behaviour to inherit, so without an explicit window.open
-  // the row would navigate in place and swallow the user's intent (MUL-5456).
+  // the row would navigate in place and swallow the user's intent (PB-5456).
   it("opens a browser tab against the shareable URL for cmd/ctrl click without openInNewTab (web)", () => {
     const push = vi.fn();
     const open = vi.spyOn(window, "open").mockReturnValue(null);

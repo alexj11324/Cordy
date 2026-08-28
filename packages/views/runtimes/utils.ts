@@ -785,7 +785,7 @@ export interface DailyCostData {
 // to see. It isn't: across the current rate table cached input is ~10x cheaper
 // than uncached, not ~100x, and agent sessions routinely read tens of times
 // more cached tokens than uncached ones — so cache read is often the LARGEST
-// segment, and dropping it understated some buckets by >50% (MUL-6334).
+// segment, and dropping it understated some buckets by >50% (PB-6334).
 //
 // Cache *savings* — a reconstruction of what the discount avoided — is a
 // separate KPI and deliberately not part of this stack; savings is not spend.
@@ -947,7 +947,7 @@ export function aggregateByDate(usage: RuntimeUsage[]): {
 // rather than disappearing. Rows whose week falls outside the window are
 // dropped; without this guard `.slice(-weekCount)` on a sparse 180-day
 // aggregate would surface old populated weeks instead of the empty
-// in-range buckets the user asked for (MUL-2382 weekly window scoping).
+// in-range buckets the user asked for (PB-2382 weekly window scoping).
 // Accepts any row carrying `date` + token counts + the model needed for
 // pricing. Both `RuntimeUsage` (runtime detail) and `DashboardUsageDaily`
 // (workspace dashboard) match this shape — there's no behavioural difference,
@@ -1067,7 +1067,7 @@ export function aggregateByWeek(
 // immediately prior window of equal length. "Today" is read in the runtime's
 // timezone so the cutoff lands on the same calendar boundary the backend
 // used when bucketing rows — without this the browser/runtime tz gap could
-// shift the boundary by a day at the edges (#MUL-2382 sliceWindow tz bug).
+// shift the boundary by a day at the edges (#PB-2382 sliceWindow tz bug).
 export function sliceWindow(
   usage: readonly RuntimeUsage[],
   days: number,

@@ -329,7 +329,7 @@ describe("InboxListItem link semantics", () => {
 
 
 // ---------------------------------------------------------------------------
-// MUL-6395 — the row's only status affordance is one glyph, and the glyph set
+// PB-6395 — the row's only status affordance is one glyph, and the glyph set
 // is per CATEGORY. Without the status's own colour, switching an issue between
 // two statuses that share a category (built-in "In Review" → custom "Human
 // Review") repainted the row identically, so the inbox looked like it had

@@ -8,11 +8,11 @@
 // is purely a detail-page concern now.
 //
 // Covers the canonical taxonomy in the `cordy-task-failure` crate — platform-side
-// reasons plus 14 `agent_error.*` sub-reasons — and the pre-MUL-1949 coarse
+// reasons plus 14 `agent_error.*` sub-reasons — and the pre-PB-1949 coarse
 // values still present on historical rows. This used to be a
 // `Record<TaskFailureReason, string>` indexed with a cast, which silently
 // resolved to `undefined` for every refined reason the backend has written
-// since MUL-1949: a task that failed on a provider 401 rendered no reason
+// since PB-1949: a task that failed on a provider 401 rendered no reason
 // at all.
 const REASON_LABEL: Record<string, string> = {
   // Platform / scheduler side.
@@ -49,7 +49,7 @@ const REASON_LABEL: Record<string, string> = {
   codex_resume_oversized: "Session too large to resume",
   local_directory_error: "Local directory error",
 
-  // Pre-MUL-1949 coarse values, still present on historical rows.
+  // Pre-PB-1949 coarse values, still present on historical rows.
   agent_error: "Agent execution error",
   codex_semantic_inactivity: "Codex semantic inactivity timeout",
   manual: "Cancelled by user",

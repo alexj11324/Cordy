@@ -32,7 +32,7 @@ use crate::ws_connector::{EndpointFetcher, WsEndpoint};
 /// on a reconnect would yield an auth rejection that looks like a Lark
 /// outage. The connector calls endpoint() once per run.
 ///
-/// PersonalAgent compatibility — OPEN RISK (MUL-2671 review thread): the
+/// PersonalAgent compatibility — OPEN RISK (PB-2671 review thread): the
 /// official Feishu docs describe long-conn mode as "supports 企业自建应用
 /// only". The PersonalAgent device-flow archetype is not listed as supported;
 /// live confirmation is pending. If the bootstrap call returns a structured

@@ -231,7 +231,7 @@ export function createSlashCommandSuggestion(qc: QueryClient): Omit<
     char: "/",
     pluginKey,
     // Only open over a `/` the user actually typed, so a pasted path
-    // (`/usr/local/bin`) never opens the skill picker (MUL-5429).
+    // (`/usr/local/bin`) never opens the skill picker (PB-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
     items: ({ query }) => buildItems(qc, query),
     command: ({ editor, range, props }) => {
@@ -349,7 +349,7 @@ export function createBuiltinCommandSuggestion(
     char: "/",
     pluginKey,
     // Only open over a `/` the user actually typed, so a pasted path
-    // (`/usr/local/bin`) never opens the command menu (MUL-5429).
+    // (`/usr/local/bin`) never opens the command menu (PB-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
     items: ({ query }) => buildBuiltinCommandItems(query, options.getQuickActions?.() ?? []),
     command: ({ editor, range, props }) => {

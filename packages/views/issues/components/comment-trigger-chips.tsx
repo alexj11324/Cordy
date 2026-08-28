@@ -35,7 +35,7 @@ const MAX_STACK_HEADS = 4;
 interface CommentTriggerChipsProps {
   agents: CommentTriggerPreviewAgent[];
   // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
-  // (MUL-4525 §2). Each renders as a named warning chip so the user sees WHICH
+  // (PB-4525 §2). Each renders as a named warning chip so the user sees WHICH
   // target won't run and why, not a silent no-op after sending.
   blocked?: CommentTriggerOutcome[];
   // The draft markdown, used only to label each blocked target with the name the

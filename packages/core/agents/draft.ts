@@ -61,7 +61,7 @@ export const EMPTY_AGENT_DRAFT: AgentDraft = {
  * them together is what stops an orphan `thinking_level` / `service_tier`
  * from being persisted for a model that never advertised it — the daemon
  * would silently fall back at execution time and the settings page would
- * disagree with what actually ran (MUL-5390).
+ * disagree with what actually ran (PB-5390).
  */
 export function applyDraftRuntimeChange(
   draft: AgentDraft,
@@ -162,7 +162,7 @@ export function deriveDuplicateAccess(
  * exact runtime. When the source runtime is gone, private to somebody else or
  * offline, the draft falls back to another runtime and the three are cleared
  * for the user to pick again — the same rule `cordy agent copy` already
- * enforces server-side. Before MUL-5390 the fallback kept
+ * enforces server-side. Before PB-5390 the fallback kept
  * the source `model` and silently persisted a cross-provider value.
  */
 export function buildDuplicateDraft(

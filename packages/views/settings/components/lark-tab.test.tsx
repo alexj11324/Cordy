@@ -187,10 +187,10 @@ function resetFixtures() {
 describe("LarkAgentBindButton (CTA gate)", () => {
   beforeEach(resetFixtures);
 
-  it("shows the Feishu bind CTA but hides the Lark CTA for an owner (MUL-3083)", () => {
+  it("shows the Feishu bind CTA but hides the Lark CTA for an owner (PB-3083)", () => {
     // Mainland Feishu binding stays available; the Lark (international)
     // entry is temporarily hidden via LARK_INTL_CONNECT_ENABLED while its
-    // install→inbound pipeline is stabilized (MUL-3083).
+    // install→inbound pipeline is stabilized (PB-3083).
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
     });
@@ -198,7 +198,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     expect(screen.queryByRole("button", { name: /Bind to Lark/i })).toBeNull();
   });
 
-  it("shows the Feishu bind CTA but hides the Lark CTA for an admin (MUL-3083)", () => {
+  it("shows the Feishu bind CTA but hides the Lark CTA for an admin (PB-3083)", () => {
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
@@ -216,7 +216,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("shows the Feishu bind CTA for a non-admin agent owner (agentOwnerId matches the user, MUL-4213)", () => {
+  it("shows the Feishu bind CTA for a non-admin agent owner (agentOwnerId matches the user, PB-4213)", () => {
     // The backend authorizes the agent's owner via canManageAgent even when
     // they are only a plain workspace member, so the CTA must render for
     // them once the caller threads the agent's owner_id.
@@ -284,7 +284,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     );
   });
 
-  // NOTE (MUL-3083): the "clicking Bind to Lark begins an install with
+  // NOTE (PB-3083): the "clicking Bind to Lark begins an install with
   // region='lark'" test was removed alongside the temporarily-hidden Lark
   // (international) CTA — there is no Lark button to click while
   // LARK_INTL_CONNECT_ENABLED is false. The Feishu region routing is still
@@ -362,7 +362,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     expect(link.href).toBe("https://open.larksuite.com/app/cli_lark_app");
   });
 
-  it("shows the Feishu CTA (Lark hidden) for an agent without its own installation, per-agent scoping (MUL-3083)", () => {
+  it("shows the Feishu CTA (Lark hidden) for an agent without its own installation, per-agent scoping (PB-3083)", () => {
     installationsRef.current.installations = [
       {
         id: "inst-other",
@@ -423,7 +423,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     ).toBeTruthy();
   });
 
-  it("shows the Feishu CTA (Lark hidden) when this agent's only installation is revoked (MUL-3083)", () => {
+  it("shows the Feishu CTA (Lark hidden) when this agent's only installation is revoked (PB-3083)", () => {
     installationsRef.current.installations = [
       {
         id: "inst-revoked",
@@ -609,7 +609,7 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
     });
-    // The Lark CTA is hidden (MUL-3083); open the dialog via the Feishu CTA
+    // The Lark CTA is hidden (PB-3083); open the dialog via the Feishu CTA
     // — the polling-error behavior under test is region-agnostic.
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
     // Let the begin-session promise resolve and the QR render.
@@ -685,7 +685,7 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: StrictModeWrapper,
     });
-    // The Lark CTA is hidden (MUL-3083); the StrictMode regression is about
+    // The Lark CTA is hidden (PB-3083); the StrictMode regression is about
     // the dialog mount cycle, so open it via the Feishu CTA.
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
 

@@ -5,7 +5,7 @@ interface ConfigState {
   cdnDomain: string;
   // True when cdnDomain serves private content via time-bounded signed URLs
   // (CloudFront signing enabled server-side). Renderers must not treat a raw
-  // storage URL on that domain as a loadable media source (MUL-3254).
+  // storage URL on that domain as a loadable media source (PB-3254).
   cdnSigned: boolean;
   allowSignup: boolean;
   googleClientId: string;

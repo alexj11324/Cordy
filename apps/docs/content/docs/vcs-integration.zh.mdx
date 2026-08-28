@@ -9,7 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 **仅适用于自部署的 Cordy。** 此集成只在你**自己部署 Cordy** 时可用，Cordy 云端不提供。这里的「自托管」指的是 **Cordy 本身自部署**——通常是为了让它能访问你自己网络内的 Git 实例。需要服务端运维开启（`CORDY_VCS_INTEGRATION_ENABLED=true`）并设置 `CORDY_VCS_SECRET_KEY`；在此之前，设置 → 集成里不会出现该板块。
 </Callout>
 
-Cordy 按工作区连接自托管的 Git 代码托管：**Forgejo**、**Gitea** 或 **GitLab**。连接后，任何在分支名、标题或正文中包含 issue 编号（例如 `MUL-123`）的 Pull Request（GitLab 为 Merge Request）都会**自动关联**到对应的 [issue](/issues)，出现在 issue 侧栏的 **Pull requests** 中；当带有关闭关键字的 PR 合并后，issue 会被移动到「完成」。head commit 的 CI 会以检查条的形式显示在卡片上。
+Cordy 按工作区连接自托管的 Git 代码托管：**Forgejo**、**Gitea** 或 **GitLab**。连接后，任何在分支名、标题或正文中包含 issue 编号（例如 `PB-123`）的 Pull Request（GitLab 为 Merge Request）都会**自动关联**到对应的 [issue](/issues)，出现在 issue 侧栏的 **Pull requests** 中；当带有关闭关键字的 PR 合并后，issue 会被移动到「完成」。head commit 的 CI 会以检查条的形式显示在卡片上。
 
 这些代码托管与 GitHub 并行工作：一个工作区可任意组合使用。
 
@@ -76,7 +76,7 @@ Cordy 会用存储的密钥校验每次投递，因此没有匹配密钥的 Webh
 ## 镜像的内容
 
 - **Pull / Merge Request** —— open、closed、merged、draft 状态，以及作者、分支和（在代码托管提供时）diff 统计。
-- **issue 关联** —— 标题、正文或分支中的编号会将 PR 关联到 issue。合并的 PR 带有关闭关键字（`Closes`/`Fixes`/`Resolves MUL-123`）且没有仍处于 open 的关联 PR 时，issue 会被移动到「完成」。
+- **issue 关联** —— 标题、正文或分支中的编号会将 PR 关联到 issue。合并的 PR 带有关闭关键字（`Closes`/`Fixes`/`Resolves PB-123`）且没有仍处于 open 的关联 PR 时，issue 会被移动到「完成」。
 - **CI** —— Forgejo/Gitea 的提交状态与 GitLab 的流水线会汇总为 head commit 的通过/失败/进行中检查条。
 
 ## 智能体创建 Pull Request

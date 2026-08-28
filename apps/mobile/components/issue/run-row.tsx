@@ -156,7 +156,7 @@ const STATUS_CLASS: Record<AgentTask["status"], string> = {
 //
 // Keyed by the raw wire value, not a closed enum: `failure_reason` is an open
 // string that grows as classifier rules land. It held only the six
-// pre-MUL-1949 coarse values until MUL-5370, so every refined `agent_error.*`
+// pre-PB-1949 coarse values until PB-5370, so every refined `agent_error.*`
 // the backend has written since fell through and the badge read just "Failed".
 // An unrecognised reason still does — a compact badge is the one place where
 // web's raw-wire-value fallback would overflow the row.

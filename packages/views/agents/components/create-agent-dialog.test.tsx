@@ -290,7 +290,7 @@ describe("CreateAgentDialog runtime visibility gate", () => {
   });
 });
 
-describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () => {
+describe("CreateAgentDialog access picker (PB-4010, feature-flag gated)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // The dialog's default (workspace) still needs to be usable by ME:
@@ -345,7 +345,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
 
     const payload = onCreate.mock.calls[0]?.[0];
     expect(payload).toBeDefined();
-    // MUL-3963 payload shape.
+    // PB-3963 payload shape.
     expect(payload.visibility).toBeUndefined();
     expect(payload.permission_mode).toBe("public_to");
     expect(payload.invocation_targets).toEqual([

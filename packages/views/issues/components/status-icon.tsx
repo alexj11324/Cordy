@@ -178,7 +178,7 @@ export function StatusIcon({
   inheritColor?: boolean;
 }) {
   // The glyph set is per CATEGORY: a custom status renders with its category's
-  // icon, which is what makes it read as "the same kind of thing". (MUL-6243)
+  // icon, which is what makes it read as "the same kind of thing". (PB-6243)
   const category = categoryProp ?? statusCategoryOfKey(status);
   const cfg = STATUS_CONFIG[category];
   const Renderer = STATUS_RENDERERS[category] ?? TodoIcon;

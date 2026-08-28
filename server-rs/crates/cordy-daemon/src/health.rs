@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// deliberately NOT omitted because the
 /// empty string is a real answer ("I am the default profile's daemon") that
 /// must stay distinguishable from a pre-#6694 daemon (#6694); SkippedAgents is
-/// what made GH #6077 actionable (MUL-5439).
+/// what made GH #6077 actionable (PB-5439).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HealthResponse {
@@ -56,7 +56,7 @@ pub struct HealthResponse {
     #[serde(default)]
     pub agents: Vec<String>,
     /// Maps a discovered provider to why registration dropped it. Omitted when
-    /// empty so older consumers see no change (MUL-5439).
+    /// empty so older consumers see no change (PB-5439).
     #[serde(
         rename = "skipped_agents",
         default,

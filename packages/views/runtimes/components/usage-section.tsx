@@ -368,7 +368,7 @@ function WhenChart({
   const metricToggleVisible = !showHeatmap;
   // Both metrics carry a cache-read segment now: the token stack always did,
   // and the cost stack gained one when it stopped dropping cache-read spend
-  // from its total (MUL-6334).
+  // from its total (PB-6334).
   const legendIncludesCacheRead = !showHeatmap;
 
   return (

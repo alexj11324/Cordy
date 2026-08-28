@@ -18,10 +18,10 @@ pub const DAEMON_CAPABILITY_REMOTE_MCP_V1: &str = "remote-mcp-v1";
 /// resources (execution_mode=worktree). A CAPABILITY rather than a version
 /// check on purpose: a daemon without the implementation json-skips
 /// execution_mode and runs the task IN PLACE, editing the working copy the
-/// user asked to isolate (MUL-5707).
+/// user asked to isolate (PB-5707).
 pub const DAEMON_CAPABILITY_LOCAL_WORKTREE_V1: &str = "local-worktree-v1";
 /// Advertises that the daemon can carry request/response RPCs over the
-/// WebSocket control connection (MUL-4257).
+/// WebSocket control connection (PB-4257).
 pub const DAEMON_CAPABILITY_RPC_V1: &str = "rpc-v1";
 /// Advertised (X-Client-Capabilities) by app clients that understand the
 /// durable draft-restore recovery path (#5219).
@@ -32,13 +32,13 @@ pub const APP_CAPABILITY_CHAT_DRAFT_RESTORE_V1: &str = "chat-draft-restore-v1";
 /// Ordinary user/assistant message.
 pub const CHAT_MESSAGE_KIND_MESSAGE: &str = "message";
 /// A direct-chat turn the agent completed without any text reply — a visible,
-/// deliberate terminal outcome rather than a silently-dropped turn (MUL-4351).
+/// deliberate terminal outcome rather than a silently-dropped turn (PB-4351).
 pub const CHAT_MESSAGE_KIND_NO_RESPONSE: &str = "no_response";
 /// The server-authored, hidden first turn used to start Mika's onboarding
 /// conversation. User-facing APIs filter it out.
 pub const CHAT_MESSAGE_KIND_ONBOARDING_KICKOFF: &str = "onboarding_kickoff";
 /// The assistant reply produced by the onboarding kickoff; chat renders the
-/// starter cards under this kind instead of quick-action chips (MUL-5765).
+/// starter cards under this kind instead of quick-action chips (PB-5765).
 pub const CHAT_MESSAGE_KIND_ONBOARDING_OPENING: &str = "onboarding_opening";
 
 // --- Pending work kinds ----------------------------------------------------
@@ -96,7 +96,7 @@ pub struct ChatQuickAction {
 /// EVENT_DAEMON_RPC_REQUEST. RequestID correlates the response; Method selects
 /// the server-side handler. TimeoutMs bounds the handler's context server-side
 /// so a slow RPC is cancelled rather than committing after the daemon has
-/// already timed out waiting (MUL-4257); 0 means connection-lifetime only.
+/// already timed out waiting (PB-4257); 0 means connection-lifetime only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RpcRequestPayload {
     #[serde(rename = "request_id")]
@@ -175,7 +175,7 @@ pub struct WorkspacesChangedPayload {}
 
 /// Sent from server to daemon when a heartbeat-carried request is enqueued for
 /// a runtime. Carries no work itself — safe to lose, duplicate, or ignore
-/// (MUL-5444).
+/// (PB-5444).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingWorkPayload {
     #[serde(rename = "runtime_id")]
@@ -223,7 +223,7 @@ pub struct ChatQuickActionsPayload {
     pub quick_actions: Vec<ChatQuickAction>,
     /// Marks a supplement that resolves the client's refresh spinner because
     /// the regeneration FAILED, not because it produced new suggestions
-    /// (MUL-5149). Omitted on the success path and for the automatic pass.
+    /// (PB-5149). Omitted on the success path and for the automatic pass.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub failed: bool,
 }
@@ -295,7 +295,7 @@ pub struct ChatMessagePayload {
 
 /// Broadcast when an agent finishes responding to a chat message. Carries the
 /// freshly-persisted assistant ChatMessage so the client can write it into the
-/// messages cache inline (#2123). MessageKind is additive (MUL-4351): older
+/// messages cache inline (#2123). MessageKind is additive (PB-4351): older
 /// clients ignore it and fall back to the non-empty Content.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatDonePayload {

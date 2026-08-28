@@ -267,7 +267,7 @@ describe("per-run token usage", () => {
 // choose. They stopped holding it once the total moved into the header: at the
 // 260px minimum the row has 227px and the full header wants ~238px, and the
 // label was the only item that could give. It gave by breaking "Execution log"
-// across two lines (MUL-5804). These tests pin the contract that replaced that:
+// across two lines (PB-5804). These tests pin the contract that replaced that:
 // one line always, and a width tier that drops the token figure whole.
 describe("execution log header geometry", () => {
   function renderSection(tasks: AgentTask[]) {
@@ -280,7 +280,7 @@ describe("execution log header geometry", () => {
     queryClient.setQueryData(issueKeys.tasks("issue-1"), tasks);
     return renderWithI18n(
       <QueryClientProvider client={queryClient}>
-        <ExecutionLogSection issueId="issue-1" identifier="MUL-1" />
+        <ExecutionLogSection issueId="issue-1" identifier="PB-1" />
       </QueryClientProvider>,
     );
   }

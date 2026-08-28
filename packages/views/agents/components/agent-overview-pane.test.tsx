@@ -275,7 +275,7 @@ describe("AgentOverviewPane Environment tab visibility", () => {
 
   it("hides the Environment tab from users who cannot manage the agent", () => {
     // The env endpoints admit the agent owner or a workspace owner/admin
-    // (MUL-5438) — the rule `canEdit` already encodes. Anyone else who opens
+    // (PB-5438) — the rule `canEdit` already encodes. Anyone else who opens
     // the tab hits a guaranteed 403 on "Reveal & edit".
     renderPane([makeRuntime("claude")], { canEdit: false });
     openSettings();

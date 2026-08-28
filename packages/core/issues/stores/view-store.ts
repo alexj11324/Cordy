@@ -211,7 +211,7 @@ export interface IssueViewState {
    * more than one status: hiding Backlog wrote the other 6 built-in keys and
    * so silently filtered out every CUSTOM status too. Display state and the
    * exact-key filter are different questions and now have different fields.
-   * (MUL-6243)
+   * (PB-6243)
    */
   hiddenStatusCategories: IssueStatusCategory[];
   ganttZoom: GanttZoom;

@@ -25,7 +25,7 @@ function wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-// MUL-4808 — `uploadWithToast` only ever toasted if its caller passed
+// PB-4808 — `uploadWithToast` only ever toasted if its caller passed
 // `onError`, and no composer did. So a failed upload silently removed its
 // placeholder and the file simply vanished with no explanation. The gate's
 // minimum failure fallback ("drop the placeholder, SAY SO, allow submit

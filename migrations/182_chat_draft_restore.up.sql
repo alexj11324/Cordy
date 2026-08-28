@@ -7,7 +7,7 @@
 -- (DELETE) once applied.
 --
 -- No foreign keys: new tables enforce their relationships in the application
--- layer (MUL-3515). DeleteChatSession prunes this table inside its transaction,
+-- layer (PB-3515). DeleteChatSession prunes this table inside its transaction,
 -- alongside the channel_* tables it already prunes there.
 --
 -- id is the deleted user chat message's id: globally unique (it was a

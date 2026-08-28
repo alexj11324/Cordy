@@ -1,4 +1,4 @@
--- Guarantee at-least-once processing of user comments (MUL-4195).
+-- Guarantee at-least-once processing of user comments (PB-4195).
 --
 -- Historically a new comment that arrived while an agent already had a
 -- queued/dispatched task for the same (issue, agent) was silently DROPPED by

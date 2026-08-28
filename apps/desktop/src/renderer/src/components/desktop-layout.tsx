@@ -235,7 +235,7 @@ export function DesktopShell() {
     () => null,
   );
   // Chrome gates on "the slug still resolves to a workspace", NOT on "the
-  // singleton is non-null" (MUL-6231 / #7021). The singleton is mutable
+  // singleton is non-null" (PB-6231 / #7021). The singleton is mutable
   // process state that no single owner keeps in lockstep with the workspace
   // list, so after the active workspace is deleted it can still hold the dead
   // slug for a beat. Everything below mounts workspace-scoped components —
@@ -280,7 +280,7 @@ export function DesktopShell() {
               headers inside the canvas must not add their own fallback one on
               top of it — desktop windows sit below `xl`, exactly where that
               fallback renders, so every page showed a second identical icon
-              50px under this one (MUL-6218). */}
+              50px under this one (PB-6218). */}
           <SidebarProvider
             hasExternalTrigger
             className="flex-1 bg-app-shell [--sidebar-wrapper-fill:var(--app-shell)]"
@@ -296,7 +296,7 @@ export function DesktopShell() {
                     at the top of SidebarInset, and MainCanvas is desktop's
                     equivalent relative/overflow-hidden content box. Desktop
                     used to have no navigation feedback at all — a click just
-                    froze until the destination committed (MUL-6404). */}
+                    froze until the destination committed (PB-6404). */}
                 <NavigationProgress />
                 <TabContent />
                 {slug && <FloatingChat />}

@@ -686,7 +686,7 @@
     "connection_description_prefix": "Link issues to pull requests automatically. When a PR with",
     "connection_description_suffix": "in its branch, title, or body is merged, the corresponding issue moves to",
     "connection_description_done": "Done",
-    "connection_identifier_example": "MUL-123",
+    "connection_identifier_example": "PB-123",
     "connected_to": "Connected to {{login}}",
     "connect_github": "Connect GitHub",
     "connect_opening": "Opening…",

@@ -100,7 +100,7 @@ pub trait Channel: Send + Sync {
 /// encrypted app_secret / tenant_key / region, Slack's bot/app tokens,
 /// …), carried opaquely so the foundation never grows a per-platform
 /// field. It maps directly onto the channel_type column + JSONB config of
-/// a channel_installation row (MUL-3515 decision §3).
+/// a channel_installation row (PB-3515 decision §3).
 #[derive(Clone, Default)]
 pub struct Config {
     /// The platform discriminator.

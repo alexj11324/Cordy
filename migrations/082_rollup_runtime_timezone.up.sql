@@ -27,7 +27,7 @@
 -- the runtime's tz. For runtimes that stay on `'UTC'` (the column
 -- default) this is a no-op; for runtimes whose operators set a non-UTC
 -- tz, dates only converge as their underlying raw rows get re-touched
--- by new events. The product decision (MUL-1950) was "guarantee future
+-- by new events. The product decision (PB-1950) was "guarantee future
 -- correctness, do not backfill history".
 
 CREATE OR REPLACE FUNCTION enqueue_task_usage_daily_dirty_for_atq()

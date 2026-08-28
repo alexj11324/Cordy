@@ -685,7 +685,7 @@
     "connection_description_prefix": "태스크를 Pull request에 자동으로 연결합니다. 브랜치, 제목 또는 본문에",
     "connection_description_suffix": "이(가) 있는 PR이 병합되면 해당 태스크가",
     "connection_description_done": "완료",
-    "connection_identifier_example": "MUL-123",
+    "connection_identifier_example": "PB-123",
     "connected_to": "{{login}}에 연결됨",
     "connect_github": "GitHub 연결",
     "connect_opening": "여는 중...",

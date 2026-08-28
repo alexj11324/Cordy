@@ -383,7 +383,7 @@ describe("AgentDetailPage DM button", () => {
   });
 
   it("shows a toast instead of navigating when the user lacks chat access", async () => {
-    // Post-MUL-3963 a workspace admin can VIEW another member's private agent
+    // Post-PB-3963 a workspace admin can VIEW another member's private agent
     // but can no longer invoke (chat with) it — the exact case where the DM
     // button must explain itself rather than navigate.
     agentsRef.current = [

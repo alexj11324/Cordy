@@ -101,7 +101,7 @@ mod tests {
     fn plugin_prefixes_recognized() {
         assert!(is_plugin_bearer_token("mpi_abc"));
         assert!(is_plugin_bearer_token("mpc_abc"));
-        assert!(!is_plugin_bearer_token("mul_abc"));
+        assert!(!is_plugin_bearer_token("pby_abc"));
         assert!(!is_plugin_bearer_token("mdt_abc"));
         assert!(!is_plugin_bearer_token(""));
     }

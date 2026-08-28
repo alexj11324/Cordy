@@ -7,7 +7,7 @@ export interface ChatPinnedAgent {
 }
 
 /**
- * Kind of a chat message. Additive (MUL-4351): the server always sends a
+ * Kind of a chat message. Additive (PB-4351): the server always sends a
  * concrete value, but treat a missing/unknown value as "message" so an older
  * server or a future kind never breaks rendering.
  * - "message"     — an ordinary user/assistant message.
@@ -48,7 +48,7 @@ export interface ChatQuickActionsPendingState {
    * chat:quick_actions supplement and clears this marker. Stored on the marker
    * (not as a component timer) so switching chat surfaces — which unmounts and
    * remounts the timeout hook — resumes the SAME deadline instead of re-arming
-   * a fresh window each time (MUL-5149 review).
+   * a fresh window each time (PB-5149 review).
    */
   expires_at: number;
 }
@@ -59,7 +59,7 @@ export interface ChatQuickActionsPendingState {
  * the turn's pills are unchanged. Set by the realtime layer off a failed
  * chat:quick_actions and consumed once by a view to toast "couldn't refresh"
  * before clearing itself. `at` is a per-event nonce so a second failure re-fires
- * even when the message_id repeats (MUL-5149 review).
+ * even when the message_id repeats (PB-5149 review).
  */
 export interface ChatQuickActionsFailureState {
   message_id: string;
@@ -155,7 +155,7 @@ export interface ChatMessage {
   elapsed_ms?: number | null;
   /**
    * "message" (default) or "no_response" — a completed direct-chat turn that
-   * produced no text reply (MUL-4351). Optional/additive: absent on older
+   * produced no text reply (PB-4351). Optional/additive: absent on older
    * servers and on user messages; treat a missing value as "message".
    */
   message_kind?: ChatMessageKind;

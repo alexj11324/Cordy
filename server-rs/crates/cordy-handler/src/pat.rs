@@ -153,7 +153,7 @@ async fn renew(State(state): State<HandlerState>, headers: HeaderMap) -> Respons
         Ok(id) => id,
         Err(response) => return response,
     };
-    let Some(raw) = bearer(&headers).filter(|value| value.starts_with("mul_")) else {
+    let Some(raw) = bearer(&headers).filter(|value| value.starts_with("pby_")) else {
         return error_response(
             StatusCode::BAD_REQUEST,
             "only personal access tokens can be renewed",
@@ -247,7 +247,7 @@ mod tests {
             name: "local".into(),
             revoked: false,
             token_hash: "hidden".into(),
-            token_prefix: "mul_example".into(),
+            token_prefix: "pby_example".into(),
             user_id: Uuid::nil(),
         });
         let value = serde_json::to_value(response).unwrap();

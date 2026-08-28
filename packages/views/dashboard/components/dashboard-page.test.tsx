@@ -21,7 +21,7 @@ const dashboardDataRef = vi.hoisted(() => ({ current: false }));
 const manyAgentsRef = vi.hoisted(() => ({ current: false }));
 // Appends the server's `__restricted_agents__` bucket to the per-agent rollups
 // — what a plain member actually receives once the backend folds the agents
-// they may not view (MUL-5409).
+// they may not view (PB-5409).
 const restrictedBucketRef = vi.hoisted(() => ({ current: false }));
 
 // Kept out of the fixture ternary so the sentinel's shape reads at a glance.
@@ -566,7 +566,7 @@ describe("DashboardPage — the Errors list never exposes an agent the viewer ca
 
 // The page answers two questions — "what did this cost" and "what broke" —
 // and used to answer both on one scroll, where the failure breakdown sat
-// below a leaderboard that can itself run to thirty rows (MUL-5759).
+// below a leaderboard that can itself run to thirty rows (PB-5759).
 describe("DashboardPage — the two questions are separate tabs", () => {
   beforeEach(() => {
     queryKeys.length = 0;
@@ -651,7 +651,7 @@ describe("DashboardPage — the two questions are separate tabs", () => {
   });
 });
 
-// MUL-5409. The server folds every agent it won't name — those the viewer may
+// PB-5409. The server folds every agent it won't name — those the viewer may
 // not see, plus the hidden system carriers behind agent-builder sessions — onto
 // one sentinel row. The leaderboard used to have a single synthetic row,
 // labelled "Deleted agents" with a bin icon and dashed-out Time/Tasks, so the
@@ -721,7 +721,7 @@ describe("DashboardPage — leaderboard density", () => {
 
     const list = () => within(screen.getByRole("list", { name: "Leaderboard" }));
     // 12 agents have usage. Flattening all of them is what pushed the Errors
-    // card a full screen below the fold (MUL-5388).
+    // card a full screen below the fold (PB-5388).
     expect(list().getAllByRole("listitem")).toHaveLength(10);
     // Ranked by tokens desc, so the two smallest spenders are the ones cut.
     expect(list().getByText("Bulk Agent 0")).toBeInTheDocument();

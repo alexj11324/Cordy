@@ -13,7 +13,7 @@ import type { NodeType } from "@tiptap/pm/model";
  * preceding sibling to nest under. That is correct for a collapsed cursor in the
  * first item, but it also kills the natural "select the whole list from the top
  * and press Tab" gesture: the command sees the first item at index 0 and does
- * nothing (MUL-3697).
+ * nothing (PB-3697).
  *
  * The structurally-correct behaviour in a nested-list model (matching Notion /
  * GitHub) is: keep the first selected item as an anchor and sink the rest under

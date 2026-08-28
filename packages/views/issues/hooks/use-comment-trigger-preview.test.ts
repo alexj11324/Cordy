@@ -275,7 +275,7 @@ describe("commentTriggerPreviewSignature", () => {
   it("tracks @all but ignores issue cross-references", () => {
     const issueID = "00000000-0000-0000-0000-000000000003";
 
-    expect(commentTriggerPreviewSignature(`See [MUL-1](mention://issue/${issueID})`)).toBe(
+    expect(commentTriggerPreviewSignature(`See [PB-1](mention://issue/${issueID})`)).toBe(
       commentTriggerPreviewSignature("plain text"),
     );
     expect(commentTriggerPreviewSignature("[@all](mention://all/all)")).not.toBe(

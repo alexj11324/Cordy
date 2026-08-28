@@ -12,7 +12,7 @@
  * so a status offered in one and missing from the other can't happen (that is
  * how an issue becomes unfindable). Until the catalog lands, or against a
  * backend that predates it, that list is exactly the 7 built-ins this picker
- * always offered. (MUL-6243)
+ * always offered. (PB-6243)
  */
 import { Pressable, ScrollView, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";

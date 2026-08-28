@@ -58,7 +58,7 @@ impl Store {
     }
 
     /// Re-checks membership at inbound time. With channel_* FKs removed
-    /// (MUL-3515 §4) a stale binding could otherwise route a message to a
+    /// (PB-3515 §4) a stale binding could otherwise route a message to a
     /// user who has since left the workspace.
     pub async fn is_workspace_member(
         &self,

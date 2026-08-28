@@ -4,7 +4,7 @@ import type { ChatMessage, ChatMessagesPage } from "../types";
 
 /**
  * The single door a settled chat message goes through on its way into the
- * message caches (MUL-5711).
+ * message caches (PB-5711).
  *
  * Before this, every writer rolled its own: `chat:done` inline-inserted the
  * assistant reply, `chat:message` threw its payload away and only invalidated,

@@ -118,7 +118,7 @@ export function ChatMessageList({
   // passes through to the list cells / bubble long-press wrappers normally.
   const selectingId = useChatSelectStore((s) => s.selectingId);
 
-  // Every image in this session, in message order (MUL-5752), so tapping one
+  // Every image in this session, in message order (PB-5752), so tapping one
   // opens the lightbox at its position and a swipe walks the rest.
   //
   // Above the loading / empty early returns because hooks must run on every
@@ -291,7 +291,7 @@ function MessageRow({
 
   if (isUser) {
     // User bubble: same Markdown pipeline as assistant — `@mention`
-    // serialisation `[MUL-1](mention://issue/<id>)`, inline links, and
+    // serialisation `[PB-1](mention://issue/<id>)`, inline links, and
     // inline code resolve identically to web's
     // `packages/views/chat/components/chat-message-list.tsx` user branch.
     // Width is capped at 80% so the bubble keeps the iMessage-style
@@ -378,7 +378,7 @@ function AssistantRow({
   const { data: timeline = [] } = useQuery(
     taskMessagesOptions(message.task_id),
   );
-  // no_response (MUL-4351, mirrors packages/views AssistantMessage): the agent
+  // no_response (PB-4351, mirrors packages/views AssistantMessage): the agent
   // completed this turn without text. Keep the tool timeline and show a notice
   // instead of an empty Markdown block; caption reads "Finished in" not
   // "Replied in".

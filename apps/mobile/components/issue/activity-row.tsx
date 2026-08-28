@@ -87,7 +87,7 @@ function LeadIcon({
   const details = (entry.details ?? {}) as Record<string, string>;
   if (entry.action === "status_changed" && details.to) {
     // `details.to` is a status KEY: the glyph comes from its category and the
-    // colour from the catalog, so a custom status is recognizable. (MUL-6243)
+    // colour from the catalog, so a custom status is recognizable. (PB-6243)
     return (
       <StatusIcon
         status={details.to}

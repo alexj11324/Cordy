@@ -50,7 +50,7 @@ fn cleanup_invalid_concurrent_index(index_regclass: &'static str) -> PreMigratio
 /// Port of `preMigrationHooks`: the two business backfills plus an invalid-
 /// index cleanup for every up migration that builds an index concurrently.
 /// The map must stay total — a new CONCURRENTLY migration without an entry
-/// lets an interrupted build be mistaken for success (see MUL-5999/MUL-6288).
+/// lets an interrupted build be mistaken for success (see PB-5999/PB-6288).
 pub(crate) fn hooks_for_direction(direction: &str) -> Vec<(&'static str, PreMigrationHook)> {
     let mut hooks: Vec<(&'static str, PreMigrationHook)> = match direction {
         "up" => vec![

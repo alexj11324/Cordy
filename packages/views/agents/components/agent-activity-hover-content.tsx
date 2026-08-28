@@ -173,7 +173,7 @@ interface WorkspaceAgentActivityHoverContentProps {
 }
 
 /**
- * Hover-card body for the workspace working chip (MUL-4884).
+ * Hover-card body for the workspace working chip (PB-4884).
  *
  * The chip says WHO is working ("N agents working"); this card says WHERE.
  * The header carries the two figures the chip does not — how many issues

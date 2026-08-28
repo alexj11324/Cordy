@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { TestApiClient } from "./fixtures";
 import { waitForPageText } from "./helpers";
 
-// Stage 3.2 (MUL-3870): the creator-only MCP tab on the agent detail page.
+// Stage 3.2 (PB-3870): the creator-only MCP tab on the agent detail page.
 //
 // Auth + workspace bootstrap go through the real backend (same as every other
 // spec), but the agent list and the Composio connection/catalog endpoints are

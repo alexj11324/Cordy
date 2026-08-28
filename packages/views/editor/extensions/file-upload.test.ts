@@ -232,7 +232,7 @@ describe("uploadAndInsertFile", () => {
   });
 
   it("persists markdownLink (the stable per-attachment URL) into the markdown body, not the short-lived storage URL", async () => {
-    // Regression pin for MUL-3130 review feedback. useFileUpload returns
+    // Regression pin for PB-3130 review feedback. useFileUpload returns
     // both `link` (= att.url, short-lived signed `/uploads/<key>?exp&sig`
     // on LocalStorage) and `markdownLink` (= /api/attachments/<id>/download).
     // The editor must persist `markdownLink` so the comment doesn't

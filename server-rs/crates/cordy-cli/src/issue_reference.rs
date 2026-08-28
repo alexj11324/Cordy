@@ -13,11 +13,11 @@ pub(super) async fn resolve_issue_ref(client: &ApiClient, input: &str) -> Result
     }
     if normalize_uuid_prefix(trimmed).is_some() {
         bail!(
-            "issue ref {input:?} looks like a short UUID prefix; short prefixes are no longer supported for issues. Use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID (run a list command with --full-id to copy it)"
+            "issue ref {input:?} looks like a short UUID prefix; short prefixes are no longer supported for issues. Use the issue key (e.g. PB-123) shown by `cordy issue list`, or pass the full UUID (run a list command with --full-id to copy it)"
         );
     }
     bail!(
-        "issue ref {input:?} is not a recognized issue reference; use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID"
+        "issue ref {input:?} is not a recognized issue reference; use the issue key (e.g. PB-123) shown by `cordy issue list`, or pass the full UUID"
     )
 }
 

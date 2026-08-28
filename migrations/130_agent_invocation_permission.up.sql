@@ -1,4 +1,4 @@
--- Agent invocation permission system, V1 (MUL-3963, parent MUL-3715 Composio epic).
+-- Agent invocation permission system, V1 (PB-3963, parent PB-3715 Composio epic).
 --
 -- Splits "who may TRIGGER/INVOKE an agent" out of the overloaded `visibility`
 -- column into an explicit, extensible model:
@@ -33,13 +33,13 @@ ALTER TABLE agent
         CHECK (permission_mode IN ('private', 'public_to'));
 
 COMMENT ON COLUMN agent.permission_mode IS
-    'Agent invocation permission mode (MUL-3963). private = owner only; public_to = allow-list in agent_invocation_target. Replaces visibility as the authorization source for triggering runs; visibility is now a derived legacy field. Default private = deny-by-default.';
+    'Agent invocation permission mode (PB-3963). private = owner only; public_to = allow-list in agent_invocation_target. Replaces visibility as the authorization source for triggering runs; visibility is now a derived legacy field. Default private = deny-by-default.';
 
 -- ----------------------------------------------------------------------------
 -- agent_invocation_target
 -- ----------------------------------------------------------------------------
 --
--- NO foreign keys by design (Cordy migration rule, matching the MUL-3515 §4
+-- NO foreign keys by design (Cordy migration rule, matching the PB-3515 §4
 -- channel_* generalization): relationships are maintained in the application
 -- layer, not by the database. Concretely:
 --   * agent_id  — cleaned up alongside agent hard-deletes
@@ -66,7 +66,7 @@ CREATE TABLE agent_invocation_target (
 );
 
 COMMENT ON TABLE agent_invocation_target IS
-    'Allow-list of who may invoke a public_to agent (MUL-3963). One row per (agent, target_type, target); targets stack and canInvokeAgent OR-matches. workspace rows store the agent workspace_id in target_id; member rows store the user id; team rows are reserved and inert in V1. Rows only matter when agent.permission_mode = public_to. No DB foreign keys: agent_id / created_by / member target_id relationships are maintained in the application layer (see migration comment).';
+    'Allow-list of who may invoke a public_to agent (PB-3963). One row per (agent, target_type, target); targets stack and canInvokeAgent OR-matches. workspace rows store the agent workspace_id in target_id; member rows store the user id; team rows are reserved and inert in V1. Rows only matter when agent.permission_mode = public_to. No DB foreign keys: agent_id / created_by / member target_id relationships are maintained in the application layer (see migration comment).';
 
 CREATE INDEX agent_invocation_target_agent_id_idx
     ON agent_invocation_target(agent_id);
@@ -90,13 +90,13 @@ WHERE visibility = 'workspace'
 ON CONFLICT (agent_id, target_type, target_id) DO NOTHING;
 
 -- ----------------------------------------------------------------------------
--- Refresh two Composio-era column comments to the MUL-3963 rules (the overlay
+-- Refresh two Composio-era column comments to the PB-3963 rules (the overlay
 -- now FOLLOWS invocation permission and uses the agent OWNER's connection; the
 -- old "originator must equal owner" gate is gone). These COMMENT ON COLUMN
 -- statements also drive the sqlc-generated doc comments in models.go.
 -- ----------------------------------------------------------------------------
 COMMENT ON COLUMN agent.composio_toolkit_allowlist IS
-    'Composio toolkit slugs this agent is allowed to mount as MCP. NULL or empty array = no MCP overlay. Mounted for any run that passes the agent invocation-permission gate (MUL-3963); the overlay uses the agent OWNER''s active Composio connection, so sharing the agent (public_to) shares these apps with whoever may invoke it. No longer gated on originator == owner. Stored as TEXT[] so the dispatch path can intersect against the owner''s active connections with a single SQL ANY() filter.';
+    'Composio toolkit slugs this agent is allowed to mount as MCP. NULL or empty array = no MCP overlay. Mounted for any run that passes the agent invocation-permission gate (PB-3963); the overlay uses the agent OWNER''s active Composio connection, so sharing the agent (public_to) shares these apps with whoever may invoke it. No longer gated on originator == owner. Stored as TEXT[] so the dispatch path can intersect against the owner''s active connections with a single SQL ANY() filter.';
 
 COMMENT ON COLUMN agent_task_queue.originator_user_id IS
-    'Top-of-chain human originator for this run. For human-triggered tasks (comment by a member, chat, quick-create) equals that member. For agent-fanout tasks inherited from the parent task''s originator_user_id via comment.source_task_id. NULL when no human is in the chain (autopilot, system-driven). Used by canInvokeAgent to judge A2A by the originator; the Composio overlay now follows invocation permission and uses the agent owner''s connection, so this is audit/attribution + A2A gating, NOT a Composio owner==originator gate (MUL-3963).';
+    'Top-of-chain human originator for this run. For human-triggered tasks (comment by a member, chat, quick-create) equals that member. For agent-fanout tasks inherited from the parent task''s originator_user_id via comment.source_task_id. NULL when no human is in the chain (autopilot, system-driven). Used by canInvokeAgent to judge A2A by the originator; the Composio overlay now follows invocation permission and uses the agent owner''s connection, so this is audit/attribution + A2A gating, NOT a Composio owner==originator gate (PB-3963).';

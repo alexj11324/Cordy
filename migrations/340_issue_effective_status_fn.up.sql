@@ -1,4 +1,4 @@
--- SQL mirror of issuestatus.Effective (MUL-6243).
+-- SQL mirror of issuestatus.Effective (PB-6243).
 --
 -- Several queries have to ask "is this issue terminal / open?" in SQL, where
 -- the Go resolver cannot reach. Without this, a custom status in the `done`

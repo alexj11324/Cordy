@@ -19,7 +19,7 @@
 -- pg_try_advisory_lock and returns 0 ("no work to do"), so usage aggregation
 -- stops, and DeleteWorkspace — which waits on pg_advisory_xact_lock(4246) to
 -- keep the rollup out of a workspace it is tearing down — blocks forever, so
--- deleting a workspace appears to do nothing at all (MUL-5983).
+-- deleting a workspace appears to do nothing at all (PB-5983).
 --
 -- pg_try_advisory_xact_lock is released by the transaction end, including a
 -- rollback from a cancelled statement, so no failure mode can leak it. The

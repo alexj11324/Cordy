@@ -82,7 +82,7 @@ cleared_outbound_cards AS (
     WHERE chat_session_id IN (SELECT chat_session_id FROM cleared_chat_sessions)
 ),
 cleared_draft_restores AS (
-    -- chat_draft_restore is keyed by chat_session_id with no FK (MUL-3515) and has
+    -- chat_draft_restore is keyed by chat_session_id with no FK (PB-3515) and has
     -- no reaper, while its chat_session rows cascade away with the workspace. Reach
     -- them directly through chat_session (unlike the cards above, this is not
     -- limited to channel-bound sessions) or every pending restore — each holding a

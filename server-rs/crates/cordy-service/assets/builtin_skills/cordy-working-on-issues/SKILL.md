@@ -22,14 +22,14 @@ The GitHub webhook runs two separate scans over an incoming PR. They are not the
 same gate and they read different fields.
 
 **Linking** scans the PR **title, body, OR branch** for a routable issue key
-(`PREFIX-NUMBER`, e.g. `MUL-2759`). Each match writes an issue ↔ PR link row.
+(`PREFIX-NUMBER`, e.g. `PB-2759`). Each match writes an issue ↔ PR link row.
 This is the link that `cordy issue pull-requests` reads back — but see the
 reference-only rule below: a key that appears **only** as a bare mention in the
 body is linked yet hidden from that list.
 
 ```text
-MUL-2759: add built-in issue working skill        # title prefix → links, shown
-agent/matt/mul-2759-working-on-issues             # branch ref   → links, shown
+PB-2759: add built-in issue working skill        # title prefix → links, shown
+agent/matt/pb-2759-working-on-issues             # branch ref   → links, shown
 ```
 
 **Close intent** is stricter and is a separate scan over **title or body only —
@@ -39,10 +39,10 @@ adjacency is what sets the link row's close-intent flag, the gate that
 auto-advances the issue to `done` when the PR merges.
 
 ```text
-Closes MUL-2759                                    # links AND records close intent
-Fixes MUL-2759
-Resolves MUL-2759
-Fix login MUL-2759                                 # links only — keyword not adjacent
+Closes PB-2759                                    # links AND records close intent
+Fixes PB-2759
+Resolves PB-2759
+Fix login PB-2759                                 # links only — keyword not adjacent
 ```
 
 Consequence: a bare title prefix or a branch reference links the PR but does not
@@ -54,16 +54,16 @@ records close intent; on merge, that close intent can move the linked issue to
 as a bare mention in the body — no closing keyword, and not in the title or
 branch — still writes a link row, but the row is flagged `reference_only` and
 **excluded from `cordy issue pull-requests`** (and the issue's right-side PR
-list in the UI). This keeps passing mentions like `Related MUL-2759` or
-`Follow up in MUL-2759` from surfacing an unrelated PR as if it were working on
+list in the UI). This keeps passing mentions like `Related PB-2759` or
+`Follow up in PB-2759` from surfacing an unrelated PR as if it were working on
 that issue. To make a PR show up for an issue, either attach it explicitly with
 `cordy issue pull-request attach <issue-id> --url …` (always a working link), or
 put the key in the title, the branch, or after a closing keyword in the body —
 not as a loose body reference.
 
 ```text
-Closes MUL-2759 in the body                        # links and shown
-Related to MUL-2759 in the body (no title/branch)  # links but reference_only → hidden
+Closes PB-2759 in the body                        # links and shown
+Related to PB-2759 in the body (no title/branch)  # links but reference_only → hidden
 ```
 
 ### Default for code-changing issue work
@@ -91,8 +91,8 @@ body; attaching never creates close intent and preserves any intent the webhook
 already recorded:
 
 ```text
-MUL-2759: fix login redirect        # links only
-Closes MUL-2759                     # links and records close intent
+PB-2759: fix login redirect        # links only
+Closes PB-2759                     # links and records close intent
 ```
 
 Division of labor: the write-back answers "which PR is this" at creation time.
@@ -243,11 +243,11 @@ on it. These are the contracts, not advice:
   is available, keep the issue in its current active state and ask a human to
   choose one; do not leave it ownerless or parked in review.
 - **`done`** on a child issue posts a system comment on its parent. If a PR
-  carries close intent (`Closes MUL-XXXX`), it advances the issue to `done`
+  carries close intent (`Closes PB-XXXX`), it advances the issue to `done`
   itself on merge — you do not also need to flip it manually.
 - **`cancelled`** is a terminal, user-driven decision to close the issue. Like
   `done` it enqueues no new agent work, but it does **not** stop tasks already in
-  flight — a run in progress keeps going (MUL-4465). To stop a running task,
+  flight — a run in progress keeps going (PB-4465). To stop a running task,
   cancel the task itself.
 - **Failed issue-triggered tasks** may roll an issue from `in_progress` back to
   `todo` when no active task / retry remains — that is the main server-owned
@@ -340,7 +340,7 @@ PR title (link the issue):
 
 ```text
 Fix login redirect                  # incorrect — no issue key, won't link
-MUL-2759: fix login redirect        # correct — links the PR
+PB-2759: fix login redirect        # correct — links the PR
 ```
 
 Serial / phased sub-issues (don't start the whole chain at once):

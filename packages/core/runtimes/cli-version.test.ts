@@ -112,7 +112,7 @@ describe("runtimeAdvertisesLocalWorktree", () => {
   // The whole reason this replaced a version check: a dev-built daemon reports a
   // git-describe string that the version floor exempts, so a binary with no
   // worktree implementation passed and two tasks ran in the user's own
-  // directory (MUL-5707).
+  // directory (PB-5707).
   it("ignores the daemon version string in both directions", () => {
     expect(runtimeAdvertisesLocalWorktree([row({ cli_version: "9.9.9" })], "d1")).toBe(false);
     expect(

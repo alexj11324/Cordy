@@ -1,4 +1,4 @@
--- Explicit terminal outcome kind for chat messages (MUL-4351).
+-- Explicit terminal outcome kind for chat messages (PB-4351).
 --
 -- 'message'      — an ordinary user/assistant message (the default; every
 --                  existing row and every legacy client sees this).

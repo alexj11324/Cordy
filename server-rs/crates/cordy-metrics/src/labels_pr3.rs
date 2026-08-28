@@ -152,7 +152,7 @@ const KNOWN_DAEMON_WS_KINDS: &[&str] = &[
     "other",
 ];
 const KNOWN_FEEDBACK_KINDS: &[&str] = &["bug", "feature", "general", "praise", "other"];
-/// Evidence kinds for cordy_chat_output_local_path_total (MUL-4899). A closed
+/// Evidence kinds for cordy_chat_output_local_path_total (PB-4899). A closed
 /// allowlist is what keeps the offending path out of Prometheus: the caller
 /// passes a classification, never a fragment of the reply.
 const KNOWN_CHAT_OUTPUT_LOCAL_PATH_KINDS: &[&str] = &["file_url", "workdir_path"];

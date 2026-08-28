@@ -47,7 +47,7 @@ export function baselineFromQuery(query: Record<string, unknown>): IssueViewBase
   // Unknown enum members (a newer server, a hand-edited blob) are dropped —
   // a value the store cannot represent must not enter the snapshot.
   //
-  // Status is the exception: since MUL-6243 a status filter holds a status KEY,
+  // Status is the exception: since PB-6243 a status filter holds a status KEY,
   // and a workspace's custom keys are not enumerable from a constant. Filtering
   // against ALL_STATUSES here silently deleted every custom status filter the
   // moment a saved view was reopened, so the view came back showing more than

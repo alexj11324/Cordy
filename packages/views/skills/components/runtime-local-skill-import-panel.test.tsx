@@ -231,7 +231,7 @@ describe("RuntimeLocalSkillImportPanel", () => {
     );
   });
 
-  it("surfaces the runtime alias and provider in the picker, not the raw daemon name (MUL-5248)", async () => {
+  it("surfaces the runtime alias and provider in the picker, not the raw daemon name (PB-5248)", async () => {
     mockRuntimeListOptions.mockReturnValue({
       queryKey: ["runtimes", "ws-1", "list"],
       queryFn: () =>

@@ -147,7 +147,7 @@ Open a pull request when it is ready.
 
 ![新建 issue 的智能体模式，创建者已选 Engineer](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-提交后，Cordy 创建 issue（编号 `MUL-1`，标题自动生成），把 Engineer 设为负责人；Engineer 随即开始执行，状态转为「进行中」。issue 右侧是它的全部动态：状态、负责人、关联的 pull request 和执行记录。
+提交后，Cordy 创建 issue（编号 `PB-1`，标题自动生成），把 Engineer 设为负责人；Engineer 随即开始执行，状态转为「进行中」。issue 右侧是它的全部动态：状态、负责人、关联的 pull request 和执行记录。
 
 执行需要几分钟，进展有两个入口：标题旁的工作状态徽章，和右侧的**执行日志**——点开当前这次运行：
 
@@ -173,7 +173,7 @@ Open a pull request when it is ready.
 
 ![在聊天中引用 issue 提问](/images/docs/tutorial-chat-ask-in-issue.webp)
 
-Engineer 的回复分两部分：本地服务已经启动，给出访问地址；PR 其实已经提交了，只是标题、分支名和正文里都没有 `MUL-1`，自动关联匹配不上——它随后把编号补进了 PR 标题。
+Engineer 的回复分两部分：本地服务已经启动，给出访问地址；PR 其实已经提交了，只是标题、分支名和正文里都没有 `PB-1`，自动关联匹配不上——它随后把编号补进了 PR 标题。
 
 ![Engineer 的回复：本地地址和 PR 未关联的原因](/images/docs/tutorial-chat-engineer-reply.webp)
 
@@ -209,7 +209,7 @@ Engineer 交付了第一版，但有些问题它自己意识不到。审查交�
 
 ![Reviewer 的配置](/images/docs/tutorial-reviewer-detail.webp)
 
-审查不用新开 issue，也不用换负责人。回到 MUL-1 的评论框，输入 `@Reviewer` 提及它，写上要做的事再发送——评论框下方会提示：发送后 Reviewer 就开始执行：
+审查不用新开 issue，也不用换负责人。回到 PB-1 的评论框，输入 `@Reviewer` 提及它，写上要做的事再发送——评论框下方会提示：发送后 Reviewer 就开始执行：
 
 ![在评论中 @Reviewer 发起审查](/images/docs/tutorial-comment-mention-reviewer.webp)
 
@@ -239,7 +239,7 @@ Engineer 交付了第一版，但有些问题它自己意识不到。审查交�
 
 ## 组建小队
 
-MUL-1 的循环跑通了，但每一次衔接都由你发起：验收后提及 Reviewer，审查后提及 Engineer。协调本身成了你的工作。这层工作也交出去。Cordy 为此提供的组织形式是**小队（squad）**：一组智能体和成员的命名集合，由一名队长智能体领导。issue 分配给小队后，接手的是队长：读 issue、派活、推进状态；成员有了回复，它被自动唤醒，决定下一步；收尾时向你汇报交付产物。队长接手的正是你刚才的角色。
+PB-1 的循环跑通了，但每一次衔接都由你发起：验收后提及 Reviewer，审查后提及 Engineer。协调本身成了你的工作。这层工作也交出去。Cordy 为此提供的组织形式是**小队（squad）**：一组智能体和成员的命名集合，由一名队长智能体领导。issue 分配给小队后，接手的是队长：读 issue、派活、推进状态；成员有了回复，它被自动唤醒，决定下一步；收尾时向你汇报交付产物。队长接手的正是你刚才的角色。
 
 小队就是已有的分工加一名队长：
 
@@ -289,7 +289,7 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 生成的 issue 里，需求已经被整理成结构化描述；标题旁的徽章显示队长已经接手：
 
-![MUL-2：Lead 创建 issue 并开始工作](/images/docs/tutorial-issue-squad-created.webp)
+![PB-2：Lead 创建 issue 并开始工作](/images/docs/tutorial-issue-squad-created.webp)
 
 接下来全是队长的工作。它的派活评论不只是转发：补上两条 issue 里没有的约束（占位身份全站统一、清查范围列到元数据和 README），再交给 Engineer。Engineer 完成后，把 PR 回报在同一条时间线里：
 
@@ -299,7 +299,7 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 ![Lead 的交付汇报](/images/docs/tutorial-squad-delivery.webp)
 
-从整理需求、确认方案、开发、审查到交付汇报，这条 issue 没有一步需要你衔接。验收方式和 MUL-1 相同——也可以让它启动本地服务在浏览器里看，不再展开。「已完成」仍然留给你：回复合并，或手动改状态。整条时间线的每一步都有记录，和人类团队的 issue 没有区别——变的只是执行的人。
+从整理需求、确认方案、开发、审查到交付汇报，这条 issue 没有一步需要你衔接。验收方式和 PB-1 相同——也可以让它启动本地服务在浏览器里看，不再展开。「已完成」仍然留给你：回复合并，或手动改状态。整条时间线的每一步都有记录，和人类团队的 issue 没有区别——变的只是执行的人。
 
 ## 自动化
 

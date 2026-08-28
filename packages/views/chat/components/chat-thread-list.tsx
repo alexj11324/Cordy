@@ -245,7 +245,7 @@ export function ChatThreadList({
     } else if (last?.message_kind === "no_response") {
       // A no_response turn stores a non-empty English fallback as its content,
       // so the preview is never blank even on older clients; new clients show a
-      // localized, italic hint instead of that fallback text (MUL-4351).
+      // localized, italic hint instead of that fallback text (PB-4351).
       previewNode = (
         <span className="block truncate italic text-muted-foreground">
           {t(($) => $.list.no_response_preview)}

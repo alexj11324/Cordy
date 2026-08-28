@@ -1,4 +1,4 @@
--- Workspace-level MCP configuration (GH #6062, MUL-5421).
+-- Workspace-level MCP configuration (GH #6062, PB-5421).
 --
 -- Shares one MCP server set across every agent in the workspace instead of
 -- forcing the same servers to be re-entered on each agent. Deliberately the

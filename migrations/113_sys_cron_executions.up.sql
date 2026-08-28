@@ -1,4 +1,4 @@
--- Schema for the DB-backed execution-record scheduler (MUL-2957). One row
+-- Schema for the DB-backed execution-record scheduler (PB-2957). One row
 -- represents a single planned execution of a registered system job for a
 -- single scope at a single canonical UTC `plan_time` bucket — the row is
 -- both the distributed lease and the audit log entry.

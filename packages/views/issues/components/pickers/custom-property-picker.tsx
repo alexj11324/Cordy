@@ -48,7 +48,7 @@ const EDITABLE_PROPERTY_TYPES = [
  *      would otherwise render as empty and the user, believing the field is
  *      unset, would overwrite a value they were never shown. `multi_actor` is
  *      exempt: its toggle round-trips unknown entries instead of replacing the
- *      whole value (MUL-6286 review).
+ *      whole value (PB-6286 review).
  */
 export function isCustomPropertyReadOnly(
   property: IssueProperty,

@@ -10,8 +10,8 @@ use cordy_redis::RecoveringConnection;
 pub const AUTH_CACHE_TTL_SECS: i64 = 10 * 60;
 
 /// Namespaces auth-cache keys away from the realtime relay (`ws:*`) and
-/// local-skill (`mul:local_skill:*`) keys.
-const PAT_CACHE_PREFIX: &str = "mul:auth:pat:";
+/// local-skill (`patchbay:local_skill:*`) keys.
+const PAT_CACHE_PREFIX: &str = "patchbay:auth:pat:";
 
 /// Caches resolved PAT lookups in Redis. A `disabled()` cache is safe to use —
 /// every method becomes a no-op or reports a miss, and auth degrades to direct

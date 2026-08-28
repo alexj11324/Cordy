@@ -8,7 +8,7 @@
  *
  * Header note: the parent _layout.tsx already declares the `issue/[id]`
  * Stack.Screen with title "Issue". We override that here once the data
- * lands so the navigation bar shows `MUL-123` (Linear-style).
+ * lands so the navigation bar shows `PB-123` (Linear-style).
  */
 import { useCallback, useEffect } from "react";
 import {
@@ -68,7 +68,7 @@ export default function IssueDetail() {
   useIssueRealtime(id, () => router.back());
 
   // Track viewed issues so the chat composer's `@` suggestion bar can
-  // surface "Recent" — the user just looked at MUL-123, likely wants to
+  // surface "Recent" — the user just looked at PB-123, likely wants to
   // ask the agent about it next. Workspace-scoped + in-memory; see
   // data/viewed-issues-store.ts.
   useEffect(() => {

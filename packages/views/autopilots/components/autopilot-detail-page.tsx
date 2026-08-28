@@ -81,7 +81,7 @@ const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; 
   issue_created: { color: "text-blue-500", icon: Clock },
   running: { color: "text-blue-500", icon: Loader2, spin: true },
   // `skipped` (admission check found the assignee runtime offline,
-  // MUL-1899) is muted so it doesn't read as a failure-ratio inflator.
+  // PB-1899) is muted so it doesn't read as a failure-ratio inflator.
   // The row still shows failure_reason which carries the skip context.
   skipped: { color: "text-muted-foreground", icon: Ban },
   completed: { color: "text-emerald-500", icon: CheckCircle2 },
@@ -724,7 +724,7 @@ export function AutopilotDetailPage({ autopilotId }: { autopilotId: string }) {
     try {
       const run = await triggerAutopilot.mutateAsync(autopilotId);
       // Manual "run now" returns 200 even when admission blocks the run, so the
-      // toast is driven by the run's domain status, not the HTTP 2xx (MUL-4525).
+      // toast is driven by the run's domain status, not the HTTP 2xx (PB-4525).
       // Success is a whitelist (issue_created/running) — a skipped run warns, a
       // failed or unknown/future status errors — never a false "triggered".
       const kind = runNowToastKind(run?.status);
@@ -747,7 +747,7 @@ export function AutopilotDetailPage({ autopilotId }: { autopilotId: string }) {
         return;
       }
       // Only a 4xx message is written for the user; a 5xx one is internal
-      // server detail (MUL-6472), so an unclassified dispatch failure shows the
+      // server detail (PB-6472), so an unclassified dispatch failure shows the
       // localized generic sentence instead of the raw body.
       toast.error(clientErrorMessage(e) || t(($) => $.detail.toast_trigger_failed));
     }

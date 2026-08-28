@@ -321,7 +321,7 @@ describe("DeleteRuntimeDialog", () => {
     ).toBeInTheDocument();
   });
 
-  // MUL-3352: the dialog used to refuse self-healing runtimes outright,
+  // PB-3352: the dialog used to refuse self-healing runtimes outright,
   // both at the affordance and at confirm. The new contract is owner-led:
   // the affordance is always live, the dialog raises a warning banner so
   // the user understands the daemon will re-register a new row unless

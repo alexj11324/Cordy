@@ -2,7 +2,7 @@
 -- pickers have no time-of-day input), so "Mar 1" must mean Mar 1 for everyone
 -- regardless of timezone. Storing them as TIMESTAMPTZ folded the writer's
 -- local midnight into a UTC instant, shifting the displayed day by the local
--- offset in non-UTC timezones (GH #3618 / MUL-2925). DATE carries no time or
+-- offset in non-UTC timezones (GH #3618 / PB-2925). DATE carries no time or
 -- timezone, so the picked day is preserved as-is.
 --
 -- Existing rows are truncated at the UTC day boundary, matching what the Gantt

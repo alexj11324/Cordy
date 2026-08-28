@@ -41,7 +41,7 @@ pub struct AgentEntry {
     /// nvm/fnm) does an in-place upgrade that deletes the old versioned
     /// directory Path points into. Empty for synthesized entries (custom
     /// runtime profiles) that carry an absolute path directly. See
-    /// Daemon.resolveAgentEntry and MUL-4486.
+    /// Daemon.resolveAgentEntry and PB-4486.
     pub command: String,
     /// Model override (optional).
     pub model: String,
@@ -59,7 +59,7 @@ pub struct Runtime {
     #[serde(rename = "status")]
     pub status: String,
     /// ProfileID is non-empty when this runtime was registered from a
-    /// workspace custom runtime profile (MUL-3284). It links the runtime row
+    /// workspace custom runtime profile (PB-3284). It links the runtime row
     /// back to the profile so the daemon can resolve the profile's command_name
     /// to the executable to launch. Built-in (provider-detected) runtimes
     /// leave this empty.
@@ -207,7 +207,7 @@ pub struct Task {
     /// a leader run". Absent on servers predating it — those before #4951
     /// never sent is_leader_task at all, later ones send it without this
     /// guarantee — so taskIsSquadLeader falls back to the briefing marker for
-    /// both (MUL-5811).
+    /// both (PB-5811).
     #[serde(
         rename = "leader_role_resolved",
         skip_serializing_if = "std::ops::Not::not",
@@ -220,7 +220,7 @@ pub struct Task {
     /// work_dir from a previous task on this issue.
     #[serde(rename = "prior_work_dir", skip_serializing_if = "String::is_empty")]
     pub prior_work_dir: String,
-    /// MUL-5305: server signals a more recent Codex session was withheld
+    /// PB-5305: server signals a more recent Codex session was withheld
     /// (rollout missing) and PriorSessionID (if any) is an older fallback; the
     /// run must disclose the continuity gap even if that older session resumes
     /// cleanly. Absent/false on old servers.
@@ -236,7 +236,7 @@ pub struct Task {
         skip_serializing_if = "String::is_empty"
     )]
     pub trigger_comment_id: String,
-    /// MUL-4195: earlier comments folded into this run while it was still
+    /// PB-4195: earlier comments folded into this run while it was still
     /// queued; the agent must address these in addition to the (newest)
     /// triggering comment. Empty for old servers / non-merged runs.
     #[serde(
@@ -244,7 +244,7 @@ pub struct Task {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub coalesced_comment_ids: Vec<String>,
-    /// MUL-4195: full detail of the folded comments
+    /// PB-4195: full detail of the folded comments
     /// (thread_id/author/created_at/content) so the prompt can address each
     /// without assuming a shared thread. Empty for old servers / non-merged
     /// runs.
@@ -296,7 +296,7 @@ pub struct Task {
     /// and the worst case is a delivery that could have happened did not.
     /// Must never be re-derived from chat_channel_type: whether the hop exists
     /// depends on the SERVER's storage and adapter wiring, which no daemon can
-    /// see (MUL-4899).
+    /// see (PB-4899).
     #[serde(
         rename = "chat_channel_delivers_files",
         skip_serializing_if = "std::ops::Not::not",
@@ -327,7 +327,7 @@ pub struct Task {
     #[serde(rename = "chat_intro", skip_serializing_if = "std::ops::Not::not")]
     pub chat_intro: bool,
     /// Set only by servers predating server-side quick-actions generation
-    /// (MUL-5573). Read as a REFUSAL marker, never executed: see the guard in
+    /// (PB-5573). Read as a REFUSAL marker, never executed: see the guard in
     /// runTask.
     #[serde(
         rename = "regenerate_quick_actions_for",
@@ -399,7 +399,7 @@ pub struct Task {
     /// issue the new issue should be filed under.
     #[serde(rename = "parent_issue_id", skip_serializing_if = "String::is_empty")]
     pub parent_issue_id: String,
-    /// Human-readable identifier (e.g. MUL-123) of the quick-create parent
+    /// Human-readable identifier (e.g. PB-123) of the quick-create parent
     /// issue, used in prompt context.
     #[serde(
         rename = "parent_issue_identifier",
@@ -432,7 +432,7 @@ pub struct Task {
     /// daemon emits these into the brief under `## Task Initiator` so a
     /// workspace-visible agent can attribute the request per person. The
     /// agent's effective credentials stay owner-scoped — this is an attested
-    /// identity, not a credential. See MUL-2645.
+    /// identity, not a credential. See PB-2645.
     #[serde(rename = "initiator_type", skip_serializing_if = "String::is_empty")]
     pub initiator_type: String,
     #[serde(rename = "initiator_id", skip_serializing_if = "String::is_empty")]
@@ -445,7 +445,7 @@ pub struct Task {
     /// The daemon injects it into the spawned agent as CORDY_TOKEN so the
     /// agent never sees the daemon's own (often workspace-owner) credential.
     /// Empty or non-task-scoped values are fatal for writable agent tasks; the
-    /// daemon must not fall back to its own token. See MUL-3292.
+    /// daemon must not fall back to its own token. See PB-3292.
     #[serde(rename = "auth_token", skip_serializing_if = "String::is_empty")]
     pub auth_token: String,
 }
@@ -563,7 +563,7 @@ pub struct ChatAttachmentMeta {
 
 /// CoalescedCommentData mirrors the server-side struct
 /// (handler.CoalescedCommentData): the full detail of a comment folded into
-/// this run while it was still queued (MUL-4195) (types.go:183–193). The
+/// this run while it was still queued (PB-4195) (types.go:183–193). The
 /// prompt embeds each one directly so the agent addresses every folded comment
 /// without assuming they all live in the triggering thread.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -792,7 +792,7 @@ pub struct TaskResult {
     #[serde(skip)]
     pub failure_reason: String,
     /// SessionRolloutMissing is set when the daemon withheld this task's Codex
-    /// session because its rollout was not in the store (MUL-5305). Forwarded
+    /// session because its rollout was not in the store (PB-5305). Forwarded
     /// to the terminal report so the server clears the resume pointer and
     /// flags the continuity gap for the next claim. Not part of the wire
     /// result itself.

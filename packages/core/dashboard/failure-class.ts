@@ -26,7 +26,7 @@ export type FailureClass = (typeof FAILURE_CLASSES)[number];
 // Reason → class. Keys are the wire values written by the backend: the 22
 // canonical `taskfailure.Reason` strings, the `"unclassified"` sentinel the
 // failure rollups substitute for a failed row with an empty column, and the
-// pre-MUL-1949 coarse values that still sit in historical rows.
+// pre-PB-1949 coarse values that still sit in historical rows.
 //
 // Anything absent from this map falls through to "other" — including a new
 // reason from a backend newer than this client, which is the case that makes

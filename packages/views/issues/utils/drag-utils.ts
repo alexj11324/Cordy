@@ -56,7 +56,7 @@ export function getIssueGroupId(
   // Status columns are CATEGORIES, so the card buckets by the category it
   // behaves as. Bucketing by the raw key gave a custom status a column id no
   // column has, and the card was dropped from the board/list entirely
-  // (MUL-6409).
+  // (PB-6409).
   if (grouping === "status") return statusGroupId(issueColumnCategory(issue));
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) {
@@ -146,7 +146,7 @@ export function findColumn(
 export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolean {
   // "Is this card already in that column?" — a category question, like the
   // column itself. Comparing the raw key answered no for every custom status,
-  // so a drop that changed nothing still fired a status write (MUL-6409).
+  // so a drop that changed nothing still fired a status write (PB-6409).
   if (group.status) return issueColumnCategory(issue) === group.status;
   if (group.propertyId !== undefined) {
     const value = issue.properties?.[group.propertyId];
@@ -166,7 +166,7 @@ export function getMoveUpdates(
    *  CATEGORY, and a card on a custom status is already in that column under a
    *  DIFFERENT key — so writing the column's canonical key would silently
    *  rewrite `awaiting_response` to `in_review`, and a status change starts an
-   *  agent run, for a drag that only changed the row order (MUL-6409). */
+   *  agent run, for a drag that only changed the row order (PB-6409). */
   issue?: Pick<Issue, "status" | "status_category">,
 ): DragMoveTargetUpdates {
   if (group.status) {

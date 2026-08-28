@@ -1,8 +1,8 @@
 /**
- * MUL-5345 — the main window must publish which page it is showing.
+ * PB-5345 — the main window must publish which page it is showing.
  *
  * This reporting existed once and was deleted with the PostHog $pageview
- * cleanup (MUL-4127), which left the main process reading a route it was never
+ * cleanup (PB-4127), which left the main process reading a route it was never
  * sent: every field hang report came back with only the asar `index.html` URL.
  * Nothing failed loudly, so these tests pin both consumers — the IPC push to
  * main (the only party alive during a true hang) and the in-renderer

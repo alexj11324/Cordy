@@ -63,7 +63,7 @@ pub async fn get_user_by_email(
 }
 
 /// Batch lookup from the GLOBAL user table (not gated on membership, so
-/// departed members still render) — MUL-4302 §9 N+1 avoidance.
+/// departed members still render) — PB-4302 §9 N+1 avoidance.
 pub async fn get_users_by_ids(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     ids: &[Uuid],

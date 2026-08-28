@@ -1,4 +1,4 @@
--- Direct-chat input ownership (MUL-4351).
+-- Direct-chat input ownership (PB-4351).
 --
 -- chat_input_task_id makes each web/mobile direct-chat task the immutable owner
 -- of the user-message batch it must consume. A fresh direct-send task sets this

@@ -97,7 +97,7 @@ describe("applyChatDoneToCache", () => {
         created_at: "2026-05-13T05:00:02Z",
         elapsed_ms: 1234,
         // Additive kind carried on the inline-inserted assistant message so a
-        // no_response turn renders without a refetch (MUL-4351); defaults to
+        // no_response turn renders without a refetch (PB-4351); defaults to
         // "message" when the server omits it.
         message_kind: "message",
       },
@@ -131,7 +131,7 @@ describe("applyChatDoneToCache", () => {
     );
   });
 
-  // A replay merges instead of appending (MUL-5711): the cached row keeps every
+  // A replay merges instead of appending (PB-5711): the cached row keeps every
   // field it already has, and only fields it is MISSING are filled from the
   // payload — here `message_kind`, which this hand-built row predates. That
   // fill direction is what lets a send response and its chat:message echo
@@ -240,7 +240,7 @@ describe("applyChatSessionUpdatedToCache", () => {
     expect(row.project_id).toBeNull();
   });
 
-  // MUL-4360 cross-tab: chatSessionsOptions is staleTime: Infinity, so a stale
+  // PB-4360 cross-tab: chatSessionsOptions is staleTime: Infinity, so a stale
   // cache in another tab never self-heals. When an archive event lands there,
   // the row's unread must be forced to 0 to match the archive mutation and the
   // backend, or the sidebar/header keep counting an archived session no one can
@@ -832,7 +832,7 @@ describe("handleInboxNew", () => {
 
     // The workspace prefix, which covers both the main list and the archived
     // one: a new notification on an archived issue revives it into the main
-    // inbox, so the archived list has to drop it in the same pass (MUL-3736).
+    // inbox, so the archived list has to drop it in the same pass (PB-3736).
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: inboxKeys.all("ws-a"),
     });
@@ -1002,7 +1002,7 @@ describe("chat quick-actions supplement flow", () => {
     expect(qc.getQueryData(pendingMarkerKey)).toEqual({
       message_id: "msg-assistant",
       task_id: taskId,
-      // Absolute give-up deadline stamped at raise time (MUL-5149); its exact
+      // Absolute give-up deadline stamped at raise time (PB-5149); its exact
       // value tracks the wall clock, so assert presence, not a fixed number.
       expires_at: expect.any(Number),
     });
@@ -1077,7 +1077,7 @@ describe("chat quick-actions supplement flow", () => {
     expect(qc.getQueryData(pendingMarkerKey)).toBeNull();
   });
 
-  // Regression (MUL-5149): the chat:done invalidate can leave a messages refetch
+  // Regression (PB-5149): the chat:done invalidate can leave a messages refetch
   // in flight that read the row before the actions were persisted. If that
   // refetch resolves AFTER the chat:quick_actions patch, it must not overwrite
   // the freshly-patched actions — the supplement cancels the in-flight refetch
@@ -1147,7 +1147,7 @@ describe("chat quick-actions supplement flow", () => {
     unsub();
   });
 
-  // Regression (MUL-5711): cancelQueries defaults to revert:true, so the cancel
+  // Regression (PB-5711): cancelQueries defaults to revert:true, so the cancel
   // above ALSO rolls the cache back to the pre-fetch snapshot. Rows that only
   // the cancelled response carried — a peer's user message, anything that landed
   // while this surface was unmounted — must come back, which is what the

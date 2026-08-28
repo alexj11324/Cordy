@@ -14,7 +14,7 @@ function issue(revision: number, title: string): Issue {
   return {
     id: "issue-1",
     workspace_id: "ws-1",
-    identifier: "MUL-1",
+    identifier: "PB-1",
     number: 1,
     title,
     description: null,
@@ -221,7 +221,7 @@ describe("issue realtime revision admission", () => {
   });
 });
 
-// MUL-6394: `getQueriesData` matches a key PREFIX, so a scan over `tableAll` /
+// PB-6394: `getQueriesData` matches a key PREFIX, so a scan over `tableAll` /
 // `myAll` also sees sibling caches with a different shape. Reading `rows` /
 // `byStatus` off them threw "Cannot read properties of undefined (reading
 // 'some')" out of `useCreateComment`'s onSuccess — the comment was created,

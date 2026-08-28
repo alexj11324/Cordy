@@ -62,7 +62,7 @@ const NO_THINKING_MODEL: RuntimeModel = {
 
 // Codex flagship: flagged Default and advertises the widest catalog
 // (up to `ultra`). For an empty (follow-config) codex model the row must NOT
-// borrow this entry's levels — that's the MUL-4347 fix.
+// borrow this entry's levels — that's the PB-4347 fix.
 const CODEX_DEFAULT_MODEL: RuntimeModel = {
   id: "gpt-5.6-sol",
   label: "GPT-5.6 Sol",
@@ -218,7 +218,7 @@ describe("ThinkingPropRow", () => {
     expect((await screen.findAllByText("Follow CLI config")).length).toBeGreaterThan(0);
   });
 
-  it("hides the picker for an empty codex model — it must not borrow the Default's catalog (MUL-4347)", async () => {
+  it("hides the picker for an empty codex model — it must not borrow the Default's catalog (PB-4347)", async () => {
     // Empty model on codex follows config.toml, which can resolve to any
     // installed model. Previewing gpt-5.6-sol's levels (the flagged Default,
     // the only one with `ultra`) would offer a level the real model may not

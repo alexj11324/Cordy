@@ -9,7 +9,7 @@
 -- predicate. Two all-status consumers therefore had no index at all:
 --
 --   1. Workspace teardown, which has to find every task belonging to a
---      workspace's runtimes regardless of status (MUL-5999).
+--      workspace's runtimes regardless of status (PB-5999).
 --   2. The runtime_id foreign key itself. PostgreSQL does not index the
 --      referencing side of a FK, so `DELETE FROM agent_runtime` runs its
 --      ON DELETE CASCADE probe (`WHERE runtime_id = $1`) once per deleted

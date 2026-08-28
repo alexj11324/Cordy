@@ -91,7 +91,7 @@ export default function IssuesPage() {
   );
 
   // Only the active-filter chips need the catalog — sections group on the
-  // category the server already resolved onto each issue. (MUL-6243)
+  // category the server already resolved onto each issue. (PB-6243)
   const catalog = useIssueStatuses();
 
   const allIssues = data ?? [];

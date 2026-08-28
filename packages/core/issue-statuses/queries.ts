@@ -4,7 +4,7 @@ import { STATUS_CONFIG, STATUS_ORDER } from "../issues/config";
 import type { IssueStatusCategory, IssueStatusEntry } from "../types";
 
 /**
- * The workspace issue status catalog (MUL-6243).
+ * The workspace issue status catalog (PB-6243).
  *
  * A workspace always has the 7 built-in statuses and may define custom ones.
  * Every status — built-in or custom — belongs to exactly one of the 7
@@ -25,7 +25,7 @@ export function issueStatusListOptions(wsId: string) {
     // future assignment but leaves existing issues on it, and those issues must
     // keep their real name, color and category. Dropping archived rows here
     // would degrade them to a raw key with a guessed category. Pickers use
-    // `activeStatuses`, which excludes them. (MUL-6243)
+    // `activeStatuses`, which excludes them. (PB-6243)
     queryFn: () => api.listIssueStatuses(true),
     select: (data) => data.statuses,
     // The catalog changes only when an admin edits it, which is rare, so a
@@ -65,7 +65,7 @@ export interface IssueStatusCatalog {
    * system row) and every surface renders them from the token — `text-success`
    * and friends, which is what makes them follow the theme into dark mode. A
    * caller that reaches for `entryOf(key)?.color` instead paints the raw seed
-   * and drifts from the same status two pixels away. (MUL-6440)
+   * and drifts from the same status two pixels away. (PB-6440)
    */
   colorOf: (statusKey: string) => string | null;
   /** ACTIVE statuses belonging to one category, in display order. */
@@ -79,7 +79,7 @@ export interface IssueStatusCatalog {
    * while this is true. `isLoaded === false` alone is not enough to act on:
    * the difference between "not here yet" and "the request failed" decides
    * whether the user sees a spinner or a retryable error, and the first cut
-   * showed neither — just a silently empty board. (MUL-6243)
+   * showed neither — just a silently empty board. (PB-6243)
    */
   isPending: boolean;
   /**
@@ -88,7 +88,7 @@ export interface IssueStatusCatalog {
    * Narrower than "the query errored" on purpose: a BACKGROUND refetch can fail
    * while the last successful catalog is still cached, and blocking a surface
    * then would throw away data that is perfectly serviceable. Only a failure
-   * with nothing behind it is worth stopping for. (MUL-6243)
+   * with nothing behind it is worth stopping for. (PB-6243)
    */
   isError: boolean;
   /** Re-runs the catalog request. Wired to the surface's retry affordance. */
@@ -110,7 +110,7 @@ export interface IssueStatusCatalog {
    *
    * A workspace with no custom statuses therefore keeps the exact request it
    * made before this feature — which is also what keeps its board off the extra
-   * catalog reads the category contract needs. (MUL-6243)
+   * catalog reads the category contract needs. (PB-6243)
    */
   hasCustomStatuses: boolean;
 }

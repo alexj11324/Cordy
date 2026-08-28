@@ -1,10 +1,10 @@
--- Partial index that backs the queued-task TTL sweeper added in MUL-1899
+-- Partial index that backs the queued-task TTL sweeper added in PB-1899
 -- (sweepExpiredQueuedTasks in cmd/server/runtime_sweeper.go). The sweeper
 -- runs every 30s and looks up the oldest queued tasks with:
 --   WHERE status = 'queued' AND created_at < now() - interval '...'
 --   ORDER BY created_at ASC LIMIT 500
 -- Without a queued-only partial index on created_at this devolves into a
--- full scan once historical terminal rows accumulate (MUL-1899 baseline:
+-- full scan once historical terminal rows accumulate (PB-1899 baseline:
 -- ~89k+ rows). The partial index stays tiny because only in-flight rows
 -- live in 'queued'.
 --

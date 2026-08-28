@@ -15,7 +15,7 @@ describe("resolveFailureReasonKey", () => {
   });
 
   it("degrades a refined reason to its family when there is no exact copy", () => {
-    // The MUL-5370 regression: before this, agent_error.unknown missed the
+    // The PB-5370 regression: before this, agent_error.unknown missed the
     // lookup entirely and the UI rendered a generic fallback instead of the
     // agent_error line the backend's classification had earned.
     expect(resolveFailureReasonKey("agent_error.unknown", COPY)).toBe(

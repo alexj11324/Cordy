@@ -1,5 +1,5 @@
 -- Human Attribution rollout, phase 2: install the strict one-way invariant
--- alongside migration 190's transitional constraint (MUL-4302).
+-- alongside migration 190's transitional constraint (PB-4302).
 --
 -- Migration 190 temporarily exempted rows with originator_source IS NULL so
 -- active legacy tasks and stale writers could survive the rolling deployment.

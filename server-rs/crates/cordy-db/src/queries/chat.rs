@@ -814,7 +814,7 @@ WHERE session_id NOT IN (SELECT session_id FROM retired_sessions)
                AND COALESCE(error, '') ~* 'role[^a-z0-9]{0,2}assistant|assistant message|message at position|messages\.[0-9]|messages\[[0-9]')
     )
   )
-  -- MUL-5722, mirroring GetLastTaskSession: an overflowed resume records no
+  -- PB-5722, mirroring GetLastTaskSession: an overflowed resume records no
   -- session, so exclude by time instead of by matching the failed row. Note
   -- this only guards the FALLBACK — the claim handler reads
   -- chat_session.session_id first, so a pointer still naming the oversized
@@ -924,7 +924,7 @@ pub async fn get_pending_chat_task(
 WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
   -- Background quick-actions regeneration passes are invisible to the chat UI:
   -- they own no assistant turn and must not raise the StatusPill or disable the
-  -- composer (MUL-5149 refresh follow-up).
+  -- composer (PB-5149 refresh follow-up).
   AND regenerate_quick_actions_for IS NULL
 ORDER BY created_at DESC
 LIMIT 1"#
@@ -1025,7 +1025,7 @@ pub async fn has_pending_chat_tasks_by_creator(
   WHERE atq.chat_session_id IS NOT NULL
     AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
     -- Background quick-actions regeneration passes own no visible turn and must
-    -- never light the FAB "running" indicator (MUL-5149 refresh follow-up).
+    -- never light the FAB "running" indicator (PB-5149 refresh follow-up).
     AND atq.regenerate_quick_actions_for IS NULL
     AND cs.workspace_id = $1
     AND cs.creator_id = $2
@@ -1652,7 +1652,7 @@ JOIN chat_session cs ON cs.id = atq.chat_session_id
 WHERE atq.chat_session_id IS NOT NULL
   AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
   -- Exclude background quick-actions regeneration passes: they own no assistant
-  -- turn and must not surface as "running" chat work (MUL-5149 refresh follow-up).
+  -- turn and must not surface as "running" chat work (PB-5149 refresh follow-up).
   AND atq.regenerate_quick_actions_for IS NULL
   AND cs.workspace_id = $1
   AND cs.creator_id = $2
@@ -2129,7 +2129,7 @@ pub async fn reanchor_claimed_direct_chat_input(
       -- member's message so the runtime reads "context, then their words";
       -- moving it to dispatch time reverses that, and because the batch's two
       -- rows would then share one timestamp, their order falls to random UUIDs
-      -- (MUL-5827).
+      -- (PB-5827).
       AND claimed_input.message_kind <> 'onboarding_kickoff'
 )
 UPDATE chat_message AS claimed_input

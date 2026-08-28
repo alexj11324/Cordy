@@ -32,7 +32,7 @@ function isCustomStatus(catalog: IssueStatusCatalog, status: IssueStatus): boole
 
 /**
  * Names an issue's status when the surface around it only shows the CATEGORY
- * (MUL-6243).
+ * (PB-6243).
  *
  * Board columns and list sections are categories, so two issues sitting in the
  * same "In Review" column can be on different statuses — "Code Review" and "QA"

@@ -124,7 +124,7 @@ function pickModelEntry(
   // alone advertises `ultra`, which the actually-configured model may not
   // support. Fail closed (no preview): the row hides unless a stale level is
   // persisted, in which case it still renders so the orphan can be cleared.
-  // Mirrors the backend ValidateThinkingLevel. (MUL-4347)
+  // Mirrors the backend ValidateThinkingLevel. (PB-4347)
   if (provider === "codex") return undefined;
   return models.find((m) => m.default) ?? models[0];
 }

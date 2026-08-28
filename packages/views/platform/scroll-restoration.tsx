@@ -8,7 +8,7 @@ import {
 } from "react";
 
 /**
- * Pull-based scroll restoration channel (MUL-4741 state-restoration
+ * Pull-based scroll restoration channel (PB-4741 state-restoration
  * protocol).
  *
  * The platform (desktop tab host) captures scroll offsets when a view is

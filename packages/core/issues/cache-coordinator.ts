@@ -55,7 +55,7 @@ export type IssueTableRowCache = IssueTableRowsResponse;
  *     visible list is what made drags flicker)
  *   card present, no longer matches the list's filter → surgical REMOVE
  *     (bucket total decremented) — the "issue left this surface" case that a
- *     filter-blind patch used to leave behind (MUL-3669)
+ *     filter-blind patch used to leave behind (PB-3669)
  *   card present, membership undecidable client-side (involves / my:all) →
  *     patch + mark the key stale
  *   card absent, change can't affect this list → skip
@@ -132,7 +132,7 @@ function listContractFromKey(key: QueryKey): {
  * `data.rows` / `data.pages` / `data.byStatus` off those siblings throws
  * ("Cannot read properties of undefined"), and inside a mutation's onSuccess
  * that throw surfaces as a failed write the server already accepted
- * (MUL-6394). Every scan goes through these helpers so the shape check can't
+ * (PB-6394). Every scan goes through these helpers so the shape check can't
  * be forgotten at a new call site.
  */
 export function bucketedListEntries(
@@ -340,7 +340,7 @@ export function applyIssueChange(
   const { changed, baseIssue, acceptCurrent = () => true } = opts;
   // Normalize ONCE, at the door. Every write below is a `{...entity, ...patch}`
   // spread, and an optimistic `{status}` patch would otherwise leave the stale
-  // status_category on the entity while the card moves buckets. (MUL-6243)
+  // status_category on the entity while the card moves buckets. (PB-6243)
   const patch = normalizeStatusPatch(rawPatch);
   const prevLists: [QueryKey, ListIssuesCache][] = [];
   const prevFlatLists: [QueryKey, IssueFlatCache][] = [];
@@ -378,7 +378,7 @@ export function applyIssueChange(
       // A status this client cannot resolve to a category makes
       // patchIssueInBuckets a no-op. The row DID move on the server, so
       // treating that as "nothing to do" would leave the card in its old
-      // column forever — force a refetch instead. (MUL-6243)
+      // column forever — force a refetch instead. (PB-6243)
       if (patchNeedsInvalidation(patch)) staleKeys.push(key);
       let next: ListIssuesCache;
       if (filterTouched) {
@@ -429,7 +429,7 @@ export function applyIssueChange(
         // buckets; anything else (e.g. member→member reassignment) leaves
         // this list's pages and counts untouched.
         if (!changed.status || patch.status === undefined) continue;
-        // Bucket totals are per category (MUL-6243).
+        // Bucket totals are per category (PB-6243).
         // patch.status_category is authoritative when the server sent it; the
         // key-only fallback covers built-ins.
         const fromCategory = issueStatusCategory(baseIssue);
@@ -623,7 +623,7 @@ function queryKeyHasSort(key: QueryKey, field: string): boolean {
  * Refetch every loaded issue list/board ordered by "Updated date" so a card
  * whose `updated_at` just advanced re-sorts to its true slot. Used by events
  * that bump `updated_at` without carrying the new timestamp or a field patch:
- * `comment:created` (MUL-5009) and the property/metadata WS events, all of
+ * `comment:created` (PB-5009) and the property/metadata WS events, all of
  * which advance the issue's `updated_at` server-side but bypass the
  * coordinator's field-diff path. Covers status boards, flat tables, AND
  * assignee-grouped boards (workspace + My Issues); only `updated_at`-sorted

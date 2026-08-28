@@ -7,7 +7,7 @@
 // The fuse: keep the first EXCEPTION_SAMPLE_LIMIT of each (tab-session,
 // fingerprint) pair and drop the rest. One runaway error — a render loop, a
 // polling fetch that keeps throwing — otherwise emits 100+ identical
-// `$exception` events per session (MUL-3331 / MUL-3330). Different fingerprints
+// `$exception` events per session (PB-3331 / PB-3330). Different fingerprints
 // never affect each other.
 //
 // Safety invariant (load-bearing): `before_send` must never throw — a throw
@@ -18,7 +18,7 @@
 //
 // Scope is the browser tab session (`sessionStorage`): cleared when the tab
 // closes, isolated per tab. This is intentionally NOT the posthog 30-min
-// session — see the dedupe discussion on MUL-3331.
+// session — see the dedupe discussion on PB-3331.
 
 const STORAGE_KEY = "mc_exc_fp";
 // Keep the first N of each fingerprint per session, drop from N+1.

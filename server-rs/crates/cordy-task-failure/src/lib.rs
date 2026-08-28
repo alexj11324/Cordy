@@ -7,7 +7,7 @@
 //! strings are persisted and surfaced as Prometheus labels.
 //!
 //! [`Reason`] is an OPEN set on purpose: [`normalize_daemon_reason`] passes
-//! through arbitrary legacy values (e.g. the pre-MUL-1949 coarse
+//! through arbitrary legacy values (e.g. the pre-PB-1949 coarse
 //! `"agent_error"`), so a closed enum would be unfaithful.
 
 use std::borrow::Cow;
@@ -132,7 +132,7 @@ pub fn all_reasons() -> Vec<Reason> {
 // Digit-boundary guards keep bare substrings like "402" inside "402913
 // tokens" or "exit status 4030" from misclassifying process/unknown failures
 // as provider billing/rate-limit errors. Mirrors the SQL regexes from
-// MUL-1949.
+// PB-1949.
 
 static PROVIDER_HTTP_5XX_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(^|[^0-9])5[0-9][0-9]([^0-9]|$)"#).unwrap());
@@ -181,7 +181,7 @@ fn contains_all(s: &str, subs: &[&str]) -> bool {
 /// 14 `agent_error.*` sub-reasons. Always returns a valid reason;
 /// [`Reason::AGENT_UNKNOWN`] when no rule matches and for empty input.
 ///
-/// The rule order mirrors the SQL CASE expression from MUL-1949 — the SQL is
+/// The rule order mirrors the SQL CASE expression from PB-1949 — the SQL is
 /// the source of truth, and keeping them in lock-step is required so
 /// in-flight rows and historically backfilled rows share one taxonomy.
 /// Matching is case-insensitive substring against the lowercased input;

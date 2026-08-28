@@ -1,7 +1,7 @@
 //! Daemon-side WebSocket request/response transport.
 //!
 //! The daemon-side half of the generic WS request/response transport
-//! (MUL-4257). It correlates responses to requests by request_id over the
+//! (PB-4257). It correlates responses to requests by request_id over the
 //! shared, multiplexed WS control connection so multiple RPCs can be in flight
 //! concurrently. Sending is delegated to an injected frame-sender closure
 //! (which pushes onto the active connection's write channel); when no
@@ -49,7 +49,7 @@ pub struct Unavailable;
 /// `errWSRPCUncertain`: the request's frame WAS sent but the connection dropped
 /// before a definitive response. The outcome is unknown (the server may have
 /// committed), so the caller must NOT fall back to another transport for the
-/// same work — that risks a double claim (MUL-4257).
+/// same work — that risks a double claim (PB-4257).
 #[derive(Debug, thiserror::Error)]
 #[error("ws rpc: sent but outcome unknown (connection lost)")]
 pub struct Uncertain;
@@ -93,7 +93,7 @@ pub fn is_write_buffer_full(err: &WsRpcError) -> bool {
 /// `wsRPCResponseGrace` (wsrpc.go:30): how much longer the daemon waits for an
 /// RPC response beyond the server-side execution budget it requested, so a
 /// claim that committed just before the server deadline still reports back
-/// before the daemon gives up (MUL-4257).
+/// before the daemon gives up (PB-4257).
 pub const WS_RPC_RESPONSE_GRACE: Duration = Duration::from_secs(2);
 
 /// `wsClaimUncertainFallbackDelay` (wsrpc.go:32).
@@ -123,7 +123,7 @@ enum OutboundState {
 /// cancelable so an RPC caller that gives up (timeout/detach) before the frame
 /// has hit the socket can prevent it from being delivered later — otherwise a
 /// backpressured writer could deliver a stale tasks.claim after the daemon
-/// already HTTP-fell-back, double-claiming (MUL-4257, Sol-Boy review).
+/// already HTTP-fell-back, double-claiming (PB-4257, Sol-Boy review).
 /// sent/cancel race under one lock so the decision is atomic: whoever wins
 /// determines whether the frame is delivered.
 #[derive(Debug, Default)]
@@ -177,7 +177,7 @@ pub(crate) struct WsRpcClient {
     /// Added to a call's server-side timeout budget to get how long the daemon
     /// waits for the response, so a claim that committed just before the
     /// server deadline still reports back before the daemon gives up
-    /// (MUL-4257).
+    /// (PB-4257).
     grace: Duration,
 }
 
@@ -358,7 +358,7 @@ impl WsRpcClient {
         // — a definitively-not-sent outcome that is safe to HTTP-fall-back.
         // If the writer already began sending it, it may reach the server,
         // so the outcome is uncertain and the caller must NOT fall back
-        // (that would double-claim, MUL-4257).
+        // (that would double-claim, PB-4257).
         let give_up = || {
             if item.cancel() {
                 WsRpcError::Unavailable(Unavailable)
@@ -370,7 +370,7 @@ impl WsRpcClient {
         // Wait the server-side budget PLUS a grace margin: a claim that
         // committed just before the server deadline must still report back
         // before the daemon gives up and falls back to HTTP, or we would
-        // double-claim (MUL-4257). (wsrpc.go:243–248)
+        // double-claim (PB-4257). (wsrpc.go:243–248)
         let mut timeout = server_timeout + self.grace;
         if timeout.is_zero() {
             timeout = Duration::from_secs(5);

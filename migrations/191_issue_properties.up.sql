@@ -1,4 +1,4 @@
--- Custom issue properties (MUL-4463).
+-- Custom issue properties (PB-4463).
 --
 -- Two-part model:
 --   1. issue_property — workspace-level property definitions (the catalog),

@@ -117,7 +117,7 @@ export const issueKeys = {
     ] as const,
   detail: (wsId: string, id: string) =>
     [...issueKeys.all(wsId), "detail", id] as const,
-  /** Resolve a bare issue identifier (e.g. "MUL-123") to an issue. */
+  /** Resolve a bare issue identifier (e.g. "PB-123") to an issue. */
   identifier: (wsId: string, identifier: string) =>
     [...issueKeys.all(wsId), "identifier", identifier] as const,
   /** Prefix for every per-parent children query in a workspace. */
@@ -218,11 +218,11 @@ export const ISSUE_PAGE_SIZE = 50;
 
 /**
  * CATEGORIES fetched and paginated into the list/board cache — all 7,
- * `cancelled` included. `cancelled` is a first-class default (MUL-4290), so it
+ * `cancelled` included. `cancelled` is a first-class default (PB-4290), so it
  * lives in the cache and renders like any other column; there is no separate
  * "visible board" subset. This constant governs fetch/cache membership.
  *
- * Keyed on category, not on status key (MUL-6243). A workspace can define any
+ * Keyed on category, not on status key (PB-6243). A workspace can define any
  * number of custom statuses, and bucketing by status would mean one more
  * parallel `listIssues` request on every board load per status added. Bucketing
  * by category keeps the fan-out fixed at 7 forever; a custom status appears in
@@ -417,7 +417,7 @@ export function issueDetailOptions(wsId: string, id: string) {
 }
 
 /**
- * Resolve a bare issue identifier ("MUL-123") to its issue, or `null`.
+ * Resolve a bare issue identifier ("PB-123") to its issue, or `null`.
  *
  * Backs the Linear-style autolink. This is an EXACT lookup, so it goes to
  * `GET /api/issues/{identifier}` — the server parses `PREFIX-NUMBER`, checks
@@ -430,7 +430,7 @@ export function issueDetailOptions(wsId: string, id: string) {
  * workspace-wide full-text query (title/description/comment `LIKE`, ranking,
  * snippet subquery, `COUNT(*) OVER()`) which is orders of magnitude more
  * expensive than a point read, and autolink resolution was the dominant
- * caller of it (MUL-6268).
+ * caller of it (PB-6268).
  *
  * Server state → TanStack Query; the key includes `wsId` and the identifier,
  * so identical identifiers across the app share one request. Caller gates

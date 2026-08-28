@@ -35,7 +35,7 @@ describe("ApiClient edit guards", () => {
       id: "issue-1",
       workspace_id: "ws-1",
       number: 1,
-      identifier: "MUL-1",
+      identifier: "PB-1",
       title: "Legacy issue",
       description: null,
       status: "todo",
@@ -83,10 +83,10 @@ describe("ApiClient pull-request response schema", () => {
     repo_owner: "acme",
     repo_name: "widget",
     number: 7,
-    title: "MUL-1: fix",
+    title: "PB-1: fix",
     state: "open",
     html_url: "https://github.example/acme/widget/pull/7",
-    branch: "fix/mul-1",
+    branch: "fix/pb-1",
     author_login: "octocat",
     author_avatar_url: null,
     merged_at: null,
@@ -396,7 +396,7 @@ describe("ApiClient server Table query", () => {
                 parent: {
                   id: "parent-1",
                   number: 10,
-                  identifier: "MUL-10",
+                  identifier: "PB-10",
                   title: "Parent",
                   status: "todo",
                 },
@@ -1706,7 +1706,7 @@ describe("ApiClient", () => {
       expect(body.get("comment_id")).toBeNull();
     });
 
-    it("threads an AbortSignal into fetch so the coordinator can cancel it (MUL-5181)", async () => {
+    it("threads an AbortSignal into fetch so the coordinator can cancel it (PB-5181)", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ id: "att-1", url: "https://cdn/x" }), {
           status: 200,
@@ -1955,7 +1955,7 @@ describe("ApiClient model discovery response schema", () => {
 });
 
 /**
- * Mixed-version contract for subtree unsubscribe (MUL-5483).
+ * Mixed-version contract for subtree unsubscribe (PB-5483).
  *
  * Web/desktop staging deploys on merge while the backend is deployed by hand,
  * so this client routinely runs against an older server. Subtree unsubscribe
@@ -2301,7 +2301,7 @@ describe("clientErrorMessage", () => {
   });
 
   it("withholds a 5xx message, which carries internal server detail", () => {
-    // MUL-6472: the pre-fix body for a failed autopilot trigger looked like
+    // PB-6472: the pre-fix body for a failed autopilot trigger looked like
     // this, and it was rendered verbatim in the run-now toast.
     const leaky = new ApiError(
       'failed to trigger autopilot: create run: ERROR: duplicate key value violates unique constraint "autopilot_run_pkey" (SQLSTATE 23505)',

@@ -1,5 +1,5 @@
 -- The write half of workspace teardown's concurrency contract, and of the legacy
--- runtime merge's (MUL-5999).
+-- runtime merge's (PB-5999).
 --
 -- THE WINDOWS
 --

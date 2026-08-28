@@ -54,7 +54,7 @@ pub(crate) struct DemotionPartition {
     /// Provider → evidence reason (go `demotedProviders`).
     pub demoted_providers: BTreeMap<String, String>,
     /// Runtime id → offline reason carried to the server per row (go
-    /// `offlineReasons`) — only for verdicts that carry one (MUL-6164).
+    /// `offlineReasons`) — only for verdicts that carry one (PB-6164).
     pub offline_reasons: BTreeMap<String, crate::client::RuntimeOfflineReason>,
     /// (workspace, provider) `ws.builtinVersions` records to delete: the
     /// runtime is gone, so the record of what was registered for it goes too;

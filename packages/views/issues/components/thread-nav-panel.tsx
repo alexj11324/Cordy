@@ -35,7 +35,7 @@ import { commentPreview } from "./thread-minimap";
 // compress to their 5px floor and stop being countable at all. A list fixes
 // the cost model — 8-10 titles readable in one glance instead of one at a
 // time — and search/filter make 24 threads and 240 threads cost the same
-// (MUL-5755).
+// (PB-5755).
 //
 // The panel deliberately does NOT mark which threads are currently on screen.
 // "On screen" is a set, not a point — a tall viewport holds several threads at

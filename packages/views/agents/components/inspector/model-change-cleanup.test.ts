@@ -35,7 +35,7 @@ const CLAUDE_MEDIUM_ONLY: RuntimeModel = {
   thinking: { supported_levels: [{ value: "medium", label: "Medium" }] },
 };
 
-describe("buildModelChangeUpdate (MUL-5390)", () => {
+describe("buildModelChangeUpdate (PB-5390)", () => {
   it("clears overrides the new model does not advertise", () => {
     expect(
       buildModelChangeUpdate({

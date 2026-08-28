@@ -286,7 +286,7 @@ describe("MermaidDiagram inline presentation", () => {
   });
 });
 
-// Kim's acceptance (MUL-4908): a still click opens, a horizontal drag moves a
+// Kim's acceptance (PB-4908): a still click opens, a horizontal drag moves a
 // wide diagram, and no gesture past the threshold may open the viewer on
 // release. Before this, every attempt to drag a wide diagram ended in a click
 // and the viewer opened on top of the user.

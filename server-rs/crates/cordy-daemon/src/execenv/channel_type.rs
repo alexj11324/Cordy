@@ -83,11 +83,11 @@ pub fn audience_of(channel_type: &str, chat_type: &str) -> ChatAudience {
 
 /// ChannelCarriesFiles reports whether a file the agent produces will actually
 /// reach this conversation. It is the delivery half of the two-layer channel
-/// policy (MUL-4899).
+/// policy (PB-4899).
 ///
 /// Its one caller is the per-turn chat prompt (daemon.buildChatPrompt). The
 /// runtime brief must not call it: the answer changes turn to turn on one
-/// resumed session, and the brief is the prompt-cache prefix (MUL-5377).
+/// resumed session, and the brief is the prompt-cache prefix (PB-5377).
 ///
 /// `server_says_delivers` is the claim's chat_channel_delivers_files, and it is
 /// the ONLY thing consulted for a channel-backed chat. The channel type is not,

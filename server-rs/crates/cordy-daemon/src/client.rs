@@ -213,7 +213,7 @@ pub(crate) fn normalize_goos(goos: &str) -> &'static str {
 
 /// `daemonClientCapabilities` (client.go:189): the X-Client-Capabilities value
 /// the daemon advertises on BOTH the HTTP control-plane requests and the WS
-/// handshake. rpc-v1 advertises WS request/response support (MUL-4257).
+/// handshake. rpc-v1 advertises WS request/response support (PB-4257).
 pub(crate) fn daemon_client_capabilities() -> String {
     [
         DAEMON_CAPABILITY_SKILL_BUNDLES_V1,
@@ -232,7 +232,7 @@ pub(crate) fn daemon_client_capabilities() -> String {
 // ---------------------------------------------------------------------------
 
 /// `batchClaimRequestTimeout` (client.go:255): the short, request-scoped
-/// deadline for the machine-level batch claim (MUL-4257). Bounding the batch to
+/// deadline for the machine-level batch claim (PB-4257). Bounding the batch to
 /// a few seconds caps worst-case head-of-line starvation across every runtime
 /// the daemon hosts; a claim that commits server-side after the client gives up
 /// is recovered by stale-dispatch reclaim on the next poll. Kept comfortably
@@ -758,7 +758,7 @@ pub struct WorkspaceReposResponse {
 }
 
 /// `RuntimeProfile` (client.go:896): mirrors the server's workspace custom
-/// runtime profile (MUL-3284). protocol_family selects the agent backend;
+/// runtime profile (PB-3284). protocol_family selects the agent backend;
 /// command_name is the executable the daemon resolves and launches.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeProfile {
@@ -852,7 +852,7 @@ pub struct TaskGcStatus {
 
 /// `RuntimeOfflineCodeNotExecutable` (client.go:837): marks a runtime taken
 /// offline because the OS refuses to execute its agent CLI — the one
-/// deregistration cause no amount of waiting fixes (MUL-6164).
+/// deregistration cause no amount of waiting fixes (PB-6164).
 pub const RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE: &str = "not_executable";
 
 /// `RuntimeOfflineReason` (client.go:843): why a runtime went offline, in the
@@ -1366,7 +1366,7 @@ impl Client {
 // ---------------------------------------------------------------------------
 
 /// `defaultTerminalRetrySchedule` (client.go:934): five backoffs totalling 124s
-/// rides out short upstream blips (MUL-2780) without leaving the task stuck.
+/// rides out short upstream blips (PB-2780) without leaving the task stuck.
 /// N entries → N+1 attempts.
 pub(crate) const DEFAULT_TERMINAL_RETRY_SCHEDULE: &[Duration] = &[
     Duration::from_secs(4),

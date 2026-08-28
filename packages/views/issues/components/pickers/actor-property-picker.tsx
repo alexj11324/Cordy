@@ -40,7 +40,7 @@ export function toggleActorRefValue(current: string[], key: string): string[] | 
 }
 
 /**
- * Value editor for `actor` / `multi_actor` custom properties (MUL-6286).
+ * Value editor for `actor` / `multi_actor` custom properties (PB-6286).
  *
  * Shaped like AssigneePicker's members section — same rows, same avatars — but
  * members are the only kind an actor property accepts. Agents and squads are

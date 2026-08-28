@@ -85,7 +85,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       // Not wired into drag-and-drop or the batch toolbar, which keep applying
       // directly. That is the existing split, not a new one: a drop is direct
       // manipulation whose card has already moved, and batch status was made
-      // deliberately dialog-free in MUL-4155.
+      // deliberately dialog-free in PB-4155.
       const intent = issue && runConfirmIntent(issue, updates, { entryOf });
       if (intent) {
         openModal("issue-run-confirm", intent);
@@ -157,7 +157,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
 
   const copyLink = useCallback(async () => {
     if (!issueId) return;
-    // Share the identifier form (`/{ws}/issues/MUL-123`): a pasted link should
+    // Share the identifier form (`/{ws}/issues/PB-123`): a pasted link should
     // say which issue it points at. The UUID form stays valid, so links copied
     // before this still resolve.
     const url = navigation.getShareableUrl(paths.issueDetail(issueIdentifier || issueId));

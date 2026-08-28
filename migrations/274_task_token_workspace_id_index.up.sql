@@ -4,7 +4,7 @@
 -- task_token has carried workspace_id NOT NULL since migration 108, but only
 -- token_hash and task_id were indexed. Workspace teardown is the one consumer
 -- that filters on workspace_id, and without this index it had no choice but to
--- scan the whole table (MUL-5999).
+-- scan the whole table (PB-5999).
 --
 -- The column is also the natural key for any future per-tenant token audit, so
 -- the index is not teardown-only.

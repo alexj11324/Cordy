@@ -5,7 +5,7 @@
 -- Two consumers need one:
 --
 --   1. Workspace teardown deletes tokens by agent as one of the three explicit
---      task_token paths (MUL-5999). It must not fall back on the agent_id
+--      task_token paths (PB-5999). It must not fall back on the agent_id
 --      cascade, because the legacy FKs are documented as an expand-phase safety
 --      net that a later contract removes.
 --   2. The FK's own ON DELETE CASCADE probe, which PostgreSQL runs once per

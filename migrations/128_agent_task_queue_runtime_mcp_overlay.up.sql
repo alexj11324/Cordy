@@ -1,7 +1,7 @@
 -- Per-task MCP overlay computed at task enqueue (dispatch) time, layered on
 -- top of agent.mcp_config when the daemon prepares the execution environment.
 --
--- Stage 3 of the Composio epic (MUL-3721 / MUL-3715): the Composio integration
+-- Stage 3 of the Composio epic (PB-3721 / PB-3715): the Composio integration
 -- writes a fresh `{"mcpServers": {"composio": {"type": "http", "url": "...",
 -- "headers": {"Authorization": "Bearer ..."}}}}` here for every task whose
 -- initiator user has at least one active connection. The daemon claim

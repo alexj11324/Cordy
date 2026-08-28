@@ -2,10 +2,10 @@
 use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 
-/// Namespaces daemon-token cache keys separately from PAT (`mul:auth:pat:*`)
+/// Namespaces daemon-token cache keys separately from PAT (`patchbay:auth:pat:*`)
 /// so the two key spaces can't collide and an invalidation on one kind of
 /// token doesn't accidentally hit the other.
-const DAEMON_TOKEN_CACHE_PREFIX: &str = "mul:auth:daemon:";
+const DAEMON_TOKEN_CACHE_PREFIX: &str = "patchbay:auth:daemon:";
 
 /// What DaemonAuth needs from the cached lookup — the workspace_id and
 /// daemon_id injected into the request context. Deliberately omits token_hash,
@@ -134,7 +134,10 @@ mod tests {
 
     #[test]
     fn key_format_matches_go() {
-        assert_eq!(DaemonTokenCache::key("abc123"), "mul:auth:daemon:abc123");
+        assert_eq!(
+            DaemonTokenCache::key("abc123"),
+            "patchbay:auth:daemon:abc123"
+        );
     }
 
     #[test]

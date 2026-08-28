@@ -1,5 +1,5 @@
 /**
- * Groups issues into the sections mobile's grouped lists render (MUL-6457).
+ * Groups issues into the sections mobile's grouped lists render (PB-6457).
  *
  * Extracted from `(tabs)/my-issues.tsx` + `more/issues.tsx` — which held the
  * same fifteen lines twice, and the same bug twice — so the rule is stated

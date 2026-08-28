@@ -1,5 +1,5 @@
 /**
- * MUL-5208 — the web half of the `cordy:navigate` bridge.
+ * PB-5208 — the web half of the `cordy:navigate` bridge.
  *
  * Shared content (comments, chat, issue descriptions) fires this event whenever
  * a link resolves to an in-app destination, including an absolute URL on this
@@ -53,9 +53,9 @@ describe("WebNavigationProvider internal link bridge", () => {
   it("pushes the path a content link resolved to", () => {
     render(<WebNavigationProvider>{null}</WebNavigationProvider>);
 
-    navigate("/acme/issues/MUL-1");
+    navigate("/acme/issues/PB-1");
 
-    expect(router.push).toHaveBeenCalledWith("/acme/issues/MUL-1");
+    expect(router.push).toHaveBeenCalledWith("/acme/issues/PB-1");
   });
 
   it("ignores an event without a path", () => {
@@ -72,7 +72,7 @@ describe("WebNavigationProvider internal link bridge", () => {
     );
 
     unmount();
-    navigate("/acme/issues/MUL-1");
+    navigate("/acme/issues/PB-1");
 
     expect(router.push).not.toHaveBeenCalled();
   });

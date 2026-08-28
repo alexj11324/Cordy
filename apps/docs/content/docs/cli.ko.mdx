@@ -81,32 +81,32 @@ cordy workspace member invite admin@example.com --role admin
 ```bash
 # 확인 및 검색
 cordy issue list
-cordy issue get MUL-123
+cordy issue get PB-123
 cordy issue search "로그인 실패"
 
 # 생성 및 수정
 cordy issue create --title "로그인 실패 수정"
-cordy issue status MUL-123 in_progress
-cordy issue assign MUL-123 --to "Backend Agent"
+cordy issue status PB-123 in_progress
+cordy issue assign PB-123 --to "Backend Agent"
 
 # 댓글 및 실행 기록
-cordy issue comment list MUL-123
-cordy issue comment add MUL-123 --content "회귀 테스트를 먼저 확인해 주세요"
-cordy issue runs MUL-123
+cordy issue comment list PB-123
+cordy issue comment add PB-123 --content "회귀 테스트를 먼저 확인해 주세요"
+cordy issue runs PB-123
 ```
 
 긴 설명이나 댓글은 stdin에서 읽어 줄바꿈과 따옴표 처리를 피할 수 있습니다.
 
 ```bash
 cordy issue create --title "업그레이드 안내" --description-stdin < notes.md
-cordy issue comment add MUL-123 --content-stdin < review.md
+cordy issue comment add PB-123 --content-stdin < review.md
 ```
 
 특정 실행의 메시지를 확인하거나 태스크를 중지합니다.
 
 ```bash
-cordy issue run-messages <task-id> --issue MUL-123
-cordy issue cancel-task <task-id> --issue MUL-123
+cordy issue run-messages <task-id> --issue PB-123
+cordy issue cancel-task <task-id> --issue PB-123
 ```
 
 ## 에이전트와 스킬
@@ -174,7 +174,7 @@ cordy runtime activity <runtime-id>
 
 ## ID와 출력 형식
 
-이슈에는 `MUL-123` 같은 key 또는 전체 UUID를 사용하며 UUID 짧은 접두사는 허용하지 않습니다.
+이슈에는 `PB-123` 같은 key 또는 전체 UUID를 사용하며 UUID 짧은 접두사는 허용하지 않습니다.
 
 다른 리소스의 `list` 명령은 일반적으로 복사 가능한 짧은 ID를 표시하고 `--full-id`로 전체 UUID를 출력할 수 있습니다. 짧은 ID가 고유하지 않으면 CLI가 더 많은 글자를 입력하거나 전체 UUID를 사용하도록 요청합니다. 실행 태스크의 짧은 ID에는 `--issue`로 소속 이슈도 지정해야 합니다.
 

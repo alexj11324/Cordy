@@ -1,6 +1,6 @@
 /**
  * Image sequence — the ordered list of images one surface exposes to the
- * preview viewer's prev / next navigation (MUL-5752).
+ * preview viewer's prev / next navigation (PB-5752).
  *
  * Scope is deliberately narrow: ONLY images. PDFs, video, audio, markdown,
  * HTML and text attachments never enter this sequence — mixing kinds would
@@ -100,7 +100,7 @@ function matchesAttachmentURL(
  * for the download click and another for the sequence):
  *
  *   1. id extracted from the stable `/api/attachments/<id>/download` shape
- *      that every post-MUL-3130 body persists. Survives a host swap and any
+ *      that every post-PB-3130 body persists. Survives a host swap and any
  *      incidental query / fragment.
  *   2. full-URL equality against `url` / `download_url` / `markdown_url`, for
  *      legacy bodies and CDN markdown that never got the stable shape.

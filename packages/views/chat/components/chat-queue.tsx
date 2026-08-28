@@ -28,7 +28,7 @@ interface ChatQueueProps {
   onSendNow: (taskId: string) => Promise<void> | void;
   /** Blocks "send now" independently of the head task's status — used when the
    *  caller may no longer invoke the agent, since steering a queued task
-   *  dispatches a run the server would refuse (MUL-6380). */
+   *  dispatches a run the server would refuse (PB-6380). */
   sendNowDisabled?: boolean;
   onEdit: (taskId: string) => Promise<void> | void;
   onRemove: (taskId: string) => Promise<void> | void;
@@ -53,7 +53,7 @@ export function ChatQueue({
   const canSendNow = !sendNowDisabled && dispatchableHead;
   // The two blocked states need different copy: "wait for the reply to start"
   // is actionable, "you cannot run this agent" is not — telling a user to wait
-  // for something waiting cannot fix is the bug (MUL-6380).
+  // for something waiting cannot fix is the bug (PB-6380).
   const sendNowLabel = t(($) =>
     canSendNow
       ? $.queue.steer

@@ -7,7 +7,7 @@ import { render, act } from "@testing-library/react";
 import { useDragSettle } from "./use-drag-settle";
 
 describe("useDragSettle", () => {
-  // MUL-4985 defense-in-depth: the board/list/swimlane resync effect calls
+  // PB-4985 defense-in-depth: the board/list/swimlane resync effect calls
   // `setColumns(buildColumns(...))` whenever its `groups` input changes
   // identity. When `groups` churns a fresh-but-content-equal value every render
   // (the cold-load failure mode), an unguarded setter allocated a new column

@@ -1,6 +1,6 @@
 /**
  * Custom issue properties — workspace-defined, typed fields on issues
- * (MUL-4463). Definitions live in a workspace catalog (managed by owner/admin
+ * (PB-4463). Definitions live in a workspace catalog (managed by owner/admin
  * only); values live on each issue in a bag keyed by definition id, so
  * renames never touch issue rows.
  *
@@ -37,7 +37,7 @@ export function isKnownPropertyType(type: string): type is IssuePropertyType {
 }
 
 /**
- * Actor properties (MUL-6286) reference a workspace member. The assignee field
+ * Actor properties (PB-6286) reference a workspace member. The assignee field
  * also accepts agents and squads; actor properties deliberately do not — an
  * agent reference would drag in agent-visibility rules, and a squad is a
  * routing target rather than a person.
@@ -118,7 +118,7 @@ export function actorRefsFromValue(value: IssuePropertyValue | undefined): Issue
  * Editors must consult this before offering a normal edit. For `multi_actor`
  * the toggle already round-trips unknown entries, but for single `actor` an
  * unresolvable value renders as empty, and letting the user "fill in the empty
- * field" would overwrite a value they were never shown (MUL-6286 review).
+ * field" would overwrite a value they were never shown (PB-6286 review).
  */
 export function hasUnknownActorRef(value: IssuePropertyValue | undefined): boolean {
   return actorRefValuesFromValue(value).length !== actorRefsFromValue(value).length;

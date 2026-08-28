@@ -284,7 +284,7 @@ describe("IssueAgentHeaderChip", () => {
     renderWithI18n(<IssueAgentHeaderChip issueId="issue-1" />);
 
     // Base UI gates hover-to-open on `openOnHover` on the trigger. Without it
-    // the chip would be click-only, which is the behavior MUL-3507 replaces.
+    // the chip would be click-only, which is the behavior PB-3507 replaces.
     // The trigger stays a real <button>, so click/keyboard access is retained.
     expect(mockState.triggerProps?.openOnHover).toBe(true);
     expect(

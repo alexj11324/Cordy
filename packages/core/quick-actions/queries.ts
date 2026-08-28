@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 
 /**
- * Quick action catalog queries (MUL-5465).
+ * Quick action catalog queries (PB-5465).
  *
  * ONE projection, shared by settings and the issue sidebar. There used to be a
  * second "runnable only" projection that filtered by invoke permission; it was

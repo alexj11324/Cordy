@@ -1,5 +1,5 @@
 //! Per-workspace issue status catalog — port of
-//! Per-workspace issue-status catalog (MUL-6243).
+//! Per-workspace issue-status catalog (PB-6243).
 //!
 //! MODEL. There are 7 categories and they map one-to-one onto the 7 built-in
 //! statuses: a category's value IS its canonical status key. A custom status

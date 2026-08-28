@@ -1,5 +1,5 @@
 -- Audit + rename existing workspace slugs against the newly-added reserved
--- set from MUL-961 (slug review follow-up).
+-- set from PB-961 (slug review follow-up).
 --
 -- This PR expands the reserved list in three directions:
 --   * §1 Real conflict: `homepage` — `/homepage` is an active Next.js route
@@ -10,14 +10,14 @@
 --   * API / ops prefixes: v1, v2, graphql, webhooks, sdk, tokens, cli,
 --     health, ws, metrics, ping.
 --
--- Per db-boy's prod audit (MUL-961 thread, 2026-04-22), two slugs in the §3
+-- Per db-boy's prod audit (PB-961 thread, 2026-04-22), two slugs in the §3
 -- set already had live prod workspaces:
 --
 --   * `home`       (68a982da-68a7-4e2e-ac8e-45a0323507f3) — zzlye, 2026-04-14
 --   * `dashboard`  (ea5a332f-06f9-480d-ab81-8f2324c92d80) — 王争,  2026-04-22
 --
--- Decision on MUL-961: force-rename both via this migration (scheme 1), same
--- playbook as MUL-972 for admin/cordy/new/www. Rename targets `home-1`
+-- Decision on PB-961: force-rename both via this migration (scheme 1), same
+-- playbook as PB-972 for admin/cordy/new/www. Rename targets `home-1`
 -- and `dashboard-1` were verified unoccupied at audit time. The subsequent
 -- DO block is a generic fallback that picks `<slug>-N` for any other row
 -- that slips in between audit and deploy (defensive against a race with new

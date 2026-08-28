@@ -1,5 +1,5 @@
 /**
- * MUL-5208 — a dedicated issue window must answer content-link navigation.
+ * PB-5208 — a dedicated issue window must answer content-link navigation.
  *
  * `cordy:navigate` is fired by the shared link handler for every in-app
  * destination, including an absolute URL on this deployment's own origin. Only
@@ -43,7 +43,7 @@ function CurrentPath() {
 
 function renderWindow() {
   return render(
-    <MemoryRouter initialEntries={["/acme/issues/MUL-1"]}>
+    <MemoryRouter initialEntries={["/acme/issues/PB-1"]}>
       <Routes>
         <Route
           path=":workspaceSlug/issues/:id"
@@ -72,9 +72,9 @@ describe("IssueWindowNavigationProvider content links", () => {
   it("opens another issue in place", () => {
     renderWindow();
 
-    navigate("/acme/issues/MUL-2");
+    navigate("/acme/issues/PB-2");
 
-    expect(screen.getByTestId("path")).toHaveTextContent("/acme/issues/MUL-2");
+    expect(screen.getByTestId("path")).toHaveTextContent("/acme/issues/PB-2");
     expect(openExternal).not.toHaveBeenCalled();
   });
 
@@ -83,7 +83,7 @@ describe("IssueWindowNavigationProvider content links", () => {
 
     navigate("/acme/chat");
 
-    expect(screen.getByTestId("path")).toHaveTextContent("/acme/issues/MUL-1");
+    expect(screen.getByTestId("path")).toHaveTextContent("/acme/issues/PB-1");
     expect(openExternal).toHaveBeenCalledWith(`${APP_URL}/acme/chat`);
   });
 

@@ -1,4 +1,4 @@
--- Custom Runtime, PR1 (schema only). See MUL-3284 / GitHub issue #3667.
+-- Custom Runtime, PR1 (schema only). See PB-3284 / GitHub issue #3667.
 --
 -- Adds the workspace-level `runtime_profile` table (the shared, team-visible
 -- definition of a "custom runtime" — e.g. an in-house Codex wrapper) and gives

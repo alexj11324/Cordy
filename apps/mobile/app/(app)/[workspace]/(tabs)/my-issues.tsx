@@ -2,7 +2,7 @@
  * "My Issues" tab. Three scopes — assigned / created / agents — mirroring
  * web's `packages/views/my-issues/components/my-issues-page.tsx:48-65`. The
  * `agents` scope label is "Agents and Squads" because the backend predicate
- * (`involves_user_id`, MUL-2397) surfaces both the user's owned agents and
+ * (`involves_user_id`, PB-2397) surfaces both the user's owned agents and
  * squads they're involved in (member / leader / has an owned agent inside).
  *
  * Issues are grouped by status CATEGORY using SectionList in
@@ -10,7 +10,7 @@
  * doesn't fill with "(0)" headers. Grouping is by category, not by status key,
  * because a workspace's custom statuses live inside their category's section
  * rather than adding one of their own — bucketing by key is what made
- * custom-status issues disappear from this list (MUL-6457). `cancelled` stays
+ * custom-status issues disappear from this list (PB-6457). `cancelled` stays
  * excluded, so a custom status in that category is hidden here exactly like the
  * built-in Cancelled is: a custom status inherits its category's behavior.
  *
@@ -56,7 +56,7 @@ import { THEME } from "@/lib/theme";
 // must fit in 343pt usable space, so the agents scope renders "Agents" — the
 // full "Agents and Squads" label (~135pt) blows past safe limits and breaks
 // under Dynamic Type. Semantics unchanged: same backend predicate
-// (`involves_user_id`, MUL-2397) covers owned agents + related squads; the
+// (`involves_user_id`, PB-2397) covers owned agents + related squads; the
 // empty state copy still says "agents or squads".
 const SCOPES: { value: MyIssuesScope; label: string }[] = [
   { value: "assigned", label: "Assigned" },
@@ -100,7 +100,7 @@ export default function MyIssues() {
 
   // Only the active-filter chips need the catalog: sections group on the
   // category the server already resolved onto each issue, so the list never
-  // waits for this. (MUL-6243)
+  // waits for this. (PB-6243)
   const catalog = useIssueStatuses();
 
   // Apply client-side status + priority filter. Mirrors the predicate at

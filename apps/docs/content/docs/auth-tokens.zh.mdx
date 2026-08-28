@@ -17,7 +17,11 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 个人访问令牌
 
-个人访问令牌（PAT）以 `mul_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
+个人访问令牌（PAT）以 `pby_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
+
+<Callout type="info">
+如果你从 Patchbay 更名前的版本升级，请重新登录并替换所有已保存的 PAT。使用旧产品前缀的令牌不再被接受。
+</Callout>
 
 在 **设置 → API Token** 中创建令牌时，需要填写名称，并选择 30 天、90 天、1 年或永不过期，默认选中 90 天。完整令牌只显示一次；关闭窗口后，Cordy 只保留：
 
@@ -40,7 +44,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 ~/.cordy/profiles/<name>/config.json
 ```
 
-守护进程使用同一个 PAT 连接 Cordy。带过期时间的 `mul_` PAT 在剩余有效期不足 7 天时自动续期，延长到当时起 90 天后。续期失败不会改变令牌本身；令牌已经过期或被吊销时，需要重新运行 `cordy login`。
+守护进程使用同一个 PAT 连接 Cordy。带过期时间的 `pby_` PAT 在剩余有效期不足 7 天时自动续期，延长到当时起 90 天后。续期失败不会改变令牌本身；令牌已经过期或被吊销时，需要重新运行 `cordy login`。
 
 无浏览器环境可以先在 Web 中创建 PAT，再让 CLI 安全地提示输入：
 
@@ -53,7 +57,7 @@ cordy login --token
 把 PAT 放进 `Authorization` header：
 
 ```bash
-export CORDY_TOKEN='mul_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export CORDY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.cordy.ai/api/me \
   -H "Authorization: Bearer $CORDY_TOKEN"
@@ -92,7 +96,7 @@ curl https://api.cordy.ai/api/issues \
 | `mcn_` | Cordy Cloud Node 连接 | Cordy Cloud Fleet |
 | `mdt_` | 工作区范围的守护进程认证协议 | 服务端内部流程 |
 
-普通 Cloud、自托管和 Desktop 安装都不需要手动创建它们。用户侧的 CLI 与守护进程始终使用 `mul_` PAT；不要自行构造其他前缀的令牌。
+普通 Cloud、自托管和 Desktop 安装都不需要手动创建它们。用户侧的 CLI 与守护进程始终使用 `pby_` PAT；不要自行构造其他前缀的令牌。
 
 ## 接下来
 

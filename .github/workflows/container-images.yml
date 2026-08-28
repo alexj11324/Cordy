@@ -25,7 +25,26 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Docker Buildx
+        id: backend-buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Restore Cargo image cache
+        id: backend-cargo-cache
+        uses: actions/cache@v6
+        with:
+          path: .buildkit-cache/backend
+          key: buildkit-backend-${{ runner.os }}-${{ hashFiles('server-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            buildkit-backend-${{ runner.os }}-${{ hashFiles('server-rs/Cargo.lock') }}-
+            buildkit-backend-${{ runner.os }}-
+
+      - name: Mount Cargo cache in BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.backend-buildx.outputs.name }}
+          cache-dir: .buildkit-cache/backend
+          dockerfile: Dockerfile
+          skip-extraction: ${{ steps.backend-cargo-cache.outputs.cache-hit }}
 
       - name: Compute backend image date
         id: backend-image

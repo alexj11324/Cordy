@@ -76,7 +76,7 @@ const SQUAD_PARENT_STATUS_OWNED: &str = r#"6. **Own the parent issue status.** T
 
 /// Responsibility 6 for every other leader path (Go
 /// `squadParentStatusNotOwned`): an @squad mention on an issue owned by someone
-/// else (MUL-3724), and quick-create, where no issue exists yet on this turn.
+/// else (PB-3724), and quick-create, where no issue exists yet on this turn.
 const SQUAD_PARENT_STATUS_NOT_OWNED: &str = r#"6. **Do NOT change this issue's status.** This issue is not assigned to your
    squad — you were pulled in by an @mention (or this is a quick-create turn,
    where the issue does not exist yet). Its status belongs to its own

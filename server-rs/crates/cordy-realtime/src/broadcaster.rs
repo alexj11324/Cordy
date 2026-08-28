@@ -16,7 +16,7 @@ pub const SCOPE_DAEMON_RUNTIME: &str = "daemon_runtime";
 /// The abstraction every realtime event producer should depend on instead of
 /// the concrete Hub.
 ///
-/// Phase 1 (MUL-1138) extends the surface with [`Broadcaster::broadcast_to_scope`]
+/// Phase 1 (PB-1138) extends the surface with [`Broadcaster::broadcast_to_scope`]
 /// so events can be fanned out to high-frequency per-resource scopes
 /// (`task:{id}`, `chat:{id}`) instead of the whole workspace. The legacy
 /// methods continue to work and route through it under the hood.

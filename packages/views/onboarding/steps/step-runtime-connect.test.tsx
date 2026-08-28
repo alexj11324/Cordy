@@ -10,7 +10,7 @@ const TEST_RESOURCES = { en: { common: enCommon, onboarding: enOnboarding } };
 
 // Drive the runtime picker via a hoisted mock so the step renders without a
 // live daemon. (The onboarding_runtime_detected PostHog event this file used
-// to cover was removed in MUL-4127.)
+// to cover was removed in PB-4127.)
 const mocks = vi.hoisted(() => ({
   pickerState: {
     runtimes: [] as AgentRuntime[],
@@ -95,7 +95,7 @@ describe("StepRuntimeConnect", () => {
     renderStep({ runtimesPending: true });
 
     // Past the soft budget the daemon still reports work in flight, so the
-    // false-negative empty state must not appear (MUL-5119).
+    // false-negative empty state must not appear (PB-5119).
     act(() => vi.advanceTimersByTime(5000));
     expect(
       screen.getByText(/connecting this computer/i),

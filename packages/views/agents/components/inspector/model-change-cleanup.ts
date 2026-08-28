@@ -22,7 +22,7 @@ export type ModelChangeUpdate = {
  * `thinking_level` / `service_tier` are per-model capabilities: keeping a value
  * the new model never advertised leaves an orphan override that the daemon
  * silently drops at execution time, so the settings page would claim a tier
- * that never ran (MUL-5390). Clearing unconditionally is worse though — moving
+ * that never ran (PB-5390). Clearing unconditionally is worse though — moving
  * between two models that both support Fast would throw the user's choice away,
  * and clearing while the catalog is unknown would delete a value the daemon
  * would have honoured.

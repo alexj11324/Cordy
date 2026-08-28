@@ -23,7 +23,7 @@ vi.mock("@cordy/core/labels", () => ({
 describe("LabelsTab scopes", () => {
   afterEach(cleanup);
 
-  // Agent labels were removed from the product (MUL-5600). The backend still
+  // Agent labels were removed from the product (PB-5600). The backend still
   // models the `agent` resource type, so the guard here is that the settings
   // UI never offers it as a manageable catalog again.
   it("offers only the issue and skill catalogs", () => {

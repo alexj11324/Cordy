@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 /**
- * MUL-6231 / #7021. The desktop renderer mounted <App /> with no boundary
+ * PB-6231 / #7021. The desktop renderer mounted <App /> with no boundary
  * above it, so one throw in the shell emptied the window and left force-quit
  * as the only way out.
  */

@@ -77,7 +77,7 @@ import { useSearchStore } from "./search-store";
 // registry the sidebar nav and the desktop tab bar read. It used to be a
 // hand-written list, which silently went stale every time a page was added:
 // Chat, Autopilot, Squads and Analytics shipped in the sidebar but were
-// unreachable from the palette (MUL-6272). Deriving the list means a new
+// unreachable from the palette (PB-6272). Deriving the list means a new
 // workspace page is in the palette the moment it is in the registry.
 //
 // Page keys double as WorkspacePaths method names, so `p[key]()` resolves the
@@ -564,7 +564,7 @@ export function SearchCommand() {
   // Enter into a jump to a result the user has already typed past.
   const resultsAreStale = results.query !== query.trim();
 
-  // Cross-type cancelled demotion (MUL-5824). The two searches are ranked
+  // Cross-type cancelled demotion (PB-5824). The two searches are ranked
   // independently server-side, so the partition has to happen here, where they
   // are aggregated for display. See the render note on the results list.
   const partitionedResults = useMemo(
@@ -852,7 +852,7 @@ export function SearchCommand() {
               )}
 
             {/*
-              Render order is the cross-type cancelled partition (MUL-5824):
+              Render order is the cross-type cancelled partition (PB-5824):
               live projects → live issues → one trailing Cancelled section
               holding cancelled projects then cancelled issues. Projects and
               issues arrive as two independently ranked responses, so per-type

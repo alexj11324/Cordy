@@ -6,7 +6,7 @@ import type { ChatQuickActionsPendingState } from "../types/chat";
 /**
  * Clears a session's `quickActionsPending` marker from the query cache when no
  * chat:quick_actions supplement resolves it before the marker's own deadline
- * (MUL-5149). Unlike a component-local timer, this drops the REAL cache state,
+ * (PB-5149). Unlike a component-local timer, this drops the REAL cache state,
  * so the pill spinner / skeleton stops AND a later refresh — even after closing
  * and reopening chat — starts clean instead of re-reading a stuck marker.
  *

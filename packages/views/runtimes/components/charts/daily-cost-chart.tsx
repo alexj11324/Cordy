@@ -18,7 +18,7 @@ import { useT } from "../../../i18n";
 // category `estimateCost` bills for, so the bars add up to the same money the
 // Cost KPI reports. The tooltip derives Total by summing the segments it can
 // see, so a category left out of this config is a category left out of the
-// user's total (MUL-6334: cache read alone was >50% of some buckets).
+// user's total (PB-6334: cache read alone was >50% of some buckets).
 //
 // Series → CSS chart token: input/output/cache-write keep chart-1/2/3, and
 // cache read takes chart-4 in the output→cache-write slot — the same colour

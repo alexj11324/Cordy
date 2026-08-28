@@ -53,7 +53,7 @@ describe("resolveRemoteApiUrl", () => {
 
   // Same defect as the browser base, same fix: the rewrite target already
   // appends the full incoming pathname (`/api/**`, `/uploads/**`, `/ws`), so a
-  // configured `/api` suffix would double it (MUL-5922).
+  // configured `/api` suffix would double it (PB-5922).
   it("strips a trailing /api from server-side rewrite targets", () => {
     expect(
       resolveRemoteApiUrl({ REMOTE_API_URL: "http://backend:8080/api" }),

@@ -25,7 +25,7 @@ function cleanHttpUrl(raw: string | undefined): string | undefined {
 // `/api/**`, avatars resolve `/uploads/**`, realtime connects `/ws`), and the
 // Rust backend serves all three at the root. A base
 // ending in `/api` therefore yields `/api/api/**` requests and 404s every
-// upload — the most common self-hosting mistake (#6619, MUL-5922). Strip that
+// upload — the most common self-hosting mistake (#6619, PB-5922). Strip that
 // one suffix instead of honouring it. Any other path is preserved: a reverse
 // proxy may legitimately mount the whole backend under a prefix such as
 // `https://host/cordy`.
@@ -152,7 +152,7 @@ function isBackendAuthPath(pathname: string): boolean {
 // prefix-mounted deployment would break in one direction while working in the
 // other. `apps/desktop/src/shared/runtime-config.ts` derives it the same way,
 // so both clients read one configured value identically. The regression that
-// motivated MUL-5922 — `NEXT_PUBLIC_API_URL=https://host/api` deriving
+// motivated PB-5922 — `NEXT_PUBLIC_API_URL=https://host/api` deriving
 // `wss://host/api/ws` while the backend serves `/ws` at the root — is fixed
 // upstream in the base itself (see stripApiPathSuffix), not here.
 function tryDeriveWsUrl(apiUrl: string): string | undefined {

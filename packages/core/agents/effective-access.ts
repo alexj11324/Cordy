@@ -2,7 +2,7 @@ import type { AgentInvocationTarget, AgentPermissionMode } from "../types";
 
 /**
  * The three effective access-scope states shown in the agents list, derived
- * from the authoritative `permission_mode` + `invocation_targets` (MUL-3963).
+ * from the authoritative `permission_mode` + `invocation_targets` (PB-3963).
  * The legacy `visibility` field is a lossy two-state projection of these — a
  * `public_to` agent scoped to specific people maps to `visibility: "private"`,
  * indistinguishable from a truly owner-only agent — so the list shows this

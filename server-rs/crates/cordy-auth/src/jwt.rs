@@ -53,9 +53,9 @@ pub fn validate_jwt_secret(secret: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Personal access token: `mul_` + 40 random hex chars.
+/// Personal access token: `pby_` + 40 random hex chars.
 pub fn generate_pat_token() -> anyhow::Result<String> {
-    Ok(format!("mul_{}", random_hex20()?))
+    Ok(format!("pby_{}", random_hex20()?))
 }
 
 /// Daemon auth token: `mdt_` + 40 random hex chars.
@@ -65,7 +65,7 @@ pub fn generate_daemon_token() -> anyhow::Result<String> {
 
 /// Task-scoped agent token: `mat_` + 40 random hex chars. Bound to a specific
 /// (agent_id, task_id) pair server-side; injected by the daemon into the agent
-/// process in place of its owner PAT (MUL-2600).
+/// process in place of its owner PAT (PB-2600).
 pub fn generate_agent_task_token() -> anyhow::Result<String> {
     Ok(format!("mat_{}", random_hex20()?))
 }
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn pat_token_shape() {
         let t = generate_pat_token().unwrap();
-        assert!(t.starts_with("mul_"));
+        assert!(t.starts_with("pby_"));
         assert_eq!(t.len(), 4 + 40);
         assert!(t[4..].chars().all(|c| c.is_ascii_hexdigit()));
     }

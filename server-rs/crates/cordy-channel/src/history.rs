@@ -1,6 +1,6 @@
 //! Channel-agnostic vocabulary for ON-DEMAND history reads.
 //!
-//! Shared channel-history contract (MUL-3871).
+//! Shared channel-history contract (PB-3871).
 //! History is PULLED by the agent through two unified CLI commands —
 //! `cordy chat history` (the channel OVERVIEW: top-level messages +
 //! thread metadata, not thread contents) and `cordy chat thread [id]`

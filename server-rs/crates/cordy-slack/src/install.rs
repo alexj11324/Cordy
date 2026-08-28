@@ -1,5 +1,5 @@
 //! Slack install backend — port of
-//! Slack installation contract (MUL-3666).
+//! Slack installation contract (PB-3666).
 //!
 //! Slack uses the bring-your-own-app (BYO) model: the workspace admin creates
 //! their own Slack app, installs it to their Slack workspace, and pastes its

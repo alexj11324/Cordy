@@ -8,7 +8,7 @@ import { useSyncExternalStore } from "react";
  * Callers use it to answer "is the user really looking at this surface". A chat
  * reply that lands while the app is NOT in the foreground must not be
  * auto-marked-read and must still raise the unread badge — otherwise the
- * notification is silently eaten while the user is away (MUL-4485). The chat
+ * notification is silently eaten while the user is away (PB-4485). The chat
  * sidebar badge and the auto mark-read effects share this signal so they stay
  * consistent: while backgrounded the active session both counts toward the
  * badge and keeps its unread; on return the badge clears and mark-read fires.

@@ -268,7 +268,7 @@ impl TaskService {
     /// The `issue` payload is a map (issue_to_map); note this does NOT cover
     /// the full HTTP UpdateIssue side effects: activity-log and inbox
     /// listeners type-assert a handler response and skip maps, so a background
-    /// status reset intentionally emits neither (#4648 / MUL-3782).
+    /// status reset intentionally emits neither (#4648 / PB-3782).
     pub(crate) async fn broadcast_issue_updated(&self, issue: &Issue, prev_status: &str) {
         let prefix = self.get_issue_prefix(issue.workspace_id).await;
         let category = issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await;
@@ -485,7 +485,7 @@ pub fn issue_to_map(issue: &Issue, issue_prefix: &str) -> serde_json::Value {
         "status": issue.status,
         // Mirrors handler.IssueResponse.StatusCategory: a built-in status IS
         // its own category; empty for a custom status, which consumers
-        // resolve via the catalog. (MUL-6243)
+        // resolve via the catalog. (PB-6243)
         "status_category": built_in_status_category(&issue.status),
         "priority": issue.priority,
         "assignee_type": issue.assignee_type.clone(),
@@ -509,7 +509,7 @@ pub fn issue_to_map(issue: &Issue, issue_prefix: &str) -> serde_json::Value {
 
 /// issue_to_map with an AUTHORITATIVE status_category resolved through the
 /// catalog so a custom status is not emitted blank. Background events go
-/// through this; clients bucket by category. (MUL-6243)
+/// through this; clients bucket by category. (PB-6243)
 pub fn issue_to_map_with_category(
     issue: &Issue,
     issue_prefix: &str,
@@ -627,7 +627,7 @@ impl TaskService {
         }
 
         // Requester subscription happens at issue-creation time in the shared
-        // delegated-subscriber rule, NOT here (MUL-5483 keeps one owner).
+        // delegated-subscriber rule, NOT here (PB-5483 keeps one owner).
         let prefix = self.get_issue_prefix(workspace_id).await;
         let identifier = format!("{}-{}", prefix, issue.number);
         let details = json!({

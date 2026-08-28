@@ -1,7 +1,7 @@
 /*
  * RichContent density modifier.
  *
- * `density` is CSS-only (MUL-4922): compact and document render the SAME
+ * `density` is CSS-only (PB-4922): compact and document render the SAME
  * semantic DOM through the same components map, and differ only in spacing.
  * Nothing here may change which blocks exist — only how tightly they sit.
  *

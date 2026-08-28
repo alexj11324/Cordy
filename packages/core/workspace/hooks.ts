@@ -23,7 +23,7 @@ import { pluginInstallationsOptions } from "../plugins";
 // `laneGroups`) then churn a fresh value each render, and the board/list
 // column resync `useEffect(setColumns, [groups])` re-fires without end — an
 // infinite re-render that react-virtuoso turns into "Maximum update depth
-// exceeded" on the Issues route (MUL-4985). Sharing one reference keeps the
+// exceeded" on the Issues route (PB-4985). Sharing one reference keeps the
 // loading snapshot referentially stable.
 const EMPTY_MEMBERS: MemberWithUser[] = [];
 const EMPTY_AGENTS: Agent[] = [];

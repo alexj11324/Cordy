@@ -1,4 +1,4 @@
--- Custom Runtime, PR2 (registration extension). See MUL-3284 / GitHub #3667.
+-- Custom Runtime, PR2 (registration extension). See PB-3284 / GitHub #3667.
 --
 -- PR1 (migration 120) added agent_runtime.profile_id and a partial unique index
 -- for custom-runtime instances, but deliberately left the legacy

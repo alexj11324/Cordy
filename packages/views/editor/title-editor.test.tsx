@@ -138,7 +138,7 @@ describe("TitleEditor", () => {
   });
 });
 
-// MUL-4931 — which `send` bindings the title's shortcut-submit path honors.
+// PB-4931 — which `send` bindings the title's shortcut-submit path honors.
 describe("titleShortcutSubmitAllowed", () => {
   it("allows the default Mod+Enter chord", () => {
     expect(

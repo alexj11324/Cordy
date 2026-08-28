@@ -16,7 +16,7 @@ import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useT } from "../../i18n";
 
 // Fully controlled — parent owns the selection state and ships it to the
-// create/update mutation. Members-only on purpose (per RFC, MUL-2533).
+// create/update mutation. Members-only on purpose (per RFC, PB-2533).
 export function SubscriberMultiSelect({
   selectedIds,
   onChange,

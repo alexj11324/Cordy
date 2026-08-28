@@ -18,7 +18,7 @@
  * match web `packages/views/projects/components/project-detail.tsx`, NOT status
  * keys: a workspace's custom statuses live inside their category's group rather
  * than adding one of their own, and grouping by key dropped them from the list
- * entirely (MUL-6457). The earlier mobile-only "Open / Done" two-bucket layout
+ * entirely (PB-6457). The earlier mobile-only "Open / Done" two-bucket layout
  * was a parity violation: the same status would appear in different visible
  * groups on mobile vs web. Cancelled is omitted on both clients.
  */

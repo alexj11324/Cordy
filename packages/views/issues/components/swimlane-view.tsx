@@ -888,7 +888,7 @@ function SwimLaneViewImpl({
           }
           // Cells are CATEGORIES: a custom status belongs to the column it
           // behaves as, and keying the cell by the raw status key dropped
-          // those cards out of the grid entirely (MUL-6409).
+          // those cards out of the grid entirely (PB-6409).
           const status = issueColumnCategory(issue);
           if (result[lane.key]?.[status]) {
             result[lane.key]![status]!.push(issue.id);
@@ -980,7 +980,7 @@ function SwimLaneViewImpl({
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
   // The outer scroll box is the customScrollParent for the lane Virtuoso.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (MUL-4741): same wiring as board/list/
+  // Pull-based scroll restoration (PB-4741): same wiring as board/list/
   // issue-detail — ref-attach assigns the saved offset pre-paint, and the
   // lane Virtuoso is born at it via initialScrollTop.
   const restoredScrollTop = useRestoredScrollOffset("swimlane");
@@ -1276,7 +1276,7 @@ function SwimLaneViewImpl({
         issueColumnCategory(currentIssue) === finalOverCell.status;
       // ...and a card already here on a CUSTOM status keeps it: writing the
       // cell's canonical key would rewrite `awaiting_response` to `in_review`
-      // — a real status change, which starts an agent run (MUL-6409).
+      // — a real status change, which starts an agent run (PB-6409).
       const keepsStatus =
         staysInCell && currentIssue?.status !== finalOverCell.status;
       if (
@@ -1365,7 +1365,7 @@ function SwimLaneViewImpl({
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires
   // onDragCancel instead of onDragEnd. Releasing the drag lock here keeps
   // localCells resyncing with the cache afterwards — see the same handler in
-  // list-view for the touch path that makes this routine (MUL-6240).
+  // list-view for the touch path that makes this routine (PB-6240).
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
@@ -1492,7 +1492,7 @@ function SwimLaneViewImpl({
           {/* Seed a bounded slice of real lanes while the scroll ref hasn't
               settled after a remount, so the lane area never paints blank; once
               it's set, mount the Virtuoso with a matching `initialItemCount` to
-              survive the measurement frame (MUL-4750). */}
+              survive the measurement frame (PB-4750). */}
           {scrollEl ? (
             <Virtuoso
               customScrollParent={scrollEl}

@@ -345,7 +345,7 @@ impl BusinessMetrics {
     ///
     /// Observation only: the reply is delivered either way. The server cannot
     /// judge these paths the way the CLI lint can — it has no access to the
-    /// daemon's filesystem to stat them — so this measures whether the MUL-4899
+    /// daemon's filesystem to stat them — so this measures whether the PB-4899
     /// prompt contract is landing, and must never gate delivery on a lexical
     /// guess. The label is a closed enum precisely so no fragment of the path
     /// or reply body can reach Prometheus.
@@ -403,7 +403,7 @@ fn bool_label(v: bool) -> &'static str {
 /// ships to PostHog, enqueues the PostHog event too — so the two cannot drift.
 /// Both sides are best-effort and never block the request path.
 ///
-/// As of MUL-4127 every server-side event is flagged metrics-only, so capture
+/// As of PB-4127 every server-side event is flagged metrics-only, so capture
 /// is skipped for all of them; the path is retained so a future
 /// non-metrics-only event name would still ship.
 pub fn record_event(client: Option<&dyn AnalyticsClient>, m: Option<&BusinessMetrics>, ev: &Event) {

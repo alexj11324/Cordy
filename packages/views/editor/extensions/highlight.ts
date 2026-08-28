@@ -19,7 +19,7 @@ import { matchHighlightAt } from "../utils/highlight-match";
  *
  * Single colour (yellow) for now — `multicolor` stays off. A future multicolour
  * variant would need a syntax that can carry a colour (`==text==` cannot), so it
- * is intentionally out of scope here (see MUL-2934).
+ * is intentionally out of scope here (see PB-2934).
  *
  * BOUNDARY RULES live in utils/highlight-match.ts and are shared with the
  * read-only renderer (utils/highlight-markdown.ts) so the editor and the

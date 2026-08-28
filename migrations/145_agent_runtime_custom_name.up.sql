@@ -1,4 +1,4 @@
--- Adds an optional user-facing custom name for a runtime (MUL-4217).
+-- Adds an optional user-facing custom name for a runtime (PB-4217).
 -- custom_name overrides the daemon-proposed `name` for display only; NULL
 -- falls back to `name`. Deliberately NOT written by the registration /
 -- heartbeat upserts (which do name = EXCLUDED.name on every beat), so a

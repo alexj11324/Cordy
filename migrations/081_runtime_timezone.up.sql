@@ -15,5 +15,5 @@ ALTER TABLE agent_runtime
 COMMENT ON COLUMN agent_runtime.timezone IS
     'IANA timezone (e.g. ''Asia/Shanghai''). Bucket boundary for per-day '
     'and per-hour token usage aggregation. Defaults to UTC for runtimes '
-    'that existed before MUL-1950; the daemon registration / web UI '
+    'that existed before PB-1950; the daemon registration / web UI '
     'overwrites this with an operator-detected value going forward.';

@@ -85,7 +85,7 @@ fn sanitize_brief_code_token(s: &str) -> String {
         .collect()
 }
 
-/// BuildTaskInitiatorBlock (MUL-2645 pinned phrases kept verbatim). Returns
+/// BuildTaskInitiatorBlock (PB-2645 pinned phrases kept verbatim). Returns
 /// "" when no initiator name resolves.
 pub(crate) fn build_task_initiator_block(
     initiator_type: &str,
@@ -276,7 +276,7 @@ Do NOT write literal `\\n` escapes to simulate line breaks; the file preserves r
     {
         format!(
             "{lead}do NOT reuse --parent values from previous turns in this session.\n\n\
-Write the body file first (rules: ## Comment Formatting above — MUL-2904 / #4182):\n\n\
+Write the body file first (rules: ## Comment Formatting above — PB-2904 / #4182):\n\n\
     cordy issue comment add {issue_id} --parent {trigger_comment_id} --content-file ./reply.md\n\
     rm ./reply.md\n\n\
 Do NOT write literal `\\n` escapes to simulate line breaks; the file preserves real newlines.\n"
@@ -284,7 +284,7 @@ Do NOT write literal `\\n` escapes to simulate line breaks; the file preserves r
     }
 }
 
-/// BuildMultiThreadCommentReplyInstructions (MUL-4348 / MUL-5825): fan-out
+/// BuildMultiThreadCommentReplyInstructions (PB-4348 / PB-5825): fan-out
 /// block carrying only multi-thread-SPECIFIC guidance. Returns "" below two
 /// targets.
 pub(crate) fn build_multi_thread_comment_reply_instructions(

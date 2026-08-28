@@ -126,7 +126,7 @@ export interface ListGitHubInstallationsResponse {
   repository_browse_configured?: boolean;
   /** Whether the caller can connect / disconnect installations. Non-admin
    * members get `false` along with installations that omit `installation_id`.
-   * Older backends predating MUL-2413 omit the field; treat absence as
+   * Older backends predating PB-2413 omit the field; treat absence as
    * `false` for read-only safety. */
   can_manage?: boolean;
 }

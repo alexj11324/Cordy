@@ -9,7 +9,7 @@ export const composioKeys = {
 };
 
 /** The project's connectable Composio toolkits (those with an enabled auth
- * config; see MUL-4009). The list changes rarely, so a long staleTime avoids
+ * config; see PB-4009). The list changes rarely, so a long staleTime avoids
  * refetching it every time the Settings tab mounts. */
 export const composioToolkitsOptions = () =>
   queryOptions({

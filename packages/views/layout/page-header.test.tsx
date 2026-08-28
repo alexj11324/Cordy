@@ -93,7 +93,7 @@ describe("PageHeader base chrome", () => {
 
   // A shell that keeps its own trigger on screen (the desktop window toolbar)
   // gets no fallback one: the header's copy is the same icon 50px below the
-  // shell's, and a list/detail surface stacked a third alongside it (MUL-6218).
+  // shell's, and a list/detail surface stacked a third alongside it (PB-6218).
   it("drops its trigger under a shell that keeps its own on screen", () => {
     const header = renderHeader(
       <PageHeader>

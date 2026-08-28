@@ -1149,7 +1149,7 @@ mod tests {
                 .await
                 .expect_err("short prefix");
             assert!(error.to_string().contains("short UUID prefix"));
-            assert!(error.to_string().contains("MUL-123"));
+            assert!(error.to_string().contains("PB-123"));
         }
         let error = resolve_issue_ref(&client, "not-an-id")
             .await

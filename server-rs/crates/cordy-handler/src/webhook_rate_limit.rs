@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 const OPERATION_TIMEOUT: Duration = Duration::from_millis(250);
 const WINDOW: Duration = Duration::from_secs(60);
-const TOKEN_PREFIX: &str = "mul:webhook:rate:";
-const BAD_IP_PREFIX: &str = "mul:webhook:ip:";
-const ABSOLUTE_IP_PREFIX: &str = "mul:webhook:absolute-ip:";
+const TOKEN_PREFIX: &str = "patchbay:webhook:rate:";
+const BAD_IP_PREFIX: &str = "patchbay:webhook:ip:";
+const ABSOLUTE_IP_PREFIX: &str = "patchbay:webhook:absolute-ip:";
 
 // Redis TIME supplies a cross-replica clock. Milliseconds remain exactly
 // representable by Lua numbers, unlike current-epoch nanoseconds.

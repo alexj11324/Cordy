@@ -685,7 +685,7 @@
     "connection_description_prefix": "タスクを Pull request に自動でリンクします。ブランチ、タイトル、または本文に",
     "connection_description_suffix": "を含む PR がマージされると、対応するタスクが次のステータスに移動します:",
     "connection_description_done": "完了",
-    "connection_identifier_example": "MUL-123",
+    "connection_identifier_example": "PB-123",
     "connected_to": "{{login}} に接続済み",
     "connect_github": "GitHub を接続",
     "connect_opening": "開いています…",

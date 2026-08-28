@@ -66,7 +66,7 @@ export function chipAppearance(
  * surface really has nobody working, a non-empty list = the roster. Rendering
  * the empty sentence for an unresolved projection would assert "no agents
  * working right now" on no evidence — the same class of unearned claim the chip
- * count itself had (MUL-5525).
+ * count itself had (PB-5525).
  */
 export function WorkingAgentsHoverContent({
   agents,
@@ -128,7 +128,7 @@ export function WorkingAgentsHoverContent({
  * The number IS the post-click row count's authority: it counts the agents
  * working on rows this surface's scope AND active filters would show, resolved
  * by the surface controller from the server-side `working_agents` facet — the
- * same compiled query the rows come from. Before MUL-5525 it ran its own
+ * same compiled query the rows come from. Before PB-5525 it ran its own
  * workspace-wide `/api/working-agents` read, so on a project page it could
  * advertise agents working nowhere near that project and open an empty list.
  *

@@ -685,7 +685,7 @@
     "connection_description_prefix": "自动把任务关联到 Pull Request。当 PR 的分支、标题或正文中包含",
     "connection_description_suffix": "并被合并时，对应的任务会自动转为",
     "connection_description_done": "已完成",
-    "connection_identifier_example": "MUL-123",
+    "connection_identifier_example": "PB-123",
     "connected_to": "已连接到 {{login}}",
     "connect_github": "连接 GitHub",
     "connect_opening": "正在打开…",

@@ -6,7 +6,7 @@ import { create } from "zustand";
  *
  * Deliberately NOT persisted (same contract as resolved-expand-store): the
  * state lives in a store rather than issue-detail component state so leaving
- * an issue and navigating back finds the section as it was left (MUL-4741
+ * an issue and navigating back finds the section as it was left (PB-4741
  * state restoration on back), while a reload returns to the default.
  */
 interface SubIssuesCollapseStore {

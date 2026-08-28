@@ -1,7 +1,7 @@
 //! Redis-backed workspace-membership cache.
 use cordy_redis::RecoveringConnection;
 
-const MEMBERSHIP_CACHE_PREFIX: &str = "mul:auth:member:";
+const MEMBERSHIP_CACHE_PREFIX: &str = "patchbay:auth:member:";
 
 /// Bounds how long a workspace membership lookup stays cached before the
 /// handler goes back to Postgres. Short enough that a removed member loses
@@ -114,7 +114,7 @@ mod tests {
     fn key_format_matches_go() {
         assert_eq!(
             MembershipCache::key("u-123", "ws-456"),
-            "mul:auth:member:u-123:ws-456"
+            "patchbay:auth:member:u-123:ws-456"
         );
     }
 

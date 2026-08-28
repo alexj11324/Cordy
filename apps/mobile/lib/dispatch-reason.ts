@@ -18,7 +18,7 @@ export function dispatchReasonCode(err: unknown): string | undefined {
 
 /**
  * User-facing sentence for a refused send. `invocation_not_allowed` is the
- * revoked-permission case (MUL-4525): the session was created while the user
+ * revoked-permission case (PB-4525): the session was created while the user
  * could run the agent and the server now refuses, so it must not read as a
  * transient failure the user should retry.
  */

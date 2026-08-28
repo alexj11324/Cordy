@@ -1,5 +1,5 @@
 /**
- * Cross-surface sanitize contract (MUL-4922).
+ * Cross-surface sanitize contract (PB-4922).
  *
  * The two product-level Markdown chains — Chat (ui/markdown/Markdown.tsx) and
  * Issue/Comment (views/editor/readonly-content.tsx) — used to carry a verbatim
@@ -173,7 +173,7 @@ describe.each(SURFACES)("sanitize contract — $name", ({ render: renderSurface 
 
 // Code-block *rendering* is deliberately not asserted cross-surface yet: chat
 // highlights with Shiki and readonly with lowlight, so the emitted class tokens
-// still differ. Converging them is the RichCodeBlock phase of MUL-4922; until
+// still differ. Converging them is the RichCodeBlock phase of PB-4922; until
 // the highlight engine is picked, only the schema-level allow-list is shared.
 describe("canonical sanitize schema", () => {
   it("permits language-/math-/hljs class tokens on <code>", () => {

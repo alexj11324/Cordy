@@ -103,7 +103,7 @@ const LOCAL_DIRECTORY_MODE_WORKTREE: &str = "worktree";
 
 /// Returns a user-facing reason when this runtime must not run the task.
 /// The decision keys off the CAPABILITY the daemon advertised on this very
-/// request, not its version string (MUL-5707). Only resources bound to the
+/// request, not its version string (PB-5707). Only resources bound to the
 /// claiming runtime's own daemon are considered.
 fn worktree_claim_block_reason(
     resources: &[Value],
@@ -324,7 +324,7 @@ pub(crate) async fn build_claimed_task_response(
 
     // Claim-only capability: this server resolves the squad-leader role on the
     // wire so the daemon must not re-derive it from the briefing text
-    // (MUL-5811).
+    // (PB-5811).
     obj.insert("leader_role_resolved".into(), Value::Bool(true));
 
     let supports_coalesced_comments =
@@ -594,7 +594,7 @@ pub(crate) async fn build_claimed_task_response(
         }
     }
 
-    // Stored chat initiator (MUL-2645).
+    // Stored chat initiator (PB-2645).
     if let Some(initiator_id) = task.initiator_user_id {
         obj.insert("initiator_type".into(), Value::String("member".into()));
         obj.insert(
@@ -621,7 +621,7 @@ pub(crate) async fn build_claimed_task_response(
             obj.insert("thread_name".into(), Value::String(issue.title.clone()));
 
             // Squad-leader briefing injection keyed off is_leader_task +
-            // squad_id, NOT off the issue assignee (MUL-3724 covers the
+            // squad_id, NOT off the issue assignee (PB-3724 covers the
             // mention path).
             if task.is_leader_task {
                 let mut injected = false;
@@ -656,7 +656,7 @@ pub(crate) async fn build_claimed_task_response(
                 }
                 // Every skip leaves a task the daemon must NOT run as a leader:
                 // clear the flag so "is_leader_task on the wire ⇔ briefing
-                // injected" stays true (MUL-5811).
+                // injected" stays true (PB-5811).
                 if !injected {
                     obj.insert("is_leader_task".into(), Value::Bool(false));
                     tracing::warn!(
@@ -955,7 +955,7 @@ pub(crate) async fn build_claimed_task_response(
             obj.insert("thread_name".into(), Value::String(cs.title.clone()));
 
             // Historical intro sessions carry no opening human message; flag
-            // only when the creator hasn't replied yet (MUL-4259).
+            // only when the creator hasn't replied yet (PB-4259).
             if cs.is_agent_intro {
                 match chat_q::chat_session_has_user_message(&state.pool, cs.id).await {
                     Ok(has_user) => {
@@ -972,7 +972,7 @@ pub(crate) async fn build_claimed_task_response(
             }
 
             // Channel-backed session flag: read WITHOUT naming a channel
-            // (the binding row itself is the answer — MUL-4899).
+            // (the binding row itself is the answer — PB-4899).
             if let Ok(Some(binding)) =
                 cordy_db::queries::channel::get_channel_chat_session_binding_by_session_any(
                     &state.pool,
@@ -1102,7 +1102,7 @@ pub(crate) async fn build_claimed_task_response(
                 Ok(msgs) => msgs,
                 Err(e) => {
                     // Preserve the just-dispatched task for redelivery rather
-                    // than cancelling a valid direct task (MUL-4351 review).
+                    // than cancelling a valid direct task (PB-4351 review).
                     tracing::error!(
                         error = %e,
                         task_id = %task.id,
@@ -1152,7 +1152,7 @@ pub(crate) async fn build_claimed_task_response(
                 obj.insert("chat_message".into(), Value::String(chat_message.clone()));
             }
 
-            // Fail closed on empty task-owned input (MUL-4351).
+            // Fail closed on empty task-owned input (PB-4351).
             let chat_intro = obj
                 .get("chat_intro")
                 .and_then(|v| v.as_bool())

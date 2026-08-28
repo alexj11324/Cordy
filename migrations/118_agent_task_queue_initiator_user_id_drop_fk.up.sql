@@ -8,6 +8,6 @@
 -- the column only feeds a best-effort name/email lookup at claim time, so the
 -- constraint is not needed. DROP CONSTRAINT only touches catalog metadata (a
 -- brief lock on agent_task_queue, no table scan, no lock on "user"). IF EXISTS
--- makes this a no-op where 117 already ran in its FK-free form. See MUL-2645.
+-- makes this a no-op where 117 already ran in its FK-free form. See PB-2645.
 ALTER TABLE agent_task_queue
     DROP CONSTRAINT IF EXISTS agent_task_queue_initiator_user_id_fkey;

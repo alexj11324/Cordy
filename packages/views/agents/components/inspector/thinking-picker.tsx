@@ -12,7 +12,7 @@ import { CHIP_CLASS } from "./chip";
 import { useT } from "../../../i18n";
 
 /**
- * Per-agent reasoning/effort picker (MUL-2339). Renders only when the
+ * Per-agent reasoning/effort picker (PB-2339). Renders only when the
  * current model exposes a non-empty `supported_levels` set — Claude, Codex,
  * and OpenCode today; every other provider gets nothing. The catalog is daemon-
  * discovered, so the value/label pairs match each CLI's own UI (`Low`,

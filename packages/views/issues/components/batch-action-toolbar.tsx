@@ -162,7 +162,7 @@ export function BatchActionToolbar({
       // circuit. A mixed selection still routes through the modal: the non-backlog
       // issues will trigger and need confirmation.
       // Category, not key: a custom status in the backlog category is a parking
-      // lot too, and assigning into it never starts a run. (MUL-6243)
+      // lot too, and assigning into it never starts a run. (PB-6243)
       const allBacklog = selectedIssues.every((i) => issueBehavesAs(i, "backlog"));
       if (!allBacklog) {
         openModal("issue-run-confirm", {
