@@ -1051,8 +1051,9 @@ mod tests {
             .commit()
             .await
             .expect("release workspace counter row");
-        let created = create_task
+        let created = timeout(std::time::Duration::from_secs(2), create_task)
             .await
+            .expect("issue create deadline")
             .expect("issue create task")
             .expect("issue create wins")
             .issue
@@ -1123,7 +1124,11 @@ mod tests {
         .expect("archive update target")
         .expect("archived update target");
         exclusive.commit().await.expect("commit archive first");
-        let (status, conflict) = pending_update.await.expect("update task");
+        let (status, conflict) =
+            timeout(std::time::Duration::from_secs(2), pending_update)
+                .await
+                .expect("archive-winner update deadline")
+                .expect("update task");
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(
             conflict,
@@ -1173,12 +1178,16 @@ mod tests {
             "archive must wait for the update-side shared lock"
         );
         row_blocker.commit().await.expect("release issue row");
-        let (status, updated) = pending_update.await.expect("update-winner task");
+        let (status, updated) = timeout(std::time::Duration::from_secs(2), pending_update)
+            .await
+            .expect("update-winner deadline")
+            .expect("update-winner task");
         assert_eq!(status, StatusCode::OK);
         assert_eq!(updated["status"], "update_before_archive");
         assert_eq!(
-            pending_archive
+            timeout(std::time::Duration::from_secs(2), pending_archive)
                 .await
+                .expect("update-winner archive deadline")
                 .expect("update-winner archive task")
                 .status(),
             StatusCode::OK
