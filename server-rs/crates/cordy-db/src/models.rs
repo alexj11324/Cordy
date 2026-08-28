@@ -1575,7 +1575,7 @@ mod wire_compatibility_tests {
     use super::*;
     use serde::Serialize;
 
-    fn assert_type_field<T: Serialize>(value: &T) {
+    fn assert_type_field<T: Serialize>(value: &T) -> serde_json::Value {
         let json = serde_json::to_value(value).expect("model serializes");
         let object = json.as_object().expect("model is an object");
         assert!(
@@ -1586,6 +1586,7 @@ mod wire_compatibility_tests {
             object.get("type_").is_none(),
             "Rust field name must not leak"
         );
+        json
     }
 
     #[test]
@@ -1613,7 +1614,7 @@ mod wire_compatibility_tests {
             workspace_id: id,
         });
 
-        assert_type_field(&InboxItem {
+        let inbox = assert_type_field(&InboxItem {
             actor_id: None,
             actor_type: None,
             archived: false,
@@ -1630,6 +1631,7 @@ mod wire_compatibility_tests {
             type_: "issue".into(),
             workspace_id: id,
         });
+        assert!(inbox.get("details").is_some_and(serde_json::Value::is_null));
 
         assert_type_field(&IssueDependency {
             depends_on_issue_id: id,
@@ -1652,7 +1654,7 @@ mod wire_compatibility_tests {
             workspace_id: id,
         });
 
-        assert_type_field(&TaskMessage {
+        let message = assert_type_field(&TaskMessage {
             content: None,
             created_at: now,
             id,
@@ -1663,47 +1665,6 @@ mod wire_compatibility_tests {
             tool: None,
             type_: "assistant".into(),
         });
-    }
-
-    #[test]
-    fn legacy_nullable_json_fields_remain_null_on_the_wire() {
-        let id = Uuid::nil();
-        let item = InboxItem {
-            actor_id: None,
-            actor_type: None,
-            archived: false,
-            body: None,
-            created_at: Utc::now(),
-            details: None,
-            id,
-            issue_id: None,
-            read: false,
-            recipient_id: id,
-            recipient_type: "member".into(),
-            severity: "info".into(),
-            title: "legacy".into(),
-            type_: "issue".into(),
-            workspace_id: id,
-        };
-        let message = TaskMessage {
-            content: None,
-            created_at: Utc::now(),
-            id,
-            input: None,
-            output: None,
-            seq: 1,
-            task_id: id,
-            tool: None,
-            type_: "assistant".into(),
-        };
-
-        let item_json = serde_json::to_value(item).expect("inbox item serializes");
-        let message_json = serde_json::to_value(message).expect("task message serializes");
-        assert!(item_json
-            .get("details")
-            .is_some_and(serde_json::Value::is_null));
-        assert!(message_json
-            .get("input")
-            .is_some_and(serde_json::Value::is_null));
+        assert!(message.get("input").is_some_and(serde_json::Value::is_null));
     }
 }
