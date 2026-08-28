@@ -376,14 +376,12 @@ async fn rollup_slice_on_connection(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> anyhow::Result<i64> {
-    sqlx::query_scalar(
-        "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
-    )
-    .bind(from)
-    .bind(to)
-    .fetch_one(connection)
-    .await
-    .context("execute task_usage hourly rollup window")
+    sqlx::query_scalar("SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)")
+        .bind(from)
+        .bind(to)
+        .fetch_one(connection)
+        .await
+        .context("execute task_usage hourly rollup window")
 }
 
 async fn rollup_slice(
