@@ -201,6 +201,7 @@ jobs:
 
       - name: Build Rust CLI
         working-directory: server-rs
+        shell: bash
         env:
           CORDY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
           CORDY_BUILD_COMMIT: ${{ github.sha }}
