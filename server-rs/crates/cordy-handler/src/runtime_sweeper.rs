@@ -2394,7 +2394,10 @@ mod tests {
                 DEFAULT_RECONNECT_GRACE,
             );
             let deleted = gc_sweeper
-                .gc_with_budget(Utc::now() - chrono::Duration::days(7))
+                .gc_with_budget_with_timeout(
+                    Utc::now() - chrono::Duration::days(7),
+                    GC_OPERATION_TIMEOUT,
+                )
                 .await;
             anyhow::ensure!(
                 deleted == GC_BATCH as usize,
