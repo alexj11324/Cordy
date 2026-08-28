@@ -14,32 +14,13 @@
 
 ## 1. 执行边界
 
-主 agent 只做：
+当前工作方式以仓库根目录 `AGENTS.md` 为准：
 
-- Go→Rust 业务能力或完整契约迁移；
-- Rust 生产入口接线；
-- worktree、分支、提交、推送和 Ready PR；
-- 接收异步结果后回写台账和 PR。
-
-独立 verification agent 异步负责：
-
-- 编译、测试、格式/静态检查、契约检查和生产入口验证；
-- 只报告精确命令与结果，不 review、不修改或修复代码。
-
-独立 reviewer agent 异步负责：
-
-- review 迁移完整性、生产 wiring、证据和 Ponytail；
-- 只输出 findings，不修改或提交代码。
-
-独立 fixer agent 异步负责：
-
-- 根据 review findings 修复缺陷、安全问题和回归；
-- 修复机械验证发现的编译或测试失败；
-- 必要时直接提交修复。
-
-verification、reviewer 与 fixer 必须由三个不同的 subagent 承担。主 agent 派发后
-继续迁移，不等待、不轮询，也不把任何异步结果作为下一块迁移、提交、推送或
-Ready PR 的前置条件；长时间编译和测试不得占用主 agent 的迁移主线。
+- 主 agent 负责 Go→Rust 迁移、生产入口接线、分支/提交/PR、review comment 收口和最终合并；
+- GitHub Actions 是唯一权威的编译、测试、格式、静态检查、契约、镜像、安装器和跨平台门禁；
+- 可以把互不重叠的只读审计或修复交给 subagent，但必须给每个文件和分支指定唯一 writer，由主 agent 统一集成；
+- 不再强制设置三个固定的 verification/reviewer/fixer 角色，也不在本机运行编译或测试来替代 GitHub checks；
+- 本文件后续章节中出现的 Volta、V/R/F 或本地验证描述只记录当时交付过程，不是当前执行指令。
 
 ## 2. Ponytail 约束
 
@@ -437,14 +418,14 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 - 现状证据：默认后端和容器入口已由 PR #523 切到 Rust；PR #527 将 CLI release 资产链改为 Rust；PR #528 将 Desktop packaging 从 Go 源码嵌入改为按目标构建 Rust CLI；本切片对齐 installer/手工运维文档。
 - 交付：默认产出 cordy-server、cordy-cli、cordy-migrate 及三个 Rust backfill；Rust release、Desktop 和 installer 保留兼容的 binary/asset 名称或有明确迁移说明；启动、迁移、信号、退出码和回滚路径可演练。
 - 退出证据：新鲜 worktree 的 build/check、镜像启动 health/ready、migrate up/down/status、CLI --help/version、回滚演练均以 Rust 产物为准。
-- owner：主 agent 迁移/接线；Volta 异步 review/fix。
+- owner：主 agent 迁移/接线并统一集成；subagent 仅在明确文件/分支所有权下并行审计或修复；GitHub Actions 验证。
 
 ##### [~] AUDIT-002：生产行为与完整契约 smoke
 
 - 范围：route parity 之外的认证、权限、事务、错误码/JSON、WS、realtime、background worker、CLI 退出码、daemon control/health。
 - 交付：按业务能力建立可执行矩阵；每项标记 Go contract、Rust entry、生产是否切换、Go 是否可删。
 - 退出证据：关键 API/WS/CLI/daemon smoke 在 Rust 默认产物上通过，并有失败路径和回滚记录。
-- owner：主 agent 负责迁移与机械验证；review 与 fix 交给两个独立 subagent。
+- owner：主 agent 负责迁移、生产接线、review/fix 收口和合并；GitHub Actions 负责机械验证。
 
 ##### [~] AUDIT-003：未闭合 leaf contract（pprof、logger、avatar、concurrency）
 
@@ -453,7 +434,7 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 - Squad avatar：Rust `cordy-handler::squad` 已把响应接到现有 `avatar::resolve_url`，创建/更新接到 `avatar::accept_url`；这复用了已有 HMAC、存储归属和 standalone-image 发布校验，不重复实现 signer。私有对象的 squad 读写契约已迁移并接线；avatar endpoint 的下载策略与剩余 Go 退休仍需整体生产验证。
 - agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust 由 `cordy-config::agent_concurrency` 统一 CLI/API contract。daemon 的默认 20 是独立的进程级 task slot pool，不是 agent 默认值；它从 `CORDY_DAEMON_MAX_CONCURRENT_TASKS`/CLI override 进入 `cordy-daemon::task_execution`，要求大于 0。
 - 退出证据：每个 leaf 明确为“Rust 迁移并接线”“已由现有模块吸收”或“仍需迁移”，并有对应测试/生产路径。
-- owner：主 agent 负责真正迁移；Volta 负责 review/fix。
+- owner：主 agent 负责真正迁移并统一收口；可按不重叠所有权并行 review/fix；GitHub Actions 验证。
 
 ##### [~] AUDIT-004：integrations 生产配置矩阵
 
@@ -461,7 +442,7 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 - 正向场景：有效凭证、真实 outbound、inbound/session 路由、media、重试和 shutdown。
 - 负向场景：缺凭证、坏凭证、绑定缺失、网络失败必须可观测且 fail-closed；测试 Stub/Noop 不能被有效生产配置误选。
 - 退出证据：每个 provider 有 Rust entry、配置开关、最小 smoke 或明确的不可测原因和回滚策略。
-- owner：主 agent 负责迁移/生产接线；Volta 异步处理安全和回归修复。
+- owner：主 agent 负责迁移/生产接线和最终集成；安全与回归修复可按不重叠所有权并行处理。
 
 ##### [~] AUDIT-005：daemon 完整能力验收
 
@@ -469,7 +450,7 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 - 现状：Rust production stack 已存在，但有 43 条 S9-integration 标记、28 个相关文件，且 crate 顶层仍写着“awaiting daemon wiring”。
 - 交付：按真实调用关系逐项验收并移除已无意义的 seam/allow；若某 seam 是真实依赖，补真实 trait/entry，不做仅为清注释的 PR。
 - 退出证据：daemon 生产进程可启动、控制面可用、task/provider/GC/reconcile 生命周期通过；不再依赖 Go daemon。
-- owner：主 agent 迁移/接线；Volta review/fix。
+- owner：主 agent 迁移/接线并统一集成；subagent 只处理明确分配的独立文件范围。
 
 ##### [~] AUDIT-006：migration 与 backfill 发布闭环
 
@@ -477,7 +458,7 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 - 当前 Dockerfile 只构建/复制两个旧 backfill，Makefile build 没有三个 Rust backfill 的默认产物，CI 仍以 Go migrate 为主验证之一。
 - 交付：迁移 hooks、advisory lock、取消/超时、状态/退出码、三个 backfill 的 image/Makefile/release packaging 一致。
 - 退出证据：新镜像只需 Rust migration/backfill 产物即可完成升级和运维恢复。
-- owner：主 agent；Volta 异步 review/fix。
+- owner：主 agent 统一收口；GitHub Actions 验证；subagent 可处理独立审计或修复。
 
 #### P1
 
@@ -486,7 +467,7 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 - 不按 807 个 Go test 文件机械复制。
 - 先按 API、DB transaction、provider、daemon lifecycle、security boundary、backfill、CLI contract 建索引。
 - 每个高风险 Go 回归用例标记 Rust 已有测试、需新增测试、或不适用及理由。
-- 退出证据：关键 contract 有 Rust 可执行测试；测试失败由 Volta 处理，主 agent 不代做修复。
+- 退出证据：关键 contract 有 Rust 可执行测试；失败由主 agent 根据 GitHub Actions 日志统一分配、修复并重跑。
 
 ##### [ ] AUDIT-008：wire/schema/ID 兼容性
 
@@ -542,8 +523,8 @@ ID，也不要求一个子项单独创建 PR；每项都应能回指本台账已
 
 1. 为完整 Go 能力或生产契约建立独立 branch/worktree；
 2. 主 agent 只迁移和接线；
-3. 立即把 review/fix 派给当前 subagent，继续下一块，不等待；
-4. 机械验证完成后立即提交、推送并创建 Ready PR；
+3. 可把不重叠的 review/fix 交给有明确文件和分支所有权的 subagent，由主 agent 统一集成；
+4. 提交、推送并创建 Ready PR 后等待 GitHub Actions；失败则修复并重跑，全部必需检查通过后才能合并；
 5. PR body 必须写明 Go 能力、Rust 入口、生产是否切换、Go 是否可下线、验证结果和异步 subagent 状态；
 6. 在本清单中更新证据，不用旧文档 checkbox 代替当前状态。
 
@@ -2937,14 +2918,15 @@ worktree、直接 touched-file rustfmt 和 base-range diff-check 均 PASS。lock
 未执行。reviewer 无 P0/P1/P2/P3 finding。在 exact compile、matched/executed、跨语言 timestamp 和真实生产 smoke 证据返回前，
 本项不能声称 AUDIT-008 已完成或删除 Go。
 
-## 70. [ ] AUDIT-008 handler/service RFC3339Nano helper centralization（T-54E）
+## 70. [~] AUDIT-008 handler/service RFC3339Nano helper centralization（T-54E）
 
 本项在开始修改 handler/service 时间输出前登记。Go 的 `server/internal/handler/comment.go` 游标、
 `server/internal/handler/chat.go` 的 chat/transcript 游标与输出时间、`server/internal/handler/daemon.go` task message
 payload，以及 `server/internal/service/task.go` 的 chat/issue 通知和 deferred cancel-finalized payload，明确使用
-`time.RFC3339Nano`；Rust 这些已迁移路径此前分散调用本地 `AutoSi` 或固定九位纳秒格式，`.123400000` 可能变成 `.123`
-或 `.123400000`，而不是 Go 的 `.1234`。这会让 API cursor/header、task message、chat/issue event 和取消完成 payload
-产生可观察的字符串差异。相反，Go 的 comment unresolved `created_at`/`updated_at`/`resolved_at` 与 agent `archived_at`
+`time.RFC3339Nano`。Rust handler 此前使用本地 `AutoSi`，会把同一输入输出为 `.123400Z`，而不是 Go 的 `.1234Z`；
+Rust service 的本地 helper 已通过固定九位后裁剪尾零输出 `.1234Z`，本项对 service 的改动只是去重并复用共享 helper。
+handler 的差异会让 API cursor/header、task message 和 chat event 产生可观察的字符串变化。相反，Go 的 comment
+unresolved `created_at`/`updated_at`/`resolved_at` 与 agent `archived_at`
 是 seconds-only `TimestampToString` 路径，不能被本项误改为 Nano。
 
 范围只把上述已有 handler/service RFC3339Nano 生产调用切到 T-54D 已验证的 `cordy-util::rfc3339_nano`，并保留上述
@@ -3144,7 +3126,9 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   2. **本地 Rust 默认入口**：在 disposable fresh PostgreSQL 上运行 `make migrate-up`，以 `make start`/`make rust-server`
      启动，记录 `/health`、`/healthz`、`/readyz` 状态、migration lock/失败退出与干净 shutdown；以 `cordy daemon start`
      完成 registration→claim→execute→reconcile→shutdown smoke，并记录 matched/executed/blocked。
-  3. **发布、CI 与安装入口**：运行 `docker build -f Dockerfile .` 和
+  3. **发布、CI 与安装入口**：先固定 `COMMIT="$(git rev-parse HEAD)"`、
+     `VERSION="$(git describe --tags --always --dirty)"` 和 `DATE="$(git show -s --format=%cI "$COMMIT")"`，再运行
+     `docker build --build-arg VERSION="$VERSION" --build-arg COMMIT="$COMMIT" --build-arg DATE="$DATE" --tag "cordy-backend:acceptance-$COMMIT" -f Dockerfile .` 和
      `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`，记录镜像
      digest、entrypoint `migrate up`、backend healthcheck 与 `/readyz`；运行 `helm lint deploy/helm/cordy`、
      `helm template cordy deploy/helm/cordy`。验证 `.github/workflows/release.yml` 的 required Rust build/test、

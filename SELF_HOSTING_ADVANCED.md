@@ -662,9 +662,13 @@ installed client in the backend container's network namespace without
 publishing the management port:
 
 ```bash
+console_bin="$(command -v tokio-console)"
+test -x "$console_bin"
 backend_id="$(docker compose -f docker-compose.selfhost.yml ps -q backend)"
-sudo nsenter --target "$(docker inspect --format '{{.State.Pid}}' "$backend_id")" \
-  --net tokio-console http://127.0.0.1:6669
+backend_pid="$(docker inspect --format '{{.State.Pid}}' "$backend_id")"
+test "$backend_pid" -gt 1
+sudo nsenter --target "$backend_pid" --net \
+  "$console_bin" http://127.0.0.1:6669
 ```
 
 ## Upgrading
