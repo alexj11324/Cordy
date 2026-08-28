@@ -1,4 +1,5 @@
 use super::*;
+use crate::update_commands::write_update_progress;
 use clap::Parser;
 use serde_json::Value;
 use std::io::Cursor;

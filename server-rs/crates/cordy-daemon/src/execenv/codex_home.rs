@@ -694,13 +694,16 @@ fn set_mtime(path: &Path, time: std::time::SystemTime) -> std::io::Result<()> {
 #[cfg(windows)]
 fn set_mtime(path: &Path, time: std::time::SystemTime) -> std::io::Result<()> {
     use std::os::windows::fs::OpenOptionsExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+    };
 
-    // Opening a directory on Windows requires FILE_FLAG_BACKUP_SEMANTICS.
-    // File::set_times then works for both the store directory and its files,
-    // keeping the retention signal equivalent to utimensat on Unix.
-    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    // FILE_WRITE_ATTRIBUTES is the precise access right required by
+    // File::set_times. A read-only handle can compile successfully but fails
+    // with ERROR_ACCESS_DENIED on Windows runners. BACKUP_SEMANTICS keeps the
+    // same handle path valid for both files and directories.
     let file = std::fs::OpenOptions::new()
-        .read(true)
+        .access_mode(FILE_WRITE_ATTRIBUTES)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
     file.set_times(
@@ -734,7 +737,7 @@ fn clean_lexical(path: &str) -> String {
         use std::path::Component::*;
         match comp {
             CurDir => {}
-            RootDir => out.push("/"),
+            component @ RootDir => out.push(component.as_os_str()),
             ParentDir => {
                 out.pop();
             }

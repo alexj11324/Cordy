@@ -2729,11 +2729,11 @@ mod tests {
         #[cfg(windows)]
         let mut success = tokio::process::Command::new("cmd.exe");
         #[cfg(windows)]
-        success.args(["/D", "/S", "/C", "<nul set /p =success"]);
+        success.args(["/D", "/C", "echo success"]);
         let (output, result) =
             processtree::combined_output(&ctx, success, Duration::from_secs(1)).await;
         result.unwrap();
-        assert_eq!(output, b"success");
+        assert_eq!(String::from_utf8_lossy(&output).trim_end(), "success");
 
         #[cfg(unix)]
         let mut failure = tokio::process::Command::new("/bin/sh");
@@ -2747,9 +2747,8 @@ mod tests {
         #[cfg(windows)]
         failure.args([
             "/D",
-            "/S",
             "/C",
-            ">&2 echo fatal: a branch named 'taken' already exists & exit /b 128",
+            "echo fatal: a branch named 'taken' already exists 1>&2 & exit /b 128",
         ]);
         let (output, result) =
             processtree::combined_output(&ctx, failure, Duration::from_secs(1)).await;
