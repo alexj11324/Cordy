@@ -354,7 +354,10 @@ pub(crate) fn collect_local_skill_files(
                 Ok(r) => r.to_string_lossy().into_owned(),
                 Err(_) => continue,
             };
-            let rel = crate::execenv::execenv::clean_path(&rel_raw);
+            // Skill bundle paths are a slash-separated wire contract. Windows
+            // strip_prefix returns native backslashes, so normalize before the
+            // same lexical safety check used on Unix.
+            let rel = crate::execenv::execenv::clean_path(&rel_raw.replace('\\', "/"));
             if rel == "." || rel.starts_with('/') || rel.starts_with("..") {
                 continue;
             }

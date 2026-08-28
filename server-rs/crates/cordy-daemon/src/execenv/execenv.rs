@@ -548,6 +548,16 @@ pub(crate) fn ensure_task_temp_dir(
     anyhow::ensure!(!task_id.trim().is_empty(), "task id is empty");
 
     let (base, override_configured) = task_temp_base_dir()?;
+    // Provider launch environments are serialized as UTF-8 strings. Unix can
+    // accept an absolute non-Unicode operator override, but exporting that
+    // pathname would make an otherwise valid task fail after preparation. Use
+    // the same private socket-safe fallback for that representational edge.
+    let base = if base.to_str().is_some() {
+        base
+    } else {
+        tracing::warn!(path = %base.display(), "task temp base is not UTF-8; using socket-safe fallback");
+        socket_safe_temp_base_dir()
+    };
     let directory = tempfile::Builder::new()
         .prefix("cordy-task-")
         .tempdir_in(&base)
@@ -1994,7 +2004,8 @@ mod tests {
         std::env::set_var("CORDY_AGENT_TEMP_BASE", &base);
 
         let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
-        assert_eq!(directory.path().parent(), Some(base.as_path()));
+        assert!(directory.path().to_str().is_some());
+        assert_ne!(directory.path().parent(), Some(base.as_path()));
     }
 
     // join_path / clean_path must reproduce Go's filepath.Join/Clean cleaning

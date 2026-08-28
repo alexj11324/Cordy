@@ -700,7 +700,7 @@ fn sanitize_custom_env(
     Ok(result)
 }
 
-fn blocked_custom_env_key(key: &str) -> bool {
+pub(crate) fn blocked_custom_env_key(key: &str) -> bool {
     let upper = key.to_ascii_uppercase();
     upper.starts_with("CORDY_")
         || matches!(

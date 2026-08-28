@@ -463,6 +463,21 @@ fn create_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
     }
 }
 
+/// Session databases must remain writable through the task overlay. Windows
+/// file symlinks require elevated privileges, while a same-volume hard link
+/// preserves the required shared-file semantics without that requirement.
+fn create_session_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, target)?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        fs::hard_link(source, target).map_err(anyhow::Error::new)
+    }
+}
+
 fn write_derived_config(
     shared: &str,
     overlay: &str,
@@ -676,7 +691,7 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     // Prove the link can be created before deleting a task-local database.
     let staged = Path::new(overlay).join(SESSION_LINK_STAGING);
     remove_path(&staged)?;
-    if create_file_link(&store_db, &staged).is_err() {
+    if create_session_file_link(&store_db, &staged).is_err() {
         return Ok(HermesSessions::default());
     }
     remove_state_files(overlay)?;
@@ -789,16 +804,28 @@ mod tests {
 
     #[test]
     fn profile_resolution_rejects_reserved_and_scopes_named_profiles() {
-        let invalid = resolve_hermes_profile("/tmp/hermes", Some("root"));
+        let base = std::env::temp_dir().join("hermes-profile-resolution");
+        let base = base.to_string_lossy().into_owned();
+        let invalid = resolve_hermes_profile(&base, Some("root"));
         assert!(invalid.error.is_some());
-        let named = resolve_hermes_profile("/tmp/hermes", Some("Work-1"));
-        assert_eq!(named.source_home, "/tmp/hermes/profiles/work-1");
-        assert!(named.must_exist);
-        let nested = resolve_hermes_profile("/tmp/hermes/profiles/old", Some("Work-2"));
-        assert_eq!(nested.source_home, "/tmp/hermes/profiles/work-2");
+        let named = resolve_hermes_profile(&base, Some("Work-1"));
         assert_eq!(
-            hermes_profile_segment("/tmp/custom/profiles/research"),
-            format!("research_{}", sha256_short("/tmp/custom"))
+            Path::new(&named.source_home),
+            Path::new(&base).join("profiles").join("work-1")
+        );
+        assert!(named.must_exist);
+        let nested_home = Path::new(&base).join("profiles").join("old");
+        let nested = resolve_hermes_profile(&nested_home.to_string_lossy(), Some("Work-2"));
+        assert_eq!(
+            Path::new(&nested.source_home),
+            Path::new(&base).join("profiles").join("work-2")
+        );
+        let custom_root = std::env::temp_dir().join("hermes-custom-root");
+        let research = custom_root.join("profiles").join("research");
+        let custom_root = custom_root.to_string_lossy().into_owned();
+        assert_eq!(
+            hermes_profile_segment(&research.to_string_lossy()),
+            format!("research_{}", sha256_short(&custom_root))
         );
     }
 
@@ -856,7 +883,7 @@ mod tests {
         fs::create_dir_all(&memory).unwrap();
         fs::create_dir_all(&session).unwrap();
         fs::write(session.join("state.db"), b"sqlite").unwrap();
-        prepare_hermes_home(
+        let sessions = prepare_hermes_home(
             &overlay.display().to_string(),
             &shared.display().to_string(),
             true,
@@ -866,14 +893,13 @@ mod tests {
             &session.display().to_string(),
         )
         .unwrap();
-        assert!(fs::symlink_metadata(overlay.join("memories"))
-            .unwrap()
-            .file_type()
-            .is_symlink());
-        assert!(fs::symlink_metadata(overlay.join("state.db"))
-            .unwrap()
-            .file_type()
-            .is_symlink());
-        assert!(has_session_db(&session));
+        assert!(sessions.mounted);
+        assert!(sessions.history_present);
+
+        fs::write(overlay.join("memories").join("probe"), b"memory").unwrap();
+        assert_eq!(fs::read(memory.join("probe")).unwrap(), b"memory");
+
+        fs::write(overlay.join("state.db"), b"updated").unwrap();
+        assert_eq!(fs::read(session.join("state.db")).unwrap(), b"updated");
     }
 }

@@ -11,6 +11,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
+use futures_util::stream::{FuturesUnordered, StreamExt};
+
 use crate::agents_refresh::RuntimeVerdict;
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
@@ -74,6 +76,9 @@ pub struct ResolvedProfileCommand {
 #[error("{reason}")]
 pub struct ProfileResolutionError {
     pub reason: String,
+    /// A previously accepted launch remains usable while this transient probe
+    /// is retried. Permanent policy/path/version failures must set this false.
+    pub preserve_existing: bool,
 }
 
 /// Mandatory provider-core surface. Failures must be returned as errors;
@@ -107,6 +112,7 @@ pub struct LocalProviderCatalog {
     version_probe_timeout: Duration,
     not_executable_confirm_window: Duration,
     not_executable_since: Mutex<HashMap<String, Instant>>,
+    detected: Mutex<HashMap<String, DetectedProviderRuntime>>,
 }
 
 impl Default for LocalProviderCatalog {
@@ -127,6 +133,7 @@ impl LocalProviderCatalog {
             version_probe_timeout: Self::DEFAULT_VERSION_PROBE_TIMEOUT,
             not_executable_confirm_window: Self::DEFAULT_NOT_EXECUTABLE_CONFIRM_WINDOW,
             not_executable_since: Mutex::new(HashMap::new()),
+            detected: Mutex::new(HashMap::new()),
         }
     }
 
@@ -146,6 +153,7 @@ impl LocalProviderCatalog {
             version_probe_timeout: timeout,
             not_executable_confirm_window: confirm_window,
             not_executable_since: Mutex::new(HashMap::new()),
+            detected: Mutex::new(HashMap::new()),
         }
     }
 
@@ -184,8 +192,30 @@ impl LocalProviderCatalog {
     ) -> anyhow::Result<String> {
         let mut command = tokio::process::Command::new(command_path);
         command.args(fixed_args).arg("--version");
+        let probe_ctx = ctx.child();
         let output =
-            crate::gc::processtree::output(ctx, command, self.version_probe_timeout).await?;
+            crate::gc::processtree::output(&probe_ctx, command, self.version_probe_timeout);
+        tokio::pin!(output);
+        let output = tokio::select! {
+            result = &mut output => result?,
+            () = ctx.cancelled() => {
+                let cause = ctx.cause();
+                probe_ctx.cancel_with(cause);
+                let _ = output.await;
+                anyhow::bail!("provider version probe cancelled: {cause}");
+            }
+            () = tokio::time::sleep(self.version_probe_timeout) => {
+                probe_ctx.cancel_with(crate::repocache::CancelCause::DeadlineExceeded);
+                let cleanup = output.await;
+                if let Err(error) = cleanup {
+                    tracing::debug!(%command_path, %error, "provider version probe process tree stopped after deadline");
+                }
+                anyhow::bail!(
+                    "provider version probe timed out after {:?}",
+                    self.version_probe_timeout
+                );
+            }
+        };
         Ok(extract_version_line(&String::from_utf8_lossy(&output)))
     }
 
@@ -283,6 +313,7 @@ impl LocalProviderCatalog {
         if !Self::supports_profile_backend(&profile.protocol_family) {
             return Err(ProfileResolutionError {
                 reason: format!("unsupported protocol family: {}", profile.protocol_family),
+                preserve_existing: false,
             });
         }
 
@@ -294,6 +325,7 @@ impl LocalProviderCatalog {
             .or_else(|| crate::config::resolve_agent_executable_path(&profile.command_name).ok())
             .ok_or_else(|| ProfileResolutionError {
                 reason: format!("runtime command not executable: {}", profile.command_name),
+                preserve_existing: false,
             })?;
 
         let fixed_args =
@@ -303,10 +335,12 @@ impl LocalProviderCatalog {
             .await
             .map_err(|error| ProfileResolutionError {
                 reason: format!("provider version probe failed: {error}"),
+                preserve_existing: true,
             })?;
         check_provider_minimum(&profile.protocol_family, &version).map_err(|error| {
             ProfileResolutionError {
                 reason: format!("provider version {version:?} is not supported: {error}"),
+                preserve_existing: false,
             }
         })?;
         Ok(ResolvedProfileCommand {
@@ -394,10 +428,12 @@ impl ProviderCatalog for LocalProviderCatalog {
     async fn probe_builtins(
         &self,
         ctx: Ctx,
-        _reason: ProviderProbeReason,
+        reason: ProviderProbeReason,
     ) -> anyhow::Result<ProviderProbeResult> {
         let agents = crate::agents_probe::probe_agent_clis();
         let mut result = ProviderProbeResult::default();
+        let mut discovered = BTreeSet::new();
+        let mut probes = FuturesUnordered::new();
         for (provider, entry) in agents {
             if !Self::supports_backend(&provider) {
                 tracing::debug!(%provider, "provider CLI discovered without a Rust backend; withholding registration");
@@ -408,26 +444,55 @@ impl ProviderCatalog for LocalProviderCatalog {
                 continue;
             };
             let fixed_args = Self::fixed_args(&provider);
-            match self
-                .probe_builtin(
-                    &ctx.child(),
-                    &provider,
-                    display_name,
-                    &entry.path,
-                    &fixed_args,
-                )
-                .await
+            discovered.insert(provider.clone());
+            let cached = self.detected.lock().unwrap().get(&provider).cloned();
+            if reason == ProviderProbeReason::Discovery
+                && cached.as_ref().is_some_and(|runtime| {
+                    runtime.command_path == entry.path && runtime.fixed_args == fixed_args
+                })
             {
+                result
+                    .detected
+                    .push(cached.expect("cached runtime was checked"));
+                continue;
+            }
+            let probe_ctx = ctx.child();
+            probes.push(async move {
+                let outcome = self
+                    .probe_builtin(
+                        &probe_ctx,
+                        &provider,
+                        display_name,
+                        &entry.path,
+                        &fixed_args,
+                    )
+                    .await;
+                (provider, outcome)
+            });
+        }
+        self.detected
+            .lock()
+            .unwrap()
+            .retain(|provider, _| discovered.contains(provider));
+        while let Some((provider, outcome)) = probes.next().await {
+            match outcome {
                 Ok(runtime) => result.detected.push(runtime),
                 Err(ProbeFailure::Unavailable(reason)) => {
                     tracing::debug!(%provider, %reason, "provider version probe unavailable; preserving accepted runtime");
                     result.unavailable.insert(provider, reason);
                 }
                 Err(ProbeFailure::Demotable(verdict)) => {
+                    self.detected.lock().unwrap().remove(&provider);
                     tracing::warn!(%provider, reason = %verdict.reason, "provider CLI is confirmed unusable; scheduling runtime demotion");
                     result.demotable.insert(provider, verdict);
                 }
             }
+        }
+        for runtime in &result.detected {
+            self.detected
+                .lock()
+                .unwrap()
+                .insert(runtime.provider.clone(), runtime.clone());
         }
         Ok(result)
     }
@@ -705,17 +770,17 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
             Ok(response) => response.runtime_profiles,
             Err(error) => {
                 tracing::info!(%workspace_id, %error, "custom runtime profile fetch failed; preserving prior launch set");
-                for spec in self.launches.workspace_profiles(workspace_id) {
-                    payload.runtimes.push(registration_entry(
-                        spec.display_name,
-                        spec.target.provider,
-                        spec.version,
-                        Some(spec.target.profile_id),
-                    ));
-                }
-                return Ok(payload);
+                return Err(anyhow::anyhow!(
+                    "fetch custom runtime profiles for workspace {workspace_id}: {error}"
+                ));
             }
         };
+        let existing_profiles: BTreeMap<String, RuntimeLaunchSpec> = self
+            .launches
+            .workspace_profiles(workspace_id)
+            .into_iter()
+            .map(|spec| (spec.target.profile_id.clone(), spec))
+            .collect();
         let mut launches = Vec::new();
         for profile in profiles {
             if !profile.enabled {
@@ -779,9 +844,33 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                         version: command.version,
                     });
                 }
-                Err(error) => payload
-                    .failed_profiles
-                    .push(profile_failure(&profile, &error.reason)),
+                Err(error) => {
+                    let preserved = error.preserve_existing.then(|| {
+                        existing_profiles
+                            .get(&profile.id)
+                            .filter(|spec| spec.target.provider == profile.protocol_family)
+                            .cloned()
+                    });
+                    if let Some(spec) = preserved.flatten() {
+                        tracing::debug!(
+                            workspace_id = %workspace_id,
+                            profile_id = %profile.id,
+                            reason = %error.reason,
+                            "custom runtime profile probe unavailable; preserving accepted launch"
+                        );
+                        payload.runtimes.push(registration_entry(
+                            spec.display_name.clone(),
+                            spec.target.provider.clone(),
+                            spec.version.clone(),
+                            Some(spec.target.profile_id.clone()),
+                        ));
+                        launches.push(spec);
+                    } else {
+                        payload
+                            .failed_profiles
+                            .push(profile_failure(&profile, &error.reason));
+                    }
+                }
             }
         }
         self.pending_profiles

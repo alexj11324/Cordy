@@ -25,12 +25,15 @@ use tokio_util::sync::CancellationToken;
 use crate::client::{Client, TaskMessageData};
 use crate::config::Config;
 use crate::execenv::codex_home::codex_resume_rollout_present;
+use crate::execenv::codex_shell_env::{
+    codex_shell_env_allowlist, ensure_codex_shell_env_policy_config,
+};
 use crate::execenv::context::{
     cleanup_sidecars, write_context_files, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
-    ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, reuse,
+    ensure_task_temp_dir, join_path, predict_root_dir, prepare, read_managed_env_provenance, reuse,
     Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 #[cfg(not(test))]
@@ -136,6 +139,41 @@ where
                 TASK_PREPARATION_TIMEOUT
             ))
         }
+    }
+}
+
+/// One wall-clock budget shared by every async preparation step. Individual
+/// helpers keep their narrower deadlines, while this owner prevents a sequence
+/// of otherwise bounded Remote MCP, skill, model, lock, and filesystem waits
+/// from exceeding the dispatched-task preparation lease indefinitely.
+struct PreparationDeadline {
+    ctx: Ctx,
+    timer: JoinHandle<()>,
+}
+
+impl PreparationDeadline {
+    fn start(parent: &Ctx) -> Self {
+        let ctx = parent.child();
+        let deadline_ctx = ctx.clone();
+        let timer = tokio::spawn(async move {
+            tokio::time::sleep(TASK_PREPARATION_TIMEOUT).await;
+            deadline_ctx.cancel_with(CancelCause::DeadlineExceeded);
+        });
+        Self { ctx, timer }
+    }
+
+    fn ctx(&self) -> &Ctx {
+        &self.ctx
+    }
+
+    fn stop(self) {
+        self.timer.abort();
+    }
+}
+
+impl Drop for PreparationDeadline {
+    fn drop(&mut self) {
+        self.timer.abort();
     }
 }
 
@@ -340,11 +378,32 @@ impl ProductionProviderAdapter {
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
         let _active = CounterGuard::new(&self.active_tasks);
+        // Old servers can still dispatch this retired synthetic task. It has
+        // no user prompt and must complete empty before registration lookup,
+        // Remote MCP discovery, skill fetch, or filesystem preparation.
+        if !task.regenerate_quick_actions_for.is_empty() {
+            tracing::warn!(
+                task = %task.id,
+                target_task = %task.regenerate_quick_actions_for,
+                "refusing legacy quick-actions refresh task"
+            );
+            return TaskRunOutcome {
+                result: TaskResult {
+                    status: "completed".to_string(),
+                    ..TaskResult::default()
+                },
+                failure: None,
+            };
+        }
         // Skill resolution can contact the server. Reject malformed claimed
         // task identities before any identifiers cross that network boundary;
         // execution-plan construction repeats the guard after preparation.
         if let Err(error) = crate::execution_plan::validate_identity(&task, &target) {
-            return failed(error, None);
+            return failed_with_reason(
+                error,
+                cordy_task_failure::Reason::INVALID_TASK_IDENTITY.as_str(),
+                None,
+            );
         }
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
@@ -436,6 +495,16 @@ impl ProductionProviderAdapter {
                 }
             }
         }
+        let preparation = PreparationDeadline::start(&ctx);
+        let preparation_ctx = preparation.ctx().clone();
+        // Remote MCP credential resolution is part of preparation and may
+        // block on the server, so lease ownership must begin before it.
+        let prepare_lease = PrepareLeaseExtender::start(
+            ctx.clone(),
+            Arc::clone(&client),
+            task.runtime_id.clone(),
+            task.id.clone(),
+        );
         let credential_resolver: RemoteMCPCredentialResolver = {
             let client = Arc::clone(&client);
             let daemon_token = task.remote_mcp_daemon_token.clone();
@@ -457,8 +526,8 @@ impl ProductionProviderAdapter {
             })
         };
         let remote_mcp = match start_task_remote_mcp_brokers(
-            &ctx,
-            &ctx,
+            &preparation_ctx,
+            &preparation_ctx,
             &task.id,
             &target.provider,
             &task.remote_mcp_connections,
@@ -525,7 +594,7 @@ impl ProductionProviderAdapter {
             })
         };
         let (plugin_overlay, plugin_hook_mcp) = match start_task_plugin_hook_mcp(
-            &ctx,
+            &preparation_ctx,
             &task.id,
             &task.plugin_hook_tools,
             plugin_invoke,
@@ -577,14 +646,8 @@ impl ProductionProviderAdapter {
                 inputs.local_work_dir = assignment.abs_path.clone();
             }
         }
-        let prepare_lease = PrepareLeaseExtender::start(
-            ctx.clone(),
-            Arc::clone(&client),
-            task.runtime_id.clone(),
-            task.id.clone(),
-        );
         if let Err(error) = self
-            .ensure_task_skill_bundles(&ctx, &client, &mut task)
+            .ensure_task_skill_bundles(&preparation_ctx, &client, &mut task)
             .await
         {
             return failed_with_reason(
@@ -599,7 +662,7 @@ impl ProductionProviderAdapter {
             .is_some_and(|agent| !agent.model.is_empty());
         let selection = self
             .resolve_task_model_selection(
-                &ctx,
+                &preparation_ctx,
                 &task.id,
                 &target,
                 &launch,
@@ -645,17 +708,32 @@ impl ProductionProviderAdapter {
         let _store_guard = if store_paths.is_empty() {
             None
         } else {
-            Some(runtime.activity().mark_stores(store_paths).await)
+            let activity = runtime.activity();
+            Some(tokio::select! {
+                () = preparation_ctx.cancelled() => {
+                    return failed(
+                        anyhow::anyhow!("task preparation cancelled: {}", preparation_ctx.cause()),
+                        None,
+                    );
+                }
+                guard = activity.mark_stores(store_paths) => guard,
+            })
         };
         let path_guard = match self
-            .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
+            .acquire_local_path(&preparation_ctx, &client, &task, assignment.as_ref())
             .await
         {
             Ok(guard) => guard,
             Err(error) => return failed_with_reason(error, "local_directory_error", None),
         };
         let (mut environment, resumed) = match self
-            .prepare_environment(&ctx, &task, &mut plan, assignment.as_ref(), &path_guard)
+            .prepare_environment(
+                &preparation_ctx,
+                &task,
+                &mut plan,
+                assignment.as_ref(),
+                &path_guard,
+            )
             .await
         {
             Ok(environment) => environment,
@@ -739,11 +817,12 @@ impl ProductionProviderAdapter {
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
-            let start_result = client.start_task(&ctx, &task.id).await;
+            let start_result = client.start_task(&preparation_ctx, &task.id).await;
             // The dispatched-task lease remains owned through temp allocation
             // and stops only after the server returns the running transition.
             // Join it on both success and failure instead of relying on Drop's
             // abort path for a failed StartTask request.
+            preparation.stop();
             prepare_lease.stop().await;
             start_result.map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
             if let Err(error) = client
@@ -776,11 +855,17 @@ impl ProductionProviderAdapter {
                     ctx.token().clone(),
                 ),
             )?;
+            let child_env = bound.child_env.into_inner();
+            configure_codex_task_shell_environment(
+                &target.provider,
+                &environment.codex_home,
+                &task,
+                &child_env,
+            )?;
             // Keep the exact launch snapshot accepted before preparation. A
             // concurrent registration refresh must not change the executable
             // after this task has already passed its launch gate.
-            let mut backend_config =
-                runtime.backend_config_for_launch(&launch, bound.child_env.into_inner())?;
+            let mut backend_config = runtime.backend_config_for_launch(&launch, child_env)?;
             // The selected Hermes overlay is authoritative. Keep the latest
             // accepted launch from the runtime registry, but remove any
             // profile selector in its fixed prefix before spawning the child.
@@ -817,6 +902,8 @@ impl ProductionProviderAdapter {
                 &environment.codex_home,
                 &prompt,
                 bound.options,
+                self.config.agent_idle_watchdog,
+                self.config.agent_tool_watchdog,
                 &mut transcript,
             )
             .await
@@ -857,6 +944,8 @@ impl ProductionProviderAdapter {
                     &environment.codex_home,
                     &build_prompt(task.clone(), &target.provider),
                     fresh.options,
+                    self.config.agent_idle_watchdog,
+                    self.config.agent_tool_watchdog,
                     &mut transcript,
                 )
                 .await;
@@ -1555,11 +1644,14 @@ async fn withhold_missing_codex_rollout(
 
 async fn drain_session(
     ctx: &Ctx,
+    backend_cancel: &CancellationToken,
     client: &Arc<Client>,
     task_id: &str,
     work_dir: &str,
     codex_home: &str,
     session: Session,
+    idle_watchdog: Duration,
+    tool_watchdog: Duration,
     transcript: &mut TranscriptBatch,
 ) -> anyhow::Result<ExecutionResult> {
     let Session {
@@ -1570,15 +1662,32 @@ async fn drain_session(
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut terminal: Option<ExecutionResult> = None;
     let mut cancelled = false;
+    let mut watchdog_fired = false;
+    let mut watchdog_threshold = idle_watchdog;
+    let mut in_flight_tools = 0usize;
     let mut messages_closed = false;
     let mut result_closed = false;
     let mut drain_deadline = Box::pin(tokio::time::sleep(Duration::from_secs(365 * 24 * 3600)));
     let mut drain_armed = false;
+    let mut watchdog_deadline = Box::pin(tokio::time::sleep(Duration::from_secs(365 * 24 * 3600)));
+    // The global idle window is the suite-level enable switch. A non-zero
+    // tool budget alone must not re-enable watchdogs after an operator set the
+    // global window to zero.
+    let watchdog_enabled = !idle_watchdog.is_zero();
+    let mut watchdog_armed = watchdog_enabled;
+    if watchdog_armed {
+        watchdog_deadline
+            .as_mut()
+            .reset(tokio::time::Instant::now() + idle_watchdog);
+    }
     let pin_owner = CancellationToken::new();
     let mut pin_waiters = JoinSet::new();
 
     loop {
-        if messages_closed && terminal.is_some() {
+        if messages_closed
+            && terminal.is_some()
+            && (!(cancelled || watchdog_fired) || result_closed)
+        {
             break;
         }
         tokio::select! {
@@ -1587,6 +1696,7 @@ async fn drain_session(
                 terminal = Some(ExecutionResult {
                     status: "cancelled".to_string(),
                     error: ctx.cause().to_string(),
+                    session_id: transcript.session_id.clone(),
                     ..ExecutionResult::default()
                 });
                 drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
@@ -1595,6 +1705,26 @@ async fn drain_session(
             received = messages.recv(), if !messages_closed => {
                 match received {
                     Some(message) => {
+                        match message.message_type {
+                            MessageType::ToolUse => {
+                                in_flight_tools = in_flight_tools.saturating_add(1)
+                            }
+                            MessageType::ToolResult => {
+                                in_flight_tools = in_flight_tools.saturating_sub(1)
+                            }
+                            _ => {}
+                        }
+                        watchdog_threshold = if in_flight_tools > 0 {
+                            tool_watchdog
+                        } else {
+                            idle_watchdog
+                        };
+                        watchdog_armed = watchdog_enabled && !watchdog_threshold.is_zero();
+                        if watchdog_armed {
+                            watchdog_deadline
+                                .as_mut()
+                                .reset(tokio::time::Instant::now() + watchdog_threshold);
+                        }
                         if let Some(session_id) = transcript.push(message) {
                             let client = Arc::clone(client);
                             let task_id = task_id.to_string();
@@ -1639,7 +1769,19 @@ async fn drain_session(
             }
             received = &mut result, if !result_closed => {
                 result_closed = true;
-                if !cancelled {
+                if cancelled || watchdog_fired {
+                    if let (Some(cancelled_result), Ok(mut provider_result)) =
+                        (terminal.as_mut(), received)
+                    {
+                        if !provider_result.session_id.is_empty() {
+                            cancelled_result.session_id = provider_result.session_id;
+                        }
+                        cancelled_result.usage = merge_usage(
+                            std::mem::take(&mut cancelled_result.usage),
+                            std::mem::take(&mut provider_result.usage),
+                        );
+                    }
+                } else {
                     match received {
                         Ok(value) => terminal = Some(value),
                         Err(error) => {
@@ -1655,6 +1797,28 @@ async fn drain_session(
                 drain_armed = true;
             }
             _ = ticker.tick() => flush_transcript(client, task_id, transcript).await,
+            () = &mut watchdog_deadline, if watchdog_armed && terminal.is_none() => {
+                // A buffered message means the consumer is behind rather than
+                // the provider being silent. Give it a complete fresh window.
+                if !messages.is_empty() {
+                    watchdog_deadline
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + watchdog_threshold);
+                    continue;
+                }
+                watchdog_fired = true;
+                backend_cancel.cancel();
+                terminal = Some(ExecutionResult {
+                    status: "idle_watchdog".to_string(),
+                    error: format!(
+                        "agent produced no new messages for {watchdog_threshold:?} and message queue was empty; force-stopped by idle watchdog"
+                    ),
+                    session_id: transcript.session_id.clone(),
+                    ..ExecutionResult::default()
+                });
+                drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
+                drain_armed = true;
+            }
             () = &mut drain_deadline, if drain_armed => {
                 tracing::warn!(task = %task_id, "provider transcript did not close within drain grace");
                 break;
@@ -1664,11 +1828,17 @@ async fn drain_session(
     flush_transcript(client, task_id, transcript).await;
     pin_owner.cancel();
     while pin_waiters.join_next().await.is_some() {}
-    Ok(terminal.unwrap_or_else(|| ExecutionResult {
+    let mut terminal = terminal.unwrap_or_else(|| ExecutionResult {
         status: "failed".to_string(),
         error: "provider messages closed without a terminal result".to_string(),
         ..ExecutionResult::default()
-    }))
+    });
+    if matches!(terminal.status.as_str(), "cancelled" | "idle_watchdog")
+        && terminal.session_id.is_empty()
+    {
+        terminal.session_id.clone_from(&transcript.session_id);
+    }
+    Ok(terminal)
 }
 
 #[derive(Default)]
@@ -1678,12 +1848,14 @@ struct TranscriptBatch {
     tools: HashMap<String, String>,
     tool_use_count: usize,
     session_pinned: bool,
+    session_id: String,
 }
 
 impl TranscriptBatch {
     fn begin_attempt(&mut self) {
         self.tools.clear();
         self.session_pinned = false;
+        self.session_id.clear();
     }
 
     fn ready(&self) -> bool {
@@ -1692,6 +1864,9 @@ impl TranscriptBatch {
 
     fn push(&mut self, message: Message) -> Option<String> {
         if message.message_type == MessageType::Status {
+            if !message.session_id.is_empty() {
+                self.session_id.clone_from(&message.session_id);
+            }
             if !self.session_pinned && !message.session_id.is_empty() {
                 self.session_pinned = true;
                 return Some(message.session_id);
@@ -1747,13 +1922,37 @@ async fn execute_and_drain(
     work_dir: &str,
     codex_home: &str,
     prompt: &str,
-    options: ExecOptions,
+    mut options: ExecOptions,
+    idle_watchdog: Duration,
+    tool_watchdog: Duration,
     transcript: &mut TranscriptBatch,
 ) -> anyhow::Result<(ExecutionResult, usize)> {
     let tools_before = transcript.tool_use_count;
+    let effective_idle_watchdog = if idle_watchdog.is_zero() {
+        Duration::ZERO
+    } else if !options.idle_watchdog_timeout.is_zero()
+        && options.idle_watchdog_timeout < idle_watchdog
+    {
+        options.idle_watchdog_timeout
+    } else {
+        idle_watchdog
+    };
+    // This child follows upstream cancellation but can also be cancelled by
+    // the watchdog without misclassifying the task as a server/user cancel.
+    let backend_cancel = ctx.token().child_token();
+    options.cancellation = backend_cancel.clone();
     let session = backend.execute(prompt, options).await?;
     let result = drain_session(
-        ctx, client, task_id, work_dir, codex_home, session, transcript,
+        ctx,
+        &backend_cancel,
+        client,
+        task_id,
+        work_dir,
+        codex_home,
+        session,
+        effective_idle_watchdog,
+        tool_watchdog,
+        transcript,
     )
     .await?;
     Ok((
@@ -2333,6 +2532,46 @@ fn provider_needs_inline_system_prompt(provider: &str) -> bool {
     matches!(provider, "openclaw" | "kimi" | "traecli" | "qwenpaw")
 }
 
+/// Installs the managed Codex shell policy in the task-local CODEX_HOME after
+/// the complete child environment has been assembled and before the backend
+/// can spawn. Only blocklist-checked agent custom keys may opt credential-like
+/// names back into Codex's shell environment.
+fn configure_codex_task_shell_environment(
+    provider: &str,
+    codex_home: &str,
+    task: &Task,
+    child_env: &BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    if provider != "codex" {
+        return Ok(());
+    }
+    anyhow::ensure!(
+        !codex_home.trim().is_empty(),
+        "configure Codex shell environment: task CODEX_HOME is missing"
+    );
+
+    let inherited = std::env::vars()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>();
+    let explicit = child_env
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<HashMap<_, _>>();
+    let authorized_explicit = task
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.custom_env.as_ref())
+        .into_iter()
+        .flat_map(|custom| custom.keys())
+        .filter(|key| !crate::execution_plan::blocked_custom_env_key(key))
+        .cloned()
+        .collect::<Vec<_>>();
+    let include_only = codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
+    let config_path = join_path(&[codex_home, "config.toml"]);
+    ensure_codex_shell_env_policy_config(&config_path, &include_only)
+        .context("configure Codex shell environment")
+}
+
 fn prepared_environment_inputs(
     task: &Task,
     provider: &str,
@@ -2412,8 +2651,122 @@ mod tests {
         }
     }
 
+    fn isolated_runtime() -> ProviderRuntimeContext {
+        ProviderRuntimeContext::new(
+            Arc::new(Client::new("http://server.invalid")),
+            Arc::new(RuntimeLaunchRegistry::default()),
+            crate::activity::DaemonActivity::new(),
+            Arc::new(crate::repo_state::DaemonRepoState::new()),
+            Arc::new(crate::health::RepoCheckoutRegistry::default()),
+        )
+    }
+
+    #[tokio::test]
+    async fn claimed_task_preflight_completes_legacy_quick_actions_and_classifies_identity() {
+        let adapter = ProductionProviderAdapter::new(Arc::new(Config::default()));
+        let target = RuntimeExecutionTarget {
+            provider: "codex".to_string(),
+            profile_id: String::new(),
+        };
+        let quick_action = adapter
+            .run_task_inner(
+                Ctx::new(),
+                Task {
+                    regenerate_quick_actions_for: "old-task".to_string(),
+                    ..Task::default()
+                },
+                target.clone(),
+                0,
+                isolated_runtime(),
+            )
+            .await;
+        assert_eq!(quick_action.result.status, "completed");
+        assert!(quick_action.failure.is_none());
+
+        let invalid = adapter
+            .run_task_inner(Ctx::new(), Task::default(), target, 0, isolated_runtime())
+            .await;
+        assert_eq!(
+            invalid.failure.unwrap().failure_reason,
+            cordy_task_failure::Reason::INVALID_TASK_IDENTITY.as_str()
+        );
+    }
+
+    #[test]
+    fn codex_launch_writes_policy_from_blocklist_checked_task_environment() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex_home = temp.path().to_string_lossy().into_owned();
+        let task = Task {
+            agent: Some(crate::types::AgentData {
+                custom_env: Some(HashMap::from([
+                    ("CUSTOM_API_TOKEN".to_string(), "secret".to_string()),
+                    ("PATH".to_string(), "blocked".to_string()),
+                ])),
+                ..crate::types::AgentData::default()
+            }),
+            ..Task::default()
+        };
+        let child_env = BTreeMap::from([
+            ("CUSTOM_API_TOKEN".to_string(), "secret".to_string()),
+            ("PATH".to_string(), "/bin".to_string()),
+        ]);
+
+        configure_codex_task_shell_environment("codex", &codex_home, &task, &child_env).unwrap();
+
+        let config = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
+        assert!(config.contains("CUSTOM_API_TOKEN"));
+        assert!(config.contains("PATH"));
+        assert!(!config.contains("secret"));
+        assert!(!config.contains("blocked"));
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_cancels_backend_and_preserves_terminal_session() {
+        let client = Arc::new(Client::new("http://server.invalid"));
+        let backend_cancel = CancellationToken::new();
+        let (messages_tx, messages_rx) = tokio::sync::mpsc::channel(1);
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let producer_cancel = backend_cancel.clone();
+        let producer = tokio::spawn(async move {
+            producer_cancel.cancelled().await;
+            drop(messages_tx);
+            result_tx
+                .send(ExecutionResult {
+                    status: "cancelled".to_string(),
+                    session_id: "watchdog-session".to_string(),
+                    ..ExecutionResult::default()
+                })
+                .unwrap();
+        });
+        let mut transcript = TranscriptBatch::default();
+        let result = drain_session(
+            &Ctx::new(),
+            &backend_cancel,
+            &client,
+            "task-watchdog",
+            "/work",
+            "",
+            Session {
+                messages: messages_rx,
+                result: result_rx,
+            },
+            Duration::from_millis(10),
+            Duration::from_millis(50),
+            &mut transcript,
+        )
+        .await
+        .unwrap();
+        producer.await.unwrap();
+        assert_eq!(result.status, "idle_watchdog");
+        assert_eq!(result.session_id, "watchdog-session");
+        assert!(result.error.contains("message queue was empty"));
+    }
+
     #[tokio::test]
     async fn production_heartbeat_lists_and_imports_local_skills_with_retry() {
+        let _env_guard = ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let temp = tempfile::tempdir().unwrap();
         let skill_dir = temp.path().join("skills/deploy");
         std::fs::create_dir_all(&skill_dir).unwrap();
@@ -2434,17 +2787,18 @@ mod tests {
         let attempts = Arc::new(std::sync::Mutex::new(HashMap::<String, usize>::new()));
         let app = {
             let attempts = Arc::clone(&attempts);
-            axum::Router::new().fallback(axum::routing::any(
+            axum::Router::new().fallback(axum::routing::post(
                 move |request: axum::extract::Request| {
                     let reports_tx = reports_tx.clone();
                     let attempts = Arc::clone(&attempts);
                     async move {
+                        let method = request.method().clone();
                         let path = request.uri().path().to_string();
                         let body = axum::body::to_bytes(request.into_body(), 1 << 20)
                             .await
                             .unwrap();
                         let payload: Value = serde_json::from_slice(&body).unwrap();
-                        reports_tx.send((path.clone(), payload)).unwrap();
+                        reports_tx.send((method, path.clone(), payload)).unwrap();
                         let mut attempts = attempts.lock().unwrap();
                         let attempt = attempts.entry(path.clone()).or_default();
                         *attempt += 1;
@@ -2562,11 +2916,12 @@ mod tests {
         );
         assert!(reports
             .iter()
-            .all(|(path, _)| !path.contains("ignored-singular")));
+            .all(|(method, path, _)| method == axum::http::Method::POST
+                && !path.contains("ignored-singular")));
         let list = reports
             .iter()
-            .find(|(path, _)| path.ends_with("/local-skills/list-1/result"))
-            .map(|(_, payload)| payload)
+            .find(|(_, path, _)| path.ends_with("/local-skills/list-1/result"))
+            .map(|(_, _, payload)| payload)
             .unwrap();
         assert_eq!(list["status"], "completed");
         assert_eq!(list["supported"], true);
@@ -2576,13 +2931,18 @@ mod tests {
             .iter()
             .any(|skill| skill["key"] == "deploy"));
         for id in ["batch-1", "batch-2", "singular-1"] {
-            let (_, payload) = reports
+            let (_, _, payload) = reports
                 .iter()
-                .find(|(path, _)| path.ends_with(&format!("/import/{id}/result")))
+                .find(|(_, path, _)| path.ends_with(&format!("/import/{id}/result")))
                 .unwrap();
             assert_eq!(payload["status"], "completed");
             assert_eq!(payload["skill"]["name"], "deploy");
+            assert_eq!(
+                payload["skill"]["content"],
+                "---\nname: deploy\ndescription: ship it\n---\nbody\n"
+            );
             assert_eq!(payload["skill"]["files"][0]["path"], "run.sh");
+            assert_eq!(payload["skill"]["files"][0]["content"], "echo deploy\n");
         }
 
         adapter
@@ -2845,8 +3205,10 @@ mod tests {
             }
         });
         let mut transcript = TranscriptBatch::default();
+        let backend_cancel = CancellationToken::new();
         let result = drain_session(
             &Ctx::new(),
+            &backend_cancel,
             &client,
             "task-delayed",
             "/work",
@@ -2855,6 +3217,8 @@ mod tests {
                 messages: messages_rx,
                 result: result_rx,
             },
+            Duration::ZERO,
+            Duration::ZERO,
             &mut transcript,
         )
         .await
@@ -2890,8 +3254,10 @@ mod tests {
             })
             .unwrap();
         let mut transcript = TranscriptBatch::default();
+        let backend_cancel = CancellationToken::new();
         let mut missing = drain_session(
             &Ctx::new(),
+            &backend_cancel,
             &client,
             "task-missing",
             "/work",
@@ -2900,6 +3266,8 @@ mod tests {
                 messages: messages_rx,
                 result: result_rx,
             },
+            Duration::ZERO,
+            Duration::ZERO,
             &mut transcript,
         )
         .await

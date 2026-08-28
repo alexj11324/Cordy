@@ -18,7 +18,7 @@
 //! - `buildPatternSet` (diskusage.go:285) → [`build_pattern_set`]
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 pub(crate) const MANAGED_ARTIFACT_PATTERN_PREFIX: &str = "managed:";
 
@@ -124,7 +124,11 @@ pub(crate) fn build_pattern_set(patterns: &[String]) -> HashSet<String> {
 /// cleaning; returns the cleaned path otherwise.
 pub(crate) fn safe_relative_path(path: &str) -> Option<PathBuf> {
     let trimmed = path.trim();
-    if trimmed.is_empty() || Path::new(trimmed).is_absolute() || has_windows_volume_prefix(trimmed)
+    if trimmed.is_empty()
+        || trimmed.starts_with('/')
+        || trimmed.starts_with('\\')
+        || Path::new(trimmed).is_absolute()
+        || has_windows_volume_prefix(trimmed)
     {
         return None;
     }
@@ -143,38 +147,28 @@ fn has_windows_volume_prefix(path: &str) -> bool {
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
-/// Mirrors Go's `filepath.Clean` semantics on slash-separated input (the
-/// callers pass either native or slash paths; Rust's `Path` components give
-/// the same normalization for both).
+/// Mirrors Go's `filepath.Clean` semantics while keeping the serialized form
+/// slash-separated on every host. Managed subpaths are protocol data, so a
+/// Windows daemon must interpret both separator spellings and must not leak
+/// native backslashes into reports sent to the server.
 fn clean_path(path: &str) -> PathBuf {
-    let p = Path::new(path);
-    let mut out = PathBuf::new();
-    let mut absolute = false;
-    for comp in p.components() {
-        match comp {
-            Component::RootDir => absolute = true,
-            Component::CurDir => {}
-            Component::ParentDir => {
-                // Keep leading .. components (like Clean does).
-                match out.file_name() {
-                    Some(name) if name != ".." => {
-                        out.pop();
-                    }
-                    _ => out.push(".."),
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." => match parts.last() {
+                Some(previous) if *previous != ".." => {
+                    parts.pop();
                 }
-            }
-            other => out.push(other.as_os_str()),
+                _ => parts.push(".."),
+            },
+            _ => parts.push(part),
         }
     }
-    if out.as_os_str().is_empty() {
-        out.push(".");
-    }
-    if absolute && !out.starts_with("/") {
-        let mut abs = PathBuf::from("/");
-        abs.push(out);
-        abs
+    if parts.is_empty() {
+        PathBuf::from(".")
     } else {
-        out
+        PathBuf::from(parts.join("/"))
     }
 }
 
@@ -234,10 +228,13 @@ mod tests {
         assert_eq!(safe_relative_path(""), None);
         assert_eq!(safe_relative_path("  "), None);
         assert_eq!(safe_relative_path("/abs"), None);
+        assert_eq!(safe_relative_path(r"\rooted"), None);
+        assert_eq!(safe_relative_path(r"\\server\share"), None);
         assert_eq!(safe_relative_path("C:/x"), None);
         assert_eq!(safe_relative_path("."), None);
         assert_eq!(safe_relative_path(".."), None);
         assert_eq!(safe_relative_path("../x"), None);
         assert_eq!(safe_relative_path("./a/../b"), Some(PathBuf::from("b")));
+        assert_eq!(safe_relative_path(r"a\b\c"), Some(PathBuf::from("a/b/c")));
     }
 }

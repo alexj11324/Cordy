@@ -25,6 +25,7 @@ pub const DEFAULT_UPDATE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const DOWNLOAD_TIMEOUT: Duration = DEFAULT_UPDATE_DOWNLOAD_TIMEOUT;
 const BREW_PREFIX_TIMEOUT: Duration = Duration::from_secs(10);
 const BREW_UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const BREW_DIAGNOSTIC_BYTES: usize = 2 * 1024;
 const MAX_ARCHIVE_BYTES: usize = 256 * 1024 * 1024;
 const MAX_BINARY_BYTES: usize = 128 * 1024 * 1024;
 const KNOWN_BREW_PREFIXES: &[&str] = &["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"];
@@ -368,9 +369,10 @@ impl UpdateExecutor {
         if !result.status.success() {
             return Err(UpdateExecutorError::new(
                 UpdateFailureKind::Homebrew,
-                format!(
-                    "Homebrew upgrade failed with status {}",
-                    result.status.code().unwrap_or(-1)
+                homebrew_failure_message(
+                    result.status.code().unwrap_or(-1),
+                    &result.stdout,
+                    &result.stderr,
                 ),
             ));
         }
@@ -512,6 +514,38 @@ impl UpdateExecutor {
         }
         Ok(bytes)
     }
+}
+
+fn homebrew_failure_message(status: i32, stdout: &[u8], stderr: &[u8]) -> String {
+    let mut message = format!("Homebrew upgrade failed with status {status}");
+    for (label, output) in [("stdout", stdout), ("stderr", stderr)] {
+        let diagnostic = bounded_redacted_diagnostic(output, BREW_DIAGNOSTIC_BYTES);
+        if !diagnostic.is_empty() {
+            message.push_str(&format!("; {label}: {diagnostic}"));
+        }
+    }
+    message
+}
+
+fn bounded_redacted_diagnostic(output: &[u8], max_bytes: usize) -> String {
+    if max_bytes == 0 {
+        return String::new();
+    }
+    let value = String::from_utf8_lossy(output);
+    let redacted = cordy_agent::stderr::sanitize_diagnostic(&value);
+    if redacted.len() <= max_bytes {
+        return redacted.trim().to_string();
+    }
+    const PREFIX: &str = "[truncated] ";
+    if max_bytes <= PREFIX.len() {
+        return PREFIX[..max_bytes].to_string();
+    }
+    let tail_bytes = max_bytes - PREFIX.len();
+    let mut start = redacted.len().saturating_sub(tail_bytes);
+    while start < redacted.len() && !redacted.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("{PREFIX}{}", redacted[start..].trim())
 }
 
 fn append_download_chunk(
@@ -1204,6 +1238,21 @@ mod tests {
         let (latest, failed) = resolve_homebrew_latest(Ok("v1.2.3".into()));
         assert_eq!(latest.as_deref(), Some("v1.2.3"));
         assert!(!failed);
+    }
+
+    #[test]
+    fn homebrew_failure_includes_bounded_redacted_process_diagnostics() {
+        let stdout = format!("{}\nformula resolution failed", "x".repeat(4_096));
+        let stderr = b"Authorization: Bearer very-secret-token-123\npermission denied";
+        let message = homebrew_failure_message(1, stdout.as_bytes(), stderr);
+
+        assert!(message.contains("status 1"));
+        assert!(message.contains("formula resolution failed"));
+        assert!(message.contains("permission denied"));
+        assert!(!message.contains("very-secret-token-123"));
+        let diagnostic = bounded_redacted_diagnostic(stdout.as_bytes(), 64);
+        assert!(diagnostic.len() <= 64);
+        assert!(diagnostic.starts_with("[truncated] "));
     }
 
     #[test]

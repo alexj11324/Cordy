@@ -170,6 +170,10 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     repo_state: Arc<DaemonRepoState>,
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     source: Arc<S>,
+    /// Serializes the only paths that can both pause claims and mutate runtime
+    /// registration. This outer lock removes the workspace-lock/claim-barrier
+    /// inversion between ordinary registration and provider demotion.
+    registration_demotion: AsyncMutex<()>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     pending_deregistrations: PendingDeregistrations,
     deregistration_flush: AsyncMutex<()>,
@@ -214,6 +218,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             repo_state,
             repo_warmups,
             source,
+            registration_demotion: AsyncMutex::new(()),
             serial: Mutex::new(HashMap::new()),
             pending_deregistrations: PendingDeregistrations::default(),
             deregistration_flush: AsyncMutex::new(()),
@@ -426,6 +431,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         round: Arc<dyn RuntimeRegistrationRound>,
         activity: &Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
+        let _registration_demotion = self.registration_demotion.lock().await;
         let causes = round.demotable_providers();
         if causes.is_empty() {
             return Ok(());
@@ -465,6 +471,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         allow_empty_refresh: bool,
         activity: Option<&Arc<DaemonActivity>>,
     ) -> anyhow::Result<()> {
+        let _registration_demotion = self.registration_demotion.lock().await;
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
         let payload = round
@@ -604,6 +611,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         round: Arc<dyn RuntimeRegistrationRound>,
         activity: &Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
+        let _registration_demotion = self.registration_demotion.lock().await;
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
         let payload = round
