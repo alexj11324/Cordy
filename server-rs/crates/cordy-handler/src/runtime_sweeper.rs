@@ -2299,7 +2299,11 @@ mod tests {
             let mut batch_candidates = Vec::with_capacity(GC_BATCH as usize + 1);
             for index in 0..=GC_BATCH {
                 batch_candidates.push(
-                    rows.runtime(&format!("batch-{index}"), "offline", "8 days")
+                    // Put the fixture ahead of ordinary developer leftovers in
+                    // the production ORDER BY. The test can then prove that
+                    // its own 101 candidates, rather than arbitrary global
+                    // rows, are subject to the per-tick budget.
+                    rows.runtime(&format!("batch-{index}"), "offline", "100 years")
                         .await?,
                 );
             }
@@ -2322,8 +2326,8 @@ mod tests {
                 .gc_with_budget(Utc::now() - chrono::Duration::days(7))
                 .await;
             anyhow::ensure!(
-                deleted <= GC_BATCH as usize,
-                "production GC deleted {deleted} rows, exceeding batch {GC_BATCH}"
+                deleted == GC_BATCH as usize,
+                "production GC deleted {deleted} rows, want exactly the fixture batch {GC_BATCH}"
             );
             let remaining: i64 = sqlx::query_scalar(
                 "SELECT count(*) FROM agent_runtime WHERE id = ANY($1::uuid[])",
