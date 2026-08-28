@@ -28,6 +28,7 @@ _features
 /docker/
 /docs/
 /e2e/
+/server/
 /server-rs/
 /migrations/
 /apps/*

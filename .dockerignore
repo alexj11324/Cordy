@@ -5,7 +5,7 @@ node_modules
 # Build outputs
 .next
 dist
-bin
+/bin/
 
 # Git
 .git
@@ -50,3 +50,4 @@ coverage
 /.github/
 /deploy/
 /scripts/
+/server/
