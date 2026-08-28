@@ -838,15 +838,174 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    use chrono::Utc;
     use cordy_db::queries::{agent, comment};
     use cordy_events::{Bus, Event};
-    use chrono::Utc;
     use sqlx::PgPool;
+    use tokio::sync::Barrier;
+
+    // Recovery scans are workspace-wide.  Use a transaction-scoped advisory
+    // lock so the handler and service contract tests (which run in separate
+    // test binaries) cannot consume one another's pending rows.
+    const CONTRACT_DB_LOCK_KEY: i64 = 0x434f_5244_595f_5357;
+
+    struct ContractDbLock {
+        _transaction: sqlx::Transaction<'static, sqlx::Postgres>,
+    }
+
+    impl ContractDbLock {
+        async fn acquire(pool: &PgPool) -> anyhow::Result<Self> {
+            let mut transaction = pool.begin().await?;
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(CONTRACT_DB_LOCK_KEY)
+                .execute(&mut *transaction)
+                .await?;
+            Ok(Self {
+                _transaction: transaction,
+            })
+        }
+    }
+
+    async fn cleanup_workspace(
+        pool: &PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+    ) -> anyhow::Result<()> {
+        // Recovery fixtures contain tasks, comments, inbox rows, agents, and
+        // runtimes. Reuse the production dependency order so teardown is
+        // complete even when a test fails halfway through an assertion.
+        let mut tx = pool.begin().await?;
+        let task_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM agent_task_queue WHERE agent_id IN (SELECT id FROM agent WHERE workspace_id = $1) \
+             OR issue_id IN (SELECT id FROM issue WHERE workspace_id = $1) \
+             OR runtime_id IN (SELECT id FROM agent_runtime WHERE workspace_id = $1)",
+        )
+        .bind(workspace_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        if !task_ids.is_empty() {
+            cordy_db::queries::workspace_delete::detach_task_batch_references(
+                &mut *tx,
+                task_ids.clone(),
+            )
+            .await?;
+            cordy_db::queries::workspace_delete::delete_task_batch(&mut *tx, task_ids).await?;
+        }
+        cordy_db::queries::workspace_delete::delete_workspace_leaf_data(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_runs(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_quota_reservations(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_quota_periods(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_chat_messages(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_communication_roots(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_comments(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_issue_roots(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::issue_status::delete_issue_status_entries_for_workspace(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_children(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_pull_requests(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_connections(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_squads_and_skills(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_plugin_data(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_agents(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_runtimes_and_projects(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_administration(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace::delete_workspace(&mut *tx, workspace_id).await?;
+        tx.commit().await?;
+        sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+            .bind(user_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    struct SetupCleanupGuard {
+        pool: PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        armed: bool,
+    }
+
+    impl SetupCleanupGuard {
+        fn new(pool: PgPool, workspace_id: Uuid) -> Self {
+            Self {
+                pool,
+                workspace_id,
+                user_id: Uuid::nil(),
+                armed: true,
+            }
+        }
+
+        fn disarm(&mut self) {
+            self.armed = false;
+        }
+    }
+
+    impl Drop for SetupCleanupGuard {
+        fn drop(&mut self) {
+            if !self.armed {
+                return;
+            }
+            let pool = self.pool.clone();
+            let workspace_id = self.workspace_id;
+            let user_id = self.user_id;
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
+                });
+            }
+        }
+    }
 
     struct RecoveryRows {
         pool: PgPool,
         workspace_id: Uuid,
         user_id: Uuid,
+        _lock: ContractDbLock,
         runtime_id: Uuid,
         coordinator_id: Uuid,
         worker_id: Uuid,
@@ -860,6 +1019,7 @@ mod tests {
             let url = std::env::var("DATABASE_URL")
                 .expect("DATABASE_URL is required for delegated recovery contracts");
             let pool = PgPool::connect(&url).await?;
+            let lock = ContractDbLock::acquire(&pool).await?;
             let workspace_id = new_v7();
             sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
                 .bind(workspace_id)
@@ -867,6 +1027,7 @@ mod tests {
                 .bind(format!("rust-delegated-recovery-{workspace_id}"))
                 .execute(&pool)
                 .await?;
+            let mut setup_cleanup = SetupCleanupGuard::new(pool.clone(), workspace_id);
             let suffix = workspace_id.simple().to_string();
             let user_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
@@ -875,11 +1036,14 @@ mod tests {
             .bind(format!("delegated-recovery-{suffix}@example.test"))
             .fetch_one(&pool)
             .await?;
-            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')")
-                .bind(workspace_id)
-                .bind(user_id)
-                .execute(&pool)
-                .await?;
+            setup_cleanup.user_id = user_id;
+            sqlx::query(
+                "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+            )
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await?;
 
             let runtime_id = new_v7();
             sqlx::query(
@@ -894,11 +1058,20 @@ mod tests {
             .execute(&pool)
             .await?;
 
-            let coordinator_id = Self::agent(&pool, workspace_id, user_id, runtime_id, "coordinator").await?;
+            let coordinator_id =
+                Self::agent(&pool, workspace_id, user_id, runtime_id, "coordinator").await?;
             let worker_id = Self::agent(&pool, workspace_id, user_id, runtime_id, "worker").await?;
-            let source_issue_id = Self::issue(&pool, workspace_id, user_id, coordinator_id, 1, None).await?;
-            let worker_issue_id =
-                Self::issue(&pool, workspace_id, user_id, worker_id, 2, Some(source_issue_id)).await?;
+            let source_issue_id =
+                Self::issue(&pool, workspace_id, user_id, coordinator_id, 1, None).await?;
+            let worker_issue_id = Self::issue(
+                &pool,
+                workspace_id,
+                user_id,
+                worker_id,
+                2,
+                Some(source_issue_id),
+            )
+            .await?;
             let source_task_id = Self::task(
                 &pool,
                 coordinator_id,
@@ -925,12 +1098,15 @@ mod tests {
             .bind(source_task_id)
             .bind(user_id)
             .execute(&pool)
-            .await?;
+                .await?;
+
+            setup_cleanup.disarm();
 
             Ok(Self {
                 pool,
                 workspace_id,
                 user_id,
+                _lock: lock,
                 runtime_id,
                 coordinator_id,
                 worker_id,
@@ -1110,6 +1286,26 @@ mod tests {
             .await?)
         }
 
+        async fn autopilot_run(&self) -> anyhow::Result<Uuid> {
+            let autopilot_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO autopilot (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) \
+                 VALUES ($1, 'delegated recovery contract', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
+            )
+            .bind(self.workspace_id)
+            .bind(self.coordinator_id)
+            .bind(self.user_id)
+            .fetch_one(&self.pool)
+            .await?;
+            Ok(sqlx::query_scalar(
+                "INSERT INTO autopilot_run (autopilot_id, source, status, issue_id) \
+                 VALUES ($1, 'manual', 'running', $2) RETURNING id",
+            )
+            .bind(autopilot_id)
+            .bind(self.source_issue_id)
+            .fetch_one(&self.pool)
+            .await?)
+        }
+
         fn service(&self) -> (TaskService, Arc<Bus>, Arc<Mutex<Vec<Event>>>) {
             let bus = Arc::new(Bus::new());
             let events = Arc::new(Mutex::new(Vec::new()));
@@ -1120,23 +1316,15 @@ mod tests {
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .push(event.clone());
             });
-            (TaskService::new(self.pool.clone(), bus.clone()), bus, events)
+            (
+                TaskService::new(self.pool.clone(), bus.clone()),
+                bus,
+                events,
+            )
         }
 
         async fn cleanup(&self) -> anyhow::Result<()> {
-            sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM workspace WHERE id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                .bind(self.user_id)
-                .execute(&self.pool)
-                .await?;
-            Ok(())
+            cleanup_workspace(&self.pool, self.workspace_id, self.user_id).await
         }
     }
 
@@ -1147,18 +1335,7 @@ mod tests {
             let user_id = self.user_id;
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
-                    let _ = sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
-                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
-                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                        .bind(user_id)
-                        .execute(&pool)
-                        .await;
+                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
                 });
             }
         }
@@ -1166,9 +1343,9 @@ mod tests {
 
     #[tokio::test]
     async fn final_delegated_failure_creates_one_redacted_recovery_signal() {
-        let rows = RecoveryRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for delegated recovery contract");
+        let rows = RecoveryRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for delegated recovery contract",
+        );
         let result = async {
             let secret = format!("sk-{}", "a".repeat(24));
             let failed_id = rows
@@ -1209,7 +1386,22 @@ mod tests {
             drop(captured);
 
             let failed_again = rows.failed_task(failed_id).await?;
-            svc.handle_failed_tasks(&[failed_again]).await;
+            let failed_race = failed_again.clone();
+            let (race_svc, _race_bus, _race_events) = rows.service();
+            let barrier = Arc::new(Barrier::new(3));
+            let left_barrier = barrier.clone();
+            let left = tokio::spawn(async move {
+                left_barrier.wait().await;
+                svc.handle_failed_tasks(&[failed_again]).await
+            });
+            let right_barrier = barrier.clone();
+            let right = tokio::spawn(async move {
+                right_barrier.wait().await;
+                race_svc.handle_failed_tasks(&[failed_race]).await
+            });
+            barrier.wait().await;
+            let _ = left.await?;
+            let _ = right.await?;
             anyhow::ensure!(rows.recovery_count(failed_id).await? == 1, "replaying terminal failure created a duplicate recovery task");
             let comment_count: i64 = sqlx::query_scalar("SELECT count(*) FROM comment WHERE issue_id = $1 AND type = 'progress_update' AND source_task_id = $2")
                 .bind(rows.source_issue_id)
@@ -1227,28 +1419,90 @@ mod tests {
 
     #[tokio::test]
     async fn committed_recovery_comment_is_replayed_once_by_bounded_sweeper() {
-        let rows = RecoveryRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for recovery outbox contract");
+        let rows = RecoveryRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for recovery outbox contract",
+        );
         let result = async {
             let failed_id = rows
-                .worker_task("failed", "comment", 1, 1, Some("provider_auth"), Some("worker exited"))
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
                 .await?;
             let (svc, _bus, _events) = rows.service();
-            let (target, created) = svc.ensure_delegated_failure_recovery_comment(failed_id).await?;
-            anyhow::ensure!(target.is_some() && created, "durable recovery comment was not created");
-            anyhow::ensure!(rows.recovery_count(failed_id).await? == 0, "comment creation unexpectedly enqueued a task");
+            let (target, created) = svc
+                .ensure_delegated_failure_recovery_comment(failed_id)
+                .await?;
+            anyhow::ensure!(
+                target.is_some() && created,
+                "durable recovery comment was not created"
+            );
+            anyhow::ensure!(
+                rows.recovery_count(failed_id).await? == 0,
+                "comment creation unexpectedly enqueued a task"
+            );
+
+            let second_failed_id = rows
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("second worker exited"),
+                )
+                .await?;
+            let (second_target, second_created) = svc
+                .ensure_delegated_failure_recovery_comment(second_failed_id)
+                .await?;
+            anyhow::ensure!(
+                second_target.is_some() && second_created,
+                "second durable recovery comment was not created"
+            );
 
             let zero = svc.recover_pending_delegated_failures(0).await?;
-            anyhow::ensure!(zero == DelegatedFailureRecoverySweepResult::default(), "zero-sized replay mutated outbox: {zero:?}");
-            let replayed = svc.recover_pending_delegated_failures(100).await?;
-            anyhow::ensure!(replayed.replayed == 1 && replayed.exhausted == 0, "outbox replay = {replayed:?}, want one replay");
-            anyhow::ensure!(rows.recovery_count(failed_id).await? == 1, "outbox replay did not create one coordinator task");
-            let second = svc.recover_pending_delegated_failures(100).await?;
-            anyhow::ensure!(second == DelegatedFailureRecoverySweepResult::default(), "second replay was not idempotent: {second:?}");
+            anyhow::ensure!(
+                zero == DelegatedFailureRecoverySweepResult::default(),
+                "zero-sized replay mutated outbox: {zero:?}"
+            );
+            let replayed = svc.recover_pending_delegated_failures(1).await?;
+            anyhow::ensure!(
+                replayed.replayed == 1 && replayed.exhausted == 0,
+                "outbox replay = {replayed:?}, want one replay"
+            );
+            anyhow::ensure!(
+                rows.recovery_count(failed_id).await? == 1,
+                "outbox replay did not create one coordinator task"
+            );
+            anyhow::ensure!(
+                rows.recovery_count(second_failed_id).await? == 0,
+                "positive limit replayed more than one row"
+            );
+            let second = svc.recover_pending_delegated_failures(1).await?;
+            anyhow::ensure!(
+                second.replayed == 1 && second.exhausted == 0,
+                "second bounded replay = {second:?}, want one replay"
+            );
+            anyhow::ensure!(
+                rows.recovery_count(second_failed_id).await? == 1,
+                "second bounded replay did not create one coordinator task"
+            );
+            let third = svc.recover_pending_delegated_failures(1).await?;
+            anyhow::ensure!(
+                third == DelegatedFailureRecoverySweepResult::default(),
+                "third replay was not idempotent: {third:?}"
+            );
 
             let pending = agent::list_pending_delegated_failure_recoveries(&rows.pool, 1).await?;
-            anyhow::ensure!(pending.is_empty(), "covered recovery comment remained pending: {} rows", pending.len());
+            anyhow::ensure!(
+                pending.is_empty(),
+                "covered recovery comment remained pending: {} rows",
+                pending.len()
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -1298,9 +1552,9 @@ mod tests {
 
     #[tokio::test]
     async fn dispatched_coordinator_plans_signal_and_completion_replays_successor() {
-        let rows = RecoveryRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for dispatched recovery contract");
+        let rows = RecoveryRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for dispatched recovery contract",
+        );
         let result = async {
             let coordinator = rows.coordinator_task("dispatched").await?;
             let failed_id = rows
@@ -1333,24 +1587,39 @@ mod tests {
 
     #[tokio::test]
     async fn running_coordinator_gets_independent_successor() {
-        let rows = RecoveryRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for running recovery contract");
+        let rows = RecoveryRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for running recovery contract",
+        );
         let result = async {
             let coordinator = rows.coordinator_task("running").await?;
             let failed_id = rows
-                .worker_task("failed", "comment", 1, 1, Some("provider_auth"), Some("worker exited"))
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
                 .await?;
             let failed = rows.failed_task(failed_id).await?;
             let (svc, _bus, _events) = rows.service();
             svc.handle_failed_tasks(&[failed]).await;
-            anyhow::ensure!(rows.recovery_count(failed_id).await? == 1, "running coordinator did not get a successor");
-            let covered: bool = sqlx::query_scalar("SELECT $2::uuid = ANY(coalesced_comment_ids) FROM agent_task_queue WHERE id = $1")
-                .bind(coordinator)
-                .bind(rows.recovery_comment(failed_id).await?.id)
-                .fetch_one(&rows.pool)
-                .await?;
-            anyhow::ensure!(!covered, "running coordinator incorrectly claimed the recovery comment");
+            anyhow::ensure!(
+                rows.recovery_count(failed_id).await? == 1,
+                "running coordinator did not get a successor"
+            );
+            let covered: bool = sqlx::query_scalar(
+                "SELECT $2::uuid = ANY(coalesced_comment_ids) FROM agent_task_queue WHERE id = $1",
+            )
+            .bind(coordinator)
+            .bind(rows.recovery_comment(failed_id).await?.id)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(
+                !covered,
+                "running coordinator incorrectly claimed the recovery comment"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -1535,13 +1804,20 @@ mod tests {
 
     #[tokio::test]
     async fn retry_pending_and_invalid_source_shapes_fail_closed() {
-        let rows = RecoveryRows::required()
-            .await
-            .expect("DATABASE_URL and migrated PostgreSQL are required for recovery guard contract");
+        let rows = RecoveryRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for recovery guard contract",
+        );
         let result = async {
             let (svc, _bus, _events) = rows.service();
             let retry_failed = rows
-                .worker_task("failed", "comment", 1, 1, Some("provider_auth"), Some("worker exited"))
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
                 .await?;
             let retry_id = RecoveryRows::task(
                 &rows.pool,
@@ -1568,44 +1844,135 @@ mod tests {
                 .bind(retry_failed)
                 .execute(&rows.pool)
                 .await?;
-            anyhow::ensure!(svc.ensure_delegated_failure_recovery_comment(retry_failed).await?.0.is_none(), "retry-pending failure woke coordinator");
+            anyhow::ensure!(
+                svc.ensure_delegated_failure_recovery_comment(retry_failed)
+                    .await?
+                    .0
+                    .is_none(),
+                "retry-pending failure woke coordinator"
+            );
             sqlx::query("DELETE FROM agent_task_queue WHERE id = $1")
                 .bind(retry_id)
                 .execute(&rows.pool)
                 .await?;
 
             let backlog_failed = rows
-                .worker_task("failed", "comment", 1, 1, Some("provider_auth"), Some("worker exited"))
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
                 .await?;
             sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
                 .bind(rows.source_issue_id)
                 .execute(&rows.pool)
                 .await?;
-            anyhow::ensure!(svc.ensure_delegated_failure_recovery_comment(backlog_failed).await?.0.is_none(), "backlog source issue woke coordinator");
+            anyhow::ensure!(
+                svc.ensure_delegated_failure_recovery_comment(backlog_failed)
+                    .await?
+                    .0
+                    .is_none(),
+                "backlog source issue woke coordinator"
+            );
             sqlx::query("UPDATE issue SET status = 'in_progress' WHERE id = $1")
                 .bind(rows.source_issue_id)
                 .execute(&rows.pool)
                 .await?;
 
             let unbound_failed = rows
-                .worker_task("failed", "comment", 1, 1, Some("provider_auth"), Some("worker exited"))
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
                 .await?;
             sqlx::query("UPDATE agent SET runtime_id = NULL WHERE id = $1")
                 .bind(rows.coordinator_id)
                 .execute(&rows.pool)
                 .await?;
-            anyhow::ensure!(svc.ensure_delegated_failure_recovery_comment(unbound_failed).await?.0.is_none(), "unbound source agent woke coordinator");
+            anyhow::ensure!(
+                svc.ensure_delegated_failure_recovery_comment(unbound_failed)
+                    .await?
+                    .0
+                    .is_none(),
+                "unbound source agent woke coordinator"
+            );
             sqlx::query("UPDATE agent SET runtime_id = $2 WHERE id = $1")
                 .bind(rows.coordinator_id)
                 .bind(rows.runtime_id)
                 .execute(&rows.pool)
                 .await?;
 
-            let recursive_id = rows
-                .worker_task("failed", attribution::evidence_delegated_failure().as_str(), 1, 1, Some("agent_error"), Some("recovery task failed"))
+            let failed_autopilot = rows
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
                 .await?;
-            let recursive = svc.ensure_delegated_failure_recovery_comment(recursive_id).await?;
-            anyhow::ensure!(recursive.0.is_none(), "recovery task shape was not rejected");
+            let autopilot_run_id = rows.autopilot_run().await?;
+            sqlx::query("UPDATE agent_task_queue SET autopilot_run_id = $2 WHERE id = $1")
+                .bind(failed_autopilot)
+                .bind(autopilot_run_id)
+                .execute(&rows.pool)
+                .await?;
+            anyhow::ensure!(
+                svc.ensure_delegated_failure_recovery_comment(failed_autopilot)
+                    .await?
+                    .0
+                    .is_none(),
+                "autopilot failed task woke coordinator"
+            );
+
+            sqlx::query("UPDATE agent_task_queue SET autopilot_run_id = $2 WHERE id = $1")
+                .bind(rows.source_task_id)
+                .bind(autopilot_run_id)
+                .execute(&rows.pool)
+                .await?;
+            let source_autopilot_failed = rows
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
+                )
+                .await?;
+            anyhow::ensure!(
+                svc.ensure_delegated_failure_recovery_comment(source_autopilot_failed)
+                    .await?
+                    .0
+                    .is_none(),
+                "autopilot source task woke coordinator"
+            );
+
+            let recursive_id = rows
+                .worker_task(
+                    "failed",
+                    attribution::evidence_delegated_failure().as_str(),
+                    1,
+                    1,
+                    Some("agent_error"),
+                    Some("recovery task failed"),
+                )
+                .await?;
+            let recursive = svc
+                .ensure_delegated_failure_recovery_comment(recursive_id)
+                .await?;
+            anyhow::ensure!(
+                recursive.0.is_none(),
+                "recovery task shape was not rejected"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;

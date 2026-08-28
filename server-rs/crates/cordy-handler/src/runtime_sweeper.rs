@@ -497,7 +497,169 @@ mod tests {
     use cordy_db::models::AgentRuntime;
     use cordy_events::Event;
     use sqlx::Row as _;
+    use tokio::sync::Barrier;
     use uuid::Uuid;
+
+    // These contracts intentionally exercise workspace-wide sweeper queries.
+    // A process-local mutex would not protect the service crate's contracts,
+    // so hold a transaction-scoped PostgreSQL advisory lock instead.  The
+    // transaction rolls back when the fixture is dropped, including on a
+    // failing assertion, which also releases the lock safely.
+    const CONTRACT_DB_LOCK_KEY: i64 = 0x434f_5244_595f_5357;
+
+    struct ContractDbLock {
+        _transaction: sqlx::Transaction<'static, sqlx::Postgres>,
+    }
+
+    impl ContractDbLock {
+        async fn acquire(pool: &PgPool) -> anyhow::Result<Self> {
+            let mut transaction = pool.begin().await?;
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(CONTRACT_DB_LOCK_KEY)
+                .execute(&mut *transaction)
+                .await?;
+            Ok(Self {
+                _transaction: transaction,
+            })
+        }
+    }
+
+    async fn cleanup_workspace(
+        pool: &PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+    ) -> anyhow::Result<()> {
+        // Keep fixture teardown in the same dependency order as the
+        // production workspace deleter. A bare workspace DELETE leaves
+        // task-scoped rows (task_message/task_usage/task_token) and allows a
+        // failed setup to leak rows into the next workspace-wide sweep.
+        let mut tx = pool.begin().await?;
+        let task_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM agent_task_queue WHERE agent_id IN (SELECT id FROM agent WHERE workspace_id = $1) \
+             OR issue_id IN (SELECT id FROM issue WHERE workspace_id = $1) \
+             OR runtime_id IN (SELECT id FROM agent_runtime WHERE workspace_id = $1) \
+             OR chat_session_id IN (SELECT id FROM chat_session WHERE workspace_id = $1)",
+        )
+        .bind(workspace_id)
+        .fetch_all(&mut *tx)
+        .await?;
+        if !task_ids.is_empty() {
+            cordy_db::queries::workspace_delete::detach_task_batch_references(
+                &mut *tx,
+                task_ids.clone(),
+            )
+            .await?;
+            cordy_db::queries::workspace_delete::delete_task_batch(&mut *tx, task_ids).await?;
+        }
+        cordy_db::queries::workspace_delete::delete_workspace_leaf_data(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_runs(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_quota_reservations(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_quota_periods(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_chat_messages(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_communication_roots(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_comments(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_issue_roots(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::issue_status::delete_issue_status_entries_for_workspace(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_children(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_pull_requests(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_connections(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_squads_and_skills(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_plugin_data(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_agents(&mut *tx, workspace_id)
+            .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_runtimes_and_projects(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace_delete::delete_workspace_administration(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        cordy_db::queries::workspace::delete_workspace(&mut *tx, workspace_id).await?;
+        tx.commit().await?;
+        sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+            .bind(user_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    struct SetupCleanupGuard {
+        pool: PgPool,
+        workspace_id: Uuid,
+        user_id: Uuid,
+        armed: bool,
+    }
+
+    impl SetupCleanupGuard {
+        fn new(pool: PgPool, workspace_id: Uuid) -> Self {
+            Self {
+                pool,
+                workspace_id,
+                user_id: Uuid::nil(),
+                armed: true,
+            }
+        }
+
+        fn disarm(&mut self) {
+            self.armed = false;
+        }
+    }
+
+    impl Drop for SetupCleanupGuard {
+        fn drop(&mut self) {
+            if !self.armed {
+                return;
+            }
+            let pool = self.pool.clone();
+            let workspace_id = self.workspace_id;
+            let user_id = self.user_id;
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
+                });
+            }
+        }
+    }
 
     struct FixedClock(DateTime<Utc>);
 
@@ -510,6 +672,7 @@ mod tests {
     struct RuntimeRows {
         pool: PgPool,
         workspace_id: uuid::Uuid,
+        _lock: ContractDbLock,
     }
 
     impl RuntimeRows {
@@ -519,6 +682,9 @@ mod tests {
             let pool = PgPool::connect(&url)
                 .await
                 .expect("runtime sweeper contract requires a reachable migrated PostgreSQL");
+            let lock = ContractDbLock::acquire(&pool)
+                .await
+                .expect("acquire runtime sweeper contract lock");
             let workspace_id = new_v7();
             sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
                 .bind(workspace_id)
@@ -527,7 +693,11 @@ mod tests {
                 .execute(&pool)
                 .await
                 .expect("insert runtime sweeper workspace");
-            Self { pool, workspace_id }
+            Self {
+                pool,
+                workspace_id,
+                _lock: lock,
+            }
         }
 
         async fn runtime(&self, suffix: &str, status: &str, age: Duration) -> AgentRuntime {
@@ -562,9 +732,7 @@ mod tests {
         }
 
         async fn cleanup(&self) {
-            sqlx::query("DELETE FROM workspace WHERE id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
+            cleanup_workspace(&self.pool, self.workspace_id, Uuid::nil())
                 .await
                 .expect("clean runtime sweeper workspace");
         }
@@ -584,10 +752,7 @@ mod tests {
                     .build()
                     .expect("build runtime cleanup executor");
                 runtime.block_on(async move {
-                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
+                    let _ = cleanup_workspace(&pool, workspace_id, Uuid::nil()).await;
                 });
             })
             .join();
@@ -906,6 +1071,7 @@ mod tests {
         pool: PgPool,
         workspace_id: Uuid,
         user_id: Uuid,
+        _lock: ContractDbLock,
         old_agent_id: Uuid,
         grace_agent_id: Uuid,
         healthy_agent_id: Uuid,
@@ -924,6 +1090,7 @@ mod tests {
             let url = std::env::var("DATABASE_URL")
                 .expect("DATABASE_URL is required for offline task recovery contracts");
             let pool = PgPool::connect(&url).await?;
+            let lock = ContractDbLock::acquire(&pool).await?;
             let workspace_id = new_v7();
             sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
                 .bind(workspace_id)
@@ -984,6 +1151,14 @@ mod tests {
                     .await?,
                 );
             }
+            // Keep the offline tasks retry-enabled so this contract exercises
+            // the same production `handle_failed_tasks` path as a real task;
+            // the explicitly fabricated reconnect rows below remain capped at
+            // one attempt and still prove the expiry guard.
+            sqlx::query("UPDATE agent_task_queue SET max_attempts = 2 WHERE id = ANY($1::uuid[])")
+                .bind(&active_task_ids)
+                .execute(&pool)
+                .await?;
             let grace_issue =
                 Self::issue(&pool, workspace_id, user_id, grace_agent_id, next_number).await?;
             next_number += 1;
@@ -1094,6 +1269,7 @@ mod tests {
                 pool,
                 workspace_id,
                 user_id,
+                _lock: lock,
                 old_agent_id,
                 grace_agent_id,
                 healthy_agent_id,
@@ -1224,15 +1400,7 @@ mod tests {
         }
 
         async fn cleanup(&self) -> anyhow::Result<()> {
-            sqlx::query("DELETE FROM workspace WHERE id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                .bind(self.user_id)
-                .execute(&self.pool)
-                .await?;
-            Ok(())
+            cleanup_workspace(&self.pool, self.workspace_id, self.user_id).await
         }
 
         async fn status(&self, id: Uuid) -> anyhow::Result<String> {
@@ -1252,14 +1420,7 @@ mod tests {
             let user_id = self.user_id;
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
-                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
-                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                        .bind(user_id)
-                        .execute(&pool)
-                        .await;
+                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
                 });
             }
         }
@@ -1358,6 +1519,25 @@ mod tests {
                 anyhow::ensure!(reason.as_deref() == Some("runtime_offline"), "offline reason = {reason:?}");
                 anyhow::ensure!(completed.is_some(), "offline task has no completion timestamp");
                 anyhow::ensure!(wait_reason.is_none(), "offline waiter retained wait reason");
+            }
+            let retry_children: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+                "SELECT id, parent_task_id, retry_of_task_id FROM agent_task_queue \
+                 WHERE parent_task_id = ANY($1::uuid[]) ORDER BY parent_task_id",
+            )
+            .bind(&rows.active_task_ids)
+            .fetch_all(&rows.pool)
+            .await?;
+            anyhow::ensure!(
+                retry_children.len() == rows.active_task_ids.len(),
+                "offline failure path created {} retry children, want {}",
+                retry_children.len(),
+                rows.active_task_ids.len()
+            );
+            for (child_id, parent_id, retry_of) in retry_children {
+                anyhow::ensure!(
+                    parent_id == retry_of && parent_id.is_some(),
+                    "retry child {child_id} lost parent/retry lineage: parent={parent_id:?} retry_of={retry_of:?}"
+                );
             }
             anyhow::ensure!(rows.status(rows.grace_task_id).await? == "running", "task inside reconnect grace was failed");
             anyhow::ensure!(rows.status(rows.offline_retry_id).await? == "failed", "expired offline retry was not terminalized");
@@ -1670,10 +1850,15 @@ mod tests {
             .with_clock(Arc::new(FixedClock(Utc::now())));
             let report = sweeper.run_once().await;
             anyhow::ensure!(report.runtimes_offline == 0, "alive stale runtime was marked offline");
-            anyhow::ensure!(report.tasks_failed == 4, "stale/queued tasks failed = {}, want 4", report.tasks_failed);
+            // `tasks_failed` counts the stale-dispatch timeout. Queued TTL
+            // expirations are reported separately in `queued_expired`, and a
+            // running task whose runtime is still inside reconnect grace is
+            // intentionally left untouched.
+            anyhow::ensure!(report.tasks_failed == 1, "stale/queued tasks failed = {}, want 1", report.tasks_failed);
             anyhow::ensure!(report.queued_expired == 2, "queued_expired = {}, want 2", report.queued_expired);
 
-            for id in [stale_dispatch, stale_running] {
+            {
+                let id = stale_dispatch;
                 let (status, reason, error, lease): (String, Option<String>, Option<String>, Option<chrono::DateTime<Utc>>) = sqlx::query_as(
                     "SELECT status, failure_reason, error, prepare_lease_expires_at FROM agent_task_queue WHERE id = $1",
                 )
@@ -1685,6 +1870,10 @@ mod tests {
                 anyhow::ensure!(error.as_deref() == Some("task timed out"), "stale task error = {error:?}");
                 anyhow::ensure!(lease.is_none(), "stale task retained prepare lease");
             }
+            anyhow::ensure!(
+                rows.status(stale_running).await? == "running",
+                "running task inside reconnect grace was timed out"
+            );
             anyhow::ensure!(rows.status(leased_dispatch).await? == "dispatched", "active prepare lease was ignored");
             anyhow::ensure!(rows.status(fresh_running).await? == "running", "fresh runtime running task was timed out");
             anyhow::ensure!(rows.status(waiting).await? == "waiting_local_directory", "directory waiter was timed out");
@@ -1707,7 +1896,7 @@ mod tests {
                 .filter(|event| event.event_type == cordy_protocol::EVENT_TASK_FAILED)
                 .cloned()
                 .collect::<Vec<_>>();
-            anyhow::ensure!(task_events.len() == 4, "task failure events = {}, want 4", task_events.len());
+            anyhow::ensure!(task_events.len() == 3, "task failure events = {}, want 3", task_events.len());
             anyhow::ensure!(
                 task_events.iter().all(|event| event.workspace_id == rows.workspace_id.to_string()),
                 "task failure event workspace mismatch"
@@ -1716,7 +1905,7 @@ mod tests {
                 .iter()
                 .filter_map(|event| event.payload["failure_reason"].as_str())
                 .collect::<Vec<_>>();
-            anyhow::ensure!(reasons.iter().filter(|reason| **reason == "timeout").count() == 2, "timeout event count mismatch");
+            anyhow::ensure!(reasons.iter().filter(|reason| **reason == "timeout").count() == 1, "timeout event count mismatch");
             anyhow::ensure!(
                 reasons.iter().filter(|reason| **reason == "queued_expired").count() == 2,
                 "queued_expired event count mismatch"
@@ -1734,6 +1923,7 @@ mod tests {
         workspace_id: Uuid,
         user_id: Uuid,
         helper_agent_id: Uuid,
+        _lock: ContractDbLock,
     }
 
     impl GcRows {
@@ -1741,6 +1931,7 @@ mod tests {
             let url = std::env::var("DATABASE_URL")
                 .expect("DATABASE_URL is required for runtime GC contracts");
             let pool = PgPool::connect(&url).await?;
+            let lock = ContractDbLock::acquire(&pool).await?;
             let workspace_id = new_v7();
             sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
                 .bind(workspace_id)
@@ -1748,6 +1939,7 @@ mod tests {
                 .bind(format!("rust-runtime-gc-{workspace_id}"))
                 .execute(&pool)
                 .await?;
+            let mut setup_cleanup = SetupCleanupGuard::new(pool.clone(), workspace_id);
             let suffix = workspace_id.simple().to_string();
             let user_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
@@ -1756,6 +1948,7 @@ mod tests {
             .bind(format!("runtime-gc-{suffix}@example.test"))
             .fetch_one(&pool)
             .await?;
+            setup_cleanup.user_id = user_id;
             sqlx::query(
                 "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
             )
@@ -1769,11 +1962,13 @@ mod tests {
             let helper_agent_id =
                 RecoveryRows::agent(&pool, workspace_id, user_id, helper_runtime_id, "gc-helper")
                     .await?;
+            setup_cleanup.disarm();
             Ok(Self {
                 pool,
                 workspace_id,
                 user_id,
                 helper_agent_id,
+                _lock: lock,
             })
         }
 
@@ -1814,19 +2009,7 @@ mod tests {
         }
 
         async fn cleanup(&self) -> anyhow::Result<()> {
-            sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM workspace WHERE id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                .bind(self.user_id)
-                .execute(&self.pool)
-                .await?;
-            Ok(())
+            cleanup_workspace(&self.pool, self.workspace_id, self.user_id).await
         }
     }
 
@@ -1837,19 +2020,7 @@ mod tests {
             let user_id = self.user_id;
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
-                    let _ =
-                        sqlx::query("UPDATE agent SET runtime_id = NULL WHERE workspace_id = $1")
-                            .bind(workspace_id)
-                            .execute(&pool)
-                            .await;
-                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
-                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                        .bind(user_id)
-                        .execute(&pool)
-                        .await;
+                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
                 });
             }
         }
@@ -1883,22 +2054,6 @@ mod tests {
         .bind(issue_id)
         .fetch_optional(pool)
         .await?)
-    }
-
-    async fn wait_for_lock_wait(pool: &PgPool, pid: i32) -> anyhow::Result<()> {
-        for _ in 0..500 {
-            let waiting: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = $1 AND state = 'active' AND wait_event_type = 'Lock')",
-            )
-            .bind(pid)
-            .fetch_one(pool)
-            .await?;
-            if waiting {
-                return Ok(());
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        anyhow::bail!("backend {pid} never waited for the runtime row lock")
     }
 
     #[tokio::test]
@@ -2138,28 +2293,17 @@ mod tests {
                 );
             }
 
-            let bounded_candidates = runtime::list_stale_offline_runtime_gc_candidates(
-                &rows.pool,
-                Utc::now() - chrono::Duration::days(7),
-                1,
-            )
-            .await?;
-            anyhow::ensure!(
-                bounded_candidates.len() <= 1,
-                "GC candidate query returned {} rows for max_per_tick=1",
-                bounded_candidates.len()
-            );
-
-            let active_runtime = rows.runtime("guard-active-agent", "offline", "8 days").await?;
-            let active_agent = RecoveryRows::agent(
-                &rows.pool,
-                rows.workspace_id,
-                rows.user_id,
-                active_runtime,
-                "guard-active-agent",
-            )
-            .await?;
-            let sweeper = RuntimeTaskSweeper::new(
+            // Exercise the production budget loop, rather than only checking
+            // the SQL helper with an arbitrary limit. One more candidate than
+            // `GC_BATCH` must survive this tick.
+            let mut batch_candidates = Vec::with_capacity(GC_BATCH as usize + 1);
+            for index in 0..=GC_BATCH {
+                batch_candidates.push(
+                    rows.runtime(&format!("batch-{index}"), "offline", "8 days")
+                        .await?,
+                );
+            }
+            let gc_sweeper = RuntimeTaskSweeper::new(
                 rows.pool.clone(),
                 Arc::new(TestLiveness {
                     available: false,
@@ -2174,8 +2318,36 @@ mod tests {
                 None,
                 DEFAULT_RECONNECT_GRACE,
             );
+            let deleted = gc_sweeper
+                .gc_with_budget(Utc::now() - chrono::Duration::days(7))
+                .await;
             anyhow::ensure!(
-                sweeper
+                deleted <= GC_BATCH as usize,
+                "production GC deleted {deleted} rows, exceeding batch {GC_BATCH}"
+            );
+            let remaining: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM agent_runtime WHERE id = ANY($1::uuid[])",
+            )
+            .bind(&batch_candidates)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(
+                remaining >= 1,
+                "production GC removed all {} batch candidates in one tick",
+                batch_candidates.len()
+            );
+
+            let active_runtime = rows.runtime("guard-active-agent", "offline", "8 days").await?;
+            let active_agent = RecoveryRows::agent(
+                &rows.pool,
+                rows.workspace_id,
+                rows.user_id,
+                active_runtime,
+                "guard-active-agent",
+            )
+            .await?;
+            anyhow::ensure!(
+                gc_sweeper
                     .gc_runtime(active_runtime, Utc::now() - chrono::Duration::days(7))
                     .await?
                     .is_none(),
@@ -2194,7 +2366,7 @@ mod tests {
             for (suffix, status, age) in [("fresh-guard", "offline", "1 day"), ("online-guard", "online", "8 days")] {
                 let runtime_id = rows.runtime(suffix, status, age).await?;
                 anyhow::ensure!(
-                    sweeper
+                    gc_sweeper
                         .gc_runtime(runtime_id, Utc::now() - chrono::Duration::days(7))
                         .await?
                         .is_none(),
@@ -2225,32 +2397,7 @@ mod tests {
         let result = async {
             let writer_runtime = rows.runtime("writer-wins", "offline", "8 days").await?;
             let writer_issue = rows.issue(640).await?;
-            let mut holder = rows.pool.begin().await?;
-            sqlx::query("SELECT id FROM agent_runtime WHERE id = $1 FOR UPDATE")
-                .bind(writer_runtime)
-                .fetch_one(&mut *holder)
-                .await?;
-            let mut writer = rows.pool.acquire().await?;
-            let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-                .fetch_one(&mut *writer)
-                .await?;
-            let agent_id = rows.helper_agent_id;
-            let writer_handle = tokio::spawn(async move {
-                sqlx::query_scalar::<_, Uuid>(
-                    "INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority) \
-                     SELECT $1, $2, $3, 'queued', 0 \
-                     WHERE lock_task_owner_rows($1, $3, $2) RETURNING id",
-                )
-                .bind(agent_id)
-                .bind(writer_runtime)
-                .bind(writer_issue)
-                .fetch_optional(&mut *writer)
-                .await
-            });
-            wait_for_lock_wait(&rows.pool, writer_pid).await?;
-            holder.commit().await?;
-            let writer_task = writer_handle.await??.expect("owner-fenced writer inserted no task");
-            let sweeper = RuntimeTaskSweeper::new(
+            let sweeper = Arc::new(RuntimeTaskSweeper::new(
                 rows.pool.clone(),
                 Arc::new(TestLiveness {
                     available: false,
@@ -2264,23 +2411,57 @@ mod tests {
                 Arc::new(Bus::new()),
                 None,
                 DEFAULT_RECONNECT_GRACE,
-            );
-            anyhow::ensure!(
-                sweeper
-                    .gc_runtime(writer_runtime, Utc::now() - chrono::Duration::days(7))
-                    .await?
-                    .is_none(),
-                "GC deleted runtime after owner-fenced enqueue committed"
-            );
-            anyhow::ensure!(
-                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2 AND completed_at IS NULL")
-                    .bind(writer_task)
-                    .bind(writer_runtime)
-                    .fetch_one(&rows.pool)
-                    .await?
-                    == 1,
-                "writer task was detached or deleted despite blocking GC"
-            );
+            ));
+            // Start the actual production delete and owner-fenced enqueue at
+            // the same barrier. Depending on lock acquisition order, exactly
+            // one side may win; both outcomes must preserve the invariant
+            // that a committed task never references a deleted runtime.
+            let barrier = Arc::new(Barrier::new(3));
+            let gc_handle = {
+                let barrier = barrier.clone();
+                let sweeper = sweeper.clone();
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    sweeper
+                        .gc_runtime(writer_runtime, Utc::now() - chrono::Duration::days(7))
+                        .await
+                })
+            };
+            let writer_handle = {
+                let barrier = barrier.clone();
+                let pool = rows.pool.clone();
+                let agent_id = rows.helper_agent_id;
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    owner_fenced_enqueue(&pool, agent_id, writer_runtime, writer_issue).await
+                })
+            };
+            barrier.wait().await;
+            let gc_result = gc_handle.await??;
+            let writer_task = writer_handle.await??;
+            let runtime_exists: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM agent_runtime WHERE id = $1",
+            )
+            .bind(writer_runtime)
+            .fetch_one(&rows.pool)
+            .await?;
+            let task_count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM agent_task_queue WHERE runtime_id = $1 AND completed_at IS NULL",
+            )
+            .bind(writer_runtime)
+            .fetch_one(&rows.pool)
+            .await?;
+            if writer_task.is_some() {
+                anyhow::ensure!(
+                    gc_result.is_none() && runtime_exists == 1 && task_count == 1,
+                    "enqueue won but GC result/runtime/task state was unsafe: gc={gc_result:?} runtime={runtime_exists} tasks={task_count}"
+                );
+            } else {
+                anyhow::ensure!(
+                    gc_result.is_some() && runtime_exists == 0 && task_count == 0,
+                    "GC won but enqueue result/runtime/task state was unsafe: gc={gc_result:?} runtime={runtime_exists} tasks={task_count}"
+                );
+            }
 
             let delete_runtime = rows.runtime("delete-wins", "offline", "8 days").await?;
             let delete_issue = rows.issue(641).await?;
@@ -2319,6 +2500,7 @@ mod tests {
         user_id: Uuid,
         source_task_id: Uuid,
         failed_task_id: Uuid,
+        _lock: ContractDbLock,
     }
 
     impl DelegatedSweeperRows {
@@ -2326,6 +2508,7 @@ mod tests {
             let url = std::env::var("DATABASE_URL")
                 .expect("DATABASE_URL is required for delegated sweeper contract");
             let pool = PgPool::connect(&url).await?;
+            let lock = ContractDbLock::acquire(&pool).await?;
             let workspace_id = new_v7();
             sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
                 .bind(workspace_id)
@@ -2447,19 +2630,12 @@ mod tests {
                 user_id,
                 source_task_id,
                 failed_task_id,
+                _lock: lock,
             })
         }
 
         async fn cleanup(&self) -> anyhow::Result<()> {
-            sqlx::query("DELETE FROM workspace WHERE id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                .bind(self.user_id)
-                .execute(&self.pool)
-                .await?;
-            Ok(())
+            cleanup_workspace(&self.pool, self.workspace_id, self.user_id).await
         }
     }
 
@@ -2470,14 +2646,7 @@ mod tests {
             let user_id = self.user_id;
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
-                    let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
-                        .bind(workspace_id)
-                        .execute(&pool)
-                        .await;
-                    let _ = sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                        .bind(user_id)
-                        .execute(&pool)
-                        .await;
+                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
                 });
             }
         }
@@ -2548,6 +2717,7 @@ mod tests {
         task_id: Uuid,
         user_message_id: Uuid,
         attachment_id: Uuid,
+        _lock: ContractDbLock,
     }
 
     impl ChatFinalizeRows {
@@ -2559,6 +2729,7 @@ mod tests {
                 anyhow::anyhow!("DATABASE_URL is required for chat finalize contracts")
             })?;
             let pool = PgPool::connect(&url).await?;
+            let lock = ContractDbLock::acquire(&pool).await?;
             let workspace_id = new_v7();
             let user_id = new_v7();
             let runtime_id = new_v7();
@@ -2665,28 +2836,12 @@ mod tests {
                 task_id,
                 user_message_id,
                 attachment_id,
+                _lock: lock,
             })
         }
 
         async fn cleanup(&self) -> anyhow::Result<()> {
-            // chat_draft_restore intentionally has no FK, so prune it before
-            // the workspace cascade rather than relying on the test Drop path.
-            sqlx::query(
-                "DELETE FROM chat_draft_restore WHERE chat_session_id = $1 OR task_id = $2",
-            )
-            .bind(self.session_id)
-            .bind(self.task_id)
-            .execute(&self.pool)
-            .await?;
-            sqlx::query("DELETE FROM workspace WHERE id = $1")
-                .bind(self.workspace_id)
-                .execute(&self.pool)
-                .await?;
-            sqlx::query("DELETE FROM \"user\" WHERE id = $1")
-                .bind(self.user_id)
-                .execute(&self.pool)
-                .await?;
-            Ok(())
+            cleanup_workspace(&self.pool, self.workspace_id, self.user_id).await
         }
 
         async fn backdate_marker(&self, seconds: f64) -> anyhow::Result<()> {
@@ -2734,6 +2889,25 @@ mod tests {
                     .fetch_one(&self.pool)
                     .await?,
             )
+        }
+
+        async fn list_restores(&self) -> anyhow::Result<Vec<cordy_db::models::ChatDraftRestore>> {
+            Ok(
+                cordy_db::queries::chat::list_chat_draft_restores_by_session(
+                    &self.pool,
+                    self.session_id,
+                )
+                .await?,
+            )
+        }
+
+        async fn consume_restore(&self, restore_id: Uuid) -> anyhow::Result<u64> {
+            Ok(cordy_db::queries::chat::delete_chat_draft_restore(
+                &self.pool,
+                restore_id,
+                self.session_id,
+            )
+            .await?)
         }
 
         async fn attachment_message_id(&self) -> anyhow::Result<Option<Uuid>> {
@@ -2982,6 +3156,29 @@ mod tests {
             anyhow::ensure!(
                 cancel_finalized_events(&events).len() == 1,
                 "second sweep duplicated event"
+            );
+            let restores = rows.list_restores().await?;
+            anyhow::ensure!(
+                restores.len() == 1,
+                "production restore list returned {} rows",
+                restores.len()
+            );
+            anyhow::ensure!(
+                restores[0].attachment_ids == vec![rows.attachment_id],
+                "production restore list lost attachment linkage: {:?}",
+                restores[0].attachment_ids
+            );
+            anyhow::ensure!(
+                rows.consume_restore(restores[0].id).await? == 1,
+                "production restore consume did not delete the row"
+            );
+            anyhow::ensure!(
+                rows.consume_restore(restores[0].id).await? == 0,
+                "production restore consume was not idempotent"
+            );
+            anyhow::ensure!(
+                rows.restore_count().await? == 0,
+                "consumed restore remained durable"
             );
             Ok::<(), anyhow::Error>(())
         }
@@ -3324,6 +3521,68 @@ mod tests {
                 rows.restore_count().await? == 1,
                 "ack/sweeper race did not commit exactly one restore"
             );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result?;
+        cleanup?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn draft_restore_consume_races_production_workspace_delete() -> anyhow::Result<()> {
+        let rows = ChatFinalizeRows::required("running", true).await?;
+        let result = async {
+            let tasks = TaskService::new(rows.pool.clone(), Arc::new(Bus::new()));
+            tasks
+                .cancel_task_with_result(
+                    rows.task_id,
+                    cordy_service::task_service::CancelTaskOptions {
+                        client_supports_draft_restore: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!("cancel task: {error}"))?;
+            rows.backdate_marker(120.0).await?;
+            anyhow::ensure!(
+                tasks.finalize_deferred_cancelled_chat(rows.task_id).await,
+                "deferred finalizer did not create restore"
+            );
+            let restore = rows
+                .list_restores()
+                .await?
+                .into_iter()
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("restore row missing before race"))?;
+
+            // The workspace teardown uses the same production deletion query
+            // sequence as the HTTP deleter. Run it concurrently with the
+            // production consume query; either transaction may win, but a
+            // restore must never reappear after the workspace is deleted.
+            let delete_pool = rows.pool.clone();
+            let delete = tokio::spawn(async move {
+                cleanup_workspace(&delete_pool, rows.workspace_id, rows.user_id).await
+            });
+            let consume_pool = rows.pool.clone();
+            let consume = tokio::spawn(async move {
+                cordy_db::queries::chat::delete_chat_draft_restore(
+                    &consume_pool,
+                    restore.id,
+                    rows.session_id,
+                )
+                .await
+            });
+            let (delete_result, consume_result) = tokio::join!(delete, consume);
+            delete_result??;
+            consume_result??;
+            let remaining: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM chat_draft_restore WHERE id = $1")
+                    .bind(restore.id)
+                    .fetch_one(&rows.pool)
+                    .await?;
+            anyhow::ensure!(remaining == 0, "restore row survived delete/consume race");
             Ok::<(), anyhow::Error>(())
         }
         .await;
