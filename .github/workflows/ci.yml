@@ -183,6 +183,14 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: pnpm install
 
+      - name: Prepare Rust CLI bundle target
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+
       # `node-version: 22` above floats across patch releases, and turbo's
       # global hash does not include the interpreter at all (`engines` is null
       # in its dry-run cache inputs). Without the resolved version in the key,

@@ -706,7 +706,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            projection,
+            &projection,
             json!([
                 {"key": "backlog", "name": "Backlog", "description": "Parked. Assigning an issue here never starts an agent run.", "category": "backlog", "color": "#6b7280", "is_system": true, "position": 0.0, "archived_at": null},
                 {"key": "todo", "name": "Todo", "description": "Queued for work. Moving an issue here starts the assigned agent.", "category": "todo", "color": "#6b7280", "is_system": true, "position": 0.0, "archived_at": null},

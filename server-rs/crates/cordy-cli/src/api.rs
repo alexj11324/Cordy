@@ -438,33 +438,6 @@ impl ApiClient {
         Ok(result)
     }
 
-    pub async fn import_skill_file(
-        &self,
-        file_data: Vec<u8>,
-        filename: &str,
-        on_conflict: &str,
-    ) -> Result<serde_json::Value> {
-        let filename = std::path::Path::new(filename)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(filename)
-            .to_string();
-        let mut form = reqwest::multipart::Form::new().part(
-            "file",
-            reqwest::multipart::Part::bytes(file_data).file_name(filename),
-        );
-        if !on_conflict.is_empty() {
-            form = form.text("on_conflict", on_conflict.to_string());
-        }
-        self.send_json(
-            Method::POST,
-            "/api/skills/import",
-            self.request(Method::POST, "/api/skills/import")
-                .multipart(form),
-        )
-        .await
-    }
-
     pub async fn download_file(&self, download_url: &str) -> Result<Vec<u8>> {
         let relative =
             !download_url.starts_with("http://") && !download_url.starts_with("https://");

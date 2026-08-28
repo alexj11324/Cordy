@@ -549,6 +549,11 @@ test_with_server_pins_selected_release_images() {
 }
 
 test_with_server_systemd_owns_compose_lifecycle() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "skipping Linux-only systemd lifecycle test on $(uname -s)"
+    return 0
+  fi
+
   local tmp unit
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN

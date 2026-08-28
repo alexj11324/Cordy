@@ -1224,27 +1224,32 @@ mod tests {
         std::env::set_var("FF_COMPOSIO_MCP_APPS", "1");
         let missing_api_key = build();
         assert!(missing_api_key.composio.is_none());
-        assert!(missing_api_key.tasks.composio.is_none());
+        assert!(missing_api_key.tasks.composio.read().unwrap().is_none());
 
         std::env::set_var("COMPOSIO_API_KEY", "test-api-key");
         let missing_state_secret = build();
         assert!(missing_state_secret.composio.is_none());
-        assert!(missing_state_secret.tasks.composio.is_none());
+        assert!(missing_state_secret
+            .tasks
+            .composio
+            .read()
+            .unwrap()
+            .is_none());
 
         std::env::set_var("COMPOSIO_STATE_SECRET", "test-state-secret");
         let missing_callback = build();
         assert!(missing_callback.composio.is_none());
-        assert!(missing_callback.tasks.composio.is_none());
+        assert!(missing_callback.tasks.composio.read().unwrap().is_none());
 
         std::env::set_var("COMPOSIO_CALLBACK_BASE_URL", "https://api.example.com/");
         let configured = build();
         assert!(configured.composio.is_some());
-        assert!(configured.tasks.composio.is_some());
+        assert!(configured.tasks.composio.read().unwrap().is_some());
 
         std::env::set_var("FF_COMPOSIO_MCP_APPS", "0");
         let flag_disabled = build();
         assert!(flag_disabled.composio.is_none());
-        assert!(flag_disabled.tasks.composio.is_none());
+        assert!(flag_disabled.tasks.composio.read().unwrap().is_none());
     }
 
     #[tokio::test]

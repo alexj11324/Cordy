@@ -13,7 +13,7 @@ use windows_sys::Win32::System::JobObjects::{
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows_sys::Win32::System::Threading::{
-    OpenProcess, OpenThread, ResumeThread, CREATE_NEW_CONSOLE, CREATE_SUSPENDED, PROCESS_SET_QUOTA,
+    OpenProcess, OpenThread, ResumeThread, CREATE_NO_WINDOW, CREATE_SUSPENDED, PROCESS_SET_QUOTA,
     PROCESS_TERMINATE, THREAD_SUSPEND_RESUME,
 };
 
@@ -25,9 +25,7 @@ pub(crate) struct ProcessTree {
 
 pub(crate) fn prepare(command: &mut Command) {
     use std::os::windows::process::CommandExt as _;
-    const SW_HIDE: u16 = 0;
-    command.creation_flags(CREATE_NEW_CONSOLE | CREATE_SUSPENDED);
-    command.as_std_mut().startupinfo_show_window(SW_HIDE);
+    command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
 }
 
 pub(crate) async fn claim(child: &mut Child) -> io::Result<ProcessTree> {

@@ -505,7 +505,8 @@ pnpm dev:desktop
 
 This automatically:
 
-1. Compiles the `cordy` CLI from `server/cmd/cordy` into
+1. Compiles the `cordy` CLI from the Rust `cordy-cli` package in the
+   `server-rs` Cargo workspace into
    `apps/desktop/resources/bin/cordy`
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance

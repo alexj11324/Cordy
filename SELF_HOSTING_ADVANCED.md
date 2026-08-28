@@ -248,7 +248,7 @@ The Docker Compose setup runs migrations automatically. If you need to run them 
 ./server/bin/migrate up
 
 # Or from the Rust source
-cd server-rs && cargo run --locked -p cordy-migrate -- up
+cd server-rs && cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
 ```
 
 ## Usage Dashboard Rollup
@@ -284,13 +284,22 @@ External cron / systemd / Kubernetes `CronJob` setups that call `SELECT rollup_t
 `rollup_task_usage_hourly()` only processes new buckets after it starts running. If you already have `task_usage` rows from before the rollup was claimed for the first time — most commonly when upgrading from `v0.3.4` to `v0.3.5+` on a database that already has months of usage — you can run `backfill_task_usage_hourly` to seed historical buckets:
 
 ```bash
-# Docker Compose
-docker compose -f docker-compose.selfhost.yml exec backend \
-  ./backfill_task_usage_hourly --sleep-between-slices=2s
+# Docker Compose. `run` bypasses a failed backend container, and the explicit
+# entrypoint bypasses the normal migrate-before-server startup path.
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/backfill_task_usage_hourly backend \
+  --sleep-between-slices=2s
 
-# Kubernetes
-kubectl -n cordy exec deploy/cordy-backend -- \
-  ./backfill_task_usage_hourly --sleep-between-slices=2s
+# Kubernetes. Copy a backend Pod so the one-off command retains its image,
+# environment, secrets, service account, and network policy even if the
+# original container has already exited during migration.
+pod="$(kubectl -n cordy get pod \
+  -l app.kubernetes.io/component=backend \
+  -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n cordy debug "$pod" --copy-to=cordy-backfill --container=backend -- \
+  /app/backfill_task_usage_hourly --sleep-between-slices=2s
+kubectl -n cordy logs -f cordy-backfill -c backend
+kubectl -n cordy delete pod cordy-backfill
 ```
 
 The command walks `task_usage`'s full time range in monthly slices and calls the same idempotent primitive the in-process scheduler uses, so it's safe to re-run, to interrupt with Ctrl-C, and to run concurrently with the scheduler (advisory lock 4246 serialises them). Flags:

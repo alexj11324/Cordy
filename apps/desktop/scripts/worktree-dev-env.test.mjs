@@ -41,10 +41,13 @@ describe("worktree-dev-env", () => {
   });
 
   it("never reuses 5173 even when the offset is 0", () => {
-    // POSIX cksum("/tmp/cordy-3494") === 1189739000, % 1000 === 0
-    expect(offsetForPath("/tmp/cordy-3494")).toBe(0);
-    expect(rendererPortForPath("/tmp/cordy-3494")).toBe(5174);
-    expect(rendererPortForPath("/tmp/cordy-3494")).not.toBe(5173);
+    const path = Array.from({ length: 10_000 }, (_, i) => `/tmp/cordy-${i}`).find(
+      (candidate) => offsetForPath(candidate) === 0,
+    );
+
+    if (!path) throw new Error("failed to find an offset-zero fixture");
+    expect(rendererPortForPath(path)).toBe(5174);
+    expect(rendererPortForPath(path)).not.toBe(5173);
   });
 
   it("skips 6000, which Chromium refuses to load (ERR_UNSAFE_PORT)", () => {
