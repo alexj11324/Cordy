@@ -33,7 +33,9 @@ use crate::execenv::execenv::{
     ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, reuse,
     Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
-use crate::execenv::isolation::{prepare_isolated, reuse_isolated, PREPARATION_HELPER_ARG};
+#[cfg(not(test))]
+use crate::execenv::isolation::PREPARATION_HELPER_ARG;
+use crate::execenv::isolation::{prepare_isolated, reuse_isolated};
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execution_plan::{
     strip_hermes_profile_selectors, PreparedEnvironmentInputs, ProviderExecutionInputs,

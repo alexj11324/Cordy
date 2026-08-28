@@ -156,7 +156,7 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
 
-    use futures_util::{SinkExt, StreamExt};
+    use futures_util::StreamExt;
     use serde_json::json;
 
     use super::*;

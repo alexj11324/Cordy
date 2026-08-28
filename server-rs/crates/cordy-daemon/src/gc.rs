@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use futures_util::Future;
 use sha2::{Digest, Sha256};
