@@ -1162,6 +1162,10 @@ mod tests {
             br#"{"type":"foreign-workspace:event"}"#,
             "",
         );
+        assert_eq!(
+            client_json(&mut socket).await,
+            json!({"type":"foreign-workspace:event"})
+        );
         assert!(
             tokio::time::timeout(Duration::from_millis(100), socket_two.next())
                 .await

@@ -1876,8 +1876,10 @@ mod tests {
             .await
             .unwrap();
 
-        let (mut writer, reader) = tokio::io::duplex(8);
-        writer.write_all(b"partial").await.unwrap();
+        // A one-byte pipe makes the multi-byte write below a synchronization
+        // barrier: it cannot finish until upload_stream has created the temp
+        // file and started draining the reader.
+        let (mut writer, reader) = tokio::io::duplex(1);
         let upload_store = store.clone();
         let upload = tokio::spawn(async move {
             upload_store
@@ -1891,12 +1893,7 @@ mod tests {
                 .await
         });
         let tmp = local_temp_path(&store.path(key).unwrap()).unwrap();
-        for _ in 0..100 {
-            if tmp.exists() {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        writer.write_all(b"partial").await.unwrap();
         assert!(tmp.exists());
         upload.abort();
         assert!(upload.await.unwrap_err().is_cancelled());
