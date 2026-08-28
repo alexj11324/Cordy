@@ -212,7 +212,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - 前一步完成“实现提交、生产入口接线、`git diff --check`、推送和 Ready PR”后，才能开始下一步实现。
 - 编译、测试、review 和 fix 在切片交付后异步运行，不作为下一步实现的前置条件；结果必须回写，不能伪报通过。
 - `T-xx` 是排程编号，`§xx` 是已有台账章节，不新增 AUDIT ID；已经交付的历史切片不重做。
-- 当前 `T-36 / §61`（PR #574）已交付，下一实现游标是 `T-52`：先登记 AUDIT-005 的下一个未闭合 background-worker 缺口，再开始编码。
+- 当前实现已推进到 `T-61 / §76`；唯一后续实现游标是最终退休门 `T-56`，且只能在 T-53、T-59、T-60、T-61 与 AUDIT-001..009 的退出证据全部收齐后启动。不得再次派发或重复记录已经交付的 T-52/CI cutover。
 
 #### 阶段一：生产基础与发布资产
 
@@ -2700,12 +2700,12 @@ contract test 继续回写 T-53/§63；不再为同一回归面创建新的 T-ID
 
 | 风险域 | Go 回归来源（代表性，不声称穷尽） | Rust 证据/入口 | 当前状态 | 退出动作 |
 | --- | --- | --- | --- | --- |
-| API、auth、permission、错误 JSON | `server/internal/handler/*_test.go`、`middleware/*_test.go`、`daemon_auth_test.go` | `server-rs/scripts/route_parity.py`；`cordy-handler` 的 route/validation/error contract；`cordy-auth` JWT/Redis tests；Rust production router | 部分覆盖；route method/path 不是响应/权限/事务等价证明 | 为高风险 handler 补 response/auth/permission/error-envelope smoke；wire 字段转 AUDIT-008 |
-| DB transaction、locking、rollback | `server/internal/service/*_test.go`、`handler/*race_test.go`、scheduler lock tests | #565/#566 issue transaction contracts；#567 WS session；#568/#569 workers；#571/#573/#575 sweeper contracts；`cordy-db` production SQL | 已按完整业务切片登记/提交，真实 DB 与异步 finding 未全部收口 | 每个切片记录 required DB、并发/rollback、matched/executed 与 cleanup 证据；缺口回到对应 AUDIT-002/005 |
-| provider、integration、fail-closed | `server/internal/integrations/**/*_test.go`、provider client/credential tests | PR #532..#541 channel/provider production contracts；各 crate 的 credential/config guards；`cordy-server` channel runtime | 生产 wiring 已有，真实凭证/网络 smoke 仍待 verifier | 为每 provider 记录正/负向矩阵、Stub/Noop 只在测试或 fail-closed 的理由；不适用项写明外部依赖 |
-| daemon、task lifecycle、concurrency | `server/internal/daemon/**/*_test.go`、`daemonws/**/*_test.go`、task terminal/retry tests | PR #542..#563 daemon lifecycle contracts；`cordy-daemon::ProductionStack`、task execution、control/heartbeat；#565..#575 task workers | 部分覆盖；长生命周期/跨平台/真实 daemon 进程仍未完成 | 继续按 registration→claim→execute→reconcile→shutdown 业务链补 contract，不拆成按文件 PR |
-| security boundary、redaction、secret handling | `server/internal/util/secretbox/*_test.go`、`middleware/auth_test.go`、provider redaction tests | `cordy-service::redact`、`cordy-agent::command` redaction、`cordy-auth` JWT、#574 recovery payload redaction | 核心静态/单元证据已有；Unicode/control、真实日志和外部凭证边界仍需审计 | 补不泄露 secret 的 wire/log vectors；安全 finding 交独立 reviewer/fixer，不能以“字符串相等”代替 |
-| backfill、migration、CLI/exit code | `server/internal/*backfill/**/*_test.go`、`cli/*_test.go`、`migrate/*_test.go` | `cordy-migrate` runner/backfill bins；`cordy-cli::error` exit-code tests、CLI command contract tests；PR #518..#523/#555 | CLI/parser 多数已有 Rust unit contract；新鲜 DB/image/operator recovery 未完全执行 | 记录参数、退出码、锁/取消/恢复、镜像产物和 Windows/Linux evidence；发布入口仍归 AUDIT-001/006 |
+| API、auth、permission、错误 JSON | `server/internal/handler/**/*_test.go`、`server/internal/middleware/**/*_test.go`、`server/cmd/cordy/**/*_test.go` | `server-rs/scripts/route_parity.py`；`cordy-handler` 的 route/validation/error contract；`cordy-auth` JWT/Redis tests；Rust production router | 部分覆盖；route method/path 不是响应/权限/事务等价证明 | 为高风险 handler 补 response/auth/permission/error-envelope smoke；wire 字段转 AUDIT-008 |
+| DB transaction、locking、rollback | `server/internal/service/**/*_test.go`、`server/internal/handler/*race_test.go`、scheduler lock tests | #565/#566 issue transaction contracts；#567 WS session；#568/#569 workers；#571/#573/#575 sweeper contracts；`cordy-db` production SQL | 已按完整业务切片登记/提交，真实 DB 与异步 finding 未全部收口 | 每个切片记录 required DB、并发/rollback、matched/executed 与 cleanup 证据；缺口回到对应 AUDIT-002/005 |
+| provider、integration、fail-closed | `server/internal/integrations/**/*_test.go`、`server/pkg/agent/**/*_test.go` | PR #532..#536/#538..#541 channel/provider production contracts；各 crate 的 credential/config guards；`cordy-server` channel runtime | 生产 wiring 已有，真实凭证/网络 smoke 仍待 verifier | 为每 provider 记录正/负向矩阵、Stub/Noop 只在测试或 fail-closed 的理由；不适用项写明外部依赖 |
+| daemon、task lifecycle、concurrency | `server/internal/daemon/**/*_test.go`、`server/internal/daemonws/**/*_test.go`、task terminal/retry tests | PR #542..#550/#558..#563 daemon lifecycle contracts；`cordy-daemon::DaemonProductionStack`、task execution、control/heartbeat；#565..#575 task workers | 部分覆盖；长生命周期/跨平台/真实 daemon 进程仍未完成 | 继续按 registration→claim→execute→reconcile→shutdown 业务链补 contract，不拆成按文件 PR |
+| security boundary、redaction、secret handling | `server/internal/util/secretbox/**/*_test.go`、`server/internal/middleware/auth_test.go`、`server/pkg/redact/**/*_test.go` | `cordy-service::redact`、`cordy-agent::command` redaction、`cordy-auth` JWT、#574 recovery payload redaction | 核心静态/单元证据已有；Unicode/control、真实日志和外部凭证边界仍需审计 | 补不泄露 secret 的 wire/log vectors；安全 finding 交独立 reviewer/fixer，不能以“字符串相等”代替 |
+| backfill、migration、CLI/exit code | `server/internal/*backfill/**/*_test.go`、`server/cmd/cordy/**/*_test.go`、`server/cmd/migrate/**/*_test.go` | `cordy-migrate` runner/backfill bins；`cordy-cli::error` exit-code tests、CLI command contract tests；PR #518/#519/#520/#523/#555 | CLI/parser 多数已有 Rust unit contract；新鲜 DB/image/operator recovery 未完全执行 | 记录参数、退出码、锁/取消/恢复、镜像产物和 Windows/Linux evidence；发布入口仍归 AUDIT-001/006 |
 | wire/schema、time、UUID/ULID、Redis/event envelope | `server/internal/*_test.go` 中 JSON/time/id/redis/event tests | 现有 protocol/event/serde tests、WS tests；route parity | 不在本索引重复宣布；属于 AUDIT-008 的独立兼容门 | 建 golden vectors、round-trip、旧数据读取与跨语言 event fixture；完成前不得删除 Go |
 | 不适用或仅测试辅助 | `internal/testutil`、纯 UI/mock helper、仅 Go runtime 的测试 harness | Rust fixture/test helper 或无生产对应物 | 不把测试辅助文件当作缺失业务能力；若 helper 隐含契约，转入上面风险域 | 每项写出“不适用”理由和替代 Rust evidence，禁止用删除测试文件掩盖契约丢失 |
 
@@ -3119,11 +3119,11 @@ daemon registration→claim→execute→reconcile→shutdown、provider 正/负�
 为未执行或阻塞，不能由局部编译或 route parity 代替。若需要最小发布/启动接线修复，修复留在本项并保持同一
 Ready PR，不再拆成 per-provider 或 per-command PR。
 
-- 默认生产路径：验证 `cordy-server`、`cordy-cli daemon`、`cordy-migrate`、三个 backfill、Docker/Helm/systemd
+- 默认生产路径：验证 `cordy-server`、`cordy daemon`、`cordy-migrate`、三个 backfill、Docker/Helm/systemd
   真实入口；有效生产配置必须选择真实 client/transport，缺失或非法配置必须 fail-closed；测试 Stub/Noop/Fake
   只允许测试或明确缺配置路径。
 - Go 是否可下线：不能。只有 T-60 全矩阵和 T-53/T-59/T-61 退出后才可进入 T-56。
-- 依赖：T-01..T-58 的 Rust 生产 assemblies、T-53/T-59 契约证据和可用 fresh environment；验证由独立 subagent
+- 依赖：T-01..T-55、T-57、T-58 的 Rust 生产 assemblies（明确排除只能在本项退出后执行的最终退休门 T-56）、T-53/T-59 契约证据和可用 fresh environment；验证由独立 subagent
   执行，主 agent 不运行长编译/测试。
 - owner：主 agent 负责必要的生产入口/发布接线；独立 verification/reviewer/fixer 负责完整矩阵、 finding 和
   回归修复。
