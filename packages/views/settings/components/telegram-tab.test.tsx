@@ -314,7 +314,7 @@ describe("TelegramTab", () => {
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  // Malformed-response defense (CLAUDE.md → API Compatibility): a response
+  // Malformed-response defense (AGENTS.md → API Compatibility): a response
   // missing `installations` must not crash the panel.
   it("tolerates a malformed installations response", () => {
     installationsRef.current = { configured: true } as never;

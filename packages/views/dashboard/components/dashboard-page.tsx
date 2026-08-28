@@ -338,7 +338,7 @@ export function DashboardPage() {
   // Totals / classes / reasons are derived from the DATE-BUCKETED rollup after
   // the same `dailyCutoffIso` trim the charts use, not from the per-agent one.
   // `parseSinceParamInTZ` deliberately returns N+1 calendar days of headroom
-  // (see sinceFromDays in server/internal/handler/runtime.go), and only a
+  // (see the Rust runtime handler's day-window calculation), and only a
   // series carrying a date can trim that back client-side. Reading these off
   // the per-agent rollup put the summary one calendar day wider than the chart
   // beside it — at 1D the chart could show no failures while the tile counted

@@ -1,6 +1,6 @@
 //! Normalized cross-platform message envelopes.
 //!
-//! Port of `server/internal/integrations/channel/message.go`. Every
+//! Every
 //! adapter translates its platform's raw payload into an
 //! [`InboundMessage`]; the core's router, dedup, identity check, and
 //! persistence read ONLY these fields. Per the boundary rule (MUL-3515

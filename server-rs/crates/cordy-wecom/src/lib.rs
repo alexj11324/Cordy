@@ -1,5 +1,4 @@
-//! WeCom (企业微信) smart-bot ("智能机器人" / aibot) adapter — port of
-//! `server/internal/integrations/wecom`.
+//! WeCom (企业微信) smart-bot ("智能机器人" / aibot) adapter.
 //!
 //! Unlike the internal customer-service ("内部客服号") flow which is
 //! HTTP-callback based, the smart-bot flow is a client-initiated WebSocket

@@ -1,4 +1,4 @@
-//! Active-duplicate guard — port of `server/internal/issueguard/duplicate.go`.
+//! Active-duplicate guard.
 //!
 //! Both entry points take a transaction-scoped executor: the advisory lock
 //! (`pg_advisory_xact_lock`) only lives until the surrounding transaction

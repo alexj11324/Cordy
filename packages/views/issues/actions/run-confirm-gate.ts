@@ -1,11 +1,16 @@
-import type { Issue, IssueStatusCategory, UpdateIssueRequest } from "@cordy/core/types";
+import type {
+  Issue,
+  IssueAssigneeType,
+  IssueStatusCategory,
+  UpdateIssueRequest,
+} from "@cordy/core/types";
 import { issueStatusCategory } from "@cordy/core/issues";
 import { isIssueStatusCategory, type IssueStatusCatalog } from "@cordy/core/issue-statuses";
 
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<
   Issue,
-  "id" | "status" | "status_category" | "assignee_type" | "assignee_id"
+  "id" | "revision" | "status" | "status_category" | "assignee_type" | "assignee_id"
 >;
 
 /** Payload for the `issue-run-confirm` modal, or null when nothing to confirm. */
@@ -22,6 +27,16 @@ export type RunConfirmIntent =
       status: string;
       assigneeType: "agent" | "squad";
       assigneeId: string;
+    }
+  | {
+      issueIds: [string];
+      mode: "review";
+      status: string;
+      fromAssigneeType: IssueAssigneeType | null;
+      fromAssigneeId: string | null;
+      assigneeType: IssueAssigneeType | null;
+      assigneeId: string | null;
+      issueRevision?: number;
     };
 
 /**
@@ -60,12 +75,14 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  *
  * - **assign**: giving the issue an agent/squad owner. Skipped only when the
  *   issue is KNOWN to be parked, because assigning into the backlog category
- *   never starts a run (`server/internal/service/issue_trigger.go`) and the
+ *   never starts a run (the Rust issue-trigger service) and the
  *   dialog would promise something that cannot happen.
  * - **promote**: moving an already-owned issue out of the backlog category.
  *   That status change alone starts the run (`RunSourceStatus`), so it earns
  *   the same dialog — for built-in `todo` and every custom Todo-category
  *   status alike.
+ * - **review**: entering the Review category. The dialog requires a reviewer
+ *   different from the current owner and sends status + assignee atomically.
  *
  * Unresolvable categories fail toward confirming: a dialog the user dismisses
  * costs a click, a silent start costs an unwanted agent run.
@@ -77,6 +94,25 @@ export function runConfirmIntent(
 ): RunConfirmIntent | null {
   const issueCategory = resolveStatusCategory(issue.status, issue.status_category, catalog);
   const parked = issueCategory === "backlog";
+
+  if (updates.status && updates.status !== issue.status) {
+    const target = resolveStatusCategory(updates.status, undefined, catalog);
+    if (target === "in_review" && issueCategory !== "in_review") {
+      const assigneeWasProvided =
+        Object.prototype.hasOwnProperty.call(updates, "assignee_type") ||
+        Object.prototype.hasOwnProperty.call(updates, "assignee_id");
+      return {
+        issueIds: [issue.id],
+        mode: "review",
+        status: updates.status,
+        fromAssigneeType: issue.assignee_type,
+        fromAssigneeId: issue.assignee_id,
+        assigneeType: assigneeWasProvided ? updates.assignee_type ?? null : null,
+        assigneeId: assigneeWasProvided ? updates.assignee_id ?? null : null,
+        issueRevision: issue.revision,
+      };
+    }
+  }
 
   if (
     (updates.assignee_type === "agent" || updates.assignee_type === "squad") &&

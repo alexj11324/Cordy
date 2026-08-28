@@ -1,7 +1,7 @@
 //! The `mcp` transport: a hook that points at an MCP server the plugin
 //! author already runs, whose tools Cordy adopts.
 //!
-//! Port of `server/internal/service/plugin_mcp_transport.go`. The
+//! The
 //! discovery protocol itself lives in `cordy_remotemcp::discover`; this
 //! module wires the plugin domain around it.
 //!

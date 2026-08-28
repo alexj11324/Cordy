@@ -1,5 +1,4 @@
-//! Lightweight realtime subsystem counters — port of
-//! `server/internal/realtime/metrics.go`.
+//! Lightweight realtime subsystem counters.
 //!
 //! Phase 1 (MUL-1138) extends the phase-0 counter set with subscribe / Redis /
 //! per-scope-room counters. We keep using std-library atomics rather than a

@@ -44,7 +44,7 @@ async function fetchLatestVersion(): Promise<string | null> {
  * A daemon built from source reports a `git describe` string
  * ("v0.4.17-12-gabc1234") or the ldflags default ("dev"), and neither can be
  * ordered against a release tag. This mirrors `IsReleaseVersion` in
- * server/internal/cli/update.go, which is how the daemon's own auto-update
+ * the Rust CLI update command, which is how the daemon's own auto-update
  * loop decides the same question.
  */
 function parseReleaseVersion(v: string): number[] | null {

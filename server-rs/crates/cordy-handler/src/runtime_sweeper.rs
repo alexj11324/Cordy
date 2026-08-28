@@ -99,8 +99,23 @@ impl RuntimeTaskSweeper {
     }
 
     async fn gc_once_at(&self, now: DateTime<Utc>) -> usize {
+        self.gc_once_at_with_timeouts(now, GC_TICK_TIMEOUT, GC_OPERATION_TIMEOUT)
+            .await
+    }
+
+    async fn gc_once_at_with_timeouts(
+        &self,
+        now: DateTime<Utc>,
+        tick_timeout: Duration,
+        operation_timeout: Duration,
+    ) -> usize {
         let stale_before = cutoff(now, OFFLINE_RUNTIME_TTL);
-        match tokio::time::timeout(GC_TICK_TIMEOUT, self.gc_with_budget(stale_before)).await {
+        match tokio::time::timeout(
+            tick_timeout,
+            self.gc_with_budget_with_timeout(stale_before, operation_timeout),
+        )
+        .await
+        {
             Ok(deleted) => deleted,
             Err(_) => {
                 tracing::info!("runtime GC: tick budget exhausted");
@@ -109,9 +124,13 @@ impl RuntimeTaskSweeper {
         }
     }
 
-    async fn gc_with_budget(&self, stale_before: DateTime<Utc>) -> usize {
+    async fn gc_with_budget_with_timeout(
+        &self,
+        stale_before: DateTime<Utc>,
+        operation_timeout: Duration,
+    ) -> usize {
         match tokio::time::timeout(
-            GC_OPERATION_TIMEOUT,
+            operation_timeout,
             runtime::count_stale_offline_runtimes_blocked_by_tasks(
                 &self.pool,
                 stale_before,
@@ -140,7 +159,7 @@ impl RuntimeTaskSweeper {
             }
         }
         let candidates = match tokio::time::timeout(
-            GC_OPERATION_TIMEOUT,
+            operation_timeout,
             runtime::list_stale_offline_runtime_gc_candidates(&self.pool, stale_before, GC_BATCH),
         )
         .await
@@ -164,11 +183,8 @@ impl RuntimeTaskSweeper {
         let mut deleted = 0;
         let mut workspaces = HashSet::new();
         for runtime_id in candidates {
-            match tokio::time::timeout(
-                GC_OPERATION_TIMEOUT,
-                self.gc_runtime(runtime_id, stale_before),
-            )
-            .await
+            match tokio::time::timeout(operation_timeout, self.gc_runtime(runtime_id, stale_before))
+                .await
             {
                 Ok(Ok(Some(workspace_id))) => {
                     deleted += 1;
@@ -611,6 +627,25 @@ mod tests {
         Ok(())
     }
 
+    fn complete_cleanup_on_drop(pool: PgPool, workspace_id: Uuid, user_id: Uuid) {
+        // Tokio may cancel detached teardown as soon as a panicking test drops
+        // its runtime. Run the asynchronous deletion on an independent
+        // executor and join it so setup failures and assertion panics cannot
+        // leak workspace-wide sweep candidates into another contract.
+        let _ = std::thread::spawn(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
+            runtime.block_on(async move {
+                let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
+            });
+        })
+        .join();
+    }
+
     struct SetupCleanupGuard {
         pool: PgPool,
         workspace_id: Uuid,
@@ -638,14 +673,7 @@ mod tests {
             if !self.armed {
                 return;
             }
-            let pool = self.pool.clone();
-            let workspace_id = self.workspace_id;
-            let user_id = self.user_id;
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                runtime.spawn(async move {
-                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
-                });
-            }
+            complete_cleanup_on_drop(self.pool.clone(), self.workspace_id, self.user_id);
         }
     }
 
@@ -728,22 +756,7 @@ mod tests {
 
     impl Drop for RuntimeRows {
         fn drop(&mut self) {
-            let pool = self.pool.clone();
-            let workspace_id = self.workspace_id;
-            // A detached task can be cancelled as soon as the test runtime
-            // begins teardown, leaking all fixture rows into later tests.
-            // Finish cleanup on a small independent runtime before Drop
-            // returns so every fixture is isolated even on panic paths.
-            let _ = std::thread::spawn(move || {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("build runtime cleanup executor");
-                runtime.block_on(async move {
-                    let _ = cleanup_workspace(&pool, workspace_id, Uuid::nil()).await;
-                });
-            })
-            .join();
+            complete_cleanup_on_drop(self.pool.clone(), self.workspace_id, Uuid::nil());
         }
     }
 
@@ -1091,6 +1104,7 @@ mod tests {
                 .bind(format!("rust-recovery-{workspace_id}"))
                 .execute(&pool)
                 .await?;
+            let mut setup_cleanup = SetupCleanupGuard::new(pool.clone(), workspace_id);
             let suffix = workspace_id.simple().to_string();
             let user_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
@@ -1099,6 +1113,7 @@ mod tests {
             .bind(format!("offline-recovery-{suffix}@example.test"))
             .fetch_one(&pool)
             .await?;
+            setup_cleanup.user_id = user_id;
             sqlx::query(
                 "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
             )
@@ -1258,6 +1273,7 @@ mod tests {
             )
             .await?;
 
+            setup_cleanup.disarm();
             Ok(Self {
                 pool,
                 workspace_id,
@@ -1407,14 +1423,7 @@ mod tests {
 
     impl Drop for RecoveryRows {
         fn drop(&mut self) {
-            let pool = self.pool.clone();
-            let workspace_id = self.workspace_id;
-            let user_id = self.user_id;
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                runtime.spawn(async move {
-                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
-                });
-            }
+            complete_cleanup_on_drop(self.pool.clone(), self.workspace_id, self.user_id);
         }
     }
 
@@ -2017,14 +2026,7 @@ mod tests {
 
     impl Drop for GcRows {
         fn drop(&mut self) {
-            let pool = self.pool.clone();
-            let workspace_id = self.workspace_id;
-            let user_id = self.user_id;
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                runtime.spawn(async move {
-                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
-                });
-            }
+            complete_cleanup_on_drop(self.pool.clone(), self.workspace_id, self.user_id);
         }
     }
 
@@ -2058,16 +2060,72 @@ mod tests {
         .await?)
     }
 
+    async fn wait_for_lock_wait(pool: &PgPool, pid: i32) -> anyhow::Result<()> {
+        for _ in 0..500 {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
+                 WHERE pid = $1 AND state = 'active' AND wait_event_type = 'Lock')",
+            )
+            .bind(pid)
+            .fetch_one(pool)
+            .await?;
+            if waiting {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        anyhow::bail!("backend {pid} never waited for the runtime row lock")
+    }
+
+    async fn wait_for_blocked_task_detach(pool: &PgPool) -> anyhow::Result<()> {
+        for _ in 0..500 {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (\
+                    SELECT 1 FROM pg_stat_activity \
+                    WHERE pid <> pg_backend_pid() \
+                      AND state = 'active' \
+                      AND wait_event_type = 'Lock' \
+                      AND query LIKE '%UPDATE agent_task_queue%' \
+                      AND query LIKE '%completed_at IS NOT NULL%'\
+                )",
+            )
+            .fetch_one(pool)
+            .await?;
+            if waiting {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        anyhow::bail!("runtime GC never reached the blocked terminal-task detach")
+    }
+
     #[tokio::test]
     async fn production_runtime_gc_preserves_terminal_history_and_deduplicates_workspace_event() {
         let rows = GcRows::required()
             .await
             .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC contract");
         let result = async {
-            let drainable_one = rows.runtime("drainable-one", "offline", "8 days").await?;
-            let drainable_two = rows.runtime("drainable-two", "offline", "8 days").await?;
-            let blocked = rows.runtime("blocked", "offline", "8 days").await?;
-            let active_agent_runtime = rows.runtime("active-agent", "offline", "8 days").await?;
+            // Fill the complete production candidate batch with fixture-owned
+            // runtimes older than any normal data. The full worker can then
+            // prove its wiring without collecting ambient developer rows.
+            let mut drainable = Vec::with_capacity(GC_BATCH as usize);
+            for index in 0..GC_BATCH {
+                drainable.push(
+                    rows.runtime(
+                        &format!("drainable-{index}"),
+                        "offline",
+                        "1000 years",
+                    )
+                    .await?,
+                );
+            }
+            let drainable_one = drainable[0];
+            let blocked = rows
+                .runtime("blocked", "offline", "1000 years")
+                .await?;
+            let active_agent_runtime = rows
+                .runtime("active-agent", "offline", "1000 years")
+                .await?;
             let fresh = rows.runtime("fresh", "offline", "1 day").await?;
             let online = rows.runtime("online", "online", "1 minute").await?;
 
@@ -2131,6 +2189,10 @@ mod tests {
                         .push(event.clone());
                 });
             }
+            // Put every production stage's cutoff centuries before ambient
+            // data while keeping the ancient fixture runtimes eligible. This
+            // exercises `run_full_once` without sweeping unrelated rows.
+            let isolated_now = Utc::now() - chrono::Duration::days(365 * 900);
             let sweeper = RuntimeTaskSweeper::new(
                 rows.pool.clone(),
                 Arc::new(TestLiveness {
@@ -2146,16 +2208,16 @@ mod tests {
                 None,
                 DEFAULT_RECONNECT_GRACE,
             )
-            .with_clock(Arc::new(FixedClock(Utc::now())));
+            .with_clock(Arc::new(FixedClock(isolated_now)));
             let report = sweeper.run_full_once().await;
             anyhow::ensure!(
-                report.runtimes_gc_deleted >= 2,
-                "runtime GC deleted {} rows, want at least the two drainable candidates",
+                report.runtimes_gc_deleted == GC_BATCH as usize,
+                "runtime GC deleted {} rows, want the isolated fixture batch {GC_BATCH}",
                 report.runtimes_gc_deleted
             );
             anyhow::ensure!(
                 sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = ANY($1::uuid[])")
-                    .bind(vec![drainable_one, drainable_two])
+                    .bind(&drainable)
                     .fetch_one(&rows.pool)
                     .await?
                     == 0,
@@ -2245,6 +2307,13 @@ mod tests {
             .await
             .expect("DATABASE_URL and migrated PostgreSQL are required for runtime GC guards");
         let result = async {
+            let blocked_before = runtime::count_stale_offline_runtimes_blocked_by_tasks(
+                &rows.pool,
+                Utc::now() - chrono::Duration::days(7),
+                GC_BLOCKED_LIMIT,
+            )
+            .await?
+            .unwrap_or_default();
             for (offset, status) in [
                 "queued",
                 "dispatched",
@@ -2325,7 +2394,10 @@ mod tests {
                 DEFAULT_RECONNECT_GRACE,
             );
             let deleted = gc_sweeper
-                .gc_with_budget(Utc::now() - chrono::Duration::days(7))
+                .gc_with_budget_with_timeout(
+                    Utc::now() - chrono::Duration::days(7),
+                    GC_OPERATION_TIMEOUT,
+                )
                 .await;
             anyhow::ensure!(
                 deleted == GC_BATCH as usize,
@@ -2386,7 +2458,10 @@ mod tests {
             )
             .await?
             .unwrap_or_default();
-            anyhow::ensure!(blocked_count >= 5, "blocked runtime gauge observed {blocked_count}, want all five statuses");
+            anyhow::ensure!(
+                blocked_count >= blocked_before + 5,
+                "blocked runtime gauge grew from {blocked_before} to {blocked_count}, want all five fixture statuses"
+            );
             Ok::<(), anyhow::Error>(())
         }
         .await;
@@ -2469,20 +2544,56 @@ mod tests {
                 );
             }
 
-            let delete_runtime = rows.runtime("delete-wins", "offline", "8 days").await?;
-            let delete_issue = rows.issue(641).await?;
+            let delete_runtime = rows.runtime("gc-wins-race", "offline", "8 days").await?;
+            let terminal_issue = rows.issue(641).await?;
+            let terminal_task = rows
+                .task(delete_runtime, terminal_issue, "completed")
+                .await?;
+            mark_task_terminal(&rows.pool, terminal_task, "completed").await?;
+
+            // Stop GC at the detach after it has acquired the runtime owner
+            // lock. The enqueue must then wait behind the real production
+            // fence; releasing the task row lets GC delete first, so the
+            // writer must observe the missing owner and create nothing.
+            let mut task_holder = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM agent_task_queue WHERE id = $1 FOR UPDATE")
+                .bind(terminal_task)
+                .fetch_one(&mut *task_holder)
+                .await?;
+            let stale_before = Utc::now() - chrono::Duration::days(7);
+            let gc_sweeper = sweeper.clone();
+            let gc_handle = tokio::spawn(async move {
+                gc_sweeper.gc_runtime(delete_runtime, stale_before).await
+            });
+            wait_for_blocked_task_detach(&rows.pool).await?;
+
+            let delete_issue = rows.issue(642).await?;
+            let mut writer = rows.pool.acquire().await?;
+            let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+                .fetch_one(&mut *writer)
+                .await?;
+            let agent_id = rows.helper_agent_id;
+            let writer_handle = tokio::spawn(async move {
+                sqlx::query_scalar::<_, Uuid>(
+                    "INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority) \
+                     SELECT $1, $2, $3, 'queued', 0 \
+                     WHERE lock_task_owner_rows($1, $3, $2) RETURNING id",
+                )
+                .bind(agent_id)
+                .bind(delete_runtime)
+                .bind(delete_issue)
+                .fetch_optional(&mut *writer)
+                .await
+            });
+            wait_for_lock_wait(&rows.pool, writer_pid).await?;
+            task_holder.commit().await?;
             anyhow::ensure!(
-                sweeper
-                    .gc_runtime(delete_runtime, Utc::now() - chrono::Duration::days(7))
-                    .await?
-                    .is_some(),
-                "drained runtime was not deleted"
+                gc_handle.await??.is_some(),
+                "GC did not win the owner-lock race"
             );
             anyhow::ensure!(
-                owner_fenced_enqueue(&rows.pool, rows.helper_agent_id, delete_runtime, delete_issue)
-                    .await?
-                    .is_none(),
-                "owner-fenced enqueue created a task for a deleted runtime"
+                writer_handle.await??.is_none(),
+                "owner-fenced enqueue committed after GC acquired the runtime owner lock"
             );
             anyhow::ensure!(
                 sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_task_queue WHERE runtime_id = $1")
@@ -2498,6 +2609,201 @@ mod tests {
         let cleanup = rows.cleanup().await;
         result.expect("runtime GC owner-lock contract failed");
         cleanup.expect("runtime GC owner-lock fixture cleanup failed");
+    }
+
+    #[tokio::test]
+    async fn production_runtime_gc_operation_timeout_rolls_back_and_isolates_candidates() {
+        let rows = GcRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for runtime GC timeout contract",
+        );
+        let result = async {
+            let blocked_runtime = rows
+                .runtime("operation-timeout", "offline", "1000 years")
+                .await?;
+            let terminal_issue = rows.issue(650).await?;
+            let terminal_task = rows
+                .task(blocked_runtime, terminal_issue, "completed")
+                .await?;
+            mark_task_terminal(&rows.pool, terminal_task, "completed").await?;
+            let blocked_chat: Uuid = sqlx::query_scalar(
+                "INSERT INTO chat_session (workspace_id, agent_id, creator_id, runtime_id) \
+                 VALUES ($1, $2, $3, $4) RETURNING id",
+            )
+            .bind(rows.workspace_id)
+            .bind(rows.helper_agent_id)
+            .bind(rows.user_id)
+            .bind(blocked_runtime)
+            .fetch_one(&rows.pool)
+            .await?;
+
+            // Fill the remainder of the production batch with fixture-owned
+            // candidates. Once the first delete times out, every later row
+            // must still be processed and no ambient runtime is eligible.
+            let mut later_runtimes = Vec::with_capacity(GC_BATCH as usize - 1);
+            for index in 1..GC_BATCH {
+                later_runtimes.push(
+                    rows.runtime(&format!("operation-next-{index}"), "offline", "999 years")
+                        .await?,
+                );
+            }
+
+            let mut chat_holder = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM chat_session WHERE id = $1 FOR UPDATE")
+                .bind(blocked_chat)
+                .fetch_one(&mut *chat_holder)
+                .await?;
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: false,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    race_refresh_id: None,
+                    pool: None,
+                }),
+                Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
+                Arc::new(Bus::new()),
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            );
+            let deleted = sweeper
+                .gc_with_budget_with_timeout(
+                    Utc::now() - chrono::Duration::days(7),
+                    Duration::from_secs(1),
+                )
+                .await;
+            chat_holder.commit().await?;
+
+            anyhow::ensure!(
+                deleted == later_runtimes.len(),
+                "timed-out candidate allowed {deleted} deletes, want {} later fixture candidates",
+                later_runtimes.len()
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT count(*) FROM agent_runtime WHERE id = ANY($1::uuid[])"
+                )
+                .bind(&later_runtimes)
+                .fetch_one(&rows.pool)
+                .await?
+                    == 0,
+                "a bad candidate starved later runtime GC candidates"
+            );
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(blocked_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1
+                    && sqlx::query_scalar::<_, i64>(
+                        "SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2"
+                    )
+                    .bind(terminal_task)
+                    .bind(blocked_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                        == 1
+                    && sqlx::query_scalar::<_, i64>(
+                        "SELECT count(*) FROM chat_session WHERE id = $1 AND runtime_id = $2"
+                    )
+                    .bind(blocked_chat)
+                    .bind(blocked_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
+                        == 1,
+                "operation timeout did not roll back task detach and runtime deletion"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("runtime GC operation-timeout/isolation contract failed");
+        cleanup.expect("runtime GC operation-timeout fixture cleanup failed");
+    }
+
+    #[tokio::test]
+    async fn production_runtime_gc_tick_timeout_cancels_and_rolls_back_candidate() {
+        let rows = GcRows::required().await.expect(
+            "DATABASE_URL and migrated PostgreSQL are required for runtime GC tick contract",
+        );
+        let result = async {
+            let runtime_id = rows
+                .runtime("tick-timeout", "offline", "1000 years")
+                .await?;
+            let issue_id = rows.issue(651).await?;
+            let task_id = rows.task(runtime_id, issue_id, "completed").await?;
+            mark_task_terminal(&rows.pool, task_id, "completed").await?;
+            let chat_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO chat_session (workspace_id, agent_id, creator_id, runtime_id) \
+                 VALUES ($1, $2, $3, $4) RETURNING id",
+            )
+            .bind(rows.workspace_id)
+            .bind(rows.helper_agent_id)
+            .bind(rows.user_id)
+            .bind(runtime_id)
+            .fetch_one(&rows.pool)
+            .await?;
+            let mut chat_holder = rows.pool.begin().await?;
+            sqlx::query("SELECT id FROM chat_session WHERE id = $1 FOR UPDATE")
+                .bind(chat_id)
+                .fetch_one(&mut *chat_holder)
+                .await?;
+
+            let sweeper = RuntimeTaskSweeper::new(
+                rows.pool.clone(),
+                Arc::new(TestLiveness {
+                    available: false,
+                    alive: HashSet::new(),
+                    forgotten: Arc::new(Mutex::new(Vec::new())),
+                    race_id: None,
+                    race_refresh_id: None,
+                    pool: None,
+                }),
+                Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
+                Arc::new(Bus::new()),
+                None,
+                DEFAULT_RECONNECT_GRACE,
+            );
+            let deleted = sweeper
+                .gc_once_at_with_timeouts(
+                    Utc::now(),
+                    Duration::from_millis(250),
+                    Duration::from_secs(5),
+                )
+                .await;
+            chat_holder.commit().await?;
+            anyhow::ensure!(deleted == 0, "timed-out GC tick reported {deleted} deletes");
+            anyhow::ensure!(
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(runtime_id)
+                    .fetch_one(&rows.pool)
+                    .await?
+                    == 1
+                    && sqlx::query_scalar::<_, i64>(
+                        "SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2"
+                    )
+                    .bind(task_id)
+                    .bind(runtime_id)
+                    .fetch_one(&rows.pool)
+                    .await?
+                        == 1
+                    && sqlx::query_scalar::<_, i64>(
+                        "SELECT count(*) FROM chat_session WHERE id = $1 AND runtime_id = $2"
+                    )
+                    .bind(chat_id)
+                    .bind(runtime_id)
+                    .fetch_one(&rows.pool)
+                    .await?
+                        == 1,
+                "tick timeout did not cancel and roll back the in-flight candidate"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+        let cleanup = rows.cleanup().await;
+        result.expect("runtime GC tick-timeout contract failed");
+        cleanup.expect("runtime GC tick-timeout fixture cleanup failed");
     }
 
     struct DelegatedSweeperRows {
@@ -2522,6 +2828,7 @@ mod tests {
                 .bind(format!("rust-delegated-sweeper-{workspace_id}"))
                 .execute(&pool)
                 .await?;
+            let mut setup_cleanup = SetupCleanupGuard::new(pool.clone(), workspace_id);
             let user_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO \"user\" (name, email) VALUES ($1, $2) RETURNING id",
             )
@@ -2532,6 +2839,7 @@ mod tests {
             ))
             .fetch_one(&pool)
             .await?;
+            setup_cleanup.user_id = user_id;
             sqlx::query(
                 "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
             )
@@ -2630,6 +2938,7 @@ mod tests {
             .execute(&pool)
             .await?;
 
+            setup_cleanup.disarm();
             Ok(Self {
                 pool,
                 workspace_id,
@@ -2647,14 +2956,7 @@ mod tests {
 
     impl Drop for DelegatedSweeperRows {
         fn drop(&mut self) {
-            let pool = self.pool.clone();
-            let workspace_id = self.workspace_id;
-            let user_id = self.user_id;
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                runtime.spawn(async move {
-                    let _ = cleanup_workspace(&pool, workspace_id, user_id).await;
-                });
-            }
+            complete_cleanup_on_drop(self.pool.clone(), self.workspace_id, self.user_id);
         }
     }
 

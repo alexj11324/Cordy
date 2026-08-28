@@ -1,4 +1,4 @@
-//! VCS provider abstraction (port of server/internal/integrations/vcs):
+//! VCS provider abstraction:
 //! Forgejo/Gitea and GitLab webhook + token adapters behind one
 //! normalized PR/CI event shape.
 

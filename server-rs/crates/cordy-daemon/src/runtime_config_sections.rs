@@ -1,18 +1,11 @@
-#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of the execenv helpers the per-turn prompt consumes:
-//! `runtime_config_sections.go` (SessionContinuityNotice* constants,
-//! BuildTaskInitiatorBlock, BuildConnectedAppsBlock) and
-//! `reply_instructions.go` (BuildNewCommentsHint, BuildResumedCommentsHint,
-//! BuildColdCommentsHint, BuildCommentReplyInstructions,
-//! BuildMultiThreadCommentReplyInstructions).
+//! Runtime-context sections consumed by the daemon's per-turn prompts.
 //!
-//! These are hosted inside cordy-daemon because their only daemon-side
-//! consumer is `crate::prompt` (the per-turn user message); the brief-side
-//! writers remain with lane E1a's runtime-config port.
+//! This module owns continuity notices, task initiator and connected-app
+//! blocks, and comment-reply instructions.
 
 use crate::execenv::execenv::{ConnectedApp, ThreadReplyTarget};
 
-/// SessionContinuityNoticeIssue (MUL-5722 wording; see Go rationale block).
+/// Session continuity notice for issue-backed tasks.
 pub(crate) fn session_continuity_notice_issue() -> &'static str {
     "## Session Continuity Notice\n\nThis run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The issue and its full comment history are unaffected — that record is the authoritative version of this conversation, and reading it (which your workflow already requires) reconstructs it. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it, and do not claim continuity the record cannot back up. Do not open your reply by announcing this — raise it only where it actually matters, such as when the user refers to reasoning you never wrote down.\n\n"
 }
@@ -30,8 +23,7 @@ pub(crate) fn session_continuity_notice_unrecoverable() -> &'static str {
     "## Session Continuity Notice\n\nThis run was meant to continue an earlier conversation, but that session's context could NOT be restored — you are starting fresh with no memory of the previous turns. That history is not readable from anywhere now: there is no command that fetches it, and only the context already in this message survives. **When you reply, tell the user up front (one short sentence) that the previous conversation context was unavailable and this is a new session**, so they understand why the thread did not carry over.\n\n"
 }
 
-/// sanitizeNameForBriefMarkdown (runtime_config.go): single-line plain-text
-/// token safe for markdown inline constructs.
+/// Converts a name to a single-line token safe for Markdown inline constructs.
 fn sanitize_name_for_brief_markdown(name: &str) -> String {
     let mut b = String::with_capacity(name.len());
     let mut prev_space = false;
@@ -173,7 +165,7 @@ pub(crate) fn build_connected_apps_block(apps: &[ConnectedApp]) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// reply_instructions.go
+// Comment reply instructions.
 // ---------------------------------------------------------------------------
 
 fn active_thread_id(trigger_thread_id: &str, trigger_comment_id: &str) -> String {
@@ -254,14 +246,14 @@ to scan the other threads cheaply, and expand only what looks relevant.\n\n"
 
 /// BuildCommentReplyInstructions: the canonical reply cookbook. The template is
 /// platform- AND provider-agnostic (the failure lives at the shell layer);
-/// the OS split matches Go's runtimeGOOS branch at compile time via cfg.
+/// the OS split is selected at compile time.
 pub(crate) fn build_comment_reply_instructions(
     provider: &str,
     issue_id: &str,
     trigger_comment_id: &str,
     squad_leader: bool,
 ) -> String {
-    let _ = provider; // retained for caller symmetry (Go does the same)
+    let _ = provider; // Retained for caller symmetry.
     if trigger_comment_id.is_empty() {
         return String::new();
     }

@@ -2,7 +2,6 @@
 //! bot gets a "link your account" prompt (minted here, delivered by the
 //! OutboundReplier), clicks through to the in-product redeem page, and their
 //! Slack user id is bound to their Cordy account. Port of
-//! `server/internal/integrations/slack/binding.go`.
 //!
 //! It mirrors lark.BindingTokenService but runs on the generic channel_*
 //! queries with channel_type='slack' (lark's ChannelStore hardcodes 'feishu').

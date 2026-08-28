@@ -1,7 +1,6 @@
 //! Telegram Bot API client: the JSON envelope, long-poll getUpdates, and
 //! the send/edit surface the adapter needs.
 //!
-//! Port of `server/internal/integrations/telegram/api.go`.
 
 use std::time::Duration;
 

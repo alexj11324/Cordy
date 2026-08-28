@@ -1,5 +1,5 @@
-//! Port of `server/internal/daemon/gc.go` (1,509 lines) plus the unix
-//! `processtree/{run.go,controller_unix.go}` inlined as [`processtree`].
+//! Workspace and repository-cache garbage collection with process-tree-safe
+//! command execution in [`processtree`].
 //!
 //! Deviations from Go:
 //! - `*Daemon` receiver → [`GcHost`] trait; config fields live in
@@ -32,7 +32,7 @@ use crate::repocache::{CancelCause, Ctx};
 // processtree (inlined port of processtree/run.go + controller_unix.go).
 // ---------------------------------------------------------------------------
 
-/// Port of `server/internal/daemon/processtree`: runs bounded helper commands
+/// Runs bounded helper commands
 /// whose descendants must not survive cancellation. Uses a Unix process group
 /// (`setpgid`) — unix only, matching the Go build tag.
 #[cfg(unix)]
@@ -524,10 +524,7 @@ pub(crate) mod processtree {
 /// explicitly what to do with it.
 pub(crate) const REPOS_DIR_NAME: &str = ".repos";
 
-// S9-integration: mirrors daemon client requestError + isAccessNotFound
-// (gc.go:472–475). The real client lives behind GcHost.
-
-/// Stand-in for the daemon client's `requestError`.
+/// Error returned by a GC control-plane request.
 #[derive(Debug, thiserror::Error)]
 #[error("request failed with status {status_code}")]
 pub(crate) struct RequestError {
@@ -548,12 +545,10 @@ fn is_access_not_found(err: &anyhow::Error) -> bool {
 /// `IssueGCCheckResult` (daemon client): outcome of one issue GC check.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct IssueGCCheckResult {
-    pub(crate) id: String,
     pub(crate) found: bool,
     pub(crate) status: String,
     pub(crate) updated_at: Option<DateTime<Utc>>,
-    /// Go stores `err error`; we keep the rendered message (Clone needed for
-    /// the batch-check map fan-out).
+    /// Rendered error message, kept cloneable for batch-check fan-out.
     pub(crate) err: Option<String>,
 }
 
@@ -565,18 +560,10 @@ pub(crate) struct IssueGCCheckStatus {
     pub(crate) updated_at: Option<DateTime<Utc>>,
 }
 
-// S9-integration: mirrors execenv.ManagedReclaimableArtifactSubpaths and the
-// hasManagedArtifact probe (codex-home/.sandbox-bin under the env root).
-
-/// `execenv.ManagedReclaimableArtifactSubpaths`: labels logged at GC startup.
+/// Managed artifact labels logged at GC startup.
 fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
     crate::execenv::reclaimable::managed_reclaimable_artifact_subpaths()
 }
-
-// S9-integration: mirrors execenv.PruneCodexSessionStores /
-// PruneHermesMemoryStores / PruneHermesSessionStores. Each returns
-// (storesRemoved, bytesReclaimed); the real implementations live in execenv
-// and receive `reserve_store_for_deletion` as a reservation callback.
 
 /// Reservation callback handed to store pruners (`d.reserveStoreForDeletion`).
 pub(crate) type ReserveStoreForDeletion<'a> =
@@ -606,7 +593,10 @@ fn prune_hermes_memory_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let Some(root) = profile_dir(profile).map(|dir| dir.join("hermes-state")) else {
+    let Some(root) = crate::identity::profile_dir(profile)
+        .ok()
+        .map(|dir| dir.join("hermes-state"))
+    else {
         return (0, 0);
     };
     prune_store_tree(&root, 2, ttl, now, reserve)
@@ -618,33 +608,13 @@ fn prune_hermes_session_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let Some(root) = profile_dir(profile).map(|dir| dir.join("hermes-sessions")) else {
+    let Some(root) = crate::identity::profile_dir(profile)
+        .ok()
+        .map(|dir| dir.join("hermes-sessions"))
+    else {
         return (0, 0);
     };
     prune_store_tree(&root, 3, ttl, now, reserve)
-}
-
-fn profile_dir(profile: &str) -> Option<PathBuf> {
-    if profile.contains(['/', '\\']) || profile == "." || profile == ".." {
-        return None;
-    }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT").filter(|v| !v.is_empty()) {
-        let root = PathBuf::from(root);
-        if !root.is_absolute() {
-            return None;
-        }
-        return Some(if profile.is_empty() {
-            root
-        } else {
-            root.join("profiles").join(profile)
-        });
-    }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    Some(if profile.is_empty() {
-        home.join(".cordy")
-    } else {
-        home.join(".cordy").join("profiles").join(profile)
-    })
 }
 
 fn shared_codex_home() -> Option<PathBuf> {
@@ -1228,10 +1198,6 @@ async fn gc_workspace_issues<H: GcHost>(
     cleaned
 }
 
-fn candidates_len_hint(_: &[IssueGcCandidate]) -> i32 {
-    0
-}
-
 // ---------------------------------------------------------------------------
 // Decision plumbing (gc.go lines 266–350).
 // ---------------------------------------------------------------------------
@@ -1467,7 +1433,6 @@ async fn gc_decision_issue<H: GcHost>(
         task_dir,
         meta,
         IssueGCCheckResult {
-            id: meta.issue_id.clone(),
             found: true,
             status: status.status,
             updated_at: status.updated_at,

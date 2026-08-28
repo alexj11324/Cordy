@@ -1,4 +1,4 @@
-//! Plugin auth routing — port of `server/internal/middleware/plugin_auth.go`.
+//! Plugin auth routing.
 //!
 //! Lets the Action API be reached two ways without weakening either:
 //!

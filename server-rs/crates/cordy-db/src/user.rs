@@ -1,15 +1,14 @@
-//! User queries — port of `server/pkg/db/queries/user.sql`.
+//! User queries.
 //!
 //! Compile-time checked via `query_as!`: every statement is verified against
 //! the live schema at build time (or `.sqlx` offline cache in CI), so any
-//! drift between this port and the Go/sqlc original fails the build.
+//! schema drift fails the build.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
-/// Mirrors the Go `db.User` model (generated/models.go). JSON field names
-/// match the Go json tags so API contracts stay byte-identical.
+/// Persisted user model. JSON field names are part of the public API contract.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct User {
     pub id: Uuid,

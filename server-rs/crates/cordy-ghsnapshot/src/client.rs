@@ -1,6 +1,6 @@
 //! GitHub App-authenticated API client for the PR snapshot pipeline.
 //!
-//! Port of `server/internal/integrations/ghsnapshot/client.go`. Layers:
+//! Layers:
 //! App JWT → installation access token (cached per installation, renewed
 //! early, concurrent mints collapsed) → GraphQL calls.
 //!

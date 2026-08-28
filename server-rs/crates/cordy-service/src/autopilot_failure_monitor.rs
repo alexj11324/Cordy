@@ -1,6 +1,4 @@
-//! Sustained-failure Autopilot monitor — port of
-//! `server/cmd/server/autopilot_failure_monitor.go`.
-
+//! Sustained-failure Autopilot monitor.
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;

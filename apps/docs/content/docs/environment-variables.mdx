@@ -36,7 +36,7 @@ You also need to pick an email service, otherwise verification codes and invitat
 | `PORT` | `8080` | API listen port |
 | `JWT_SECRET` | required in production | Secret for sign-in JWTs and some signing flows; production refuses to boot on empty or known placeholders |
 | `APP_ENV` | empty | Set to `production` in production |
-| `AUTH_TOKEN_TTL` | `720h` (30 days) | Lifetime of browser JWTs and cookies; accepts a Go duration or a positive integer of seconds |
+| `AUTH_TOKEN_TTL` | `720h` (30 days) | Lifetime of browser JWTs and cookies; accepts a duration or a positive integer of seconds |
 | `LOG_LEVEL` | application default | Log level |
 | `CORDY_SHUTDOWN_HOLD_DURATION` | `0` | How long to wait after a termination signal before graceful shutdown begins |
 | `CORDY_RUNTIME_RECONNECT_GRACE` | `3h` | How long an offline runtime may reconnect before its in-flight tasks fail; values below `150s` are clamped |
@@ -268,7 +268,7 @@ Supported keys:
 
 A few value rules:
 
-- Duration keys accept positive Go durations (such as `10s`, `2h`); `0s` and negative values are rejected. The one exception is `agent_timeout`: `0s` is valid and explicitly disables the run time limit.
+- Duration keys accept positive durations (such as `10s`, `2h`); `0s` and negative values are rejected. The one exception is `agent_timeout`: `0s` is valid and explicitly disables the run time limit.
 - Passing an empty string clears a persisted value and falls back to the env var or built-in default, for example `cordy config set poll_interval ""`.
 - `max_concurrent_tasks` requires a non-negative integer.
 - Relative `workspaces_root` values are converted to absolute paths when saved.

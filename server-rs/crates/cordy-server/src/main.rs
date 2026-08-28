@@ -1,4 +1,4 @@
-//! Cordy HTTP server — Rust replacement for `server/cmd/server`.
+//! Cordy HTTP server entry point.
 //!
 //! This is the S1 vertical slice from the migration plan: config loading,
 //! pg pool, and health endpoints. Routes are ported domain-by-domain in
@@ -459,21 +459,8 @@ async fn build_production_router(
         lark_backfill_metrics,
     )
     .await?;
-    let scheduler = cordy_scheduler::Manager::new(
-        state.pool.clone(),
-        cordy_scheduler::ManagerOptions::default(),
-    );
-    if let Err(error) =
-        scheduler.register(cordy_scheduler::task_usage_hourly_job(state.pool.clone()))
-    {
-        tracing::warn!(%error, "scheduler: failed to register task usage hourly rollup job");
-    }
-    if let Err(error) = scheduler.register(cordy_scheduler::autopilot_schedule_dispatch_job(
-        state.pool.clone(),
-        state.autopilots.clone(),
-    )) {
-        tracing::warn!(%error, "scheduler: failed to register autopilot schedule dispatch job");
-    }
+    let scheduler =
+        cordy_scheduler::production_manager(state.pool.clone(), state.autopilots.clone())?;
     let scheduler = scheduler.start(root_cancel.child_token())?;
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),

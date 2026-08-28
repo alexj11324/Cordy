@@ -42,7 +42,7 @@ import type {
 
 // Mapping is exhaustive over the current backend enum but every consumer
 // site falls back to a generic "unknown" visual when the server adds a new
-// value — see the API Response Compatibility rules in CLAUDE.md.
+// value — see the API Response Compatibility rules in AGENTS.md.
 type StatusVisual = {
   color: string;
   icon: typeof CheckCircle2;

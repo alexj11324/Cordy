@@ -2,7 +2,7 @@
 //! /api/v1 REST surface, same X-Gitea-Signature HMAC-SHA256 webhooks, same
 //! pull_request / status event shapes.
 //!
-//! Port of `server/internal/integrations/vcs/forgejo.go`. One struct serves
+//! One struct serves
 //! both kinds; it registers under Kind::FORGEJO and Kind::GITEA so the only
 //! user-visible difference is the provider label.
 

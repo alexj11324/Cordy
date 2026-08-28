@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/local_skills.go` — discovery and import of
+//! Discovery and import of
 //! runtime-local skill directories (per-provider roots, the universal
 //! `~/.agents/skills` root, and Claude plugin-contributed skills).
 //!
@@ -14,11 +14,8 @@
 //! - `runtimeLocalSkillSummary` / `runtimeLocalSkillBundle` →
 //!   [`RuntimeLocalSkillSummary`] / [`RuntimeLocalSkillBundle`]
 //!
-//! S9-integration: SKILL.md frontmatter parsing mirrors
-//! `internal/skill.ParseSkillFrontmatter` (YAML name/description) via the
-//! same fence + YAML decode shape used by cordy-service's plugin_skill port;
-//! the binary-extension heuristic is the conservative blacklist from
-//! `internal/skill/binary.go`.
+//! SKILL.md frontmatter uses the shared YAML name/description shape; binary
+//! files are rejected through a conservative extension blacklist.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;

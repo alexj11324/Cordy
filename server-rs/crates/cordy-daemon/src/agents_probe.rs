@@ -1,20 +1,7 @@
-#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/agents_probe.go` — discovery of installed
+//! Discovery of installed
 //! built-in agent CLIs (PATH lookup + login-shell fallback + Codex Desktop
 //! app-bundle probe + DSH profile probe).
-//!
-//! Symbol map:
-//! - `probeAgentCLIs` → [`probe_agent_clis`]
-//! - `cachedShellResolvedAgents` / `shellResolveEnvKey` /
-//!   `shellResolveTTL` → [`cached_shell_resolved_agents`] /
-//!   [`shell_resolve_env_key`] / [`SHELL_RESOLVE_TTL`]
-//! - `probeDshCordyProfile` → [`probe_dsh_cordy_profile`]
-//! - `defaultAgentCommandNames` → [`default_agent_command_names`]
-//! - `codexDesktopAppBundlePaths` → [`codex_desktop_app_bundle_paths`]
-//!
-//! The login-shell resolver itself (`resolveAgentsViaLoginShell` /
-//! `buildLoginShellResolveScript` / `isSafeAgentName`) already lives in
-//! config.rs from lane A and is reused here.
+//! The login-shell resolver is shared with daemon configuration.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -81,27 +68,26 @@ pub(crate) fn default_agent_command_names() -> Vec<&'static str> {
     names
 }
 
-/// `agent.BuiltinRuntimes` default commands (pkg/agent/builtin_runtimes.go).
+/// Default commands for built-in runtime identities.
 pub(crate) fn builtin_runtime_commands() -> Vec<&'static str> {
     vec!["omp"]
 }
 
-/// Built-in runtime identity descriptors the daemon probes independently
-/// (pkg/agent/builtin_runtimes.go). Adding a new fork is an entry here.
+/// Built-in runtime identity descriptors the daemon probes independently.
+/// Adding a new fork is an entry here.
 pub(crate) struct BuiltinRuntimeDesc {
     pub id: &'static str,
     pub env_prefix: &'static str,
     pub default_command: &'static str,
-    pub display_name: &'static str,
 }
 
 pub(crate) const BUILTIN_RUNTIMES: &[BuiltinRuntimeDesc] = &[BuiltinRuntimeDesc {
     id: "omp",
     env_prefix: "CORDY_OMP",
     default_command: "omp",
-    display_name: "Oh-My-Pi",
 }];
 
+#[cfg(test)]
 pub(crate) fn builtin_runtime_by_id(id: &str) -> Option<&'static BuiltinRuntimeDesc> {
     BUILTIN_RUNTIMES.iter().find(|d| d.id == id)
 }

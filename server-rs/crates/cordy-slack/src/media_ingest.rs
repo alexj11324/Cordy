@@ -1,5 +1,4 @@
-//! Slack media ingestion — port of
-//! `server/internal/integrations/slack/media_ingest.go`.
+//! Slack media ingestion.
 //!
 //! Runs after a message has been accepted and persisted, keeping network and
 //! storage I/O off the connector acknowledgement path. HasMedia only inspects

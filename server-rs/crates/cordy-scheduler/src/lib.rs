@@ -23,6 +23,19 @@ pub use spec::{
     Scope, GLOBAL_SCOPE,
 };
 
+/// Builds the single production scheduler assembly used by the server.
+/// Registration failures are startup errors: silently running only one of
+/// the durable jobs would leave production partially scheduled.
+pub fn production_manager(
+    pool: sqlx::PgPool,
+    dispatcher: std::sync::Arc<dyn AutopilotScheduleDispatcher>,
+) -> anyhow::Result<std::sync::Arc<Manager>> {
+    let manager = Manager::new(pool.clone(), ManagerOptions::default());
+    manager.register(task_usage_hourly_job(pool.clone()))?;
+    manager.register(autopilot_schedule_dispatch_job(pool, dispatcher))?;
+    Ok(manager)
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("scheduler lease lost")]
 pub struct LeaseLost;

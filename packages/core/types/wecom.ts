@@ -1,9 +1,9 @@
 /**
  * A WeCom smart-bot ("智能机器人" / aibot) installation bound to a single
  * Cordy agent. Wire shape mirrors `WecomInstallationResponse` in
- * `server/internal/handler/wecom_web.go`. Any new field the backend adds MUST
+ * the Rust WeCom handler. Any new field the backend adds MUST
  * default to optional so older desktop builds keep parsing the response — see
- * CLAUDE.md → API Compatibility.
+ * AGENTS.md → API Compatibility.
  */
 export interface WecomInstallation {
   id: string;

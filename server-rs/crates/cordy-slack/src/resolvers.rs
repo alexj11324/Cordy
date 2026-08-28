@@ -1,7 +1,6 @@
 //! Slack resolvers connecting the channel-agnostic inbound pipeline to Slack
 //! installation routing, identity binding, deduplication, session persistence,
-//! auditing, and the typing indicator. Port of
-//! `server/internal/integrations/slack/resolvers.go`. Shared channel state is
+//! auditing, and the typing indicator. Shared channel state is
 //! stored through the generic channel tables.
 
 use std::sync::Arc;

@@ -170,7 +170,7 @@ describe("useUnarchiveInbox", () => {
     // and re-pull both the workspace list (the Inbox nav count) and the
     // cross-workspace summary (the switcher dot). The server's half — that
     // UnarchiveInboxItem leaves `read` alone — is pinned by
-    // TestUnarchiveInboxPreservesUnread in the Go suite.
+    // the Rust inbox contract suite.
     queryClient.setQueryData<InboxItem[]>(inboxKeys.archived(WORKSPACE_ID), [
       item({ id: "inbox-1", read: false }),
     ]);

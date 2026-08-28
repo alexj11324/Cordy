@@ -1,9 +1,7 @@
 //! The channel-agnostic runtime that DRIVES the channel adapters defined
 //! in `cordy-channel`.
 //!
-//! Port of `server/internal/integrations/channel/engine` (MUL-3620, the
-//! "通用引擎" generalized out of the Feishu-specific lark.Hub /
-//! lark.Dispatcher).
+//! This is the generalized channel engine tracked by MUL-3620.
 //!
 //! It provides:
 //!
@@ -20,9 +18,8 @@
 //!    arrive via a channel (reply goes to IM) or directly from
 //!    web/mobile (reply stays in Cordy, MUL-4988)?
 //!
-//! Supervisor / Router / Session — the three large state machines of the
-//! Go package — are ported in follow-up slices; their seams live here
-//! already ([`lease::LeaseStore`], `cordy_channel::Registry`,
+//! Supervisor, router, and session state machines use the shared seams defined
+//! here ([`lease::LeaseStore`], `cordy_channel::Registry`,
 //! `cordy_channel::InboundHandler`).
 
 pub mod batcher;

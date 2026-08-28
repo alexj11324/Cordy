@@ -1,6 +1,4 @@
-//! The outbound sender and the per-installation Socket Mode connection. Port
-//! of `server/internal/integrations/slack/channel.go` (sender) and
-//! `slack_channel.go` (connection).
+//! The outbound sender and per-installation Socket Mode connection.
 //!
 //! Under the bring-your-own-app (BYO) model every Slack installation carries
 //! its own Slack app — its own app-level token (`xapp-`, stored encrypted in

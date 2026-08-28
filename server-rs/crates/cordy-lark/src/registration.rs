@@ -1,5 +1,4 @@
-//! Lark PersonalAgent registration — port of
-//! `server/internal/integrations/lark/registration.go`.
+//! Lark PersonalAgent registration.
 //!
 //! A 1:1 implementation of RFC 8628 (OAuth 2.0 Device Authorization Grant)
 //! against accounts.feishu.cn (mainland) / accounts.larksuite.com

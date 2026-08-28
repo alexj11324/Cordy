@@ -47,7 +47,7 @@ Cordy 코드를 작성하거나, 번역을 변경하거나, 중국어 제품 카
 - 테스트: `<file>.test.ts(x)`로 같은 위치에 배치
 - Store (Zustand): `<feature>-store.ts`, `use<Feature>Store`로 export
 
-### 데이터베이스 (Go + sqlc)
+### 데이터베이스 (Rust + SQLx)
 
 - 테이블: `snake_case` 단수 (`user`, `workspace`, `agent_runtime`)
 - 컬럼: `snake_case` (`workspace_id`, `created_at`, `last_seen_at`)
@@ -57,12 +57,12 @@ Cordy 코드를 작성하거나, 번역을 변경하거나, 중국어 제품 카
 - 데이터베이스 foreign key, cascade delete, cascade update를 만들지 않고 관계 검사와 정리는 애플리케이션 계층에서 수행
 - 모든 index는 `CREATE INDEX CONCURRENTLY` 또는 `CREATE UNIQUE INDEX CONCURRENTLY`를 사용하고 각 concurrent index를 단일 문장 migration 파일에 분리
 
-### Go
+### Rust
 
-- 표준 `gofmt` + `go vet`. 예외 없음.
-- Handler 파일은 도메인을 반영: `agent.go`, `auth.go`, `runtime.go`
-- 테스트: `<file>_test.go`로 같은 위치에 배치
-- handler에서의 UUID 파싱은 루트 `CLAUDE.md`의 규칙을 따릅니다 — 경계 입력에는 `parseUUIDOrBadRequest`, 신뢰할 수 있는 왕복에는 `parseUUID`(panic 버전), 절대 error를 확인하지 않고 `util.ParseUUID`를 직접 사용하지 마세요.
+- 표준 `rustfmt` + `clippy`. 예외 없음.
+- Handler 파일은 도메인을 반영: `agent.rs`, `auth.rs`, `runtime.rs`
+- 테스트는 같은 파일의 `#[cfg(test)]` module 또는 crate의 `tests/` directory에 배치
+- 경계 입력은 명시적으로 parse하고 validate하며, 신뢰할 수 없는 UUID나 request field에서 panic하지 않기
 
 ### TypeScript
 
@@ -84,7 +84,7 @@ Cordy 코드를 작성하거나, 번역을 변경하거나, 중국어 제품 카
 
 ### 코드 내 주석
 
-영어만 사용합니다. 레포는 Go와 TypeScript 모두에 이를 강제합니다. 코드에서 중국어 주석을 발견하면 그것은 버그이니 교체하세요.
+영어만 사용합니다. 레포는 Rust와 TypeScript 모두에 이를 강제합니다. 코드에서 중국어 주석을 발견하면 그것은 버그이니 교체하세요.
 
 ### 커밋 메시지
 
@@ -306,7 +306,7 @@ i18next는 `_one` / `_other`를 사용합니다; 중국어에는 문법적 수�
 
 이곳의 규칙을 변경하면 다음도 함께 수행하세요:
 
-1. 관련 locale JSON / CLAUDE.md / 문서 페이지에 적용
+1. 관련 locale JSON / AGENTS.md / 문서 페이지에 적용
 2. PR 설명에 변경 사항을 기록하여 리뷰어가 다운스트림 정리를 살펴보도록 알리기
 
 이 페이지가 계약입니다; 다른 어떤 것도 이를 무시할 수 없습니다.

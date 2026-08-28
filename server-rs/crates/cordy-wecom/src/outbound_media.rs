@@ -1,5 +1,4 @@
 //! Delivering the files an agent produced. Port of
-//! `server/internal/integrations/wecom/outbound_media.go`.
 //!
 //! The agent's side of this already exists and is platform-agnostic: it runs
 //! `cordy attachment upload <path>`, the file lands in object storage, and

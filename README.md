@@ -6,7 +6,7 @@
   <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
 </picture>
 
-**End to End MAS Control Plane for Individual and Teams**
+**End to End Multi agent system Control panel for long-Horizon tasks**
 
 [![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
@@ -14,33 +14,23 @@
 
 </div>
 
-Patchbay is an open-source control plane for orchestrating multi-agent systems on long-horizon tasks. It automatically decomposes ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
+Patchbay is an open-source control panel for orchestrating multi-agent systems on long-horizon tasks. It automatically decomposes your ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
 
-The name comes from a physical patch bay: a visible routing surface that
-connects inputs and outputs without hiding the path between them.
+## What Patchbay Can Do
 
-## What Patchbay does
-
-- **Keeps work connected.** Requirements, agent runs, progress, blockers, and
-  review live on the same issue.
-- **Runs agents where the code lives.** A local daemon launches authenticated
-  coding-agent CLIs on your machine or a runtime you operate.
-- **Makes execution inspectable.** Follow events, logs, retries, timeouts, and
-  usage instead of reconstructing a terminal session later.
-- **Preserves human control.** Completed work returns for review before it is
-  accepted or shipped.
-- **Fits different work surfaces.** The repository contains web, desktop, and
-  iOS clients plus a CLI and API.
-- **Can be self-hosted.** Run the application and PostgreSQL on your own
-  infrastructure.
-
-Patchbay does not bundle a model or coding agent. It coordinates compatible
-agent CLIs that you install and authenticate separately.
+- **Auto Decompose Tasks** Your goals will be decomposed into actionable tasks depending on the dependency by an agent with well organized prompt.
+- **Kanban** Each task will be available on the Kanban, so you and your team could track the progress of the project on one plane.
+- **End to end tasks orchestration** A live agent orchestrator monitors the progress of each tasks and schedules the execution.
+- **Bring your own subscriptions** All tasks running on your local agents via Agent client protocol(ACP)
+- **Makes tasks interactive.** All actions logs on the tasks page as a thread. You can assign any task to any Agent and team member at any time.
+- **Human in the loop** Steer agent when drifting.
+- **Work on your preferred platform** Web, desktop, Mobile, CLI and API.
+- **Self-host** running the program on your own infrastructure.
 
 ## Architecture
 
 ```text
- Web · Desktop · iOS
+ Web · Desktop · Mobile · CLI
           │
           ▼
  Next.js / shared UI ───────► Rust API + WebSocket server
@@ -52,22 +42,17 @@ agent CLIs that you install and authenticate separately.
                                Local agent daemon
                                       │
                                       ▼
-                            Installed coding-agent CLI
+                               Agents via ACP
 ```
 
-| Layer | Current implementation |
+| Components | Current implementation |
 | --- | --- |
 | Web | Next.js App Router |
 | Desktop | Electron with shared web UI packages |
-| Mobile | Expo / React Native for iOS |
+| Mobile | Expo / React Native|
 | Backend | Rust, Axum, SQLx, and WebSocket |
 | Database | PostgreSQL 17 with pgvector |
-| Local runtime | Rust CLI and daemon launching installed agent CLIs |
-
-The Rust server, CLI, migration runner, and backfill binaries are the default
-production entrypoints. Legacy Go source remains temporarily as migration
-evidence and for compatibility checks; its final removal is tracked in the
-[Go-to-Rust migration audit](tasks/go-to-rust-migration-audit.md).
+| Local runtime | Local daemon launching installed agent via ACP |
 
 ## Run from source
 
@@ -77,9 +62,6 @@ evidence and for compatibility checks; its final removal is tracked in the
 - pnpm 10.28.2
 - a stable Rust toolchain
 - Docker with Docker Compose for PostgreSQL
-
-Go is only needed for the temporary legacy compatibility suite while the final
-migration gate remains open.
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git patchbay
@@ -104,7 +86,6 @@ pnpm build
 - [CLI and agent daemon](CLI_AND_DAEMON.md)
 - [Contributing](CONTRIBUTING.md)
 - [Advanced self-hosting configuration](SELF_HOSTING_ADVANCED.md)
-- [Migration audit](tasks/go-to-rust-migration-audit.md)
 
 Some internal package, executable, environment-variable, and storage names
 still use the previous product identifier. They are retained where changing a

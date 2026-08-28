@@ -1,9 +1,9 @@
 /** A Telegram bot installation bound to a single Cordy agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
- * `server/internal/handler/telegram.go`. New fields the backend adds in the
+ * the Rust Telegram handler. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing the
- * response — see CLAUDE.md → API Compatibility. */
+ * response — see AGENTS.md → API Compatibility. */
 export interface TelegramInstallation {
   id: string;
   workspace_id: string;

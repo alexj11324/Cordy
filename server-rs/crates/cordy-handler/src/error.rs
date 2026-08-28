@@ -1,5 +1,4 @@
-//! Error → HTTP response mapping, port of `writeError` / `writeErrorCode`
-//! (server/internal/handler/handler.go). Body shape:
+//! Error → HTTP response mapping. Body shape:
 //! `{"error": msg}` or `{"error": msg, "code": code}`, plus a trailing
 //! newline matching Go's `json.Encoder.Encode`.
 

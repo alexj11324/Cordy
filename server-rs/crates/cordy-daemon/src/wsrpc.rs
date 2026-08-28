@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/wsrpc.go` (lines 1–305).
+//! Daemon-side WebSocket request/response transport.
 //!
 //! The daemon-side half of the generic WS request/response transport
 //! (MUL-4257). It correlates responses to requests by request_id over the
@@ -19,20 +19,12 @@
 //! - `attach` / `markRPCV1Supported` / `currentGeneration` /
 //!   `supportsRPCV1` / `call` / `deliver` → same-named methods
 //!
-//! Deviations from Go:
-//! - `ClaimTasksWSFirst` (wsrpc.go:307–380) is Daemon wiring — it reads
-//!   `d.batchClaimUnsupported`, `d.wsClaimHTTPFallbackAfter`, `d.logger` and
-//!   `d.client`. It lands with the daemon.go core (lane B), which owns those
-//!   fields.
-//! - `batchClaimRequestTimeout` (client.go:255) is defined in `client.rs`
-//!   alongside the rest of client.go; `ws_claim_uncertain_fallback_delay`
-//!   references it through that module to keep one source of truth.
-//! - Go's `<-chan protocol.RPCResponsePayload` pending map becomes
-//!   `HashMap<String, mpsc::Sender<..>>`; `deliver` uses `try_send` on a
-//!   capacity-1 channel to replicate the non-blocking send. Detach closes
-//!   delivery by removing the entry (the caller observes the removal as
-//!   [`WsRpcError::Unavailable`]-vs-[`WsRpcError::Uncertain`] via
-//!   [`WsOutbound::cancel`], exactly like Go's closed channel).
+//! `batch_claim_request_timeout` is defined in `client.rs`, and
+//! `ws_claim_uncertain_fallback_delay` references it there to keep one source
+//! of truth. The pending map uses capacity-one channels and non-blocking
+//! delivery. Detach closes delivery by removing the entry; callers distinguish
+//! [`WsRpcError::Unavailable`] from [`WsRpcError::Uncertain`] via
+//! [`WsOutbound::cancel`].
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -233,11 +225,6 @@ impl WsRpcClient {
         }
     }
 
-    /// `currentGeneration` (wsrpc.go:139).
-    pub(crate) fn current_generation(&self) -> u64 {
-        self.inner.lock().unwrap().attach.generation
-    }
-
     /// `supportsRPCV1` (wsrpc.go:152): reports whether the live connection
     /// explicitly negotiated rpc-v1. [`Self::call_if_rpc_v1_supported`] repeats
     /// this check while capturing the sender under the same mutex, so this
@@ -247,11 +234,9 @@ impl WsRpcClient {
         inner.attach.send_frame.is_some() && inner.attach.rpc_v1_supported
     }
 
-    /// `Call` (wsrpc.go:163): issues an RPC on any attached connection.
-    /// Transport-level tests and callers that have their own negotiation
-    /// contract use this directly. Returns the response status (0 when the
-    /// call never reached the server) so the caller can distinguish transport
-    /// failure (→ HTTP fallback) from a server-side error.
+    /// Issues an RPC without a negotiated-capability guard so transport tests
+    /// can exercise the raw request lifecycle directly.
+    #[cfg(test)]
     pub(crate) async fn call<Q, R>(
         &self,
         ctx: &crate::repocache::Ctx,

@@ -16,7 +16,7 @@
  * board. The Runtimes page owns the follow-up Mika bootstrap once a runtime
  * appears, so this guide does not ask the member to copy an agent prompt.
  *
- * Note: server's deprecation shim (`onboarding_shim.go:noRuntimeIssueTitle`)
+ * Note: the server's deprecated-title compatibility shim
  * still uses the bare English string for its title-based dedupe — that
  * codepath only runs for pre-v3 desktop builds and never overlaps with
  * the v3 frontend population, so the two title-spaces drifting is fine.

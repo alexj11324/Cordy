@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/runtime_profile.sql (generated runtime_profile.sql.go).
+//! Typed SQL queries for runtime_profile records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

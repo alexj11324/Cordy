@@ -1,7 +1,6 @@
 //! The Channel contract: the platform-agnostic interface every IM
 //! integration implements.
 //!
-//! Port of `server/internal/integrations/channel/channel.go`.
 
 use async_trait::async_trait;
 use serde_json::Value;

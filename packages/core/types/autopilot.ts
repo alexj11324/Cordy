@@ -226,7 +226,7 @@ export interface ListAutopilotRunsResponse {
 
 // Webhook delivery enum is server-canonical. The frontend MUST `default`
 // any switch on it to a generic fallback — see API Response Compatibility
-// rules in CLAUDE.md. PR1 collapsed `skipped` into `dispatched` (the run
+// rules in AGENTS.md. PR1 collapsed `skipped` into `dispatched` (the run
 // itself carries the skip state); a future server may add new values.
 export type WebhookDeliveryStatus =
   | "queued"

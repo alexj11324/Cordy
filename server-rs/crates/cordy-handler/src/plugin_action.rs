@@ -1,4 +1,4 @@
-//! Plugin Action API — port of `server/internal/handler/plugin_action.go`.
+//! Plugin Action API.
 //!
 //! A surface authenticates with the signed-in user's session. A plugin server
 //! authenticates with an install or callback bearer token. In both cases the

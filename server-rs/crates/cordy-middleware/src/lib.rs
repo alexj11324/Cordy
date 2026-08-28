@@ -1,4 +1,4 @@
-//! HTTP middleware — port of `server/internal/middleware`.
+//! HTTP middleware.
 //!
 //! Modules mirror the Go files one-to-one: `auth` (JWT/PAT/task-token/cloud
 //! authentication), with workspace guards and daemon/plugin auth landing as

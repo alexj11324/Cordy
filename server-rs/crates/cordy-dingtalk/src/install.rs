@@ -1,4 +1,4 @@
-//! DingTalk install backend — port of `server/internal/integrations/dingtalk/install.go`.
+//! DingTalk install backend.
 //!
 //! DingTalk uses the bring-your-own-app (BYO) model: the workspace admin
 //! creates their own DingTalk Stream-mode robot, and pastes its AppKey (client

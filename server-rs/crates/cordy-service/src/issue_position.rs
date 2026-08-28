@@ -1,6 +1,4 @@
-//! Issue manual-ordering positions — port of
-//! `server/internal/issueposition/position.go`.
-
+//! Issue manual-ordering positions.
 use sqlx::Executor;
 use uuid::Uuid;
 

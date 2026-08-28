@@ -60,10 +60,12 @@ vi.mock("@cordy/core/auth", () => ({
 vi.mock("@cordy/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
-    getAgentName: (id: string) => (id === "agent-1" ? "Claude Agent" : "Unknown Agent"),
+    getAgentName: (id: string) =>
+      id === "agent-1" ? "Claude Agent" : id === "agent-2" ? "Reviewer Agent" : "Unknown Agent",
     getActorName: (type: string, id: string) => {
       if (type === "member" && id === "user-1") return "Test User";
       if (type === "agent" && id === "agent-1") return "Claude Agent";
+      if (type === "agent" && id === "agent-2") return "Reviewer Agent";
       return "Unknown";
     },
     getActorInitials: (type: string) => (type === "member" ? "TU" : "CA"),
@@ -1338,6 +1340,37 @@ describe("IssueDetail (shared)", () => {
     });
   });
 
+  it("renders a review handoff as the previous owner pointing to the reviewer", async () => {
+    mockApiObj.listTimeline.mockResolvedValue([
+      {
+        type: "activity",
+        id: "act-review-handoff",
+        actor_type: "agent",
+        actor_id: "agent-1",
+        action: "review_handoff",
+        details: {
+          from_type: "agent",
+          from_id: "agent-1",
+          to_type: "agent",
+          to_id: "agent-2",
+          from_status: "in_progress",
+          to_status: "in_review",
+        },
+        created_at: "2026-01-18T00:00:00Z",
+      },
+    ] as TimelineEntry[]);
+
+    renderIssueDetail();
+
+    const label = await screen.findByText("handed off review");
+    const handoff = label.parentElement;
+    expect(handoff).not.toBeNull();
+    expect(within(handoff!).getAllByText("Claude Agent")).toHaveLength(2);
+    expect(within(handoff!).getByText("Reviewer Agent")).toBeInTheDocument();
+    expect(within(handoff!).getAllByTestId("actor-avatar")).toHaveLength(2);
+    expect(handoff!.querySelector("svg")).toBeInTheDocument();
+  });
+
   // -------------------------------------------------------------------------
   // MUL-6413 — the activity glyph is per CATEGORY, so a move into a custom
   // status drew the icon of the built-in it sits beside: "In Review → Awaiting
@@ -2308,7 +2341,7 @@ describe("IssueDetail (shared)", () => {
     // opt_out_scope='issue'; the subtree route writes 'subtree', which also
     // blocks FUTURE children from re-subscribing the user. Collapsing the menu
     // must not quietly upgrade a one-issue opt-out into a whole-tree one
-    // (server/pkg/db/queries/subscriber.sql).
+    // in the Rust subscriber query module.
     it("uses the root-only route, never the subtree one", async () => {
       renderIssueDetail();
 
@@ -2415,7 +2448,7 @@ describe("IssueDetail (shared)", () => {
   // renders everyone — including people who ARE subscribed — as unchecked.
   // Clicking one of those rows sends an explicit subscribe, which rewrites the
   // target's reason to 'manual' and clears any opt-out scope
-  // (server/pkg/db/queries/subscriber.sql), discarding a delegated
+    // in the Rust subscriber query module, discarding a delegated
   // subscription or a deliberate opt-out (MUL-5714).
   describe("subscriber picker before the query resolves", () => {
     // The picker sits next to the subscribe control in the Activity header.

@@ -10,7 +10,7 @@
  * statuses live inside their category's section rather than adding one of their
  * own, so bucketing by `issue.status` left every custom-status bucket unread
  * and its issues invisible — the "counts and visibility must agree" rule in
- * apps/mobile/CLAUDE.md.
+ * apps/mobile/AGENTS.md.
  *
  * An active status filter needs no special handling: callers filter the rows by
  * KEY first, so a bucket can only be non-empty if one of those rows landed in

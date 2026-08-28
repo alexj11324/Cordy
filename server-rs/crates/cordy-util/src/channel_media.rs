@@ -1,6 +1,6 @@
 //! Channel-media provenance markers in durable Markdown.
 //!
-//! Port of `server/internal/channelmedia/markdown.go`. Channel ingestion
+//! Channel ingestion
 //! materializes attachments asynchronously; these helpers let issue
 //! updates distinguish a late channel-media write from an intentional
 //! edit.

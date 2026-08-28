@@ -379,11 +379,6 @@ impl UpdateExecutor {
         Ok("Homebrew upgraded cordy-ai/tap/cordy".to_string())
     }
 
-    async fn update_direct(&self, target_version: &str) -> Result<String> {
-        self.update_direct_with_timeout(target_version, DOWNLOAD_TIMEOUT)
-            .await
-    }
-
     async fn update_direct_with_timeout(
         &self,
         target_version: &str,
@@ -457,11 +452,6 @@ impl UpdateExecutor {
             "Downloaded {} and replaced the current executable",
             asset.name
         ))
-    }
-
-    async fn fetch_asset(&self, asset: &ReleaseAsset, limit: usize) -> Result<Vec<u8>> {
-        self.fetch_asset_with_timeout(asset, limit, DOWNLOAD_TIMEOUT)
-            .await
     }
 
     async fn fetch_asset_with_timeout(

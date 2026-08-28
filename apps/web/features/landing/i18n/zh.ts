@@ -3037,7 +3037,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         date: "2026-03-22",
         title: "\u57fa\u7840\u67b6\u6784",
         changes: [
-          "Go \u540e\u7aef\uff0c\u652f\u6301 REST API\u3001JWT \u8ba4\u8bc1\u548c\u5b9e\u65f6 WebSocket",
+          "Rust \u540e\u7aef\uff0c\u652f\u6301 REST API\u3001JWT \u8ba4\u8bc1\u548c\u5b9e\u65f6 WebSocket",
           "Next.js \u524d\u7aef\uff0cLinear \u98ce\u683c UI",
           "\u4efb\u52a1\u652f\u6301\u770b\u677f\u548c\u5217\u8868\u89c6\u56fe\uff0c\u542b\u62d6\u62fd\u770b\u677f",
           "Agent\u3001\u6536\u4ef6\u7bb1\u548c\u8bbe\u7f6e\u9875\u9762",

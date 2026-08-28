@@ -1,5 +1,4 @@
 //! The "processing" reaction lifecycle for inbound Slack messages. Port of
-//! `server/internal/integrations/slack/typing_indicator.go`.
 //!
 //! Adds a 👀 reaction when a message is ingested and removes it however the
 //! agent's run ends — chat:done, task:failed or task:cancelled. State is held

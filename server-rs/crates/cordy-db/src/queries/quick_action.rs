@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/quick_action.sql (generated quick_action.sql.go).
+//! Typed SQL queries for quick_action records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

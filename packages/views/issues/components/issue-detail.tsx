@@ -14,6 +14,7 @@ import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink, useBackOrReplace } from "../../navigation";
 import {
   Archive,
+  ArrowRight,
   Calendar,
   CalendarClock,
   CalendarDays,
@@ -179,7 +180,7 @@ function SubscriberPopoverContent({
    * list until the query resolves — so an unresolved query renders everyone as
    * unsubscribed. Acting on that is not a harmless no-op: an explicit subscribe
    * rewrites the target's reason to 'manual' and clears any opt-out scope
-   * (server/pkg/db/queries/subscriber.sql), which would quietly discard a
+   * in the Rust subscriber query module, which would quietly discard a
    * delegated subscription or someone's deliberate opt-out. So these rows wait
    * for a real answer, not just for the in-flight mutation (MUL-5714).
    */
@@ -318,6 +319,15 @@ function formatActivity(
       if (toName) return t(($) => $.activity.assigned_to, { name: toName });
       if (details.from_id && !details.to_id) return t(($) => $.activity.removed_assignee);
       return t(($) => $.activity.changed_assignee);
+    }
+    case "review_handoff": {
+      const fromName = details.from_id && details.from_type && resolveActorName
+        ? resolveActorName(details.from_type, details.from_id)
+        : "?";
+      const toName = details.to_id && details.to_type && resolveActorName
+        ? resolveActorName(details.to_type, details.to_id)
+        : "?";
+      return t(($) => $.activity.review_handoff, { from: fromName, to: toName });
     }
     case "start_date_changed": {
       if (!details.to) return t(($) => $.activity.start_date_removed);
@@ -609,6 +619,7 @@ function ActivityBlock({
         const isPriorityChange = entry.action === "priority_changed";
         const isStartDateChange = entry.action === "start_date_changed";
         const isDueDateChange = entry.action === "due_date_changed";
+        const isReviewHandoff = entry.action === "review_handoff";
 
         let leadIcon: React.ReactNode;
         if (isStatusChange && details.to) {
@@ -637,7 +648,22 @@ function ActivityBlock({
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-1">
               <span className="shrink-0 font-medium">{getActorName(entry.actor_type, entry.actor_id)}</span>
-              <span className="truncate">{formatActivity(entry, t, getActorName, resolveStatusLabel)}</span>
+              {isReviewHandoff && details.from_type && details.from_id && details.to_type && details.to_id ? (
+                <>
+                  <span className="shrink-0">{t(($) => $.activity.review_handoff_short)}</span>
+                  <ActorAvatar actorType={details.from_type} actorId={details.from_id} size="xs" />
+                  <span className="max-w-32 truncate font-medium text-foreground">
+                    {getActorName(details.from_type, details.from_id)}
+                  </span>
+                  <ArrowRight className="size-3.5 shrink-0" aria-hidden="true" />
+                  <ActorAvatar actorType={details.to_type} actorId={details.to_id} size="xs" />
+                  <span className="max-w-32 truncate font-medium text-foreground">
+                    {getActorName(details.to_type, details.to_id)}
+                  </span>
+                </>
+              ) : (
+                <span className="truncate">{formatActivity(entry, t, getActorName, resolveStatusLabel)}</span>
+              )}
               {(entry.coalesced_count ?? 1) > 1 &&
                 entry.action !== "task_completed" &&
                 entry.action !== "task_failed" && (
@@ -1129,7 +1155,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   // Workspace owners and admins moderate any comment authored by anyone
-  // (mirrors backend `comment.go:507-512`). Computed here so per-comment
+  // (mirrors the Rust comment handler). Computed here so per-comment
   // rendering doesn't have to re-derive it for every row.
   const currentUserRole =
     members.find((m) => m.user_id === user?.id)?.role ?? null;
@@ -3283,7 +3309,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                        zero children the two are different server writes,
                        because a subtree tombstone also keeps FUTURE children
                        from re-subscribing the user
-                       (server/pkg/db/queries/subscriber.sql). Declining one
+                       in the Rust subscriber query module. Declining one
                        issue must not silently opt someone out of a tree that
                        does not exist yet. While the child count is unknown we
                        keep the menu below — it never picks a scope for the

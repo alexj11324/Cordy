@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/activity.sql (generated activity.sql.go).
+//! Typed SQL queries for activity records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

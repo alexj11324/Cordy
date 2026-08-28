@@ -1,5 +1,4 @@
-//! Port of `server/internal/daemon/auto_update.go` (433 lines) plus the three
-//! version helpers it imports from `server/internal/cli/update.go`.
+//! Daemon auto-update orchestration and version helpers.
 //!
 //! Symbol map (Go → Rust):
 //! - `ParseSelfVersion` → [`parse_self_version`] (exported contract shared

@@ -7,7 +7,7 @@
  *
  * Detail and Resources are workspace-scoped via the `wsId` segment so
  * switching workspaces flips the cache without manual invalidate, per the
- * root CLAUDE.md "Workspace-scoped queries must key on wsId" rule.
+ * root AGENTS.md "Workspace-scoped queries must key on wsId" rule.
  *
  * Issues belonging to a project are NOT a project query — they live under
  * `issueKeys.list(wsId, { project_id })` and reuse the issues cache shape.

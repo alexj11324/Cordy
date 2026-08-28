@@ -268,10 +268,6 @@ impl<'de> Deserialize<'de> for ProjectResourceForEnv {
     }
 }
 
-// S9-integration: ThreadReplyTarget lives in reply_instructions.go (lane E3);
-// TaskContextForEnv.CommentReplyTargets needs the shape now so the wire
-// structs round-trip. Replace with the reply_instructions.rs port when it
-// lands — field names must stay ThreadID/ParentID on the wire.
 /// One root-thread group a coalesced run must answer (reply_instructions.go).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
@@ -466,10 +462,7 @@ pub struct SkillFileContextForEnv {
     pub content: String,
 }
 
-// S9-integration: ConnectedApp lives in internal/runtimeapps (ported with the
-// service layer elsewhere); TaskContextForEnv.ConnectedApps needs the wire
-// shape now. Field names mirror the Go json tags byte-for-byte.
-/// Per-run external app capability (internal/runtimeapps/connected_app.go).
+/// Per-run external app capability.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", default)]
 pub struct ConnectedApp {
@@ -586,7 +579,10 @@ fn task_temp_base_dir() -> anyhow::Result<(PathBuf, bool)> {
         let Some(configured) = std::env::var_os("CORDY_AGENT_TEMP_BASE") else {
             return Ok((socket_safe_temp_base_dir(), false));
         };
-        let path = PathBuf::from(configured);
+        let path = match configured.to_str() {
+            Some(configured) => PathBuf::from(configured.trim()),
+            None => PathBuf::from(configured.as_os_str()),
+        };
         if path.as_os_str().is_empty() {
             return Ok((socket_safe_temp_base_dir(), false));
         }
@@ -1949,6 +1945,15 @@ mod tests {
         std::env::set_var("CORDY_AGENT_TEMP_BASE", "relative/base");
         let error = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap_err();
         assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
+
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", "   ");
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        assert_ne!(directory.path().parent(), Some(Path::new("   ")));
+
+        let spaced = format!("  {}  ", base.path().display());
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", spaced);
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        assert_eq!(directory.path().parent(), Some(base.path()));
     }
 
     #[cfg(not(windows))]

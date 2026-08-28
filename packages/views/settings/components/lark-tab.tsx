@@ -272,7 +272,7 @@ function InstallationRow({
 //   1. Only the agent's owner or a workspace owner/admin see anything —
 //      the backend authorizes `POST /lark/install/begin`, the status
 //      poll, AND disconnect with canManageAgent (agent owner OR ws
-//      owner/admin; see server/internal/handler/lark.go, MUL-4213), so
+//      owner/admin; see the Rust Lark handler, MUL-4213), so
 //      the gate here mirrors that. `agentOwnerId` is what lets a
 //      non-admin owner through; when it is omitted the button stays
 //      workspace owner/admin-only.
@@ -281,7 +281,7 @@ function InstallationRow({
 //      install_supported. install_supported governs only whether NEW
 //      scan-installs can complete; already-installed bots stay manageable
 //      when the device-flow transport is unwired (see
-//      server/internal/handler/lark.go — "already-installed bots still
+//      the Rust Lark handler — "already-installed bots still
 //      appear and remain manageable"). Gating the badge on it would hide a
 //      bound agent's connected state the moment the transport went away.
 //   3. Otherwise the Bind CTA shows only when install_supported is true —
@@ -351,7 +351,7 @@ export function LarkAgentBindButton({
 
   // Existing-installation check runs BEFORE the install_supported gate:
   // already-installed bots stay manageable even when new scan-installs are
-  // unavailable (server/internal/handler/lark.go). Surfacing the badge here
+  // unavailable (the Rust Lark handler). Surfacing the badge here
   // also closes the re-scan zombie-bot trap — re-scanning the same agent
   // upserts the row and orphans the previously-created PersonalAgent, so we
   // close the install entry point and link to the Bot's Lark app page where
@@ -499,7 +499,7 @@ function LarkAgentBotStatusRow({
 // (international) bots at open.larksuite.com. The region is auto-detected
 // at install time and surfaced per installation on the listings
 // response; an older server that omits `region` defaults to Feishu
-// (API-compat — see CLAUDE.md).
+// (API-compat — see AGENTS.md).
 function larkDevConsoleHost(region?: string): string {
   return region === "lark"
     ? "https://open.larksuite.com"
@@ -553,7 +553,7 @@ function LarkAgentBotConnectedBadge({
           `destructive` button variant — it reads dangerous without the
           loud solid-red, and stays visible because it is the user-facing
           recovery path for the install_supported=false / re-scan
-          zombie-bot trap (server/internal/handler/lark.go). Confirmation
+          zombie-bot trap (the Rust Lark handler). Confirmation
           is mandatory: the backend disconnect tears down the WebSocket
           and stops message delivery. */}
       <div className="flex items-center justify-between gap-3">

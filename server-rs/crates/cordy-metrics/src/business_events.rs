@@ -1,5 +1,4 @@
 //! PR3 funnel / community / commercial counters paired with PostHog events —
-//! port of `server/internal/metrics/business_events.go`.
 //!
 //! Deferred until the analytics package lands: `RecordEvent` / `IncForEvent`
 //! (the pairing bridge dispatching `analytics.Event` names to these counters)

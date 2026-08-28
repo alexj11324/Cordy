@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/remote_mcp_broker.go` (475 lines).
+//! Per-task Remote MCP broker lifecycle and validation.
 //!
 //! Symbol map (Go → Rust):
 //! - `remoteMCPMaxRequestBytes` / `remoteMCPMaxCalls` / `remoteMCPMaxConcurrency`
@@ -127,6 +127,22 @@ pub(crate) struct BrokerStartup {
     pub error: Option<anyhow::Error>,
 }
 
+async fn await_remote_mcp_discovery<T>(
+    setup_ctx: &crate::repocache::Ctx,
+    discovery: impl std::future::Future<Output = T>,
+) -> anyhow::Result<T> {
+    if let Some(cause) = setup_ctx.err() {
+        return Err(anyhow!("task preparation cancelled: {cause}"));
+    }
+    tokio::select! {
+        biased;
+        () = setup_ctx.cancelled() => {
+            Err(anyhow!("task preparation cancelled: {}", setup_ctx.cause()))
+        }
+        result = discovery => Ok(result),
+    }
+}
+
 /// `startTaskRemoteMCPBrokers` (go:55–157): validates and starts one loopback
 /// proxy per connection. An optional failure_policy degrades to a diagnostic
 /// instead of failing the task.
@@ -211,13 +227,16 @@ pub(crate) async fn start_task_remote_mcp_brokers(
             .iter()
             .map(String::as_str)
             .collect();
-        let discovered = cordy_remotemcp::discover(
-            &connection.endpoint,
-            &connection.endpoint_allowed_hosts,
-            protocol_versions,
-            &headers,
+        let discovered = await_remote_mcp_discovery(
+            setup_ctx,
+            cordy_remotemcp::discover(
+                &connection.endpoint,
+                &connection.endpoint_allowed_hosts,
+                protocol_versions,
+                &headers,
+            ),
         )
-        .await;
+        .await?;
         let validated: anyhow::Result<()> = match discovered {
             Ok((tools, _)) => validate_pinned_remote_mcp_tools(&connection.approved_tools, &tools)
                 .map_err(|s| anyhow!(s)),
@@ -800,24 +819,38 @@ pub(crate) fn merge_task_remote_mcp_config(base: &str, overlay: &str) -> anyhow:
         return Ok(base.to_string());
     }
     let overlay_document: Value = serde_json::from_str(overlay).map_err(|err| anyhow!("{err}"))?;
+    let overlay_document = overlay_document
+        .as_object()
+        .ok_or_else(|| anyhow!("Remote MCP overlay must be an object"))?;
     let empty_map = Map::new();
-    let overlay_servers = overlay_document
-        .get("mcpServers")
-        .and_then(Value::as_object)
-        .unwrap_or(&empty_map);
+    let overlay_servers = match overlay_document.get("mcpServers") {
+        None | Some(Value::Null) => &empty_map,
+        Some(Value::Object(servers)) => servers,
+        Some(_) => return Err(anyhow!("Remote MCP overlay mcpServers must be an object")),
+    };
 
     let trimmed = base.trim();
     let mut base_document = json!({"mcpServers": {}});
     if !trimmed.is_empty() && trimmed != "null" {
         base_document = serde_json::from_str(trimmed).map_err(|err| anyhow!("{err}"))?;
-        if base_document.get("mcpServers").is_none() {
-            base_document["mcpServers"] = json!({});
+    }
+    let base_document = base_document
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("Remote MCP base config must be an object"))?;
+    let base_servers = match base_document.entry("mcpServers") {
+        serde_json::map::Entry::Vacant(entry) => entry.insert(json!({})),
+        serde_json::map::Entry::Occupied(mut entry) if entry.get().is_null() => {
+            entry.insert(json!({}));
+            entry.into_mut()
         }
+        serde_json::map::Entry::Occupied(entry) => entry.into_mut(),
     }
+    .as_object_mut()
+    .ok_or_else(|| anyhow!("Remote MCP base mcpServers must be an object"))?;
     for (name, server) in overlay_servers {
-        base_document["mcpServers"][name] = server.clone();
+        base_servers.insert(name.clone(), server.clone());
     }
-    Ok(serde_json::to_string(&base_document)?)
+    Ok(serde_json::to_string(base_document)?)
 }
 
 #[cfg(test)]
@@ -861,6 +894,34 @@ mod tests {
             merge_task_remote_mcp_config(r#"{"mcpServers":{}}"#, "").unwrap(),
             r#"{"mcpServers":{}}"#
         );
+
+        for (base, overlay) in [
+            ("[]", r#"{"mcpServers":{}}"#),
+            (r#"{"mcpServers":[]}"#, r#"{"mcpServers":{}}"#),
+            (r#"{"mcpServers":{}}"#, "[]"),
+            (r#"{"mcpServers":{}}"#, r#"{"mcpServers":[]}"#),
+        ] {
+            assert!(
+                merge_task_remote_mcp_config(base, overlay).is_err(),
+                "base={base} overlay={overlay}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_mcp_discovery_observes_preparation_cancellation() {
+        let ctx = crate::repocache::Ctx::new();
+        ctx.cancel_with(crate::repocache::CancelCause::Cancelled);
+
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            await_remote_mcp_discovery(&ctx, std::future::pending::<()>()),
+        )
+        .await
+        .expect("cancelled discovery should return promptly")
+        .unwrap_err();
+
+        assert!(error.to_string().contains("task preparation cancelled"));
     }
 
     #[test]

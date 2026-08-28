@@ -54,7 +54,7 @@ const LOG_TAIL_MAX_RETRIES = 5;
 // wait past the common case to avoid probing healthy-but-slow starts.
 const AUTH_PROBE_GRACE_MS = 10_000;
 // `cordy daemon start` blocks until the daemon reports ready, polling /health
-// for up to its own startup timeout (45s in server/cmd/cordy/cmd_daemon.go) to
+// for up to its own startup timeout (45s in cordy-daemon's lifecycle) to
 // cover cold-start agent-version detection. This execFile timeout MUST stay
 // above that — otherwise Electron kills the CLI supervisor mid-startup and a
 // healthy-but-slow start is misreported as a failure (the detached daemon child

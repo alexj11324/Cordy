@@ -12,7 +12,7 @@
  * `packages/core/issue-statuses/queries.ts` rather than imported: those modules
  * reach `../issue-statuses/index`, which pulls web's API client and React Query
  * key factories into the graph — not on mobile's import whitelist
- * (apps/mobile/CLAUDE.md). The TYPES are shared, so the two sides cannot drift
+ * (apps/mobile/AGENTS.md). The TYPES are shared, so the two sides cannot drift
  * on shape; the fallback rules below are restated verbatim so they cannot drift
  * on behavior either.
  */
@@ -117,7 +117,7 @@ export function issueStatusCategory(
  * The unresolved fallback lands in `todo` rather than nowhere: a row in a
  * possibly-wrong section is recoverable, a row in no section is invisible, and
  * invisible is the bug this exists to prevent ("counts and visibility must
- * agree", apps/mobile/CLAUDE.md). Unreachable in practice — the server sends a
+ * agree", apps/mobile/AGENTS.md). Unreachable in practice — the server sends a
  * category on every issue payload, and a built-in key is its own category.
  */
 export function issueColumnCategory(

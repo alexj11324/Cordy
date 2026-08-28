@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/reconcile.go` (lines 1–129).
+//! Reconciliation broadcasts and workspace change signals.
 //!
 //! Symbol map (Go → Rust):
 //! - `reconcileBroadcaster` → [`ReconcileBroadcaster`]

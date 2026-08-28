@@ -2,7 +2,7 @@
  * Mobile WorkspaceAvatar. Mirrors packages/views/workspace/workspace-avatar.tsx:
  * a resolved avatar_url renders as a rounded-square logo image; otherwise the
  * workspace's initial letter sits in a muted tile. Same fallback semantics as
- * web/desktop so a workspace looks identical across clients (apps/mobile/CLAUDE.md
+ * web/desktop so a workspace looks identical across clients (apps/mobile/AGENTS.md
  * behavioral-parity rule).
  *
  * URL resolution goes through resolveAttachmentUrl — the mobile mirror of

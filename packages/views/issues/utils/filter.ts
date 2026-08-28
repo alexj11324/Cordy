@@ -55,7 +55,7 @@ export interface IssueFilterContext {
 /**
  * Filter value that selects issues where a custom property is UNSET ("No
  * value"). Mirrors the backend sentinel in `parsePropertiesFilterParam`
- * (`server/internal/handler/property.go`); cannot collide with a real option id
+ * (the Rust property handler); cannot collide with a real option id
  * (select options are UUIDs, checkbox uses "true"/"false").
  */
 export const NO_PROPERTY_VALUE = "__none__";

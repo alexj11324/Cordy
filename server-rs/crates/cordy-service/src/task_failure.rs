@@ -1,4 +1,4 @@
-//! Re-export of `cordy-task-failure` — port of `server/pkg/taskfailure`,
+//! Re-export of `cordy-task-failure`,
 //! extracted to its own crate so `cordy-metrics` can depend on it without a
 //! dependency cycle through `cordy-service`.
 

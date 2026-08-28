@@ -1,5 +1,4 @@
-//! Business backfill hooks, ported 1:1 from
-//! `server/internal/taskusagebackfill` and `server/internal/attributionbackfill`.
+//! Business backfill hooks for task usage and attribution data.
 
 pub mod attribution;
 pub mod codex_usage;

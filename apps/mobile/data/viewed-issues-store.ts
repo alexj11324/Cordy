@@ -54,7 +54,7 @@ export const useViewedIssuesStore = create<State>((set) => ({
 
 /** Stable empty array — Zustand selectors that return a fresh `[]` each
  *  call trigger an infinite re-render loop in useSyncExternalStore
- *  (see CLAUDE.md "Common Zustand footguns"). All "no entry" paths
+ *  (see AGENTS.md "Common Zustand footguns"). All "no entry" paths
  *  share this single frozen reference. */
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 

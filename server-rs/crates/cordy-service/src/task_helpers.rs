@@ -1,9 +1,7 @@
-//! Self-contained task helpers and retry policy — port of the package-level
-//! helpers in `server/internal/service/task.go` (truncate/summary, trivial
+//! Self-contained task helpers and retry policy (truncate/summary, trivial
 //! done detection, retry ceilings and delays, resume-safety guards).
 //!
-//! The `TaskService` methods land with task/mod.rs; everything here is free
-//! of service state so it ports first.
+//! Everything here is free of service state.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;

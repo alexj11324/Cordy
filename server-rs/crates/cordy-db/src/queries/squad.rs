@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/squad.sql (generated squad.sql.go).
+//! Typed SQL queries for squad records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

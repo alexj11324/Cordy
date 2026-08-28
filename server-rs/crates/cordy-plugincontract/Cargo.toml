@@ -1,6 +1,6 @@
 [package]
 name = "cordy-plugincontract"
-description = "Versioned public contract between plugin authors and the Cordy host — port of server/pkg/plugincontract"
+description = "Versioned public contract between plugin authors and the Cordy host"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

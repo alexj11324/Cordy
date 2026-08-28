@@ -1,6 +1,4 @@
-//! Redis-backed daemon-token (mdt_) lookup cache — port of
-//! `server/internal/auth/daemon_token_cache.go`.
-
+//! Redis-backed daemon-token (mdt_) lookup cache.
 use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 

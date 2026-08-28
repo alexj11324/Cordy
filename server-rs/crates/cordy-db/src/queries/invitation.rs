@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/invitation.sql (generated invitation.sql.go).
+//! Typed SQL queries for invitation records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

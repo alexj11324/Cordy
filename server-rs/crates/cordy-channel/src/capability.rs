@@ -1,6 +1,6 @@
 //! Capability bitmask a Channel uses to DECLARE what it supports.
 //!
-//! Port of `server/internal/integrations/channel/capability.go`. It is
+//! It is
 //! declaration only: this crate contains no degrade logic. A caller that
 //! wants to degrade output (rich card → plain text when
 //! [`Capability::RICH_CARD`] is absent) reads the bitmask and decides for

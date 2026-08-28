@@ -1,6 +1,4 @@
-//! LLM price table and model-alias resolution — port of
-//! `server/internal/metrics/pricing.go`.
-
+//! LLM price table and model-alias resolution.
 use std::collections::HashMap;
 use std::sync::LazyLock;
 

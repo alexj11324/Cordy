@@ -1,6 +1,6 @@
 [package]
 name = "cordy-slack"
-description = "Slack adapter (port of server/internal/integrations/slack): Socket Mode link, resolver set, outbound replies, slash commands, media ingest"
+description = "Slack adapter: Socket Mode link, resolver set, outbound replies, slash commands, and media ingest"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

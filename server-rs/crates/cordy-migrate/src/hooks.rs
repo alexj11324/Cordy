@@ -1,5 +1,4 @@
-//! Pre-migration hooks and conditions — port of the hook system in
-//! `server/cmd/migrate/main.go`, including the two business backfills.
+//! Pre-migration hooks and conditions, including the business backfills.
 
 use std::future::Future;
 use std::pin::Pin;

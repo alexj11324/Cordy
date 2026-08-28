@@ -1,6 +1,4 @@
-//! Producer-facing realtime abstractions — port of
-//! `server/internal/realtime/broadcaster.go` plus the `RelayPublisher`
-//! interface from `redis_relay.go`.
+//! Producer-facing realtime abstractions and the `RelayPublisher` interface.
 
 use async_trait::async_trait;
 

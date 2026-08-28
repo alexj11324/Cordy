@@ -1,8 +1,6 @@
 //! Database access layer: connection pool and migrations.
 //!
-//! The Rust server shares the exact same schema as the Go server
-//! (`server/migrations/`, 413 up/down pairs). See migration plan §二
-//! hard constraint #3.
+//! The server schema is defined by the migration files at the repository root.
 
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;

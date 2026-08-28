@@ -1,5 +1,5 @@
 //! Per-workspace issue status catalog — port of
-//! `server/internal/issuestatus/issuestatus.go` (MUL-6243).
+//! Per-workspace issue-status catalog (MUL-6243).
 //!
 //! MODEL. There are 7 categories and they map one-to-one onto the 7 built-in
 //! statuses: a category's value IS its canonical status key. A custom status
@@ -28,6 +28,13 @@ pub const IN_REVIEW: &str = "in_review";
 pub const DONE: &str = "done";
 pub const BLOCKED: &str = "blocked";
 pub const CANCELLED: &str = "cancelled";
+
+/// Categories that represent work already underway. Issues in these columns
+/// must always have a concrete owner so progress, blockers, and review cannot
+/// become an ownerless queue.
+pub fn requires_assignee(category: &str) -> bool {
+    matches!(category, IN_PROGRESS | IN_REVIEW | BLOCKED)
+}
 
 /// The historical STATUS_ORDER from the frontend's static status config.
 /// Category ranking copies it verbatim so a workspace with no custom statuses
@@ -464,6 +471,16 @@ mod tests {
         assert!(!is_built_in("human_review"));
         assert!(is_category("done"));
         assert!(!is_category(""));
+    }
+
+    #[test]
+    fn underway_categories_require_an_assignee() {
+        for category in [IN_PROGRESS, IN_REVIEW, BLOCKED] {
+            assert!(requires_assignee(category), "{category}");
+        }
+        for category in [BACKLOG, TODO, DONE, CANCELLED] {
+            assert!(!requires_assignee(category), "{category}");
+        }
     }
 
     #[test]

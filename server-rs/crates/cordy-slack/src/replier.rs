@@ -1,6 +1,5 @@
 //! The Slack OutboundReplier — the engine seam that delivers a verdict-driven
 //! reply back to the user (MUL-3666). Port of
-//! `server/internal/integrations/slack/replier.go`.
 //!
 //! Posts through the same bot-token send path as the chat:done outbound
 //! subscriber, so it needs no new transport.

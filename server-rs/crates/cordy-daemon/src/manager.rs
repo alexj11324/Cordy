@@ -82,6 +82,7 @@ pub(crate) struct DaemonControl {
 }
 
 impl DaemonControl {
+    #[cfg(test)]
     pub(crate) fn new(
         client: Arc<Client>,
         server_base_url: impl Into<String>,
@@ -123,6 +124,7 @@ impl DaemonControl {
 
     /// Replaces the authenticated runtime set. Sorting and deduplication make
     /// identity stable and prevent reconnects for equivalent updates.
+    #[cfg(test)]
     pub(crate) fn set_runtime_ids(&self, runtime_ids: impl IntoIterator<Item = String>) {
         self.runtimes.replace(runtime_ids);
     }
@@ -769,6 +771,7 @@ async fn open_wakeup_proxy_tunnel(
         .uri()
         .host()
         .ok_or_else(|| anyhow::anyhow!("configured wakeup proxy has no host"))?;
+    let proxy_host = proxy_connect_host(proxy_host);
     let proxy_port = proxy.uri().port_u16().unwrap_or(80);
     let target_host = target
         .host()
@@ -819,17 +822,44 @@ async fn open_wakeup_proxy_tunnel(
         }
         response.extend_from_slice(&chunk[..read]);
     }
-    let status = response
+    let status = parse_wakeup_proxy_connect_status(&response)?;
+    if status != 200 {
+        anyhow::bail!("wakeup proxy CONNECT refused with status {status}");
+    }
+    Ok(stream)
+}
+
+fn proxy_connect_host(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host)
+}
+
+fn parse_wakeup_proxy_connect_status(response: &[u8]) -> anyhow::Result<u16> {
+    let status_line = response
         .split(|byte| *byte == b'\n')
         .next()
         .and_then(|line| std::str::from_utf8(line).ok())
         .map(str::trim)
-        .and_then(|line| line.split_ascii_whitespace().nth(1))
-        .and_then(|value| value.parse::<u16>().ok());
-    if status != Some(200) {
-        anyhow::bail!("wakeup proxy CONNECT refused with status {status:?}");
-    }
-    Ok(stream)
+        .ok_or_else(|| anyhow::anyhow!("wakeup proxy CONNECT status line is malformed"))?;
+    let mut fields = status_line.split_ascii_whitespace();
+    let version = fields
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("wakeup proxy CONNECT status line is malformed"))?;
+    anyhow::ensure!(
+        matches!(version, "HTTP/1.0" | "HTTP/1.1"),
+        "wakeup proxy CONNECT status line is malformed"
+    );
+    let status = fields
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("wakeup proxy CONNECT status line is malformed"))?;
+    anyhow::ensure!(
+        status.len() == 3 && status.bytes().all(|byte| byte.is_ascii_digit()),
+        "wakeup proxy CONNECT status line is malformed"
+    );
+    status
+        .parse()
+        .map_err(|_| anyhow::anyhow!("wakeup proxy CONNECT status line is malformed"))
 }
 
 fn format_host_port(host: &str, port: u16) -> String {
@@ -1198,6 +1228,10 @@ mod tests {
                 .unwrap();
         assert_eq!(ipv6_shorthand.uri().host(), Some("[2001:db8::2]"));
         assert_eq!(ipv6_shorthand.uri().port_u16(), Some(8080));
+        assert_eq!(
+            proxy_connect_host(ipv6_shorthand.uri().host().unwrap()),
+            "2001:db8::2"
+        );
         assert!(configured_proxy_for_target(
             &target,
             "https",
@@ -1236,7 +1270,12 @@ mod tests {
     async fn wakeup_proxy_connect_rejects_refusal_truncation_and_oversize() {
         let refused =
             proxy_tunnel_error(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n").await;
-        assert!(refused.contains("status Some(407)"));
+        assert!(refused.contains("status 407"));
+
+        let malformed = proxy_tunnel_error(b"proxy/1.0 200 Connected\r\n\r\n").await;
+        assert!(malformed.contains("status line is malformed"));
+        let malformed_code = proxy_tunnel_error(b"HTTP/1.1 20 Connected\r\n\r\n").await;
+        assert!(malformed_code.contains("status line is malformed"));
 
         let truncated = proxy_tunnel_error(b"HTTP/1.1 200 Connection Established\r\n").await;
         assert!(truncated.contains("closed before CONNECT completed"));

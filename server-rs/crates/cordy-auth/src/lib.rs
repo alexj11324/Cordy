@@ -1,4 +1,4 @@
-//! Auth primitives ported from `server/internal/auth`.
+//! Auth primitives.
 //!
 //! Modules mirror the Go files one-to-one so review diffs stay aligned:
 //! `jwt` (secrets + token minting), `cookie` (session/CSRF), `disabled_users`

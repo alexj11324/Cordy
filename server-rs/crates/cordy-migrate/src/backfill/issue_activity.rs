@@ -1,6 +1,6 @@
 //! Resumable batches for seeding `issue.last_activity_at` from `updated_at`.
 //!
-//! Port of `server/internal/issueactivitybackfill/backfill.go`. Each batch is
+//! Each batch is
 //! an independent statement/transaction, uses an id keyset watermark, and
 //! skips rows locked by unrelated writers.
 

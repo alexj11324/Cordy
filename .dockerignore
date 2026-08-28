@@ -5,8 +5,7 @@ node_modules
 # Build outputs
 .next
 dist
-server/bin
-server/tmp
+/bin/
 
 # Git
 .git
@@ -35,12 +34,12 @@ coverage
 /docs/
 *.md
 
-# Rust production binaries embed these narrow Go-owned assets at compile time.
+# Rust production binaries embed these crate-owned assets at compile time.
 # Re-include them after the repository-wide Markdown ignore.
-!server/internal/service/builtin_agents/
-!server/internal/service/builtin_agents/**
-!server/internal/service/builtin_skills/
-!server/internal/service/builtin_skills/**
+!server-rs/crates/cordy-service/assets/
+!server-rs/crates/cordy-service/assets/**
+!server-rs/crates/cordy-handler/assets/
+!server-rs/crates/cordy-handler/assets/**
 
 # Only the web workspace is used by Dockerfile.web. Default-exclude future
 # app workspaces so they do not silently enter the build context.

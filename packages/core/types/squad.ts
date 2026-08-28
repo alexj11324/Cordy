@@ -86,7 +86,7 @@ export interface CreateSquadActivityLogRequest {
 }
 
 // SquadMemberStatus mirrors the five-way bucket the back-end derives in
-// handler/squad.go::deriveSquadMemberStatus. Kept as a string union here
+// the Rust squad handler's derived member status. Kept as a string union here
 // (rather than re-derived from snapshot data) so the squad page can render
 // the freshest server-side judgement without re-fetching the agent
 // snapshot / runtime list. `archived` wins over every runtime/task signal.

@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/user.sql (generated user.sql.go).
+//! Typed SQL queries for user records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

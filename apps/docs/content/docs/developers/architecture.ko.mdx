@@ -24,7 +24,7 @@ Web / Desktop / Mobile / CLI
 | 디렉터리 | 역할 | 주요 기술 |
 | --- | --- | --- |
 | `server-rs/` | production API, 인증, 태스크 스케줄링, 연동, CLI, migration runner, 데몬 | Rust, Axum, Tokio, SQLx |
-| `server/` | 공유 SQL migration, 패키지 binary, 전환 기간의 legacy compatibility 코드 | SQL, shell, Go compatibility |
+| `migrations/` | Rust migration runner가 실행하는 공유 SQL migration | SQL |
 | `apps/web/` | 브라우저 클라이언트와 landing page | Next.js App Router |
 | `apps/desktop/` | 데스크톱 클라이언트와 로컬 프로세스 관리 | Electron, electron-vite |
 | `apps/mobile/` | 독립적인 iOS 클라이언트 | Expo, React Native |
@@ -78,7 +78,7 @@ production entry point는 `server-rs/crates/`의 Cargo package입니다.
 | --- | --- |
 | `server-rs/crates/cordy-server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
 | `server-rs/crates/cordy-cli`(`cordy`) | CLI와 로컬 데몬 |
-| `server-rs/crates/cordy-migrate` | `server/migrations/`의 데이터베이스 migration 실행 |
+| `server-rs/crates/cordy-migrate` | `migrations/`의 데이터베이스 migration 실행 |
 | `cordy-migrate`의 `backfill_*` binary | 특정 버전의 데이터 backfill 도구 |
 
 요청은 일반적으로 다음 방향으로 흐릅니다.
@@ -100,7 +100,7 @@ PostgreSQL은 비즈니스 데이터의 신뢰할 수 있는 원본입니다. Re
 
 Cordy에는 서로 다른 두 WebSocket 경로가 있습니다.
 
-- `cordy-realtime`과 `cordy-server/src/realtime_runtime.rs`는 이슈, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
+- `cordy-realtime`과 `server-rs/crates/cordy-server/src/realtime_runtime.rs`는 이슈, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
 - `cordy-handler`의 daemon WebSocket route와 `cordy-daemon`은 실행 컴퓨터를 연결해 런타임을 깨우고 daemon RPC를 실행합니다.
 
 WebSocket은 지연을 줄이지만 최종 상태는 데이터베이스에 있습니다. 클라이언트는 재연결 후 query로 다시 동기화해야 합니다. 데몬도 polling 경로를 유지해 한 번의 연결 끊김으로 queued 태스크가 영구히 멈추지 않게 합니다.

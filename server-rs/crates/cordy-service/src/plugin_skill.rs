@@ -1,5 +1,4 @@
-//! Skill resources — port of `server/internal/service/plugin_skill.go` plus
-//! `server/internal/skill/frontmatter.go`.
+//! Plugin skill resources and frontmatter handling.
 //!
 //! A plugin's `skill` resource becomes an ordinary row in the existing skill
 //! table. Not a plugin-owned copy, not a bundle, not an artifact with a digest:
@@ -166,7 +165,7 @@ async fn fetch_skill_resource(
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter — port of server/internal/skill/frontmatter.go
+// Frontmatter
 // ---------------------------------------------------------------------------
 
 /// Extracts name and description from the YAML frontmatter block of a SKILL.md

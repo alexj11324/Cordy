@@ -1,17 +1,14 @@
-//! Port of `server/internal/daemon/wakeup.go` (lines 20–97, 278–333, 335–526).
+//! Daemon task-wakeup WebSocket lifecycle.
 //!
 //! The daemon-side task-wakeup WebSocket: connection lifecycle policy
 //! (backoff/jitter/runtime-set reset), the per-runtime heartbeat sender, and
 //! the pure helpers (`taskWakeupURL`, `jitterDuration`,
-//! `shouldResetTaskWakeupBackoff`, `signalTaskWakeup`,
-//! `sleepWithContextOrRuntimeChange`).
+//! `signalTaskWakeup`).
 //!
 //! Symbol map (Go → Rust):
-//! - `errRuntimeSetChanged` → [`RuntimeSetChanged`]
 //! - `taskWakeupMaxBackoff` / `taskWakeupReadLimit` / pong/write waits /
 //!   backoff-reset → [`TASK_WAKEUP_*`] constants
-//! - `shouldResetTaskWakeupBackoff` / `jitterDuration` / `signalTaskWakeup` /
-//!   `sleepWithContextOrRuntimeChange` → same-named fns
+//! - `jitterDuration` / `signalTaskWakeup` → same-named fns
 //! - `runWSHeartbeatSender` / `sendWSHeartbeats` →
 //!   [`run_ws_heartbeat_sender`] over a [`FrameSink`] trait
 //! - `marshalRaw` → inlined (`serde_json::to_value` + Null on failure)
@@ -32,12 +29,6 @@ use cordy_protocol::{
 
 use crate::client::HeartbeatResponse;
 use crate::repocache::Ctx;
-
-/// `errRuntimeSetChanged`: the runtime set changed while a wakeup connection
-/// was live; reconnect immediately with backoff reset.
-#[derive(Debug, thiserror::Error)]
-#[error("runtime set changed")]
-pub(crate) struct RuntimeSetChanged;
 
 /// `taskWakeupMaxBackoff` (wakeup.go:23).
 pub(crate) const TASK_WAKEUP_MAX_BACKOFF: Duration = Duration::from_secs(30);
@@ -63,15 +54,6 @@ pub(crate) const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskWakeup {
     pub runtime_id: String,
-}
-
-/// `shouldResetTaskWakeupBackoff` (wakeup.go:80): a connection that stayed up
-/// past the reset window proves the path healthy — restart backoff from 1s.
-pub(crate) fn should_reset_task_wakeup_backoff(connected_for: Duration) -> bool {
-    if connected_for.is_zero() {
-        return false;
-    }
-    TASK_WAKEUP_BACKOFF_RESET_AFTER.is_zero() || connected_for >= TASK_WAKEUP_BACKOFF_RESET_AFTER
 }
 
 /// `jitterDuration` (wakeup.go:87): full-width ±d/5 uniform jitter.
@@ -100,20 +82,6 @@ pub(crate) fn signal_task_wakeup(tx: &mpsc::Sender<TaskWakeup>, runtime_id: &str
     let _ = tx.try_send(TaskWakeup {
         runtime_id: runtime_id.to_string(),
     });
-}
-
-/// `sleepWithContextOrRuntimeChange` (wakeup.go:514): sleeps for `d`, but
-/// returns early (Ok) when the runtime set changed, Err on ctx cancellation.
-pub(crate) async fn sleep_with_context_or_runtime_change(
-    ctx: &Ctx,
-    d: Duration,
-    runtime_set_changed: impl std::future::Future<Output = ()>,
-) -> Result<(), crate::repocache::CancelCause> {
-    tokio::select! {
-        () = ctx.cancelled() => Err(ctx.cause()),
-        () = runtime_set_changed => Ok(()),
-        _ = tokio::time::sleep(d) => Ok(()),
-    }
 }
 
 /// Sink for outbound WS frames — Go's `writes chan<- *wsOutbound`. The writer
@@ -221,9 +189,7 @@ pub(crate) async fn run_ws_heartbeat_sender(
     }
 }
 
-/// `ack_advertises_rpc_v1`: the capability scan from
-/// `handleWSHeartbeatAckForConnection` (wakeup.go:359–364), extracted so lane B
-/// only wires the state mutation.
+/// Reports whether a heartbeat acknowledgement advertises RPC v1.
 pub(crate) fn ack_advertises_rpc_v1(ack: &HeartbeatResponse) -> bool {
     ack.server_capabilities
         .iter()
@@ -275,14 +241,6 @@ pub(crate) fn task_wakeup_url(base_url: &str, runtime_ids: &[String]) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn should_reset_backoff() {
-        assert!(!should_reset_task_wakeup_backoff(Duration::ZERO));
-        assert!(!should_reset_task_wakeup_backoff(Duration::from_secs(9)));
-        assert!(should_reset_task_wakeup_backoff(Duration::from_secs(10)));
-        assert!(should_reset_task_wakeup_backoff(Duration::from_secs(120)));
-    }
 
     #[test]
     fn jitter_stays_within_fifth() {

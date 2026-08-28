@@ -61,7 +61,7 @@ together and what must be delivered when you redistribute.
         repository.
       - This restriction is inapplicable to uses of Cordy that do not
         involve a Cordy user interface, such as running only the
-        `server/` backend, the daemon, or the CLI without redistributing
+        `server-rs/` backend, the daemon, or the CLI without redistributing
         or operating any Cordy user interface. Such uses remain subject
         to condition (c) below.
 

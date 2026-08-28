@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/webhook_delivery.sql (generated webhook_delivery.sql.go).
+//! Typed SQL queries for webhook_delivery records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

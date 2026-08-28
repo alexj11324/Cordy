@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/contact_sales.sql (generated contact_sales.sql.go).
+//! Typed SQL queries for contact_sales records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

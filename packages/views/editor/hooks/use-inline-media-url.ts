@@ -15,7 +15,7 @@ import { api } from "@cordy/core/api";
 import { attachmentIdFromDownloadURL } from "@cordy/core/types/attachment-url";
 
 // Keep refetches well inside the server's signed-URL TTL (30 min default,
-// server/internal/handler/file.go) so a re-render never serves an expired
+// the Rust file handler) so a re-render never serves an expired
 // signature from the query cache.
 const RESIGN_STALE_MS = 20 * 60 * 1000;
 

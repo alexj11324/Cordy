@@ -8,9 +8,9 @@
  *
  * SYNCED COPY — KEEP IDENTICAL TO packages/core/markdown/mention-shortcodes.ts.
  * Mobile imports the core copy because packages/ui/ cannot be imported from
- * mobile (Sharing Principles in apps/mobile/CLAUDE.md), and packages/ui/
+ * mobile (Sharing Principles in apps/mobile/AGENTS.md), and packages/ui/
  * cannot import from packages/core/ (Package Boundary Rules in root
- * CLAUDE.md). If you change the regex / behavior here, change core's copy
+ * AGENTS.md). If you change the regex / behavior here, change core's copy
  * too — otherwise web and mobile will render legacy mentions differently
  * and the "Counts must agree" parity rule breaks.
  */

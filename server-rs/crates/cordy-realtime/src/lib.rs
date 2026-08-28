@@ -1,4 +1,4 @@
-//! Realtime subsystem — port of `server/internal/realtime`.
+//! Realtime subsystem.
 //!
 //! Modules mirror the Go files one-to-one:
 //! - [`broadcaster`]: scope constants + producer-facing traits

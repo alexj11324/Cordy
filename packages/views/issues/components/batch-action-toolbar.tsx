@@ -20,6 +20,8 @@ import { commonIssueFields } from "@cordy/core/issues/batch";
 import { issueBehavesAs } from "@cordy/core/issues";
 import { useBatchUpdateIssues, useBatchDeleteIssues } from "@cordy/core/issues/mutations";
 import { useModalStore } from "@cordy/core/modals";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
 import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
 import { useT } from "../../i18n";
 import { cn } from "@cordy/ui/lib/utils";
@@ -50,6 +52,8 @@ export function BatchActionToolbar({
   placement?: "fixed-bottom" | "inline";
 }) {
   const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const { categoryOf } = useIssueStatuses(wsId);
   const selection = useIssueSurfaceSelection();
   const selectedIds = selection.selectedIds;
   const clear = selection.clear;
@@ -111,17 +115,42 @@ export function BatchActionToolbar({
     }
   };
 
-  // Batch status changes apply directly — no run-confirm modal (MUL-4155).
-  // done/cancelled can never start a run, and a backlog → active promotion now
-  // starts its run the same way a single-issue status change or the CLI does,
-  // without an extra confirmation step (product decision on MUL-4155). The
-  // status change was previously routed through the pre-trigger modal, which for
-  // the common done/cancelled case only rendered a misleading "现在开始处理？ →
-  // 不会开始处理" box. Agent/squad assignment still confirms via
-  // handleBatchAssignee — that is the only batch action that should preview a
-  // run fan-out.
+  // Most status changes apply directly. Entering review first chooses one
+  // reviewer who differs from every current owner, then the modal submits the
+  // status + reviewer handoff together for the full selection.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
     if (!updates.status) return;
+    if (
+      categoryOf(updates.status) === "in_review" &&
+      selectedIssues.some((issue) => !issueBehavesAs(issue, "in_review"))
+    ) {
+      const excludedAssignees = Array.from(
+        new Map(
+          selectedIssues.flatMap((issue) =>
+            issue.assignee_type && issue.assignee_id
+              ? [
+                  [
+                    `${issue.assignee_type}:${issue.assignee_id}`,
+                    { type: issue.assignee_type, id: issue.assignee_id },
+                  ] as const,
+                ]
+              : [],
+          ),
+        ).values(),
+      );
+      openModal("issue-run-confirm", {
+        issueIds: ids,
+        mode: "review",
+        status: updates.status,
+        fromAssigneeType: null,
+        fromAssigneeId: null,
+        fromAssigneeName: t(($) => $.batch.selected_owners),
+        excludedAssignees,
+        assigneeType: null,
+        assigneeId: null,
+      });
+      return;
+    }
     void handleBatchUpdate(updates);
   };
 

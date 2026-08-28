@@ -1,5 +1,4 @@
-//! The task-lifecycle outbound patcher — port of
-//! `server/internal/integrations/lark/outbound.go`.
+//! The task-lifecycle outbound patcher.
 //!
 //! Reacts to task-lifecycle events on the event bus and forwards chat replies
 //! to Lark. The original "thinking → streaming → final card" lifecycle was

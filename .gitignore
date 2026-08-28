@@ -9,7 +9,7 @@ dist
 .next
 out
 build
-bin
+/bin/
 dist-electron
 *.tsbuildinfo
 # ...except electron-builder's source resources dir, which holds tracked
@@ -40,13 +40,6 @@ dist-electron
 # test coverage
 coverage
 
-# Go
-server/bin/
-server/tmp/
-server/migrate
-server/daemon
-server/cordy
-
 # Test artifacts
 test-results/
 apps/web/test-results/
@@ -69,7 +62,6 @@ _features/
 # platform specific
 *.dmg
 *.app
-server/server
 data/
 .kilo
 .idea

@@ -12,7 +12,7 @@ is only a compatibility pointer back here. Use `Makefile`, `package.json`, and
 Rust backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packages.
 
 - `server-rs/` - production Rust backend, migration runner, daemon, and CLI
-- `server/` - legacy Go compatibility/reference tree pending final retirement
+- `migrations/` - production database migrations consumed by the Rust runner
 - `apps/web/` - Next.js frontend (App Router)
 - `apps/desktop/` - Electron desktop app
 - `apps/mobile/` - Expo / React Native iOS app (read `apps/mobile/AGENTS.md` first)
@@ -65,7 +65,7 @@ make check            # Product-wide local helper; not an agent/default migratio
 - Add reusable visual primitives to `packages/ui`; keep business logic in
   `packages/core` and shared product screens in `packages/views`.
 - All user-facing strings must use the repository i18n layer. Update the
-  English, Chinese, Japanese, and French locale files together.
+  English, Chinese, Japanese, and Korean locale files together.
 - Use kebab-case filenames, PascalCase components, camelCase functions, and
   `use-*.ts` for hooks.
 
@@ -81,23 +81,19 @@ make check            # Product-wide local helper; not an agent/default migratio
 
 ### Rust migration verification scope
 
-GitHub Actions is the authoritative and automatic CI/build environment for this
+GitHub Actions is the sole CI, compilation, and test environment for this
 repository. After pushing a PR branch, use its GitHub checks for Rust formatting,
 check, Clippy, tests, builds, deployment contracts, production images, installers,
 and platform coverage. Diagnose failures from the Actions logs, push a fix, and
 wait for the replacement run; do not substitute a local result for a required
 GitHub check.
 
-Agents must not run local `cargo`, `pnpm`/Vitest/Playwright, Docker builds,
-`make test`, `make check`, or other compilation/test pipelines by default.
-Local work is limited to editing and lightweight non-compiling checks such as
-`git diff --check`, conflict-marker scans, and configuration parsing. Run a
-local compiler or test command only when the user explicitly requests it or
-GitHub Actions is unavailable and the user approves the fallback.
-
-Rust migration PRs never require the legacy Go test suite. Go files may be
-inspected for compatibility evidence when a Rust change crosses an existing Go
-protocol boundary, but Go tests are not a merge condition.
+Agents must not run local `cargo`, `pnpm`/Vitest/Playwright, Go commands, Docker
+builds, `make test`, `make check`, or any other compilation or test pipeline.
+Agent-side verification is limited to editing and lightweight non-compiling
+checks such as `git diff --check`, conflict-marker scans, shell syntax checks,
+and configuration parsing. Rust migration work must never run Go tooling or Go
+tests.
 
 ### Commits, PRs, and Releases
 

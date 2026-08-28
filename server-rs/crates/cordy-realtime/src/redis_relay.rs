@@ -1,4 +1,4 @@
-//! Legacy per-scope Redis Stream relay — port of `server/internal/realtime/redis_relay.go`.
+//! Legacy per-scope Redis Stream relay.
 //!
 //! One consumer group per node per scope; hub subscription changes drive
 //! per-scope XREADGROUP loops. Retention (XTRIM/TTL) is shared with the

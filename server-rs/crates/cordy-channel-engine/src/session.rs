@@ -1,8 +1,7 @@
 //! The shared, channel-agnostic chat-session service every IM adapter
 //! reuses (MUL-3516).
 //!
-//! Port of the DB half of
-//! `server/internal/integrations/channel/engine/session.go`
+//! Database-backed session operations
 //! (ChatSession: EnsureSession / MarkPendingFresh / AppendUserMessage /
 //! BindMediaRefs). Lifted out of the Feishu-specific lark.chatSessionService
 //! so adding an IM never re-implements the session/append/`/issue`

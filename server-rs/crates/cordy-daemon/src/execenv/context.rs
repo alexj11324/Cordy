@@ -33,8 +33,8 @@
 //! - renderQuickCreateContext     → render_quick_create_context
 //! - renderAutopilotContext       → render_autopilot_context
 //!
-//! Shared package helpers hosted here per mod.rs (sidecar-manifest /
-//! runtime-skill-policy land with lane E2/E3 consumers):
+//! Shared package helpers hosted here for sidecar manifests and runtime skill
+//! policy:
 //! - sidecar_manifest.go: SidecarManifest, recordMkdirAll, recordWriteFile,
 //!   errPathPreExists, allocateCollisionFreeSkillDir, skillSlugCandidate,
 //!   writeSidecarManifest, CleanupSidecars, rollBackManifest,
@@ -633,10 +633,8 @@ fn resolve_skills_dir(
     Ok(skills_dir)
 }
 
-// S9-integration: pkg/agent.BuiltinRuntimeByID descriptor registry lands with
-// the daemon runtime-probe port; until then only the SkillsDir projection is
-// needed here. Extend this map when new built-in identities (e.g. more pi-
-// family forks) are ported.
+// Extend this projection when a built-in runtime declares its own skills
+// directory.
 fn builtin_runtime_skills_dir(provider: &str) -> Option<&'static str> {
     match provider {
         "omp" => Some(".omp/skills"),
@@ -679,9 +677,7 @@ pub(crate) fn skills_dir_path(work_dir: &str, provider: &str) -> String {
     }
 }
 
-// S9-integration: internal/skill.IsReservedContentPath (reserved.go). The
-// canonical filename check travels with the skill-package port; the rule is
-// EqualFold(Clean(p), "SKILL.md").
+// Reserved skill content is the canonical SKILL.md path, case-insensitively.
 fn is_reserved_content_path(p: &str) -> bool {
     clean_path(p).eq_ignore_ascii_case("SKILL.md")
 }

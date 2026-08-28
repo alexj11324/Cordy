@@ -54,7 +54,7 @@ class RouteParityTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "expected 424 routes"):
                 route_parity.load_contract(contract)
 
-    def test_normalizes_chi_and_axum_wildcards_to_the_same_contract(self):
+    def test_normalizes_bare_and_named_wildcards_to_the_same_contract(self):
         self.assertEqual(route_parity.normalize_route("/uploads/*"), "/uploads/{*}")
         self.assertEqual(
             route_parity.normalize_route("/uploads/{*path}"), "/uploads/{*}"

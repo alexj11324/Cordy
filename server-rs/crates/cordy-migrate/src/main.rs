@@ -1,4 +1,4 @@
-//! cordy-migrate — Rust replacement for `server/cmd/migrate`.
+//! Cordy database migration runner.
 //!
 //! Usage: `cordy-migrate up|down|status` (DATABASE_URL env required).
 

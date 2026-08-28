@@ -1,6 +1,6 @@
 //! MCP JSON-RPC discovery over the secure HTTP stack.
 //!
-//! Port of the discovery half of `server/pkg/remotemcp/client.go`
+//! Discovery operations
 //! (`Discover`, `call`, `notify`, `readResponse`, `canonicalJSON`,
 //! `ToolSetDigest`, `SupportedProtocolVersions`). The endpoint validation
 //! and client construction halves already live in
@@ -308,14 +308,13 @@ fn read_response(response: &http::Response<Vec<u8>>) -> Result<Vec<u8>, Error> {
     Ok(response.body().clone())
 }
 
-/// True when `wanted` is in `values` (helper mirroring Go's containsString,
-/// kept for parity with the Go test table).
+/// True when `wanted` is in `values`.
 pub fn contains_string(values: &[String], wanted: &str) -> bool {
     values.iter().any(|v| v == wanted)
 }
 
-// host_allowed is re-exported here because Go's Discover path reaches it via
-// the same package; the service layer uses validate::host_allowed directly.
+// Keep the validation helper reachable through the discovery module for
+// callers that share discovery policy.
 #[allow(unused_imports)]
 use crate::validate::host_allowed as _host_allowed_reexport;
 
@@ -408,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_string_matches_go_helper() {
+    fn contains_string_matches_exact_value() {
         let values = vec!["2025-03-26".to_string()];
         assert!(contains_string(&values, "2025-03-26"));
         assert!(!contains_string(&values, "2024-11-05"));

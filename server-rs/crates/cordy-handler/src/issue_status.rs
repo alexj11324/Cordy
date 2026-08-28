@@ -476,7 +476,9 @@ mod tests {
     struct TestFlags(bool);
 
     impl FlagSource for TestFlags {
-        fn is_enabled(&self, _key: &str, _default: bool) -> bool {
+        fn is_enabled(&self, key: &str, default: bool) -> bool {
+            assert_eq!(key, cordy_service::feature_flags::CUSTOM_ISSUE_STATUSES);
+            assert!(!default, "custom status rollout must fail closed");
             self.0
         }
     }
@@ -534,13 +536,36 @@ mod tests {
         body(response).await
     }
 
-    async fn test_pool() -> Option<sqlx::PgPool> {
-        let url = std::env::var("DATABASE_URL").ok()?;
+    async fn status_request(
+        state: HandlerState,
+        context: WorkspaceContext,
+        method: axum::http::Method,
+        uri: String,
+        value: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let request = axum::http::Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(axum::http::header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(value.to_string()))
+            .expect("issue-status request");
+        let response = router()
+            .with_state(state)
+            .layer(Extension(context))
+            .oneshot(request)
+            .await
+            .expect("issue-status response");
+        body(response).await
+    }
+
+    async fn test_pool() -> sqlx::PgPool {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue-status production contract tests");
         PgPoolOptions::new()
             .max_connections(4)
             .connect(&url)
             .await
-            .ok()
+            .expect("connect issue-status production contract database")
     }
 
     async fn create_workspace(pool: &sqlx::PgPool) -> Uuid {
@@ -652,10 +677,7 @@ mod tests {
 
     #[tokio::test]
     async fn production_catalog_contract_is_atomic_and_emits_only_committed_changes() {
-        let Some(pool) = test_pool().await else {
-            eprintln!("skipping: DATABASE_URL not set or unreachable");
-            return;
-        };
+        let pool = test_pool().await;
         let workspace_id = create_workspace(&pool).await;
         let state = state(pool.clone(), true);
         let events = Arc::new(Mutex::new(Vec::<cordy_events::Event>::new()));
@@ -772,6 +794,30 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED);
         let second_id = Uuid::parse_str(second["id"].as_str().expect("second id")).unwrap();
 
+        // Drive the production PATCH route, including its router binding,
+        // path/body extractors, workspace context, database update and
+        // post-write event. Direct helper calls cannot prove this endpoint.
+        let (status, updated) = status_request(
+            state.clone(),
+            admin.clone(),
+            axum::http::Method::PATCH,
+            format!("/api/issue-statuses/{first_id}"),
+            json!({
+                "name": "Human Review Updated",
+                "description": "Updated through the production handler",
+                "color": "#7C3AED",
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(updated["id"], first_id.to_string());
+        assert_eq!(updated["name"], "Human Review Updated");
+        assert_eq!(
+            updated["description"],
+            "Updated through the production handler"
+        );
+        assert_eq!(updated["color"], "#7c3aed");
+
         let built_in: Uuid = sqlx::query_scalar(
             "SELECT id FROM issue_status WHERE workspace_id = $1 AND key = 'in_progress'",
         )
@@ -825,18 +871,20 @@ mod tests {
                 .await
                 .expect("positions after rejected reorder");
         assert_eq!(positions_after, positions_before);
-        assert_eq!(events.lock().expect("event log").len(), 2);
+        assert_eq!(events.lock().expect("event log").len(), 3);
 
-        // Reorder must claim the shared catalog guard before changing any
-        // positions. Hold an exclusive catalog lock to make that ordering
-        // observable instead of relying on a timing sleep.
-        let mut exclusive = pool.begin().await.expect("reorder race lock transaction");
-        status_q::lock_issue_status_catalog(&mut *exclusive, workspace_id)
+        // Let reorder acquire the production shared catalog lock, then block
+        // on a status row. Archive must wait for that real in-flight writer;
+        // once reorder commits, archive may retire the status for future use.
+        let mut row_holder = pool.begin().await.expect("reorder row holder");
+        sqlx::query("SELECT id FROM issue_status WHERE id = $1 FOR UPDATE")
+            .bind(first_id)
+            .fetch_one(&mut *row_holder)
             .await
-            .expect("reorder race exclusive lock");
+            .expect("hold reordered status row");
         let reorder_state = state.clone();
         let reorder_admin = admin.clone();
-        let mut pending_reorder = tokio::spawn(async move {
+        let pending_reorder = tokio::spawn(async move {
             reorder(
                 State(reorder_state),
                 Extension(reorder_admin),
@@ -847,17 +895,34 @@ mod tests {
             )
             .await
         });
+        wait_for_shared_catalog_lock(&pool, workspace_id).await;
+        let archive_state = state.clone();
+        let archive_admin = admin.clone();
+        let mut pending_archive = tokio::spawn(async move {
+            archive(
+                State(archive_state),
+                Extension(archive_admin),
+                Path(first_id.to_string()),
+            )
+            .await
+        });
         assert!(
-            timeout(std::time::Duration::from_millis(100), &mut pending_reorder)
+            timeout(std::time::Duration::from_millis(100), &mut pending_archive)
                 .await
                 .is_err(),
-            "reorder must wait for an archival/exclusive catalog lock"
+            "archive must wait for the production reorder's shared catalog lock"
         );
-        exclusive.commit().await.expect("release reorder race lock");
+        row_holder
+            .commit()
+            .await
+            .expect("release reordered status row");
         let (status, _) = body(pending_reorder.await.expect("reorder task")).await;
         assert_eq!(status, StatusCode::OK);
+        // Archive may commit as soon as reorder releases the shared catalog
+        // lock, so include archived custom rows when checking the committed
+        // positions. Archival is asserted separately below.
         let ordered: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM issue_status WHERE workspace_id = $1 AND category = 'in_progress' AND is_system = FALSE AND archived_at IS NULL ORDER BY position, key",
+            "SELECT id FROM issue_status WHERE workspace_id = $1 AND category = 'in_progress' AND is_system = FALSE ORDER BY position, key",
         )
         .bind(workspace_id)
         .fetch_all(&pool)
@@ -865,15 +930,7 @@ mod tests {
         .expect("committed order");
         assert_eq!(ordered, vec![second_id, first_id]);
 
-        let (status, archived) = body(
-            archive(
-                State(state.clone()),
-                Extension(admin),
-                Path(first_id.to_string()),
-            )
-            .await,
-        )
-        .await;
+        let (status, archived) = body(pending_archive.await.expect("archive task")).await;
         assert_eq!(status, StatusCode::OK);
         assert!(archived["archived_at"].is_string());
         assert!(issue_status::resolve(&pool, workspace_id, "human_review")
@@ -896,7 +953,10 @@ mod tests {
                     .to_string()
             })
             .collect();
-        assert_eq!(actions, ["created", "created", "reordered", "archived"]);
+        assert_eq!(
+            actions,
+            ["created", "created", "updated", "reordered", "archived"]
+        );
         assert_eq!(
             events
                 .lock()
@@ -907,6 +967,7 @@ mod tests {
             [
                 json!({"action": "created"}),
                 json!({"action": "created"}),
+                json!({"action": "updated"}),
                 json!({"action": "reordered"}),
                 json!({"action": "archived"}),
             ]
@@ -942,10 +1003,7 @@ mod tests {
 
     #[tokio::test]
     async fn issue_create_and_archive_race_has_only_the_two_go_outcomes() {
-        let Some(pool) = test_pool().await else {
-            eprintln!("skipping: DATABASE_URL not set or unreachable");
-            return;
-        };
+        let pool = test_pool().await;
         let workspace_id = create_workspace(&pool).await;
         issue_status::ensure(&pool, workspace_id)
             .await
@@ -976,6 +1034,8 @@ mod tests {
             title: title.into(),
             status: status.into(),
             priority: "none".into(),
+            assignee_type: Some("member".into()),
+            assignee_id: Some(creator_id),
             creator_type: "member".into(),
             creator_id,
             allow_duplicate: true,
@@ -1198,20 +1258,70 @@ mod tests {
             .expect("updated issue status");
         assert_eq!(persisted_status, "update_before_archive");
 
+        // Batch update uses the same production transaction. Hold its issue
+        // row after the shared catalog lock is acquired, then prove archive
+        // cannot retire the target until the batch commits.
         let batch_target = insert_status("batch_target", "Batch Target").await;
-        let (status, batch) = issue_request(
-            state,
-            admin,
-            axum::http::Method::POST,
-            "/api/issues/batch-update".into(),
-            json!({
-                "issue_ids": [created.id.to_string()],
-                "updates": {"status": batch_target.key},
-            }),
-        )
-        .await;
+        let mut batch_row_holder = pool.begin().await.expect("batch issue row holder");
+        sqlx::query("SELECT id FROM issue WHERE id = $1 FOR UPDATE")
+            .bind(created.id)
+            .fetch_one(&mut *batch_row_holder)
+            .await
+            .expect("hold batch issue row");
+        let batch_state = state.clone();
+        let batch_admin = admin.clone();
+        let issue_id = created.id;
+        let batch_key = batch_target.key.clone();
+        let pending_batch = tokio::spawn(async move {
+            issue_request(
+                batch_state,
+                batch_admin,
+                axum::http::Method::POST,
+                "/api/issues/batch-update".into(),
+                json!({
+                    "issue_ids": [issue_id.to_string()],
+                    "updates": {"status": batch_key},
+                }),
+            )
+            .await
+        });
+        wait_for_shared_catalog_lock(&pool, workspace_id).await;
+        let archive_state = state.clone();
+        let archive_id = batch_target.id;
+        let mut pending_archive = tokio::spawn(async move {
+            archive(
+                State(archive_state),
+                Extension(admin),
+                Path(archive_id.to_string()),
+            )
+            .await
+        });
+        assert!(
+            timeout(std::time::Duration::from_millis(100), &mut pending_archive)
+                .await
+                .is_err(),
+            "archive must wait for the batch update's shared catalog lock"
+        );
+        batch_row_holder
+            .commit()
+            .await
+            .expect("release batch issue row");
+        let (status, batch) = pending_batch.await.expect("batch task");
         assert_eq!(status, StatusCode::OK);
         assert_eq!(batch, json!({"updated": 1}));
+        assert_eq!(
+            pending_archive
+                .await
+                .expect("batch target archive task")
+                .status(),
+            StatusCode::OK
+        );
+        let persisted_status: String = sqlx::query_scalar("SELECT status FROM issue WHERE id = $1")
+            .bind(created.id)
+            .fetch_one(&pool)
+            .await
+            .expect("batch-updated issue status");
+        assert_eq!(persisted_status, "batch_target");
 
         delete_workspace(&pool, workspace_id).await;
     }

@@ -1,25 +1,5 @@
-//! Port of `server/internal/daemon/health.go` (lines 19–184, 179–406) — the
-//! daemon's local health endpoint surface.
-//!
-//! Symbol map (Go → Rust):
-//! - `HealthResponse` / `healthWorkspace` → [`HealthResponse`] /
-//!   [`HealthWorkspace`]
-//! - `repoCheckoutRequest` → [`RepoCheckoutRequest`]
-//! - `activeRepoCheckoutTask` → [`ActiveRepoCheckoutTask`]
-//! - `registerActiveRepoCheckoutTask` / `clearActiveRepoCheckoutTask` /
-//!   `activeRepoCheckoutTask(r)` → [`RepoCheckoutRegistry`] methods
-//! - `authorizeRepoCheckoutWorkDir` → [`authorize_repo_checkout_workdir`]
-//! - constants → [`REPO_CHECKOUT_*`]
-//!
-//! S9-integration: `listenHealth`, `healthHandler`, `shutdownHandler`,
-//! `serveHealth` and `repoCheckoutHandler` are Daemon methods (lane B) — they
-//! read d.cfg/d.mu/d.ready/d.repoCache and own the HTTP mux. They land with
-//! daemon.go core; this module carries everything those handlers need that is
-//! Daemon-independent (wire types + workdir authorization + the bearer-token
-//! registry), so lane B only wires them.
-
-// S9-integration: consumed by daemon.go core (lane B) health server wiring; silence dead-code until wired.
-#![allow(dead_code)]
+//! The daemon's local health endpoint wire types, repository-checkout
+//! authorization, and bearer-token registry.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -28,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 /// `HealthResponse`: returned by the daemon's local health endpoint.
 ///
-/// Field-level notes preserved from Go: OS lets the desktop app detect a
-/// foreign-OS daemon (#3916); Profile is deliberately NOT omitempty because the
+/// OS lets the desktop app detect a foreign-OS daemon (#3916); Profile is
+/// deliberately NOT omitted because the
 /// empty string is a real answer ("I am the default profile's daemon") that
 /// must stay distinguishable from a pre-#6694 daemon (#6694); SkippedAgents is
 /// what made GH #6077 actionable (MUL-5439).
@@ -95,6 +75,16 @@ pub struct HealthResponse {
     pub workspaces: Vec<HealthWorkspace>,
 }
 
+/// Machine-level provider diagnostics from the latest successful discovery
+/// round. The registration owner replaces this snapshot atomically so the
+/// health endpoint never combines agents from one probe with skip reasons
+/// from another.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentHealthSnapshot {
+    pub agents: Vec<String>,
+    pub skipped_agents: HashMap<String, String>,
+}
+
 fn is_zero(v: &i64) -> bool {
     *v == 0
 }
@@ -141,9 +131,6 @@ pub struct ActiveRepoCheckoutTask {
 /// `REPO_CHECKOUT_LOCK_WAIT_TIMEOUT` etc. (health.go:179–184).
 pub(crate) const REPO_CHECKOUT_LOCK_WAIT_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
-pub(crate) const REPO_CHECKOUT_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(2);
-pub(crate) const REPO_CHECKOUT_RETRY_HEADER: &str = "X-Cordy-Retryable";
-pub(crate) const REPO_CHECKOUT_RETRY_VALUE_BUSY: &str = "repo-busy";
 
 /// The registry half of Go's `d.repoCheckoutTasks` map (health.go:111–153):
 /// binds checkout identity to the active task via a per-task bearer token. The

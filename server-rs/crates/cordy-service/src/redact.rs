@@ -1,5 +1,5 @@
 //! Detects and masks secrets in agent output before it reaches the database
-//! or WebSocket broadcast — port of `server/pkg/redact`.
+//! or WebSocket broadcast.
 //!
 //! Patterns are checked in order; first match wins per position. The nested
 //! walk is load-bearing, not defensive tidying: providers record structured

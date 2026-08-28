@@ -1,4 +1,4 @@
-//! Realtime collector — port of `server/internal/metrics/realtime.go`.
+//! Realtime collector.
 //!
 //! Exposes the atomic counters of [`cordy_realtime::Metrics`] as Prometheus
 //! const metrics gathered at scrape time. Metric names and label sets match

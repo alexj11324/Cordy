@@ -1,6 +1,3 @@
-//! Port of `server/internal/daemon/canonical_path.go` (lines 1–61) and
-//! `server/internal/daemon/canonical_path_windows.go` (lines 1–127).
-//!
 //! Canonicalizes agent executable paths. Ordinary symlinks resolve to their
 //! final target, but entrypoints backed by a name-dispatching shim (Volta's
 //! `volta-shim`, Vite Plus's `vp`) keep the invoked basename — spawning the
@@ -16,12 +13,8 @@
 //!   extended-length-prefix trimming, instead of calling the Win32 APIs
 //!   directly (no windows-sys dependency available to this crate).
 //! - Go's test-injection var `executablePathForLaunch` becomes a plain
-//!   function returning `Option`; integration swaps the implementation at
-//!   the call site.
-
-// S9-integration: consumed by daemon.go executable discovery wiring that
-// lands with integration; silence dead-code until then.
-#![allow(dead_code)]
+//!   function returning `Option`; the daemon launch selector injects this
+//!   function at its testable call boundary.
 
 use std::path::{Path, PathBuf};
 

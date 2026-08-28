@@ -1,34 +1,8 @@
-//! Port of `server/internal/daemon/local_directory.go` (537 lines).
+//! Local-directory task assignment and worktree handling.
 //!
-//! S9-integration: entry points are wired by the daemon-runner lane.
-//!
-//! Symbol map (Go → Rust):
-//! - `localDirectoryResourceType` → [`LOCAL_DIRECTORY_RESOURCE_TYPE`]
-//! - `localDirectoryModeInPlace` / `localDirectoryModeWorktree` →
-//!   [`LOCAL_DIRECTORY_MODE_IN_PLACE`] / [`LOCAL_DIRECTORY_MODE_WORKTREE`]
-//! - `localDirectoryRef` → [`LocalDirectoryRef`]
-//! - `localDirectoryAssignment` (+ UsesWorktree/ValidateExecutionMode) →
-//!   [`LocalDirectoryAssignment`]
-//! - `localDirectoryAssignmentForTask` → [`local_directory_assignment_for_task`]
-//! - `findLocalDirectoryAssignment` → [`find_local_directory_assignment`]
-//! - `normalizeLocalPath` → [`normalize_local_path`]
-//! - `resolveRealPath` → [`resolve_real_path`]
-//! - `validateLocalPath` → [`validate_local_path`]
-//! - `isBlacklistedLocalPath` → [`is_blacklisted_local_path`]
-//! - `isBlacklistedRealPath` → [`is_blacklisted_real_path`]
-//! - `isDriveRoot` → [`is_drive_root`]
-//! - `systemRootBlacklist` → [`system_root_blacklist`]
-//! - `checkDirReadWrite` → [`check_dir_read_write`]
-//! - `isGitWorkTree` → [`is_git_work_tree`]
-//! - `LocalPathLocker` (+ Holder/Acquire) → [`LocalPathLocker`]
-//!
-//! Port notes: the per-path mutex becomes `tokio::sync::Mutex`; Go's
-//! spawn-then-race acquire is mirrored by racing the lock future against
-//! [`Ctx::cancelled`](crate::repocache::Ctx::cancelled), with the loser
-//! releasing in a spawned task exactly as Go does. The returned release
-//! closure is an idempotent guard (Go wraps it in sync.Once).
-
-#![allow(dead_code)]
+//! Validates local project resources, resolves execution modes, and serializes
+//! in-place tasks with a cancellable per-path mutex. Worktree assignments do
+//! not use the in-place path lock.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -44,8 +18,7 @@ pub(crate) const LOCAL_DIRECTORY_RESOURCE_TYPE: &str = "local_directory";
 pub(crate) const LOCAL_DIRECTORY_MODE_IN_PLACE: &str = "in_place";
 pub(crate) const LOCAL_DIRECTORY_MODE_WORKTREE: &str = "worktree";
 
-/// Mirrors the server-side ref shape for local_directory project resources
-/// (local_directory.go:34–39).
+/// Server-side reference shape for local-directory project resources.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct LocalDirectoryRef {
@@ -57,7 +30,7 @@ pub struct LocalDirectoryRef {
     pub execution_mode: String,
 }
 
-/// The resolved view of a task's local_directory resource (go:47–51).
+/// The resolved view of a task's local-directory resource.
 #[derive(Debug, Clone)]
 pub struct LocalDirectoryAssignment {
     pub reference: LocalDirectoryRef,
@@ -443,6 +416,7 @@ impl std::fmt::Debug for PathLockRelease {
 }
 
 impl PathLockRelease {
+    #[cfg(test)]
     pub fn release(mut self) {
         if let Some(guard) = self.guard.take() {
             self.entry.set_holder("");
@@ -475,6 +449,7 @@ impl LocalPathLocker {
 
     /// The task id currently holding the lock for realPath, or "" when free —
     /// feeds the server-side wait_reason hint (go:431–441).
+    #[cfg(test)]
     pub(crate) fn holder(&self, real_path: &str) -> String {
         let entry = {
             let locks = self.locks.lock().unwrap_or_else(|p| p.into_inner());

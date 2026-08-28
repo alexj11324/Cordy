@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/daemon_token.sql (generated daemon_token.sql.go).
+//! Typed SQL queries for daemon_token records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

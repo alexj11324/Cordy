@@ -1,5 +1,4 @@
-//! Daemon claim payload assembly — port of Go `buildClaimedTaskResponse`
-//! (server/internal/handler/daemon.go) plus its helpers
+//! Daemon claim payload assembly and helpers
 //! (`worktreeClaimBlockReason`, `rerunSourceMatchesTaskScope`,
 //! `trailingUserMessages`, capability parsing).
 //!
@@ -304,7 +303,7 @@ async fn workspace_repos_or(
     fallback
 }
 
-/// Port of Go `buildClaimedTaskResponse` for one already-claimed task.
+/// Builds the claim response for one already-claimed task.
 ///
 /// A returned Err means the task must NOT be dispatched; the builder has already
 /// cancelled it where the failure semantics require it.

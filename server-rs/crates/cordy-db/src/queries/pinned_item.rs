@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/pinned_item.sql (generated pinned_item.sql.go).
+//! Typed SQL queries for pinned_item records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

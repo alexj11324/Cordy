@@ -1,4 +1,4 @@
-//! Empty-claim cache — full port of `service/empty_claim_cache.go`.
+//! Empty-claim cache.
 //!
 //! Caches "this runtime currently has no queued task" so the daemon's
 //! poll-based claim path can short-circuit before hitting Postgres. Only the
@@ -8,7 +8,7 @@
 //! The verdict is tagged with a per-runtime invalidation version that every
 //! enqueue bumps before waking the daemon — closing the slow-claim race where
 //! an empty verdict written AFTER an enqueue would otherwise stall the queued
-//! task until TTL (see the Go source for the T1/T2/T3 interleaving).
+//! task until TTL.
 
 use std::time::Duration;
 

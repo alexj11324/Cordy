@@ -1,5 +1,4 @@
-//! Structured HTTP request logging — port of
-//! `server/internal/middleware/request_logger.go`.
+//! Structured HTTP request logging.
 //!
 //! Port notes (axum vs chi runtime differences):
 //! - Body capture for soft-404 classification only intercepts 404 responses
@@ -127,14 +126,7 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     let request_id = header_str(&req, "x-request-id");
     let user_id = verified_jwt_user_id(&req);
     let meta = req.extensions().get::<ClientMetadata>().cloned();
-    let request_span = tracing::info_span!(
-        "http_request",
-        request_id = tracing::field::Empty,
-        user_id = tracing::field::Empty,
-        client_platform = tracing::field::Empty,
-        client_version = tracing::field::Empty,
-        client_os = tracing::field::Empty,
-    );
+    let request_span = request_context_span();
     record_nonempty(&request_span, "request_id", &request_id);
     record_nonempty(&request_span, "user_id", &user_id);
     if let Some(meta) = meta.as_ref() {
@@ -213,6 +205,21 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     res
 }
 
+/// Request fields are context for warnings and errors emitted by handlers, not
+/// an informational event of their own. Use the highest span level so a
+/// subscriber filtering out INFO (or even WARN) events does not discard that
+/// context before an enabled inner event is recorded.
+fn request_context_span() -> tracing::Span {
+    tracing::error_span!(
+        "http_request",
+        request_id = tracing::field::Empty,
+        user_id = tracing::field::Empty,
+        client_platform = tracing::field::Empty,
+        client_version = tracing::field::Empty,
+        client_os = tracing::field::Empty,
+    )
+}
+
 fn header_str(req: &Request, name: &str) -> String {
     req.headers()
         .get(name)
@@ -232,6 +239,28 @@ mod tests {
     use super::*;
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
     use serde_json::json;
+
+    struct ErrorOnlySubscriber;
+
+    impl tracing::Subscriber for ErrorOnlySubscriber {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::ERROR
+        }
+
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+        fn event(&self, _event: &tracing::Event<'_>) {}
+
+        fn enter(&self, _span: &tracing::span::Id) {}
+
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
 
     #[test]
     fn webhook_paths_redact_token_segment() {
@@ -264,6 +293,24 @@ mod tests {
         assert!(is_soft_not_found(b"{\"error\":\"task not found\"}"));
         assert!(!is_soft_not_found(b"{\"error\":\"wrong path\"}"));
         assert!(!is_soft_not_found(b""));
+    }
+
+    #[test]
+    fn request_context_span_survives_info_and_warn_filtering() {
+        tracing::subscriber::with_default(ErrorOnlySubscriber, || {
+            let span = request_context_span();
+            let metadata = span.metadata().expect("enabled request context span");
+            assert_eq!(*metadata.level(), tracing::Level::ERROR);
+            for field in [
+                "request_id",
+                "user_id",
+                "client_platform",
+                "client_version",
+                "client_os",
+            ] {
+                assert!(metadata.fields().field(field).is_some(), "missing {field}");
+            }
+        });
     }
 
     #[test]

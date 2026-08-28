@@ -1,4 +1,4 @@
-//! Config surface — port of `server/internal/metrics/config.go`.
+//! Config surface.
 
 /// METRICS_ADDR-driven configuration for the standalone /metrics server.
 #[derive(Debug, Clone, Default)]

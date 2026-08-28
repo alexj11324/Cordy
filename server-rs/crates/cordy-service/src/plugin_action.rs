@@ -1,4 +1,4 @@
-//! Action API authorization — port of `server/internal/service/plugin_action.go`.
+//! Action API authorization.
 //!
 //! [`PluginActionCaller`] is one authorized Action API call: which installation
 //! is speaking, in which workspace, on whose behalf.

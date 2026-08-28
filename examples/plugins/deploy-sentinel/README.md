@@ -98,11 +98,7 @@ approve.
 
 ## Tested
 
-`server/internal/handler/plugin_example_test.go` installs **this manifest**,
-not a copy, and drives it: the skill lands in the skill table, the agent tool
-list contains exactly the hooks that declare the `agent` trigger, an agent hook
-call goes out signed and comes back, and the `metrics` tools are discovered,
-refused before approval, and pinned by schema digest after it.
-
-The `.mjs` files are what you run by hand. The test uses Go servers that answer
-the same contract, so CI does not need node.
+The Rust plugin service's contract tests cover manifest installation, skill and
+agent-hook registration, signed hook calls, MCP tool discovery, approval, and
+schema-digest pinning. This example exercises the same production manifest and
+wire contracts with the `.mjs` processes that you run by hand.

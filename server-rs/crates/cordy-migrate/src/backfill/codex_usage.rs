@@ -1,7 +1,7 @@
 //! Repairs historical Codex `task_usage.input_tokens` rows that were written
 //! before cached input was normalized at ingestion time.
 //!
-//! Port of `server/cmd/backfill_codex_usage_cache`. This is a hosted-data
+//! This is a hosted-data
 //! repair: dry-run is the default, `--cutoff` is required, and only rows that
 //! are still before the cutoff can be updated.
 

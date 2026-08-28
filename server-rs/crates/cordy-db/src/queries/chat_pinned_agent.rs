@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/chat_pinned_agent.sql (generated chat_pinned_agent.sql.go).
+//! Typed SQL queries for chat_pinned_agent records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

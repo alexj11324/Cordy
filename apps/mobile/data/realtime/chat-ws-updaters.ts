@@ -313,7 +313,7 @@ export function seedAcceptedPendingTask(
  * Mirrors `packages/core/realtime/use-realtime-sync.ts` ~675-689 (web's
  * single global handler). Mobile attaches per-session via
  * `use-chat-session-realtime` instead — see the WS strategy note in
- * `apps/mobile/CLAUDE.md` for why mobile prefers per-record mounts.
+ * `apps/mobile/AGENTS.md` for why mobile prefers per-record mounts.
  */
 export function appendTaskMessage(
   qc: QueryClient,

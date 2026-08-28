@@ -8,9 +8,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
@@ -87,6 +88,7 @@ const SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
 const SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
 const TASK_PREPARATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const LAUNCH_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[cfg(test)]
 pub(crate) static ENV_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -184,12 +186,32 @@ struct TaskModelSelection {
     service_tier: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VerifiedLaunch {
+    path: String,
+    version: String,
+    /// Registration version visible when this path was verified. A later
+    /// accepted registration with a different version invalidates the cache
+    /// even if an installer reused the same concrete path.
+    registered_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LaunchCandidate {
+    path: String,
+    /// Present for registration-accepted or previously verified paths. A
+    /// newly resolved path leaves this unset until its version is probed and
+    /// checked against the provider minimum.
+    version: Option<String>,
+}
+
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
 /// Metadata-only runtimes fail at `build_backend`; no provider can turn into a
 /// pretend success path.
 pub struct ProductionProviderAdapter {
     config: Arc<Config>,
     model_cache: Arc<CatalogCache>,
+    verified_launches: Arc<RwLock<HashMap<String, VerifiedLaunch>>>,
     skill_cache: Arc<SkillBundleCache>,
     local_paths: Arc<LocalPathLocker>,
     started_at: Instant,
@@ -208,6 +230,7 @@ impl ProductionProviderAdapter {
         Self {
             config,
             model_cache: Arc::new(CatalogCache::default()),
+            verified_launches: Arc::new(RwLock::new(HashMap::new())),
             skill_cache: Arc::new(SkillBundleCache::new(&skill_cache_root)),
             local_paths: Arc::new(LocalPathLocker::new()),
             started_at: Instant::now(),
@@ -215,6 +238,14 @@ impl ProductionProviderAdapter {
             running_tasks: AtomicI64::new(0),
             resource_wait_tasks: AtomicI64::new(0),
         }
+    }
+
+    async fn resolve_launch_for_execution(
+        &self,
+        ctx: &Ctx,
+        launch: RuntimeLaunchSpec,
+    ) -> anyhow::Result<RuntimeLaunchSpec> {
+        resolve_launch_for_execution(ctx, &self.config, &self.verified_launches, launch).await
     }
 
     /// Resolves the values a task will actually pass to the provider. The
@@ -448,6 +479,15 @@ impl ProductionProviderAdapter {
                 ),
                 None,
             );
+        };
+        let launch = match self.resolve_launch_for_execution(&ctx, launch).await {
+            Ok(launch) => launch,
+            Err(error) => {
+                return failed(
+                    error.context(format!("resolve {} executable for launch", target.provider)),
+                    None,
+                );
+            }
         };
         let default_model = self
             .config
@@ -1209,30 +1249,6 @@ impl ProductionProviderAdapter {
     }
 }
 
-fn apply_task_mcp_config(
-    task: &Task,
-    target: &RuntimeExecutionTarget,
-    inputs: &mut ProviderExecutionInputs,
-) {
-    let Some(agent_mcp_config) = task
-        .agent
-        .as_ref()
-        .and_then(|agent| agent.mcp_config.as_ref())
-    else {
-        return;
-    };
-    match crate::runtime_mcp::merge_runtime_and_agent_mcp_config(&target.provider, agent_mcp_config)
-    {
-        Ok(effective) => inputs.effective_mcp_config = effective,
-        Err(error) => tracing::warn!(
-            task = %task.id,
-            provider = %target.provider,
-            %error,
-            "mcp_config: runtime merge failed; using agent configuration only"
-        ),
-    }
-}
-
 #[async_trait::async_trait]
 impl ProviderRuntimeAdapter for ProductionProviderAdapter {
     async fn handle_non_update_heartbeat_actions(
@@ -1259,6 +1275,8 @@ impl ProviderRuntimeAdapter for ProductionProviderAdapter {
                 Arc::clone(&client),
                 Arc::clone(&launch_registry),
                 Arc::clone(&self.model_cache),
+                Arc::clone(&self.config),
+                Arc::clone(&self.verified_launches),
                 workspace_id.clone(),
                 runtime_id.clone(),
                 target.clone(),
@@ -1327,10 +1345,266 @@ impl ProviderRuntimeAdapter for ProductionProviderAdapter {
             active_task_count: self.active_tasks.load(Ordering::Acquire),
             running_task_count: self.running_tasks.load(Ordering::Acquire),
             resource_wait_task_count: self.resource_wait_tasks.load(Ordering::Acquire),
-            agents: self.config.agents.keys().cloned().collect(),
             ..HealthResponse::default()
         }
     }
+}
+
+fn launch_cache_key(target: &RuntimeExecutionTarget) -> String {
+    format!("{}\0{}", target.provider, target.profile_id)
+}
+
+fn configured_launch_command(config: &Config, target: &RuntimeExecutionTarget) -> Option<String> {
+    if !target.profile_id.is_empty() {
+        return None;
+    }
+    config
+        .agents
+        .get(&target.provider)
+        .map(|entry| entry.command.trim())
+        .filter(|command| !command.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            cordy_agent::provider(&target.provider).map(|provider| {
+                std::env::var(format!("{}_PATH", provider.env_prefix))
+                    .ok()
+                    .map(|command| command.trim().to_string())
+                    .filter(|command| !command.is_empty())
+                    .unwrap_or_else(|| provider.default_command.to_string())
+            })
+        })
+        .or_else(|| {
+            cordy_agent::builtin_runtime(&target.provider).map(|runtime| {
+                std::env::var(format!("{}_PATH", runtime.env_prefix))
+                    .ok()
+                    .map(|command| command.trim().to_string())
+                    .filter(|command| !command.is_empty())
+                    .unwrap_or_else(|| runtime.default_command.to_string())
+            })
+        })
+}
+
+fn anyhow_is_not_found(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<io::Error>()
+            .is_some_and(|error| error.kind() == io::ErrorKind::NotFound)
+    })
+}
+
+fn executable_check_error(path: &str, error: io::Error) -> anyhow::Error {
+    anyhow::Error::new(error).context(format!("agent executable {path:?} is not launchable"))
+}
+
+/// Selects the exact executable to verify or launch. The three closures keep
+/// the filesystem/platform seams injectable without mutable process-global
+/// test hooks.
+fn select_launch_candidate_with<ResolveLaunchPath, InspectPath, ReresolveCommand>(
+    launch: &RuntimeLaunchSpec,
+    cached: Option<&VerifiedLaunch>,
+    command: Option<&str>,
+    resolve_launch_path: ResolveLaunchPath,
+    inspect_path: InspectPath,
+    reresolve_command: ReresolveCommand,
+) -> anyhow::Result<LaunchCandidate>
+where
+    ResolveLaunchPath: Fn(&str) -> anyhow::Result<Option<String>>,
+    InspectPath: Fn(&str) -> io::Result<()>,
+    ReresolveCommand: Fn(&str) -> Option<String>,
+{
+    let heal_missing = || -> anyhow::Result<LaunchCandidate> {
+        let command = command
+            .map(str::trim)
+            .filter(|command| !command.is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "agent executable {:?} disappeared and has no discovery command",
+                    launch.command_path
+                )
+            })?;
+        let rediscovered = reresolve_command(command).ok_or_else(|| {
+            anyhow::anyhow!(
+                "agent executable {:?} disappeared and command {command:?} could not be re-resolved",
+                launch.command_path
+            )
+        })?;
+        let path = match resolve_launch_path(&rediscovered)
+            .with_context(|| format!("resolve re-discovered agent executable {rediscovered:?}"))?
+        {
+            Some(path) => path,
+            None => rediscovered,
+        };
+        inspect_path(&path).map_err(|error| executable_check_error(&path, error))?;
+        Ok(LaunchCandidate {
+            path,
+            version: None,
+        })
+    };
+
+    match resolve_launch_path(&launch.command_path) {
+        Ok(Some(path)) => {
+            if let Some(cached) = cached.filter(|cached| cached.path == path) {
+                match inspect_path(&cached.path) {
+                    Ok(()) => {
+                        return Ok(LaunchCandidate {
+                            path: cached.path.clone(),
+                            version: Some(cached.version.clone()),
+                        });
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(executable_check_error(&cached.path, error)),
+                }
+            }
+            match inspect_path(&path) {
+                Ok(()) => Ok(LaunchCandidate {
+                    path,
+                    version: None,
+                }),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => heal_missing(),
+                Err(error) => Err(executable_check_error(&path, error)),
+            }
+        }
+        Ok(None) => {
+            // A live, previously verified heal wins over the original pinned
+            // path so a later PATH change cannot redirect launches backwards.
+            if let Some(cached) = cached {
+                match inspect_path(&cached.path) {
+                    Ok(()) => {
+                        return Ok(LaunchCandidate {
+                            path: cached.path.clone(),
+                            version: Some(cached.version.clone()),
+                        });
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(executable_check_error(&cached.path, error)),
+                }
+            }
+            match inspect_path(&launch.command_path) {
+                Ok(()) => Ok(LaunchCandidate {
+                    path: launch.command_path.clone(),
+                    version: Some(launch.version.clone()),
+                }),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => heal_missing(),
+                Err(error) => Err(executable_check_error(&launch.command_path, error)),
+            }
+        }
+        Err(error) if anyhow_is_not_found(&error) => heal_missing(),
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "resolve agent executable {:?} for launch",
+                launch.command_path
+            )
+        }),
+    }
+}
+
+async fn probe_launch_version(
+    ctx: &Ctx,
+    command_path: &str,
+    fixed_args: &[String],
+) -> anyhow::Result<String> {
+    let mut command = tokio::process::Command::new(command_path);
+    command.args(fixed_args).arg("--version");
+    let probe_ctx = ctx.child();
+    let output = crate::gc::processtree::output(&probe_ctx, command, LAUNCH_VERSION_PROBE_TIMEOUT);
+    tokio::pin!(output);
+    let output = tokio::select! {
+        result = &mut output => result?,
+        () = ctx.cancelled() => {
+            let cause = ctx.cause();
+            probe_ctx.cancel_with(cause);
+            let _ = output.await;
+            anyhow::bail!("provider version probe cancelled: {cause}");
+        }
+        () = tokio::time::sleep(LAUNCH_VERSION_PROBE_TIMEOUT) => {
+            probe_ctx.cancel_with(CancelCause::DeadlineExceeded);
+            let _ = output.await;
+            anyhow::bail!(
+                "provider version probe timed out after {:?}",
+                LAUNCH_VERSION_PROBE_TIMEOUT
+            );
+        }
+    };
+    Ok(cordy_agent::extract_version_line(&String::from_utf8_lossy(
+        &output,
+    )))
+}
+
+fn apply_verified_launch_version(
+    launch: &RuntimeLaunchSpec,
+    path: String,
+    version: String,
+) -> anyhow::Result<RuntimeLaunchSpec> {
+    anyhow::ensure!(
+        !version.trim().is_empty(),
+        "provider {} returned no version",
+        launch.target.provider
+    );
+    cordy_agent::check_provider_minimum(&launch.target.provider, &version).with_context(|| {
+        format!(
+            "provider {} version {version:?} is not supported",
+            launch.target.provider
+        )
+    })?;
+    let mut verified = launch.clone();
+    verified.command_path = path;
+    verified.version = version;
+    Ok(verified)
+}
+
+async fn resolve_launch_for_execution(
+    ctx: &Ctx,
+    config: &Config,
+    verified_launches: &RwLock<HashMap<String, VerifiedLaunch>>,
+    launch: RuntimeLaunchSpec,
+) -> anyhow::Result<RuntimeLaunchSpec> {
+    let key = launch_cache_key(&launch.target);
+    let cached = verified_launches
+        .read()
+        .map_err(|_| anyhow::anyhow!("verified launch cache lock poisoned"))?
+        .get(&key)
+        .filter(|cached| cached.registered_version == launch.version)
+        .cloned();
+    let command = configured_launch_command(config, &launch.target);
+    let candidate = select_launch_candidate_with(
+        &launch,
+        cached.as_ref(),
+        command.as_deref(),
+        crate::canonical_path::executable_path_for_launch,
+        crate::config::check_agent_executable_for_launch,
+        crate::config::reresolve_agent_command,
+    )?;
+
+    if let Some(version) = candidate.version {
+        let mut accepted = launch;
+        accepted.command_path = candidate.path;
+        accepted.version = version;
+        return Ok(accepted);
+    }
+
+    let version = probe_launch_version(ctx, &candidate.path, &launch.fixed_args)
+        .await
+        .with_context(|| format!("detect provider {} version", launch.target.provider))?;
+    let verified = apply_verified_launch_version(&launch, candidate.path, version)?;
+    verified_launches
+        .write()
+        .map_err(|_| anyhow::anyhow!("verified launch cache lock poisoned"))?
+        .insert(
+            key,
+            VerifiedLaunch {
+                path: verified.command_path.clone(),
+                version: verified.version.clone(),
+                registered_version: launch.version.clone(),
+            },
+        );
+    tracing::info!(
+        provider = %verified.target.provider,
+        profile_id = %verified.target.profile_id,
+        command_path = %verified.command_path,
+        version = %verified.version,
+        "verified resolved agent executable for launch"
+    );
+    Ok(verified)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1339,6 +1613,8 @@ async fn handle_model_list(
     client: Arc<Client>,
     launch_registry: Arc<RuntimeLaunchRegistry>,
     cache: Arc<CatalogCache>,
+    config: Arc<Config>,
+    verified_launches: Arc<RwLock<HashMap<String, VerifiedLaunch>>>,
     workspace_id: String,
     runtime_id: String,
     target: RuntimeExecutionTarget,
@@ -1361,30 +1637,41 @@ async fn handle_model_list(
             "error": format!("accepted launch for provider {} has no executable path", target.provider),
         }),
         Some(launch) => {
-            let config = cordy_agent::BackendConfig {
-                command: cordy_agent::RuntimeCommand::new(launch.command_path, launch.fixed_args),
-                env: BTreeMap::new(),
-                builtin_runtime: target.profile_id.is_empty(),
-            };
-            match cordy_agent::registry::discover_models(
-                &target.provider,
-                config,
-                &cache,
-                ctx.token().clone(),
-                Duration::ZERO,
-            )
-            .await
-            {
-                Ok(catalog) => json!({
-                    "status": "completed",
-                    "models": catalog.models,
-                    "supported": cordy_agent::registry::model_selection_supported(&target.provider),
-                    "fallback": catalog.fallback,
-                }),
+            match resolve_launch_for_execution(&ctx, &config, &verified_launches, launch).await {
                 Err(error) => json!({
                     "status": "failed",
                     "error": error.to_string(),
                 }),
+                Ok(launch) => {
+                    let config = cordy_agent::BackendConfig {
+                        command: cordy_agent::RuntimeCommand::new(
+                            launch.command_path,
+                            launch.fixed_args,
+                        ),
+                        env: BTreeMap::new(),
+                        builtin_runtime: target.profile_id.is_empty(),
+                    };
+                    match cordy_agent::registry::discover_models(
+                        &target.provider,
+                        config,
+                        &cache,
+                        ctx.token().clone(),
+                        Duration::ZERO,
+                    )
+                    .await
+                    {
+                        Ok(catalog) => json!({
+                            "status": "completed",
+                            "models": catalog.models,
+                            "supported": cordy_agent::registry::model_selection_supported(&target.provider),
+                            "fallback": catalog.fallback,
+                        }),
+                        Err(error) => json!({
+                            "status": "failed",
+                            "error": error.to_string(),
+                        }),
+                    }
+                }
             }
         }
     };
@@ -2594,6 +2881,7 @@ fn prepared_environment_inputs(
     }
 }
 
+#[cfg(test)]
 fn launch_for_environment(
     launch: &RuntimeLaunchSpec,
     provider: &str,
@@ -2996,12 +3284,27 @@ mod tests {
             provider: "deveco".to_string(),
             profile_id: String::new(),
         };
+        let command_path = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let verified_path = crate::canonical_path::executable_path_for_launch(&command_path)
+            .unwrap()
+            .unwrap_or_else(|| command_path.clone());
+        adapter.verified_launches.write().unwrap().insert(
+            launch_cache_key(&target),
+            VerifiedLaunch {
+                path: verified_path,
+                version: "1".to_string(),
+                registered_version: "1".to_string(),
+            },
+        );
         launches.replace_builtins(
             "workspace-1",
             vec![RuntimeLaunchSpec {
                 target: target.clone(),
                 display_name: "Deveco".to_string(),
-                command_path: "/bin/false".to_string(),
+                command_path,
                 fixed_args: Vec::new(),
                 version: "1".to_string(),
             }],
@@ -3595,6 +3898,144 @@ mod tests {
         });
         assert_eq!(batch.messages[1].content, content);
         assert_eq!(batch.messages[1].output.len(), TOOL_OUTPUT_BYTES);
+    }
+
+    fn launch_fixture(provider: &str, path: &str, version: &str) -> RuntimeLaunchSpec {
+        RuntimeLaunchSpec {
+            target: RuntimeExecutionTarget {
+                provider: provider.to_string(),
+                profile_id: String::new(),
+            },
+            display_name: provider.to_string(),
+            command_path: path.to_string(),
+            fixed_args: Vec::new(),
+            version: version.to_string(),
+        }
+    }
+
+    #[test]
+    fn launch_path_hook_retargets_before_spawn_and_requires_version_verification() {
+        let launch = launch_fixture("codex", "C:/stable/codex.exe", "0.100.0");
+        let candidate = select_launch_candidate_with(
+            &launch,
+            None,
+            Some("codex"),
+            |path| {
+                assert_eq!(path, "C:/stable/codex.exe");
+                Ok(Some("C:/releases/0.101.0/codex.exe".to_string()))
+            },
+            |path| {
+                assert_eq!(path, "C:/releases/0.101.0/codex.exe");
+                Ok(())
+            },
+            |_| panic!("a live retargeted junction must not re-resolve PATH"),
+        )
+        .unwrap();
+        assert_eq!(candidate.path, "C:/releases/0.101.0/codex.exe");
+        assert_eq!(candidate.version, None);
+    }
+
+    #[test]
+    fn not_found_launch_resolution_reresolves_and_reapplies_platform_hook() {
+        let launch = launch_fixture("claude", "/old/claude", "2.0.0");
+        let candidate = select_launch_candidate_with(
+            &launch,
+            None,
+            Some("claude"),
+            |path| match path {
+                "/old/claude" => Err(anyhow::Error::new(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "installer junction vanished",
+                ))),
+                "/new/stable/claude" => Ok(Some("/new/releases/2.1.0/claude".to_string())),
+                other => panic!("unexpected path resolution: {other}"),
+            },
+            |path| {
+                assert_eq!(path, "/new/releases/2.1.0/claude");
+                Ok(())
+            },
+            |command| {
+                assert_eq!(command, "claude");
+                Some("/new/stable/claude".to_string())
+            },
+        )
+        .unwrap();
+        assert_eq!(candidate.path, "/new/releases/2.1.0/claude");
+        assert_eq!(candidate.version, None);
+    }
+
+    #[test]
+    fn vanished_cached_and_pinned_paths_reresolve_but_permission_failure_does_not() {
+        let launch = launch_fixture("claude", "/old/claude", "2.0.0");
+        let cached = VerifiedLaunch {
+            path: "/older/healed/claude".to_string(),
+            version: "2.0.1".to_string(),
+            registered_version: "2.0.0".to_string(),
+        };
+        let healed = select_launch_candidate_with(
+            &launch,
+            Some(&cached),
+            Some("claude"),
+            |_| Ok(None),
+            |path| match path {
+                "/older/healed/claude" => Err(io::Error::new(io::ErrorKind::NotFound, "removed")),
+                "/old/claude" => Err(io::Error::new(io::ErrorKind::NotFound, "removed")),
+                "/new/claude" => Ok(()),
+                other => panic!("unexpected inspected path: {other}"),
+            },
+            |_| Some("/new/claude".to_string()),
+        )
+        .unwrap();
+        assert_eq!(healed.path, "/new/claude");
+        assert_eq!(healed.version, None);
+
+        let reresolved = std::cell::Cell::new(false);
+        let error = select_launch_candidate_with(
+            &launch,
+            None,
+            Some("claude"),
+            |_| Ok(None),
+            |_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "denied")),
+            |_| {
+                reresolved.set(true);
+                Some("/must-not-run".to_string())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("not launchable"));
+        assert!(!reresolved.get());
+    }
+
+    #[test]
+    fn freshly_resolved_launch_must_pass_version_and_minimum_policy() {
+        let launch = launch_fixture("claude", "/old/claude", "2.0.0");
+        let too_old = apply_verified_launch_version(
+            &launch,
+            "/new/claude".to_string(),
+            "Claude Code 1.9.99".to_string(),
+        );
+        assert!(too_old.is_err());
+        let invalid = apply_verified_launch_version(
+            &launch,
+            "/new/claude".to_string(),
+            "not-a-version".to_string(),
+        );
+        assert!(invalid.is_err());
+        let missing = apply_verified_launch_version(
+            &launch_fixture("qwen", "/old/qwen", "1"),
+            "/new/qwen".to_string(),
+            String::new(),
+        );
+        assert!(missing.is_err());
+
+        let verified = apply_verified_launch_version(
+            &launch,
+            "/new/claude".to_string(),
+            "Claude Code 2.1.0".to_string(),
+        )
+        .unwrap();
+        assert_eq!(verified.command_path, "/new/claude");
+        assert_eq!(verified.version, "Claude Code 2.1.0");
     }
 
     #[test]

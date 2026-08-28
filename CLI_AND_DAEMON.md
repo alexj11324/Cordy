@@ -16,7 +16,7 @@ brew install cordy-ai/tap/cordy
 git clone https://github.com/cordy-ai/cordy.git
 cd cordy
 make build
-cp server/bin/cordy /usr/local/bin/cordy
+cp bin/cordy /usr/local/bin/cordy
 ```
 
 ### Update
@@ -899,9 +899,10 @@ cordy daemon status --output json
 ## Error Messages
 
 The CLI funnels command errors returned to the top-level handler through a
-single user-facing translation layer (`server/internal/cli/errors.go`) so that
-what you see on the terminal is a short, actionable sentence rather than a raw
-Go error, an HTTP status line, or an internal `resolve issue: ...` chain. (A
+single user-facing translation layer (`server-rs/crates/cordy-cli/src/error.rs`)
+so that what you see on the terminal is a short, actionable sentence rather
+than a raw internal error, an HTTP status line, or an internal `resolve issue:
+...` chain. (A
 few commands print their own output or run deliberate fast probes — for example
 `setup`'s short `/health` reachability check — and don't go through this
 layer.) The underlying detail is still available on demand (see `--debug`).
@@ -964,7 +965,7 @@ CORDY_DEBUG=1 cordy issue update MUL-1234 --title "x"
 ### Request timeout
 
 API requests use a default timeout of 30 seconds. Override it with
-`CORDY_HTTP_TIMEOUT` when you are on a slow network; it accepts a Go duration
+`CORDY_HTTP_TIMEOUT` when you are on a slow network; it accepts a duration
 (`45s`, `2m`) or a plain number of seconds (`45`). Command-level deadlines are
 always at least this value, so raising it takes effect across all commands.
 

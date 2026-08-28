@@ -40,8 +40,7 @@ impl Store {
         )
         .await?
         .ok_or_else(|| anyhow::anyhow!("wecom: installation not found for bot {bot_id}"))?;
-        // sqlc maps pgx.ErrNoRows; the Rust generator returns Option, so the
-        // missing-row case surfaces as the same error text Go's caller saw.
+        // Preserve the channel-facing missing-installation error contract.
         installation_from_row(&row)
     }
 

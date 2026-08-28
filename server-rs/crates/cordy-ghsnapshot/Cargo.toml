@@ -1,6 +1,6 @@
 [package]
 name = "cordy-ghsnapshot"
-description = "GitHub snapshot integration (port of server/internal/integrations/ghsnapshot): client, refresh, snapshot"
+description = "GitHub snapshot integration: client, refresh, snapshot"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

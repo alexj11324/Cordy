@@ -1,27 +1,7 @@
-#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
-//! Port of `server/internal/daemon/prompt.go` — per-turn prompt assembly for
+//! Per-turn prompt assembly for
 //! issue / comment / chat / autopilot / quick-create tasks, plus the
 //! run-scoped context blocks (MUL-5377) appended after the cached prefix.
-//!
-//! Symbol map:
-//! - `BuildPrompt` → [`build_prompt`]
-//! - `buildPromptBody` → [`build_prompt_body`]
-//! - `sessionContinuityNoticeFor` / `backendResumeContinuityNotice` /
-//!   `perTurnContextBlocks` → same-named functions
-//! - `buildActiveSiblingRunsBlock` → [`build_active_sibling_runs_block`]
-//! - `buildQuickCreatePrompt` → [`build_quick_create_prompt`]
-//! - `buildCommentPrompt` → [`build_comment_prompt`]
-//! - `commentReplyThreads` → [`comment_reply_threads`]
-//! - `buildChatPrompt` → [`build_chat_prompt`]
-//! - `channelDisplayName` → [`channel_display_name`]
-//! - `buildAutopilotPrompt` → [`build_autopilot_prompt`]
-//! - `taskIsSquadLeader` → [`task_is_squad_leader`]
-//!
-//! The `SessionContinuityNotice*` constants and
-//! `BuildTaskInitiatorBlock`/`BuildConnectedAppsBlock` live in execenv's
-//! runtime_config_sections.go (lane E1a); they are ported here into
-//! `crate::execenv::runtime_config_sections` because the per-turn prompt is
-//! their only daemon-side consumer.
+//! Shared context sections live in [`crate::runtime_config_sections`].
 
 use crate::execenv::channel_type::{
     audience_of, channel_carries_files, channel_display_name as execenv_channel_display_name,
@@ -35,7 +15,7 @@ use crate::runtime_config_sections::{
 use crate::slash_skill::extract_slash_skills;
 use crate::types::{ActiveSiblingRunData, Task};
 
-/// squadBriefingMarker (prompt.go): legacy role signal ONLY.
+/// Legacy role signal retained for historical squad briefings.
 const SQUAD_BRIEFING_MARKER: &str = "## Squad Operating Protocol";
 
 /// `sessionContinuityNoticeFor`.

@@ -1,6 +1,6 @@
 [package]
 name = "cordy-analytics"
-description = "Product telemetry shipping to PostHog — port of server/internal/analytics"
+description = "Product telemetry shipping to PostHog"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

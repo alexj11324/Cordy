@@ -299,6 +299,9 @@ export function ManualCreatePanel({
   // List cache usually has it already, so this resolves synchronously.
   const wsId = useWorkspaceId();
   const { categoryOf: draftStatusCategory } = useIssueStatuses(wsId);
+  const activeStatusRequiresAssignee = ["in_progress", "in_review", "blocked"].includes(
+    draftStatusCategory(status),
+  );
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
   const { data: parentIssue } = useQuery({
     ...issueDetailOptions(wsId, parentIssueId ?? ""),
@@ -380,7 +383,11 @@ export function ManualCreatePanel({
   const showField = {
     status: manualFields.includes("status") || status !== "todo" || fieldPickerOpen === "status",
     priority: manualFields.includes("priority") || priority !== "none" || fieldPickerOpen === "priority",
-    assignee: manualFields.includes("assignee") || assigneeId != null || fieldPickerOpen === "assignee",
+    assignee:
+      activeStatusRequiresAssignee ||
+      manualFields.includes("assignee") ||
+      assigneeId != null ||
+      fieldPickerOpen === "assignee",
     labels: manualFields.includes("labels") || labelIds.length > 0 || fieldPickerOpen === "labels",
     project: manualFields.includes("project") || projectId != null || fieldPickerOpen === "project",
     due_date: manualFields.includes("due_date") || dueDate !== null || dueDatePickerOpen,
@@ -450,6 +457,11 @@ export function ManualCreatePanel({
     uploadGate: gate,
     normalize: () => title.trim(),
     onSubmit: async (): Promise<boolean> => {
+      if (activeStatusRequiresAssignee && (!assigneeType || !assigneeId)) {
+        toast.error(t(($) => $.create_issue.active_assignee_required));
+        setFieldPickerOpen("assignee");
+        return false;
+      }
       // Flush the description editor's pending debounce into the store BEFORE
       // snapshotting, so a late flush of pre-submit typing cannot masquerade
       // as an edit made during the request.
@@ -1229,6 +1241,11 @@ export function ManualCreatePanel({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+            {activeStatusRequiresAssignee && (!assigneeType || !assigneeId) ? (
+              <p className="px-5 pb-2 text-caption text-destructive">
+                {t(($) => $.create_issue.active_assignee_required)}
+              </p>
+            ) : null}
 
             {/* Parent / child pickers — rendered inline so they stack over this
                 modal instead of replacing it via useModalStore. */}

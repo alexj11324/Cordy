@@ -19,7 +19,7 @@ import { useT } from "../i18n";
  * need a panel about it.
  */
 
-/** A breaker trips on this many failures inside its window; see plugin_hook.go. */
+/** A breaker trips on this many failures inside its window; keep in sync with the Rust plugin-hook service. */
 const BREAKER_THRESHOLD = 5;
 
 export function summarizeInvocations(invocations: readonly PluginInvocation[]) {

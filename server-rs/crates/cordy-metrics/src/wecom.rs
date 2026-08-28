@@ -1,4 +1,4 @@
-//! WeCom adapter metrics — port of `server/internal/metrics/wecom.go`.
+//! WeCom adapter metrics.
 //!
 //! The production sink behind the WeCom adapter's Metrics interface. The
 //! adapter degrades quietly: dial failures and refused handshakes both return

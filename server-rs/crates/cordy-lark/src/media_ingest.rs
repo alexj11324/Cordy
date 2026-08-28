@@ -1,5 +1,4 @@
-//! Feishu media ingestion — port of
-//! `server/internal/integrations/lark/media_ingest.go`.
+//! Feishu media ingestion.
 //!
 //! HasMedia is a pure in-memory decode of the already-received payload — it
 //! runs on the connector ACK path. ResolveMedia downloads each resource and

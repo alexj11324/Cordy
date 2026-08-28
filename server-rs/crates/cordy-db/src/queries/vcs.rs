@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/vcs.sql (generated vcs.sql.go).
+//! Typed SQL queries for vcs records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

@@ -90,7 +90,7 @@ function RealtimeSubscriptions() {
 
 /**
  * Workspace context layout. Reads the slug from the URL (the route is the
- * source of truth — see apps/mobile/CLAUDE.md "Behavioral parity"), validates
+ * source of truth — see apps/mobile/AGENTS.md "Behavioral parity"), validates
  * membership against the workspaces list, then syncs id+slug into the
  * Zustand store so ApiClient.fetch can read the slug synchronously when
  * injecting the X-Workspace-Slug header.
@@ -189,7 +189,7 @@ export default function WorkspaceLayout() {
             footgun of a custom TextInput inside ListHeaderComponent. The
             route file wires `headerSearchBarOptions` via setOptions. If this
             proves out, propagate to label / project / other search pickers
-            and update CLAUDE.md Lesson 6 with a carve-out. */}
+            and update AGENTS.md Lesson 6 with a carve-out. */}
         <Stack.Screen
           name="issue/[id]/picker/assignee"
           options={{

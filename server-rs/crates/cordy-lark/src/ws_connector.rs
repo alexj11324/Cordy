@@ -1,5 +1,4 @@
-//! WS long-conn connector — port of
-//! `server/internal/integrations/lark/ws_connector.go`.
+//! WS long-conn connector.
 //!
 //! WSLongConnConnector is the production EventConnector that holds the Lark
 //! long-conn WebSocket open, decodes the binary Frame envelope the

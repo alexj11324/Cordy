@@ -22,14 +22,15 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use crate::activity::DaemonActivity;
 use crate::auth_lifecycle::{renew_token_once, token_renewal_loop};
 use crate::auto_update::{auto_update_loop, AutoUpdateProbes};
-use crate::bootstrap::{BootstrapClock, DaemonStackExit, SystemBootstrapClock};
+use crate::bootstrap::{daemon_owner_span, BootstrapClock, DaemonStackExit, SystemBootstrapClock};
 use crate::client::Client;
 use crate::config::Config;
-use crate::control_lifecycle::{run_daemon_control, ControlEventConsumer};
+use crate::control_lifecycle::{run_daemon_control, ControlEventConsumer, DaemonControlLifecycle};
 use crate::daemon_core::{DaemonCoreDependencies, DaemonCoreHost, DaemonCoreServices};
 use crate::gc::gc_loop;
 use crate::health::{
@@ -48,6 +49,72 @@ const TASK_WAKEUP_CAPACITY: usize = 256;
 const OWNED_DRAIN_TIMEOUT: Duration = Duration::from_secs(35);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(5);
 const CHECKOUT_MODE_ISOLATED: &str = "isolated";
+
+/// Constructs and owns the production control-event consumer together with
+/// its transport. Keeping this assembly in one entry point prevents the
+/// production stack from accidentally dropping the event receiver or running
+/// the transport without its lifecycle consumer.
+pub(crate) struct ControlOwnerAssembly<H: DaemonControlLifecycle> {
+    lifecycle: Arc<H>,
+    control: Arc<DaemonControl>,
+    events: tokio::sync::mpsc::UnboundedReceiver<ControlEvent>,
+    task_wakeups: tokio::sync::mpsc::Sender<crate::wakeup::TaskWakeup>,
+    reconcile: Arc<ReconcileBroadcaster>,
+    workspace_changes: Arc<WorkspaceChangeSignal>,
+}
+
+impl<H: DaemonControlLifecycle> ControlOwnerAssembly<H> {
+    pub(crate) fn new(
+        lifecycle: Arc<H>,
+        control: Arc<DaemonControl>,
+        events: tokio::sync::mpsc::UnboundedReceiver<ControlEvent>,
+        task_wakeups: tokio::sync::mpsc::Sender<crate::wakeup::TaskWakeup>,
+        reconcile: Arc<ReconcileBroadcaster>,
+        workspace_changes: Arc<WorkspaceChangeSignal>,
+    ) -> Self {
+        Self {
+            lifecycle,
+            control,
+            events,
+            task_wakeups,
+            reconcile,
+            workspace_changes,
+        }
+    }
+}
+
+pub(crate) fn spawn_control_owner<H: DaemonControlLifecycle>(
+    owners: &mut JoinSet<()>,
+    root_ctx: &Ctx,
+    assembly: ControlOwnerAssembly<H>,
+) {
+    let ControlOwnerAssembly {
+        lifecycle,
+        control,
+        events,
+        task_wakeups,
+        reconcile,
+        workspace_changes,
+    } = assembly;
+    let consumer = Arc::new(ControlEventConsumer::new(
+        lifecycle,
+        task_wakeups,
+        reconcile,
+        workspace_changes,
+    ));
+    let control_ctx = root_ctx.child();
+    let control_root = root_ctx.clone();
+    owners.spawn(
+        async move {
+            run_daemon_control(control_ctx.clone(), control, consumer, events).await;
+            if control_ctx.err().is_none() {
+                tracing::error!("daemon control owner stopped unexpectedly");
+                control_root.cancel_with(CancelCause::Shutdown);
+            }
+        }
+        .instrument(daemon_owner_span("control")),
+    );
+}
 
 /// Provider/runtime operations that cannot be implemented by the daemon
 /// control plane itself. A production stack cannot be constructed without a
@@ -72,8 +139,8 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<()>;
 
-    /// Provider-owned health fields: agents, skipped-agent diagnostics, and
-    /// task execution counters not represented by `DaemonActivity`.
+    /// Service-owned health fields: registration diagnostics and task
+    /// execution counters not represented by `DaemonActivity`.
     fn health_snapshot(&self) -> HealthResponse;
 
     /// Performs the real ensure-repo/default-ref/worktree operation after the
@@ -265,10 +332,13 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         });
         let mut health_task = spawn_health_server(listener, health_state, root_ctx.clone());
         let bridge_ctx = root_ctx.clone();
-        let bridge = tokio::spawn(async move {
-            bootstrap_shutdown.cancelled().await;
-            bridge_ctx.cancel_with(CancelCause::Shutdown);
-        });
+        let bridge = tokio::spawn(
+            async move {
+                bootstrap_shutdown.cancelled().await;
+                bridge_ctx.cancel_with(CancelCause::Shutdown);
+            }
+            .instrument(daemon_owner_span("shutdown_bridge")),
+        );
 
         // Go renews the PAT synchronously before the first workspace request.
         // Renewal itself is best-effort; preflight remains the readiness gate.
@@ -289,12 +359,6 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         }
         let registered_control = Arc::clone(&control);
 
-        let consumer = Arc::new(ControlEventConsumer::new(
-            Arc::clone(&host),
-            task_wakeups_tx,
-            Arc::clone(&reconcile),
-            Arc::clone(&workspace_changes),
-        ));
         let orchestrator = match TaskExecutionOrchestrator::new(
             TaskExecutionConfig {
                 max_concurrent_tasks: self.config.max_concurrent_tasks as usize,
@@ -325,75 +389,93 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let renewal_root = root_ctx.clone();
         let renewal_client = Arc::clone(&self.client);
         let renewal_profile = self.config.profile.clone();
-        owners.spawn(async move {
-            token_renewal_loop(renewal_client, renewal_profile, renewal_ctx.clone()).await;
-            if renewal_ctx.err().is_none() {
-                tracing::error!("daemon token renewal owner stopped unexpectedly");
-                renewal_root.cancel_with(CancelCause::Shutdown);
+        owners.spawn(
+            async move {
+                token_renewal_loop(renewal_client, renewal_profile, renewal_ctx.clone()).await;
+                if renewal_ctx.err().is_none() {
+                    tracing::error!("daemon token renewal owner stopped unexpectedly");
+                    renewal_root.cancel_with(CancelCause::Shutdown);
+                }
             }
-        });
-        let control_ctx = root_ctx.child();
-        let control_root = root_ctx.clone();
-        owners.spawn(async move {
-            run_daemon_control(control_ctx.clone(), control, consumer, events_rx).await;
-            if control_ctx.err().is_none() {
-                tracing::error!("daemon control owner stopped unexpectedly");
-                control_root.cancel_with(CancelCause::Shutdown);
-            }
-        });
+            .instrument(daemon_owner_span("token_renewal")),
+        );
+        spawn_control_owner(
+            &mut owners,
+            &root_ctx,
+            ControlOwnerAssembly::new(
+                Arc::clone(&host),
+                control,
+                events_rx,
+                task_wakeups_tx,
+                Arc::clone(&reconcile),
+                Arc::clone(&workspace_changes),
+            ),
+        );
         let task_ctx = root_ctx.child();
         let task_root = root_ctx.clone();
-        owners.spawn(async move {
-            orchestrator.run(task_ctx.clone(), task_wakeups_rx).await;
-            if task_ctx.err().is_none() {
-                tracing::error!("daemon task execution owner stopped unexpectedly");
-                task_root.cancel_with(CancelCause::Shutdown);
+        owners.spawn(
+            async move {
+                orchestrator.run(task_ctx.clone(), task_wakeups_rx).await;
+                if task_ctx.err().is_none() {
+                    tracing::error!("daemon task execution owner stopped unexpectedly");
+                    task_root.cancel_with(CancelCause::Shutdown);
+                }
             }
-        });
+            .instrument(daemon_owner_span("task_execution")),
+        );
         let reconcile_ctx = root_ctx.child();
         let reconcile_root = root_ctx.clone();
         let reconcile_services = Arc::clone(&self.services);
         let reconcile_signal = Arc::clone(&reconcile);
         let workspace_signal = Arc::clone(&workspace_changes);
         let reconcile_registry = Arc::clone(&registry);
-        owners.spawn(async move {
-            let result = reconcile_services
-                .run_reconcile(
-                    reconcile_ctx.clone(),
-                    reconcile_signal,
-                    workspace_signal,
-                    reconcile_registry,
-                    Arc::clone(&activity),
-                )
-                .await;
-            if reconcile_ctx.err().is_none() {
-                match result {
-                    Ok(()) => tracing::error!("daemon reconcile owner stopped unexpectedly"),
-                    Err(error) => tracing::error!(%error, "daemon reconcile owner failed"),
+        owners.spawn(
+            async move {
+                let result = reconcile_services
+                    .run_reconcile(
+                        reconcile_ctx.clone(),
+                        reconcile_signal,
+                        workspace_signal,
+                        reconcile_registry,
+                        Arc::clone(&activity),
+                    )
+                    .await;
+                if reconcile_ctx.err().is_none() {
+                    match result {
+                        Ok(()) => tracing::error!("daemon reconcile owner stopped unexpectedly"),
+                        Err(error) => tracing::error!(%error, "daemon reconcile owner failed"),
+                    }
+                    reconcile_root.cancel_with(CancelCause::Shutdown);
                 }
-                reconcile_root.cancel_with(CancelCause::Shutdown);
             }
-        });
+            .instrument(daemon_owner_span("reconcile")),
+        );
         let gc_ctx = root_ctx.child();
         let gc_root = root_ctx.clone();
         let gc_host = Arc::clone(&host);
-        owners.spawn(async move {
-            gc_loop(gc_host.as_ref(), &gc_ctx).await;
-            if gc_ctx.err().is_none() {
-                tracing::error!("daemon GC owner stopped unexpectedly");
-                gc_root.cancel_with(CancelCause::Shutdown);
+        owners.spawn(
+            async move {
+                gc_loop(gc_host.as_ref(), &gc_ctx).await;
+                if gc_ctx.err().is_none() {
+                    tracing::error!("daemon GC owner stopped unexpectedly");
+                    gc_root.cancel_with(CancelCause::Shutdown);
+                }
             }
-        });
+            .instrument(daemon_owner_span("gc")),
+        );
         let update_ctx = root_ctx.child();
         let update_root = root_ctx.clone();
         let update_host = Arc::clone(&host);
-        owners.spawn(async move {
-            auto_update_loop(update_host.as_ref(), &update_ctx, AutoUpdateProbes::real()).await;
-            if update_ctx.err().is_none() {
-                tracing::error!("daemon auto-update owner stopped unexpectedly");
-                update_root.cancel_with(CancelCause::Shutdown);
+        owners.spawn(
+            async move {
+                auto_update_loop(update_host.as_ref(), &update_ctx, AutoUpdateProbes::real()).await;
+                if update_ctx.err().is_none() {
+                    tracing::error!("daemon auto-update owner stopped unexpectedly");
+                    update_root.cancel_with(CancelCause::Shutdown);
+                }
             }
-        });
+            .instrument(daemon_owner_span("auto_update")),
+        );
 
         ready.store(true, Ordering::Release);
         let mut owner_failure = None;
@@ -535,17 +617,20 @@ fn spawn_health_server<S: ProductionRuntimeServices>(
     state: Arc<HealthState<S>>,
     ctx: Ctx,
 ) -> JoinHandle<anyhow::Result<()>> {
-    tokio::spawn(async move {
-        let app = Router::new()
-            .route("/health", get(health_handler::<S>))
-            .route("/shutdown", post(shutdown_handler::<S>))
-            .route("/repo/checkout", post(repo_checkout_handler::<S>))
-            .with_state(state);
-        axum::serve(listener, app)
-            .with_graceful_shutdown(async move { ctx.cancelled().await })
-            .await
-            .map_err(anyhow::Error::from)
-    })
+    tokio::spawn(
+        async move {
+            let app = Router::new()
+                .route("/health", get(health_handler::<S>))
+                .route("/shutdown", post(shutdown_handler::<S>))
+                .route("/repo/checkout", post(repo_checkout_handler::<S>))
+                .with_state(state);
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async move { ctx.cancelled().await })
+                .await
+                .map_err(anyhow::Error::from)
+        }
+        .instrument(daemon_owner_span("health_server")),
+    )
 }
 
 async fn stop_health_task(task: &mut JoinHandle<anyhow::Result<()>>) {
@@ -598,10 +683,13 @@ async fn shutdown_handler<S: ProductionRuntimeServices>(
     State(state): State<Arc<HealthState<S>>>,
 ) -> Json<Value> {
     let ctx = state.root_ctx.clone();
-    tokio::spawn(async move {
-        tokio::task::yield_now().await;
-        ctx.cancel_with(CancelCause::Shutdown);
-    });
+    tokio::spawn(
+        async move {
+            tokio::task::yield_now().await;
+            ctx.cancel_with(CancelCause::Shutdown);
+        }
+        .instrument(daemon_owner_span("shutdown_request")),
+    );
     Json(json!({"status":"shutting down"}))
 }
 

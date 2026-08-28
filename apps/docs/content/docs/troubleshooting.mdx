@@ -184,7 +184,7 @@ A source checkout is an alternative only when a Rust toolchain is installed:
 
 ```bash
 make rust-build
-DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
+DATABASE_URL='postgres://...' ./bin/backfill_task_usage_hourly
 ```
 
 Useful flags: `--dry-run` previews without writing; `--sleep-between-slices` adds a pause between slices to reduce read pressure on a busy instance. The command works in monthly slices and is idempotent — rerun it directly after an interruption. It holds an advisory lock and is mutually exclusive with the server's scheduled rollup, so it cannot produce duplicate or inconsistent rollup data. When it finishes, restart the backend and confirm `/readyz` returns HTTP 200 with `{"status":"ready"}`. The handler only checks database reachability; successful server startup separately confirms that the entrypoint migration completed.

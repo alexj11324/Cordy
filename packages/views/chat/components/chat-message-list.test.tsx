@@ -41,6 +41,14 @@ vi.mock("react-virtuoso", () => ({
   },
 }));
 
+// Canvas animation behavior belongs to thinking-orbs itself. Keep these DOM
+// tests focused on Cordy's disclosure state and accessible label.
+vi.mock("thinking-orbs", () => ({
+  ThinkingOrb: ({ "aria-label": label }: { "aria-label"?: string }) => (
+    <span data-testid="thinking-orb" aria-label={label} />
+  ),
+}));
+
 import { ChatMessageList } from "./chat-message-list";
 
 const TEST_RESOURCES = { en: { chat: enChat } };
@@ -54,12 +62,15 @@ function taskMsg(
   return { task_id: TASK_ID, seq, type, ...extra } as TaskMessagePayload;
 }
 
-// A streaming timeline whose middle (tool steps) is non-empty, so the live
-// footer renders the "N steps" outer fold.
+// A streaming timeline with reasoning around hidden tool diagnostics.
 const INITIAL_MESSAGES: TaskMessagePayload[] = [
   taskMsg(0, "text", { content: "Looking into it. " }),
-  taskMsg(1, "tool_use", { tool: "Bash", input: { command: "go test ./..." } }),
-  taskMsg(2, "tool_result", { tool: "Bash", output: "ok" }),
+  taskMsg(1, "thinking", { content: "Inspecting the repository." }),
+  taskMsg(2, "tool_use", {
+    tool: "Bash",
+    input: { command: "cargo test --workspace" },
+  }),
+  taskMsg(3, "tool_result", { tool: "Bash", output: "ok" }),
 ];
 
 function renderList(qc: QueryClient) {
@@ -89,49 +100,148 @@ function pushTaskMessage(qc: QueryClient, msg: TaskMessagePayload) {
 }
 
 describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
-  // The live footer is passed to Virtuoso through `components`. If that prop
-  // is rebuilt inline on render, every streamed task:message unmounts and
-  // remounts the whole footer subtree — re-parsing all Markdown and rebuilding
-  // thousands of DOM rows, which froze the renderer during long agent runs.
+  // The live turn is a keyed Virtuoso row. Streaming must update that row in
+  // place instead of remounting its Markdown and reasoning subtrees.
   it("does not remount the live timeline when a streamed message arrives", async () => {
     const qc = new QueryClient();
     renderList(qc);
 
-    const foldTrigger = await screen.findByText("2 steps");
-    const footerBefore = foldTrigger.closest("div");
+    const trigger = await screen.findByText("Thinking…");
+    const triggerBefore = trigger.closest("button");
 
     pushTaskMessage(
       qc,
-      taskMsg(3, "tool_use", { tool: "Read", input: { file_path: "/tmp/x" } }),
+      taskMsg(4, "thinking", { content: "Still checking." }),
     );
 
-    // The fold re-renders in place: same DOM node, updated count.
-    const updatedTrigger = await screen.findByText("3 steps");
-    expect(updatedTrigger.closest("div")).toBe(footerBefore);
-    expect(document.contains(foldTrigger)).toBe(true);
+    // The reasoning disclosure re-renders in place: same DOM node, new prose.
+    await screen.findByText(/Still checking\./);
+    expect(screen.getByText("Thinking…").closest("button")).toBe(triggerBefore);
+    expect(document.contains(trigger)).toBe(true);
   });
 
-  it("keeps the process fold closed by the user across streamed messages", async () => {
+  it("keeps reasoning closed by the user across streamed messages", async () => {
     const qc = new QueryClient();
     renderList(qc);
 
-    // Streaming defaults the fold open; the user closes it.
-    const foldTrigger = await screen.findByText("2 steps");
-    expect(screen.getByText("Bash")).toBeInTheDocument();
+    // Streaming defaults reasoning open; the user can close it.
+    const trigger = await screen.findByText("Thinking…");
+    expect(screen.getByText("Inspecting the repository.")).toBeInTheDocument();
     act(() => {
-      foldTrigger.click();
+      trigger.click();
     });
-    expect(screen.queryByText("Bash")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Inspecting the repository."),
+    ).not.toBeInTheDocument();
 
     pushTaskMessage(
       qc,
-      taskMsg(3, "tool_use", { tool: "Read", input: { file_path: "/tmp/x" } }),
+      taskMsg(4, "thinking", { content: "Still checking." }),
     );
 
-    // Before the fix the footer remounted, useState re-seeded defaultOpen and
-    // the fold sprang back open on every streamed message.
-    await screen.findByText("3 steps");
+    expect(await screen.findByText("Thinking…")).toBeInTheDocument();
+    expect(screen.queryByText(/Still checking\./)).not.toBeInTheDocument();
+  });
+
+  it("shows reasoning inline and omits tool call details", async () => {
+    const qc = new QueryClient();
+    renderList(qc);
+
+    expect(
+      await screen.findByText("Inspecting the repository."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Bash")).not.toBeInTheDocument();
+    expect(screen.queryByText(/go test/)).not.toBeInTheDocument();
+    expect(screen.queryByText("ok")).not.toBeInTheDocument();
+  });
+
+  it("renders growing reasoning as plain text until the turn settles", async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
+      taskMsg(0, "thinking", { content: "**Inspecting** the repository." }),
+    ]);
+
+    const view = render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[]}
+            pendingTask={{ task_id: TASK_ID, status: "running" }}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByText("**Inspecting** the repository."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Inspecting")).not.toBeInTheDocument();
+
+    view.rerender(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "assistant-markdown",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "Finished.",
+                task_id: TASK_ID,
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.click(await screen.findByText("Thought process"));
+    expect(await screen.findByText("Inspecting")).toHaveProperty(
+      "tagName",
+      "STRONG",
+    );
+  });
+
+  it("collapses reasoning when the live turn becomes a persisted reply", async () => {
+    const qc = new QueryClient();
+    const view = renderList(qc);
+
+    expect(
+      await screen.findByText("Inspecting the repository."),
+    ).toBeInTheDocument();
+
+    view.rerender(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "assistant-settled",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "Finished.",
+                task_id: TASK_ID,
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    const trigger = await screen.findByText("Thought process");
+    expect(
+      screen.queryByText("Inspecting the repository."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(screen.getByText("Inspecting the repository.")).toBeInTheDocument();
   });
 
   it("applies an embedded surface content transform to streamed text", async () => {
@@ -188,6 +298,75 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
 
     expect(await screen.findByText("Draft ready.")).toBeInTheDocument();
     expect(screen.queryByText(/Hidden suggestion/)).not.toBeInTheDocument();
+  });
+
+  it("uses persisted content when a task timeline contains only tools", async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
+      taskMsg(0, "tool_use", { tool: "Bash", input: { command: "pwd" } }),
+      taskMsg(1, "tool_result", { tool: "Bash", output: "/workspace" }),
+    ]);
+
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "assistant-tool-only",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "Persisted fallback reply.",
+                task_id: TASK_ID,
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByText("Persisted fallback reply."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Bash")).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatMessageList message geometry", () => {
+  it("keeps user width relative to the full column and omits an identity-less header", async () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "user-1",
+                chat_session_id: "session-1",
+                role: "user",
+                content: "Short user message",
+                task_id: null,
+                created_at: "2026-08-28T12:00:00Z",
+              },
+            ]}
+            pendingTask={null}
+            availability="online"
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    const article = (await screen.findByText("Short user message")).closest(
+      "article",
+    );
+    expect(article?.querySelector("header")).toBeNull();
+    expect(article?.lastElementChild).toHaveClass(
+      "w-full",
+      "flex",
+      "justify-end",
+    );
   });
 });
 

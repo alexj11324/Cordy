@@ -1,4 +1,4 @@
-//! Prometheus metrics — port of `server/internal/metrics`.
+//! Prometheus metrics.
 //!
 //! Layout mirrors the Go package:
 //! - business half: labels, pricing, task lifecycle / LLM counters, PR3

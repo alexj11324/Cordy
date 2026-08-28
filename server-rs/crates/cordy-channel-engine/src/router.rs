@@ -1,6 +1,5 @@
 //! The channel-agnostic inbound pipeline.
 //!
-//! Port of `server/internal/integrations/channel/engine/router.go`
 //! (928 lines) — the generalization of the Feishu-only lark.Dispatcher.
 //! It is the single shared `InboundHandler` the Supervisor injects into
 //! every Channel: a Channel translates its platform payload into an

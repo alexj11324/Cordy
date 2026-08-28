@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/agent_invocation_target.sql (generated agent_invocation_target.sql.go).
+//! Typed SQL queries for agent_invocation_target records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

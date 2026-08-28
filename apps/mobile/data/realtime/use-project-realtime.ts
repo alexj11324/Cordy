@@ -4,7 +4,7 @@
  *
  * Filters every event by id match (`project.id === projectId` for project
  * events, `issue.project_id === projectId` for issue events) so the hook
- * only mutates the caches it owns (apps/mobile/CLAUDE.md "Realtime → Mount
+ * only mutates the caches it owns (apps/mobile/AGENTS.md "Realtime → Mount
  * strategy").
  *
  * Handles:

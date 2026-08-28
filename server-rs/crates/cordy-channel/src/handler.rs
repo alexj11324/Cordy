@@ -1,6 +1,5 @@
 //! The shared, channel-agnostic inbound entry point.
 //!
-//! Port of `server/internal/integrations/channel/handler.go`.
 
 use std::sync::Arc;
 
@@ -49,7 +48,7 @@ impl<T> InboundHandlerFut for T where
 {
 }
 
-/// Port of Go `context.Context`: the engine passes a
+/// Request-scoped execution context: the engine passes a
 /// [`CancellationToken`] so adapters can observe shutdown while the
 /// handler runs.
 pub type HandlerFuture =

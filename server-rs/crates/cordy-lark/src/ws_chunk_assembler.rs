@@ -1,5 +1,4 @@
-//! Chunk assembler — port of
-//! `server/internal/integrations/lark/ws_chunk_assembler.go`.
+//! Chunk assembler.
 //!
 //! Buffers multi-frame Lark data payloads keyed by message_id and returns
 //! the concatenated bytes once every chunk has arrived. Lark splits large

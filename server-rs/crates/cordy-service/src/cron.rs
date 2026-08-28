@@ -1,4 +1,4 @@
-//! Cron schedule evaluation — port of `server/internal/service/cron.go`.
+//! Cron schedule evaluation.
 //!
 //! Go uses robfig/cron v3 (5-field crontab); the Rust port uses `croner`,
 //! which parses the same standard 5-field syntax. robfig's five-year search

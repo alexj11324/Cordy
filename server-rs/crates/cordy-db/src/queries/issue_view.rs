@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/issue_view.sql (generated issue_view.sql.go).
+//! Typed SQL queries for issue_view records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

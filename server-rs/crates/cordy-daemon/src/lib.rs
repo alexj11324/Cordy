@@ -1,20 +1,8 @@
-//! Daemon manager (port of server/internal/daemon + internal/daemonws).
+//! Daemon manager, execution environment, and WebSocket control plane.
 //!
-//! Module map mirrors the Go package layout one-to-one; each module header
-//! records the Go source file it ports. S9 lanes own disjoint files — see
-//! tasks/go-to-rust-migration.md for the lane split.
-//!
-//! Slices:
-//! - W  (daemonws): hub.rs, notifier.rs
-//! - E1 (execenv foundation + codex family): execenv/{execenv,context,
-//!   channel_type,runtime_config_kind,reclaimable,isolation,git,
-//!   local_worktree,codex_home,codex_sandbox,codex_memory,codex_shell_env,
-//!   codex_multi_agent,codex_user_skills,codex_skill_strip,cursor_mcp}
-//! - R  (repo lifecycle): repocache.rs, gc.rs
-//!
-//! All modules are ports awaiting daemon wiring (lanes A/B/D + S8); until
-//! then dead_code is expected and silenced crate-wide.
-#![allow(dead_code)]
+//! The production daemon stack is wired. Any intentionally dormant
+//! compatibility seam must carry a narrow module/item-level allowance with a
+//! local rationale; the crate must not hide unwired code globally.
 
 pub mod execenv;
 

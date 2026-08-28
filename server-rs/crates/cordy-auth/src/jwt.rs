@@ -1,6 +1,4 @@
-//! JWT secret management and token minting — port of
-//! `server/internal/auth/jwt.go`.
-
+//! JWT secret management and token minting.
 use std::sync::OnceLock;
 
 use rand::RngCore;

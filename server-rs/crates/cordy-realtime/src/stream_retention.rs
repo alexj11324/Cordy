@@ -1,6 +1,4 @@
-//! Stream retention config and TTL maintenance — port of
-//! `server/internal/realtime/stream_retention.go`.
-
+//! Stream retention config and TTL maintenance.
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};

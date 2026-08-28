@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/agent_builder.sql (generated agent_builder.sql.go).
+//! Typed SQL queries for agent_builder records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

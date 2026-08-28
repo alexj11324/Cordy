@@ -1,5 +1,4 @@
-//! Profile configuration and task-context isolation ported from
-//! `server/internal/cli/config.go` and the resolvers in `cmd/cordy`.
+//! Profile configuration and task-context isolation for CLI commands.
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;

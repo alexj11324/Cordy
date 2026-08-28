@@ -1,5 +1,5 @@
 //! Accountable-human resolution contract for agent task runs — port of
-//! `server/internal/attribution` (MUL-4302, "Human Attribution").
+//! Human-attribution contract (MUL-4302).
 //!
 //! Every run enqueued into agent_task_queue must be traceable to exactly one
 //! accountable human, and the attribution must be EXPLAINABLE: it records not

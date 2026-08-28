@@ -190,7 +190,8 @@ pub fn hermes_memory_store_path(profile: &str, agent_id: &str, source_home: &str
     if agent.is_empty() {
         return String::new();
     }
-    profile_dir(profile)
+    crate::identity::profile_dir(profile)
+        .ok()
         .map(|dir| {
             dir.join("hermes-state")
                 .join(agent)
@@ -217,7 +218,11 @@ pub fn hermes_session_store_path(
             (!chat.is_empty()).then(|| format!("chat_{chat}"))
         }
     };
-    match (agent.is_empty(), conversation, profile_dir(profile)) {
+    match (
+        agent.is_empty(),
+        conversation,
+        crate::identity::profile_dir(profile).ok(),
+    ) {
         (false, Some(conversation), Some(dir)) => dir
             .join("hermes-sessions")
             .join(agent)
@@ -227,29 +232,6 @@ pub fn hermes_session_store_path(
             .to_string(),
         _ => String::new(),
     }
-}
-
-fn profile_dir(profile: &str) -> Option<PathBuf> {
-    if profile.contains(['/', '\\']) || matches!(profile, "." | "..") {
-        return None;
-    }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT") {
-        let root = PathBuf::from(root);
-        if !root.is_absolute() {
-            return None;
-        }
-        return Some(if profile.is_empty() {
-            root
-        } else {
-            root.join("profiles").join(profile)
-        });
-    }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    Some(if profile.is_empty() {
-        home.join(".cordy")
-    } else {
-        home.join(".cordy").join("profiles").join(profile)
-    })
 }
 
 fn safe_segment(value: &str) -> String {

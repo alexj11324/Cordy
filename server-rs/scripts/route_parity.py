@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare Axum routes with the executable Go router contract."""
+"""Compare Axum routes with the canonical production route contract."""
 
 from __future__ import annotations
 
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--contract",
         type=Path,
-        default=server_rs / "route-contract" / "go-routes.tsv",
+        default=server_rs / "route-contract" / "routes.tsv",
     )
     parser.add_argument(
         "--rust-source",
@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--require-complete",
         action="store_true",
-        help="exit non-zero unless Rust exactly matches the Go contract",
+        help="exit non-zero unless Rust exactly matches the route contract",
     )
     parser.add_argument(
         "--list-missing", action="store_true", help="print every missing route"
@@ -208,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     missing = expected - actual
     extra = actual - expected
     print(
-        f"Go contract: {len(expected)} | Rust: {len(actual)} | "
+        f"Contract: {len(expected)} | Rust: {len(actual)} | "
         f"covered: {len(expected & actual)} | missing: {len(missing)} | extra: {len(extra)}"
     )
 

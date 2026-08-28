@@ -1,5 +1,4 @@
-//! WebSocket message envelope and payload structs — port of
-//! `server/pkg/protocol/messages.go`.
+//! WebSocket message envelope and payload structs.
 //!
 //! Field names and `omitempty` semantics match the Go json tags byte-level:
 //! value-type omitempty elides empty strings and zero ints; pointer omitempty

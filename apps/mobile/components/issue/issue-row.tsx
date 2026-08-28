@@ -20,7 +20,7 @@
  *
  * Behavioral parity:
  *   - Same `Issue` type, same `assignee_type`/`assignee_id` semantics
- *     (root CLAUDE.md "Data identity must agree").
+ *     (root AGENTS.md "Data identity must agree").
  *   - Mirrors web `packages/views/issues/components/list-row.tsx:52`:
  *     render the assignee whenever `assignee_type && assignee_id` are both
  *     truthy — `ActorAvatar` itself handles member / agent / squad rendering

@@ -1,5 +1,5 @@
 //! Task wire-shape builder — port of Go `taskToResponse`
-//! (server/internal/handler/agent.go:693) as a JSON map. Key names and
+//! Builds the task JSON map. Key names and
 //! null-vs-absent behavior match the Go struct tags byte-for-byte so clients
 //! type both shapes identically.
 

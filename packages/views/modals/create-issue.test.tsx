@@ -88,7 +88,7 @@ const emptyIssueDraft = () => ({
   manual: {
     title: "",
     description: "",
-    status: "todo" as const,
+    status: "todo" as "backlog" | "todo" | "in_progress" | "in_review" | "blocked" | "done" | "cancelled",
     startDate: null as string | null,
     assigneeType: undefined as "agent" | "squad" | "member" | undefined,
     assigneeId: undefined as string | undefined,
@@ -163,6 +163,10 @@ vi.mock("@cordy/core/paths", () => ({
 
 vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
+}));
+
+vi.mock("@cordy/core/issue-statuses/hooks", () => ({
+  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
 }));
 
 vi.mock("@cordy/core/issues/queries", () => ({
@@ -698,6 +702,24 @@ describe("CreateIssueModal", () => {
 
     expect(mockPush).toHaveBeenCalledWith("/ws-test/issues/issue-123");
     expect(mockToastDismiss).toHaveBeenCalledWith("toast-1");
+  });
+
+  it("blocks active issue creation until an assignee is selected", async () => {
+    mockDraftStore.draft.manual.status = "in_progress";
+    const user = userEvent.setup();
+
+    renderModal(<CreateIssueModal onClose={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText("Issue title"), "Owned active work");
+
+    expect(
+      screen.getByText("Choose an owner for an issue with work underway."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create Issue" }));
+
+    expect(mockCreateIssue).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Choose an owner for an issue with work underway.",
+    );
   });
 
   it("forwards selected labels in the create payload so they attach in the same transaction", async () => {

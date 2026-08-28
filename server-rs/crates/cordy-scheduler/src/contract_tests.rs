@@ -7,9 +7,12 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use cordy_db::dbid::new_v7;
+use cordy_db::models::{Autopilot, AutopilotRun};
+use serde_json::Value;
 use sqlx::{PgPool, Row as _};
-use tokio::sync::Notify;
+use tokio::sync::{Barrier, Notify};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use crate::spec::JobHandler;
 use crate::{
@@ -40,8 +43,8 @@ impl ExecutionRows {
     }
 
     async fn cleanup(&self) {
-        sqlx::query("DELETE FROM sys_cron_executions WHERE job_name LIKE $1")
-            .bind(format!("{}%", self.prefix))
+        sqlx::query("DELETE FROM sys_cron_executions WHERE left(job_name, length($1)) = $1")
+            .bind(&self.prefix)
             .execute(&self.pool)
             .await
             .expect("clean scheduler contract rows");
@@ -60,10 +63,12 @@ impl Drop for ExecutionRows {
                 .build()
                 .expect("build scheduler cleanup executor");
             runtime.block_on(async move {
-                let _ = sqlx::query("DELETE FROM sys_cron_executions WHERE job_name LIKE $1")
-                    .bind(format!("{prefix}%"))
-                    .execute(&pool)
-                    .await;
+                let _ = sqlx::query(
+                    "DELETE FROM sys_cron_executions WHERE left(job_name, length($1)) = $1",
+                )
+                .bind(prefix)
+                .execute(&pool)
+                .await;
             });
         })
         .join();
@@ -109,6 +114,54 @@ async fn db_now(pool: &PgPool) -> DateTime<Utc> {
         .fetch_one(pool)
         .await
         .expect("read PostgreSQL clock")
+}
+
+struct ContractDispatcher;
+
+#[async_trait::async_trait]
+impl crate::AutopilotScheduleDispatcher for ContractDispatcher {
+    async fn dispatch_autopilot_for_plan(
+        &self,
+        _autopilot: &Autopilot,
+        _trigger_id: Uuid,
+        _source: &str,
+        _payload: &Value,
+        _planned_at: DateTime<Utc>,
+    ) -> anyhow::Result<AutopilotRun> {
+        anyhow::bail!("contract dispatcher must not be called")
+    }
+}
+
+#[tokio::test]
+async fn production_scheduler_assembly_registers_both_real_jobs() {
+    let rows = ExecutionRows::required().await;
+    let dispatcher: Arc<dyn crate::AutopilotScheduleDispatcher> = Arc::new(ContractDispatcher);
+    let scheduler = crate::production_manager(rows.pool.clone(), dispatcher.clone())
+        .expect("build production scheduler assembly");
+
+    let task_usage_error = scheduler
+        .register(crate::task_usage_hourly_job(rows.pool.clone()))
+        .expect_err("production assembly omitted task usage job");
+    assert!(task_usage_error
+        .to_string()
+        .contains(crate::TASK_USAGE_HOURLY_JOB));
+    let autopilot_error = scheduler
+        .register(crate::autopilot_schedule_dispatch_job(
+            rows.pool.clone(),
+            dispatcher,
+        ))
+        .expect_err("production assembly omitted autopilot schedule job");
+    assert!(autopilot_error
+        .to_string()
+        .contains(crate::AUTOPILOT_SCHEDULE_DISPATCH_JOB));
+
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let runtime = scheduler
+        .start(cancel)
+        .expect("start production scheduler assembly");
+    assert_eq!(runtime.shutdown().await, ShutdownOutcome::Stopped);
+    rows.cleanup().await;
 }
 
 #[tokio::test]
@@ -428,24 +481,25 @@ async fn production_scheduler_retries_same_plan_and_classifies_failures() {
 }
 
 #[tokio::test]
-async fn production_scheduler_reclaims_stale_lease_and_fences_old_owner() {
+async fn production_scheduler_linearizes_live_heartbeat_against_stale_reclaim() {
     let rows = ExecutionRows::required().await;
     let job_name = rows.job_name("stale");
     let plan_time = db_now(&rows.pool).await;
     let first_entered = Arc::new(Notify::new());
-    let release_first = Arc::new(Notify::new());
+    let race_start = Arc::new(Barrier::new(3));
     let job = Arc::new(fixed_plan_job(job_name.clone(), plan_time, {
         let first_entered = first_entered.clone();
-        let release_first = release_first.clone();
+        let race_start = race_start.clone();
         Arc::new(move |_, input| {
             let first_entered = first_entered.clone();
-            let release_first = release_first.clone();
+            let race_start = race_start.clone();
             Box::pin(async move {
                 if input.attempt == 1 {
                     first_entered.notify_one();
-                    release_first.notified().await;
-                    // The old owner must not be able to refresh a lease that
-                    // was reclaimed by another manager.
+                    race_start.wait().await;
+                    // Race the live owner's real heartbeat against the stale
+                    // close/reclaim tick. Exactly one linearized owner may
+                    // retain or reclaim this execution row.
                     (input.heartbeat)(CancellationToken::new()).await?;
                 }
                 Ok(HandlerResult::default())
@@ -483,17 +537,31 @@ async fn production_scheduler_reclaims_stale_lease_and_fences_old_owner() {
 
     let second = manager(&rows.pool, "stale-runner-b");
     second.register((*job).clone()).expect("register stale job");
-    let report = second
-        .run_once(&CancellationToken::new())
-        .await
-        .expect("stale reclaim tick");
-    assert_eq!(report.stale_closed, 1);
-    assert_eq!(report.succeeded, 1);
-    release_first.notify_one();
-    assert_eq!(
-        first_run.await.expect("old owner join"),
-        ProcessOutcome::LeaseLost
-    );
+    let second_run = tokio::spawn({
+        let race_start = race_start.clone();
+        async move {
+            race_start.wait().await;
+            second
+                .run_once(&CancellationToken::new())
+                .await
+                .expect("stale reclaim tick")
+        }
+    });
+    race_start.wait().await;
+    let first_outcome = first_run.await.expect("live owner join");
+    let report = second_run.await.expect("stale manager join");
+    match &first_outcome {
+        ProcessOutcome::Succeeded => {
+            assert_eq!(report.stale_closed, 0);
+            assert_eq!(report.conflicted, 1);
+            assert_eq!(report.succeeded, 0);
+        }
+        ProcessOutcome::LeaseLost => {
+            assert_eq!(report.stale_closed, 1);
+            assert_eq!(report.succeeded, 1);
+        }
+        other => panic!("unexpected live-owner race outcome: {other:?}"),
+    }
 
     let audit = sqlx::query(
         "SELECT status, attempt, runner_id, error_code FROM sys_cron_executions \
@@ -505,8 +573,17 @@ async fn production_scheduler_reclaims_stale_lease_and_fences_old_owner() {
     .await
     .expect("reclaimed scheduler audit row");
     assert_eq!(audit.get::<String, _>("status"), "SUCCESS");
-    assert_eq!(audit.get::<i32, _>("attempt"), 2);
-    assert_eq!(audit.get::<String, _>("runner_id"), "stale-runner-b");
+    match &first_outcome {
+        ProcessOutcome::Succeeded => {
+            assert_eq!(audit.get::<i32, _>("attempt"), 1);
+            assert_eq!(audit.get::<String, _>("runner_id"), "stale-runner-a");
+        }
+        ProcessOutcome::LeaseLost => {
+            assert_eq!(audit.get::<i32, _>("attempt"), 2);
+            assert_eq!(audit.get::<String, _>("runner_id"), "stale-runner-b");
+        }
+        _ => unreachable!(),
+    }
     assert!(audit.get::<Option<String>, _>("error_code").is_none());
     rows.cleanup().await;
 }

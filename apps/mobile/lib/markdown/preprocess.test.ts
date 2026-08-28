@@ -14,8 +14,8 @@ describe("preprocessMobileMarkdown — !file file cards", () => {
   });
 
   it("matches the CLI's escaped-bracket label and keeps it markdown-safe", () => {
-    // CLI emits `a]b.pdf` escaped as `a\]b.pdf` (cmd_attachment.go
-    // escapeMarkdownLabel). The old regex stopped at the first `]` and left the
+    // CLI emits `a]b.pdf` escaped as `a\]b.pdf`. The old regex stopped at the
+    // first `]` and left the
     // line literal; now it is captured whole and re-emitted as a tappable link
     // whose label stays escaped so the `]` doesn't truncate the link text.
     const out = preprocessMobileMarkdown(`!file[a\\]b.pdf](${ABS_URL})`);

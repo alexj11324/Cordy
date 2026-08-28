@@ -36,7 +36,7 @@ CORDY_PUBLIC_URL=https://api.cordy.example.com
 | `PORT` | `8080` | API 监听端口 |
 | `JWT_SECRET` | 生产环境必填 | 登录 JWT、部分签名流程使用的密钥；生产环境对空值或已知占位值拒绝启动 |
 | `APP_ENV` | 空 | 生产环境设为 `production` |
-| `AUTH_TOKEN_TTL` | `720h`（30 天） | 浏览器 JWT 与 cookie 有效期；接受 Go duration 或正整数秒数 |
+| `AUTH_TOKEN_TTL` | `720h`（30 天） | 浏览器 JWT 与 cookie 有效期；接受 duration 或正整数秒数 |
 | `LOG_LEVEL` | 应用默认 | 日志级别 |
 | `CORDY_SHUTDOWN_HOLD_DURATION` | `0` | 收到终止信号后，开始优雅退出前等待多久 |
 | `CORDY_RUNTIME_RECONNECT_GRACE` | `3h` | 运行时离线后可重新连接且不终止在途 task 的宽限时间；低于 `150s` 时按 `150s` 处理 |
@@ -268,7 +268,7 @@ cordy config show
 
 几条取值规则：
 
-- duration 类键接受正的 Go duration（如 `10s`、`2h`），`0s` 和负值会被拒绝。唯一例外是 `agent_timeout`：`0s` 合法，表示明确关闭执行时限。
+- duration 类键接受正的 duration（如 `10s`、`2h`），`0s` 和负值会被拒绝。唯一例外是 `agent_timeout`：`0s` 合法，表示明确关闭执行时限。
 - 传空字符串清除已持久化的值，回到环境变量或内置默认，例如 `cordy config set poll_interval ""`。
 - `max_concurrent_tasks` 要求非负整数。
 - 相对的 `workspaces_root` 值在保存时会转换为绝对路径。

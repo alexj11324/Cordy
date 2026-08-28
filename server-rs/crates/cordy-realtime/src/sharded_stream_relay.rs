@@ -1,5 +1,4 @@
-//! Fixed-reader sharded Redis Stream relay — port of
-//! `server/internal/realtime/sharded_stream_relay.go`.
+//! Fixed-reader sharded Redis Stream relay.
 //!
 //! Every API node runs one XREAD BLOCK loop per shard and locally filters
 //! events by hub subscriptions. This keeps blocked Redis connections bounded

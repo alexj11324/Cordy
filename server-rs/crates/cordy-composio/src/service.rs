@@ -3,7 +3,7 @@
 //! handshake, the local user_composio_connection mirror, idempotent
 //! disconnect, and the per-user MCP session helper.
 //!
-//! Port of `server/internal/integrations/composio/service.go`. The SDK is
+//! The SDK is
 //! consumed through the [`Sdk`] trait so handler/service tests can inject a
 //! fake without hitting Composio.
 //!

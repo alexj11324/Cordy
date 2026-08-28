@@ -145,7 +145,7 @@ export function WorkspaceTab() {
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
   const canManageWorkspace = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isOwner = currentMember?.role === "owner";
-  // Mirror the backend invariant (server/internal/handler/workspace.go:569):
+  // Mirror the Rust backend invariant:
   // a workspace must always have at least one owner, so the sole owner can't
   // leave. Pre-flight here instead of letting the 400 round-trip become a
   // confusing toast — disable Leave and tell the user what they need to do.
@@ -281,7 +281,7 @@ export function WorkspaceTab() {
     if (!workspace) return;
     setActionId("delete-workspace");
     // Await the DELETE with the dialog in its loading state, and only
-    // navigate on success (CLAUDE.md: flows that navigate must await the
+    // navigate on success (AGENTS.md: flows that navigate must await the
     // server; no optimistic removal). The realtime `workspace:deleted`
     // handler skips self-initiated deletes via the pending-delete registry,
     // so it can't race this navigation with its own full-page relocate.

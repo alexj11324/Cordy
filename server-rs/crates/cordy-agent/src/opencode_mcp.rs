@@ -1,9 +1,9 @@
 //! OpenCode-specific MCP config translation and validation.
 //!
 //! Cordy's managed MCP payload may use the Claude-style `mcpServers` shape,
-//! while OpenCode consumes a native `mcp` map. The Go backend validates both
-//! shapes before placing the translated map in `OPENCODE_CONFIG_CONTENT`; this
-//! module keeps that boundary explicit and fail-closed.
+//! while OpenCode consumes a native `mcp` map. This module validates both
+//! shapes before placing the translated map in `OPENCODE_CONFIG_CONTENT`,
+//! keeping that boundary explicit and fail-closed.
 
 use serde_json::{Map, Value};
 

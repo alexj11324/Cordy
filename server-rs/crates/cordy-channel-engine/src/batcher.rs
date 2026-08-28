@@ -1,6 +1,5 @@
 //! Per-chat-session run-trigger debouncer.
 //!
-//! Port of `server/internal/integrations/channel/engine/batcher.go`.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -135,6 +135,8 @@ pub enum IssueCreateError {
     LabelNotFound,
     #[error("issue status is no longer available")]
     StatusUnavailable,
+    #[error("issues with work underway require an assignee")]
+    ActiveAssigneeRequired,
     #[error("{0}")]
     Internal(String),
     #[error(transparent)]
@@ -185,16 +187,21 @@ impl IssueService {
         // re-checking under the lock makes the status provably active at
         // write time. Built-ins skip both — the common path is unchanged.
         // (MUL-6243)
-        if !issue_status::is_built_in(&p.status) {
+        let status_category = if !issue_status::is_built_in(&p.status) {
             lock_issue_status_catalog_shared(&mut *tx, p.workspace_id)
                 .await
                 .map_err(|e| ic_err("lock issue status catalog", e))?;
-            if issue_status::resolve(&mut *tx, p.workspace_id, &p.status)
+            issue_status::resolve(&mut *tx, p.workspace_id, &p.status)
                 .await
-                .is_err()
-            {
-                return Err(IssueCreateError::StatusUnavailable);
-            }
+                .map_err(|_| IssueCreateError::StatusUnavailable)?
+                .category
+        } else {
+            p.status.clone()
+        };
+        if issue_status::requires_assignee(&status_category)
+            && (p.assignee_type.is_none() || p.assignee_id.is_none())
+        {
+            return Err(IssueCreateError::ActiveAssigneeRequired);
         }
 
         // Resolve and validate parent/project BEFORE the duplicate guard so a
@@ -1098,6 +1105,22 @@ mod tests {
             .expect("connect contract PostgreSQL")
     }
 
+    async fn tagged_pool(application_name: &str) -> PgPool {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue creation transaction contracts");
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .expect("connect tagged contract PostgreSQL");
+        sqlx::query("SELECT set_config('application_name', $1, false)")
+            .bind(application_name)
+            .execute(&pool)
+            .await
+            .expect("tag contract PostgreSQL connection");
+        pool
+    }
+
     async fn workspace(pool: &PgPool) -> Uuid {
         let slug = format!("issue-create-contract-{}", Uuid::now_v7().simple());
         sqlx::query_scalar(
@@ -1116,13 +1139,16 @@ mod tests {
     }
 
     fn params(workspace_id: Uuid, title: &str, status: &str) -> IssueCreateParams {
+        let creator_id = Uuid::now_v7();
         IssueCreateParams {
             workspace_id,
             title: title.into(),
             status: status.into(),
             priority: "none".into(),
+            assignee_type: Some("member".into()),
+            assignee_id: Some(creator_id),
             creator_type: "member".into(),
-            creator_id: Uuid::now_v7(),
+            creator_id,
             ..IssueCreateParams::default()
         }
     }
@@ -1160,6 +1186,57 @@ mod tests {
             .expect("delete workspace");
     }
 
+    async fn wait_for_duplicate_lock(pool: &PgPool, workspace_id: Uuid, title: &str) {
+        let key = format!(
+            "issue-active-duplicate|{workspace_id}|||{}",
+            crate::issue_guard::normalize_title(title)
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let mut probe = pool.begin().await.expect("duplicate lock probe");
+                let available: bool = sqlx::query_scalar(
+                    "SELECT pg_try_advisory_xact_lock(hashtextextended($1::text, 0))",
+                )
+                .bind(&key)
+                .fetch_one(&mut *probe)
+                .await
+                .expect("probe duplicate lock");
+                probe
+                    .rollback()
+                    .await
+                    .expect("release duplicate lock probe");
+                if !available {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("production create did not acquire the duplicate lock");
+    }
+
+    async fn wait_for_tagged_advisory_wait(pool: &PgPool, application_name: &str) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
+                     WHERE application_name = $1 AND state = 'active' \
+                       AND wait_event_type = 'Lock' AND wait_event = 'advisory')",
+                )
+                .bind(application_name)
+                .fetch_one(pool)
+                .await
+                .expect("observe duplicate advisory lock wait");
+                if waiting {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second production create did not wait for the duplicate lock");
+    }
+
     #[tokio::test]
     async fn production_create_enforces_duplicate_identity_and_column_top_order() {
         let pool = required_pool().await;
@@ -1168,6 +1245,14 @@ mod tests {
             .await
             .expect("seed statuses");
         let service = service(&pool);
+
+        let mut unassigned_active = params(workspace_id, "Owner required", "in_progress");
+        unassigned_active.assignee_type = None;
+        unassigned_active.assignee_id = None;
+        assert!(matches!(
+            create(&service, unassigned_active).await,
+            Err(IssueCreateError::ActiveAssigneeRequired)
+        ));
 
         let first = create(&service, params(workspace_id, "First", "todo"))
             .await
@@ -1187,6 +1272,13 @@ mod tests {
             .await
             .expect("issue after drag");
         assert_eq!(next.position, -51.0);
+
+        let mut unassigned_todo = params(workspace_id, "Parked without owner", "todo");
+        unassigned_todo.assignee_type = None;
+        unassigned_todo.assignee_id = None;
+        create(&service, unassigned_todo)
+            .await
+            .expect("todo may remain unassigned");
 
         let original = create(
             &service,
@@ -1366,7 +1458,7 @@ mod tests {
     async fn production_create_advisory_lock_serializes_same_identity() {
         let pool = required_pool().await;
         let workspace_id = workspace(&pool).await;
-        let service = service(&pool);
+        let issue_service = service(&pool);
 
         // Hold the row updated by increment_issue_counter. The first create
         // reaches it only after acquiring the duplicate advisory lock; the
@@ -1380,7 +1472,7 @@ mod tests {
             .await
             .expect("lock workspace counter row");
 
-        let first_service = service.clone();
+        let first_service = issue_service.clone();
         let first = tokio::spawn(async move {
             let mut first_params = params(workspace_id, "Concurrent identity", "todo");
             // The duplicate override still has to take the transaction-scoped
@@ -1389,8 +1481,10 @@ mod tests {
             first_params.allow_duplicate = true;
             create(&first_service, first_params).await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let second_service = service.clone();
+        wait_for_duplicate_lock(&pool, workspace_id, "Concurrent identity").await;
+        let waiter_name = format!("cordy-duplicate-contract-{}", Uuid::now_v7());
+        let waiter_pool = tagged_pool(&waiter_name).await;
+        let second_service = service(&waiter_pool);
         let second = tokio::spawn(async move {
             create(
                 &second_service,
@@ -1398,7 +1492,7 @@ mod tests {
             )
             .await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        wait_for_tagged_advisory_wait(&pool, &waiter_name).await;
         blocker.commit().await.expect("release workspace counter");
 
         let results = [

@@ -387,7 +387,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
   it("keeps the Connected + Manage badge for an already-installed agent even when new installs are unavailable (install_supported=false)", () => {
     // install_supported governs only NEW scan-installs — an already-installed
     // bot stays manageable when the device-flow transport is unwired
-    // (server/internal/handler/lark.go: "already-installed bots still appear
+    // (the Rust Lark handler: "already-installed bots still appear
     // and remain manageable"). Regression: the install_supported gate used to
     // run before the existing-installation check and hid the bound state.
     installationsRef.current.install_supported = false;
