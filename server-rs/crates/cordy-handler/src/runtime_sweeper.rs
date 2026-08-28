@@ -496,6 +496,7 @@ mod tests {
     use cordy_db::dbid::new_v7;
     use cordy_db::models::AgentRuntime;
     use cordy_events::Event;
+    use sqlx::Row as _;
     use uuid::Uuid;
 
     struct FixedClock(DateTime<Utc>);
@@ -573,14 +574,23 @@ mod tests {
         fn drop(&mut self) {
             let pool = self.pool.clone();
             let workspace_id = self.workspace_id;
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                runtime.spawn(async move {
+            // A detached task can be cancelled as soon as the test runtime
+            // begins teardown, leaking all fixture rows into later tests.
+            // Finish cleanup on a small independent runtime before Drop
+            // returns so every fixture is isolated even on panic paths.
+            let _ = std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build runtime cleanup executor");
+                runtime.block_on(async move {
                     let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
                         .bind(workspace_id)
                         .execute(&pool)
                         .await;
                 });
-            }
+            })
+            .join();
         }
     }
 
@@ -589,6 +599,7 @@ mod tests {
         alive: HashSet<String>,
         forgotten: Arc<Mutex<Vec<String>>>,
         race_id: Option<uuid::Uuid>,
+        race_refresh_id: Option<uuid::Uuid>,
         pool: Option<PgPool>,
     }
 
@@ -610,6 +621,17 @@ mod tests {
                         .execute(&pool)
                         .await
                         .expect("force runtime stale-sweep race");
+                }
+            }
+            if let (Some(race_id), Some(pool)) = (self.race_refresh_id, self.pool.clone()) {
+                if runtime_ids.iter().any(|id| id == &race_id.to_string()) {
+                    sqlx::query(
+                        "UPDATE agent_runtime SET status = 'online', last_seen_at = now() WHERE id = $1",
+                    )
+                    .bind(race_id)
+                    .execute(&pool)
+                    .await
+                    .expect("force heartbeat stale-sweep race");
                 }
             }
             if !self.available {
@@ -674,6 +696,9 @@ mod tests {
         let dead = rows
             .runtime("dead", "online", Duration::from_secs(300))
             .await;
+        let dead_same_workspace = rows
+            .runtime("dead-same-workspace", "online", Duration::from_secs(300))
+            .await;
         let alive = rows
             .runtime("alive", "online", Duration::from_secs(300))
             .await;
@@ -689,6 +714,7 @@ mod tests {
             alive: HashSet::from([alive.id.to_string()]),
             forgotten: forgotten.clone(),
             race_id: None,
+            race_refresh_id: None,
             pool: None,
         });
         let bus = Arc::new(Bus::new());
@@ -712,18 +738,19 @@ mod tests {
             DEFAULT_RECONNECT_GRACE,
         );
         let stale_before = Utc::now() - chrono::Duration::seconds(150);
-        assert_eq!(sweeper.sweep_stale_runtimes(stale_before).await, 1);
+        assert_eq!(sweeper.sweep_stale_runtimes(stale_before).await, 2);
         assert_eq!(rows.status(dead.id).await, "offline");
+        assert_eq!(rows.status(dead_same_workspace.id).await, "offline");
         assert_eq!(rows.status(alive.id).await, "online");
         assert_eq!(rows.status(fresh.id).await, "online");
         assert_eq!(rows.status(already_offline.id).await, "offline");
-        assert_eq!(
-            forgotten
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .as_slice(),
-            [dead.id.to_string()]
-        );
+        let forgotten = forgotten
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(forgotten.len(), 2);
+        assert!(forgotten.contains(&dead.id.to_string()));
+        assert!(forgotten.contains(&dead_same_workspace.id.to_string()));
+        drop(forgotten);
         let events = events
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -753,6 +780,7 @@ mod tests {
                 alive: HashSet::new(),
                 forgotten: unavailable_forgotten.clone(),
                 race_id: None,
+                race_refresh_id: None,
                 pool: None,
             }),
             Arc::new(TaskService::new(rows.pool.clone(), unavailable_bus.clone())),
@@ -778,13 +806,24 @@ mod tests {
             .await;
         let race_forgotten = Arc::new(Mutex::new(Vec::new()));
         let race_bus = Arc::new(Bus::new());
+        let race_events = Arc::new(Mutex::new(Vec::<Event>::new()));
+        {
+            let race_events = race_events.clone();
+            race_bus.subscribe(cordy_protocol::EVENT_DAEMON_REGISTER, move |event| {
+                race_events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(event.clone());
+            });
+        }
         let race_sweeper = RuntimeTaskSweeper::new(
             rows.pool.clone(),
             Arc::new(TestLiveness {
                 available: true,
                 alive: HashSet::new(),
-                forgotten: race_forgotten,
+                forgotten: race_forgotten.clone(),
                 race_id: Some(raced.id),
+                race_refresh_id: None,
                 pool: Some(rows.pool.clone()),
             }),
             Arc::new(TaskService::new(rows.pool.clone(), race_bus.clone())),
@@ -794,6 +833,72 @@ mod tests {
         );
         assert_eq!(race_sweeper.sweep_stale_runtimes(stale_before).await, 0);
         assert_eq!(rows.status(raced.id).await, "offline");
+        assert!(race_forgotten
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty());
+        assert!(race_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty());
+
+        // A heartbeat can win between candidate selection and the conditional
+        // offline update. The sweeper must retain the refreshed online row and
+        // must not emit cleanup side effects for that lost race.
+        let refreshed = rows
+            .runtime("heartbeat-race", "online", Duration::from_secs(300))
+            .await;
+        let refreshed_forgotten = Arc::new(Mutex::new(Vec::new()));
+        let refreshed_bus = Arc::new(Bus::new());
+        let refreshed_events = Arc::new(Mutex::new(Vec::<Event>::new()));
+        {
+            let refreshed_events = refreshed_events.clone();
+            refreshed_bus.subscribe(cordy_protocol::EVENT_DAEMON_REGISTER, move |event| {
+                refreshed_events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(event.clone());
+            });
+        }
+        let refreshed_sweeper = RuntimeTaskSweeper::new(
+            rows.pool.clone(),
+            Arc::new(TestLiveness {
+                available: true,
+                alive: HashSet::new(),
+                forgotten: refreshed_forgotten.clone(),
+                race_id: None,
+                race_refresh_id: Some(refreshed.id),
+                pool: Some(rows.pool.clone()),
+            }),
+            Arc::new(TaskService::new(rows.pool.clone(), refreshed_bus.clone())),
+            refreshed_bus,
+            None,
+            DEFAULT_RECONNECT_GRACE,
+        );
+        assert_eq!(
+            refreshed_sweeper.sweep_stale_runtimes(stale_before).await,
+            0
+        );
+        let refreshed_row = sqlx::query("SELECT status, last_seen_at FROM agent_runtime WHERE id = $1")
+            .bind(refreshed.id)
+            .fetch_one(&rows.pool)
+            .await
+            .expect("read heartbeat race row");
+        assert_eq!(refreshed_row.get::<String, _>("status"), "online");
+        assert!(
+            refreshed_row
+                .get::<Option<DateTime<Utc>>, _>("last_seen_at")
+                .expect("heartbeat timestamp")
+                > stale_before
+        );
+        assert!(refreshed_forgotten
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty());
+        assert!(refreshed_events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty());
         rows.cleanup().await;
     }
 
@@ -1222,6 +1327,7 @@ mod tests {
                 alive: HashSet::new(),
                 forgotten: Arc::new(Mutex::new(Vec::new())),
                 race_id: None,
+                race_refresh_id: None,
                 pool: None,
             });
             let sweeper = RuntimeTaskSweeper::new(
@@ -1550,6 +1656,7 @@ mod tests {
                 alive: HashSet::from([stale_runtime.to_string()]),
                 forgotten: Arc::new(Mutex::new(Vec::new())),
                 race_id: None,
+                race_refresh_id: None,
                 pool: None,
             });
             let sweeper = RuntimeTaskSweeper::new(
@@ -1874,6 +1981,7 @@ mod tests {
                     alive: HashSet::new(),
                     forgotten: Arc::new(Mutex::new(Vec::new())),
                     race_id: None,
+                    race_refresh_id: None,
                     pool: None,
                 }),
                 Arc::new(TaskService::new(rows.pool.clone(), bus.clone())),
@@ -2008,6 +2116,7 @@ mod tests {
                         alive: HashSet::new(),
                         forgotten: Arc::new(Mutex::new(Vec::new())),
                         race_id: None,
+                        race_refresh_id: None,
                         pool: None,
                     }),
                     Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
@@ -2057,6 +2166,7 @@ mod tests {
                     alive: HashSet::new(),
                     forgotten: Arc::new(Mutex::new(Vec::new())),
                     race_id: None,
+                    race_refresh_id: None,
                     pool: None,
                 }),
                 Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
@@ -2147,6 +2257,7 @@ mod tests {
                     alive: HashSet::new(),
                     forgotten: Arc::new(Mutex::new(Vec::new())),
                     race_id: None,
+                    race_refresh_id: None,
                     pool: None,
                 }),
                 Arc::new(TaskService::new(rows.pool.clone(), Arc::new(Bus::new()))),
@@ -2397,6 +2508,7 @@ mod tests {
                     alive: HashSet::new(),
                     forgotten: Arc::new(Mutex::new(Vec::new())),
                     race_id: None,
+                    race_refresh_id: None,
                     pool: None,
                 }),
                 tasks,
@@ -2708,6 +2820,7 @@ mod tests {
                 alive: HashSet::new(),
                 forgotten: Arc::new(Mutex::new(Vec::new())),
                 race_id: None,
+                race_refresh_id: None,
                 pool: None,
             }),
             tasks,

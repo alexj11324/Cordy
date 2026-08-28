@@ -49,14 +49,21 @@ impl Drop for ExecutionRows {
     fn drop(&mut self) {
         let pool = self.pool.clone();
         let prefix = self.prefix.clone();
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(async move {
+        // Detached cleanup races test-runtime teardown and can leak audit rows
+        // into the next scheduler contract. Complete it before Drop returns.
+        let _ = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build scheduler cleanup executor");
+            runtime.block_on(async move {
                 let _ = sqlx::query("DELETE FROM sys_cron_executions WHERE job_name LIKE $1")
                     .bind(format!("{prefix}%"))
                     .execute(&pool)
                     .await;
             });
-        }
+        })
+        .join();
     }
 }
 
@@ -72,11 +79,7 @@ fn manager(pool: &PgPool, runner_id: &str) -> Arc<Manager> {
     )
 }
 
-fn fixed_plan_job(
-    name: String,
-    plan_time: DateTime<Utc>,
-    handler: JobHandler,
-) -> JobSpec {
+fn fixed_plan_job(name: String, plan_time: DateTime<Utc>, handler: JobHandler) -> JobSpec {
     JobSpec {
         name,
         cadence: Duration::from_secs(60),
@@ -230,11 +233,14 @@ async fn production_scheduler_single_winner_audit_and_runtime_shutdown() {
 
     let runtime_name = rows.job_name("runtime");
     let runtime_plan = db_now(&rows.pool).await;
-    let runtime_job = fixed_plan_job(
-        runtime_name.clone(),
-        runtime_plan,
-        Arc::new(|_, _| Box::pin(async { Ok(HandlerResult::default()) })),
-    );
+    let runtime_entered = Arc::new(Notify::new());
+    let runtime_job = fixed_plan_job(runtime_name.clone(), runtime_plan, {
+        let runtime_entered = runtime_entered.clone();
+        Arc::new(move |_, _| {
+            runtime_entered.notify_one();
+            Box::pin(async { std::future::pending::<anyhow::Result<HandlerResult>>().await })
+        })
+    });
     let runtime_manager = manager(&rows.pool, "runtime-runner");
     runtime_manager
         .register(runtime_job)
@@ -242,16 +248,17 @@ async fn production_scheduler_single_winner_audit_and_runtime_shutdown() {
     let runtime = runtime_manager
         .start(CancellationToken::new())
         .expect("start production scheduler runtime");
-    wait_for_status(&rows.pool, &runtime_name, "SUCCESS").await;
+    tokio::time::timeout(Duration::from_secs(2), runtime_entered.notified())
+        .await
+        .expect("runtime handler entered");
     assert_eq!(runtime.shutdown().await, ShutdownOutcome::Stopped);
-    let runtime_status: String = sqlx::query_scalar(
-        "SELECT status FROM sys_cron_executions WHERE job_name = $1",
-    )
-    .bind(&runtime_name)
-    .fetch_one(&rows.pool)
-    .await
-    .expect("runtime audit row");
-    assert_eq!(runtime_status, "SUCCESS");
+    let runtime_status: String =
+        sqlx::query_scalar("SELECT status FROM sys_cron_executions WHERE job_name = $1")
+            .bind(&runtime_name)
+            .fetch_one(&rows.pool)
+            .await
+            .expect("runtime audit row");
+    assert_eq!(runtime_status, "FAILED");
     rows.cleanup().await;
 }
 
@@ -260,7 +267,7 @@ async fn production_scheduler_retries_same_plan_and_classifies_failures() {
     let rows = ExecutionRows::required().await;
     let retry_name = rows.job_name("retry");
     let retry_plan = db_now(&rows.pool).await;
-    let retry_job = fixed_plan_job(
+    let mut retry_job = fixed_plan_job(
         retry_name.clone(),
         retry_plan,
         Arc::new(|_, input| {
@@ -272,6 +279,22 @@ async fn production_scheduler_retries_same_plan_and_classifies_failures() {
             })
         }),
     );
+    // Exercise the production plan cursor: the first tick creates the plan,
+    // while the second tick must rediscover that exact plan from
+    // LatestPlanInfo as a retry rather than receiving a synthetic constant.
+    retry_job.plans_for_scope = Some(Arc::new(move |_, _, now, latest| {
+        Box::pin(async move {
+            if !latest.found {
+                Ok(vec![retry_plan])
+            } else if latest.retry_eligible(now) {
+                Ok(vec![latest
+                    .plan_time
+                    .expect("retry cursor includes plan time")])
+            } else {
+                Ok(Vec::new())
+            }
+        })
+    }));
     let retry_manager = manager(&rows.pool, "retry-runner");
     retry_manager
         .register(retry_job)
@@ -300,9 +323,7 @@ async fn production_scheduler_retries_same_plan_and_classifies_failures() {
     assert!(retry_audit
         .get::<Option<DateTime<Utc>>, _>("next_retry_at")
         .is_none());
-    assert!(retry_audit
-        .get::<Option<String>, _>("error_code")
-        .is_none());
+    assert!(retry_audit.get::<Option<String>, _>("error_code").is_none());
 
     let panic_name = rows.job_name("panic");
     let panic_plan = db_now(&rows.pool).await;
@@ -399,7 +420,7 @@ async fn production_scheduler_retries_same_plan_and_classifies_failures() {
     ));
 
     let failures = sqlx::query(
-        "SELECT job_name, error_code FROM sys_cron_executions \
+        "SELECT job_name, status, error_code FROM sys_cron_executions \
          WHERE job_name = ANY($1) ORDER BY job_name",
     )
     .bind(vec![panic_name, timeout_name, cancel_name])
@@ -408,7 +429,13 @@ async fn production_scheduler_retries_same_plan_and_classifies_failures() {
     .expect("classified failure audit rows");
     let codes = failures
         .into_iter()
-        .map(|row| (row.get::<String, _>("job_name"), row.get::<String, _>("error_code")))
+        .map(|row| {
+            assert_eq!(row.get::<String, _>("status"), "FAILED");
+            (
+                row.get::<String, _>("job_name"),
+                row.get::<String, _>("error_code"),
+            )
+        })
         .collect::<Vec<_>>();
     assert_eq!(codes.len(), 3);
     assert!(codes.iter().any(|(_, code)| code == "handler_panic"));

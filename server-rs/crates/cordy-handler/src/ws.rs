@@ -832,6 +832,22 @@ mod tests {
         .expect("hub disconnect cleanup");
     }
 
+    async fn wait_for_client_close<S>(socket: &mut tokio_tungstenite::WebSocketStream<S>)
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match socket.next().await {
+                    Some(Ok(ClientMessage::Close(_))) | Some(Err(_)) | None => return,
+                    Some(Ok(_)) => {}
+                }
+            }
+        })
+        .await
+        .expect("websocket close deadline");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn production_websocket_session_auth_scope_wire_and_cleanup() {
         let url = std::env::var("DATABASE_URL")
@@ -958,7 +974,24 @@ mod tests {
             client_json(&mut malformed).await,
             json!({"error":"expected auth message as first frame"})
         );
+        wait_for_client_close(&mut malformed).await;
         wait_for_disconnect(&hub).await;
+
+        let mut outsider_cookie = ws_url.clone().into_client_request().expect("outsider cookie request");
+        outsider_cookie.headers_mut().insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!("{AUTH_COOKIE_NAME}={outsider_token}"))
+                .expect("outsider cookie header"),
+        );
+        match tokio_tungstenite::connect_async(outsider_cookie)
+            .await
+            .expect_err("cookie outsider must be rejected before upgrade")
+        {
+            tokio_tungstenite::tungstenite::Error::Http(response) => {
+                assert_eq!(response.status(), StatusCode::FORBIDDEN)
+            }
+            other => panic!("unexpected cookie outsider failure: {other}"),
+        }
 
         let (mut outsider, _) = tokio_tungstenite::connect_async(&ws_url)
             .await
@@ -1010,10 +1043,9 @@ mod tests {
             ))
             .await
             .expect("subscribe foreign workspace");
-        assert_eq!(
-            client_json(&mut socket).await["payload"]["error"],
-            "forbidden"
-        );
+        let workspace_error = client_json(&mut socket).await;
+        assert_eq!(workspace_error["type"], "subscribe_error");
+        assert_eq!(workspace_error["payload"]["error"], "forbidden");
 
         socket
             .send(ClientMessage::Text(
@@ -1043,10 +1075,21 @@ mod tests {
             ))
             .await
             .expect("subscribe foreign task");
-        assert_eq!(
-            client_json(&mut socket).await["payload"]["error"],
-            "forbidden"
-        );
+        let task_error = client_json(&mut socket).await;
+        assert_eq!(task_error["type"], "subscribe_error");
+        assert_eq!(task_error["payload"]["error"], "forbidden");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"user","id":outsider_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe foreign user");
+        let user_error = client_json(&mut socket).await;
+        assert_eq!(user_error["type"], "subscribe_error");
+        assert_eq!(user_error["payload"]["error"], "forbidden");
 
         socket
             .send(ClientMessage::Text(
@@ -1062,6 +1105,16 @@ mod tests {
             "",
         );
         assert_eq!(client_json(&mut socket).await["type"], "contract:event");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"task","id":task_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe task before disconnect cleanup");
+        assert_eq!(client_json(&mut socket).await["type"], "subscribe_ack");
         socket.close(None).await.expect("close member websocket");
         wait_for_disconnect(&hub).await;
         assert!(!hub.has_local_subscribers(SCOPE_TASK, &task_id.to_string()));

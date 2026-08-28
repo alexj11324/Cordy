@@ -1260,6 +1260,55 @@ mod tests {
             other => panic!("unexpected custom duplicate result: {other:?}"),
         }
 
+        // Duplicate identity is workspace-scoped and applies across every
+        // active status, not just equal status keys. A custom status inherits
+        // the same active category semantics as its built-in category.
+        let active_identity = create(
+            &service,
+            params(workspace_id, "Cross status identity", "todo"),
+        )
+        .await
+        .expect("cross-status issue");
+        match create(
+            &service,
+            params(workspace_id, "cross status identity", "in_progress"),
+        )
+        .await
+        .expect_err("active duplicate must span active status columns")
+        {
+            IssueCreateError::ActiveDuplicate {
+                duplicate: Some(found),
+            } => {
+                assert_eq!(found.id, active_identity.id)
+            }
+            other => panic!("unexpected cross-status duplicate result: {other:?}"),
+        }
+
+        cordy_db::queries::issue_status::create_issue_status_entry(
+            &pool,
+            workspace_id,
+            "completed_custom",
+            "Completed Custom",
+            "",
+            "done",
+            "#8b82f6",
+        )
+        .await
+        .expect("create closed custom status")
+        .expect("closed custom status row");
+        create(
+            &service,
+            params(workspace_id, "Closed custom identity", "completed_custom"),
+        )
+        .await
+        .expect("custom done issue");
+        create(
+            &service,
+            params(workspace_id, "closed custom identity", "done"),
+        )
+        .await
+        .expect("done category does not block duplicate");
+
         let done = create(&service, params(workspace_id, "Done column", "done"))
             .await
             .expect("independent status column");
@@ -1277,35 +1326,28 @@ mod tests {
         create(&service, project_issue)
             .await
             .expect("project-scoped issue");
-        create(
-            &service,
-            params(workspace_id, "Scoped identity", "todo"),
-        )
-        .await
-        .expect("root and project identities are independent");
+        create(&service, params(workspace_id, "Scoped identity", "todo"))
+            .await
+            .expect("root and project identities are independent");
 
         let parent = create(&service, params(workspace_id, "Parent", "todo"))
             .await
             .expect("parent issue");
         let mut child = params(workspace_id, "Child identity", "todo");
         child.parent_issue_id = Some(parent.id);
-        create(&service, child)
+        create(&service, child).await.expect("parent-scoped issue");
+        create(&service, params(workspace_id, "Child identity", "todo"))
             .await
-            .expect("parent-scoped issue");
-        create(
-            &service,
-            params(workspace_id, "Child identity", "todo"),
-        )
-        .await
-        .expect("root and child identities are independent");
+            .expect("root and child identities are independent");
 
         let other_workspace = workspace(&pool).await;
-        create(
+        let other = create(
             &service,
             params(other_workspace, "duplicate title", "in_progress"),
         )
         .await
         .expect("duplicate identity is workspace scoped");
+        assert_eq!(other.position, -1.0);
 
         cleanup(&pool, other_workspace).await;
         cleanup(&pool, workspace_id).await;
@@ -1349,7 +1391,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         blocker.commit().await.expect("release workspace counter");
 
-        let results = [first.await.expect("first task"), second.await.expect("second task")];
+        let results = [
+            first.await.expect("first task"),
+            second.await.expect("second task"),
+        ];
         assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
         assert_eq!(
             results
@@ -1426,7 +1471,11 @@ mod tests {
         for (autopilot, title, window) in [
             (None, "recurring work", chrono::Duration::hours(1)),
             (Some(autopilot_id), "   ", chrono::Duration::hours(1)),
-            (Some(autopilot_id), "recurring work", chrono::Duration::zero()),
+            (
+                Some(autopilot_id),
+                "recurring work",
+                chrono::Duration::zero(),
+            ),
         ] {
             let mut tx = pool.begin().await.expect("no-op transaction");
             let (_, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(

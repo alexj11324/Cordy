@@ -255,14 +255,21 @@ mod tests {
         fn drop(&mut self) {
             let pool = self.pool.clone();
             let workspace_id = self.workspace_id;
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                runtime.spawn(async move {
+            // Do not leave fixture deletion to a detached task that can be
+            // cancelled when the test runtime tears down.
+            let _ = std::thread::spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build heartbeat cleanup executor");
+                runtime.block_on(async move {
                     let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
                         .bind(workspace_id)
                         .execute(&pool)
                         .await;
                 });
-            }
+            })
+            .join();
         }
     }
 
@@ -319,6 +326,23 @@ mod tests {
         assert!(recovered_offline.last_seen_at.is_some());
         assert_eq!(scheduler.pending_count(), 0);
 
+        let never_seen = rows.runtime("never-seen", "online", false).await;
+        scheduler
+            .schedule(&never_seen)
+            .await
+            .expect("never-seen heartbeat uses online fallback");
+        let never_seen_after = rows.get(never_seen.id).await;
+        assert_eq!(never_seen_after.status, "online");
+        assert!(never_seen_after.last_seen_at.is_some());
+
+        let passthrough_seen = rows.runtime("passthrough-seen", "online", true).await;
+        let passthrough_seen_at = seen(&passthrough_seen);
+        PassthroughHeartbeatScheduler::new(rows.pool.clone())
+            .schedule(&passthrough_seen)
+            .await
+            .expect("already-seen online heartbeat touches in place");
+        assert!(seen(&rows.get(passthrough_seen.id).await) > passthrough_seen_at);
+
         sqlx::query("UPDATE agent_runtime SET status = 'offline' WHERE id = $1")
             .bind(passthrough_race.id)
             .execute(&rows.pool)
@@ -361,13 +385,23 @@ mod tests {
         let late_seen = seen(&late);
         let scheduler = Arc::new(BatchedHeartbeatScheduler::new(
             rows.pool.clone(),
-            Duration::from_secs(3_600),
+            Duration::from_millis(20),
         ));
         let runtime = scheduler.clone().start(CancellationToken::new());
         scheduler
             .schedule(&pending)
             .await
             .expect("schedule before shutdown");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if seen(&rows.get(pending.id).await) > pending_seen {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("heartbeat ticker flush deadline");
 
         let mut lock = rows.pool.begin().await.expect("begin runtime row lock");
         sqlx::query("SELECT id FROM agent_runtime WHERE id = $1 FOR UPDATE")

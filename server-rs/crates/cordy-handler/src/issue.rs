@@ -7130,6 +7130,9 @@ mod tests {
             "an active duplicate issue already exists"
         );
         assert_eq!(duplicate["issue"]["id"], first["id"]);
+        assert_eq!(duplicate["issue"]["identifier"], first["identifier"]);
+        assert_eq!(duplicate["issue"]["title"], first["title"]);
+        assert_eq!(duplicate["issue"]["status"], first["status"]);
 
         let (status, allowed) = post(
             &app,
@@ -7142,6 +7145,8 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(allowed["position"], -2.0);
+        assert_eq!(first["number"], 1);
+        assert_eq!(allowed["number"], 2);
 
         sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
             .bind(workspace_id)
