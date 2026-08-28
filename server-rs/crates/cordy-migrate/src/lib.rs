@@ -21,6 +21,7 @@ pub fn required_versions() -> anyhow::Result<&'static [String]> {
 /// backfill binary. Keeping this at the package boundary avoids four subtly
 /// different startup filters for one operator-facing command family.
 pub fn init_logging() {
+    let (writer, terminal) = logging_output();
     let log_filter = tracing_subscriber::EnvFilter::try_new(cordy_util::logging::env_filter())
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"));
     tracing_subscriber::fmt()
@@ -28,6 +29,26 @@ pub fn init_logging() {
         .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
             cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
         ))
-        .with_ansi(cordy_util::logging::stderr_is_terminal())
+        .with_writer(writer)
+        .with_ansi(terminal)
         .init();
+}
+
+/// Keep the writer and terminal decision on the same stream. The formatter's
+/// implicit default is stdout, while the Go migration/logger contract and the
+/// existing TTY check both use stderr.
+fn logging_output() -> (fn() -> std::io::Stderr, bool) {
+    (std::io::stderr, cordy_util::logging::stderr_is_terminal())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::logging_output;
+
+    #[test]
+    fn migration_logging_writer_matches_the_stderr_tty_decision() {
+        let (make_writer, terminal) = logging_output();
+        let _: std::io::Stderr = make_writer();
+        assert_eq!(terminal, cordy_util::logging::stderr_is_terminal());
+    }
 }

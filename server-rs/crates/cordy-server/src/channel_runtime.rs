@@ -1358,7 +1358,7 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        app_url, channel_secret_box, configure_dingtalk, configure_lark, configure_telegram,
+        app_url, configure_dingtalk, configure_lark, configure_slack, configure_telegram,
         configure_wecom, configure_wecom_security, lease_backend_settings, start_media_reconciler,
         ChannelRouter, ChannelRuntimeDeps, ChannelServices, ChannelStorage, LeaseBackendSettings,
         RouterConfig,
@@ -1377,6 +1377,7 @@ mod tests {
     struct RuntimeTestSetup {
         state: cordy_handler::HandlerState,
         cfg: cordy_config::Config,
+        services: Arc<ChannelServices>,
         router: Arc<ChannelRouter>,
         registry: Arc<cordy_channel::Registry>,
     }
@@ -1396,12 +1397,13 @@ mod tests {
             let router = ChannelRouter::new(
                 services.clone(),
                 services.clone(),
-                services,
+                services.clone(),
                 RouterConfig::default(),
             );
             Self {
                 state,
                 cfg: cordy_config::Config::default(),
+                services,
                 router,
                 registry: Arc::new(cordy_channel::Registry::new()),
             }
@@ -1580,22 +1582,46 @@ mod tests {
         );
     }
 
-    #[test]
-    fn slack_runtime_requires_a_valid_secret_and_constructs_the_real_client() {
-        const KEY_ENV: &str = "CORDY_TEST_SLACK_SECRET_KEY";
+    #[tokio::test]
+    async fn slack_production_configuration_registers_real_channel_factory() {
+        let _env_lock = production_env_lock().lock().await;
+        let _env = EnvRestore::set("CORDY_SLACK_SECRET_KEY", ZERO_KEY);
+        let setup = RuntimeTestSetup::new();
 
-        std::env::remove_var(KEY_ENV);
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_none());
+        configure_slack(
+            &setup.state,
+            &setup.cfg,
+            &setup.services,
+            &setup.router,
+            None,
+            &setup.registry,
+            &setup.state.channel_tasks,
+        );
+        let slack = cordy_channel::Type(cordy_slack::TYPE_SLACK.to_string());
+        assert_eq!(setup.registry.types(), vec![slack.clone()]);
 
-        std::env::set_var(KEY_ENV, "not-base64");
-        assert!(channel_secret_box(KEY_ENV).is_err());
-
-        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        assert!(channel_secret_box(KEY_ENV).unwrap().is_some());
-        std::env::remove_var(KEY_ENV);
-
-        let client = cordy_slack::client::SlackClient::new("xoxb-test");
-        assert_eq!(client.api_url(), cordy_slack::client::DEFAULT_API_URL);
+        let channel = setup
+            .registry
+            .build(cordy_channel::Config {
+                r#type: slack.clone(),
+                raw: serde_json::json!({
+                    "app_id": "A_TEST",
+                    "team_id": "T_TEST",
+                    "bot_user_id": "U_TEST",
+                    "bot_token_encrypted": SEALED_TEST_SECRET,
+                    "app_token_encrypted": SEALED_TEST_SECRET,
+                }),
+                ..Default::default()
+            })
+            .await
+            .expect("production Slack factory decrypts and builds the channel");
+        assert_eq!(channel.r#type(), slack);
+        assert!(channel.capabilities().has(cordy_channel::Capability::TEXT));
+        assert!(
+            channel
+                .capabilities()
+                .has(cordy_channel::Capability::THREAD_REPLY)
+        );
     }
 
     #[tokio::test]
