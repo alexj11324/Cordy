@@ -400,9 +400,11 @@ pub(crate) use setup_command_schema::{SetupArgs, SetupCommand, SetupError};
 #[cfg(test)]
 use setup_commands::{
     confirm_setup_overwrite, prepare_setup_profile, resolve_setup_profile_input,
-    setup_callback_host, setup_daemon_action, SetupDaemonAction,
+    setup_callback_host, SetupDaemonAction,
 };
-use setup_commands::{dispatch_daemon_after_setup, read_setup_confirmation, run_setup};
+use setup_commands::{
+    dispatch_daemon_after_setup, read_setup_confirmation, run_setup, setup_daemon_action,
+};
 pub(crate) use skill_command_schema::{
     SkillArgs, SkillCommand, SkillCreateArgs, SkillDeleteArgs, SkillFilesArgs, SkillFilesCommand,
     SkillFilesDeleteArgs, SkillFilesListArgs, SkillFilesUpsertArgs, SkillGetArgs, SkillImportArgs,
