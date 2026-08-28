@@ -1354,7 +1354,6 @@ impl ProviderRuntimeAdapter for ProductionProviderAdapter {
             active_task_count: self.active_tasks.load(Ordering::Acquire),
             running_task_count: self.running_tasks.load(Ordering::Acquire),
             resource_wait_task_count: self.resource_wait_tasks.load(Ordering::Acquire),
-            agents: self.config.agents.keys().cloned().collect(),
             ..HealthResponse::default()
         }
     }

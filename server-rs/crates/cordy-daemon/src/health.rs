@@ -94,6 +94,16 @@ pub struct HealthResponse {
     pub workspaces: Vec<HealthWorkspace>,
 }
 
+/// Machine-level provider diagnostics from the latest successful discovery
+/// round. The registration owner replaces this snapshot atomically so the
+/// health endpoint never combines agents from one probe with skip reasons
+/// from another.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentHealthSnapshot {
+    pub agents: Vec<String>,
+    pub skipped_agents: HashMap<String, String>,
+}
+
 fn is_zero(v: &i64) -> bool {
     *v == 0
 }

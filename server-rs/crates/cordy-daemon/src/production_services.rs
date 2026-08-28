@@ -25,8 +25,8 @@ use crate::config::{
 };
 use crate::daemon_core::DaemonCoreServices;
 use crate::health::{
-    ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry, RepoCheckoutRequest,
-    REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
+    ActiveRepoCheckoutTask, AgentHealthSnapshot, HealthResponse, RepoCheckoutRegistry,
+    RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
@@ -627,6 +627,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     fn health_snapshot(&self) -> HealthResponse {
         let mut snapshot = self.provider.health_snapshot();
         snapshot.profile = self.config.profile.clone();
+        apply_agent_health_snapshot(&mut snapshot, self.registration.agent_health_snapshot());
         snapshot
     }
 
@@ -642,6 +643,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()> {
         self.registration.flush_deregistrations(&ctx).await
     }
+}
+
+fn apply_agent_health_snapshot(
+    response: &mut HealthResponse,
+    agent_health: AgentHealthSnapshot,
+) {
+    response.agents = agent_health.agents;
+    response.skipped_agents = agent_health.skipped_agents;
 }
 
 fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
@@ -686,6 +695,37 @@ fn checkout_sync_repos(workspace_repos: Vec<RepoData>, requested_url: &str) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registration_diagnostics_replace_stale_provider_health_fields() {
+        let mut response = HealthResponse {
+            agents: vec!["startup".to_string()],
+            skipped_agents: std::collections::HashMap::from([(
+                "old".to_string(),
+                "stale reason".to_string(),
+            )]),
+            ..HealthResponse::default()
+        };
+        apply_agent_health_snapshot(
+            &mut response,
+            AgentHealthSnapshot {
+                agents: vec!["claude".to_string(), "codex".to_string()],
+                skipped_agents: std::collections::HashMap::from([(
+                    "kiro".to_string(),
+                    "below minimum".to_string(),
+                )]),
+            },
+        );
+
+        assert_eq!(response.agents, vec!["claude", "codex"]);
+        assert_eq!(
+            response.skipped_agents,
+            std::collections::HashMap::from([(
+                "kiro".to_string(),
+                "below minimum".to_string(),
+            )])
+        );
+    }
 
     #[test]
     fn workspace_backoff_matches_bootstrap_and_steady_caps() {
