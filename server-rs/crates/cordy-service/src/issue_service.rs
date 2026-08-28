@@ -1187,13 +1187,6 @@ mod tests {
             Err(IssueCreateError::ActiveAssigneeRequired)
         ));
 
-        let mut unassigned_todo = params(workspace_id, "Parked without owner", "todo");
-        unassigned_todo.assignee_type = None;
-        unassigned_todo.assignee_id = None;
-        create(&service, unassigned_todo)
-            .await
-            .expect("todo may remain unassigned");
-
         let first = create(&service, params(workspace_id, "First", "todo"))
             .await
             .expect("first issue");
@@ -1212,6 +1205,13 @@ mod tests {
             .await
             .expect("issue after drag");
         assert_eq!(next.position, -51.0);
+
+        let mut unassigned_todo = params(workspace_id, "Parked without owner", "todo");
+        unassigned_todo.assignee_type = None;
+        unassigned_todo.assignee_id = None;
+        create(&service, unassigned_todo)
+            .await
+            .expect("todo may remain unassigned");
 
         let original = create(
             &service,
