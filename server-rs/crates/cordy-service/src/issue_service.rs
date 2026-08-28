@@ -1433,7 +1433,7 @@ mod tests {
     async fn production_create_advisory_lock_serializes_same_identity() {
         let pool = required_pool().await;
         let workspace_id = workspace(&pool).await;
-        let service = service(&pool);
+        let issue_service = service(&pool);
 
         // Hold the row updated by increment_issue_counter. The first create
         // reaches it only after acquiring the duplicate advisory lock; the
@@ -1447,7 +1447,7 @@ mod tests {
             .await
             .expect("lock workspace counter row");
 
-        let first_service = service.clone();
+        let first_service = issue_service.clone();
         let first = tokio::spawn(async move {
             let mut first_params = params(workspace_id, "Concurrent identity", "todo");
             // The duplicate override still has to take the transaction-scoped

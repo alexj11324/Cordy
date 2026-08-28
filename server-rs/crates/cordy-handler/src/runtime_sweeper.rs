@@ -124,11 +124,6 @@ impl RuntimeTaskSweeper {
         }
     }
 
-    async fn gc_with_budget(&self, stale_before: DateTime<Utc>) -> usize {
-        self.gc_with_budget_with_timeout(stale_before, GC_OPERATION_TIMEOUT)
-            .await
-    }
-
     async fn gc_with_budget_with_timeout(
         &self,
         stale_before: DateTime<Utc>,

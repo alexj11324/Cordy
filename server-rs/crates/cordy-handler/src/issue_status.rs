@@ -884,7 +884,7 @@ mod tests {
             .expect("hold reordered status row");
         let reorder_state = state.clone();
         let reorder_admin = admin.clone();
-        let mut pending_reorder = tokio::spawn(async move {
+        let pending_reorder = tokio::spawn(async move {
             reorder(
                 State(reorder_state),
                 Extension(reorder_admin),
