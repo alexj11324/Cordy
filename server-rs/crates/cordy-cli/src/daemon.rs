@@ -32,13 +32,15 @@ pub struct DaemonStartAssembly {
 
 impl DaemonStartAssembly {
     /// Loads one profile snapshot and resolves every launch-precedence layer.
-    /// Authentication fails before a background process can be spawned.
+    /// Background callers must be able to assemble this snapshot before the
+    /// lifecycle health probe; foreground production assembly remains the
+    /// authenticated boundary in [`Self::production_inputs`].
     pub fn load(
         profile: &str,
         flags: &DaemonLaunchFlags,
         environment: &Environment,
     ) -> Result<Self> {
-        if environment.in_daemon_managed_execution_context() {
+        if environment.in_daemon_task_identity_context() {
             bail!("daemon start is not available inside a daemon-managed task");
         }
         let config = environment.load_config(profile)?;
@@ -52,14 +54,6 @@ impl DaemonStartAssembly {
         config: &CliConfig,
     ) -> Result<Self> {
         let profile_input = config.daemon_profile_input();
-        if profile_input.token.is_empty() {
-            let login = if profile.is_empty() {
-                "cordy login".to_string()
-            } else {
-                format!("cordy login --profile {profile}")
-            };
-            bail!("not authenticated: run '{login}' first");
-        }
         let launch = resolve_daemon_launch_overrides(profile, flags, environment, config)?;
         Ok(Self {
             launch,
@@ -181,16 +175,15 @@ mod tests {
     }
 
     #[test]
-    fn start_fails_before_spawn_without_profile_credentials() {
+    fn start_snapshot_allows_health_probe_without_profile_credentials() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
 
-        let error =
+        let assembly =
             DaemonStartAssembly::load("missing", &DaemonLaunchFlags::default(), &environment)
-                .err()
-                .expect("missing token must fail");
-        assert!(error.to_string().contains("cordy login --profile missing"));
+                .expect("health probe must be able to run before login");
+        assert!(assembly.profile_input.token.is_empty());
     }
 
     #[test]
@@ -199,6 +192,7 @@ mod tests {
         let cwd = tempfile::tempdir().expect("temp cwd");
         let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
         environment.set("CORDY_DAEMON_PORT", "19876");
+        environment.set("CORDY_TASK_ID", "task-1");
 
         let error = DaemonStartAssembly::load("", &DaemonLaunchFlags::default(), &environment)
             .err()

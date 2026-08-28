@@ -7,11 +7,13 @@
 //! worktree before returning the normalized result.
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use anyhow::Context as _;
 use cordy_agent::{
     Backend, CatalogCache, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
@@ -23,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use crate::client::{Client, TaskMessageData};
 use crate::config::Config;
 use crate::execenv::context::{
-    cleanup_sidecars, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
+    cleanup_sidecars, write_context_files, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::codex_home::codex_resume_rollout_present;
@@ -31,9 +33,11 @@ use crate::execenv::execenv::{
     ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, reuse,
     Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
+use crate::execenv::isolation::{prepare_isolated, reuse_isolated, PREPARATION_HELPER_ARG};
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execution_plan::{
-    PreparedEnvironmentInputs, ProviderExecutionInputs, ProviderExecutionPlan,
+    strip_hermes_profile_selectors, PreparedEnvironmentInputs, ProviderExecutionInputs,
+    ProviderExecutionPlan,
 };
 use crate::health::{ActiveRepoCheckoutTask, HealthResponse};
 use crate::local_directory::{
@@ -52,7 +56,7 @@ use crate::remote_mcp_broker::{
     merge_task_remote_mcp_config, start_task_remote_mcp_brokers,
     RemoteMCPCredentialResolver,
 };
-use crate::repocache::Ctx;
+use crate::repocache::{CancelCause, Ctx};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::skill_cache::{
     build_manifest, validate_skill_bundle, SkillBundleCache, SkillBundleFile, SkillBundleSkill,
@@ -78,6 +82,61 @@ const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
 const SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
+const TASK_PREPARATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+#[cfg(test)]
+pub(crate) static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+fn preparation_helper_command() -> anyhow::Result<Option<Vec<String>>> {
+    // Unit tests exercise the real preparation implementation directly. The
+    // production daemon uses the CLI entry point below so filesystem work is
+    // owned by a killable child process.
+    Ok(None)
+}
+
+#[cfg(not(test))]
+fn preparation_helper_command() -> anyhow::Result<Option<Vec<String>>> {
+    let executable = std::env::current_exe().context("resolve cordy executable")?;
+    Ok(Some(vec![
+        executable
+            .into_os_string()
+            .into_string()
+            .map_err(|_| anyhow::anyhow!("cordy executable path is not valid UTF-8"))?,
+        PREPARATION_HELPER_ARG.to_string(),
+    ]))
+}
+
+/// Runs one environment operation with a finite preparation budget. The
+/// operation receives a child context so a timeout/cancellation can terminate
+/// the helper process and wait for its cleanup before returning; dropping a
+/// future alone would leave a blocked preparation process behind.
+async fn run_with_preparation_budget<T, F, Fut>(ctx: &Ctx, operation: F) -> anyhow::Result<T>
+where
+    F: FnOnce(Ctx) -> Fut,
+    Fut: Future<Output = anyhow::Result<T>>,
+{
+    let operation_ctx = ctx.child();
+    let future = operation(operation_ctx.clone());
+    tokio::pin!(future);
+    tokio::select! {
+        result = &mut future => result,
+        () = ctx.cancelled() => {
+            let cause = ctx.cause();
+            operation_ctx.cancel_with(cause);
+            let _ = future.await;
+            Err(anyhow::anyhow!("task preparation cancelled: {cause}"))
+        }
+        () = tokio::time::sleep(TASK_PREPARATION_TIMEOUT) => {
+            operation_ctx.cancel_with(CancelCause::DeadlineExceeded);
+            let _ = future.await;
+            Err(anyhow::anyhow!(
+                "task preparation timed out after {:?}",
+                TASK_PREPARATION_TIMEOUT
+            ))
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct TaskModelSelection {
@@ -282,21 +341,22 @@ impl ProductionProviderAdapter {
         let _active = CounterGuard::new(&self.active_tasks);
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
-            Err(error) => return failed(error, None),
+            Err(error) => return failed_with_reason(error, "local_directory_error", None),
         };
         if let Some(assignment) = &assignment {
             if let Err(error) = assignment.validate_execution_mode() {
-                return failed(error, None);
+                return failed_with_reason(error, "local_directory_error", None);
             }
             if let Err(error) = validate_local_path(&assignment.abs_path) {
-                return failed(error, None);
+                return failed_with_reason(error, "local_directory_error", None);
             }
             if assignment.uses_worktree() && !is_git_work_tree(&ctx, &assignment.abs_path).await {
-                return failed(
+                return failed_with_reason(
                     anyhow::anyhow!(
                         "local_directory: worktree mode requires a git working tree: {:?}",
                         assignment.abs_path
                     ),
+                    "local_directory_error",
                     None,
                 );
             }
@@ -337,9 +397,15 @@ impl ProductionProviderAdapter {
             openclaw_bin: (target.provider == "openclaw")
                 .then(|| launch.command_path.clone())
                 .unwrap_or_default(),
+            launch_prefix_args: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
         };
+        let provider_runtime_env = match task_provider_runtime_env(&self.config, &task, &target) {
+            Ok(values) => values,
+            Err(error) => return failed(error, None),
+        };
+        inputs.runtime_env.extend(provider_runtime_env);
         let client = runtime.client();
         if let Some(agent) = task.agent.as_ref() {
             inputs.cursor_mcp_auth_source = agent
@@ -563,20 +629,51 @@ impl ProductionProviderAdapter {
             Ok(plan) => plan,
             Err(error) => return failed(error, None),
         };
+        // GC may remove profile-scoped Hermes/Codex stores concurrently with
+        // task preparation. Reserve every store this plan can mount before
+        // entering Reuse/Prepare and keep the guard through finalization.
+        let store_paths = persistent_store_paths(&self.config, &target, &plan);
+        let _store_guard = if store_paths.is_empty() {
+            None
+        } else {
+            Some(runtime.activity().mark_stores(store_paths).await)
+        };
         let path_guard = match self
             .acquire_local_path(&ctx, &client, &task, assignment.as_ref())
             .await
         {
             Ok(guard) => guard,
-            Err(error) => return failed(error, None),
+            Err(error) => return failed_with_reason(error, "local_directory_error", None),
         };
         let (mut environment, resumed) = match self
             .prepare_environment(&ctx, &task, &mut plan, assignment.as_ref(), &path_guard)
             .await
         {
             Ok(environment) => environment,
-            Err(error) => return failed(error, None),
+            Err(error) => {
+                return if assignment.is_some() {
+                    failed_with_reason(error, "local_directory_error", None)
+                } else {
+                    failed(error, None)
+                };
+            }
         };
+        if let Err(error) =
+            gate_resume_after_environment(&mut task, &target, &mut plan, &environment, resumed)
+                .await
+        {
+            let outcome = failed_with_reason(
+                error.context("refresh execution context after resume gate"),
+                if assignment.is_some() {
+                    "local_directory_error"
+                } else {
+                    "environment_error"
+                },
+                Some(&environment),
+            );
+            drop(path_guard);
+            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+        }
         // Worktree mode holds the source-path lock only while taking its
         // consistent snapshot. In-place mode deliberately retains it until
         // the complete result has been finalized.
@@ -589,28 +686,44 @@ impl ProductionProviderAdapter {
         } else {
             path_guard
         };
-        let task_temp_dir = match ensure_task_temp_dir(
-            &environment.root_dir,
-            &task.workspace_id,
-            &task.id,
-        ) {
-            Ok(directory) => directory,
-            Err(error) => {
-                let outcome = failed(error.context("prepare task temp dir"), Some(&environment));
-                return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
-            }
-        };
+        let task_temp_dir =
+            match ensure_task_temp_dir(&environment.root_dir, &task.workspace_id, &task.id) {
+                Ok(directory) => directory,
+                Err(error) => {
+                    let outcome = failed_with_reason(
+                        error.context("prepare task temp dir"),
+                        if assignment.is_some() {
+                            "local_directory_error"
+                        } else {
+                            "environment_error"
+                        },
+                        Some(&environment),
+                    );
+                    return finalize_environment(outcome, &mut environment, assignment.as_ref())
+                        .await;
+                }
+            };
         let Some(task_temp_dir_path) = task_temp_dir.path().to_str() else {
-            let outcome = failed(
+            let outcome = failed_with_reason(
                 anyhow::anyhow!("task temp directory path is not valid UTF-8"),
+                if assignment.is_some() {
+                    "local_directory_error"
+                } else {
+                    "environment_error"
+                },
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         };
         if let Err(error) = plan.set_task_temp_dir(task_temp_dir_path) {
-            let outcome = failed(
+            let outcome = failed_with_reason(
                 error.context("bind task temp directory"),
+                if assignment.is_some() {
+                    "local_directory_error"
+                } else {
+                    "environment_error"
+                },
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
@@ -647,17 +760,25 @@ impl ProductionProviderAdapter {
             let requested_session_id = plan.resume_session_id().to_string();
             let bound = plan.bind_environment(
                 &environment,
-                PreparedEnvironmentInputs {
-                    cancellation: ctx.token().clone(),
-                    openclaw_include_roots: environment.openclaw_include_root.clone(),
-                    ..PreparedEnvironmentInputs::default()
-                },
+                prepared_environment_inputs(
+                    &task,
+                    &target.provider,
+                    &environment,
+                    ctx.token().clone(),
+                ),
             )?;
-            let backend_config = runtime.backend_config(
+            let mut backend_config = runtime.backend_config(
                 &task.workspace_id,
                 &target,
                 bound.child_env.into_inner(),
             )?;
+            // The selected Hermes overlay is authoritative. Keep the latest
+            // accepted launch from the runtime registry, but remove any
+            // profile selector in its fixed prefix before spawning the child.
+            if target.provider == "hermes" && !environment.hermes_home.trim().is_empty() {
+                backend_config.command.prefix =
+                    strip_hermes_profile_selectors(&backend_config.command.prefix);
+            }
             let backend = cordy_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
             let token = task.auth_token.trim().to_string();
@@ -710,11 +831,12 @@ impl ProductionProviderAdapter {
                 plan.drop_resume();
                 let fresh = plan.bind_environment(
                     &environment,
-                    PreparedEnvironmentInputs {
-                        cancellation: ctx.token().clone(),
-                        openclaw_include_roots: environment.openclaw_include_root.clone(),
-                        ..PreparedEnvironmentInputs::default()
-                    },
+                    prepared_environment_inputs(
+                        &task,
+                        &target.provider,
+                        &environment,
+                        ctx.token().clone(),
+                    ),
                 )?;
                 transcript.begin_attempt();
                 let retry = execute_and_drain(
@@ -909,23 +1031,35 @@ impl ProductionProviderAdapter {
         let Some(assignment) = assignment else {
             return Ok(None);
         };
-        let holder = self.local_paths.holder(&assignment.real_path);
-        let waiting = !holder.is_empty();
-        if waiting {
-            self.resource_wait_tasks.fetch_add(1, Ordering::AcqRel);
-            let reason = format!("waiting for local directory held by task {holder}");
-            if let Err(error) = client
-                .mark_task_waiting_local_directory(ctx, &task.id, &reason)
-                .await
-            {
-                tracing::warn!(task = %task.id, %error, "mark task waiting for local directory failed");
+        let wait_counted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let wait_counted_callback = Arc::clone(&wait_counted);
+        let resource_wait_tasks = &self.resource_wait_tasks;
+        let wait_client = Arc::clone(&client);
+        let wait_ctx = ctx.clone();
+        let wait_task_id = task.id.clone();
+        let on_wait = move |holder: &str| {
+            if wait_counted_callback.swap(true, Ordering::AcqRel) {
+                return;
             }
-        }
+            resource_wait_tasks.fetch_add(1, Ordering::AcqRel);
+            let reason = format!("waiting for local directory held by task {holder}");
+            let wait_client = Arc::clone(&wait_client);
+            let wait_ctx = wait_ctx.clone();
+            let wait_task_id = wait_task_id.clone();
+            tokio::spawn(async move {
+                if let Err(error) = wait_client
+                    .mark_task_waiting_local_directory(&wait_ctx, &wait_task_id, &reason)
+                    .await
+                {
+                    tracing::warn!(task = %wait_task_id, %error, "mark task waiting for local directory failed");
+                }
+            });
+        };
         let acquired = self
             .local_paths
-            .acquire(ctx, &assignment.real_path, &task.id, None)
+            .acquire(ctx, &assignment.real_path, &task.id, Some(&on_wait))
             .await;
-        if waiting {
+        if wait_counted.load(Ordering::Acquire) {
             self.resource_wait_tasks.fetch_sub(1, Ordering::AcqRel);
         }
         acquired.map(Some)
@@ -942,18 +1076,60 @@ impl ProductionProviderAdapter {
         if ctx.err().is_some() {
             anyhow::bail!(ctx.cause().to_string());
         }
+        let helper_command = preparation_helper_command()?;
         if assignment.is_none() && reusable_workdir(&self.config.workspaces_root, task) {
-            if let Some(environment) = reuse(plan.reuse_params(task.prior_work_dir.clone())) {
+            let reuse_params = plan.reuse_params(task.prior_work_dir.clone());
+            let reused = if let Some(command) = helper_command.as_ref() {
+                let command = command.clone();
+                let helper_params = reuse_params.clone();
+                run_with_preparation_budget(ctx, move |operation_ctx| async move {
+                    reuse_isolated(&operation_ctx, &command, helper_params).await
+                })
+                .await?
+            } else {
+                reuse(reuse_params)
+            };
+            if let Some(environment) = reused {
                 return Ok((environment, true));
             }
         }
         plan.drop_resume();
-        tokio::select! {
-            result = prepare(plan.prepare_params()) => result
-                .map(|environment| (environment, false))
-                .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}")),
-            () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
-        }
+        let prepare_params = plan.prepare_params();
+        let environment = if let Some(command) = helper_command {
+            run_with_preparation_budget(ctx, move |operation_ctx| async move {
+                prepare_isolated(&operation_ctx, &command, prepare_params).await
+            })
+            .await?
+        } else {
+            prepare(prepare_params)
+                .await
+                .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}"))?
+        };
+        Ok((environment, false))
+    }
+}
+
+fn apply_task_mcp_config(
+    task: &Task,
+    target: &RuntimeExecutionTarget,
+    inputs: &mut ProviderExecutionInputs,
+) {
+    let Some(agent_mcp_config) = task
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.mcp_config.as_ref())
+    else {
+        return;
+    };
+    match crate::runtime_mcp::merge_runtime_and_agent_mcp_config(&target.provider, agent_mcp_config)
+    {
+        Ok(effective) => inputs.effective_mcp_config = effective,
+        Err(error) => tracing::warn!(
+            task = %task.id,
+            provider = %target.provider,
+            %error,
+            "mcp_config: runtime merge failed; using agent configuration only"
+        ),
     }
 }
 
@@ -1522,8 +1698,15 @@ impl TranscriptBatch {
             seq: self.next_seq,
             r#type: message_type_name(message.message_type).to_string(),
             tool: message.tool.clone(),
-            content: bounded_text(&message.content, TOOL_OUTPUT_BYTES),
-            output: bounded_text(&message.output, TOOL_OUTPUT_BYTES),
+            // Content is the user-visible transcript and must remain intact;
+            // only untrusted tool output is bounded to protect the control
+            // plane from a runaway command response.
+            content: message.content.clone(),
+            output: if message.message_type == MessageType::ToolResult {
+                bounded_text(&message.output, TOOL_OUTPUT_BYTES)
+            } else {
+                message.output.clone()
+            },
             ..TaskMessageData::default()
         };
         if message.message_type == MessageType::ToolUse {
@@ -1930,11 +2113,11 @@ async fn finalize_environment(
                 );
                 outcome.failure = Some(TaskRunFailure {
                     message: message.clone(),
-                    failure_reason: String::new(),
+                    failure_reason: "local_directory_error".to_string(),
                     cancelled_delivery_failure: Some(
                         crate::task_execution::CancelledRunDeliveryFailure {
                             error_message: message,
-                            failure_reason: "agent_error".to_string(),
+                            failure_reason: "local_directory_error".to_string(),
                         },
                     ),
                 });
@@ -2015,6 +2198,189 @@ fn provider_path() -> String {
         .and_then(|path| path.into_string().ok())
         .unwrap_or(inherited)
     }
+}
+
+fn task_provider_runtime_env(
+    config: &Config,
+    task: &Task,
+    target: &RuntimeExecutionTarget,
+) -> anyhow::Result<BTreeMap<String, String>> {
+    let mut values = BTreeMap::new();
+    match target.provider.as_str() {
+        "reasonix" => {
+            let state_home = task_provider_state_dir(
+                &config.profile,
+                "reasonix-state",
+                &task.runtime_id,
+                &task.agent_id,
+            )?;
+            values.insert("REASONIX_STATE_HOME".to_string(), state_home);
+        }
+        "dsh" => {
+            let session_root = task_provider_state_dir(
+                &config.profile,
+                "dsh-sessions",
+                &task.runtime_id,
+                &task.agent_id,
+            )?;
+            values.insert("CORDY_DSH_SESSION_ROOT".to_string(), session_root);
+            values.insert("DSH_TELEMETRY_DISABLED".to_string(), "1".to_string());
+        }
+        _ => {}
+    }
+    Ok(values)
+}
+
+fn persistent_store_paths(
+    config: &Config,
+    target: &RuntimeExecutionTarget,
+    plan: &ProviderExecutionPlan,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    match target.provider.as_str() {
+        "codex" => {
+            let path = crate::execenv::codex_home::codex_session_store_path(
+                &config.profile,
+                plan.task_context(),
+            );
+            if !path.is_empty() {
+                paths.push(PathBuf::from(path));
+            }
+        }
+        "hermes" => {
+            let params = plan.prepare_params();
+            for path in [params.hermes_memory_store, params.hermes_session_store] {
+                if !path.is_empty() {
+                    paths.push(PathBuf::from(path));
+                }
+            }
+        }
+        _ => {}
+    }
+    paths
+}
+
+async fn gate_resume_after_environment(
+    task: &mut Task,
+    target: &RuntimeExecutionTarget,
+    plan: &mut ProviderExecutionPlan,
+    environment: &Environment,
+    reused: bool,
+) -> anyhow::Result<()> {
+    if plan.resume_session_id().is_empty() {
+        return Ok(());
+    }
+
+    let available = reused
+        && match target.provider.as_str() {
+            "codex" => {
+                codex_session_resumable(
+                    &environment.codex_home,
+                    plan.resume_session_id(),
+                    CODEX_ROLLOUT_FLUSH_WAIT,
+                )
+                .await
+            }
+            "hermes" => environment.hermes_session_history_present,
+            _ => true,
+        };
+    if available {
+        return Ok(());
+    }
+
+    // The environment was selected without a usable prior session. Clear the
+    // plan and the task copy together before StartTask/runtime injection so a
+    // fresh launch cannot advertise continuity it does not have.
+    plan.drop_resume();
+    task.prior_session_id.clear();
+    task.prior_session_resume_unavailable = true;
+    write_context_files(
+        &environment.work_dir,
+        &target.provider,
+        plan.task_context(),
+        None,
+    )
+}
+
+fn task_provider_state_dir(
+    profile: &str,
+    root_name: &str,
+    runtime_id: &str,
+    agent_id: &str,
+) -> anyhow::Result<String> {
+    for (name, value) in [("runtime id", runtime_id), ("agent id", agent_id)] {
+        anyhow::ensure!(
+            valid_provider_path_segment(value),
+            "invalid {name} for provider state directory"
+        );
+    }
+    let path = crate::identity::profile_dir(profile)?
+        .join(root_name)
+        .join(runtime_id)
+        .join(agent_id);
+    std::fs::create_dir_all(&path)
+        .with_context(|| format!("create provider state directory {}", path.to_string_lossy()))?;
+    set_private_directory_mode(&path)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn provider_needs_inline_system_prompt(provider: &str) -> bool {
+    matches!(provider, "openclaw" | "kimi" | "traecli" | "qwenpaw")
+}
+
+fn prepared_environment_inputs(
+    task: &Task,
+    provider: &str,
+    environment: &Environment,
+    cancellation: CancellationToken,
+) -> PreparedEnvironmentInputs {
+    PreparedEnvironmentInputs {
+        system_prompt: provider_needs_inline_system_prompt(provider)
+            .then(|| build_prompt(task.clone(), provider))
+            .unwrap_or_default(),
+        openclaw_include_roots: environment.openclaw_include_root.clone(),
+        cancellation,
+    }
+}
+
+fn launch_for_environment(
+    launch: &RuntimeLaunchSpec,
+    provider: &str,
+    environment: &Environment,
+) -> RuntimeLaunchSpec {
+    if provider != "hermes" || environment.hermes_home.trim().is_empty() {
+        return launch.clone();
+    }
+    let mut filtered = launch.clone();
+    filtered.fixed_args = strip_hermes_profile_selectors(&filtered.fixed_args);
+    filtered
+}
+
+fn valid_provider_path_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+#[cfg(unix)]
+fn set_private_directory_mode(path: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(path, permissions).with_context(|| {
+        format!(
+            "restrict provider state directory {}",
+            path.to_string_lossy()
+        )
+    })?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_directory_mode(_path: &Path) -> anyhow::Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2830,5 +3196,66 @@ mod tests {
             overflow.result.retired_session_id,
             "session-oversized"
         );
+    }
+
+    #[test]
+    fn inline_brief_is_required_for_runtime_prompt_providers() {
+        assert!(provider_needs_inline_system_prompt("openclaw"));
+        assert!(provider_needs_inline_system_prompt("kimi"));
+        assert!(provider_needs_inline_system_prompt("traecli"));
+        assert!(provider_needs_inline_system_prompt("qwenpaw"));
+        assert!(!provider_needs_inline_system_prompt("codex"));
+    }
+
+    #[test]
+    fn transcript_preserves_content_but_bounds_tool_output() {
+        let content = "c".repeat(TOOL_OUTPUT_BYTES + 256);
+        let output = "o".repeat(TOOL_OUTPUT_BYTES + 256);
+        let mut batch = TranscriptBatch::default();
+        batch.push(Message {
+            message_type: MessageType::Text,
+            content: content.clone(),
+            output: output.clone(),
+            ..Message::default()
+        });
+        assert_eq!(batch.messages[0].content, content);
+        assert_eq!(batch.messages[0].output, output);
+
+        batch.push(Message {
+            message_type: MessageType::ToolResult,
+            content: content.clone(),
+            output,
+            ..Message::default()
+        });
+        assert_eq!(batch.messages[1].content, content);
+        assert_eq!(batch.messages[1].output.len(), TOOL_OUTPUT_BYTES);
+    }
+
+    #[test]
+    fn hermes_launch_snapshot_filters_profile_selectors_when_overlay_is_active() {
+        let launch = RuntimeLaunchSpec {
+            target: RuntimeExecutionTarget {
+                provider: "hermes".to_string(),
+                profile_id: "profile-1".to_string(),
+            },
+            display_name: "Hermes".to_string(),
+            command_path: "/bin/hermes".to_string(),
+            fixed_args: vec![
+                "--profile".to_string(),
+                "default".to_string(),
+                "--keep".to_string(),
+            ],
+            version: "1".to_string(),
+        };
+        let filtered = launch_for_environment(
+            &launch,
+            "hermes",
+            &Environment {
+                hermes_home: "/task/hermes".to_string(),
+                ..Environment::default()
+            },
+        );
+        assert_eq!(filtered.fixed_args, vec!["--keep"]);
+        assert_eq!(launch.fixed_args.len(), 3);
     }
 }
