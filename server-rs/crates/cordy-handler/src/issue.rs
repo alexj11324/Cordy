@@ -208,7 +208,7 @@ fn search_snippet(raw: &str, query: &str) -> String {
         for folded_character in character.to_lowercase() {
             let byte_len = folded_character.len_utf8();
             folded.push(folded_character);
-            folded_byte_to_char.extend(std::iter::repeat(char_index).take(byte_len));
+            folded_byte_to_char.extend(std::iter::repeat_n(char_index, byte_len));
         }
     }
     let char_index = folded

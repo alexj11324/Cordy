@@ -897,24 +897,29 @@ mod tests {
         assert_eq!(rows.status(alive.id).await, "online");
         assert_eq!(rows.status(fresh.id).await, "online");
         assert_eq!(rows.status(already_offline.id).await, "offline");
-        let forgotten = forgotten
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        assert_eq!(forgotten.len(), 2);
-        assert!(forgotten.contains(&dead.id.to_string()));
-        assert!(forgotten.contains(&dead_same_workspace.id.to_string()));
-        drop(forgotten);
-        let events = events
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].workspace_id, rows.workspace_id.to_string());
-        assert_eq!(events[0].event_type, cordy_protocol::EVENT_DAEMON_REGISTER);
-        assert_eq!(
-            events[0].payload,
-            serde_json::json!({"action": "stale_sweep"})
-        );
-        drop(events);
+        let dead_id = dead.id.to_string();
+        let dead_same_workspace_id = dead_same_workspace.id.to_string();
+        {
+            let forgotten = forgotten
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert_eq!(forgotten.len(), 2);
+            assert!(forgotten.contains(&dead_id));
+            assert!(forgotten.contains(&dead_same_workspace_id));
+        }
+        let workspace_id = rows.workspace_id.to_string();
+        {
+            let events = events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].workspace_id, workspace_id);
+            assert_eq!(events[0].event_type, cordy_protocol::EVENT_DAEMON_REGISTER);
+            assert_eq!(
+                events[0].payload,
+                serde_json::json!({"action": "stale_sweep"})
+            );
+        }
         sqlx::query("UPDATE agent_runtime SET status = 'offline' WHERE id = $1")
             .bind(alive.id)
             .execute(&rows.pool)
@@ -1065,7 +1070,6 @@ mod tests {
         grace_agent_id: Uuid,
         healthy_agent_id: Uuid,
         old_runtime_id: Uuid,
-        grace_runtime_id: Uuid,
         healthy_runtime_id: Uuid,
         active_task_ids: Vec<Uuid>,
         grace_task_id: Uuid,
@@ -1263,7 +1267,6 @@ mod tests {
                 grace_agent_id,
                 healthy_agent_id,
                 old_runtime_id,
-                grace_runtime_id,
                 healthy_runtime_id,
                 active_task_ids,
                 grace_task_id,
@@ -1568,7 +1571,7 @@ mod tests {
             drop(failed_events);
             anyhow::ensure!(
                 issue_events.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).len()
-                    >= rows.active_task_ids.len() + 1,
+                    > rows.active_task_ids.len(),
                 "terminal failures did not reconcile issue events"
             );
             Ok::<(), anyhow::Error>(())
@@ -2885,22 +2888,20 @@ mod tests {
         }
 
         async fn list_restores(&self) -> anyhow::Result<Vec<cordy_db::models::ChatDraftRestore>> {
-            Ok(
-                cordy_db::queries::chat::list_chat_draft_restores_by_session(
-                    &self.pool,
-                    self.session_id,
-                )
-                .await?,
+            cordy_db::queries::chat::list_chat_draft_restores_by_session(
+                &self.pool,
+                self.session_id,
             )
+            .await
         }
 
         async fn consume_restore(&self, restore_id: Uuid) -> anyhow::Result<u64> {
-            Ok(cordy_db::queries::chat::delete_chat_draft_restore(
+            cordy_db::queries::chat::delete_chat_draft_restore(
                 &self.pool,
                 restore_id,
                 self.session_id,
             )
-            .await?)
+            .await
         }
 
         async fn attachment_message_id(&self) -> anyhow::Result<Option<Uuid>> {

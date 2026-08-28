@@ -1,3 +1,6 @@
+#![allow(clippy::expect_used)]
+// Database contract fixtures need contextual fail-fast messages when setup or query invariants break.
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -106,26 +109,6 @@ async fn db_now(pool: &PgPool) -> DateTime<Utc> {
         .fetch_one(pool)
         .await
         .expect("read PostgreSQL clock")
-}
-
-async fn wait_for_status(pool: &PgPool, job_name: &str, expected: &str) {
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            let status = sqlx::query_scalar::<_, String>(
-                "SELECT status FROM sys_cron_executions WHERE job_name = $1",
-            )
-            .bind(job_name)
-            .fetch_optional(pool)
-            .await
-            .expect("poll scheduler audit row");
-            if status.as_deref() == Some(expected) {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("scheduler audit status deadline");
 }
 
 #[tokio::test]
