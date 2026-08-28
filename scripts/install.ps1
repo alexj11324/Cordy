@@ -119,6 +119,31 @@ function Checkout-ServerRef {
     }
 }
 
+function Update-LegacySelfHostImageRepositories {
+    param([Parameter(Mandatory = $true)][string]$EnvPath)
+
+    $legacyBackend = "CORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend"
+    $legacyWeb = "CORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web"
+    $canonicalBackend = "CORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend"
+    $canonicalWeb = "CORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web"
+    $changed = $false
+    $content = @(Get-Content $EnvPath) | ForEach-Object {
+        if ($_ -ceq $legacyBackend) {
+            $changed = $true
+            $canonicalBackend
+        } elseif ($_ -ceq $legacyWeb) {
+            $changed = $true
+            $canonicalWeb
+        } else {
+            $_
+        }
+    }
+    if ($changed) {
+        $content | Set-Content $EnvPath
+        Write-Ok "Migrated legacy Cordy image repositories to ghcr.io/alexj11324"
+    }
+}
+
 function Set-SelfHostImageTag {
     param([string]$Ref)
 
@@ -458,6 +483,7 @@ function Install-Server {
         Write-Ok "Using existing .env"
     }
 
+    Update-LegacySelfHostImageRepositories -EnvPath (Join-Path $InstallDir ".env")
     Set-SelfHostImageTag -Ref $serverRef
 
     Write-Info "Pulling official Cordy images..."

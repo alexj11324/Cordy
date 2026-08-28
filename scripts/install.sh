@@ -324,6 +324,35 @@ checkout_server_ref() {
   git checkout --force --detach FETCH_HEAD || fail "Could not check out self-host ref '$ref'."
 }
 
+migrate_legacy_selfhost_image_repositories() {
+  local migrated=false
+  local legacy_backend="ghcr.io/cordy-ai/cordy-backend"
+  local legacy_web="ghcr.io/cordy-ai/cordy-web"
+  local canonical_backend="ghcr.io/alexj11324/cordy-backend"
+  local canonical_web="ghcr.io/alexj11324/cordy-web"
+
+  if grep -Fxq "CORDY_BACKEND_IMAGE=$legacy_backend" .env; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' "s#^CORDY_BACKEND_IMAGE=$legacy_backend\$#CORDY_BACKEND_IMAGE=$canonical_backend#" .env
+    else
+      sed -i "s#^CORDY_BACKEND_IMAGE=$legacy_backend\$#CORDY_BACKEND_IMAGE=$canonical_backend#" .env
+    fi
+    migrated=true
+  fi
+  if grep -Fxq "CORDY_WEB_IMAGE=$legacy_web" .env; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' "s#^CORDY_WEB_IMAGE=$legacy_web\$#CORDY_WEB_IMAGE=$canonical_web#" .env
+    else
+      sed -i "s#^CORDY_WEB_IMAGE=$legacy_web\$#CORDY_WEB_IMAGE=$canonical_web#" .env
+    fi
+    migrated=true
+  fi
+
+  if [ "$migrated" = true ]; then
+    ok "Migrated legacy Cordy image repositories to ghcr.io/alexj11324"
+  fi
+}
+
 pin_selfhost_image_tag() {
   local ref="$1" image_tag preserve_existing=false
 
@@ -587,6 +616,7 @@ setup_server() {
     ok "Using existing .env"
   fi
 
+  migrate_legacy_selfhost_image_repositories
   pin_selfhost_image_tag "$server_ref"
 
   # Start Docker Compose

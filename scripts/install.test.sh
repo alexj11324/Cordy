@@ -628,6 +628,29 @@ test_with_server_resolves_latest_pin_to_matching_release_assets() {
   fi
 }
 
+test_with_server_migrates_only_legacy_image_repositories() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend\nCORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web\n' >>"$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 || return 1
+
+  grep -Fxq 'CORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend' "$tmp/server/.env" || return 1
+  grep -Fxq 'CORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web' "$tmp/server/.env" || return 1
+
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_BACKEND_IMAGE=registry.example/custom-backend\nCORDY_WEB_IMAGE=registry.example/custom-web\n' >>"$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 || return 1
+
+  grep -Fxq 'CORDY_BACKEND_IMAGE=registry.example/custom-backend' "$tmp/server/.env" || return 1
+  grep -Fxq 'CORDY_WEB_IMAGE=registry.example/custom-web' "$tmp/server/.env" || return 1
+}
+
 test_systemd_preflight_fails_before_server_mutation() {
   if [[ "$(uname -s)" != "Linux" ]]; then
     echo "skipping Linux-only systemd preflight test on $(uname -s)"
@@ -794,6 +817,7 @@ test_with_server_fails_when_compose_port_is_unavailable
 test_with_server_pins_selected_release_images
 test_with_server_preserves_existing_image_pin_without_explicit_ref
 test_with_server_resolves_latest_pin_to_matching_release_assets
+test_with_server_migrates_only_legacy_image_repositories
 test_systemd_preflight_fails_before_server_mutation
 test_with_server_systemd_owns_compose_lifecycle
 test_container_entrypoint_forwards_migration_signal

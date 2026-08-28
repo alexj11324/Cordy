@@ -112,7 +112,46 @@ if ($null -ne $failureResult) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. End to end: the probed URL and the printed URLs are the published ports
+# 3. Legacy image defaults migrate without overwriting custom repositories
+# ---------------------------------------------------------------------------
+$migrationDir = Join-Path ([System.IO.Path]::GetTempPath()) ("cordy-ps1-migration-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $migrationDir -Force | Out-Null
+try {
+    $migrationEnv = Join-Path $migrationDir ".env"
+    @(
+        "CORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend"
+        "CORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web"
+    ) | Set-Content $migrationEnv
+
+    & {
+        Invoke-Expression $definitions
+        Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
+    } | Out-Null
+    $migrated = @(Get-Content $migrationEnv)
+    if ($migrated -notcontains "CORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend" -or
+        $migrated -notcontains "CORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web") {
+        Fail-Test "install.ps1 did not migrate the exact legacy image repositories"
+    }
+
+    @(
+        "CORDY_BACKEND_IMAGE=registry.example/custom-backend"
+        "CORDY_WEB_IMAGE=registry.example/custom-web"
+    ) | Set-Content $migrationEnv
+    & {
+        Invoke-Expression $definitions
+        Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
+    } | Out-Null
+    $custom = @(Get-Content $migrationEnv)
+    if ($custom -notcontains "CORDY_BACKEND_IMAGE=registry.example/custom-backend" -or
+        $custom -notcontains "CORDY_WEB_IMAGE=registry.example/custom-web") {
+        Fail-Test "install.ps1 overwrote an operator-customized image repository"
+    }
+} finally {
+    Remove-Item $migrationDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------------
+# 4. End to end: the probed URL and the printed URLs are the published ports
 # ---------------------------------------------------------------------------
 $cases = @(
     @{ Label = "defaults"; Env = @{}; Mutation = $null; Backend = "8080"; Frontend = "3000" }
