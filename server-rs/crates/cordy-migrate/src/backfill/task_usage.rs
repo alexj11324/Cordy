@@ -9,8 +9,11 @@
 
 use anyhow::Context as _;
 use chrono::{DateTime, Datelike, Months, SecondsFormat, TimeZone, Utc};
-use sqlx::{PgConnection, PgPool};
+use futures_util::future::BoxFuture;
+use sqlx::pool::PoolConnection;
+use sqlx::{Connection, PgConnection, PgPool, Postgres};
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 /// Shared with rollup_task_usage_hourly(), the standalone backfill command,
 /// and the in-process scheduler so a mixed-version cluster cannot double-write.
@@ -152,60 +155,128 @@ pub struct StandaloneOptions {
     pub sleep_between_slices: Duration,
 }
 
+async fn cancellable<T, F>(shutdown: &CancellationToken, future: F) -> anyhow::Result<T>
+where
+    F: std::future::Future<Output = Result<T, sqlx::Error>>,
+{
+    tokio::select! {
+        biased;
+        () = shutdown.cancelled() => anyhow::bail!("backfill interrupted by signal"),
+        result = future => Ok(result?),
+    }
+}
+
+/// Run a query on a disposable connection. Dropping a SQLx query future does
+/// not cancel PostgreSQL work, so signal handling must hard-close the socket
+/// before the advisory-lock connection is released.
+async fn cancellable_pool_query<T, F>(
+    pool: &PgPool,
+    shutdown: &CancellationToken,
+    query: F,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+    F: for<'a> FnOnce(&'a mut PgConnection) -> BoxFuture<'a, Result<T, sqlx::Error>>,
+{
+    let mut connection = cancellable(shutdown, pool.acquire()).await?;
+    tokio::select! {
+        biased;
+        () = shutdown.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("backfill interrupted by signal");
+        }
+        result = query(&mut connection) => Ok(result?),
+    }
+}
+
+async fn acquire_advisory_lock(
+    pool: &PgPool,
+    shutdown: &CancellationToken,
+) -> anyhow::Result<PoolConnection<Postgres>> {
+    let mut connection = cancellable(shutdown, pool.acquire())
+        .await
+        .context("acquire advisory-lock connection")?;
+    tokio::select! {
+        biased;
+        () = shutdown.cancelled() => {
+            let connection = connection.detach();
+            let _ = connection.close_hard().await;
+            anyhow::bail!("backfill interrupted by signal");
+        }
+        result = sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(ADVISORY_LOCK_KEY)
+            .execute(&mut *connection) => {
+            result.context("acquire advisory lock 4246")?;
+        }
+    }
+    Ok(connection)
+}
+
 /// Runs the standalone task-usage backfill while holding the shared session
 /// advisory lock. The migration hook and this command intentionally use the
 /// same monthly rollup primitive and watermark update.
 pub async fn run_standalone(
     pool: &PgPool,
     options: StandaloneOptions,
-    shutdown: tokio_util::sync::CancellationToken,
+    shutdown: CancellationToken,
 ) -> anyhow::Result<()> {
     if options.months_back < 0 {
         anyhow::bail!("--months-back must be non-negative");
     }
 
-    let mut lock_conn = pool
-        .acquire()
-        .await
-        .context("acquire advisory-lock connection")?;
-    sqlx::query("SELECT pg_advisory_lock($1)")
+    let mut lock_conn = acquire_advisory_lock(pool, &shutdown).await?;
+    let result = run_standalone_locked(pool, options, &shutdown).await;
+    let unlock_result: anyhow::Result<bool> = sqlx::query_scalar("SELECT pg_advisory_unlock($1)")
         .bind(ADVISORY_LOCK_KEY)
-        .execute(&mut *lock_conn)
-        .await
-        .context("acquire advisory lock 4246")?;
-
-    let result = run_standalone_locked(pool, &mut *lock_conn, options, shutdown).await;
-    let unlock_result = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(ADVISORY_LOCK_KEY)
-        .execute(&mut *lock_conn)
+        .fetch_one(&mut *lock_conn)
         .await
         .context("release advisory lock 4246");
 
-    result?;
-    unlock_result?;
-    Ok(())
+    match unlock_result {
+        Ok(true) => {
+            drop(lock_conn);
+            result
+        }
+        Ok(false) => {
+            let connection = lock_conn.detach();
+            let _ = connection.close_hard().await;
+            result?;
+            anyhow::bail!("advisory lock 4246 was not held during release")
+        }
+        Err(unlock_error) => {
+            // Never return a possibly still-locked session to the pool.
+            let connection = lock_conn.detach();
+            let _ = connection.close_hard().await;
+            result?;
+            Err(unlock_error)
+        }
+    }
 }
 
 async fn run_standalone_locked(
     pool: &PgPool,
-    conn: &mut PgConnection,
     options: StandaloneOptions,
-    shutdown: tokio_util::sync::CancellationToken,
+    shutdown: &CancellationToken,
 ) -> anyhow::Result<()> {
     let (min_ts, max_ts): (Option<DateTime<Utc>>, Option<DateTime<Utc>>) =
-        sqlx::query_as(
-            "SELECT MIN(created_at), MAX(COALESCE(updated_at, created_at)) FROM task_usage",
-        )
-            .fetch_one(pool)
-            .await
-            .context("scan task_usage time range")?;
+        cancellable_pool_query(pool, shutdown, |connection| {
+            Box::pin(
+                sqlx::query_as(
+                    "SELECT MIN(created_at), MAX(COALESCE(updated_at, created_at)) FROM task_usage",
+                )
+                .fetch_one(connection),
+            )
+        })
+        .await
+        .context("scan task_usage time range")?;
 
     let Some(min_ts) = min_ts else {
         tracing::info!("task_usage is empty; nothing to backfill");
         if options.dry_run {
             return Ok(());
         }
-        stamp_and_report(pool).await?;
+        stamp_and_report_cancellable(pool, shutdown).await?;
         return Ok(());
     };
     let max_ts = max_ts.context("task_usage has a minimum timestamp but no maximum")?;
@@ -263,13 +334,15 @@ async fn run_standalone_locked(
             continue;
         }
 
-        let rows = rollup_slice(conn, cursor, next).await.with_context(|| {
-            format!(
-                "rollup slice {}..{}",
-                format_timestamp(cursor),
-                format_timestamp(next)
-            )
-        })?;
+        let rows = rollup_slice(pool, cursor, next, shutdown)
+            .await
+            .with_context(|| {
+                format!(
+                    "rollup slice {}..{}",
+                    format_timestamp(cursor),
+                    format_timestamp(next)
+                )
+            })?;
         total_rows += rows;
         tracing::info!(
             from = %format_timestamp(cursor),
@@ -291,36 +364,69 @@ async fn run_standalone_locked(
         return Ok(());
     }
 
-    // Once the slice walk is complete, do not observe cancellation until the
-    // final watermark write finishes. Leaving all buckets updated with the old
-    // watermark makes the next migration/backfill repeat completed work.
-    stamp_and_report(pool).await?;
+    // The final stamp is also cancellation-aware. Repeating idempotent slices
+    // is safe; stamping after an operator requested shutdown is not.
+    stamp_and_report_cancellable(pool, shutdown).await?;
     tracing::info!(total_rows_touched = total_rows, "backfill complete");
     Ok(())
 }
 
 async fn rollup_slice(
-    conn: &mut PgConnection,
+    pool: &PgPool,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    shutdown: &CancellationToken,
 ) -> anyhow::Result<i64> {
-    sqlx::query_scalar("SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)")
-        .bind(from)
-        .bind(to)
-        .fetch_one(&mut *conn)
-        .await
-        .context("execute task_usage hourly rollup window")
+    cancellable_pool_query(pool, shutdown, |connection| {
+        Box::pin(
+            sqlx::query_scalar(
+                "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+            )
+            .bind(from)
+            .bind(to)
+            .fetch_one(connection),
+        )
+    })
+    .await
+    .context("execute task_usage hourly rollup window")
 }
 
 async fn stamp_and_report(pool: &PgPool) -> anyhow::Result<()> {
     let rows_affected = stamp_watermark(pool).await?;
+    report_watermark(rows_affected);
+    Ok(())
+}
+
+async fn stamp_and_report_cancellable(
+    pool: &PgPool,
+    shutdown: &CancellationToken,
+) -> anyhow::Result<()> {
+    let rows_affected = cancellable_pool_query(pool, shutdown, |connection| {
+        Box::pin(async move {
+            let result = sqlx::query(
+                r#"
+                UPDATE task_usage_hourly_rollup_state
+                   SET watermark_at = now() - INTERVAL '5 minutes'
+                 WHERE id = 1
+                "#,
+            )
+            .execute(connection)
+            .await?;
+            Ok(result.rows_affected())
+        })
+    })
+    .await?;
+    report_watermark(rows_affected);
+    Ok(())
+}
+
+fn report_watermark(rows_affected: u64) {
     if rows_affected == 0 {
         tracing::warn!(
             "no rollup state row to stamp; was the task_usage_hourly schema migration applied?"
         );
     }
     println!("watermark stamped to now() - 5 minutes");
-    Ok(())
 }
 
 /// Moves the watermark to `now() - 5 min` using PostgreSQL's clock, matching

@@ -2722,17 +2722,34 @@ mod tests {
     #[tokio::test]
     async fn process_tree_captures_success_and_failure_output() {
         let ctx = Ctx::new();
+        #[cfg(unix)]
         let mut success = tokio::process::Command::new("/bin/sh");
+        #[cfg(unix)]
         success.args(["-c", "printf success"]);
+        #[cfg(windows)]
+        let mut success = tokio::process::Command::new("cmd.exe");
+        #[cfg(windows)]
+        success.args(["/D", "/S", "/C", "<nul set /p =success"]);
         let (output, result) =
             processtree::combined_output(&ctx, success, Duration::from_secs(1)).await;
         result.unwrap();
         assert_eq!(output, b"success");
 
+        #[cfg(unix)]
         let mut failure = tokio::process::Command::new("/bin/sh");
+        #[cfg(unix)]
         failure.args([
             "-c",
             "printf \"fatal: a branch named 'taken' already exists\" >&2; exit 128",
+        ]);
+        #[cfg(windows)]
+        let mut failure = tokio::process::Command::new("cmd.exe");
+        #[cfg(windows)]
+        failure.args([
+            "/D",
+            "/S",
+            "/C",
+            ">&2 echo fatal: a branch named 'taken' already exists & exit /b 128",
         ]);
         let (output, result) =
             processtree::combined_output(&ctx, failure, Duration::from_secs(1)).await;
