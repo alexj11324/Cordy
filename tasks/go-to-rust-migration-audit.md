@@ -305,6 +305,9 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 这次冻结覆盖 source inventory、route/assembly、P0/P1 退出项和现有 Go 测试契约分类；未知问题不视为
 已完成，而是在所属冻结任务内追加证据和修复范围。
 
+本次冻结证据：实现 commit `d25ebf59`，Ready PR #587（<https://github.com/alexj11324/Cordy/pull/587>）。该 PR 仅更新
+本台账；没有新增生产代码、依赖、测试框架、Stub/Noop/Fake 或默认入口，T-59/T-60/T-61 仍按顺序等待后续实现与验证。
+
 执行规则：一次只从“下一动作”选择一个不重叠的主线业务切片；切片完成后
 立即提交、推送并创建 Ready PR，同时回写本表。verification/review/fix 可以
 并行运行；主 agent 只从依赖已满足的项继续选择，不需要等待异步结果。切片大小
