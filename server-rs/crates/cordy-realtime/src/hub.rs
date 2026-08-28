@@ -302,11 +302,11 @@ impl Hub {
         if !inner.clients.contains_key(&client.id) {
             return false;
         }
-        let subs_empty = match inner.subscriptions.get_mut(&client.id) {
-            Some(subs) => !subs.remove(&key),
+        let removed = match inner.subscriptions.get_mut(&client.id) {
+            Some(subs) => subs.remove(&key),
             None => false,
         };
-        if !subs_empty {
+        if !removed {
             return false;
         }
         let mut emptied = false;
@@ -629,6 +629,7 @@ impl crate::redis_relay::ScopeSubscriptionSource for Hub {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::broadcaster::SCOPE_TASK;
     use std::sync::Mutex;
 
     fn shared_log() -> Arc<Mutex<Vec<&'static str>>> {
@@ -660,6 +661,18 @@ mod tests {
         assert!(hub.has_local_subscribers(SCOPE_WORKSPACE, "ws-1"));
         assert!(hub.has_local_subscribers(SCOPE_USER, "u-1"));
         assert!(hub.has_local_subscribers(SCOPE_WORKSPACE, "ws-1"));
+    }
+
+    #[test]
+    fn unsubscribe_removes_last_subscriber_room_index() {
+        let hub = Hub::new();
+        let (client, _, _rx) = make_client(&hub, "u-1", "ws-1");
+
+        assert!(hub.subscribe(&client, SCOPE_TASK, "task-1"));
+        assert!(hub.has_local_subscribers(SCOPE_TASK, "task-1"));
+        assert!(hub.unsubscribe(&client, SCOPE_TASK, "task-1"));
+        assert!(!hub.has_local_subscribers(SCOPE_TASK, "task-1"));
+        assert!(!hub.unsubscribe(&client, SCOPE_TASK, "task-1"));
     }
 
     #[test]
