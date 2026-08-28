@@ -34,6 +34,7 @@ vi.mock("../i18n", async () => {
       t: (select: (bundle: Record<string, unknown>) => string) =>
         select((ns === "chat" ? chat : editor) as Record<string, unknown>),
     }),
+    useLocale: () => "en",
     useTimeAgo: () => "just now",
   };
 });
