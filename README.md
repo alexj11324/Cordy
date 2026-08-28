@@ -8,7 +8,7 @@
 
 **Route coding-agent work from intent to review without losing the thread.**
 
-[![CI](https://github.com/alexj11324/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/patchbay/actions/workflows/ci.yml)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
 **English | [简体中文](README.zh.md)**
 
@@ -84,7 +84,7 @@ Go is only needed for the temporary legacy compatibility suite while the final
 migration gate remains open.
 
 ```bash
-git clone https://github.com/alexj11324/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git patchbay
 cd patchbay
 make dev
 ```
