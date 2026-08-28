@@ -605,8 +605,7 @@ jobs:
         run: cargo test -p cordy-daemon --all-targets --locked
 
   image-budget:
-    # Soft gate against the 21.7MB of raw PNG/JPG that PB-6352 cleared out:
-    # a bitmap added or grown past 300KB fails until the PR description says
+    # A bitmap added or grown past 300KB fails until the PR description says
     # why. Manual runs compare the selected branch against base_ref;
     # maintainers can paste the PR body when an explicit exemption is needed.
     needs: changes
@@ -622,8 +621,8 @@ jobs:
 
       - name: Check image budget
         env:
-          PR_BODY: ${{ inputs.pr_body }}
-        run: node scripts/check-image-budget.mjs --base "origin/${{ inputs.base_ref }}"
+          PR_BODY: ${{ inputs.pr_body || github.event.pull_request.body }}
+        run: node scripts/check-image-budget.mjs --base "origin/${{ inputs.base_ref || github.base_ref || 'main' }}"
 
   installer:
     # Stub-driven shell tests for scripts/install.sh and scripts/install.ps1.

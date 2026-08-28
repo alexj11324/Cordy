@@ -2,8 +2,7 @@
 // Fails a pull request that adds a bitmap over IMAGE_BUDGET_BYTES, or grows an
 // existing one past it, unless the PR description carries an exemption line.
 //
-// PB-6352 took the repo from 21.7MB of PNG/JPG to ~4MB of WebP; this keeps it
-// there. Every committed bitmap is paid for on every clone, every Docker build
+// Every committed bitmap is paid for on every clone, every Docker build
 // context, and every deploy upload — costs a runtime image optimizer like
 // `next/image` never touches, because it optimizes what visitors download, not
 // what the repo carries.
