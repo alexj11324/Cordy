@@ -1,23 +1,21 @@
 # Repository Guidelines
 
-This file provides guidance to AI agents when working with code in this repository.
-
-> **Single source of truth:** This file is a concise pointer document.
-> All authoritative architecture, coding rules, and conventions
-> live in **CLAUDE.md** at the project root. Read that file first.
-> Use `Makefile`, `package.json`, and `pnpm-workspace.yaml` as the
-> source of truth for the full command list.
+This file is the single source of truth for AI agents working in this
+repository. Do not duplicate or maintain agent rules in `CLAUDE.md`; that file
+is only a compatibility pointer back here. Use `Makefile`, `package.json`, and
+`pnpm-workspace.yaml` as the source of truth for the full command list.
 
 ## Quick Reference
 
 ### Architecture
 
-Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packages.
+Rust backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packages.
 
-- `server/` - Go backend (Chi router, sqlc, gorilla/websocket)
+- `server-rs/` - production Rust backend, migration runner, daemon, and CLI
+- `server/` - legacy Go compatibility/reference tree pending final retirement
 - `apps/web/` - Next.js frontend (App Router)
 - `apps/desktop/` - Electron desktop app
-- `apps/mobile/` - Expo / React Native iOS app (read `apps/mobile/CLAUDE.md` first)
+- `apps/mobile/` - Expo / React Native iOS app (read `apps/mobile/AGENTS.md` first)
 - `apps/docs/` - Fumadocs documentation site
 - `packages/core/` - Headless business logic (Zustand stores, React Query hooks, API client)
 - `packages/ui/` - Atomic UI components (shadcn/Base UI, zero business logic)
@@ -46,26 +44,68 @@ Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared package
 
 ### Commands
 
+These are developer commands, not the default agent verification path:
+
 ```bash
 make dev              # Auto-setup + start everything
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
-make test             # Go tests (legacy backend; not a Rust migration gate)
-make check            # Full product pipeline; includes legacy Go/TS/E2E checks
+make test             # Developer helper for Rust tests; GitHub Actions is authoritative
+make check            # Product-wide local helper; not an agent/default migration gate
 ```
 
-See CLAUDE.md for the authoritative rules and common commands.
+### Coding Conventions
+
+- TypeScript is strict. Prefer `type` over `interface`, avoid `any`, and use
+  `import type` for type-only dependencies.
+- Reuse the shared API client and schemas rather than calling `fetch` directly
+  from product code. Treat response enums and unions as forward-compatible:
+  preserve unknown values with an explicit fallback instead of silently
+  dropping them.
+- Add reusable visual primitives to `packages/ui`; keep business logic in
+  `packages/core` and shared product screens in `packages/views`.
+- All user-facing strings must use the repository i18n layer. Update the
+  English, Chinese, Japanese, and French locale files together.
+- Use kebab-case filenames, PascalCase components, camelCase functions, and
+  `use-*.ts` for hooks.
+
+### Worktrees and Local Services
+
+- Worktrees share PostgreSQL infrastructure but use isolated databases and
+  ports through `.env.worktree`; never point one worktree at another's database.
+- Do not delete or overwrite another worktree's files, build outputs, or running
+  services. Preserve unrelated user changes in dirty worktrees.
+- Default tests and production code must never discover or execute ambient,
+  user-installed agent CLIs. Tests must supply a fixture executable or an
+  explicitly missing path.
 
 ### Rust migration verification scope
 
-For Rust refactor/migration PRs, local CI is Rust-only by default. Run the
-applicable `cargo fmt`, `cargo check`, `cargo clippy`, `cargo test`, and build
-commands with the repository's locked/offline settings; do not run `make test`
-or the Go test suite, and do not make Go test results a merge condition. Go
-files may be inspected or covered by a narrow compatibility/contract check only
-when the Rust change crosses an existing Go protocol boundary. The full
-`make check` target is a product-wide legacy pipeline and is not the default
-gate for Rust migration work.
-The migration owner only performs the refactor, production wiring, and
-`git diff --check`; an independent verification subagent runs these Rust
-format/check/test/build gates and reports the exact results.
+GitHub Actions is the authoritative and automatic CI/build environment for this
+repository. After pushing a PR branch, use its GitHub checks for Rust formatting,
+check, Clippy, tests, builds, deployment contracts, production images, installers,
+and platform coverage. Diagnose failures from the Actions logs, push a fix, and
+wait for the replacement run; do not substitute a local result for a required
+GitHub check.
+
+Agents must not run local `cargo`, `pnpm`/Vitest/Playwright, Docker builds,
+`make test`, `make check`, or other compilation/test pipelines by default.
+Local work is limited to editing and lightweight non-compiling checks such as
+`git diff --check`, conflict-marker scans, and configuration parsing. Run a
+local compiler or test command only when the user explicitly requests it or
+GitHub Actions is unavailable and the user approves the fallback.
+
+Rust migration PRs never require the legacy Go test suite. Go files may be
+inspected for compatibility evidence when a Rust change crosses an existing Go
+protocol boundary, but Go tests are not a merge condition.
+
+### Commits, PRs, and Releases
+
+- Use focused conventional commits (`feat`, `fix`, `refactor`, `docs`, `test`,
+  `chore`) and preserve the repository's required merge method.
+- Do not stop after a local edit or partial check. Push the correct PR branch,
+  wait for all required GitHub Actions jobs, fix failures, and merge only after
+  valid review comments are handled and no real blocker remains.
+- A production release is created from a version tag on `main`; the release
+  workflow publishes binaries, images, installers, charts, and the stable
+  Homebrew formula after its required jobs succeed.
