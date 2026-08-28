@@ -3709,11 +3709,13 @@ pub async fn get_last_task_session(
     FROM agent_task_queue r
     WHERE r.agent_id = $1 AND r.issue_id = $2
       AND r.retired_session_id IS NOT NULL
+      AND COALESCE(r.context->>'side_chat_parent_task_id', '') = ''
 ), resume_overflow_at AS (
     SELECT MAX(COALESCE(t.completed_at, t.started_at, t.dispatched_at, t.created_at)) AS at
     FROM agent_task_queue t
     WHERE t.agent_id = $1 AND t.issue_id = $2
       AND t.status = 'failed'
+      AND COALESCE(t.context->>'side_chat_parent_task_id', '') = ''
       AND (
         COALESCE(t.failure_reason, '') = 'codex_resume_oversized'
         OR (COALESCE(t.error, '') ILIKE '%thread/resume failed%' AND COALESCE(t.error, '') ILIKE '%token too long%')
@@ -3726,6 +3728,7 @@ pub async fn get_last_task_session(
     WHERE t.agent_id = $1 AND t.issue_id = $2
       AND t.session_id IS NOT NULL
       AND t.status IN ('completed', 'failed', 'cancelled')
+      AND COALESCE(t.context->>'side_chat_parent_task_id', '') = ''
     ORDER BY t.session_id, COALESCE(t.completed_at, t.started_at, t.dispatched_at, t.created_at) DESC
 )
 SELECT session_id, work_dir, runtime_id FROM latest_per_session
@@ -3787,6 +3790,7 @@ pub async fn get_last_task_started_at_for_issue_and_agent(
     let row = sqlx::query(
         r#"SELECT started_at FROM agent_task_queue
 WHERE agent_id = $1 AND issue_id = $2 AND started_at IS NOT NULL
+  AND COALESCE(context->>'side_chat_parent_task_id', '') = ''
 ORDER BY started_at DESC
 LIMIT 1"#,
     )
@@ -3831,6 +3835,7 @@ pub async fn get_latest_task_role_for_issue_and_agent(
     let row = sqlx::query(
         r#"SELECT is_leader_task, squad_id FROM agent_task_queue
 WHERE issue_id = $1 AND agent_id = $2
+  AND COALESCE(context->>'side_chat_parent_task_id', '') = ''
 ORDER BY created_at DESC
 LIMIT 1"#,
     )
@@ -3855,6 +3860,7 @@ pub async fn get_latest_task_rollout_missing(
 WHERE agent_id = $1 AND issue_id = $2
   AND status IN ('completed', 'failed')
   AND started_at IS NOT NULL
+  AND COALESCE(context->>'side_chat_parent_task_id', '') = ''
 ORDER BY COALESCE(completed_at, started_at, dispatched_at, created_at) DESC
 LIMIT 1"#,
     )
@@ -5784,6 +5790,25 @@ pub async fn promote_due_deferred_tasks_for_runtime(
     WHERE t.runtime_id = $1
       AND t.status = 'deferred'
       AND t.fire_at <= now()
+      AND (
+        COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
+        OR EXISTS (
+            SELECT 1 FROM agent_task_queue parent
+            WHERE parent.id::text = t.context->>'message_bus_parent_task_id'
+              AND parent.status IN ('completed', 'failed', 'cancelled')
+        )
+      )
+      AND (
+        COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
+        OR NOT EXISTS (
+          SELECT 1 FROM agent_task_queue active
+          WHERE active.issue_id = t.issue_id
+            AND active.agent_id = t.agent_id
+            AND active.id <> t.id
+            AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+            AND COALESCE(active.context->>'side_chat_parent_task_id', '') = ''
+        )
+      )
       AND EXISTS (
         SELECT 1 FROM agent_runtime r
         WHERE r.id = t.runtime_id
@@ -5889,6 +5914,25 @@ pub async fn promote_due_deferred_tasks_for_runtimes(
     WHERE t.runtime_id = ANY($1::uuid[])
       AND t.status = 'deferred'
       AND t.fire_at <= now()
+      AND (
+        COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
+        OR EXISTS (
+            SELECT 1 FROM agent_task_queue parent
+            WHERE parent.id::text = t.context->>'message_bus_parent_task_id'
+              AND parent.status IN ('completed', 'failed', 'cancelled')
+        )
+      )
+      AND (
+        COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
+        OR NOT EXISTS (
+          SELECT 1 FROM agent_task_queue active
+          WHERE active.issue_id = t.issue_id
+            AND active.agent_id = t.agent_id
+            AND active.id <> t.id
+            AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+            AND COALESCE(active.context->>'side_chat_parent_task_id', '') = ''
+        )
+      )
       AND EXISTS (
         SELECT 1 FROM agent_runtime r
         WHERE r.id = t.runtime_id
@@ -6405,6 +6449,197 @@ RETURNING id, coalesced_comment_ids"#,
         id: row.try_get(0)?,
         coalesced_comment_ids: row.try_get(1)?,
     }))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ActiveIssueAgentTaskRow {
+    pub id: Uuid,
+    pub status: String,
+}
+
+pub async fn get_active_issue_agent_task(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    issue_id: Uuid,
+    agent_id: Uuid,
+) -> anyhow::Result<Option<ActiveIssueAgentTaskRow>> {
+    let row = sqlx::query(
+        r#"SELECT id, status
+FROM agent_task_queue
+WHERE issue_id = $1
+  AND agent_id = $2
+  AND status IN ('dispatched', 'running', 'waiting_local_directory')
+  AND COALESCE(context->>'side_chat_parent_task_id', '') = ''
+ORDER BY started_at DESC NULLS LAST, created_at DESC
+LIMIT 1"#,
+    )
+    .bind(issue_id)
+    .bind(agent_id)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(ActiveIssueAgentTaskRow {
+        id: row.try_get(0)?,
+        status: row.try_get(1)?,
+    }))
+}
+
+pub async fn set_task_side_chat(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+    source_task_id: Uuid,
+    root_comment_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE agent_task_queue
+SET context = COALESCE(context, '{}'::jsonb) || jsonb_build_object(
+        'side_chat_parent_task_id', $2::text,
+        'side_chat_root_comment_id', $3::text
+    )
+WHERE id = $1
+  AND status = 'queued'"#,
+    )
+    .bind(task_id)
+    .bind(source_task_id)
+    .bind(root_comment_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+/// Serializes Message Bus writes for one main task. The row lock closes the
+/// race where two Side Chats both observe that no deferred continuation exists
+/// and create duplicate children.
+pub async fn lock_task_for_message_bus(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"SELECT id
+FROM agent_task_queue
+WHERE id = $1
+  AND lock_task_owner_rows(agent_id, issue_id, runtime_id)
+FOR UPDATE"#,
+    )
+    .bind(task_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
+}
+
+/// Appends an instruction to the still-deferred continuation for a main task.
+/// Messages stay structured so the eventual prompt can preserve provenance.
+pub async fn append_task_message_bus_instruction(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    parent_task_id: Uuid,
+    source_task_id: Uuid,
+    source_trigger_comment_id: Uuid,
+    message_id: Uuid,
+    content: &str,
+) -> anyhow::Result<Option<Uuid>> {
+    let row = sqlx::query(
+        r#"UPDATE agent_task_queue
+SET context = jsonb_set(
+        COALESCE(context, '{}'::jsonb),
+        '{message_bus_messages}',
+        COALESCE(context->'message_bus_messages', '[]'::jsonb)
+            || jsonb_build_array(jsonb_build_object(
+                'id', $4::text,
+                'source_task_id', $2::text,
+                'content', $5::text
+            )),
+        TRUE
+    ),
+    coalesced_comment_ids = CASE
+        WHEN $3::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+          OR trigger_comment_id = $3::uuid
+          OR $3::uuid = ANY(coalesced_comment_ids)
+        THEN coalesced_comment_ids
+        ELSE array_append(coalesced_comment_ids, $3::uuid)
+    END
+WHERE id = (
+    SELECT id
+    FROM agent_task_queue
+    WHERE status = 'deferred'
+      AND context->>'message_bus_parent_task_id' = $1::text
+    ORDER BY created_at DESC
+    LIMIT 1
+    FOR UPDATE
+)
+RETURNING id"#,
+    )
+    .bind(parent_task_id)
+    .bind(source_task_id)
+    .bind(source_trigger_comment_id)
+    .bind(message_id)
+    .bind(content)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(row.try_get(0)?))
+}
+
+/// Creates a provider-neutral continuation of the exact main task. It remains
+/// deferred until the normal promoter observes the named parent in a terminal
+/// state. Unlike a retry, this is a deliberate new turn: attempt/retry lineage
+/// is not incremented or forged.
+pub async fn create_task_message_bus_continuation(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    parent_task_id: Uuid,
+    source_task_id: Uuid,
+    source_trigger_comment_id: Uuid,
+    message_id: Uuid,
+    content: &str,
+    task_id: Uuid,
+) -> anyhow::Result<Option<Uuid>> {
+    let row = sqlx::query(
+        r#"INSERT INTO agent_task_queue (
+    id, agent_id, runtime_id, issue_id, status, priority,
+    trigger_comment_id, trigger_summary, context, session_id, work_dir,
+    attempt, max_attempts, parent_task_id, force_fresh_session,
+    is_leader_task, squad_id, originator_user_id, accountable_user_id,
+    runtime_mcp_overlay, runtime_connected_apps, originator_source,
+    delegated_from_task_id, rule_version_id, trigger_evidence_kind,
+    trigger_evidence_ref_id, fire_at
+)
+SELECT
+    $6, parent.agent_id, parent.runtime_id, parent.issue_id, 'deferred', parent.priority,
+    NULLIF($3::uuid, '00000000-0000-0000-0000-000000000000'::uuid), LEFT($5::text, 200),
+    (COALESCE(parent.context, '{}'::jsonb)
+        - 'side_chat_parent_task_id'
+        - 'side_chat_root_comment_id'
+        - 'channel_issue_media_pending'
+        - 'message_bus_parent_task_id'
+        - 'message_bus_messages') || jsonb_build_object(
+            'message_bus_parent_task_id', parent.id::text,
+            'message_bus_messages', jsonb_build_array(jsonb_build_object(
+                'id', $4::text,
+                'source_task_id', $2::text,
+                'content', $5::text
+            ))
+        ),
+    parent.session_id, parent.work_dir,
+    1, parent.max_attempts, NULL, FALSE,
+    parent.is_leader_task, parent.squad_id, parent.originator_user_id,
+    parent.accountable_user_id, parent.runtime_mcp_overlay,
+    parent.runtime_connected_apps, parent.originator_source,
+    parent.delegated_from_task_id, parent.rule_version_id,
+    parent.trigger_evidence_kind, parent.trigger_evidence_ref_id, now()
+FROM agent_task_queue parent
+WHERE parent.id = $1
+  AND parent.issue_id IS NOT NULL
+  AND lock_task_owner_rows(parent.agent_id, parent.issue_id, parent.runtime_id)
+RETURNING id"#,
+    )
+    .bind(parent_task_id)
+    .bind(source_task_id)
+    .bind(source_trigger_comment_id)
+    .bind(message_id)
+    .bind(content)
+    .bind(task_id)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(row.try_get(0)?))
 }
 
 pub async fn requeue_agent_task_after_claim_failure(

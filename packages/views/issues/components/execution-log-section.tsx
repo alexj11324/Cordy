@@ -16,7 +16,6 @@ import {
 } from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { formatDuration } from "../../agents/components/agent-activity-hover-content";
-import { TranscriptButton } from "../../common/task-transcript";
 import { cancelReasonLabel, failureReasonLabel } from "../../agents/components/tabs/task-failure";
 import { useT } from "../../i18n";
 import {
@@ -27,6 +26,10 @@ import {
 } from "../../runtimes/utils";
 import { TerminateTaskConfirmDialog } from "./terminate-task-confirm-dialog";
 import { IssueUsageDialog } from "./issue-usage-dialog";
+import {
+  IssueAgentConversationDialog,
+  IssueAgentConversationTrigger,
+} from "./issue-agent-conversation-dialog";
 import { TaskStatusIcon } from "./task-status-icon";
 import { useStatusLabel, useTriggerText } from "./task-run-labels";
 
@@ -74,6 +77,8 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
   const [open, setOpen] = useState(true);
   const [showPast, setShowPast] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [conversationTaskSnapshot, setConversationTaskSnapshot] =
+    useState<AgentTask | null>(null);
 
   // Cache key registered in `issueKeys.tasks` (packages/core/issues/queries.ts)
   // so the global useRealtimeSync `task:` prefix path invalidates it via
@@ -120,8 +125,18 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
       );
     });
   }, [tasks]);
+  const conversationTask = conversationTaskSnapshot
+    ? tasks.find((task) => task.id === conversationTaskSnapshot.id) ??
+      conversationTaskSnapshot
+    : null;
 
-  if (activeTasks.length === 0 && pastTasks.length === 0) return null;
+  if (
+    activeTasks.length === 0 &&
+    pastTasks.length === 0 &&
+    !conversationTask
+  ) {
+    return null;
+  }
 
   return (
     // `@container/execution-log`: the header's three items only fit side by
@@ -170,7 +185,12 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
       {open && (
         <div className="space-y-0.5 pl-2">
           {activeTasks.map((task) => (
-            <ActiveTaskRow key={task.id} task={task} issueId={issueId} />
+            <ActiveTaskRow
+              key={task.id}
+              task={task}
+              issueId={issueId}
+              onConversationOpen={setConversationTaskSnapshot}
+            />
           ))}
 
           {pastTasks.length > 0 && (
@@ -195,7 +215,12 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
               {showPast && (
                 <div className="mt-0.5 space-y-0.5">
                   {pastTasks.map((task) => (
-                    <PastRow key={task.id} task={task} issueId={issueId} />
+                    <PastRow
+                      key={task.id}
+                      task={task}
+                      issueId={issueId}
+                      onConversationOpen={setConversationTaskSnapshot}
+                    />
                   ))}
                 </div>
               )}
@@ -209,6 +234,16 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
         identifier={identifier ?? ""}
         tasks={tasks}
       />
+      {conversationTask ? (
+        <IssueAgentConversationDialog
+          issueId={issueId}
+          agentId={conversationTask.agent_id}
+          tasks={tasks}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setConversationTaskSnapshot(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -301,17 +336,17 @@ const STATUS_TONE: Record<AgentTask["status"], string> = {
 // ─── Active row ────────────────────────────────────────────────────────────
 
 // One active (running / queued / dispatched / parked) task row. Running rows
-// keep status to a single live elapsed timer; transcript and stop stay available
-// as hover actions. Transcript content lazy-loads on click via TranscriptButton,
-// so the row no longer fetches task messages just to render a count.
+// keep status to a single live elapsed timer; conversation and stop stay available
+// as hover actions. The conversation lazy-loads on click and projects every
+// run for this issue/agent into the shared Chat surface.
 export function ActiveTaskRow({
   task,
   issueId,
-  onTranscriptOpenChange,
+  onConversationOpen,
 }: {
   task: AgentTask;
   issueId: string;
-  onTranscriptOpenChange?: (open: boolean) => void;
+  onConversationOpen?: (task: AgentTask) => void;
 }) {
   const { t } = useT("issues");
   const [cancelling, setCancelling] = useState(false);
@@ -335,11 +370,6 @@ export function ActiveTaskRow({
           now,
         )
       : "";
-
-  // Transcript only meaningful once messages exist — pure-queued and
-  // waiting_local_directory tasks haven't streamed any agent output yet.
-  const showTranscript =
-    task.status !== "queued" && task.status !== "waiting_local_directory";
 
   const handleCancel = async () => {
     if (cancelling) return;
@@ -379,15 +409,7 @@ export function ActiveTaskRow({
         )}
       </RowStatus>
       <RowActions>
-        {showTranscript && (
-          <TranscriptButton
-            task={task}
-            agentName=""
-            isLive={task.status === "running"}
-            title={t(($) => $.execution_log.transcript_tooltip)}
-            onOpenChange={onTranscriptOpenChange}
-          />
-        )}
+        <IssueAgentConversationTrigger onClick={() => onConversationOpen?.(task)} />
         <Tooltip>
           <TooltipTrigger
             render={
@@ -425,7 +447,15 @@ export function ActiveTaskRow({
 
 // ─── Past row ──────────────────────────────────────────────────────────────
 
-function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
+function PastRow({
+  task,
+  issueId,
+  onConversationOpen,
+}: {
+  task: AgentTask;
+  issueId: string;
+  onConversationOpen: (task: AgentTask) => void;
+}) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const [retrying, setRetrying] = useState(false);
@@ -514,7 +544,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
         )}
       </RowStatus>
       <RowActions>
-        <TranscriptButton task={task} agentName="" title={t(($) => $.execution_log.transcript_tooltip)} />
+        <IssueAgentConversationTrigger onClick={() => onConversationOpen(task)} />
         {canRetry && (
           <Tooltip>
             <TooltipTrigger

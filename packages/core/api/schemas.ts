@@ -953,6 +953,8 @@ const CommentTriggerPreviewAgentSchema = z.object({
   avatar_url: z.string().optional(),
   source: z.string().default(""),
   reason: z.string().default(""),
+  active_task_id: z.string().optional(),
+  active_task_status: z.string().optional(),
 }).loose();
 
 // Per-target outcome of an explicit @agent / @squad mention (PB-4525 §2).
@@ -1535,6 +1537,8 @@ export const AgentTaskSchema = z.object({
   chat_session_id: z.string().optional(),
   autopilot_run_id: z.string().optional(),
   parent_task_id: z.string().optional(),
+  side_chat_parent_task_id: z.string().optional(),
+  side_chat_root_comment_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
   // Coverage is additive display metadata. A mixed-version or partially

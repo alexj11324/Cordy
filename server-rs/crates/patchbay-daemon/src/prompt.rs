@@ -124,6 +124,12 @@ fn build_prompt_body(task: &Task, provider: &str) -> String {
     if !task.chat_session_id.is_empty() {
         return build_chat_prompt(task);
     }
+    if !task.message_bus_messages.is_empty() {
+        return build_message_bus_prompt(task, provider);
+    }
+    if !task.side_chat_parent_task_id.is_empty() {
+        return build_side_chat_prompt(task, provider);
+    }
     if !task.trigger_comment_id.is_empty() {
         return build_comment_prompt(task, provider);
     }
@@ -149,6 +155,104 @@ fn build_prompt_body(task: &Task, provider: &str) -> String {
         "For comment history, follow the rule in your runtime workflow file (assignment-triggered tasks treat the read as mandatory). Scan the threads first with `patchbay issue comment list {} --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `patchbay issue comment list --help`.\n",
         task.issue_id
     ));
+    b
+}
+
+/// A comment-triggered Side Chat is an isolated discussion branch for the
+/// specifically mentioned Agent. It cannot edit the main task directly. Once
+/// an edit is actually called for, the branch autonomously records one
+/// structured instruction on Patchbay's provider-neutral Message Bus.
+fn build_side_chat_prompt(task: &Task, provider: &str) -> String {
+    let mut b = String::new();
+    b.push_str("You are in a Patchbay Side Chat for the Agent explicitly @mentioned in an issue comment.\n\n");
+    b.push_str(&format!(
+        "This Side Chat is derived from main task `{}` on issue `{}`. The main task and any inherited provider history are reference-only here. Do not modify files, run mutating commands, create commits or pull requests, or continue the main task from this branch.\n\n",
+        task.side_chat_parent_task_id, task.issue_id
+    ));
+    if !task.side_chat_root_comment_id.is_empty() {
+        b.push_str(&format!(
+            "Start by reading this Side Chat's durable conversation history: `patchbay issue comment list {} --thread {} --full --output json`. Use that comment thread—not the provider's fork support—as the source of truth for prior Side Chat turns.\n\n",
+            task.issue_id, task.side_chat_root_comment_id
+        ));
+    }
+    if !task.trigger_comment_content.is_empty() {
+        b.push_str("The user said in this Side Chat:\n\n");
+        b.push_str(&format!(
+            "> {}\n\n",
+            task.trigger_comment_content.trim().replace('\n', "\n> ")
+        ));
+    }
+    b.push_str("Use your own judgment:\n");
+    b.push_str("- If this is discussion, analysis, or a question, answer it only in this Side Chat. Do not contact the main task.\n");
+    b.push_str("- If the conversation clearly requires a code or workspace edit, formulate the concrete next-step instruction yourself and immediately send it to the @mentioned Agent's main task. Do not ask the user to copy it, relay it, click a button, or run a command.\n\n");
+    b.push_str(&format!(
+        "To deliver that confirmed edit instruction, run exactly once: `patchbay issue message-main {} --content \"<concise, actionable instruction>\"`. This queues the next turn of the @mentioned Agent's main conversation at a safe boundary; it does not inject work into this Side Chat.\n\n",
+        task.side_chat_parent_task_id
+    ));
+    b.push_str(&format!(
+        "When the main conversation's implementation state matters, inspect its durable task record with `patchbay issue run-messages {} --output json`.\n\n",
+        task.side_chat_parent_task_id
+    ));
+    let targets = comment_reply_threads(task);
+    if targets.len() >= 2 {
+        b.push_str(
+            &crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
+                &task.issue_id,
+                &targets,
+                false,
+            ),
+        );
+    } else {
+        b.push_str(&crate::runtime_config_sections::build_comment_reply_instructions(
+            provider,
+            &task.issue_id,
+            &task.trigger_comment_id,
+            false,
+        ));
+    }
+    b
+}
+
+/// Follow-up work delivered by a Side Chat is a new turn on the exact main
+/// task/session. Every provider receives the same prompt contract; native
+/// session resume remains an adapter detail.
+fn build_message_bus_prompt(task: &Task, provider: &str) -> String {
+    let mut b = String::new();
+    b.push_str("You are continuing a Patchbay main conversation after its Side Chat confirmed that implementation work is needed.\n\n");
+    b.push_str(&format!(
+        "Main conversation anchor task: `{}`\nIssue: `{}`\n\n",
+        task.message_bus_parent_task_id, task.issue_id
+    ));
+    b.push_str("Patchbay Message Bus instructions, in delivery order:\n\n");
+    for message in &task.message_bus_messages {
+        b.push_str(&format!(
+            "- From Side Chat task `{}`: {}\n",
+            message.source_task_id,
+            message.content.trim().replace('\n', "\n  ")
+        ));
+    }
+    b.push_str("\nTreat these as the confirmed next steps for the same Agent and main conversation. Resume that conversation's latest provider session when available, inspect the current workspace state, carry the requested edits through to completion, and report the result in the originating issue discussion. Do not turn this back into another Side Chat and do not ask the user to relay the instruction.\n\n");
+    b.push_str(&format!(
+        "Start by running `patchbay issue get {} --output json`, then inspect the existing work before editing.\n\n",
+        task.issue_id
+    ));
+    let targets = comment_reply_threads(task);
+    if targets.len() >= 2 {
+        b.push_str(
+            &crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
+                &task.issue_id,
+                &targets,
+                false,
+            ),
+        );
+    } else {
+        b.push_str(&crate::runtime_config_sections::build_comment_reply_instructions(
+            provider,
+            &task.issue_id,
+            &task.trigger_comment_id,
+            false,
+        ));
+    }
     b
 }
 
@@ -649,7 +753,7 @@ pub(crate) fn task_is_squad_leader(task: &Task) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AgentData, CoalescedCommentData};
+    use crate::types::{AgentData, CoalescedCommentData, TaskMessageBusMessageData};
 
     fn base_task() -> Task {
         Task {
@@ -694,6 +798,37 @@ mod tests {
         assert!(out.contains("> please look"));
         assert!(out.contains("--parent c-42"));
         assert!(out.contains("./reply.md"));
+    }
+
+    #[test]
+    fn side_chat_keeps_discussion_isolated_and_owns_delivery_decision() {
+        let mut t = base_task();
+        t.trigger_comment_id = "comment-1".into();
+        t.trigger_comment_content = "Should we change the retry policy?".into();
+        t.side_chat_parent_task_id = "main-task-1".into();
+        t.side_chat_root_comment_id = "thread-root-1".into();
+        let out = build_prompt(t, "claude");
+        assert!(out.contains("Patchbay Side Chat"));
+        assert!(out.contains("Do not modify files"));
+        assert!(out.contains("--thread thread-root-1 --full --output json"));
+        assert!(out.contains("patchbay issue message-main main-task-1"));
+        assert!(out.contains("Do not ask the user to copy it"));
+    }
+
+    #[test]
+    fn message_bus_continuation_names_exact_main_task_and_instruction() {
+        let mut t = base_task();
+        t.trigger_comment_id = "comment-1".into();
+        t.message_bus_parent_task_id = "main-task-1".into();
+        t.message_bus_messages = vec![TaskMessageBusMessageData {
+            id: "message-1".into(),
+            source_task_id: "side-chat-1".into(),
+            content: "Add the bounded retry and update its test.".into(),
+        }];
+        let out = build_prompt(t, "claude");
+        assert!(out.contains("Main conversation anchor task: `main-task-1`"));
+        assert!(out.contains("From Side Chat task `side-chat-1`"));
+        assert!(out.contains("Add the bounded retry"));
     }
 
     #[test]

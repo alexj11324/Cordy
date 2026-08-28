@@ -541,6 +541,9 @@ pub fn build_codex_args(options: &ExecOptions) -> Vec<String> {
         args = strip_fast_mode_conflicts(args);
         args.extend(["--enable".to_string(), "fast_mode".to_string()]);
     }
+    if !options.goal_objective.trim().is_empty() {
+        args.extend(["--enable".to_string(), "goals".to_string()]);
+    }
     args
 }
 
@@ -1499,6 +1502,7 @@ async fn run_protocol(
     let mut client = CodexClient::new(BufReader::new(stdout), stdin, messages)
         .with_live_protocol(live_protocol, startup_stderr);
     client.state.attempt_number = attempt_number;
+    client.state.goal_mode = !options.goal_objective.trim().is_empty();
     client.publish_live_state();
     if let Err(error) = client
         .request(
@@ -1622,6 +1626,34 @@ async fn run_protocol(
             resume_rejected,
             ..ProtocolOutcome::default()
         };
+    }
+    if client.state.goal_mode {
+        let goal = match client
+            .request(
+                "thread/goal/set",
+                serde_json::json!({
+                    "threadId": client.state.thread_id.clone(),
+                    "objective": options.goal_objective.trim(),
+                    "status": "active",
+                }),
+                handshake_timeout,
+            )
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                return ProtocolOutcome {
+                    status: "failed".to_string(),
+                    error: format!("Codex goal mode is unavailable: {error}"),
+                    session_id: client.state.thread_id,
+                    resumed,
+                    resume_rejected,
+                    ..ProtocolOutcome::default()
+                };
+            }
+        };
+        client.apply_goal(&goal);
+        client.publish_live_state();
     }
     if let Err(error) = client
         .wait_for_turn(
@@ -2175,12 +2207,20 @@ where
             self.publish_live_state();
             return;
         }
-        if self.state.legacy {
+        // Goal lifecycle notifications are app-server-native even when this
+        // Codex build also mirrors turn events through the legacy codex/event
+        // stream. Keep accepting them or an active goal can never settle.
+        if self.state.legacy && !method.starts_with("thread/goal/") {
             return;
         }
         if matches!(
             method,
-            "turn/started" | "turn/completed" | "error" | "thread/status/changed"
+            "turn/started"
+                | "turn/completed"
+                | "error"
+                | "thread/status/changed"
+                | "thread/goal/updated"
+                | "thread/goal/cleared"
         ) || method.starts_with("item/")
         {
             self.handle_raw_notification(method, &params);
@@ -2199,6 +2239,7 @@ where
         {
             "task_started" => {
                 self.state.turn_started = true;
+                self.state.turn_active = true;
                 self.state.start_first_item_wait();
                 self.send(status_message("running", &self.state.thread_id));
             }
@@ -2289,11 +2330,15 @@ where
             "task_complete" => {
                 self.state.merge_usage(event.get("usage"));
                 self.finish_first_item_wait("turn_completed");
-                self.state.turn_done = true;
+                self.state.turn_active = false;
+                if !self.state.goal_mode || self.state.goal_is_terminal() {
+                    self.state.turn_done = true;
+                }
             }
             "turn_aborted" => {
                 self.state.turn_aborted = true;
                 self.finish_first_item_wait("turn_aborted");
+                self.state.turn_active = false;
                 self.state.turn_done = true;
             }
             _ => {}
@@ -2307,6 +2352,7 @@ where
         match method {
             "turn/started" => {
                 self.state.turn_started = true;
+                self.state.turn_active = true;
                 self.state.start_first_item_wait();
                 if let Some(id) = nested_string(params, &["turn", "id"]) {
                     self.state.turn_id = id.to_string();
@@ -2340,7 +2386,14 @@ where
                     "turn_completed"
                 };
                 self.finish_first_item_wait(outcome);
-                self.state.turn_done = true;
+                self.state.turn_active = false;
+                if status == "failed"
+                    || matches!(status, "cancelled" | "canceled" | "aborted" | "interrupted")
+                    || !self.state.goal_mode
+                    || self.state.goal_is_terminal()
+                {
+                    self.state.turn_done = true;
+                }
             }
             "error" => {
                 let will_retry = params
@@ -2355,6 +2408,7 @@ where
                         .or_else(|| params.get("message").and_then(Value::as_str))
                         .unwrap_or("codex app-server error");
                     self.state.set_error(error);
+                    self.state.turn_active = false;
                     self.state.turn_done = true;
                 }
             }
@@ -2363,7 +2417,18 @@ where
                     && nested_string(params, &["status", "type"]) == Some("idle") =>
             {
                 self.finish_first_item_wait("turn_completed");
-                self.state.turn_done = true;
+                self.state.turn_active = false;
+                if !self.state.goal_mode || self.state.goal_is_terminal() {
+                    self.state.turn_done = true;
+                }
+            }
+            "thread/goal/updated" => self.apply_goal(params),
+            "thread/goal/cleared" => {
+                self.state.goal_status = "cleared".to_string();
+                self.note_activity("goal:cleared");
+                if !self.state.turn_active {
+                    self.state.turn_done = true;
+                }
             }
             _ if method.starts_with("item/") => self.handle_item(method, params),
             _ => {}
@@ -2458,7 +2523,7 @@ where
                     self.send(message(MessageType::Text, text));
                     if item.get("phase").and_then(Value::as_str) == Some("final_answer") {
                         self.state.final_answer = text.to_string();
-                        if self.state.turn_started {
+                        if self.state.turn_started && !self.state.goal_mode {
                             self.state.turn_done = true;
                         }
                     }
@@ -2510,6 +2575,17 @@ where
     fn send(&mut self, value: Message) {
         self.note_activity(&describe_message_activity(&value));
         let _ = self.messages.try_send(value);
+    }
+
+    fn apply_goal(&mut self, value: &Value) {
+        let status = nested_string(value, &["goal", "status"])
+            .or_else(|| value.get("status").and_then(Value::as_str));
+        let Some(status) = status else { return };
+        self.state.goal_status = status.to_string();
+        self.note_activity(&format!("goal:{status}"));
+        if self.state.goal_is_terminal() && !self.state.turn_active {
+            self.state.turn_done = true;
+        }
     }
 }
 
@@ -2580,6 +2656,7 @@ struct CodexState {
     turn_id: String,
     model: String,
     turn_started: bool,
+    turn_active: bool,
     turn_done: bool,
     turn_aborted: bool,
     final_answer: String,
@@ -2595,6 +2672,14 @@ struct CodexState {
     attempt_number: u8,
     usage: TokenUsage,
     completed_turns: BTreeSet<String>,
+    goal_mode: bool,
+    goal_status: String,
+}
+
+impl CodexState {
+    fn goal_is_terminal(&self) -> bool {
+        self.goal_mode && !self.goal_status.is_empty() && self.goal_status != "active"
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3632,6 +3717,20 @@ exit 1
     }
 
     #[test]
+    fn goal_launch_enables_only_the_codex_goal_feature() {
+        let args = build_codex_args(&ExecOptions {
+            goal_objective: "finish every stage".to_string(),
+            ..ExecOptions::default()
+        });
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--enable", "goals"]));
+
+        let ordinary = build_codex_args(&ExecOptions::default());
+        assert!(!ordinary.iter().any(|arg| arg == "goals"));
+    }
+
+    #[test]
     fn priority_launch_prefix_drops_fast_mode_conflicts() {
         let prefix = vec![
             "--disable".to_string(),
@@ -3735,6 +3834,93 @@ exit 1
             "codex/event",
             &serde_json::json!({"msg":{"type":"agent_message"}}),
         ));
+    }
+
+    #[tokio::test]
+    async fn active_goal_waits_across_turns_until_goal_is_terminal() {
+        let (client_io, _agent_io) = tokio::io::duplex(1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (message_tx, _message_rx) = mpsc::channel(4);
+        let mut client = CodexClient::new(BufReader::new(client_read), client_write, message_tx);
+        client.state.goal_mode = true;
+        client.state.thread_id = "thread-1".to_string();
+        client.apply_goal(&serde_json::json!({"goal":{"status":"active"}}));
+
+        client.handle_raw_notification(
+            "turn/started",
+            &serde_json::json!({"threadId":"thread-1","turn":{"id":"turn-1"}}),
+        );
+        client.handle_raw_notification(
+            "turn/completed",
+            &serde_json::json!({
+                "threadId":"thread-1",
+                "turn":{"id":"turn-1","status":"completed"}
+            }),
+        );
+        assert!(!client.state.turn_active);
+        assert!(!client.state.turn_done);
+
+        client.handle_raw_notification(
+            "turn/started",
+            &serde_json::json!({"threadId":"thread-1","turn":{"id":"turn-2"}}),
+        );
+        client.handle_raw_notification(
+            "thread/goal/updated",
+            &serde_json::json!({
+                "threadId":"thread-1",
+                "goal":{"status":"complete"}
+            }),
+        );
+        assert!(client.state.turn_active);
+        assert!(!client.state.turn_done);
+
+        client.handle_raw_notification(
+            "turn/completed",
+            &serde_json::json!({
+                "threadId":"thread-1",
+                "turn":{"id":"turn-2","status":"completed"}
+            }),
+        );
+        assert!(client.state.turn_done);
+    }
+
+    #[tokio::test]
+    async fn failed_goal_turn_and_legacy_goal_update_are_terminal() {
+        let (client_io, _agent_io) = tokio::io::duplex(1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (message_tx, _message_rx) = mpsc::channel(4);
+        let mut client = CodexClient::new(BufReader::new(client_read), client_write, message_tx);
+        client.state.goal_mode = true;
+        client.state.thread_id = "thread-1".to_string();
+        client.state.turn_active = true;
+        client.apply_goal(&serde_json::json!({"goal":{"status":"active"}}));
+        client.handle_raw_notification(
+            "turn/completed",
+            &serde_json::json!({
+                "threadId":"thread-1",
+                "turn":{
+                    "id":"turn-1",
+                    "status":"failed",
+                    "error":{"message":"provider failed"}
+                }
+            }),
+        );
+        assert!(client.state.turn_done);
+        assert_eq!(client.state.turn_error, "provider failed");
+
+        client.state.turn_done = false;
+        client.state.turn_error.clear();
+        client.state.legacy = true;
+        client.notification_gate.arm();
+        client.handle_notification(
+            "thread/goal/updated",
+            Some(&serde_json::json!({
+                "threadId":"thread-1",
+                "goal":{"status":"blocked"}
+            })),
+        );
+        assert_eq!(client.state.goal_status, "blocked");
+        assert!(client.state.turn_done);
     }
 
     #[test]

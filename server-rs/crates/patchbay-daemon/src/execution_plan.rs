@@ -187,6 +187,7 @@ impl fmt::Debug for ChildEnvironmentSeed {
 struct ExecOptionsSeed {
     model: String,
     thread_name: String,
+    goal_objective: String,
     timeout: Duration,
     semantic_inactivity_timeout: Duration,
     first_turn_no_progress_timeout: Duration,
@@ -382,10 +383,19 @@ impl ProviderExecutionPlan {
         Ok(Self {
             prepare,
             target: target.clone(),
-            prior_work_dir: task.prior_work_dir.clone(),
+            prior_work_dir: if task.side_chat_parent_task_id.is_empty() {
+                task.prior_work_dir.clone()
+            } else {
+                String::new()
+            },
             options: ExecOptionsSeed {
                 model,
                 thread_name: derive_task_thread_name_from_task(task),
+                goal_objective: if provider == "codex" {
+                    task.goal_objective.clone()
+                } else {
+                    String::new()
+                },
                 timeout: config.agent_timeout,
                 semantic_inactivity_timeout: config.codex_semantic_inactivity_timeout,
                 first_turn_no_progress_timeout: config.codex_first_turn_no_progress_timeout,
@@ -395,7 +405,14 @@ impl ProviderExecutionPlan {
                     Duration::ZERO
                 },
                 handshake_timeout: config.codex_handshake_timeout,
-                resume_session_id: task.prior_session_id.clone(),
+                // A Side Chat is an application-level Patchbay thread. It reads
+                // durable issue/task history and never mutates a provider's
+                // main session, so every adapter starts it fresh.
+                resume_session_id: if task.side_chat_parent_task_id.is_empty() {
+                    task.prior_session_id.clone()
+                } else {
+                    String::new()
+                },
                 resume_continuity_notice: backend_resume_continuity_notice(task),
                 extra_args,
                 custom_args: agent.custom_args.clone(),
@@ -544,6 +561,7 @@ impl ProviderExecutionPlan {
                 model: self.options.model.clone(),
                 system_prompt: prepared.system_prompt,
                 thread_name: self.options.thread_name.clone(),
+                goal_objective: self.options.goal_objective.clone(),
                 timeout: self.options.timeout,
                 semantic_inactivity_timeout: self.options.semantic_inactivity_timeout,
                 first_turn_no_progress_timeout: self.options.first_turn_no_progress_timeout,

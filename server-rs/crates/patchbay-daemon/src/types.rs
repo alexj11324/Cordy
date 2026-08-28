@@ -134,6 +134,16 @@ pub struct ActiveSiblingRunData {
     pub started_at: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskMessageBusMessageData {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "source_task_id")]
+    pub source_task_id: String,
+    #[serde(rename = "content")]
+    pub content: String,
+}
+
 /// Task represents a claimed task from the server (types.go:72–169). Agent data
 /// (name, skills) is populated by the claim endpoint.
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -214,9 +224,29 @@ pub struct Task {
         default
     )]
     pub leader_role_resolved: bool,
-    /// Claude session ID from a previous task on this issue.
+    /// Provider session ID from a previous task on this issue.
     #[serde(rename = "prior_session_id", skip_serializing_if = "String::is_empty")]
     pub prior_session_id: String,
+    /// Patchbay main task this isolated discussion branch belongs to.
+    #[serde(
+        rename = "side_chat_parent_task_id",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub side_chat_parent_task_id: String,
+    /// Durable issue-comment thread that owns this Side Chat conversation.
+    #[serde(
+        rename = "side_chat_root_comment_id",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub side_chat_root_comment_id: String,
+    /// Exact main task continued by provider-neutral Patchbay Message Bus input.
+    #[serde(
+        rename = "message_bus_parent_task_id",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub message_bus_parent_task_id: String,
+    #[serde(rename = "message_bus_messages", skip_serializing_if = "Vec::is_empty")]
+    pub message_bus_messages: Vec<TaskMessageBusMessageData>,
     /// work_dir from a previous task on this issue.
     #[serde(rename = "prior_work_dir", skip_serializing_if = "String::is_empty")]
     pub prior_work_dir: String,
@@ -260,6 +290,10 @@ pub struct Task {
         skip_serializing_if = "String::is_empty"
     )]
     pub trigger_comment_content: String,
+    /// Explicit Codex autonomous goal requested by a `/goal` line in the
+    /// triggering comment. Empty for ordinary turns and non-supporting servers.
+    #[serde(rename = "goal_objective", skip_serializing_if = "String::is_empty")]
+    pub goal_objective: String,
     /// "agent" or "member" — author kind for the triggering comment.
     #[serde(
         rename = "trigger_author_type",

@@ -141,8 +141,28 @@ async fn preview_triggers(
         exclude_trigger_comment_id,
     })
     .await;
+    let mut agents = preview_agents(&plan);
+    for (index, trigger) in plan.triggers.iter().enumerate() {
+        if trigger.source != crate::comment_trigger::CommentTriggerSource::MentionAgent {
+            continue;
+        }
+        let Ok(active) = agent::get_active_issue_agent_task(
+            &state.pool,
+            issue.id,
+            trigger.agent.id,
+        )
+        .await
+        else {
+            continue;
+        };
+        let Some(active) = active else { continue };
+        if let Some(object) = agents.get_mut(index).and_then(Value::as_object_mut) {
+            object.insert("active_task_id".into(), json!(active.id));
+            object.insert("active_task_status".into(), json!(active.status));
+        }
+    }
     Json(json!({
-        "agents": preview_agents(&plan),
+        "agents": agents,
         "blocked": preview_blocked(&plan),
     }))
     .into_response()

@@ -2010,6 +2010,7 @@ async fn repair_stale_comment_plan(
                         task.handoff_note.as_deref().unwrap_or(""),
                         None,
                         Some(task.id),
+                        None,
                     )
                     .await;
                 if let Err(e) = replayed {

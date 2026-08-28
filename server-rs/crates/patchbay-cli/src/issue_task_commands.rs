@@ -1,12 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::fmt::Write;
+use std::io::Read;
 
 use super::{
     display_id, format_metadata_value, format_table, load_issue_actor_names, new_api_client,
     resolve_current_workspace_id, resolve_issue_ref, resolve_task_run_id, value_string, ApiClient,
-    Cli, Environment, IssueActorNames, IssueCancelTaskArgs, IssueRunMessagesArgs, IssueRunsArgs,
-    OutputFormat, RunOutput,
+    trim_one_trailing_newline, unescape_backslash_escapes, Cli, Environment, IssueActorNames,
+    IssueCancelTaskArgs, IssueMessageMainArgs, IssueRunMessagesArgs, IssueRunsArgs, OutputFormat,
+    RunOutput,
 };
 
 pub(super) async fn run_issue_runs(
@@ -120,6 +122,56 @@ pub(super) async fn run_issue_run_messages(
             OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&messages)?),
             OutputFormat::Table => format_issue_run_messages_table(&messages),
         },
+        stderr: String::new(),
+    })
+}
+
+pub(super) async fn run_issue_message_main<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueMessageMainArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    if args.content_stdin && args.content.is_some() {
+        bail!("--content and --content-stdin are mutually exclusive");
+    }
+    let content = if args.content_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read stdin for --content-stdin")?;
+        trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned())
+    } else {
+        args.content
+            .as_deref()
+            .map(unescape_backslash_escapes)
+            .unwrap_or_default()
+    };
+    if content.trim().is_empty() {
+        bail!("--content or --content-stdin is required");
+    }
+
+    let client = new_api_client(cli, environment)?;
+    let task_id = resolve_task_run_id(&client, None, &args.task_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve main task run: {error}"))?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/tasks/{task_id}/message-bus"),
+            &serde_json::json!({ "content": content }),
+        )
+        .await
+        .context("send Side Chat instruction to the main task")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => format!(
+            "Instruction {} for main task {}.\n",
+            value_string(&result, "status"),
+            value_string(&result, "main_task_id")
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
         stderr: String::new(),
     })
 }

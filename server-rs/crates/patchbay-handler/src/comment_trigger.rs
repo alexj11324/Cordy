@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::state::HandlerState;
+use patchbay_service::task_service::SideChatSeed;
 
 const NOTE_COMMENT_PREFIX: &str = "/note";
 
@@ -524,8 +525,11 @@ pub(crate) async fn enqueue_comment_triggers(
     for blocked in &plan.blocked {
         outcomes.push(json!({
             "agent_id": blocked.target_id,
+            "target_type": blocked.target_type,
+            "target_id": blocked.target_id,
             "status": "blocked",
             "reason": blocked.reason_code,
+            "reason_code": blocked.reason_code,
         }));
     }
     for trigger in &plan.triggers {
@@ -544,6 +548,53 @@ async fn enqueue_one(
     trigger_comment_id: Uuid,
     trigger: &CommentTrigger,
 ) -> Value {
+    if trigger.source == CommentTriggerSource::MentionAgent {
+        if let Ok(Some(active)) =
+            agent::get_active_issue_agent_task(&state.pool, issue.id, trigger.agent.id).await
+        {
+            let root_comment_id = comment::get_thread_root(
+                &state.pool,
+                trigger_comment_id,
+                issue.workspace_id,
+            )
+            .await
+            .ok()
+            .flatten()
+            .map(|root| root.id)
+            .unwrap_or(trigger_comment_id);
+            let result = state
+                .tasks
+                .enqueue_side_chat_for_mention(
+                    issue,
+                    trigger.agent.id,
+                    trigger_comment_id,
+                    SideChatSeed {
+                        parent_task_id: active.id,
+                        root_comment_id,
+                    },
+                )
+                .await;
+            return match result {
+                Ok(task) => json!({
+                    "agent_id": trigger.agent.id,
+                    "target_type": "agent",
+                    "target_id": trigger.agent.id,
+                    "status": "side_chat",
+                    "reason_code": "side_chat",
+                    "task_id": task.id,
+                    "parent_task_id": active.id,
+                }),
+                Err(error) => json!({
+                    "agent_id": trigger.agent.id,
+                    "target_type": "agent",
+                    "target_id": trigger.agent.id,
+                    "status": "blocked",
+                    "reason": error.to_string(),
+                    "reason_code": "enqueue_failed",
+                }),
+            };
+        }
+    }
     let result = match (trigger.source, trigger.squad_id) {
         (
             CommentTriggerSource::MentionSquadLeader | CommentTriggerSource::IssueAssignee,
@@ -573,9 +624,23 @@ async fn enqueue_one(
         }
     };
     match result {
-        Ok(task) => json!({"agent_id": trigger.agent.id, "status": "queued", "task_id": task.id}),
+        Ok(task) => json!({
+            "agent_id": trigger.agent.id,
+            "target_type": "agent",
+            "target_id": trigger.agent.id,
+            "status": "queued",
+            "reason_code": "queued",
+            "task_id": task.id,
+        }),
         Err(error) => {
-            json!({"agent_id": trigger.agent.id, "status": "blocked", "reason": error.to_string()})
+            json!({
+                "agent_id": trigger.agent.id,
+                "target_type": "agent",
+                "target_id": trigger.agent.id,
+                "status": "blocked",
+                "reason": error.to_string(),
+                "reason_code": "enqueue_failed",
+            })
         }
     }
 }
