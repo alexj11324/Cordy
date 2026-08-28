@@ -994,6 +994,7 @@ impl TaskService {
             "",
             actor_user_id,
             rerun_of_task_id,
+            None,
         )
         .await
     }

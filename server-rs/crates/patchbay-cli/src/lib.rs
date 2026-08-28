@@ -239,8 +239,8 @@ pub(crate) use execution_policy::{require_human_local_command, require_task_loca
 pub(crate) use id_helpers::{compact_uuid, is_canonical_uuid, normalize_uuid_prefix};
 pub(crate) use issue_activity_schema::{
     IssueCancelTaskArgs, IssueCommentAddArgs, IssueCommentArgs, IssueCommentCommand,
-    IssueCommentListArgs, IssueCommentResolutionArgs, IssueRerunArgs, IssueRunMessagesArgs,
-    IssueRunsArgs, IssueSearchArgs, IssueUsageArgs,
+    IssueCommentListArgs, IssueCommentResolutionArgs, IssueMessageMainArgs, IssueRerunArgs,
+    IssueRunMessagesArgs, IssueRunsArgs, IssueSearchArgs, IssueUsageArgs,
 };
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
@@ -315,7 +315,9 @@ pub(crate) use issue_subscriber_schema::{
 };
 #[cfg(test)]
 use issue_task_commands::{format_issue_run_messages_table, format_issue_runs_table};
-use issue_task_commands::{run_issue_cancel_task, run_issue_run_messages, run_issue_runs};
+use issue_task_commands::{
+    run_issue_cancel_task, run_issue_message_main, run_issue_run_messages, run_issue_runs,
+};
 use issue_timeline_commands::run_issue_timeline;
 #[cfg(test)]
 use issue_timeline_commands::{

@@ -19,6 +19,10 @@ use crate::state::HandlerState;
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/tasks/{task_id}/messages", get(list_messages))
+        .route(
+            "/api/tasks/{task_id}/message-bus",
+            post(send_message_to_main_task),
+        )
         .route("/api/tasks/{task_id}/cancel", post(cancel_task))
 }
 
@@ -35,6 +39,90 @@ struct CancelQuery {
     chat_session_id: String,
     #[serde(default)]
     queue_action: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct TaskMessageBusRequest {
+    #[serde(default)]
+    content: String,
+}
+
+/// A Side Chat may address only the exact main task recorded in its immutable
+/// task context. The task-token identity is authoritative; member/PAT callers
+/// cannot impersonate an Agent or manually relay this action.
+async fn send_message_to_main_task(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(parent_task_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<TaskMessageBusRequest>,
+) -> Response {
+    if headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        != Some("task_token")
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "only a Side Chat Agent can use the task Message Bus",
+        );
+    }
+    let Some(source_task_id) = headers
+        .get("x-task-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+    else {
+        return error_response(StatusCode::FORBIDDEN, "invalid Side Chat task identity");
+    };
+    let Some(actor_agent_id) = headers
+        .get("x-agent-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+    else {
+        return error_response(StatusCode::FORBIDDEN, "invalid Side Chat Agent identity");
+    };
+    let Ok(parent_task_id) = Uuid::parse_str(parent_task_id.trim()) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid main task id");
+    };
+
+    let parent = match agent::get_agent_task_in_workspace(
+        &state.pool,
+        parent_task_id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(parent)) if parent.agent_id == actor_agent_id => parent,
+        Ok(Some(_)) => {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "the main task belongs to a different Agent",
+            )
+        }
+        Ok(None) | Err(_) => return error_response(StatusCode::NOT_FOUND, "main task not found"),
+    };
+
+    match state
+        .tasks
+        .send_side_chat_message_to_main(source_task_id, parent.id, &request.content)
+        .await
+    {
+        Ok(receipt) => Json(json!({
+            "status": if receipt.coalesced { "coalesced" } else { "deferred" },
+            "continuation_task_id": receipt.continuation_task_id,
+            "main_task_id": parent.id,
+            "agent_id": parent.agent_id,
+        }))
+        .into_response(),
+        Err(TaskServiceError::Sql(error)) => {
+            tracing::warn!(%error, %source_task_id, %parent_task_id, "task Message Bus write failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to send the Side Chat instruction",
+            )
+        }
+        Err(error) => error_response(StatusCode::BAD_REQUEST, &error.to_string()),
+    }
 }
 
 async fn list_messages(

@@ -17,10 +17,11 @@ vi.mock("../../common/actor-avatar", () => ({
   ActorAvatar: () => <span data-testid="actor-avatar" />,
 }));
 
-vi.mock("../../common/task-transcript", () => ({
-  TranscriptButton: ({ title }: { title?: string }) => (
-    <button type="button">{title ?? "Transcript"}</button>
+vi.mock("./issue-agent-conversation-dialog", () => ({
+  IssueAgentConversationTrigger: () => (
+    <button type="button">Open conversation</button>
   ),
+  IssueAgentConversationDialog: () => null,
 }));
 
 vi.mock("./terminate-task-confirm-dialog", () => ({
@@ -85,23 +86,23 @@ describe("ActiveTaskRow", () => {
     expect(screen.queryByText(/events?/i)).not.toBeInTheDocument();
     expect(screen.getByText("Started from comment")).toBeInTheDocument();
     expect(screen.getByText("Includes 3 comments")).toBeInTheDocument();
-    expect(screen.getByText("View transcript")).toBeInTheDocument();
+    expect(screen.getByText("Open conversation")).toBeInTheDocument();
     expect(mockState.taskMessagesOptions).not.toHaveBeenCalled();
   });
 
-  it("does not make transcript actions depend on hover-only rendering", () => {
+  it("does not make conversation actions depend on hover-only rendering", () => {
     renderWithI18n(<ActiveTaskRow task={makeTask()} issueId="issue-1" />);
 
-    const transcriptButton = screen.getByRole("button", { name: "View transcript" });
+    const conversationButton = screen.getByRole("button", { name: "Open conversation" });
     const status = screen.getByText("5m 04s");
 
     expect(status.parentElement?.className).toContain("flex h-7");
     expect(status.parentElement?.className).toContain(
       "[@media(hover:hover)]:group-hover/execution-log-row:hidden",
     );
-    expect(transcriptButton.parentElement?.className).toContain("flex h-7");
-    expect(transcriptButton.parentElement?.className).toContain("[@media(hover:hover)]:hidden");
-    expect(transcriptButton.parentElement?.className).toContain(
+    expect(conversationButton.parentElement?.className).toContain("flex h-7");
+    expect(conversationButton.parentElement?.className).toContain("[@media(hover:hover)]:hidden");
+    expect(conversationButton.parentElement?.className).toContain(
       "[@media(hover:hover)]:group-hover/execution-log-row:flex",
     );
   });

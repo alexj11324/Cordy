@@ -60,6 +60,11 @@ pub(super) enum IssueCommand {
     Runs(IssueRunsArgs),
     #[command(name = "run-messages", about = "List messages for an execution")]
     RunMessages(IssueRunMessagesArgs),
+    #[command(
+        name = "message-main",
+        about = "Send a confirmed Side Chat instruction to its Agent's main task"
+    )]
+    MessageMain(IssueMessageMainArgs),
     #[command(about = "Show aggregated token usage for an issue")]
     Usage(IssueUsageArgs),
     #[command(about = "Re-enqueue an issue assignment as a fresh task")]

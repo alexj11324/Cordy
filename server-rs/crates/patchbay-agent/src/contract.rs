@@ -41,6 +41,8 @@ pub struct ExecOptions {
     pub model: String,
     pub system_prompt: String,
     pub thread_name: String,
+    /// Non-empty only for an explicit autonomous Codex goal turn.
+    pub goal_objective: String,
     pub max_turns: u32,
     pub timeout: Duration,
     pub semantic_inactivity_timeout: Duration,
@@ -73,6 +75,7 @@ impl std::fmt::Debug for ExecOptions {
             .field("cwd", &self.cwd)
             .field("model", &self.model)
             .field("thread_name", &self.thread_name)
+            .field("has_goal", &!self.goal_objective.is_empty())
             .field("max_turns", &self.max_turns)
             .field("timeout", &self.timeout)
             .field(

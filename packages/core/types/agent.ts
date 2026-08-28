@@ -317,6 +317,10 @@ export interface AgentTask {
   autopilot_run_id?: string;
   /** Set when this task was created as an auto-retry of a parent task. */
   parent_task_id?: string;
+  /** Main issue task that owns this isolated Side Chat branch. */
+  side_chat_parent_task_id?: string;
+  /** Root issue comment that persists this Side Chat's history. */
+  side_chat_root_comment_id?: string;
   /** 1-based attempt counter; >1 means this is a retry. */
   attempt?: number;
   /** Set when an issue comment triggered this task (@mention or assignee comment). */
@@ -357,7 +361,13 @@ export interface AgentTask {
    * tasks that have no linked issue (so e.g. quick-create tasks render
    * with a meaningful title instead of falling through to "Untracked").
    */
-  kind?: "comment" | "autopilot" | "chat" | "quick_create" | "direct";
+  kind?:
+    | "comment"
+    | "autopilot"
+    | "chat"
+    | "quick_create"
+    | "direct"
+    | "message_bus";
   /**
    * Local working directory pinned for this task by the daemon. Empty until
    * the daemon reports a work_dir (typically once execution starts). This is

@@ -264,6 +264,9 @@ pub(super) async fn run_with_input<R: Read>(
             command: IssueCommand::RunMessages(args),
         }) => run_issue_run_messages(cli, environment, args).await,
         Command::Issue(IssueArgs {
+            command: IssueCommand::MessageMain(args),
+        }) => run_issue_message_main(cli, environment, args, input).await,
+        Command::Issue(IssueArgs {
             command: IssueCommand::Usage(args),
         }) => run_issue_usage(cli, environment, args).await,
         Command::Issue(IssueArgs {

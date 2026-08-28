@@ -162,11 +162,40 @@ fn insert_string_array(map: &mut Map<String, Value>, key: &str, values: &[uuid::
     }
 }
 
+fn insert_context_string(map: &mut Map<String, Value>, context: Option<&Value>, key: &str) {
+    let Some(value) = context
+        .and_then(Value::as_object)
+        .and_then(|context| context.get(key))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    map.insert(key.into(), Value::String(value.into()));
+}
+
 /// Builds the full AgentTaskResponse map. Field order is irrelevant to JSON
 /// consumers; key names mirror the Go tags exactly.
 pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
     let id = t.id.to_string();
     let mut value = Map::new();
+    let is_message_bus_continuation = t
+        .context
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|context| context.get("message_bus_parent_task_id"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty());
+    let public_status = if t.status == "deferred" && is_message_bus_continuation {
+        "queued"
+    } else {
+        t.status.as_str()
+    };
+    let public_kind = if is_message_bus_continuation {
+        "message_bus"
+    } else {
+        compute_task_kind(t)
+    };
     value.insert("id".into(), Value::String(id.clone()));
     value.insert("agent_id".into(), Value::String(t.agent_id.to_string()));
     value.insert(
@@ -178,7 +207,7 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
         Value::String(t.issue_id.map(|id| id.to_string()).unwrap_or_default()),
     );
     value.insert("workspace_id".into(), Value::String(workspace_id.into()));
-    value.insert("status".into(), Value::String(t.status.clone()));
+    value.insert("status".into(), Value::String(public_status.into()));
     value.insert("priority".into(), json!(t.priority));
     value.insert("dispatched_at".into(), opt_time(t.dispatched_at));
     value.insert("started_at".into(), opt_time(t.started_at));
@@ -203,7 +232,7 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
                 .collect(),
         ),
     );
-    value.insert("kind".into(), Value::String(compute_task_kind(t).into()));
+    value.insert("kind".into(), Value::String(public_kind.into()));
     value.insert("attribution".into(), attribution_base(t));
 
     insert_string(&mut value, "failure_reason", t.failure_reason.as_deref());
@@ -238,6 +267,10 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
     insert_uuid(&mut value, "chat_session_id", t.chat_session_id);
     insert_uuid(&mut value, "autopilot_run_id", t.autopilot_run_id);
     insert_string(&mut value, "branch_name", t.branch_name.as_deref());
+    // These two IDs are safe routing metadata for the issue conversation UI.
+    // Keep the rest of the internal task context server-private.
+    insert_context_string(&mut value, t.context.as_ref(), "side_chat_parent_task_id");
+    insert_context_string(&mut value, t.context.as_ref(), "side_chat_root_comment_id");
 
     Value::Object(value)
 }
@@ -355,5 +388,39 @@ mod tests {
             Uuid::nil().to_string()
         );
         assert_eq!(value["dispatched_at"], "2026-08-23T07:00:00Z");
+    }
+
+    #[test]
+    fn user_task_wire_exposes_only_side_chat_routing_context() {
+        let mut task = task_fixture();
+        task.context = Some(json!({
+            "side_chat_parent_task_id": "main-task-1",
+            "side_chat_root_comment_id": "comment-root-1",
+            "internal_secret": "must-not-leak",
+        }));
+
+        let value = task_to_map(&task, "workspace-1");
+
+        assert_eq!(value["side_chat_parent_task_id"], "main-task-1");
+        assert_eq!(value["side_chat_root_comment_id"], "comment-root-1");
+        assert!(value.get("internal_secret").is_none());
+        assert!(value.get("context").is_none());
+    }
+
+    #[test]
+    fn deferred_main_conversation_turn_is_publicly_queued() {
+        let mut task = task_fixture();
+        task.status = "deferred".into();
+        task.context = Some(json!({
+            "message_bus_parent_task_id": "main-task-1",
+            "message_bus_messages": [{"content": "continue"}],
+        }));
+
+        let value = task_to_map(&task, "workspace-1");
+
+        assert_eq!(value["status"], "queued");
+        assert_eq!(value["kind"], "message_bus");
+        assert!(value.get("message_bus_parent_task_id").is_none());
+        assert!(value.get("message_bus_messages").is_none());
     }
 }

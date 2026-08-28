@@ -14,15 +14,16 @@ use patchbay_analytics as analytics;
 use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{Agent, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue};
 use patchbay_db::queries::agent::{
-    cancel_agent_task, cancel_agent_task_by_user, cancel_agent_task_with_reason,
-    cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
+    append_task_message_bus_instruction, cancel_agent_task, cancel_agent_task_by_user,
+    cancel_agent_task_with_reason, cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
     cancel_agent_tasks_by_trigger_comment, cancel_deferred_escalations_for_issue_agent,
     cancel_deferred_escalations_for_task, cancel_queued_agent_task,
     cancel_queued_agent_tasks_for_session, cancel_superseded_deferred_retries_for_runtimes,
     claim_agent_task, claim_chat_finalize_deferred, count_running_tasks, create_agent_task,
     create_deferred_agent_task, create_deferred_channel_issue_task, create_quick_create_task,
-    extend_agent_task_prepare_lease, get_agent, get_agent_for_claim_update, get_agent_task,
-    list_queued_claim_candidates_by_runtime, list_queued_claim_candidates_by_runtimes,
+    create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
+    get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
+    list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
     mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
@@ -105,8 +106,8 @@ pub struct ErrAttributionFailClosed;
 pub struct ErrDuplicatePendingTask;
 
 /// Reports whether err is the pending-task unique-index violation (a
-/// concurrent enqueue won the race). Accept both index names while v1 and v2
-/// coexist during a rolling deploy.
+/// concurrent enqueue won the race). Accept every deployed index generation
+/// while schema migrations may overlap a rolling deploy.
 pub fn is_duplicate_pending_task_err(err: &sqlx::Error) -> bool {
     let Some(db_err) = err.as_database_error() else {
         return false;
@@ -118,6 +119,7 @@ pub fn is_duplicate_pending_task_err(err: &sqlx::Error) -> bool {
         db_err.constraint(),
         Some("idx_one_pending_task_per_issue_agent")
             | Some("idx_one_pending_task_per_issue_agent_v2")
+            | Some("idx_one_pending_task_per_issue_agent_v3")
     )
 }
 
@@ -248,6 +250,21 @@ pub const QUICK_CREATE_CONTEXT_TYPE: &str = "quick_create";
 pub struct RuntimeMcpOverlayData {
     pub overlay: Option<serde_json::Value>,
     pub connected_apps: Option<serde_json::Value>,
+}
+
+/// Links a comment-triggered Side Chat to the specific main task for the
+/// mentioned Agent. Patchbay's durable issue/task history is the context source;
+/// provider-specific session state is never the routing contract.
+#[derive(Debug, Clone)]
+pub struct SideChatSeed {
+    pub parent_task_id: Uuid,
+    pub root_comment_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskMessageBusReceipt {
+    pub continuation_task_id: Uuid,
+    pub coalesced: bool,
 }
 
 // Go-shaped LLM seam lives with the rest of the quick-actions port; re-exported
@@ -1760,6 +1777,7 @@ impl TaskService {
                 prep.attr_evidence_kind.as_deref(),
                 prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 new_v7(),
+                &serde_json::Value::Null,
             )
             .await
         };
@@ -1935,6 +1953,7 @@ impl TaskService {
             "",
             None,
             None,
+            None,
         )
         .await
     }
@@ -1956,6 +1975,7 @@ impl TaskService {
             None,
             false,
             "",
+            None,
             None,
             None,
         )
@@ -1980,6 +2000,7 @@ impl TaskService {
             Some(squad_id),
             false,
             "",
+            None,
             None,
             None,
         )
@@ -2007,8 +2028,174 @@ impl TaskService {
             handoff_note,
             actor_user_id,
             None,
+            None,
         )
         .await
+    }
+
+    /// Explicit @Agent mention while that Agent has a main task in flight.
+    /// This creates an independent, read-only conversation branch; it never
+    /// injects the member's comment into the main task.
+    pub async fn enqueue_side_chat_for_mention(
+        &self,
+        issue: &Issue,
+        agent_id: Uuid,
+        trigger_comment_id: Uuid,
+        side_chat: SideChatSeed,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task(
+            issue,
+            agent_id,
+            Some(trigger_comment_id),
+            vec![],
+            false,
+            None,
+            false,
+            "",
+            None,
+            None,
+            Some(side_chat),
+        )
+        .await
+    }
+
+    /// Provider-neutral thread-to-thread delivery. Only a Side Chat task can
+    /// address the exact main task it was derived from. Delivery creates (or
+    /// coalesces into) a deferred continuation of that main task, so no
+    /// provider has to support live-turn injection and no parallel writer can
+    /// mutate the same checkout. The normal deferred-task promoter releases it
+    /// after the parent reaches a terminal boundary.
+    pub async fn send_side_chat_message_to_main(
+        &self,
+        source_task_id: Uuid,
+        parent_task_id: Uuid,
+        content: &str,
+    ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
+        const MAX_MESSAGE_CHARS: usize = 12_000;
+        let content = sanitize_text_for_postgres(content.trim());
+        if content.is_empty() {
+            return Err(TaskServiceError::Internal(
+                "message bus instruction is empty".to_string(),
+            ));
+        }
+        let content = content.chars().take(MAX_MESSAGE_CHARS).collect::<String>();
+
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        if !lock_task_for_message_bus(&mut *tx, parent_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+        {
+            return Err(TaskServiceError::Internal(
+                "message bus parent task not found".to_string(),
+            ));
+        }
+        let parent = get_agent_task(&mut *tx, parent_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("message bus parent task not found".to_string())
+            })?;
+        let source = get_agent_task(&mut *tx, source_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("message bus source task not found".to_string())
+            })?;
+
+        let linked_parent = source
+            .context
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+            .and_then(|context| context.get("side_chat_parent_task_id"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok());
+        let parent_is_main = parent
+            .context
+            .as_ref()
+            .and_then(serde_json::Value::as_object)
+            .and_then(|context| context.get("side_chat_parent_task_id"))
+            .is_none();
+        if linked_parent != Some(parent_task_id)
+            || source.agent_id != parent.agent_id
+            || source.issue_id != parent.issue_id
+            || !parent_is_main
+        {
+            return Err(TaskServiceError::Internal(
+                "message bus target is not this Side Chat's main task".to_string(),
+            ));
+        }
+        if !matches!(
+            source.status.as_str(),
+            "dispatched" | "running" | "waiting_local_directory"
+        ) {
+            return Err(TaskServiceError::Internal(
+                "message bus source Side Chat is not active".to_string(),
+            ));
+        }
+
+        let message_id = new_v7();
+        let existing_continuation_task_id = append_task_message_bus_instruction(
+            &mut *tx,
+            parent_task_id,
+            source_task_id,
+            source.trigger_comment_id.unwrap_or_else(Uuid::nil),
+            message_id,
+            &content,
+        )
+        .await
+        .map_err(downcast_sqlx)?;
+        let (continuation_task_id, coalesced) = if let Some(task_id) = existing_continuation_task_id
+        {
+            (task_id, true)
+        } else {
+            let task_id = create_task_message_bus_continuation(
+                &mut *tx,
+                parent.id,
+                source.id,
+                source.trigger_comment_id.unwrap_or_else(Uuid::nil),
+                message_id,
+                &content,
+                new_v7(),
+            )
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal(
+                    "message bus continuation could not be created".to_string(),
+                )
+            })?;
+            (task_id, false)
+        };
+        let continuation = get_agent_task(&mut *tx, continuation_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal(
+                    "message bus continuation could not be loaded".to_string(),
+                )
+            })?;
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+
+        tracing::info!(
+            source_task_id = %source.id,
+            parent_task_id = %parent.id,
+            continuation_task_id = %continuation_task_id,
+            agent_id = %parent.agent_id,
+            coalesced,
+            "Side Chat instruction queued on task Message Bus"
+        );
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &continuation,
+            Default::default(),
+        )
+        .await;
+        self.notify_runtime_may_have_work(parent.runtime_id, None)
+            .await;
+        Ok(TaskMessageBusReceipt {
+            continuation_task_id,
+            coalesced,
+        })
     }
 
     /// Shared mention-family implementation. An explicit mention /
@@ -2027,6 +2214,7 @@ impl TaskService {
         handoff_note: &str,
         actor_user_id: Option<Uuid>,
         rerun_of_task_id: Option<Uuid>,
+        side_chat: Option<SideChatSeed>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let agent = get_agent(&self.pool, agent_id)
             .await
@@ -2065,8 +2253,22 @@ impl TaskService {
             .unwrap_or(None);
         let head_sha = self.resolve_issue_review_sha(issue.id).await;
 
+        // Side Chat linkage must commit atomically with the queued row. A
+        // daemon must never be able to claim the row without its isolation
+        // context, and the pending-task index must be able to distinguish the
+        // Side Chat at INSERT time.
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let initial_context = side_chat
+            .as_ref()
+            .map(|side_chat| {
+                serde_json::json!({
+                    "side_chat_parent_task_id": side_chat.parent_task_id.to_string(),
+                    "side_chat_root_comment_id": side_chat.root_comment_id.to_string(),
+                })
+            })
+            .unwrap_or(serde_json::Value::Null);
         let created = create_agent_task(
-            &self.pool,
+            &mut *tx,
             agent_id,
             runtime_id,
             issue.id,
@@ -2090,6 +2292,7 @@ impl TaskService {
             attr_evidence_kind.as_deref(),
             attr_evidence_ref.unwrap_or_else(Uuid::nil),
             new_v7(),
+            &initial_context,
         )
         .await;
         let task = match created {
@@ -2108,6 +2311,8 @@ impl TaskService {
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
         };
+
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         tracing::info!(
             task_id = %task.id,

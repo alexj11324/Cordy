@@ -110,6 +110,9 @@ function TriggerAgentTooltipBody({
         <div>{t(($) => $.comment.trigger_click_to_restore)}</div>
       ) : (
         <>
+          {agent.active_task_id && (
+            <div>{t(($) => $.comment.trigger_opens_side_chat)}</div>
+          )}
           {(() => {
             // Reason (when present) and presence share one line; either may be
             // absent, so join only the parts that exist to avoid a stray space.
@@ -237,7 +240,9 @@ function SingleTriggerChip({
   // so it stays fixed-width and never truncates on long agent names.
   const sentence = suppressed
     ? t(($) => $.comment.trigger_wont_trigger)
-    : t(($) => $.comment.trigger_will_start);
+    : agent.active_task_id
+      ? t(($) => $.comment.trigger_will_side_chat)
+      : t(($) => $.comment.trigger_will_start);
 
   return (
     <Tooltip>
@@ -280,6 +285,9 @@ function MultiTriggerChip({
   const [open, setOpen] = useState(false);
   const [tooltipHover, setTooltipHover] = useState(false);
   const activeCount = agents.filter((a) => !suppressedAgentIds.has(a.id)).length;
+  const activeRunCount = agents.filter(
+    (agent) => agent.active_task_id && !suppressedAgentIds.has(agent.id),
+  ).length;
   const heads = agents.slice(0, MAX_STACK_HEADS);
   const overflow = agents.length - heads.length;
   // Mirror AgentAvatarStack: ~30% overlap reads as "stacked" without
@@ -291,7 +299,16 @@ function MultiTriggerChip({
   const sentence =
     activeCount === 0
       ? t(($) => $.comment.trigger_none_will_trigger)
-      : t(($) => $.comment.trigger_will_start_count, { count: activeCount });
+      : activeRunCount === activeCount
+        ? t(($) => $.comment.trigger_will_side_chat_count, {
+            count: activeCount,
+          })
+        : activeRunCount > 0
+          ? t(($) => $.comment.trigger_will_mixed_count, {
+              sideChatCount: activeRunCount,
+              startCount: activeCount - activeRunCount,
+            })
+        : t(($) => $.comment.trigger_will_start_count, { count: activeCount });
 
   const popoverTrigger = (
     <PopoverTrigger

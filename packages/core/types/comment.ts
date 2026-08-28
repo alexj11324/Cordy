@@ -52,6 +52,7 @@ export type CommentTriggerStatus =
   | "queued"
   | "coalesced"
   | "deferred"
+  | "side_chat"
   | "blocked";
 
 export interface CommentTriggerOutcome {
@@ -72,6 +73,9 @@ export interface CommentTriggerPreviewAgent {
   avatar_url?: string;
   source: CommentTriggerSource | string;
   reason: string;
+  /** A same-issue main task from which this mention will open a Side Chat. */
+  active_task_id?: string;
+  active_task_status?: string;
 }
 
 export interface CommentTriggerPreview {

@@ -114,6 +114,21 @@ pub(super) struct IssueRunMessagesArgs {
 }
 
 #[derive(Debug, Args)]
+pub(super) struct IssueMessageMainArgs {
+    #[arg(value_name = "MAIN-TASK-ID")]
+    pub(super) task_id: String,
+    #[arg(
+        long,
+        help = "Confirmed next-step instruction for this Side Chat's main task"
+    )]
+    pub(super) content: Option<String>,
+    #[arg(long, help = "Read the confirmed instruction from stdin")]
+    pub(super) content_stdin: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub(super) output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
 pub(super) struct IssueUsageArgs {
     #[arg(value_name = "ISSUE-ID")]
     pub(super) issue_id: String,

@@ -12,9 +12,9 @@ import { cn } from "@patchbay/ui/lib/utils";
 import { api } from "@patchbay/core/api";
 import { issueKeys } from "@patchbay/core/issues/queries";
 import type { AgentTask } from "@patchbay/core/types";
-import { TranscriptButton } from "../../common/task-transcript";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";
+import { IssueAgentConversationDialog } from "./issue-agent-conversation-dialog";
 import { useT } from "../../i18n";
 
 // Per-issue "is an agent working on this right now?" chip for the issue
@@ -47,7 +47,6 @@ interface IssueAgentHeaderChipProps {
 export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
   issueId,
 }: IssueAgentHeaderChipProps) {
-  const { t } = useT("issues");
   // Same query options as ExecutionLogSection so both observe one cache entry.
   const { data: tasks = [] } = useQuery({
     queryKey: issueKeys.tasks(issueId),
@@ -76,15 +75,15 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
     return { running, queued };
   }, [tasks]);
 
-  const [openedTranscriptTaskSnapshot, setOpenedTranscriptTaskSnapshot] =
+  const [openedConversationTaskSnapshot, setOpenedConversationTaskSnapshot] =
     useState<AgentTask | null>(null);
-  const openedTranscriptTask = openedTranscriptTaskSnapshot
-    ? tasks.find((task) => task.id === openedTranscriptTaskSnapshot.id) ??
-      openedTranscriptTaskSnapshot
+  const openedConversationTask = openedConversationTaskSnapshot
+    ? tasks.find((task) => task.id === openedConversationTaskSnapshot.id) ??
+      openedConversationTaskSnapshot
     : null;
 
   // No active work → render nothing.
-  if (running.length === 0 && queued.length === 0 && !openedTranscriptTask) return null;
+  if (running.length === 0 && queued.length === 0 && !openedConversationTask) return null;
 
   return (
     <>
@@ -93,21 +92,16 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
           issueId={issueId}
           running={running}
           queued={queued}
-          onTranscriptOpenChange={(task, open) => {
-            setOpenedTranscriptTaskSnapshot(open ? task : null);
-          }}
+          onConversationOpen={setOpenedConversationTaskSnapshot}
         />
       ) : null}
-      {openedTranscriptTask ? (
-        <TranscriptButton
-          task={openedTranscriptTask}
-          agentName=""
-          isLive={openedTranscriptTask.status === "running"}
-          title={t(($) => $.execution_log.transcript_tooltip)}
-          renderButton={false}
-          open
-          onOpenChange={(open) => {
-            if (!open) setOpenedTranscriptTaskSnapshot(null);
+      {openedConversationTask ? (
+        <IssueAgentConversationDialog
+          issueId={issueId}
+          agentId={openedConversationTask.agent_id}
+          tasks={tasks}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setOpenedConversationTaskSnapshot(null);
           }}
         />
       ) : null}
@@ -119,14 +113,14 @@ interface ActiveChipProps {
   issueId: string;
   running: AgentTask[];
   queued: AgentTask[];
-  onTranscriptOpenChange: (task: AgentTask, open: boolean) => void;
+  onConversationOpen: (task: AgentTask) => void;
 }
 
 function ActiveChip({
   issueId,
   running,
   queued,
-  onTranscriptOpenChange,
+  onConversationOpen,
 }: ActiveChipProps) {
   const { t } = useT("issues");
   const { getActorName } = useActorName();
@@ -212,9 +206,7 @@ function ActiveChip({
                 key={task.id}
                 task={task}
                 issueId={issueId}
-                onTranscriptOpenChange={(open) => {
-                  onTranscriptOpenChange(task, open);
-                }}
+                onConversationOpen={onConversationOpen}
               />
             ))}
           </div>

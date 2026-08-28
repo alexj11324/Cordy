@@ -73,6 +73,21 @@ interface ChatMessageListProps {
   userId?: string | null;
   userName?: string | null;
   /**
+   * Optional per-message identity overrides for embedded conversations where
+   * more than one person (or another agent) can author the user-side turns.
+   * Direct Chat leaves this unset and keeps its single-member identity.
+   */
+  messageActors?: Readonly<
+    Record<
+      string,
+      {
+        actorType: "member" | "agent";
+        actorId?: string | null;
+        actorName?: string | null;
+      }
+    >
+  >;
+  /**
    * Server-authoritative pending-task snapshot. `null` / undefined means
    * no in-flight task — list renders without StatusPill.
    */
@@ -211,6 +226,7 @@ export function ChatMessageList({
   agentName,
   userId,
   userName,
+  messageActors,
   pendingTask,
   availability,
   firstItemIndex = 0,
@@ -392,6 +408,9 @@ export function ChatMessageList({
               agentName={agentName}
               userId={userId}
               userName={userName}
+              messageActor={
+                item.kind === "message" ? messageActors?.[item.message.id] : undefined
+              }
               isPending={!!pendingTaskId && item.taskId === pendingTaskId}
               transformContent={transformContent}
               onQuickAction={onQuickAction}
@@ -461,6 +480,7 @@ const MessageBubble = memo(function MessageBubble({
   agentName,
   userId,
   userName,
+  messageActor,
   isPending,
   transformContent,
   onQuickAction,
@@ -475,6 +495,11 @@ const MessageBubble = memo(function MessageBubble({
   agentName?: string | null;
   userId?: string | null;
   userName?: string | null;
+  messageActor?: {
+    actorType: "member" | "agent";
+    actorId?: string | null;
+    actorName?: string | null;
+  };
   isPending: boolean;
   transformContent?: (content: string) => string;
   onQuickAction?: (action: ChatQuickAction) => void | Promise<unknown>;
@@ -512,8 +537,9 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <ChatMessageShell
         role="user"
-        actorId={userId}
-        actorName={userName}
+        actorType={messageActor?.actorType ?? "member"}
+        actorId={messageActor ? messageActor.actorId : userId}
+        actorName={messageActor ? messageActor.actorName : userName}
         createdAt={message.created_at}
       >
         <div className="rounded-2xl bg-muted px-3.5 py-2 text-body max-w-[80%] break-words">
@@ -568,12 +594,14 @@ const MessageBubble = memo(function MessageBubble({
  */
 function ChatMessageShell({
   role,
+  actorType,
   actorId,
   actorName,
   createdAt,
   children,
 }: {
   role: "user" | "assistant";
+  actorType?: "member" | "agent";
   actorId?: string | null;
   actorName?: string | null;
   createdAt?: string;
@@ -602,7 +630,7 @@ function ChatMessageShell({
         >
           {actorId && (
             <ActorAvatar
-              actorType={isUser ? "member" : "agent"}
+              actorType={actorType ?? (isUser ? "member" : "agent")}
               actorId={actorId}
               size="md"
               enableHoverCard

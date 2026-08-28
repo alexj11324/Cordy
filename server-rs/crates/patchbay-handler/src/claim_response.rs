@@ -322,6 +322,23 @@ pub(crate) async fn build_claimed_task_response(
     let obj = payload
         .as_object_mut()
         .expect("task_to_map returns an object");
+    if let Some(context) = task.context.as_ref().and_then(Value::as_object) {
+        for key in [
+            "side_chat_parent_task_id",
+            "side_chat_root_comment_id",
+            "message_bus_parent_task_id",
+        ] {
+            if let Some(value) = context.get(key).and_then(Value::as_str) {
+                set_if_not_empty(obj, key, value);
+            }
+        }
+        if let Some(messages) = context
+            .get("message_bus_messages")
+            .filter(|value| value.as_array().is_some_and(|items| !items.is_empty()))
+        {
+            obj.insert("message_bus_messages".into(), messages.clone());
+        }
+    }
 
     // Claim-only capability: this server resolves the squad-leader role on the
     // wire so the daemon must not re-derive it from the briefing text
@@ -863,6 +880,18 @@ pub(crate) async fn build_claimed_task_response(
                 }
             }
 
+            // `/goal` is deliberately explicit and line-oriented. Ordinary
+            // issue runs keep their one-turn contract; a member or coordinator
+            // can opt a Codex run into app-server autonomous continuation by
+            // putting the directive on its own line after the @mention.
+            if let Some(goal) = obj
+                .get("trigger_comment_content")
+                .and_then(Value::as_str)
+                .and_then(explicit_goal_objective)
+            {
+                obj.insert("goal_objective".into(), Value::String(goal));
+            }
+
             // Prior session / workdir resolution.
             if let Some(rerun_of) = task.rerun_of_task_id {
                 // Manual retry resumes precisely from the clicked source task.
@@ -941,6 +970,22 @@ pub(crate) async fn build_claimed_task_response(
                         obj.insert("prior_session_resume_unavailable".into(), Value::Bool(true));
                     }
                 }
+            }
+
+            // Message Bus turns use the normal issue+Agent continuity lookup
+            // above. The deferred promoter waits for every earlier main turn,
+            // and the lookup excludes Side Chat sessions, so this resumes the
+            // latest state of the main conversation instead of a stale branch.
+            // If no resumable session supplied a checkout, retain the anchor
+            // task's copied workdir so a provider failure does not discard
+            // already-written workspace state.
+            if obj.contains_key("message_bus_parent_task_id") && !obj.contains_key("prior_work_dir")
+            {
+                set_if_not_empty(
+                    obj,
+                    "prior_work_dir",
+                    task.work_dir.as_deref().unwrap_or(""),
+                );
             }
         }
     }
@@ -1481,6 +1526,27 @@ fn chat_session_resume_fallback_needed(prior_session_id: &str, prior_work_dir: &
     prior_session_id.is_empty() || prior_work_dir.is_empty()
 }
 
+fn explicit_goal_objective(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let line = line.trim();
+        let mut parts = line.splitn(2, char::is_whitespace);
+        let Some(command) = parts.next() else {
+            continue;
+        };
+        if !command.eq_ignore_ascii_case("/goal") {
+            continue;
+        }
+        let objective = parts.next().unwrap_or_default().trim();
+        return Some(if objective.is_empty() {
+            "Complete every remaining requirement for this issue, verify the result, and report only when the objective is complete or genuinely blocked."
+                .to_string()
+        } else {
+            objective.to_string()
+        });
+    }
+    None
+}
+
 /// Go failClaimedTaskBeforeLaunch: settles a durable claim-time rejection before
 /// the daemon ever receives the task. If settlement fails, release the exact
 /// claim so a later attempt can retry the gate.
@@ -1531,5 +1597,26 @@ async fn fail_claimed_task_before_launch(
             failure.outcome = format!("{outcome}_settle");
             failure
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explicit_goal_objective;
+
+    #[test]
+    fn goal_directive_is_explicit_and_line_oriented() {
+        assert_eq!(
+            explicit_goal_objective("[@Worker](mention://agent/id)\n\n/goal finish stages 2 and 3"),
+            Some("finish stages 2 and 3".to_string())
+        );
+        assert!(explicit_goal_objective("Please discuss /goal support").is_none());
+    }
+
+    #[test]
+    fn empty_goal_uses_the_issue_completion_contract() {
+        let objective = explicit_goal_objective("/GOAL").expect("goal objective");
+        assert!(objective.contains("every remaining requirement"));
+        assert!(objective.contains("genuinely blocked"));
     }
 }
