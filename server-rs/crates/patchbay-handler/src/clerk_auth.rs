@@ -32,9 +32,7 @@ pub struct ClerkAuthClient {
 }
 
 impl ClerkAuthClient {
-    pub fn from_config(
-        config: &patchbay_config::AuthConfig,
-    ) -> anyhow::Result<Option<Self>> {
+    pub fn from_config(config: &patchbay_config::AuthConfig) -> anyhow::Result<Option<Self>> {
         let secret_key = trimmed(config.clerk_secret_key.as_deref());
         let jwt_key = trimmed(config.clerk_jwt_key.as_deref());
         let issuer = trimmed(config.clerk_issuer.as_deref());
@@ -56,9 +54,10 @@ impl ClerkAuthClient {
         );
 
         let normalized_pem = jwt_key.replace("\\n", "\n");
-        let decoding_key = DecodingKey::from_rsa_pem(normalized_pem.as_bytes()).map_err(|error| {
-            anyhow::anyhow!("CLERK_JWT_KEY is not a valid RSA public key: {error}")
-        })?;
+        let decoding_key =
+            DecodingKey::from_rsa_pem(normalized_pem.as_bytes()).map_err(|error| {
+                anyhow::anyhow!("CLERK_JWT_KEY is not a valid RSA public key: {error}")
+            })?;
         let mut validation = Validation::new(Algorithm::RS256);
         validation.validate_nbf = true;
         validation.set_required_spec_claims(&["exp", "nbf", "iss", "sub"]);
@@ -146,7 +145,11 @@ impl ClerkAuthClient {
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| email.split_once('@').map_or(email.as_str(), |(name, _)| name))
+                .unwrap_or_else(|| {
+                    email
+                        .split_once('@')
+                        .map_or(email.as_str(), |(name, _)| name)
+                })
                 .to_string()
         } else {
             name

@@ -1262,6 +1262,7 @@ dependencies = [
  "hmac 0.12.1",
  "http-body-util",
  "ipnetwork",
+ "jsonwebtoken",
  "percent-encoding",
  "rand 0.8.7",
  "redis",

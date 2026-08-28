@@ -759,16 +759,20 @@ mod tests {
     async fn clerk_exchange_fails_closed_before_database_access() {
         for (verifier, status, message) in [
             (
-                Some(std::sync::Arc::new(RejectClerk(
-                    crate::clerk_auth::ClerkAuthError::Invalid,
-                )) as std::sync::Arc<dyn crate::clerk_auth::ClerkSessionVerifier>),
+                Some(
+                    std::sync::Arc::new(RejectClerk(crate::clerk_auth::ClerkAuthError::Invalid))
+                        as std::sync::Arc<dyn crate::clerk_auth::ClerkSessionVerifier>,
+                ),
                 StatusCode::UNAUTHORIZED,
                 "invalid Clerk session",
             ),
             (
                 Some(std::sync::Arc::new(RejectClerk(
                     crate::clerk_auth::ClerkAuthError::Unavailable,
-                )) as std::sync::Arc<dyn crate::clerk_auth::ClerkSessionVerifier>),
+                ))
+                    as std::sync::Arc<
+                        dyn crate::clerk_auth::ClerkSessionVerifier,
+                    >),
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Clerk login is temporarily unavailable",
             ),
