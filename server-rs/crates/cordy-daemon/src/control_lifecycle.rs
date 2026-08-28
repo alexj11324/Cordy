@@ -259,9 +259,7 @@ mod tests {
                                     let message: cordy_protocol::Message =
                                         serde_json::from_slice(message.into_data().as_ref())
                                             .unwrap();
-                                    if message.r#type
-                                        == cordy_protocol::EVENT_DAEMON_HEARTBEAT
-                                    {
+                                    if message.r#type == cordy_protocol::EVENT_DAEMON_HEARTBEAT {
                                         continue;
                                     }
                                     break message;
