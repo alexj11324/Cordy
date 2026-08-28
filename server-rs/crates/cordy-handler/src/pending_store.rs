@@ -36,7 +36,8 @@ pub const MODEL_LIST_KEY_PREFIX: &str = "patchbay:{runtime_pending}:model_list:r
 pub const MODEL_LIST_PENDING_PREFIX: &str = "patchbay:{runtime_pending}:model_list:pending:";
 pub const MODEL_CATALOG_KEY_PREFIX: &str = "patchbay:runtime_model_catalog:";
 pub const LOCAL_SKILL_LIST_KEY_PREFIX: &str = "patchbay:{runtime_pending}:local_skill:list:";
-pub const LOCAL_SKILL_LIST_PENDING_PREFIX: &str = "patchbay:{runtime_pending}:local_skill:list:pending:";
+pub const LOCAL_SKILL_LIST_PENDING_PREFIX: &str =
+    "patchbay:{runtime_pending}:local_skill:list:pending:";
 pub const LOCAL_SKILL_IMPORT_KEY_PREFIX: &str = "patchbay:{runtime_pending}:local_skill:import:";
 pub const LOCAL_SKILL_IMPORT_PENDING_PREFIX: &str =
     "patchbay:{runtime_pending}:local_skill:import:pending:";

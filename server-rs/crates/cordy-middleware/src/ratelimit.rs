@@ -217,7 +217,10 @@ mod tests {
             rate_limit_key("/api/issues/123", "1.2.3.4"),
             "patchbay:ratelimit:api:issues:123:1.2.3.4"
         );
-        assert_eq!(rate_limit_key("/", "1.2.3.4"), "patchbay:ratelimit::1.2.3.4");
+        assert_eq!(
+            rate_limit_key("/", "1.2.3.4"),
+            "patchbay:ratelimit::1.2.3.4"
+        );
     }
 
     #[test]

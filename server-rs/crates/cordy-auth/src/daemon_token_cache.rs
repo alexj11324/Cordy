@@ -134,7 +134,10 @@ mod tests {
 
     #[test]
     fn key_format_matches_go() {
-        assert_eq!(DaemonTokenCache::key("abc123"), "patchbay:auth:daemon:abc123");
+        assert_eq!(
+            DaemonTokenCache::key("abc123"),
+            "patchbay:auth:daemon:abc123"
+        );
     }
 
     #[test]
