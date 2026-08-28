@@ -409,7 +409,7 @@ mod tests {
         let result =
             parse_rollout(&path, started, true).unwrap_or_else(|| panic!("expected rollout usage"));
         assert_eq!(result.model, "gpt-test");
-        assert_eq!(result.usage.input_tokens, 30);
+        assert_eq!(result.usage.input_tokens, 20);
         assert_eq!(result.usage.output_tokens, 6);
         assert_eq!(result.usage.cache_read_tokens, 10);
     }

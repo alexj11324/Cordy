@@ -3764,7 +3764,7 @@ exit 1
                 .await
                 .unwrap_or_else(|error| panic!("read initialize: {error}"))
                 .unwrap_or_else(|| panic!("initialize request"));
-            assert!(request.contains("initialize"));
+            assert!(request.contains("turn/start"));
             agent_write
                 .write_all(
                     br#"{"jsonrpc":"2.0","id":77,"method":"item/commandExecution/requestApproval","params":{}}
@@ -3785,10 +3785,11 @@ exit 1
         let (messages, mut received) = (mpsc::channel(8), Vec::new());
         let (message_tx, mut message_rx) = messages;
         let mut client = CodexClient::new(BufReader::new(client_read), client_write, message_tx);
+        client.notification_gate.arm();
         let result = client
-            .request("initialize", serde_json::json!({}), Duration::from_secs(1))
+            .request("turn/start", serde_json::json!({}), Duration::from_secs(1))
             .await
-            .unwrap_or_else(|error| panic!("initialize request: {error}"));
+            .unwrap_or_else(|error| panic!("turn/start request: {error}"));
         assert_eq!(extract_thread_id(&result).as_deref(), Some("thread-1"));
         while let Ok(message) = message_rx.try_recv() {
             received.push(message);

@@ -83,14 +83,14 @@ fn filter_args(
             index += 1;
             continue;
         }
-        let mode = flag.and_then(|name| blocked.get(name).copied());
+        let blocked_name = flag.unwrap_or(arg.as_str());
+        let mode = blocked.get(blocked_name).copied();
         let Some(mode) = mode else {
             filtered.push(arg);
             index += 1;
             continue;
         };
-        let flag = flag.unwrap_or_default();
-        blocked_flags.push(flag.to_string());
+        blocked_flags.push(blocked_name.to_string());
         let inline = arg.contains('=');
         index += 1;
         match mode {
