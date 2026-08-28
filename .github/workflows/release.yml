@@ -228,9 +228,9 @@ jobs:
 
   release:
     needs: [verify, rust-cli-build, docker-backend-merge, docker-web-merge]
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not publish there.
-    if: github.repository_owner == 'cordy-ai'
+    # Only the canonical repository may publish release assets. A fork can
+    # still run verification and builds without creating a Release.
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -565,7 +565,7 @@ jobs:
 
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge]
-    if: github.repository_owner == 'cordy-ai'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
       group: release-helm-chart-${{ github.ref }}
@@ -700,7 +700,7 @@ jobs:
 
   publish-release:
     needs: [verify, release, desktop, helm-chart]
-    if: github.repository_owner == 'cordy-ai'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -775,56 +775,3 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
-
-      - name: Update stable Homebrew formula
-        if: needs.verify.outputs.is_stable == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          version="${TAG_NAME#v}"
-          formula="$(mktemp)"
-          cat > "$formula" <<EOF
-          class Cordy < Formula
-            desc "Cordy CLI — local agent runtime and management tool for the Cordy platform"
-            homepage "https://github.com/cordy-ai/cordy"
-            version "$version"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-arm64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-arm64.tar.gz" | cut -d' ' -f1)"
-              else
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-amd64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-amd64.tar.gz" | cut -d' ' -f1)"
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-arm64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-arm64.tar.gz" | cut -d' ' -f1)"
-              else
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-amd64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-amd64.tar.gz" | cut -d' ' -f1)"
-              end
-            end
-
-            def install
-              bin.install "cordy"
-            end
-
-            test do
-              system "#{bin}/cordy", "version"
-            end
-          end
-          EOF
-          content="$(base64 -w0 "$formula")"
-          current_sha="$(gh api repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb --jq .sha)"
-          gh api --method PUT repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb \
-            -f message="Update cordy to $TAG_NAME" \
-            -f content="$content" \
-            -f sha="$current_sha" \
-            -f branch=main
-          rm -f "$formula"

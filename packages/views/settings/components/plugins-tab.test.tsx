@@ -61,7 +61,7 @@ const INSTALLATION = {
     { key: "repo", type: "string", label: "Repo", required: true, options: [] },
     { key: "token", type: "secret", label: "Token", required: true, options: [] },
   ],
-  config: { repo: "cordy-ai/cordy" },
+  config: { repo: "alexj11324/Cordy" },
   configured_secrets: ["token"],
   surfaces: [{ key: "hello", type: "issue_panel", name: "Hello", entry: "ui/main.js", platforms: [] }],
   hooks: [],
@@ -127,7 +127,7 @@ describe("PluginsTab", () => {
     const user = userEvent.setup();
     render(<PluginsTab />, { wrapper: Wrapper });
 
-    const repo = screen.getByDisplayValue("cordy-ai/cordy");
+    const repo = screen.getByDisplayValue("alexj11324/Cordy");
     expect(repo).toBeInTheDocument();
 
     const secret = screen.getByPlaceholderText("Saved — enter a new value to replace it");
@@ -139,7 +139,7 @@ describe("PluginsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
       installationId: "installation-1",
-      values: { repo: "cordy-ai/cordy" },
+      values: { repo: "alexj11324/Cordy" },
     }));
 
     mockConfigure.mockClear();
@@ -147,7 +147,7 @@ describe("PluginsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
       installationId: "installation-1",
-      values: { repo: "cordy-ai/cordy", token: "new-token" },
+      values: { repo: "alexj11324/Cordy", token: "new-token" },
     }));
   });
 

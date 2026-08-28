@@ -119,7 +119,7 @@ fn update_homebrew_warning_continues_without_latest_details() {
         resolved_version: None,
         already_current: false,
         latest_query_failed: true,
-        message: "Homebrew upgraded cordy-ai/tap/cordy".into(),
+        message: "Homebrew upgraded alexj11324/tap/cordy".into(),
     });
     assert!(output
         .stderr

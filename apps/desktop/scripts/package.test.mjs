@@ -442,7 +442,7 @@ describe("envWithLocalBins", () => {
 });
 
 describe("electron-builder.yml packaging config", () => {
-  // Regression guard for github.com/cordy-ai/cordy/issues/5595. The
+  // Regression guard for github.com/alexj11324/Cordy/issues/5595. The
   // multi-arch release build writes each target's output to
   // dist/<platform>-<arch> in the same apps/desktop dir; electron-builder
   // only auto-excludes the *current* target's output dir, so without an

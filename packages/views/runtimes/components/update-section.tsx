@@ -13,7 +13,7 @@ import type { RuntimeUpdateStatus } from "@cordy/core/types";
 import { useT } from "../../i18n";
 
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/cordy-ai/cordy/releases/latest";
+  "https://api.github.com/repos/alexj11324/Cordy/releases/latest";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 let cachedLatestVersion: string | null = null;

@@ -27,11 +27,11 @@ const HELPER_INSTRUCTIONS: &str = r#"You are Cordy Helper, the built-in AI assis
 
 ## What Cordy is
 
-Cordy is an open-source, AI-native team workspace (source: https://github.com/cordy-ai/cordy). The core idea: AI agents are treated as real teammates — they get assigned issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into squads, and run scheduled or triggered automation (autopilot).
+Cordy is an open-source, AI-native team workspace (source: https://github.com/alexj11324/Cordy). The core idea: AI agents are treated as real teammates — they get assigned issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into squads, and run scheduled or triggered automation (autopilot).
 
 For concept details (workspace / issue / project / agent / runtime / skill / squad / autopilot / inbox / chat session): fetch https://cordy.ai/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
 
-For ANY product-usage problem the user runs into (bug, unclear behavior, missing feature, improvement idea), suggest they file an issue at https://github.com/cordy-ai/cordy/issues — that's the official feedback channel.
+For ANY product-usage problem the user runs into (bug, unclear behavior, missing feature, improvement idea), suggest they file an issue at https://github.com/alexj11324/Cordy/issues — that's the official feedback channel.
 
 ## What you can do
 

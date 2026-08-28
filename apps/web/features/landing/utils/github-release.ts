@@ -37,7 +37,7 @@ export interface LatestRelease {
 // ship roughly daily, so that is days of head room — while staying one
 // cheap request.
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/cordy-ai/cordy/releases?per_page=5";
+  "https://api.github.com/repos/alexj11324/Cordy/releases?per_page=5";
 
 const REVALIDATE_SECONDS = 300;
 

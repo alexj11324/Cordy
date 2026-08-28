@@ -53,7 +53,7 @@ services:
       retries: 5
 
   backend:
-    image: ${CORDY_BACKEND_IMAGE:-ghcr.io/cordy-ai/cordy-backend}:${CORDY_IMAGE_TAG:-latest}
+    image: ${CORDY_BACKEND_IMAGE:-ghcr.io/alexj11324/cordy-backend}:${CORDY_IMAGE_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -197,7 +197,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${CORDY_WEB_IMAGE:-ghcr.io/cordy-ai/cordy-web}:${CORDY_IMAGE_TAG:-latest}
+    image: ${CORDY_WEB_IMAGE:-ghcr.io/alexj11324/cordy-web}:${CORDY_IMAGE_TAG:-latest}
     depends_on:
       - backend
     ports:

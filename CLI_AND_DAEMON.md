@@ -4,16 +4,16 @@ The `cordy` CLI connects your local machine to Cordy. It handles authentication,
 
 ## Installation
 
-### Homebrew (macOS/Linux)
+### Install script (macOS/Linux)
 
 ```bash
-brew install cordy-ai/tap/cordy
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/cordy-ai/cordy.git
+git clone https://github.com/alexj11324/Cordy.git
 cd cordy
 make build
 cp bin/cordy /usr/local/bin/cordy
@@ -22,16 +22,10 @@ cp bin/cordy /usr/local/bin/cordy
 ### Update
 
 ```bash
-brew upgrade cordy-ai/tap/cordy
-```
-
-For install script or manual installs, use:
-
-```bash
 cordy update
 ```
 
-`cordy update` auto-detects your installation method and upgrades accordingly.
+`cordy update` downloads and verifies the latest GitHub Release.
 
 ## Quick Start
 

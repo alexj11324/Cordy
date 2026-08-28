@@ -92,7 +92,7 @@ describe("RichContent link routing", () => {
   });
 
   it("still hands a genuinely external link to the browser", () => {
-    const external = "https://github.com/cordy-ai/cordy/pull/1";
+    const external = "https://github.com/alexj11324/Cordy/pull/1";
     renderContent(`[#1](${external})`);
 
     screen.getByText("#1").click();

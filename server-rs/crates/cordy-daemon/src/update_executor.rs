@@ -23,7 +23,6 @@ const GITHUB_USER_AGENT: &str = concat!("cordy-daemon/", env!("CARGO_PKG_VERSION
 const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
 pub const DEFAULT_UPDATE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const DOWNLOAD_TIMEOUT: Duration = DEFAULT_UPDATE_DOWNLOAD_TIMEOUT;
-const BREW_PREFIX_TIMEOUT: Duration = Duration::from_secs(10);
 const BREW_UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const BREW_DIAGNOSTIC_BYTES: usize = 2 * 1024;
 const MAX_ARCHIVE_BYTES: usize = 256 * 1024 * 1024;
@@ -185,8 +184,9 @@ impl UpdateExecutor {
         }
     }
 
-    /// Resolves the running inode and detects a Homebrew install. Detection is
-    /// bounded; a broken `brew` cannot block daemon startup indefinitely.
+    /// Resolves the running inode and recognizes Homebrew only when the
+    /// canonical binary is inside a known Cellar. A direct install under
+    /// `/usr/local/bin` must keep using GitHub Releases for updates.
     pub async fn detect() -> Result<Self> {
         let executable = resolve_executable()?;
         cleanup_stale_update_artifacts(&executable);
@@ -196,11 +196,7 @@ impl UpdateExecutor {
                 format!("resolve executable symlink: {err}"),
             )
         })?;
-        let brew_prefix = detect_brew_prefix().await;
-        let known_prefix = known_brew_prefix(&resolved);
-        let install_method = brew_prefix
-            .filter(|prefix| resolved.starts_with(prefix))
-            .or(known_prefix)
+        let install_method = known_brew_prefix(&resolved)
             .map(|prefix| InstallMethod::Homebrew {
                 stable_target: prefix.join("bin").join(binary_name()),
             })
@@ -322,7 +318,7 @@ impl UpdateExecutor {
     }
 
     async fn fetch_latest_release_tag(&self) -> Result<String> {
-        let endpoint = "https://api.github.com/repos/cordy-ai/cordy/releases/latest";
+        let endpoint = "https://api.github.com/repos/alexj11324/Cordy/releases/latest";
         let response = self
             .metadata_client
             .get(endpoint)
@@ -350,7 +346,7 @@ impl UpdateExecutor {
     async fn update_homebrew(&self) -> Result<String> {
         let mut command = tokio::process::Command::new("brew");
         command
-            .args(["upgrade", "cordy-ai/tap/cordy"])
+            .args(["upgrade", "alexj11324/tap/cordy"])
             .kill_on_drop(true);
         let result = tokio::time::timeout(BREW_UPDATE_TIMEOUT, command.output())
             .await
@@ -376,7 +372,7 @@ impl UpdateExecutor {
                 ),
             ));
         }
-        Ok("Homebrew upgraded cordy-ai/tap/cordy".to_string())
+        Ok("Homebrew upgraded alexj11324/tap/cordy".to_string())
     }
 
     async fn update_direct_with_timeout(
@@ -385,7 +381,7 @@ impl UpdateExecutor {
         download_timeout: Duration,
     ) -> Result<String> {
         let tag = normalize_release_tag(target_version);
-        let endpoint = format!("https://api.github.com/repos/cordy-ai/cordy/releases/tags/{tag}");
+        let endpoint = format!("https://api.github.com/repos/alexj11324/Cordy/releases/tags/{tag}");
         let response = self
             .metadata_client
             .get(endpoint)
@@ -1023,21 +1019,6 @@ fn find_on_path(name: &OsStr) -> Option<PathBuf> {
     })
 }
 
-async fn detect_brew_prefix() -> Option<PathBuf> {
-    let mut command = tokio::process::Command::new("brew");
-    command.arg("--prefix").kill_on_drop(true);
-    let output = tokio::time::timeout(BREW_PREFIX_TIMEOUT, command.output())
-        .await
-        .ok()?
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let value = String::from_utf8(output.stdout).ok()?;
-    let value = value.trim();
-    (!value.is_empty()).then(|| PathBuf::from(value))
-}
-
 fn known_brew_prefix(path: &Path) -> Option<PathBuf> {
     KNOWN_BREW_PREFIXES.iter().find_map(|prefix| {
         let prefix = Path::new(prefix);
@@ -1179,6 +1160,7 @@ mod tests {
             known_brew_prefix(Path::new("/srv/cordy/Cellar/cordy")),
             None
         );
+        assert_eq!(known_brew_prefix(Path::new("/usr/local/bin/cordy")), None);
     }
 
     #[test]

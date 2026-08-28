@@ -3,13 +3,13 @@
 # -----------------------------------------------------------------------------
 images:
   backend:
-    repository: ghcr.io/cordy-ai/cordy-backend
+    repository: ghcr.io/alexj11324/cordy-backend
     # Empty defaults to Chart.appVersion. Released OCI charts set appVersion to
     # the Git tag (for example v0.3.5), so installs use matching app images.
     tag: ""
     pullPolicy: IfNotPresent
   frontend:
-    repository: ghcr.io/cordy-ai/cordy-web
+    repository: ghcr.io/alexj11324/cordy-web
     # Empty defaults to Chart.appVersion. Set explicitly to override.
     tag: ""
     pullPolicy: IfNotPresent
@@ -81,7 +81,7 @@ backend:
   # Concurrent backend pods are now safe to start: cordy-migrate uses a
   # Postgres session-level advisory lock to serialize the startup
   # `migrate up` run, so late-arriving pods queue and then no-op (see
-  # GitHub cordy-ai/cordy#3647). 1 is still the recommended default
+  # GitHub alexj11324/Cordy#3647). 1 is still the recommended default
   # because the chart Deployment uses strategy: Recreate and there is no
   # leader-elected workload split — increase this only if you actually
   # need horizontal scale of the API/WS server.

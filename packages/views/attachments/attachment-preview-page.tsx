@@ -39,7 +39,7 @@ export function AttachmentPreviewPage({
 
   const text = query.data?.text;
 
-  // Scroll-position restoration across desktop tab switches (cordy-ai#6405).
+  // Scroll-position restoration across desktop tab switches (alexj11324#6405).
   // No-op on web (no desktop adapter). The iframe is keyed on contentKey so a
   // content change (re-upload) structurally remounts a fresh document; the
   // hook reports y=0 with the new key until that document scrolls, and

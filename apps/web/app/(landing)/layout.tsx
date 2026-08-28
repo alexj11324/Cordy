@@ -21,7 +21,7 @@ const jsonLd = {
       "@type": "Organization",
       name: "Cordy",
       url: "https://www.cordy.ai",
-      sameAs: ["https://github.com/cordy-ai/cordy"],
+      sameAs: ["https://github.com/alexj11324/Cordy"],
     },
     {
       "@type": "SoftwareApplication",

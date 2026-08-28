@@ -8,7 +8,7 @@ version: 0.1.0
 appVersion: "latest"
 home: https://cordy.ai
 sources:
-  - https://github.com/cordy-ai/cordy
+  - https://github.com/alexj11324/Cordy
 keywords:
   - cordy
   - issue-tracker

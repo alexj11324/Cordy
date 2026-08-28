@@ -5,14 +5,14 @@ This document is designed for AI agents to execute. Follow these steps exactly t
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- Homebrew installed (for CLI)
+- `curl` installed (for CLI download)
 - At least one AI agent CLI on PATH: `claude` or `codex`
 
 ## Install
 
 ```bash
 # Install CLI + provision self-host server
-curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 
 # Configure CLI for localhost, authenticate, and start daemon
 cordy setup self-host
@@ -28,10 +28,10 @@ Wait for the server output `✓ Cordy server is running and CLI is ready!` befor
 ## Alternative: Manual Setup
 
 ```bash
-git clone https://github.com/cordy-ai/cordy.git
+git clone https://github.com/alexj11324/Cordy.git
 cd cordy
 make selfhost
-brew install cordy-ai/tap/cordy
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 cordy setup self-host
 ```
 

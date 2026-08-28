@@ -7,7 +7,7 @@
 Give this instruction to your AI agent:
 
 ```
-Fetch https://github.com/cordy-ai/cordy/blob/main/CLI_INSTALL.md and follow the instructions to install Cordy CLI, log in, and start the daemon on this machine.
+Fetch https://github.com/alexj11324/Cordy/blob/main/CLI_INSTALL.md and follow the instructions to install Cordy CLI, log in, and start the daemon on this machine.
 ```
 
 ---
@@ -27,39 +27,11 @@ cordy version
 
 ## Step 2: Install the Cordy CLI
 
-> **Windows users:** Skip to [Option C: Windows (PowerShell)](#option-c-windows-powershell) below.
+> **Windows users:** Skip to [Option B: Windows (PowerShell)](#option-b-windows-powershell) below.
 
-### Option A: Homebrew (preferred — macOS/Linux)
+### Option A: Download from GitHub Releases (macOS/Linux)
 
-Check if Homebrew is available:
-
-```bash
-which brew
-```
-
-If `brew` is found, install via Homebrew:
-
-```bash
-brew install cordy-ai/tap/cordy
-```
-
-Then verify:
-
-```bash
-cordy version
-```
-
-If the version prints successfully, skip to **Step 3**.
-
-To upgrade later, run:
-
-```bash
-brew upgrade cordy-ai/tap/cordy
-```
-
-### Option B: Download from GitHub Releases (macOS/Linux, no Homebrew)
-
-If Homebrew is not available, download the binary directly.
+Download the binary directly from the canonical repository.
 
 Detect OS and architecture, then download the correct archive:
 
@@ -73,11 +45,11 @@ if [ "$ARCH" = "x86_64" ]; then
 fi
 
 # Get the latest release tag from GitHub
-LATEST=$(curl -sI https://github.com/cordy-ai/cordy/releases/latest | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
+LATEST=$(curl -sI https://github.com/alexj11324/Cordy/releases/latest | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
 
 # Download and extract
 VERSION="${LATEST#v}"
-curl -sL "https://github.com/cordy-ai/cordy/releases/download/${LATEST}/cordy-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/cordy.tar.gz
+curl -sL "https://github.com/alexj11324/Cordy/releases/download/${LATEST}/cordy-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/cordy.tar.gz
 tar -xzf /tmp/cordy.tar.gz -C /tmp cordy
 sudo mv /tmp/cordy /usr/local/bin/cordy
 rm /tmp/cordy.tar.gz
@@ -94,12 +66,12 @@ cordy version
 - On Linux, you may need `chmod +x /usr/local/bin/cordy`.
 - If `sudo` is not available, install to a user-writable directory: `mv /tmp/cordy ~/.local/bin/cordy` and ensure `~/.local/bin` is in `$PATH`.
 
-### Option C: Windows (PowerShell)
+### Option B: Windows (PowerShell)
 
 Run in PowerShell (no admin required):
 
 ```powershell
-irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 This downloads the latest Windows binary from GitHub Releases, installs it to `%USERPROFILE%\.cordy\bin\`, and adds it to your user PATH.
@@ -112,7 +84,6 @@ cordy version
 
 **If this fails:**
 - Restart your terminal so the updated PATH takes effect.
-- If you use Scoop, the installer will use it automatically: `scoop bucket add cordy https://github.com/cordy-ai/scoop-bucket.git && scoop install cordy`
 - If your execution policy blocks the script: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` then re-run.
 
 ---

@@ -4,8 +4,8 @@
 
 Release from a reviewed commit on `main` by creating and pushing a new semantic
 version tag such as `v0.18.4`. The Release workflow intentionally has no manual
-trigger: a tag push is the only event that can publish binaries, Homebrew
-formulae, and container images.
+trigger: a tag push is the only event that can publish binaries, desktop
+installers, container images, and the Helm chart.
 
 The verification job applies migrations with `cordy-migrate`, runs every Rust
 workspace target, builds the server, CLI, migration runner, and all three
