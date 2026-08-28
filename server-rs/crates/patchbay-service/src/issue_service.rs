@@ -1105,20 +1105,14 @@ mod tests {
             .expect("connect contract PostgreSQL")
     }
 
-    async fn tagged_pool(application_name: &str) -> PgPool {
+    async fn single_connection_pool() -> PgPool {
         let url = std::env::var("DATABASE_URL")
             .expect("DATABASE_URL is required for issue creation transaction contracts");
-        let pool = PgPoolOptions::new()
+        PgPoolOptions::new()
             .max_connections(1)
             .connect(&url)
             .await
-            .expect("connect tagged contract PostgreSQL");
-        sqlx::query("SELECT set_config('application_name', $1, false)")
-            .bind(application_name)
-            .execute(&pool)
-            .await
-            .expect("tag contract PostgreSQL connection");
-        pool
+            .expect("connect single-connection contract PostgreSQL")
     }
 
     async fn workspace(pool: &PgPool) -> Uuid {
@@ -1215,21 +1209,20 @@ mod tests {
         .expect("production create did not acquire the duplicate lock");
     }
 
-    async fn wait_for_tagged_advisory_wait(pool: &PgPool, application_name: &str) {
-        // A fresh tagged pool can spend a few seconds waiting for a CI runner
-        // to schedule its first connection. Inspect pg_locks directly instead
-        // of coupling the contract to pg_stat_activity's version-sensitive
-        // wait-event label; the ungranted advisory lock is the invariant this
-        // test needs before releasing the blocker.
+    async fn wait_for_advisory_wait(pool: &PgPool, backend_pid: i32) {
+        // A fresh single-connection pool can spend a few seconds waiting for a
+        // CI runner to schedule its first connection. Inspect pg_locks directly
+        // instead of coupling the contract to pg_stat_activity session labels
+        // or version-sensitive wait-event text; the ungranted advisory lock on
+        // this exact backend is the invariant needed before releasing the
+        // blocker.
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
                 let waiting: bool = sqlx::query_scalar(
-                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity a \
-                     JOIN pg_locks l ON l.pid = a.pid \
-                     WHERE a.application_name = $1 \
-                       AND l.locktype = 'advisory' AND NOT l.granted)",
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks \
+                     WHERE pid = $1 AND locktype = 'advisory' AND NOT granted)",
                 )
-                .bind(application_name)
+                .bind(backend_pid)
                 .fetch_one(pool)
                 .await
                 .expect("observe duplicate advisory lock wait");
@@ -1488,8 +1481,11 @@ mod tests {
             create(&first_service, first_params).await
         });
         wait_for_duplicate_lock(&pool, workspace_id, "Concurrent identity").await;
-        let waiter_name = format!("patchbay-duplicate-contract-{}", Uuid::now_v7());
-        let waiter_pool = tagged_pool(&waiter_name).await;
+        let waiter_pool = single_connection_pool().await;
+        let waiter_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&waiter_pool)
+            .await
+            .expect("read waiter PostgreSQL backend pid");
         let second_service = service(&waiter_pool);
         let second = tokio::spawn(async move {
             create(
@@ -1498,7 +1494,7 @@ mod tests {
             )
             .await
         });
-        wait_for_tagged_advisory_wait(&pool, &waiter_name).await;
+        wait_for_advisory_wait(&pool, waiter_pid).await;
         blocker.commit().await.expect("release workspace counter");
 
         let results = [
