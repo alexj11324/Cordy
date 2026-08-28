@@ -12,10 +12,11 @@ Cordy 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `ma
 - Node.js 22；
 - pnpm 10.28.2；
 - Rust stable 与 Cargo；
+- Go 1.26.6，仅由 legacy `make check` compatibility gate 临时需要，不是生产 backend 依赖；
 - Docker Engine 或 Docker Desktop；
 - Git 和 Make。
 
-版本和依赖以根目录 `package.json`、`server-rs/Cargo.toml`、`Cargo.lock` 和 CI workflow 为准。
+版本和依赖以根目录 `package.json`、`server-rs/Cargo.toml`、`server-rs/Cargo.lock` 和 CI workflow 为准。
 
 ## 第一次启动
 

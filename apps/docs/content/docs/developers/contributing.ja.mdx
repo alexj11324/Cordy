@@ -12,10 +12,11 @@ Cordy は Rust バックエンドと pnpm monorepo で構成されています�
 - Node.js 22
 - pnpm 10.28.2
 - Rust stable と Cargo
+- Go 1.26.6（本番 backend の依存ではなく、legacy `make check` compatibility gate のためだけに一時的に必要）
 - Docker Engine または Docker Desktop
 - Git と Make
 
-バージョンと依存関係については、ルートの `package.json`、`server-rs/Cargo.toml`、`Cargo.lock`、CI workflow を信頼できる情報源としてください。
+バージョンと依存関係については、ルートの `package.json`、`server-rs/Cargo.toml`、`server-rs/Cargo.lock`、CI workflow を信頼できる情報源としてください。
 
 ## 初回起動
 

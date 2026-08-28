@@ -12,10 +12,11 @@ Cordy is a Rust backend and pnpm monorepo. The simplest way to start locally is 
 - Node.js 22
 - pnpm 10.28.2
 - Rust stable with Cargo
+- Go 1.26.6, temporarily required only by the legacy `make check` compatibility gate, not by the production backend
 - Docker Engine or Docker Desktop
 - Git and Make
 
-Treat the root `package.json`, `server-rs/Cargo.toml`, `Cargo.lock`, and CI workflows as the source of truth for versions and dependencies.
+Treat the root `package.json`, `server-rs/Cargo.toml`, `server-rs/Cargo.lock`, and CI workflows as the source of truth for versions and dependencies.
 
 ## First start
 
