@@ -642,15 +642,7 @@ async fn validate_assignee(
                     "squad leader is not ready for autopilot execution",
                 ));
             }
-            if !crate::task::can_access_agent(
-                state,
-                context,
-                &leader,
-                "member",
-                context.member.user_id,
-            )
-            .await
-            {
+            if !crate::task::can_member_invoke_agent(state, &leader, context.member.user_id).await {
                 return Err(error_response(
                     StatusCode::FORBIDDEN,
                     "cannot assign autopilot to squad with private leader",

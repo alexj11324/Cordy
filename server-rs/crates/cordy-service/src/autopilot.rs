@@ -859,9 +859,6 @@ impl AutopilotService {
         issue: &cordy_db::models::Issue,
         leader_id: Uuid,
     ) {
-        let Some(client) = self.task_svc.analytics.as_deref() else {
-            return;
-        };
         let ev = analytics::issue_created(
             &autopilot_actor_id(ap),
             &ap.workspace_id.to_string(),
@@ -873,7 +870,7 @@ impl AutopilotService {
             analytics::PLATFORM_SERVER,
         );
         cordy_metrics::business_events::record_event(
-            Some(client),
+            self.task_svc.analytics.as_deref(),
             self.task_svc.metrics.as_deref(),
             &ev,
         );
@@ -885,9 +882,6 @@ impl AutopilotService {
         run: &AutopilotRun,
         trigger_source: &str,
     ) {
-        let Some(client) = self.task_svc.analytics.as_deref() else {
-            return;
-        };
         // triggerSource doubles as cadence proxy (metrics/labels_pr3 note).
         let assignee = self.assignee_analytics(ap).await;
         let ev = analytics::autopilot_run_started(
@@ -900,16 +894,13 @@ impl AutopilotService {
             trigger_source,
         );
         cordy_metrics::business_events::record_event(
-            Some(client),
+            self.task_svc.analytics.as_deref(),
             self.task_svc.metrics.as_deref(),
             &ev,
         );
     }
 
     async fn capture_autopilot_run_completed(&self, ap: &Autopilot, run: &AutopilotRun) {
-        let Some(client) = self.task_svc.analytics.as_deref() else {
-            return;
-        };
         let assignee = self.assignee_analytics(ap).await;
         let ev = analytics::autopilot_run_completed(
             &autopilot_actor_id(ap),
@@ -922,7 +913,7 @@ impl AutopilotService {
             autopilot_run_duration_ms(run),
         );
         cordy_metrics::business_events::record_event(
-            Some(client),
+            self.task_svc.analytics.as_deref(),
             self.task_svc.metrics.as_deref(),
             &ev,
         );
@@ -935,9 +926,6 @@ impl AutopilotService {
         trigger_source: &str,
         reason: &str,
     ) {
-        let Some(client) = self.task_svc.analytics.as_deref() else {
-            return;
-        };
         let reason = if reason.is_empty() { "unknown" } else { reason };
         let assignee = self.assignee_analytics(ap).await;
         let ev = analytics::autopilot_run_failed(
@@ -954,7 +942,7 @@ impl AutopilotService {
             autopilot_run_duration_ms(run),
         );
         cordy_metrics::business_events::record_event(
-            Some(client),
+            self.task_svc.analytics.as_deref(),
             self.task_svc.metrics.as_deref(),
             &ev,
         );

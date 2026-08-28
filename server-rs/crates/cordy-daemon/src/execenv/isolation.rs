@@ -6,7 +6,8 @@
 //! - preparationWaitDelay          → PREPARATION_WAIT_DELAY
 //! - preparationRequest            → PreparationRequest
 //! - preparationPrepareParams /
-//!   preparationReuseParams        → PreparationWireParams / ReuseWireParams
+//!   preparationReuseParams        → (folded: the gateway token is carried
+//!   plainly on the wire structs; see note)
 //! - preparationResponse           → PreparationResponse
 //! - preparationErrorKindOpenclawCLITimeout → PREPARATION_ERROR_KIND_OPENCLAW_CLI_TIMEOUT
 //! - preparationErrorKind          → preparation_error_kind
@@ -28,8 +29,8 @@
 //! - WaitDelay semantics: cancellation terminates the platform process-tree
 //!   boundary before awaiting the child and pipe readers.
 //!
-//! NOTE: the parent-side entry points remain to be wired into the task
-//! launcher; the helper itself now executes both Prepare and Reuse.
+//! NOTE: the parent-side entry points are wired into the task launcher; the
+//! helper executes both Prepare and Reuse against the real implementations.
 #![allow(dead_code)]
 
 use std::process::Stdio;
@@ -447,9 +448,9 @@ pub(crate) fn decode_preparation_request<R: std::io::Read>(
 /// parent can preserve them; malformed protocol input/output is returned as a
 /// process error because the parent cannot safely interpret the result.
 ///
-/// The prepare/reuse bodies are wired to the real implementations. A missing
-/// reused environment is represented as an empty response, matching Go's
-/// `Reuse` nil result so the caller can fall back to a fresh prepare.
+/// Both actions call the real execenv implementations. A reuse cache miss is
+/// encoded as a successful response without an environment so the parent can
+/// fall back to a fresh prepare, matching the Go contract.
 pub async fn run_preparation_helper<I, O>(input: I, output: &mut O) -> anyhow::Result<()>
 where
     I: std::io::Read,
@@ -494,7 +495,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::execenv::OpenclawGatewayPin;
+    use super::super::execenv::{OpenclawGatewayPin, ReuseParams};
     use super::*;
 
     fn sample_prepare_params() -> PrepareParams {
@@ -503,6 +504,21 @@ mod tests {
             workspace_id: "ws1".into(),
             task_id: "01a01ec0-e69d-7000-8000-0123456789ab".into(),
             ..Default::default()
+        }
+    }
+
+    fn sample_reuse_params(work_dir: impl Into<String>) -> ReuseParams {
+        ReuseParams {
+            workspaces_root: "/tmp/ws".into(),
+            work_dir: work_dir.into(),
+            provider: "codex".into(),
+            openclaw_gateway: OpenclawGatewayPin {
+                host: "gw".into(),
+                port: 7420,
+                token: "reuse-secret".into(),
+                tls: true,
+            },
+            ..ReuseParams::default()
         }
     }
 
@@ -545,6 +561,78 @@ mod tests {
             gw.token, "sekrit",
             "the trusted boundary carries the real token"
         );
+    }
+
+    #[test]
+    fn reuse_request_round_trip_preserves_real_params() {
+        let req = PreparationRequest {
+            action: PREPARATION_ACTION_REUSE.into(),
+            prepare: None,
+            reuse: Some(ReuseWireParams {
+                params: sample_reuse_params("/tmp/ws/task/worktree"),
+            }),
+        };
+
+        let bytes = serde_json::to_vec(&req).unwrap();
+        let back: PreparationRequest = serde_json::from_slice(&bytes).unwrap();
+        let params = back.reuse.unwrap().params;
+        assert_eq!(params.work_dir, "/tmp/ws/task/worktree");
+        assert_eq!(params.provider, "codex");
+        assert_eq!(params.openclaw_gateway.token, "reuse-secret");
+    }
+
+    #[tokio::test]
+    async fn reuse_helper_preserves_cache_miss_as_successful_none() {
+        let missing = tempfile::tempdir()
+            .unwrap()
+            .path()
+            .join("missing-workdir")
+            .to_string_lossy()
+            .into_owned();
+        let request = PreparationRequest {
+            action: PREPARATION_ACTION_REUSE.into(),
+            prepare: None,
+            reuse: Some(ReuseWireParams {
+                params: sample_reuse_params(missing),
+            }),
+        };
+        let input = serde_json::to_vec(&request).unwrap();
+        let mut output = Vec::new();
+
+        run_preparation_helper(input.as_slice(), &mut output)
+            .await
+            .unwrap();
+
+        let response: PreparationResponse = serde_json::from_slice(&output).unwrap();
+        assert!(response.environment.is_none());
+        assert!(response.error.is_empty());
+        assert!(response.error_kind.is_empty());
+    }
+
+    #[tokio::test]
+    async fn reuse_helper_returns_the_real_reused_environment() {
+        let root = tempfile::tempdir().unwrap();
+        let work_dir = root.path().join("task-root").join("worktree");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let mut params = sample_reuse_params(work_dir.to_string_lossy());
+        params.workspaces_root = root.path().to_string_lossy().into_owned();
+        params.provider = "pi".into();
+        let request = PreparationRequest {
+            action: PREPARATION_ACTION_REUSE.into(),
+            prepare: None,
+            reuse: Some(ReuseWireParams { params }),
+        };
+        let input = serde_json::to_vec(&request).unwrap();
+        let mut output = Vec::new();
+
+        run_preparation_helper(input.as_slice(), &mut output)
+            .await
+            .unwrap();
+
+        let response: PreparationResponse = serde_json::from_slice(&output).unwrap();
+        let environment = response.environment.unwrap();
+        assert_eq!(environment.work_dir, work_dir.to_string_lossy().as_ref());
+        assert!(response.error.is_empty());
     }
 
     // Port of TestPreparationErrorKindRoundTrip.

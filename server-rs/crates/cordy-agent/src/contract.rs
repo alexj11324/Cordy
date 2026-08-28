@@ -35,7 +35,7 @@ pub trait Backend: Send + Sync {
 
 /// Configuration for one execution. Empty strings mean that the runtime keeps
 /// its own default, matching the Go contract.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ExecOptions {
     pub cwd: String,
     pub model: String,
@@ -64,6 +64,42 @@ pub struct ExecOptions {
     /// token is inert, so callers that do not need cancellation retain the Go
     /// contract's background-context behaviour.
     pub cancellation: CancellationToken,
+}
+
+impl std::fmt::Debug for ExecOptions {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecOptions")
+            .field("cwd", &self.cwd)
+            .field("model", &self.model)
+            .field("thread_name", &self.thread_name)
+            .field("max_turns", &self.max_turns)
+            .field("timeout", &self.timeout)
+            .field(
+                "semantic_inactivity_timeout",
+                &self.semantic_inactivity_timeout,
+            )
+            .field(
+                "first_turn_no_progress_timeout",
+                &self.first_turn_no_progress_timeout,
+            )
+            .field("idle_watchdog_timeout", &self.idle_watchdog_timeout)
+            .field("handshake_timeout", &self.handshake_timeout)
+            .field("has_resume_session", &!self.resume_session_id.is_empty())
+            .field("resume_expected", &self.resume_expected)
+            .field("extra_arg_count", &self.extra_args.len())
+            .field("custom_arg_count", &self.custom_args.len())
+            .field("has_mcp_config", &self.mcp_config.is_some())
+            .field("thinking_level", &self.thinking_level)
+            .field("service_tier", &self.service_tier)
+            .field("openclaw_mode", &self.openclaw_mode)
+            .field("has_system_prompt", &!self.system_prompt.is_empty())
+            .field(
+                "has_resume_continuity_notice",
+                &!self.resume_continuity_notice.is_empty(),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 /// A running provider session.

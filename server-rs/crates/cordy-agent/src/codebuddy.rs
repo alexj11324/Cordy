@@ -19,6 +19,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::mcp::{managed_object, write_managed_temp};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -61,6 +62,10 @@ impl CodebuddyBackend {
 
     pub(crate) fn config(&self) -> &CodebuddyConfig {
         &self.config
+    }
+
+    pub(crate) fn blocked_launch_args() -> &'static BTreeMap<&'static str, BlockedArgMode> {
+        &BLOCKED_ARGS
     }
 }
 
@@ -135,8 +140,8 @@ impl Backend for CodebuddyBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -376,14 +381,14 @@ async fn read_stream(
     }
 }
 
+type CodebuddyJoinResults = (
+    io::Result<ExitStatus>,
+    Result<CodebuddyStreamState, JoinError>,
+    Result<io::Result<()>, JoinError>,
+);
+
 enum RunOutcome {
-    Completed(
-        (
-            io::Result<ExitStatus>,
-            Result<CodebuddyStreamState, JoinError>,
-            Result<io::Result<()>, JoinError>,
-        ),
-    ),
+    Completed(CodebuddyJoinResults),
     Cancelled,
     TimedOut,
 }

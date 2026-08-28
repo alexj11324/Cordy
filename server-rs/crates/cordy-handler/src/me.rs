@@ -52,9 +52,9 @@ struct PatchOnboardingRequest {
 
 #[derive(Debug, Default, Deserialize)]
 struct JoinCloudWaitlistRequest {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_string")]
     email: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_string")]
     reason: String,
 }
 
@@ -63,19 +63,19 @@ struct QuestionnaireAnswers {
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     source: Vec<String>,
     #[serde(default)]
-    source_other: String,
+    source_other: Option<String>,
     #[serde(default)]
     source_skipped: bool,
     #[serde(default)]
-    role: String,
+    role: Option<String>,
     #[serde(default)]
-    role_other: String,
+    role_other: Option<String>,
     #[serde(default)]
     role_skipped: bool,
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     use_case: Vec<String>,
     #[serde(default)]
-    use_case_other: String,
+    use_case_other: Option<String>,
     #[serde(default)]
     use_case_skipped: bool,
     #[serde(default)]
@@ -89,7 +89,7 @@ impl QuestionnaireAnswers {
 
     fn complete(&self) -> bool {
         self.version == QUESTIONNAIRE_SCHEMA_VERSION
-            && (!self.role.is_empty() || self.role_skipped)
+            && (self.role.as_deref().is_some_and(|role| !role.is_empty()) || self.role_skipped)
             && (!self.use_case.is_empty() || self.use_case_skipped)
     }
 }
@@ -124,9 +124,6 @@ impl From<&User> for UserResponse {
             id: user.id.to_string(),
             name: user.name.clone(),
             email: user.email.clone(),
-            // Current Rust handler state has no storage signer. This is the
-            // same raw-URL branch the Go handler uses when Storage/CFSigner
-            // are nil; private URL signing lands with the storage slice.
             avatar_url: user.avatar_url.clone(),
             language: user.language.clone(),
             timezone: user.timezone.clone(),
@@ -140,13 +137,22 @@ impl From<&User> for UserResponse {
     }
 }
 
+fn user_response(state: &HandlerState, user: &User) -> UserResponse {
+    let mut response = UserResponse::from(user);
+    response.avatar_url = user
+        .avatar_url
+        .as_deref()
+        .map(|url| crate::avatar::resolve_url(state, url));
+    response
+}
+
 async fn get_me(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
     let user_id = match authenticated_user_id(&headers) {
         Some(user_id) => user_id,
         None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
     };
     match user::get_user(&state.pool, user_id).await {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(user_response(&state, &user)).into_response(),
         Ok(None) | Err(_) => error_response(StatusCode::NOT_FOUND, "user not found"),
     }
 }
@@ -181,7 +187,17 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
         }
         None => current_user.name.clone(),
     };
-    let avatar_url = request.avatar_url.map(|value| value.trim().to_string());
+    let avatar_url = match request.avatar_url {
+        Some(value) => {
+            match crate::avatar::accept_url(&state, &value, current_user.avatar_url.as_deref())
+                .await
+            {
+                Ok(value) => Some(value),
+                Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+            }
+        }
+        None => None,
+    };
     let language = match request.language {
         Some(language) => {
             let language = language.trim().to_string();
@@ -227,7 +243,7 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
     )
     .await
     {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(user_response(&state, &user)).into_response(),
         Ok(None) | Err(_) => {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update user")
         }
@@ -251,7 +267,24 @@ async fn patch_onboarding(
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
 
-    let before_user = user::get_user(&state.pool, user_id).await.ok().flatten();
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update onboarding",
+            )
+        }
+    };
+    let before_user = match user::get_user_for_update(&mut *tx, user_id).await {
+        Ok(user) => user,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update onboarding",
+            )
+        }
+    };
     let before_raw = before_user
         .as_ref()
         .map(|user| user.onboarding_questionnaire.clone())
@@ -263,18 +296,27 @@ async fn patch_onboarding(
             .as_object()
             .is_some_and(serde_json::Map::is_empty);
 
-    let updated =
-        match user::patch_user_onboarding(&state.pool, request.questionnaire.as_ref(), user_id)
-            .await
-        {
-            Ok(Some(user)) => user,
-            Ok(None) | Err(_) => {
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to update onboarding",
-                )
-            }
-        };
+    let updated = match user::patch_user_onboarding(
+        &mut *tx,
+        request.questionnaire.as_ref(),
+        user_id,
+    )
+    .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) | Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update onboarding",
+            )
+        }
+    };
+    if tx.commit().await.is_err() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to update onboarding",
+        );
+    }
 
     if first_touch
         && request
@@ -300,14 +342,23 @@ async fn patch_onboarding(
             &cordy_analytics::onboarding_questionnaire_submitted(
                 &user_id.to_string(),
                 after.source.clone(),
-                &after.role,
+                after.role.as_deref().unwrap_or_default(),
                 after.use_case.clone(),
                 after.source_skipped,
                 after.role_skipped,
                 after.use_case_skipped,
-                !after.source_other.is_empty(),
-                !after.role_other.is_empty(),
-                !after.use_case_other.is_empty(),
+                after
+                    .source_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
+                after
+                    .role_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
+                after
+                    .use_case_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
             ),
         );
     }
@@ -321,12 +372,15 @@ async fn patch_onboarding(
                 &user_id.to_string(),
                 after.source.clone(),
                 after.source_skipped,
-                !after.source_other.is_empty(),
+                after
+                    .source_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
             ),
         );
     }
 
-    Json(UserResponse::from(&updated)).into_response()
+    Json(user_response(&state, &updated)).into_response()
 }
 
 async fn complete_onboarding(
@@ -354,19 +408,19 @@ async fn complete_onboarding(
         };
     }
 
-    let before = match user::get_user(&state.pool, user_id).await {
-        Ok(Some(user)) => user,
-        Ok(None) | Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to complete onboarding",
-            )
-        }
-    };
-    let first_completion = before.onboarded_at.is_none();
-    let updated = match user::mark_user_onboarded(&state.pool, user_id).await {
-        Ok(Some(user)) => user,
-        Ok(None) | Err(_) => {
+    let (updated, first_completion) = match user::claim_first_onboarding(&state.pool, user_id).await
+    {
+        Ok(Some(user)) => (user, true),
+        Ok(None) => match user::get_user(&state.pool, user_id).await {
+            Ok(Some(user)) => (user, false),
+            Ok(None) | Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to complete onboarding",
+                )
+            }
+        },
+        Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to complete onboarding",
@@ -399,7 +453,7 @@ async fn complete_onboarding(
         );
     }
 
-    Json(UserResponse::from(&updated)).into_response()
+    Json(user_response(&state, &updated)).into_response()
 }
 
 async fn join_cloud_waitlist(
@@ -445,7 +499,7 @@ async fn join_cloud_waitlist(
         &state,
         &cordy_analytics::cloud_waitlist_joined(&user_id.to_string(), reason.is_some()),
     );
-    Json(UserResponse::from(&updated)).into_response()
+    Json(user_response(&state, &updated)).into_response()
 }
 
 fn valid_email_address(value: &str) -> bool {
@@ -498,9 +552,18 @@ fn first_unquoted(value: &str, needle: char) -> Option<usize> {
 }
 
 fn record_metric_event(state: &HandlerState, event: &cordy_analytics::Event) {
-    if let Some(metrics) = state.business_metrics.as_deref() {
-        metrics.inc_for_event(event);
-    }
+    cordy_metrics::business_events::record_event(
+        Some(state.analytics.as_ref()),
+        state.business_metrics.as_deref(),
+        event,
+    );
+}
+
+fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 fn deserialize_string_or_slice<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -581,6 +644,79 @@ mod tests {
         assert_eq!(value["onboarding_questionnaire"], serde_json::json!({}));
         assert_eq!(value["created_at"], "2026-08-23T12:34:56Z");
         assert_eq!(value["updated_at"], "2026-08-23T12:35:00Z");
+    }
+
+    struct PrivateStorage;
+
+    #[async_trait::async_trait]
+    impl crate::attachment_storage::AttachmentStorage for PrivateStorage {
+        async fn upload(
+            &self,
+            _key: &str,
+            _body: Vec<u8>,
+            _content_type: &str,
+            _filename: &str,
+        ) -> anyhow::Result<String> {
+            unreachable!()
+        }
+
+        async fn get(
+            &self,
+            _key: &str,
+            _range: Option<&str>,
+        ) -> anyhow::Result<crate::attachment_storage::StoredObject> {
+            unreachable!()
+        }
+
+        async fn delete(&self, _key: &str) -> anyhow::Result<()> {
+            unreachable!()
+        }
+
+        fn key_from_url(&self, raw: &str) -> Option<String> {
+            raw.strip_prefix("https://objects.example/")
+                .map(str::to_string)
+        }
+
+        fn object_url(&self, key: &str) -> String {
+            format!("https://objects.example/{key}")
+        }
+    }
+
+    fn profile_state() -> HandlerState {
+        let download = crate::state::AttachmentDownloadSettings {
+            public_url: "https://api.example".into(),
+            ..Default::default()
+        };
+        HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        )
+        .with_attachment_storage(std::sync::Arc::new(PrivateStorage), Vec::new(), download)
+    }
+
+    #[tokio::test]
+    async fn user_response_hides_private_avatar_object_url() {
+        let user = User {
+            avatar_url: Some("https://objects.example/users/u/avatar.png".into()),
+            cloud_waitlist_email: None,
+            cloud_waitlist_reason: None,
+            created_at: "2026-08-23T12:34:56Z".parse().unwrap(),
+            email: "alex@example.com".into(),
+            id: Uuid::nil(),
+            language: None,
+            name: "Alex".into(),
+            onboarded_at: None,
+            onboarding_questionnaire: serde_json::json!({}),
+            profile_description: String::new(),
+            starter_content_state: None,
+            timezone: None,
+            updated_at: "2026-08-23T12:35:00Z".parse().unwrap(),
+        };
+        let response = user_response(&profile_state(), &user);
+        let avatar_url = response.avatar_url.unwrap();
+        assert!(avatar_url.starts_with("https://api.example/api/avatars/"));
+        assert!(!avatar_url.contains("objects.example"));
     }
 
     #[test]
@@ -674,6 +810,27 @@ mod tests {
     }
 
     #[test]
+    fn questionnaire_preserves_answers_when_optional_strings_are_null() {
+        let answers: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
+            "source": [],
+            "source_other": null,
+            "source_skipped": true,
+            "role": null,
+            "role_other": null,
+            "role_skipped": true,
+            "use_case": [],
+            "use_case_other": null,
+            "use_case_skipped": true,
+            "version": 2
+        }))
+        .unwrap();
+
+        assert!(answers.source_resolved());
+        assert!(answers.complete());
+        assert_eq!(answers.version, QUESTIONNAIRE_SCHEMA_VERSION);
+    }
+
+    #[test]
     fn questionnaire_completion_is_scoped_to_schema_v2() {
         let answers: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
             "role": "founder",
@@ -741,6 +898,11 @@ mod tests {
         let omitted: JoinCloudWaitlistRequest = decode_json_body(b"{}").unwrap();
         assert!(omitted.email.is_empty());
         assert!(omitted.reason.is_empty());
+
+        let nullable: JoinCloudWaitlistRequest =
+            decode_json_body(br#"{"email":"alex@example.com","reason":null}"#).unwrap();
+        assert_eq!(nullable.email, "alex@example.com");
+        assert!(nullable.reason.is_empty());
     }
 
     #[tokio::test]

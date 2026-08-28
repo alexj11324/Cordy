@@ -258,6 +258,43 @@ pub(crate) async fn can_access_agent(
     member_hits_invocation_targets(&targets, actor_id)
 }
 
+/// Returns whether a human member may invoke an agent. This is intentionally
+/// narrower than [`can_access_agent`]: workspace admins may inspect and wire
+/// private agents, but they must not run them with the owner's credentials.
+/// It mirrors Go's `canInvokeAgent` member branch.
+pub(crate) async fn can_member_invoke_agent(
+    state: &HandlerState,
+    target: &Agent,
+    actor_id: Uuid,
+) -> bool {
+    if target.owner_id == Some(actor_id) {
+        return true;
+    }
+    if target.permission_mode != "public_to" {
+        return false;
+    }
+    let targets = match agent_invocation_target::list_agent_invocation_targets(
+        &state.pool,
+        target.id,
+    )
+    .await
+    {
+        Ok(targets) => targets,
+        Err(_) => return false,
+    };
+    member_invocation_allowed(target.owner_id, &target.permission_mode, &targets, actor_id)
+}
+
+fn member_invocation_allowed(
+    owner_id: Option<Uuid>,
+    permission_mode: &str,
+    targets: &[AgentInvocationTarget],
+    actor_id: Uuid,
+) -> bool {
+    owner_id == Some(actor_id)
+        || (permission_mode == "public_to" && member_hits_invocation_targets(targets, actor_id))
+}
+
 fn member_hits_invocation_targets(targets: &[AgentInvocationTarget], actor_id: Uuid) -> bool {
     targets.iter().any(|target| {
         target.target_type == "workspace"
@@ -369,6 +406,24 @@ mod tests {
         assert!(!member_hits_invocation_targets(
             &[target("member", other_id), target("team", member_id)],
             member_id
+        ));
+    }
+
+    #[test]
+    fn private_agent_never_gets_an_admin_invoke_bypass() {
+        let owner = uuid_at('8');
+        let admin = uuid_at('9');
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "private",
+            &[],
+            admin
+        ));
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "private",
+            &[],
+            owner
         ));
     }
 }

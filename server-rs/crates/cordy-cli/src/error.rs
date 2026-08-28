@@ -1,7 +1,52 @@
 //! User-facing error classification ported from `server/internal/cli/errors.go`.
 
 use crate::api::{ErrorKind, HttpError, NetworkError};
+use crate::config::Environment;
+use crate::RunOutput;
 use anyhow::Error;
+use std::io::{self, Write};
+
+#[derive(Debug)]
+struct CommandOutputError {
+    output: RunOutput,
+    cause: anyhow::Error,
+}
+
+impl std::fmt::Display for CommandOutputError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.cause.fmt(formatter)
+    }
+}
+
+impl std::error::Error for CommandOutputError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.cause.as_ref())
+    }
+}
+
+pub(super) fn command_output_error(output: RunOutput, cause: anyhow::Error) -> anyhow::Error {
+    anyhow::Error::new(CommandOutputError { output, cause })
+}
+
+pub fn command_error_output(error: &anyhow::Error) -> Option<&RunOutput> {
+    error.chain().find_map(|cause| {
+        cause
+            .downcast_ref::<CommandOutputError>()
+            .map(|error| &error.output)
+    })
+}
+
+impl super::Cli {
+    pub fn debug_enabled(&self, environment: &Environment) -> bool {
+        self.debug
+            || environment.trimmed("CORDY_DEBUG").is_some_and(|value| {
+                !matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "0" | "false" | "no" | "off"
+                )
+            })
+    }
+}
 
 pub fn format_error(error: &Error, debug: bool) -> String {
     let chinese = detect_chinese_locale();
@@ -13,7 +58,7 @@ pub fn format_error(error: &Error, debug: bool) -> String {
         error.to_string()
     };
     if debug {
-        let mut detail = format!("{base}\n\n[debug] {error}");
+        let mut detail = format!("{base}\n\n[debug] {error:#}");
         if let Some(network) = find_network_error(error) {
             detail.push_str(&format!(
                 "\n[debug] network: op={:?} kind={:?} cause={}",
@@ -32,6 +77,18 @@ pub fn format_error(error: &Error, debug: bool) -> String {
         detail
     } else {
         base
+    }
+}
+
+/// Writes CLI stdout/stderr. A closed pipe (`head`, `true`, etc.) is a
+/// normal termination, not a panic or exit-code-101 failure.
+pub fn write_output(mut writer: impl Write, data: &str) -> io::Result<()> {
+    if data.is_empty() {
+        return Ok(());
+    }
+    match writer.write_all(data.as_bytes()) {
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
     }
 }
 
@@ -184,5 +241,31 @@ mod tests {
             "Invalid request: Profile is invalid"
         );
         assert_eq!(exit_code(&error), 5);
+        let debug = format_error(&error, true);
+        assert!(
+            debug.contains("get user profile"),
+            "debug output should include the outer context: {debug}"
+        );
+        assert!(
+            debug.contains("HTTP 422")
+                || debug.contains("422")
+                || debug.contains("Profile is invalid"),
+            "debug output should include the cause chain: {debug}"
+        );
+        assert!(debug.contains("[debug]"));
+    }
+
+    #[test]
+    fn write_output_treats_broken_pipe_as_success() {
+        struct BrokenPipeWriter;
+        impl Write for BrokenPipeWriter {
+            fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::BrokenPipe, "closed"))
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        write_output(BrokenPipeWriter, "hello\n").expect("broken pipe is success");
     }
 }

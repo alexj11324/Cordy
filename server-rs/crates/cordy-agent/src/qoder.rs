@@ -25,6 +25,7 @@ use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
     COST_USD_TICKS_PER_USD,
 };
+use crate::env::configure_child_env;
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
 use crate::model::{parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
@@ -903,8 +904,8 @@ async fn discover_models_with_scope(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, &config.env);
     if config.provider == "hermes" {
         command.env("HERMES_YOLO_MODE", "1");
     }
@@ -996,6 +997,9 @@ async fn discover_models_with_scope(
         if matches!(config.provider.as_str(), "dim" | "reasonix") {
             annotate_acp_effort(&mut models, &session);
         }
+        if config.provider == "grok" {
+            annotate_grok_thinking(&mut models);
+        }
         Catalog {
             models,
             fallback: false,
@@ -1081,8 +1085,8 @@ impl Backend for QoderBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if self.config.provider == "hermes" {
             command.env("HERMES_YOLO_MODE", "1");
         }
@@ -1137,6 +1141,7 @@ impl Backend for QoderBackend {
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
+        let published_session = Arc::new(Mutex::new(String::new()));
         let fallback_model = if options.model.is_empty() {
             "unknown".to_string()
         } else {
@@ -1181,6 +1186,7 @@ impl Backend for QoderBackend {
                 held_retry_attempts,
                 held_retry_delay,
                 builtin_runtime,
+                published_session.clone(),
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -1198,11 +1204,19 @@ impl Backend for QoderBackend {
                 RunEnd::Protocol(result) => result.unwrap_or_else(|error| {
                     ProtocolOutcome::failed(format!("{provider} protocol task failed: {error}"))
                 }),
-                RunEnd::Cancelled => ProtocolOutcome::terminal("aborted", "execution cancelled"),
-                RunEnd::TimedOut => ProtocolOutcome::terminal(
-                    "timeout",
-                    format!("{provider} timed out after {}s", timeout.as_secs_f64()),
-                ),
+                RunEnd::Cancelled => {
+                    let mut outcome = ProtocolOutcome::terminal("aborted", "execution cancelled");
+                    outcome.session_id = remembered_session_id(&published_session);
+                    outcome
+                }
+                RunEnd::TimedOut => {
+                    let mut outcome = ProtocolOutcome::terminal(
+                        "timeout",
+                        format!("{provider} timed out after {}s", timeout.as_secs_f64()),
+                    );
+                    outcome.session_id = remembered_session_id(&published_session);
+                    outcome
+                }
             };
             let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
             if !protocol_task.is_finished() {
@@ -1297,6 +1311,7 @@ impl ProtocolOutcome {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_protocol(
     stdin: ChildStdin,
     stdout: ChildStdout,
@@ -1308,7 +1323,7 @@ async fn run_protocol(
     resume_method: String,
     prompt_content_alias: bool,
     model_selection: bool,
-    reject_failed_load: bool,
+    _reject_failed_load: bool,
     coding_project_meta: Option<String>,
     full_text_output: bool,
     usage_model_unknown: bool,
@@ -1323,6 +1338,7 @@ async fn run_protocol(
     held_retry_attempts: u8,
     held_retry_delay: Duration,
     builtin_runtime: bool,
+    published_session: Arc<Mutex<String>>,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -1489,7 +1505,7 @@ async fn run_protocol(
                 (result, session_id)
             }
             Err(error) => {
-                let rejected = reject_failed_load && error.is_session_not_found();
+                let rejected = error.is_session_not_found();
                 if provider == "reasonix" && is_reasonix_lease_conflict(&error) {
                     return ProtocolOutcome::failed(format!(
                         "reasonix session is already in use; close the other Reasonix window or process first: {error}"
@@ -1499,6 +1515,7 @@ async fn run_protocol(
             }
         }
     };
+    remember_session_id(&published_session, &session_id);
     let mut effective_model = if usage_model_unknown || !model_selection {
         "unknown".to_string()
     } else if matches!(provider.as_str(), "kimi" | "reasonix") {
@@ -1555,6 +1572,7 @@ async fn run_protocol(
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
+                remember_session_id(&published_session, "");
             }
             if close_session && !session_id.is_empty() {
                 let _ = client
@@ -1688,6 +1706,7 @@ async fn run_protocol(
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
+                remember_session_id(&published_session, "");
             }
             if close_session && !session_id.is_empty() {
                 let _ = client
@@ -1780,14 +1799,11 @@ async fn run_protocol(
         .unwrap_or_default();
     let mut usage = BTreeMap::new();
     let prompt_meta = prompt_result.get("_meta");
-    let prompt_usage = merge_usage(
-        parse_usage(prompt_result.get("usage")),
-        merge_usage(
-            parse_usage(prompt_meta),
-            parse_usage(prompt_meta.and_then(|meta| meta.get("usage"))),
-        ),
-    );
-    let mut turn_usage = merge_usage(state.usage, prompt_usage);
+    let meta_usage = parse_usage_snapshot(prompt_meta.and_then(|meta| meta.get("usage")))
+        .with_fallback(parse_usage_snapshot(prompt_meta));
+    let prompt_usage = parse_usage_snapshot(prompt_result.get("usage")).with_fallback(meta_usage);
+    state.usage.merge(prompt_usage);
+    let mut turn_usage = state.usage.usage;
     if provider == "reasonix" && turn_usage == TokenUsage::default() {
         turn_usage = state.reasonix_usage;
     }
@@ -1895,11 +1911,22 @@ fn protocol_failure(
     }
 }
 
+fn remember_session_id(slot: &Arc<Mutex<String>>, session_id: &str) {
+    if let Ok(mut guard) = slot.lock() {
+        guard.clear();
+        guard.push_str(session_id);
+    }
+}
+
+fn remembered_session_id(slot: &Arc<Mutex<String>>) -> String {
+    slot.lock().map(|guard| guard.clone()).unwrap_or_default()
+}
+
 #[derive(Default)]
 struct NotificationState {
     deliverable: Deliverable,
     tools: HashMap<String, PendingTool>,
-    usage: TokenUsage,
+    usage: UsageAccumulator,
     activity: u64,
     last_finishing_status: String,
     kiro_dialect: bool,
@@ -1917,7 +1944,7 @@ struct NotificationState {
 struct PendingTool {
     name: String,
     input: BTreeMap<String, Value>,
-    deferred_text: String,
+    args_text: String,
     emitted: bool,
     finishing: bool,
 }
@@ -2000,8 +2027,9 @@ fn handle_notification(
             handle_tool_update(data, messages, state);
         }
         "usageupdate" | "turnend" => {
-            let update = parse_usage(data.get("usage").or(Some(data)));
-            state.usage = merge_usage(state.usage, update);
+            state
+                .usage
+                .merge(parse_usage_snapshot(data.get("usage").or(Some(data))));
         }
         _ => {}
     }
@@ -2142,7 +2170,7 @@ fn handle_tool_start(
             PendingTool {
                 name,
                 input: invocation,
-                deferred_text,
+                args_text: deferred_text,
                 emitted,
                 finishing: false,
             },
@@ -2151,6 +2179,11 @@ fn handle_tool_start(
     }
     let name = tool_name(data, state.extended_tool_names);
     let input = tool_input(data);
+    let args_text = if input.is_empty() {
+        tool_content_text(data).unwrap_or_default()
+    } else {
+        String::new()
+    };
     let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
     state.deliverable.tool_boundary();
     let emitted = !input.is_empty();
@@ -2162,7 +2195,7 @@ fn handle_tool_start(
         PendingTool {
             name,
             input,
-            deferred_text: String::new(),
+            args_text,
             emitted,
             finishing,
         },
@@ -2178,14 +2211,23 @@ fn handle_tool_update(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if !matches!(status, "completed" | "failed") {
-        return;
-    }
     let id = data
         .get("toolCallId")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if id.is_empty() {
+        return;
+    }
+    if !matches!(status, "completed" | "failed") {
+        if let Some(pending) = state.tools.get_mut(id) {
+            if let Some(text) = tool_content_text(data) {
+                pending.args_text = text;
+            }
+            let incoming = tool_input(data);
+            if !incoming.is_empty() {
+                pending.input = incoming;
+            }
+        }
         return;
     }
     let mut pending = match state.tools.remove(id) {
@@ -2199,19 +2241,19 @@ fn handle_tool_update(
                     tool_name(data, state.extended_tool_names)
                 },
                 input: tool_input(data),
-                deferred_text: String::new(),
+                args_text: tool_content_text(data).unwrap_or_default(),
                 emitted: false,
                 finishing: false,
             }
         }
     };
-    if state.hermes_dialect && !pending.emitted {
-        let update_input = tool_input(data);
-        if !update_input.is_empty() {
-            pending.input = update_input;
-        } else if pending.input.is_empty() && !pending.deferred_text.is_empty() {
-            pending.input = parse_hermes_tool_input(&pending.deferred_text);
-        }
+    apply_completed_tool_input(&mut pending, data);
+    if state.hermes_dialect
+        && !pending.emitted
+        && pending.input.is_empty()
+        && !pending.args_text.is_empty()
+    {
+        pending.input = parse_hermes_tool_input(&pending.args_text);
     }
     let finishing = state.kiro_dialect
         && (pending.finishing || is_finishing_tool(&pending.name, &pending.input));
@@ -2222,6 +2264,7 @@ fn handle_tool_update(
         .iter()
         .find_map(|key| data.get(*key))
         .map(render_value)
+        .or_else(|| tool_content_text(data))
         .or_else(|| content_text(data).map(str::to_string))
         .or_else(|| {
             state
@@ -2462,41 +2505,280 @@ fn tool_input(data: &Value) -> BTreeMap<String, Value> {
         .unwrap_or_default()
 }
 
+fn tool_content_text(data: &Value) -> Option<String> {
+    let content = data.get("content")?;
+    if let Some(text) = content.get("text").and_then(Value::as_str) {
+        let text = text.trim();
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+    let blocks = content.as_array()?;
+    let mut pieces = Vec::new();
+    for block in blocks {
+        let kind = block.get("type").and_then(Value::as_str).unwrap_or("");
+        let text = match kind {
+            "content" => block
+                .get("content")
+                .and_then(|inner| inner.get("text"))
+                .and_then(Value::as_str),
+            "text" => block.get("text").and_then(Value::as_str),
+            _ => None,
+        };
+        if let Some(text) = text.filter(|text| !text.is_empty()) {
+            pieces.push(text.to_string());
+        }
+    }
+    (!pieces.is_empty()).then_some(pieces.join("\n"))
+}
+
+fn apply_completed_tool_input(pending: &mut PendingTool, data: &Value) {
+    let incoming = tool_input(data);
+    if !incoming.is_empty() {
+        pending.input = incoming;
+        return;
+    }
+    if pending.input.is_empty() {
+        pending.input = parse_json_object(&pending.args_text);
+    }
+}
+
+fn parse_json_object(text: &str) -> BTreeMap<String, Value> {
+    serde_json::from_str::<Value>(text.trim())
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .map(|object| object.into_iter().collect())
+        .unwrap_or_default()
+}
+
 fn render_value(value: &Value) -> String {
     value
         .as_str()
         .map_or_else(|| value.to_string(), str::to_string)
 }
 
-fn parse_usage(value: Option<&Value>) -> TokenUsage {
-    let value = value.unwrap_or(&Value::Null);
-    TokenUsage {
-        input_tokens: integer(value, &["inputTokens", "input_tokens"]),
-        output_tokens: integer(value, &["outputTokens", "output_tokens"]),
-        cache_read_tokens: integer(
-            value,
-            &["cachedReadTokens", "cacheReadTokens", "cache_read_tokens"],
-        ),
-        cache_write_tokens: integer(
-            value,
-            &[
-                "cachedWriteTokens",
-                "cacheWriteTokens",
-                "cache_write_tokens",
-            ],
-        ),
-        cost_usd_ticks: integer(value, &["costUsdTicks", "cost_usd_ticks"]),
+#[derive(Debug, Clone, Copy, Default)]
+struct UsageFields {
+    input: bool,
+    output: bool,
+    cache_read: bool,
+    cache_write: bool,
+    cost: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct UsageSnapshot {
+    usage: TokenUsage,
+    raw_input: i64,
+    fields: UsageFields,
+    total: Option<i64>,
+    input_normalized: bool,
+}
+
+impl UsageSnapshot {
+    fn normalize_input(&mut self) {
+        self.usage.input_tokens = self.raw_input;
+        self.input_normalized = false;
+        let Some(total) = self.total else {
+            return;
+        };
+        if self.fields.input
+            && self.fields.output
+            && self.fields.cache_read
+            && total > 0
+            && self.usage.cache_read_tokens > 0
+            && self.usage.cache_read_tokens <= self.raw_input
+            && total == self.raw_input.saturating_add(self.usage.output_tokens)
+        {
+            self.usage.input_tokens = self.raw_input - self.usage.cache_read_tokens;
+            self.input_normalized = true;
+        }
+    }
+
+    fn with_fallback(mut self, fallback: Self) -> Self {
+        let input_from_fallback =
+            fallback.fields.input && (!self.fields.input || self.raw_input == 0);
+        if input_from_fallback {
+            self.usage.input_tokens = fallback.usage.input_tokens;
+            self.raw_input = fallback.raw_input;
+            self.input_normalized = fallback.input_normalized;
+        }
+        if fallback.fields.output && (!self.fields.output || self.usage.output_tokens == 0) {
+            self.usage.output_tokens = fallback.usage.output_tokens;
+        }
+        if fallback.fields.cache_read
+            && (!self.fields.cache_read || self.usage.cache_read_tokens == 0)
+        {
+            self.usage.cache_read_tokens = fallback.usage.cache_read_tokens;
+        }
+        if fallback.fields.cache_write
+            && (!self.fields.cache_write || self.usage.cache_write_tokens == 0)
+        {
+            self.usage.cache_write_tokens = fallback.usage.cache_write_tokens;
+        }
+        if fallback.fields.cost
+            && (!self.fields.cost || fallback.usage.cost_usd_ticks > self.usage.cost_usd_ticks)
+        {
+            self.usage.cost_usd_ticks = fallback.usage.cost_usd_ticks;
+        }
+        self.fields.input |= fallback.fields.input;
+        self.fields.output |= fallback.fields.output;
+        self.fields.cache_read |= fallback.fields.cache_read;
+        self.fields.cache_write |= fallback.fields.cache_write;
+        self.fields.cost |= fallback.fields.cost;
+        if (input_from_fallback && fallback.input_normalized) || self.total.is_none() {
+            self.total = fallback.total;
+        }
+        self.normalize_input();
+        self
     }
 }
 
-fn merge_usage(current: TokenUsage, next: TokenUsage) -> TokenUsage {
-    TokenUsage {
-        input_tokens: current.input_tokens.max(next.input_tokens),
-        output_tokens: current.output_tokens.max(next.output_tokens),
-        cache_read_tokens: current.cache_read_tokens.max(next.cache_read_tokens),
-        cache_write_tokens: current.cache_write_tokens.max(next.cache_write_tokens),
-        cost_usd_ticks: current.cost_usd_ticks.max(next.cost_usd_ticks),
+#[derive(Default)]
+struct UsageAccumulator {
+    usage: TokenUsage,
+    fields: UsageFields,
+    ambiguous_input: Option<i64>,
+    normalized_input: Option<(i64, i64)>,
+}
+
+impl UsageAccumulator {
+    fn merge(&mut self, next: UsageSnapshot) {
+        if next.fields.input {
+            if next.input_normalized {
+                let candidate = (next.total.unwrap_or_default(), next.usage.input_tokens);
+                if self
+                    .normalized_input
+                    .is_none_or(|current| candidate > current)
+                {
+                    self.normalized_input = Some(candidate);
+                }
+            } else if self
+                .ambiguous_input
+                .is_none_or(|current| next.usage.input_tokens > current)
+            {
+                self.ambiguous_input = Some(next.usage.input_tokens);
+            }
+        }
+        if next.fields.output
+            && (!self.fields.output || next.usage.output_tokens > self.usage.output_tokens)
+        {
+            self.usage.output_tokens = next.usage.output_tokens;
+        }
+        if next.fields.cache_read
+            && (!self.fields.cache_read
+                || next.usage.cache_read_tokens > self.usage.cache_read_tokens)
+        {
+            self.usage.cache_read_tokens = next.usage.cache_read_tokens;
+        }
+        if next.fields.cache_write
+            && (!self.fields.cache_write
+                || next.usage.cache_write_tokens > self.usage.cache_write_tokens)
+        {
+            self.usage.cache_write_tokens = next.usage.cache_write_tokens;
+        }
+        if next.fields.cost
+            && (!self.fields.cost || next.usage.cost_usd_ticks > self.usage.cost_usd_ticks)
+        {
+            self.usage.cost_usd_ticks = next.usage.cost_usd_ticks;
+        }
+        self.fields.input |= next.fields.input;
+        self.fields.output |= next.fields.output;
+        self.fields.cache_read |= next.fields.cache_read;
+        self.fields.cache_write |= next.fields.cache_write;
+        self.fields.cost |= next.fields.cost;
+        self.resolve_input();
     }
+
+    fn resolve_input(&mut self) {
+        self.usage.input_tokens = match (self.ambiguous_input, self.normalized_input) {
+            (None, Some((_, normalized))) => normalized,
+            (Some(ambiguous), None) => ambiguous,
+            (Some(ambiguous), Some((total, normalized))) => {
+                if total >= ambiguous.saturating_add(self.usage.output_tokens) {
+                    normalized
+                } else {
+                    ambiguous
+                }
+            }
+            (None, None) => 0,
+        };
+    }
+}
+
+fn parse_usage_snapshot(value: Option<&Value>) -> UsageSnapshot {
+    let value = value.unwrap_or(&Value::Null);
+    let (input, has_input) = usage_integer(value, &["inputTokens", "input_tokens"]);
+    let (output, has_output) = usage_integer(value, &["outputTokens", "output_tokens"]);
+    let (cache_read, has_cache_read) = usage_integer(
+        value,
+        &[
+            "cachedReadTokens",
+            "cacheReadTokens",
+            "cached_input_tokens",
+            "cache_read_tokens",
+            "cache_read_input_tokens",
+        ],
+    );
+    let (cache_write, has_cache_write) = usage_integer(
+        value,
+        &[
+            "cachedWriteTokens",
+            "cacheWriteTokens",
+            "cache_write_tokens",
+            "cache_creation_input_tokens",
+        ],
+    );
+    let (cost, has_cost) = usage_integer(value, &["costUsdTicks", "cost_usd_ticks"]);
+    let (total, has_total) = usage_integer(value, &["totalTokens", "total_tokens"]);
+    let mut snapshot = UsageSnapshot {
+        usage: TokenUsage {
+            input_tokens: input,
+            output_tokens: output,
+            cache_read_tokens: cache_read,
+            cache_write_tokens: cache_write,
+            cost_usd_ticks: cost,
+        },
+        raw_input: input,
+        fields: UsageFields {
+            input: has_input,
+            output: has_output,
+            cache_read: has_cache_read,
+            cache_write: has_cache_write,
+            cost: has_cost,
+        },
+        total: has_total.then_some(total),
+        input_normalized: false,
+    };
+    snapshot.normalize_input();
+    snapshot
+}
+
+fn usage_integer(value: &Value, keys: &[&str]) -> (i64, bool) {
+    for key in keys {
+        let Some(value) = value.get(*key) else {
+            continue;
+        };
+        let parsed = value
+            .as_i64()
+            .filter(|value| *value >= 0)
+            .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+            .or_else(|| {
+                value.as_f64().and_then(|value| {
+                    (value.is_finite() && value >= 0.0 && value <= i64::MAX as f64)
+                        .then_some(value as i64)
+                })
+            })
+            .or_else(|| {
+                value
+                    .as_str()
+                    .map(str::trim)
+                    .and_then(|value| value.parse::<i64>().ok())
+                    .filter(|value| *value >= 0)
+            });
+        if let Some(value) = parsed {
+            return (value, true);
+        }
+    }
+    (0, false)
 }
 
 fn has_token_usage(usage: &BTreeMap<String, TokenUsage>) -> bool {
@@ -2655,7 +2937,7 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .trim();
-            if !value.is_empty() && !choices.iter().any(|choice| choice.value == value) {
+            if !value.is_empty() && !choices.iter().any(|existing| existing.value == value) {
                 let label = choice
                     .get("name")
                     .and_then(Value::as_str)
@@ -2677,11 +2959,11 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
             .trim();
         return Some(AcpEffortOption {
             config_id: config_id.to_string(),
-            current: choices
-                .iter()
-                .any(|choice| choice.value == current)
-                .then(|| current.to_string())
-                .unwrap_or_default(),
+            current: if choices.iter().any(|choice| choice.value == current) {
+                current.to_string()
+            } else {
+                String::new()
+            },
             choices,
         });
     }
@@ -2773,6 +3055,25 @@ async fn apply_acp_effort<R, W>(
             error = %error,
             "runtime rejected the reasoning effort request; sending the prompt anyway"
         ),
+    }
+}
+
+fn annotate_grok_thinking(models: &mut [crate::model::Model]) {
+    for model in models {
+        if model.id != "grok-4.5" {
+            continue;
+        }
+        model.thinking = Some(crate::model::ModelThinking {
+            supported_levels: ["low", "medium", "high"]
+                .into_iter()
+                .map(|value| crate::model::ThinkingLevel {
+                    value: value.to_string(),
+                    label: thinking_label(value),
+                    description: String::new(),
+                })
+                .collect(),
+            default_level: String::new(),
+        });
     }
 }
 
@@ -3220,11 +3521,11 @@ mod tests {
         );
         let api_only = serde_json::json!({"authMethods":[{"id":"xai.api_key"}]});
         assert!(select_grok_auth_method(&api_only, false)
-            .unwrap_err()
-            .contains("XAI_API_KEY"));
+            .err()
+            .is_some_and(|err| err.contains("XAI_API_KEY")));
         assert!(select_grok_auth_method(&Value::Null, false)
-            .unwrap_err()
-            .contains("grok login"));
+            .err()
+            .is_some_and(|err| err.contains("grok login")));
     }
 
     #[test]
@@ -3338,6 +3639,169 @@ mod tests {
             reasonix_permission_decision(Some(&fresh)).decision,
             AcpPermissionDecision::Select("reject".to_string())
         );
+    }
+
+    #[test]
+    fn reasonix_permission_policy_allows_ordinary_tools_and_flags_missing_metadata() {
+        let ordinary = serde_json::json!({
+            "toolCall":{"toolCallId":"tool-1","_meta":{"reasonix.io":{"tool":"read_file"}}},
+            "options":[{"optionId":"allow","kind":"allow_once"}]
+        });
+        let decision = reasonix_permission_decision(Some(&ordinary));
+        assert_eq!(
+            decision.decision,
+            AcpPermissionDecision::Select("allow".to_string())
+        );
+        assert!(!decision.metadata_missing);
+
+        let missing = serde_json::json!({
+            "toolCall":{"toolCallId":"tool-2"},
+            "options":[{"optionId":"allow","kind":"allow_once"}]
+        });
+        assert!(reasonix_permission_decision(Some(&missing)).metadata_missing);
+    }
+
+    #[test]
+    fn reasonix_effort_parser_preserves_runtime_vocabulary() {
+        let option = parse_acp_effort_option(&serde_json::json!({
+            "config_options":[{
+                "id":"effort",
+                "category":"thought_level",
+                "current_value":"high",
+                "options":[
+                    {"value":"auto","name":"Auto"},
+                    {"value":"high","name":"High"},
+                    {"value":"high","name":"duplicate"},
+                    {"value":"","name":"empty"}
+                ]
+            }]
+        }))
+        .unwrap_or_else(|| panic!("Reasonix effort option"));
+        assert_eq!(option.config_id, "effort");
+        assert_eq!(option.current, "high");
+        assert_eq!(
+            option
+                .choices
+                .iter()
+                .map(|choice| choice.value.as_str())
+                .collect::<Vec<_>>(),
+            ["auto", "high"]
+        );
+        assert_eq!(option.choices[1].label, "High");
+    }
+
+    #[test]
+    fn reasonix_discovery_annotates_only_the_current_model() {
+        let session = serde_json::json!({
+            "models":{
+                "currentModelId":"deepseek-v4-flash",
+                "availableModels":[
+                    {"modelId":"deepseek-v4-flash","name":"Flash"},
+                    {"modelId":"deepseek-v4-pro","name":"Pro"}
+                ]
+            },
+            "configOptions":[{
+                "id":"effort",
+                "category":"thought_level",
+                "currentValue":"max",
+                "options":[
+                    {"value":"auto","name":"Auto"},
+                    {"value":"disabled","name":"Disabled"},
+                    {"value":"max","name":"Max"}
+                ]
+            }]
+        });
+        let mut models = parse_acp_session_models(&session, "reasonix");
+        annotate_acp_effort(&mut models, &session);
+        let thinking = models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("current Reasonix model thinking catalog"));
+        assert_eq!(thinking.default_level, "max");
+        assert_eq!(thinking.supported_levels[1].value, "disabled");
+        assert!(models[1].thinking.is_none());
+    }
+
+    #[test]
+    fn grok_discovery_annotates_only_verified_effort_models() {
+        let mut models = vec![
+            crate::model::Model {
+                id: "grok-4.5".to_string(),
+                label: "Grok 4.5".to_string(),
+                provider: "grok".to_string(),
+                default: true,
+                ..crate::model::Model::default()
+            },
+            crate::model::Model {
+                id: "grok-4".to_string(),
+                label: "Grok 4".to_string(),
+                provider: "grok".to_string(),
+                ..crate::model::Model::default()
+            },
+        ];
+        annotate_grok_thinking(&mut models);
+        let thinking = models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Grok 4.5 thinking catalog"));
+        assert_eq!(
+            thinking
+                .supported_levels
+                .iter()
+                .map(|level| level.value.as_str())
+                .collect::<Vec<_>>(),
+            ["low", "medium", "high"]
+        );
+        assert!(models[1].thinking.is_none());
+    }
+
+    #[test]
+    fn streamed_tool_arguments_are_buffered_until_completion() {
+        let (messages, mut receiver) = mpsc::channel(8);
+        let mut state = NotificationState {
+            extended_tool_names: true,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tc-kimi-1",
+                "title": "Shell",
+                "status": "in_progress",
+                "content": [{"type":"content","content":{"type":"text","text":""}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tc-kimi-1",
+                "status": "in_progress",
+                "content": [{"type":"content","content":{"type":"text","text":"{\"command\":\"echo hi\"}"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tc-kimi-1",
+                "status": "completed",
+                "content": [{"type":"content","content":{"type":"text","text":"hi\n"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        let mut got = Vec::new();
+        while let Ok(message) = receiver.try_recv() {
+            got.push(message);
+        }
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].message_type, MessageType::ToolUse);
+        assert_eq!(
+            got[0].input.get("command").and_then(Value::as_str),
+            Some("echo hi")
+        );
+        assert_eq!(got[1].message_type, MessageType::ToolResult);
+        assert_eq!(got[1].output, "hi\n");
     }
 
     #[test]
@@ -4379,6 +4843,90 @@ done
             .unwrap_or_else(|error| panic!("cancellation exceeded bound: {error}"))
             .unwrap_or_else(|error| panic!("Qoder result: {error}"));
         assert_eq!(result.status, "aborted");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_preserves_session_id_after_session_new() {
+        let (directory, backend) = fake_backend(
+            r#"#!/bin/sh
+ready="$(dirname "$0")/ready"
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-keep"}}\n' "$id"
+      printf ready > "$ready"
+      ;;
+    *'"method":"session/prompt"'*) sleep 60 ;;
+  esac
+done
+"#,
+        );
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    cancellation: cancellation.clone(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let ready = directory.path().join("ready");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if ready.exists() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "session/new never published a resume pointer"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        cancellation.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(15), session.result)
+            .await
+            .unwrap_or_else(|error| panic!("cancellation exceeded bound: {error}"))
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "aborted");
+        assert_eq!(result.session_id, "qoder-keep");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qoder_missing_resumed_session_requests_fresh_retry() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/resume"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"session not found"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "continue",
+                ExecOptions {
+                    resume_session_id: "stale".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert!(result.session_id.is_empty());
     }
 
     #[cfg(unix)]

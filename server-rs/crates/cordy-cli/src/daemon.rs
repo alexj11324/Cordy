@@ -1,7 +1,8 @@
 //! Production daemon command input assembly.
 //!
-//! The foreground and background start paths share one resolved launch
-//! snapshot. Provider construction remains mandatory at the foreground
+//! Start and restart both use this owner so the background child, foreground
+//! bootstrap, and self-update successor receive one identical resolved launch
+//! configuration. Provider construction remains mandatory at the foreground
 //! `run_production_daemon` boundary; this module does not install a fallback.
 
 use std::path::PathBuf;
@@ -21,30 +22,50 @@ use cordy_daemon::provider_registration::{
 
 use crate::config::{resolve_daemon_launch_overrides, CliConfig, DaemonLaunchFlags, Environment};
 
-/// Authenticated inputs shared by background start and foreground production
-/// daemon execution. This type intentionally has no `Debug` implementation:
-/// `profile_input` contains the stored bearer token.
+/// Profile inputs shared by background start/restart and the foreground
+/// production daemon. This type intentionally has no `Debug` implementation:
+/// `profile_input` can contain the stored bearer token.
 #[derive(Clone)]
 pub struct DaemonStartAssembly {
     pub launch: DaemonLaunchOverrides,
     pub profile_input: DaemonProfileInput,
 }
-
 impl DaemonStartAssembly {
     /// Loads one profile snapshot and resolves every launch-precedence layer.
-    /// Background callers must be able to assemble this snapshot before the
-    /// lifecycle health probe; foreground production assembly remains the
-    /// authenticated boundary in [`Self::production_inputs`].
+    /// Authentication is deliberately deferred: the background lifecycle first
+    /// performs its live-daemon/profile check, then validates credentials only
+    /// when it must actually spawn a replacement. Foreground production input
+    /// resolution remains fail-closed.
     pub fn load(
         profile: &str,
         flags: &DaemonLaunchFlags,
         environment: &Environment,
     ) -> Result<Self> {
         if environment.in_daemon_task_identity_context() {
-            bail!("daemon start is not available inside a daemon-managed task");
+            bail!("daemon start and restart are not available inside a daemon-managed task");
         }
         let config = environment.load_config(profile)?;
         Self::from_config(profile, flags, environment, &config)
+    }
+
+    /// Loads the local profile for a stop operation without requiring a
+    /// bearer token. Stopping is a local PID/health transaction; requiring a
+    /// server credential here would make it impossible to stop a daemon after
+    /// an expired or revoked login.
+    pub fn load_for_control(
+        profile: &str,
+        flags: &DaemonLaunchFlags,
+        environment: &Environment,
+    ) -> Result<Self> {
+        if environment.in_daemon_task_identity_context() {
+            bail!("daemon lifecycle commands are not available inside a daemon-managed task");
+        }
+        let config = environment.load_config(profile)?;
+        let launch = resolve_daemon_launch_overrides(profile, flags, environment, &config)?;
+        Ok(Self {
+            launch,
+            profile_input: config.daemon_profile_input(),
+        })
     }
 
     fn from_config(
@@ -61,8 +82,9 @@ impl DaemonStartAssembly {
         })
     }
 
-    /// Background lifecycle input. The lifecycle owner performs authenticated
-    /// preflight before spawn and waits for foreground readiness.
+    /// Background lifecycle input. The lifecycle owner performs its live
+    /// daemon/profile check before authenticated preflight and spawn, then waits
+    /// for foreground readiness.
     pub fn lifecycle_options(
         &self,
         executable: PathBuf,
@@ -72,14 +94,15 @@ impl DaemonStartAssembly {
     }
 
     /// Foreground bootstrap input, including the canonical successor argv used
-    /// by auto-update and reload handoff.
+    /// by both auto-update and reload handoff.
     pub fn bootstrap_options(&self) -> BootstrapOptions {
         BootstrapOptions::new(self.launch.profile.clone(), self.launch.foreground_args())
     }
 
     /// Foreground production input. The bootstrap context is the authoritative
-    /// source for launcher identity, so the daemon cannot silently diverge
-    /// from the process-level value used by successor handoff and registration.
+    /// source for launcher identity, so the foreground daemon cannot silently
+    /// diverge from the process-level value used by successor handoff and
+    /// health registration.
     pub fn production_inputs(
         &self,
         context: &BootstrapContext,
@@ -94,9 +117,25 @@ impl DaemonStartAssembly {
         .context("assemble foreground daemon production inputs")
     }
 
+    /// Completes the typed foreground assembly once the command layer has a
+    /// real provider catalog. The catalog is mandatory: CLI wiring must not
+    /// manufacture a placeholder adapter for an unsupported provider family.
+    pub fn production_assembly<C: ProviderCatalog>(
+        &self,
+        context: &BootstrapContext,
+        cli_version: impl Into<String>,
+        catalog: Arc<C>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> Result<DaemonProductionAssembly<ProductionProviderAdapter, ProviderRegistrationSource<C>>>
+    {
+        let inputs = self.production_inputs(context, cli_version)?;
+        Ok(inputs.into_production_assembly(catalog, checkout_registry))
+    }
+
     /// Completes foreground assembly with the daemon's real local catalog.
-    /// Unsupported provider families fail closed; no metadata-only adapter is
-    /// substituted for an unimplemented backend.
+    /// This is the command-facing entry point once the CLI command supplies
+    /// its bootstrap context and checkout registry; it performs no metadata
+    /// fallback for provider families without a landed backend.
     pub fn production_assembly_with_local_catalog(
         &self,
         context: &BootstrapContext,
@@ -108,23 +147,12 @@ impl DaemonStartAssembly {
             ProviderRegistrationSource<LocalProviderCatalog>,
         >,
     > {
-        let inputs = self.production_inputs(context, cli_version)?;
-        Ok(inputs
-            .into_production_assembly(Arc::new(LocalProviderCatalog::new()), checkout_registry))
-    }
-
-    /// Generic assembly seam used by embedders and focused tests that provide
-    /// an explicit catalog implementation.
-    pub fn production_assembly<C: ProviderCatalog>(
-        &self,
-        context: &BootstrapContext,
-        cli_version: impl Into<String>,
-        catalog: Arc<C>,
-        checkout_registry: Arc<RepoCheckoutRegistry>,
-    ) -> Result<DaemonProductionAssembly<ProductionProviderAdapter, ProviderRegistrationSource<C>>>
-    {
-        let inputs = self.production_inputs(context, cli_version)?;
-        Ok(inputs.into_production_assembly(catalog, checkout_registry))
+        self.production_assembly(
+            context,
+            cli_version,
+            Arc::new(LocalProviderCatalog::new()),
+            checkout_registry,
+        )
     }
 }
 
@@ -175,28 +203,54 @@ mod tests {
     }
 
     #[test]
-    fn start_snapshot_allows_health_probe_without_profile_credentials() {
+    fn start_load_defers_authentication_to_lifecycle() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
 
         let assembly =
             DaemonStartAssembly::load("missing", &DaemonLaunchFlags::default(), &environment)
-                .expect("health probe must be able to run before login");
+                .expect("profile loading should not preempt the live-daemon check");
         assert!(assembly.profile_input.token.is_empty());
     }
 
     #[test]
-    fn daemon_managed_tasks_cannot_assemble_nested_daemons() {
+    fn stop_profile_load_does_not_require_server_credentials() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        let assembly = DaemonStartAssembly::load_for_control(
+            "missing",
+            &DaemonLaunchFlags::default(),
+            &environment,
+        )
+        .expect("local stop should not require login");
+        assert!(assembly.profile_input.token.is_empty());
+    }
+
+    #[test]
+    fn daemon_port_alone_does_not_block_host_start() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
         environment.set("CORDY_DAEMON_PORT", "19876");
+
+        let assembly = DaemonStartAssembly::load("", &DaemonLaunchFlags::default(), &environment)
+            .expect("a daemon port without task identity is only a weak host hint");
+        assert!(assembly.profile_input.token.is_empty());
+    }
+
+    #[test]
+    fn daemon_task_identity_cannot_assemble_nested_daemons() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
         environment.set("CORDY_TASK_ID", "task-1");
 
         let error = DaemonStartAssembly::load("", &DaemonLaunchFlags::default(), &environment)
             .err()
-            .expect("nested daemon must fail");
+            .expect("strong task identity must reject nested daemon startup");
         assert!(error.to_string().contains("daemon-managed task"));
     }
 
@@ -226,12 +280,11 @@ mod tests {
         };
 
         let error = match assembly.production_inputs(&context, "1.2.3") {
-            Ok(_) => panic!("foreground assembly must require profile credentials"),
             Err(error) => error,
+            Ok(_) => panic!("foreground assembly must require profile credentials"),
         };
-        assert!(error
-            .chain()
-            .any(|cause| cause.to_string().contains("cordy login")));
+        let message = format!("{error:#}");
+        assert!(message.contains("cordy login"), "unexpected error: {message}");
         assert!(!root.exists());
     }
 }

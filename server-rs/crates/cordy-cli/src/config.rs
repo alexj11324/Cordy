@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 pub const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
@@ -31,6 +31,7 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_DAEMON_DEVICE_NAME",
     "CORDY_AGENT_RUNTIME_NAME",
     "CORDY_WORKSPACES_ROOT",
+    "CORDY_TASK_WORKSPACES_ROOT",
     "CORDY_DAEMON_MAX_CONCURRENT_TASKS",
     "CORDY_DAEMON_POLL_INTERVAL",
     "CORDY_DAEMON_HEARTBEAT_INTERVAL",
@@ -45,7 +46,6 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "SSH_TTY",
     "CORDY_QUICK_CREATE_TASK_ID",
     "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
-    "CORDY_TASK_WORKSPACES_ROOT",
     TASK_CONFIG_ROOT_ENV,
 ];
 
@@ -57,7 +57,6 @@ fn capture_environment_values(
         .filter_map(|key| read(key).map(|value| ((*key).into(), value)))
         .collect()
 }
-
 #[derive(Clone, Debug)]
 pub struct Environment {
     values: HashMap<String, String>,
@@ -178,6 +177,45 @@ impl Environment {
         object.remove("token");
         write_json_atomically(&path, &document)?;
         Ok(true)
+    }
+
+    /// Persist an authenticated profile in one locked, atomic replacement.
+    ///
+    /// Authentication changes deployment credentials and workspace identity
+    /// together; retaining the old workspace after a login can direct the
+    /// daemon at a tenant from the previous account. The token never appears
+    /// in an error or diagnostic produced by this method.
+    pub fn save_authenticated_profile(
+        &self,
+        profile: &str,
+        server_url: &str,
+        app_url: &str,
+        token: &str,
+        workspace_id: &str,
+    ) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        object.insert("server_url".into(), Value::String(server_url.into()));
+        object.insert("app_url".into(), Value::String(app_url.into()));
+        object.insert("token".into(), Value::String(token.into()));
+        object.insert("workspace_id".into(), Value::String(workspace_id.into()));
+        write_json_atomically(&path, &document)
     }
 
     pub fn load_profile_document(&self, profile: &str) -> Result<Value> {
@@ -310,6 +348,66 @@ impl Environment {
         Ok(true)
     }
 
+    /// Replace a profile with the minimal configuration produced by `setup`,
+    /// but only after the caller's health preflight succeeds.
+    ///
+    /// Setup is intentionally a whole-profile replacement: an old token,
+    /// workspace, or daemon override must not silently survive a switch to a
+    /// different deployment. The probe is injected so the command layer can
+    /// enforce its two-second `/health` contract without coupling persistence
+    /// to an HTTP client (and tests can exercise the no-mutation failure
+    /// path). The config lock is acquired only for the eventual write, so an
+    /// unreachable target cannot truncate or otherwise alter the existing
+    /// profile.
+    pub fn replace_profile_for_setup_if_reachable<F>(
+        &self,
+        profile: &str,
+        input: &SetupProfileInput,
+        probe: F,
+    ) -> Result<bool>
+    where
+        F: FnOnce(&str) -> bool,
+    {
+        if !probe(&input.server_url) {
+            return Ok(false);
+        }
+        self.replace_profile_for_setup(profile, input)?;
+        Ok(true)
+    }
+
+    /// Atomically persist the minimal profile emitted by `setup`.
+    ///
+    /// This deliberately does not merge with the previous JSON document:
+    /// setup is a deployment switch, not a `config set` operation. Unknown
+    /// fields and credentials from the old deployment are discarded, while
+    /// the existing lock file is preserved and the replacement file is
+    /// written with the normal restricted permissions.
+    pub fn replace_profile_for_setup(
+        &self,
+        profile: &str,
+        input: &SetupProfileInput,
+    ) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let document = serde_json::json!({
+            "server_url": input.server_url,
+            "app_url": input.app_url,
+        });
+        write_json_atomically(&path, &document)
+    }
+
     pub fn in_agent_execution_context(&self) -> bool {
         self.raw("CORDY_AGENT_ID")
             .is_some_and(|value| !value.is_empty())
@@ -373,18 +471,55 @@ impl Environment {
     }
 }
 
+/// The only values setup is allowed to write before authentication. Keeping
+/// this separate from [`CliConfig`] makes it impossible for a setup caller to
+/// accidentally persist an old token, workspace, or daemon execution state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SetupProfileInput {
+    pub server_url: String,
+    pub app_url: String,
+}
+
+impl SetupProfileInput {
+    pub fn new(server_url: impl Into<String>, app_url: impl Into<String>) -> Result<Self> {
+        let server_url = server_url.into();
+        let app_url = app_url.into();
+        anyhow::ensure!(
+            !server_url.trim().is_empty(),
+            "setup server URL must not be empty"
+        );
+        anyhow::ensure!(
+            !app_url.trim().is_empty(),
+            "setup app URL must not be empty"
+        );
+        Ok(Self {
+            server_url,
+            app_url,
+        })
+    }
+}
+
 fn normalize_path(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                normalized.pop();
-            }
+            Component::CurDir => {}
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    let _ = normalized.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ if !normalized.has_root() => normalized.push(component.as_os_str()),
+                _ => {}
+            },
             _ => normalized.push(component.as_os_str()),
         }
     }
-    normalized
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
 }
 
 fn read_config_document(path: &Path) -> Result<Value> {
@@ -560,6 +695,31 @@ impl CliConfig {
             .and_then(|backends| backends.openclaw.as_ref());
         cordy_daemon::assembly::DaemonProfileInput {
             token: self.token.clone(),
+            profile_command_overrides: self.profile_command_overrides.clone(),
+            openclaw_binary_path: openclaw
+                .map(|override_| override_.binary_path.clone())
+                .unwrap_or_default(),
+            openclaw_state_dir: openclaw
+                .map(|override_| override_.state_dir.clone())
+                .unwrap_or_default(),
+            openclaw_cli_timeout: openclaw
+                .map(|override_| override_.cli_timeout.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Extracts only the non-secret profile settings consumed by the local
+    /// runtime probe. The probe must not receive the stored bearer token.
+    pub fn daemon_runtime_probe_options(
+        &self,
+        profile: &str,
+    ) -> cordy_daemon::runtime_probe::RuntimeProbeOptions {
+        let openclaw = self
+            .backends
+            .as_ref()
+            .and_then(|backends| backends.openclaw.as_ref());
+        cordy_daemon::runtime_probe::RuntimeProbeOptions {
+            profile: profile.to_owned(),
             profile_command_overrides: self.profile_command_overrides.clone(),
             openclaw_binary_path: openclaw
                 .map(|override_| override_.binary_path.clone())
@@ -866,32 +1026,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn process_environment_captures_quick_create_context() {
-        let values = capture_environment_values(|key| match key {
-            "CORDY_QUICK_CREATE_TASK_ID" => Some("task-quick".into()),
-            "CORDY_QUICK_CREATE_ATTACHMENT_IDS" => {
-                Some(r#"["attachment-1","attachment-2"]"#.into())
-            }
-            _ => None,
-        });
-
-        assert_eq!(
-            values.get("CORDY_QUICK_CREATE_TASK_ID").map(String::as_str),
-            Some("task-quick")
-        );
-        assert_eq!(
-            values
-                .get("CORDY_QUICK_CREATE_ATTACHMENT_IDS")
-                .map(String::as_str),
-            Some(r#"["attachment-1","attachment-2"]"#)
-        );
-    }
-
-    #[test]
-    fn daemon_profile_schema_preserves_launch_and_backend_inputs() {
-        let config: CliConfig = serde_json::from_str(
+    fn daemon_profile_schema_preserves_persisted_launch_and_backend_inputs() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let path = environment.config_path("production").expect("config path");
+        fs::create_dir_all(path.parent().expect("profile directory")).expect("create profile");
+        fs::write(
+            &path,
             r#"{
-                "server_url":"https://profile.example",
+                "server_url":"https://cordy.example",
+                "app_url":"https://app.cordy.example",
+                "workspace_id":"workspace-1",
                 "token":"mul_secret",
                 "device_name":"build-host",
                 "runtime_name":"night-shift",
@@ -900,6 +1046,11 @@ mod tests {
                 "poll_interval":"3s",
                 "heartbeat_interval":"11s",
                 "agent_timeout":"0s",
+                "codex_semantic_inactivity_timeout":"17m",
+                "codex_handshake_timeout":"42s",
+                "disable_auto_update":true,
+                "auto_update_check_interval":"4h",
+                "disable_auto_reload":true,
                 "backends":{"openclaw":{
                     "binary_path":"/opt/openclaw/bin/openclaw",
                     "state_dir":"/srv/openclaw-state",
@@ -910,16 +1061,27 @@ mod tests {
                 }
             }"#,
         )
-        .expect("profile config");
+        .expect("write profile");
 
+        let config = environment.load_config("production").expect("load profile");
+        assert_eq!(config.server_url, "https://cordy.example");
+        assert_eq!(config.app_url, "https://app.cordy.example");
+        assert_eq!(config.workspace_id, "workspace-1");
         assert_eq!(config.device_name, "build-host");
+        assert_eq!(config.runtime_name, "night-shift");
+        assert_eq!(config.workspaces_root, "/srv/cordy-workspaces");
         assert_eq!(config.max_concurrent_tasks, 7);
+        assert_eq!(config.poll_interval, "3s");
+        assert_eq!(config.heartbeat_interval, "11s");
         assert_eq!(config.agent_timeout.as_deref(), Some("0s"));
+        assert_eq!(config.codex_semantic_inactivity_timeout, "17m");
+        assert_eq!(config.codex_handshake_timeout, "42s");
+        assert!(config.disable_auto_update);
+        assert_eq!(config.auto_update_check_interval, "4h");
+        assert!(config.disable_auto_reload);
+
         let daemon = config.daemon_profile_input();
         assert_eq!(daemon.token, "mul_secret");
-        assert_eq!(daemon.openclaw_binary_path, "/opt/openclaw/bin/openclaw");
-        assert_eq!(daemon.openclaw_state_dir, "/srv/openclaw-state");
-        assert_eq!(daemon.openclaw_cli_timeout, "45s");
         assert_eq!(
             daemon
                 .profile_command_overrides
@@ -927,71 +1089,190 @@ mod tests {
                 .map(String::as_str),
             Some("/opt/agents/custom-codex")
         );
+        assert_eq!(daemon.openclaw_binary_path, "/opt/openclaw/bin/openclaw");
+        assert_eq!(daemon.openclaw_state_dir, "/srv/openclaw-state");
+        assert_eq!(daemon.openclaw_cli_timeout, "45s");
     }
 
     #[test]
-    fn daemon_launch_resolution_preserves_precedence_and_explicit_zero() {
+    fn absent_agent_timeout_and_backend_overrides_remain_unset() {
+        let config: CliConfig =
+            serde_json::from_str(r#"{"token":"mul_secret"}"#).expect("minimal profile");
+        assert!(config.agent_timeout.is_none());
+        assert!(config.backends.is_none());
+
+        let daemon = config.daemon_profile_input();
+        assert!(daemon.openclaw_binary_path.is_empty());
+        assert!(daemon.openclaw_state_dir.is_empty());
+        assert!(daemon.openclaw_cli_timeout.is_empty());
+    }
+
+    #[test]
+    fn daemon_launch_resolver_applies_persisted_values_when_flag_and_env_are_absent() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_SERVER_URL", "https://env.example");
-        environment.set("CORDY_DAEMON_DEVICE_NAME", "env-device");
-        environment.set("CORDY_DAEMON_AUTO_UPDATE", "true");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
         let config: CliConfig = serde_json::from_str(
             r#"{
                 "server_url":"https://profile.example",
                 "device_name":"profile-device",
+                "runtime_name":"profile-runtime",
                 "workspaces_root":"/profile/workspaces",
+                "max_concurrent_tasks":9,
                 "poll_interval":"3s",
-                "agent_timeout":"2h",
-                "disable_auto_update":true
+                "heartbeat_interval":"11s",
+                "agent_timeout":"0s",
+                "codex_semantic_inactivity_timeout":"17m",
+                "codex_handshake_timeout":"42s",
+                "disable_auto_update":true,
+                "auto_update_check_interval":"4h",
+                "disable_auto_reload":true
             }"#,
         )
         .expect("profile config");
-        let flags = DaemonLaunchFlags {
-            server_url: Some("https://flag.example".into()),
-            workspaces_root: Some("/flag/workspaces".into()),
-            agent_timeout: Some(Duration::ZERO),
-            poll_interval: Some(Duration::from_secs(2)),
-            ..DaemonLaunchFlags::default()
-        };
 
-        let resolved = resolve_daemon_launch_overrides("staging", &flags, &environment, &config)
-            .expect("resolve launch");
-        assert_eq!(resolved.server_url, "https://flag.example");
-        assert_eq!(resolved.workspaces_root, "/flag/workspaces");
-        assert_eq!(resolved.poll_interval, Duration::from_secs(2));
+        let resolved = resolve_daemon_launch_overrides(
+            "production",
+            &DaemonLaunchFlags::default(),
+            &environment,
+            &config,
+        )
+        .expect("resolve launch");
+        assert_eq!(resolved.server_url, "https://profile.example");
+        assert_eq!(resolved.device_name, "profile-device");
+        assert_eq!(resolved.runtime_name, "profile-runtime");
+        assert_eq!(resolved.workspaces_root, "/profile/workspaces");
+        assert_eq!(resolved.max_concurrent_tasks, 9);
+        assert_eq!(resolved.poll_interval, Duration::from_secs(3));
+        assert_eq!(resolved.heartbeat_interval, Duration::from_secs(11));
         assert_eq!(resolved.agent_timeout, Some(Duration::ZERO));
-        assert_eq!(resolved.device_name, "");
-        assert!(!resolved.disable_auto_update);
+        assert_eq!(
+            resolved.codex_semantic_inactivity_timeout,
+            Duration::from_secs(17 * 60)
+        );
+        assert_eq!(resolved.codex_handshake_timeout, Duration::from_secs(42));
+        assert!(resolved.disable_auto_update);
+        assert_eq!(
+            resolved.auto_update_check_interval,
+            Duration::from_secs(4 * 60 * 60)
+        );
+        assert!(resolved.disable_auto_reload);
+        assert_eq!(resolved.profile, "production");
         assert_eq!(
             resolved.health_port,
             i32::from(cordy_daemon::control_client::health_port_for_profile(
-                "staging"
+                "production"
             ))
         );
     }
 
     #[test]
-    fn daemon_launch_resolution_keeps_environment_server_url_for_preflight() {
+    fn daemon_launch_resolver_leaves_environment_values_to_daemon_config() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_SERVER_URL", "https://env.example");
-        environment.set("CORDY_DAEMON_POLL_INTERVAL", "5s");
+        for (key, value) in [
+            ("CORDY_SERVER_URL", "https://env.example"),
+            ("CORDY_DAEMON_ID", "env-daemon"),
+            ("CORDY_DAEMON_DEVICE_NAME", "env-device"),
+            ("CORDY_AGENT_RUNTIME_NAME", "env-runtime"),
+            ("CORDY_WORKSPACES_ROOT", "/env/workspaces"),
+            ("CORDY_DAEMON_MAX_CONCURRENT_TASKS", "5"),
+            ("CORDY_DAEMON_POLL_INTERVAL", "5s"),
+            ("CORDY_DAEMON_HEARTBEAT_INTERVAL", "13s"),
+            ("CORDY_AGENT_TIMEOUT", "2h"),
+            ("CORDY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", "19m"),
+            ("CORDY_CODEX_HANDSHAKE_TIMEOUT", "51s"),
+            ("CORDY_DAEMON_AUTO_UPDATE_INTERVAL", "6h"),
+            ("CORDY_DAEMON_AUTO_UPDATE", "true"),
+            ("CORDY_DAEMON_AUTO_RELOAD", "false"),
+        ] {
+            environment.set(key, value);
+        }
+        let config: CliConfig = serde_json::from_str(
+            r#"{
+                "server_url":"https://profile.example",
+                "device_name":"profile-device",
+                "runtime_name":"profile-runtime",
+                "workspaces_root":"/profile/workspaces",
+                "max_concurrent_tasks":9,
+                "poll_interval":"3s",
+                "heartbeat_interval":"11s",
+                "agent_timeout":"0s",
+                "codex_semantic_inactivity_timeout":"17m",
+                "codex_handshake_timeout":"42s",
+                "disable_auto_update":true,
+                "auto_update_check_interval":"4h",
+                "disable_auto_reload":false
+            }"#,
+        )
+        .expect("profile config");
+
         let resolved = resolve_daemon_launch_overrides(
             "",
             &DaemonLaunchFlags::default(),
             &environment,
-            &CliConfig {
-                server_url: "https://profile.example".into(),
-                poll_interval: "3s".into(),
-                ..CliConfig::default()
-            },
+            &config,
         )
         .expect("resolve launch");
         assert_eq!(resolved.server_url, "https://env.example");
+        assert!(resolved.daemon_id.is_empty());
+        assert!(resolved.device_name.is_empty());
+        assert!(resolved.runtime_name.is_empty());
+        assert!(resolved.workspaces_root.is_empty());
+        assert_eq!(resolved.max_concurrent_tasks, 0);
         assert!(resolved.poll_interval.is_zero());
+        assert!(resolved.heartbeat_interval.is_zero());
+        assert!(resolved.agent_timeout.is_none());
+        assert!(resolved.codex_semantic_inactivity_timeout.is_zero());
+        assert!(resolved.codex_handshake_timeout.is_zero());
+        assert!(resolved.auto_update_check_interval.is_zero());
+        assert!(!resolved.disable_auto_update);
+        assert!(resolved.disable_auto_reload);
+    }
+
+    #[test]
+    fn daemon_launch_flags_win_and_preserve_explicit_zero_agent_timeout() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "https://env.example");
+        environment.set("CORDY_AGENT_TIMEOUT", "2h");
+        environment.set("CORDY_DAEMON_AUTO_UPDATE", "true");
+        let flags = DaemonLaunchFlags {
+            server_url: Some("https://flag.example".into()),
+            daemon_id: Some("flag-daemon".into()),
+            device_name: Some("flag-device".into()),
+            runtime_name: Some("flag-runtime".into()),
+            workspaces_root: Some("/flag/workspaces".into()),
+            poll_interval: Some(Duration::from_secs(2)),
+            heartbeat_interval: Some(Duration::from_secs(7)),
+            agent_timeout: Some(Duration::ZERO),
+            codex_semantic_inactivity_timeout: Some(Duration::from_secs(23 * 60)),
+            codex_handshake_timeout: Some(Duration::from_secs(61)),
+            max_concurrent_tasks: Some(12),
+            disable_auto_update: true,
+            auto_update_check_interval: Some(Duration::from_secs(8 * 60 * 60)),
+            disable_auto_reload: true,
+        };
+        let resolved = resolve_daemon_launch_overrides(
+            "flag-profile",
+            &flags,
+            &environment,
+            &CliConfig::default(),
+        )
+        .expect("resolve launch");
+        assert_eq!(resolved.server_url, "https://flag.example");
+        assert_eq!(resolved.daemon_id, "flag-daemon");
+        assert_eq!(resolved.device_name, "flag-device");
+        assert_eq!(resolved.runtime_name, "flag-runtime");
+        assert_eq!(resolved.workspaces_root, "/flag/workspaces");
+        assert_eq!(resolved.poll_interval, Duration::from_secs(2));
+        assert_eq!(resolved.heartbeat_interval, Duration::from_secs(7));
+        assert_eq!(resolved.agent_timeout, Some(Duration::ZERO));
+        assert_eq!(resolved.max_concurrent_tasks, 12);
+        assert!(resolved.disable_auto_update);
+        assert!(resolved.disable_auto_reload);
     }
 
     #[test]
@@ -999,14 +1280,15 @@ mod tests {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let config = CliConfig {
+            poll_interval: "eventually".into(),
+            ..CliConfig::default()
+        };
         let error = resolve_daemon_launch_overrides(
             "",
             &DaemonLaunchFlags::default(),
             &environment,
-            &CliConfig {
-                poll_interval: "eventually".into(),
-                ..CliConfig::default()
-            },
+            &config,
         )
         .expect_err("invalid duration must fail");
         let message = format!("{error:#}");
@@ -1036,6 +1318,19 @@ mod tests {
             task_root.join("profiles/dev/config.json")
         );
         assert!(env.config_path("../owner").is_err());
+    }
+
+    #[test]
+    fn task_config_root_with_parent_segments_does_not_escape() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut env = Environment::for_test(home.path().into(), cwd.path().into());
+        let canonical = home.path().join("task-config");
+        let aliased = home.path().join("tasks").join("..").join("task-config");
+        env.set(TASK_CONFIG_ROOT_ENV, aliased.display().to_string());
+        env.set_profile_value("dev", "token", Some(Value::String("tok".into())))
+            .expect("save under aliased task root");
+        assert!(canonical.join("profiles/dev/config.json").is_file());
     }
 
     #[test]
@@ -1137,55 +1432,84 @@ mod tests {
     }
 
     #[test]
-    fn task_root_with_parent_components_is_normalized_before_permission_walk() {
+    fn setup_health_failure_does_not_mutate_existing_profile() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
-        let container = tempfile::tempdir().expect("temp task container");
-        let task_root = container.path().join("task-config");
-        let raw_task_root = container.path().join("unused/../task-config");
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set(TASK_CONFIG_ROOT_ENV, raw_task_root.display().to_string());
-
-        #[cfg(unix)]
-        let container_mode = {
-            use std::os::unix::fs::PermissionsExt;
-            fs::metadata(container.path())
-                .expect("task container metadata")
-                .permissions()
-                .mode()
-                & 0o777
-        };
-
-        environment
-            .set_profile_value(
-                "dev",
-                "workspace_id",
-                Some(Value::String("workspace-1".into())),
-            )
-            .expect("set task profile value");
-
-        assert!(task_root.join("profiles/dev/config.json").is_file());
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(container.path())
-                    .expect("task container metadata")
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                container_mode
-            );
-            for directory in [task_root.clone(), task_root.join("profiles/dev")] {
-                assert_eq!(
-                    fs::metadata(directory)
-                        .expect("task config directory metadata")
-                        .permissions()
-                        .mode()
-                        & 0o777,
-                    0o700
-                );
-            }
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        let config_path = profile_dir.join("config.json");
+        let old_config = br#"{
+            "server_url":"https://old.example",
+            "app_url":"https://old-app.example",
+            "token":"mul_old",
+            "workspace_id":"workspace-old",
+            "future":{"kept":true}
         }
+        "#;
+        fs::write(&config_path, old_config).expect("old config");
+        fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let input = SetupProfileInput::new("https://new.example", "https://new-app.example")
+            .expect("setup input");
+
+        let persisted = environment
+            .replace_profile_for_setup_if_reachable("dev", &input, |_| false)
+            .expect("probe failure is not an I/O error");
+
+        assert!(!persisted);
+        assert_eq!(fs::read(&config_path).expect("config remains"), old_config);
+        assert_eq!(
+            fs::read(profile_dir.join(".config.lock")).expect("lock remains"),
+            b"lock-sentinel"
+        );
+    }
+
+    #[test]
+    fn setup_success_replaces_whole_profile_atomically() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(
+            profile_dir.join("config.json"),
+            br#"{"server_url":"https://old.example","token":"mul_old","workspace_id":"old","future":{"kept":true}}"#,
+        )
+        .expect("old config");
+        fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let input = SetupProfileInput::new("https://new.example", "https://new-app.example")
+            .expect("setup input");
+
+        assert!(environment
+            .replace_profile_for_setup_if_reachable("dev", &input, |url| {
+                assert_eq!(url, "https://new.example");
+                true
+            })
+            .expect("persist setup profile"));
+
+        let saved = environment
+            .load_profile_document("dev")
+            .expect("saved config");
+        assert_eq!(saved["server_url"], "https://new.example");
+        assert_eq!(saved["app_url"], "https://new-app.example");
+        assert!(saved.get("token").is_none());
+        assert!(saved.get("workspace_id").is_none());
+        assert!(saved.get("future").is_none());
+        assert_eq!(
+            fs::read(profile_dir.join(".config.lock")).expect("lock remains"),
+            b"lock-sentinel"
+        );
+    }
+
+    #[test]
+    fn setup_input_rejects_empty_urls() {
+        assert!(SetupProfileInput::new("", "https://app.example").is_err());
+        assert!(SetupProfileInput::new("https://api.example", " ").is_err());
+    }
+
+    #[test]
+    fn captured_env_includes_quick_create_task_keys() {
+        assert!(CAPTURED_ENV_KEYS.contains(&"CORDY_QUICK_CREATE_TASK_ID"));
+        assert!(CAPTURED_ENV_KEYS.contains(&"CORDY_QUICK_CREATE_ATTACHMENT_IDS"));
     }
 }

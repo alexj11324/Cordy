@@ -29,13 +29,23 @@ const MAX_UPLOAD: usize = 100 << 20;
 const MAX_PREVIEW: usize = 2 << 20;
 const CAP_TTL: i64 = 60;
 
-pub fn public_router() -> Router<HandlerState> {
-    Router::new()
-        .route("/uploads/{*key}", get(serve_local_upload))
-        .route(
-            "/api/attachments/{id}/signed-download",
-            get(signed_download),
-        )
+pub fn public_router(state: &HandlerState) -> Router<HandlerState> {
+    let router = Router::new().route(
+        "/api/attachments/{id}/signed-download",
+        get(signed_download),
+    );
+    if mounts_local_uploads(state) {
+        router.route("/uploads/{*key}", get(serve_local_upload))
+    } else {
+        router
+    }
+}
+
+pub(crate) fn mounts_local_uploads(state: &HandlerState) -> bool {
+    state
+        .attachment_storage
+        .as_ref()
+        .is_some_and(|storage| storage.is_local())
 }
 pub fn authenticated_router() -> Router<HandlerState> {
     Router::new()
@@ -696,6 +706,31 @@ fn attachment_redirect(state: &HandlerState, location: &str) -> Response {
     response
 }
 
+/// Bulk comment/issue payloads follow Go `attachmentToResponse`:
+/// callers that advertise `stable_attachment_urls` keep the auth-gated
+/// `/download` path; everyone else gets a CloudFront signed URL when a
+/// signer is configured. Presign and proxy deployments resolve at download
+/// time, so they stay on the stable path.
+pub(crate) fn bulk_download_url(
+    state: &HandlerState,
+    attachment: &Attachment,
+    headers: &HeaderMap,
+) -> String {
+    let stable = format!("/api/attachments/{}/download", attachment.id);
+    if crate::claim_response::request_has_client_capability(headers, "stable_attachment_urls") {
+        return stable;
+    }
+    let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() else {
+        return stable;
+    };
+    let Ok(expiry) = cloudfront_expiry(state) else {
+        return stable;
+    };
+    signer
+        .signed_url(&attachment.url, expiry, None)
+        .unwrap_or(stable)
+}
+
 fn cloudfront_expiry(state: &HandlerState) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
     let ttl = chrono::Duration::from_std(state.attachment_download.ttl)
         .map_err(|_| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
@@ -990,7 +1025,7 @@ async fn publish_changes(
             if let Ok(Some(value)) =
                 comment::get_comment_in_workspace(&state.pool, comment_id, att.workspace_id).await
             {
-                let body = crate::comment::comment_json(state, &value).await;
+                let body = crate::comment::comment_json(state, &value, &HeaderMap::new()).await;
                 state.bus.publish(&cordy_events::Event {
                     event_type: cordy_protocol::EVENT_COMMENT_UPDATED.into(),
                     workspace_id: att.workspace_id.to_string(),
@@ -1186,5 +1221,78 @@ mod tests {
         assert!(!got.contains('\r'));
         assert!(!got.contains('\n'));
         assert!(got.contains("filename*=UTF-8''"));
+    }
+
+    fn sample_attachment() -> Attachment {
+        Attachment {
+            chat_message_id: None,
+            chat_session_id: None,
+            comment_id: None,
+            content_type: "image/png".into(),
+            created_at: chrono::Utc::now(),
+            filename: "diagram.png".into(),
+            id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap(),
+            issue_id: None,
+            size_bytes: 42,
+            task_id: None,
+            uploader_id: Uuid::nil(),
+            uploader_type: "member".into(),
+            url: "https://static.example.test/workspaces/w/file.png".into(),
+            workspace_id: Uuid::nil(),
+        }
+    }
+
+    #[tokio::test]
+    async fn bulk_comment_attachments_sign_cloudfront_unless_client_advertises_stable_urls() {
+        let attachment = sample_attachment();
+        let stable = format!("/api/attachments/{}/download", attachment.id);
+        let mut state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert_eq!(
+            bulk_download_url(&state, &attachment, &HeaderMap::new()),
+            stable
+        );
+
+        state.attachment_download.cloudfront_signer = Some(std::sync::Arc::new(
+            crate::cloudfront::CloudFrontSigner::test_signer(),
+        ));
+        let signed = bulk_download_url(&state, &attachment, &HeaderMap::new());
+        assert!(signed.contains("Policy="), "{signed}");
+        assert!(signed.contains("Key-Pair-Id=KTEST"), "{signed}");
+        assert!(!signed.starts_with("/api/attachments/"), "{signed}");
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-client-capabilities",
+            "stable_attachment_urls".parse().unwrap(),
+        );
+        assert_eq!(bulk_download_url(&state, &attachment, &headers), stable);
+    }
+
+    #[tokio::test]
+    async fn uploads_route_is_mounted_only_for_local_storage() {
+        let mut state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert!(!mounts_local_uploads(&state));
+
+        let dir = tempfile::tempdir().expect("temp upload dir");
+        state = state.with_attachment_storage(
+            std::sync::Arc::new(
+                crate::attachment_storage::LocalStorage::new(
+                    dir.path().to_path_buf(),
+                    String::new(),
+                )
+                .expect("local storage"),
+            ),
+            Vec::new(),
+            crate::state::AttachmentDownloadSettings::default(),
+        );
+        assert!(mounts_local_uploads(&state));
     }
 }

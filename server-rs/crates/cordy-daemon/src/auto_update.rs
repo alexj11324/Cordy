@@ -659,15 +659,10 @@ mod tests {
     #[test]
     fn github_release_request_sets_user_agent() {
         let client = github_release_client().unwrap();
-        let request = github_release_request(&client)
-            .build()
-            .unwrap();
+        let request = github_release_request(&client).build().unwrap();
 
         assert_eq!(
-            request
-                .headers()
-                .get(reqwest::header::USER_AGENT)
-                .unwrap(),
+            request.headers().get(reqwest::header::USER_AGENT).unwrap(),
             GITHUB_USER_AGENT
         );
     }

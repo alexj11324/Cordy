@@ -175,6 +175,35 @@ fn accumulate(usage: &mut BTreeMap<String, TokenUsage>, path: &Path, scan: &Kimi
     }
 }
 
+fn read_bounded_line<R: BufRead>(reader: &mut R, line: &mut Vec<u8>) -> io::Result<usize> {
+    let limit = u64::try_from(MAX_LINE_BYTES)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    let bytes = {
+        let mut bounded = std::io::Read::take(&mut *reader, limit);
+        bounded.read_until(b'\n', line)?
+    };
+    if line.len() > MAX_LINE_BYTES && !line.ends_with(b"\n") {
+        discard_line_remainder(reader)?;
+    }
+    Ok(bytes)
+}
+
+fn discard_line_remainder<R: BufRead>(reader: &mut R) -> io::Result<()> {
+    loop {
+        let buffer = reader.fill_buf()?;
+        if buffer.is_empty() {
+            return Ok(());
+        }
+        if let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+            reader.consume(newline + 1);
+            return Ok(());
+        }
+        let consumed = buffer.len();
+        reader.consume(consumed);
+    }
+}
+
 fn record_in_turn(record_millis: i64, scan: &KimiUsageScan<'_>) -> bool {
     if record_millis <= 0 {
         return !scan.resumed;

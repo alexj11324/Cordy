@@ -286,7 +286,7 @@ pub struct ThreadReplyTarget {
 ///
 /// Serde field names match the Go struct's default JSON names because the
 /// isolation helper protocol (isolation.rs) marshals this struct over stdin.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct PrepareParams {
     /// Base path for all envs (e.g., ~/cordy_workspaces).
@@ -344,6 +344,22 @@ pub struct PrepareParams {
     pub codex_custom_args: Vec<String>,
     /// Context data for writing files.
     pub task: TaskContextForEnv,
+}
+
+impl std::fmt::Debug for PrepareParams {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PrepareParams")
+            .field("workspace_id", &self.workspace_id)
+            .field("task_id", &self.task_id)
+            .field("provider", &self.provider)
+            .field("profile", &self.profile)
+            .field("has_mcp_config", &self.mcp_config.is_some())
+            .field("hermes_env_variable_count", &self.hermes_env.len())
+            .field("reasonix_env_variable_count", &self.reasonix_env.len())
+            .field("codex_custom_arg_count", &self.codex_custom_args.len())
+            .finish_non_exhaustive()
+    }
 }
 
 /// TaskContextForEnv is the subset of task context used for writing context
@@ -1635,10 +1651,10 @@ fn dir_is_empty(dir: &str) -> anyhow::Result<bool> {
 /// wrapper. Zero means "inherit whatever the user's global openclaw.json
 /// already configures".
 ///
-/// Deviation vs Go: the public Go type masks Token in MarshalJSON and
-/// Display. This stand-in serializes plainly (the isolation helper protocol
-/// requires the real token over stdin anyway) and masks only in Display.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Deviation vs Go: the public Go type masks Token in MarshalJSON. This
+/// stand-in serializes plainly because the isolation helper protocol requires
+/// the real token over stdin, but masks it in both Debug and Display.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OpenclawGatewayPin {
     #[serde(rename = "host", skip_serializing_if = "String::is_empty")]
@@ -1649,6 +1665,18 @@ pub struct OpenclawGatewayPin {
     pub token: String,
     #[serde(rename = "tls", skip_serializing_if = "std::ops::Not::not")]
     pub tls: bool,
+}
+
+impl std::fmt::Debug for OpenclawGatewayPin {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OpenclawGatewayPin")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("has_token", &!self.token.is_empty())
+            .field("tls", &self.tls)
+            .finish()
+    }
 }
 
 fn is_zero_i64(v: &i64) -> bool {

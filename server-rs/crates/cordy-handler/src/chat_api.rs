@@ -325,7 +325,7 @@ fn dispatch_blocked(
         .into_response()
 }
 
-fn session_json(session: &ChatSession) -> Value {
+pub(crate) fn session_json(session: &ChatSession) -> Value {
     json!({
         "id": session.id,
         "workspace_id": session.workspace_id,

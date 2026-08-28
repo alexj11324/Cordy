@@ -38,11 +38,12 @@ pub fn parse_auth_token_ttl(raw: &str) -> Option<std::time::Duration> {
 }
 
 fn warn_if_huge(d: std::time::Duration) -> Option<std::time::Duration> {
-    if d.as_secs() as i64 > TEN_YEARS_SECS {
+    if d.as_secs() > TEN_YEARS_SECS as u64 {
         tracing::warn!(
             hours = d.as_secs() / 3600,
-            "AUTH_TOKEN_TTL exceeds 10 years; accepting but verify this is intentional"
+            "AUTH_TOKEN_TTL exceeds 10 years; capping at 10 years"
         );
+        return Some(std::time::Duration::from_secs(TEN_YEARS_SECS as u64));
     }
     Some(d)
 }
@@ -331,6 +332,10 @@ mod tests {
             DEFAULT_AUTH_TOKEN_TTL_SECS
         );
         assert_eq!(auth_token_ttl_secs(Some("7200")), 7200);
+        assert_eq!(
+            auth_token_ttl_secs(Some("9223372036854775807")),
+            TEN_YEARS_SECS
+        );
     }
 
     #[test]

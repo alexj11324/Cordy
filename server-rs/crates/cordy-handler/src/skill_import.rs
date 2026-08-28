@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::to_bytes;
@@ -38,6 +40,8 @@ const MAX_FILE_SIZE: usize = 1 << 20;
 const MAX_TOTAL_SIZE: usize = 8 << 20;
 const MAX_FILE_COUNT: usize = 256;
 const MAX_ARCHIVE_UPLOAD_SIZE: usize = 16 << 20;
+const MAX_ARCHIVE_ENTRY_COUNT: usize = MAX_FILE_COUNT * 2;
+const MAX_ARCHIVE_UNCOMPRESSED_SIZE: usize = MAX_TOTAL_SIZE * 2;
 const FETCH_TIMEOUT: Duration = Duration::from_secs(45);
 const SEARCH_STATS_LIMIT: usize = 10;
 const DOWNLOAD_CONCURRENCY: usize = 8;
@@ -99,7 +103,9 @@ struct ClawSearchResult {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClawStats {
+    #[serde(default)]
     installs_all_time: i64,
+    #[serde(default)]
     installs_current: i64,
 }
 
@@ -188,40 +194,46 @@ async fn search_clawhub(
         .json()
         .await
         .map_err(|_| "failed to parse ClawHub search response".to_string())?;
-    let mut candidates = Vec::new();
-    for (index, item) in found.results.into_iter().enumerate() {
-        if item.slug.is_empty() {
-            continue;
-        }
-        let installs = if index < SEARCH_STATS_LIMIT {
-            clawhub_install_count(client, base, &item.slug).await
-        } else {
-            None
-        };
-        let name = if item.display_name.is_empty() {
-            item.slug.clone()
-        } else {
-            item.display_name
-        };
-        let url = if item.owner_handle.is_empty() {
-            format!("https://clawhub.ai/{}", path_segment(&item.slug))
-        } else {
-            format!(
-                "https://clawhub.ai/{}/{}",
-                path_segment(&item.owner_handle),
-                path_segment(&item.slug)
-            )
-        };
-        candidates.push(SearchCandidate {
-            name,
-            url,
-            source: "clawhub.ai".into(),
-            repo: None,
-            install_count: installs,
-            github_stars: None,
-            description: item.summary,
-        });
-    }
+    let candidates = stream::iter(
+        found
+            .results
+            .into_iter()
+            .enumerate()
+            .filter(|(_, item)| !item.slug.is_empty())
+            .map(|(index, item)| async move {
+                let installs = if index < SEARCH_STATS_LIMIT {
+                    clawhub_install_count(client, base, &item.slug).await
+                } else {
+                    None
+                };
+                let name = if item.display_name.is_empty() {
+                    item.slug.clone()
+                } else {
+                    item.display_name
+                };
+                let url = if item.owner_handle.is_empty() {
+                    format!("https://clawhub.ai/{}", path_segment(&item.slug))
+                } else {
+                    format!(
+                        "https://clawhub.ai/{}/{}",
+                        path_segment(&item.owner_handle),
+                        path_segment(&item.slug)
+                    )
+                };
+                SearchCandidate {
+                    name,
+                    url,
+                    source: "clawhub.ai".into(),
+                    repo: None,
+                    install_count: installs,
+                    github_stars: None,
+                    description: item.summary,
+                }
+            }),
+    )
+    .buffered(DOWNLOAD_CONCURRENCY)
+    .collect()
+    .await;
     Ok(candidates)
 }
 
@@ -321,6 +333,7 @@ impl ImportedSkill {
 enum ImportError {
     Bad(String),
     Cap(String),
+    ArchiveLimit(String),
     Unavailable(String),
     Timeout,
     Upstream(String),
@@ -329,7 +342,7 @@ enum ImportError {
 impl std::fmt::Display for ImportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Bad(message) | Self::Cap(message) | Self::Unavailable(message) | Self::Upstream(message) => formatter.write_str(message),
+            Self::Bad(message) | Self::Cap(message) | Self::ArchiveLimit(message) | Self::Unavailable(message) | Self::Upstream(message) => formatter.write_str(message),
             Self::Timeout => formatter.write_str("skill import timed out fetching source files; the skill may be too large or the source too slow"),
         }
     }
@@ -338,7 +351,7 @@ impl std::fmt::Display for ImportError {
 fn import_error_response(error: ImportError) -> Response {
     let status = match error {
         ImportError::Bad(_) => StatusCode::BAD_REQUEST,
-        ImportError::Cap(_) => StatusCode::PAYLOAD_TOO_LARGE,
+        ImportError::Cap(_) | ImportError::ArchiveLimit(_) => StatusCode::PAYLOAD_TOO_LARGE,
         ImportError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         ImportError::Timeout => StatusCode::GATEWAY_TIMEOUT,
         ImportError::Upstream(_) => StatusCode::BAD_GATEWAY,
@@ -370,6 +383,11 @@ fn detect_source(raw: &str) -> Result<(Source, String), ImportError> {
         .map_err(|error| ImportError::Bad(format!("invalid URL: {error}")))?;
     if parsed.scheme() != "https" {
         return Err(ImportError::Bad("skill source must use https".into()));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ImportError::Bad(
+            "skill source URL must not contain credentials".into(),
+        ));
     }
     let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
     match host.as_str() {
@@ -494,8 +512,24 @@ async fn archive_from_request(
             "a skill archive file is required (form field \"file\")",
         )
     })?;
-    let imported = parse_archive(&data, &filename)
-        .map_err(|error| error_response(StatusCode::BAD_REQUEST, &error.to_string()))?;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancel_on_drop = CancelArchiveOnDrop(cancelled.clone());
+    let parse_cancelled = cancelled.clone();
+    let archive_data = data.to_vec();
+    let archive_filename = filename.clone();
+    let imported = tokio::task::spawn_blocking(move || {
+        parse_archive_with_cancel(&archive_data, &archive_filename, &parse_cancelled)
+    })
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "skill archive parser task failed");
+        error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to parse uploaded archive",
+        )
+    })?
+    .map_err(import_error_response)?;
+    drop(cancel_on_drop);
     Ok((
         imported,
         if strategy.is_empty() {
@@ -621,7 +655,8 @@ async fn fetch_clawhub(
                 imported.content = String::from_utf8_lossy(&bytes).into_owned()
             }
             Ok(bytes) => imported.add_file(path, String::from_utf8_lossy(&bytes).into_owned())?,
-            Err(error) if path == "SKILL.md" || matches!(error, ImportError::Cap(_)) => {
+            Err(error) if matches!(error, ImportError::Cap(_)) => return Err(error),
+            Err(error) if path == "SKILL.md" => {
                 return Err(ImportError::Upstream(format!(
                     "clawhub import: {path}: {error}"
                 )))
@@ -665,7 +700,7 @@ struct ContentEntry {
     #[serde(rename = "type")]
     kind: String,
     #[serde(default)]
-    download_url: String,
+    download_url: Option<String>,
 }
 
 async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill, ImportError> {
@@ -686,7 +721,12 @@ async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill
         .tree
         .iter()
         .filter(|entry| {
-            entry.kind == "blob" && (entry.path == "SKILL.md" || entry.path.ends_with("/SKILL.md"))
+            entry.kind == "blob"
+                && entry
+                    .path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"))
         })
         .collect::<Vec<_>>();
     let raw_prefix = raw_prefix(owner, repo, &branch);
@@ -696,35 +736,54 @@ async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill
         format!(".claude/skills/{requested}/SKILL.md"),
         format!("plugin/skills/{requested}/SKILL.md"),
         format!("{requested}/SKILL.md"),
+        "SKILL.md".into(),
     ];
-    for entry in &candidates {
-        let likely = conventional.iter().any(|path| path == &entry.path)
-            || entry
-                .path
-                .rsplit('/')
-                .nth(1)
-                .is_some_and(|name| name.eq_ignore_ascii_case(requested));
-        if !likely {
-            continue;
-        }
-        if let Ok(body) = fetch_bytes(client, raw_url_for(&raw_prefix, &entry.path)?, true).await {
-            let (name, _) = parse_frontmatter(&String::from_utf8_lossy(&body));
-            if name == *requested || conventional.iter().any(|path| path == &entry.path) {
-                selected = Some((entry.path.clone(), body));
-                break;
-            }
+    let mut candidate_paths = conventional.to_vec();
+    for entry in candidates {
+        if !candidate_paths
+            .iter()
+            .any(|path| path.eq_ignore_ascii_case(&entry.path))
+        {
+            candidate_paths.push(entry.path.clone());
         }
     }
-    if selected.is_none() {
-        for entry in candidates {
-            if let Ok(body) =
-                fetch_bytes(client, raw_url_for(&raw_prefix, &entry.path)?, true).await
-            {
-                if parse_frontmatter(&String::from_utf8_lossy(&body)).0 == *requested {
-                    selected = Some((entry.path.clone(), body));
-                    break;
-                }
+    candidate_paths.sort_by_key(|path| {
+        if let Some(index) = conventional
+            .iter()
+            .position(|candidate| candidate.eq_ignore_ascii_case(path))
+        {
+            if index + 1 == conventional.len() {
+                (3_u8, index, path.len())
+            } else {
+                (0, index, path.len())
             }
+        } else if path
+            .rsplit('/')
+            .nth(1)
+            .is_some_and(|name| name.eq_ignore_ascii_case(requested))
+        {
+            (1, 0, path.len())
+        } else if path.contains('/') {
+            (2, 0, path.len())
+        } else {
+            (3, 0, path.len())
+        }
+    });
+    for path in candidate_paths {
+        let Ok(body) = fetch_bytes(client, raw_url_for(&raw_prefix, &path)?, true).await else {
+            continue;
+        };
+        let (name, _) = parse_frontmatter(&String::from_utf8_lossy(&body));
+        let conventional_path = conventional
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(&path));
+        let nested_alias = path
+            .rsplit('/')
+            .nth(1)
+            .is_some_and(|parent| parent.eq_ignore_ascii_case(requested));
+        if conventional_path || nested_alias || name.eq_ignore_ascii_case(requested) {
+            selected = Some((path, body));
+            break;
         }
     }
     let (skill_path, body) = selected.ok_or_else(|| {
@@ -732,7 +791,10 @@ async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill
             "SKILL.md not found in repository {owner}/{repo} for skill {requested}"
         ))
     })?;
-    let skill_dir = skill_path.strip_suffix("/SKILL.md").unwrap_or("");
+    let skill_dir = skill_path
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
     let body_text = String::from_utf8_lossy(&body).into_owned();
     let (front_name, description) = parse_frontmatter(&body_text);
     let name = if front_name.is_empty() {
@@ -762,6 +824,7 @@ struct GitHubSpec {
     repo: String,
     reference: String,
     skill_dir: String,
+    skill_filename: String,
     tree_segments: Vec<String>,
 }
 
@@ -775,9 +838,9 @@ async fn fetch_github(client: &Client, raw_url: &str) -> Result<ImportedSkill, I
     }
     let prefix = raw_prefix(&spec.owner, &spec.repo, &spec.reference);
     let skill_path = if spec.skill_dir.is_empty() {
-        "SKILL.md".into()
+        spec.skill_filename.clone()
     } else {
-        format!("{}/SKILL.md", spec.skill_dir)
+        format!("{}/{}", spec.skill_dir, spec.skill_filename)
     };
     let body = fetch_bytes(client, raw_url_for(&prefix, &skill_path)?, true)
         .await
@@ -841,6 +904,7 @@ fn parse_github(raw: &str) -> Result<GitHubSpec, ImportError> {
         repo: parts[1].trim_end_matches(".git").to_string(),
         reference: String::new(),
         skill_dir: String::new(),
+        skill_filename: "SKILL.md".into(),
         tree_segments: Vec::new(),
     };
     if parts.len() > 2 {
@@ -853,15 +917,16 @@ fn parse_github(raw: &str) -> Result<GitHubSpec, ImportError> {
         }
         let mut encoded = parts[3..].to_vec();
         if kind == "blob" {
-            if !encoded
-                .last()
-                .is_some_and(|value| value.eq_ignore_ascii_case("SKILL.md"))
-            {
+            let filename = encoded
+                .pop()
+                .ok_or_else(|| ImportError::Bad("blob URL must point to a SKILL.md file".into()))?;
+            let filename = decode_path_segment(&filename)?;
+            if !filename.eq_ignore_ascii_case("SKILL.md") {
                 return Err(ImportError::Bad(
                     "blob URL must point to a SKILL.md file".into(),
                 ));
             }
-            encoded.pop();
+            spec.skill_filename = filename;
             if encoded.is_empty() {
                 return Err(ImportError::Bad("missing ref after /blob/".into()));
             }
@@ -993,6 +1058,17 @@ async fn github_tree(
         .map_err(|error| ImportError::Upstream(error.to_string()))
 }
 
+fn github_token() -> Option<String> {
+    std::env::var("GITHUB_TOKEN")
+        .ok()
+        .and_then(|token| normalize_github_token(&token))
+}
+
+fn normalize_github_token(raw: &str) -> Option<String> {
+    let token = raw.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
 async fn github_get(client: &Client, url: String) -> Result<reqwest::Response, ImportError> {
     let parsed = Url::parse(&url).map_err(|error| ImportError::Upstream(error.to_string()))?;
     if parsed.scheme() != "https" || parsed.host_str() != Some("api.github.com") {
@@ -1004,10 +1080,8 @@ async fn github_get(client: &Client, url: String) -> Result<reqwest::Response, I
         .get(parsed)
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "Cordy-Skill-Importer");
-    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-        if !token.trim().is_empty() {
-            request = request.bearer_auth(token);
-        }
+    if let Some(token) = github_token() {
+        request = request.bearer_auth(token);
     }
     request.send().await.map_err(upstream)
 }
@@ -1046,21 +1120,34 @@ async fn add_files_via_crawl(
     let mut queue = vec![skill_dir.trim_matches('/').to_string()];
     let mut files = Vec::new();
     while let Some(repo_path) = queue.pop() {
-        let response = github_get(
+        let response = match github_get(
             client,
             github_contents_url(owner, repo, &repo_path, reference),
         )
-        .await?;
+        .await
+        {
+            Ok(response) => response,
+            Err(error @ ImportError::Cap(_)) => return Err(error),
+            Err(error) => {
+                tracing::warn!(%error, path = %repo_path, "github supporting-file listing skipped");
+                continue;
+            }
+        };
         if response.status() != StatusCode::OK {
-            return Err(ImportError::Upstream(format!(
-                "github directory listing returned HTTP {}",
-                response.status().as_u16()
-            )));
+            tracing::warn!(
+                status = response.status().as_u16(),
+                path = %repo_path,
+                "github supporting-file listing skipped"
+            );
+            continue;
         }
-        let entries: Vec<ContentEntry> = response
-            .json()
-            .await
-            .map_err(|error| ImportError::Upstream(error.to_string()))?;
+        let entries: Vec<ContentEntry> = match response.json().await {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::warn!(%error, path = %repo_path, "github supporting-file listing skipped");
+                continue;
+            }
+        };
         for entry in entries {
             match entry.kind.as_str() {
                 "dir" => queue.push(entry.path),
@@ -1069,7 +1156,6 @@ async fn add_files_via_crawl(
                     if lower == "skill.md"
                         || matches!(lower.as_str(), "license" | "license.md" | "license.txt")
                         || likely_binary(&entry.path)
-                        || entry.download_url.is_empty()
                     {
                         continue;
                     }
@@ -1083,14 +1169,23 @@ async fn add_files_via_crawl(
                             .unwrap_or(&entry.path)
                             .to_string()
                     };
-                    let download = Url::parse(&entry.download_url)
-                        .map_err(|error| ImportError::Upstream(error.to_string()))?;
+                    let Some(download_url) =
+                        entry.download_url.as_deref().filter(|url| !url.is_empty())
+                    else {
+                        continue;
+                    };
+                    let download = match Url::parse(download_url) {
+                        Ok(download) => download,
+                        Err(error) => {
+                            tracing::warn!(%error, path = %entry.path, "github supporting file skipped");
+                            continue;
+                        }
+                    };
                     if download.scheme() != "https"
                         || download.host_str() != Some("raw.githubusercontent.com")
                     {
-                        return Err(ImportError::Upstream(
-                            "github contents API returned an unsafe download URL".into(),
-                        ));
+                        tracing::warn!(path = %entry.path, "github supporting file skipped unsafe download URL");
+                        continue;
                     }
                     files.push((relative, download));
                     if files.len() > MAX_FILE_COUNT {
@@ -1104,16 +1199,17 @@ async fn add_files_via_crawl(
         }
     }
     files.sort_by(|left, right| left.0.cmp(&right.0));
-    let downloads = stream::iter(files.into_iter().map(|(path, url)| async move {
+    let mut downloads = stream::iter(files.into_iter().map(|(path, url)| async move {
         let bytes = fetch_bytes(client, url, true).await?;
         Ok::<_, ImportError>((path, String::from_utf8_lossy(&bytes).into_owned()))
     }))
-    .buffered(DOWNLOAD_CONCURRENCY)
-    .collect::<Vec<_>>()
-    .await;
-    for result in downloads {
-        let (path, content) = result?;
-        imported.add_file(path, content)?;
+    .buffered(DOWNLOAD_CONCURRENCY);
+    while let Some(result) = downloads.next().await {
+        match result {
+            Ok((path, content)) => imported.add_file(path, content)?,
+            Err(error @ ImportError::Cap(_)) => return Err(error),
+            Err(error) => tracing::warn!(%error, "github supporting file skipped"),
+        }
     }
     Ok(())
 }
@@ -1176,7 +1272,7 @@ async fn add_tree_files(
             "import bundle is {total} bytes, exceeding the {MAX_TOTAL_SIZE} byte limit"
         )));
     }
-    let downloads = stream::iter(
+    let mut downloads = stream::iter(
         files
             .into_iter()
             .map(|(repo_path, relative, _)| async move {
@@ -1185,12 +1281,13 @@ async fn add_tree_files(
                 Ok::<_, ImportError>((relative, String::from_utf8_lossy(&bytes).into_owned()))
             }),
     )
-    .buffered(DOWNLOAD_CONCURRENCY)
-    .collect::<Vec<_>>()
-    .await;
-    for result in downloads {
-        let (path, content) = result?;
-        imported.add_file(path, content)?;
+    .buffered(DOWNLOAD_CONCURRENCY);
+    while let Some(result) = downloads.next().await {
+        match result {
+            Ok((path, content)) => imported.add_file(path, content)?,
+            Err(error @ ImportError::Cap(_)) => return Err(error),
+            Err(error) => tracing::warn!(%error, "github supporting file skipped"),
+        }
     }
     Ok(())
 }
@@ -1205,10 +1302,8 @@ async fn fetch_bytes(client: &Client, url: Url, github_auth: bool) -> Result<Vec
     }
     let mut request = client.get(url);
     if github_auth {
-        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-            if !token.trim().is_empty() {
-                request = request.bearer_auth(token);
-            }
+        if let Some(token) = github_token() {
+            request = request.bearer_auth(token);
         }
     }
     let response = request.send().await.map_err(upstream)?;
@@ -1307,14 +1402,29 @@ fn parse_frontmatter(content: &str) -> (String, String) {
         value
             .get(key)
             .and_then(|value| match value {
-                serde_yaml::Value::String(value) => Some(value.clone()),
+                serde_yaml::Value::String(value) => Some(value.trim().to_string()),
                 serde_yaml::Value::Number(value) => Some(value.to_string()),
                 serde_yaml::Value::Bool(value) => Some(value.to_string()),
+                serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => {
+                    serde_json::to_string(value).ok()
+                }
                 _ => None,
             })
             .unwrap_or_default()
     };
     (string("name"), string("description"))
+}
+
+fn skill_archive_root_prefix(name: &str) -> String {
+    let normalized = name.replace('\\', "/");
+    match normalized.rsplit_once('/') {
+        Some((parent, basename))
+            if basename.eq_ignore_ascii_case("SKILL.md") && !parent.is_empty() =>
+        {
+            format!("{parent}/")
+        }
+        _ => String::new(),
+    }
 }
 
 fn likely_binary(path: &str) -> bool {
@@ -1342,6 +1452,11 @@ fn likely_binary(path: &str) -> bool {
             | "mp4"
             | "mov"
             | "avi"
+            | "wav"
+            | "bmp"
+            | "wasm"
+            | "so"
+            | "sqlite"
             | "doc"
             | "docx"
             | "xls"
@@ -1351,11 +1466,55 @@ fn likely_binary(path: &str) -> bool {
     )
 }
 
+struct CancelArchiveOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelArchiveOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
 fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportError> {
+    parse_archive_with_cancel(data, filename, &AtomicBool::new(false))
+}
+
+fn parse_archive_with_cancel(
+    data: &[u8],
+    filename: &str,
+    cancelled: &AtomicBool,
+) -> Result<ImportedSkill, ImportError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(data))
         .map_err(|_| ImportError::Bad("uploaded file is not a valid .skill/.zip archive".into()))?;
+    if archive.len() > MAX_ARCHIVE_ENTRY_COUNT {
+        return Err(ImportError::ArchiveLimit(format!(
+            "archive exceeds {MAX_ARCHIVE_ENTRY_COUNT} entry limit"
+        )));
+    }
+    let mut declared_size = 0_u64;
+    for index in 0..archive.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(ImportError::Bad("archive parsing cancelled".into()));
+        }
+        let file = archive
+            .by_index(index)
+            .map_err(|error| ImportError::Bad(error.to_string()))?;
+        if !file.is_dir() {
+            declared_size = declared_size.checked_add(file.size()).ok_or_else(|| {
+                ImportError::ArchiveLimit("archive uncompressed size is too large".into())
+            })?;
+            if declared_size > MAX_ARCHIVE_UNCOMPRESSED_SIZE as u64 {
+                return Err(ImportError::ArchiveLimit(format!(
+                    "archive exceeds {MAX_ARCHIVE_UNCOMPRESSED_SIZE} byte uncompressed limit"
+                )));
+            }
+        }
+    }
     let mut primary = None;
     for index in 0..archive.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(ImportError::Bad("archive parsing cancelled".into()));
+        }
         let file = archive
             .by_index(index)
             .map_err(|error| ImportError::Bad(error.to_string()))?;
@@ -1369,10 +1528,7 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
             .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"))
             && safe_archive_path(&name)
         {
-            let prefix = name
-                .strip_suffix("SKILL.md")
-                .unwrap_or_default()
-                .to_string();
+            let prefix = skill_archive_root_prefix(&name);
             if primary
                 .as_ref()
                 .is_none_or(|(_, existing): &(usize, String)| prefix.len() < existing.len())
@@ -1383,7 +1539,13 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
     }
     let (primary_index, prefix) =
         primary.ok_or_else(|| ImportError::Bad("archive does not contain a SKILL.md".into()))?;
-    let content = read_zip(&mut archive, primary_index)?;
+    let mut decompressed_size = 0_usize;
+    let content = read_zip(
+        &mut archive,
+        primary_index,
+        &mut decompressed_size,
+        cancelled,
+    )?;
     let (front_name, description) = parse_frontmatter(&content);
     let fallback = if prefix.is_empty() {
         filename
@@ -1413,6 +1575,9 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
     }
     let mut imported = ImportedSkill::new(name, description, content, None);
     for index in 0..archive.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(ImportError::Bad("archive parsing cancelled".into()));
+        }
         if index == primary_index {
             continue;
         }
@@ -1438,9 +1603,10 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
         {
             continue;
         }
-        match read_zip(&mut archive, index) {
+        match read_zip(&mut archive, index, &mut decompressed_size, cancelled) {
             Ok(content) => imported.add_file(relative, content)?,
             Err(ImportError::Cap(_)) => continue,
+            Err(error @ ImportError::ArchiveLimit(_)) => return Err(error),
             Err(error) => return Err(error),
         }
     }
@@ -1453,15 +1619,28 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
 fn read_zip(
     archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
     index: usize,
+    decompressed_size: &mut usize,
+    cancelled: &AtomicBool,
 ) -> Result<String, ImportError> {
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(ImportError::Bad("archive parsing cancelled".into()));
+    }
     let mut file = archive
         .by_index(index)
         .map_err(|error| ImportError::Bad(error.to_string()))?;
     let mut bytes = Vec::new();
+    let remaining = MAX_ARCHIVE_UNCOMPRESSED_SIZE.saturating_sub(*decompressed_size);
+    let read_limit = (MAX_FILE_SIZE + 1).min(remaining.saturating_add(1));
     file.by_ref()
-        .take((MAX_FILE_SIZE + 1) as u64)
+        .take(read_limit as u64)
         .read_to_end(&mut bytes)
         .map_err(|error| ImportError::Bad(error.to_string()))?;
+    *decompressed_size = (*decompressed_size).saturating_add(bytes.len());
+    if *decompressed_size > MAX_ARCHIVE_UNCOMPRESSED_SIZE {
+        return Err(ImportError::ArchiveLimit(format!(
+            "archive exceeds {MAX_ARCHIVE_UNCOMPRESSED_SIZE} byte uncompressed limit"
+        )));
+    }
     if bytes.len() > MAX_FILE_SIZE {
         return Err(ImportError::Cap(format!(
             "file {:?} exceeds {MAX_FILE_SIZE} bytes",
@@ -1889,6 +2068,8 @@ mod tests {
             Source::GitHub
         );
         assert!(detect_source("http://github.com/acme/review").is_err());
+        assert!(detect_source("https://ghp_secret@github.com/acme/review").is_err());
+        assert!(detect_source("https://user:secret@github.com/acme/review").is_err());
         assert!(detect_source("https://127.0.0.1/skill").is_err());
     }
 
@@ -1958,10 +2139,68 @@ mod tests {
     }
 
     #[test]
+    fn archive_rejects_excess_entries_before_decompression() {
+        let mut bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut bytes));
+            let options = zip::write::SimpleFileOptions::default();
+            for index in 0..=MAX_ARCHIVE_ENTRY_COUNT {
+                writer
+                    .start_file(format!("entry-{index}.txt"), options)
+                    .unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        assert!(matches!(
+            parse_archive(&bytes, "review.skill"),
+            Err(ImportError::ArchiveLimit(_))
+        ));
+    }
+
+    #[test]
+    fn archive_rejects_declared_uncompressed_size_before_reading() {
+        let mut bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut bytes));
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("review/SKILL.md", options).unwrap();
+            writer.write_all(b"---\nname: review\n---\n").unwrap();
+            writer.start_file("review/bomb.txt", options).unwrap();
+            writer
+                .write_all(&vec![0; MAX_ARCHIVE_UNCOMPRESSED_SIZE + 1])
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        assert!(bytes.len() < MAX_ARCHIVE_UPLOAD_SIZE);
+        assert!(matches!(
+            parse_archive(&bytes, "review.skill"),
+            Err(ImportError::ArchiveLimit(_))
+        ));
+    }
+
+    #[test]
     fn frontmatter_and_bundle_caps_are_stable() {
         assert_eq!(
             parse_frontmatter("---\nname: x\ndescription: y\n---\n").0,
             "x"
+        );
+        assert_eq!(
+            parse_frontmatter("---\nname: \" review \"\ndescription: \" notes \"\n---\n"),
+            ("review".into(), "notes".into())
+        );
+        assert_eq!(
+            parse_frontmatter("---\ndescription:\n  - first feature\n  - second feature\n---\n").1,
+            "[\"first feature\",\"second feature\"]"
+        );
+        assert!(likely_binary("assets/icon.bmp"));
+        assert!(likely_binary("native/lib.so"));
+        assert!(likely_binary("data.sqlite"));
+        assert_eq!(skill_archive_root_prefix("review/skill.md"), "review/");
+        assert_eq!(skill_archive_root_prefix("SKILL.md"), "");
+        assert_eq!(
+            normalize_github_token("  ghp_secret\n"),
+            Some("ghp_secret".into())
         );
         let mut imported = ImportedSkill::new("x".into(), String::new(), "body".into(), None);
         assert!(imported
@@ -1972,5 +2211,21 @@ mod tests {
             imported.add_file("large.md".into(), "x".repeat(MAX_FILE_SIZE + 1)),
             Err(ImportError::Cap(_))
         ));
+    }
+
+    #[test]
+    fn clawhub_partial_stats_default_missing_counters() {
+        let stats: ClawStats = serde_json::from_str(r#"{"installsAllTime":62,"stars":3}"#).unwrap();
+        assert_eq!(stats.installs_all_time, 62);
+        assert_eq!(stats.installs_current, 0);
+    }
+
+    #[test]
+    fn github_directory_entries_accept_null_download_url() {
+        let entry: ContentEntry = serde_json::from_str(
+            r#"{"name":"docs","path":"review/docs","type":"dir","download_url":null}"#,
+        )
+        .unwrap();
+        assert!(entry.download_url.is_none());
     }
 }

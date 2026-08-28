@@ -368,6 +368,9 @@ pub struct HandlerState {
     pub daemon_token_cache: DaemonTokenCache,
     pub membership_cache: MembershipCache,
     pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
+    /// Loaded Fleet base URL used by the cloud-runtime HTTP proxy. Empty means
+    /// fall back to `CORDY_CLOUD_FLEET_URL` / `CORDY_FLEET_URL` at router build.
+    pub cloud_runtime_base_url: String,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -428,16 +431,17 @@ pub struct HandlerState {
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
-    /// Redis-backed pending request stores (update / model list / local
-    /// skills). `None` matches Go's nil-store path: every probe reports an
-    /// empty queue and report endpoints answer 404, which daemons treat as a
-    /// dropped one-shot report.
-    pub update_store: Option<Arc<crate::pending_store::UpdateStore>>,
-    pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
-    pub model_catalog_cache: Option<Arc<crate::pending_store::ModelCatalogCache>>,
+    /// Pending request stores (update / model list / local skills). Production
+    /// uses Redis when configured and process-local stores for single-node
+    /// deployments that intentionally omit Redis. `None` is reserved for
+    /// invalid Redis configuration, which fails closed like Go.
+    pub update_store: Option<Arc<dyn crate::pending_store::UpdateStoreBackend>>,
+    pub model_list_store: Option<Arc<dyn crate::pending_store::ModelListStoreBackend>>,
+    pub model_catalog_cache: Option<Arc<dyn crate::pending_store::ModelCatalogCacheBackend>>,
     pub webhook_rate_limits: crate::webhook_rate_limit::WebhookRateLimits,
-    pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
-    pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+    pub local_skill_list_store: Option<Arc<dyn crate::pending_store::LocalSkillListStoreBackend>>,
+    pub local_skill_import_store:
+        Option<Arc<dyn crate::pending_store::LocalSkillImportStoreBackend>>,
     /// Shared Redis connection for per-IP public-route rate limiting. None is
     /// the Go nil-client path and deliberately fails open.
     pub rate_limit_client: Option<redis::Client>,
@@ -540,9 +544,11 @@ impl HandlerState {
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         task_service.quick_actions = Some(llm.clone());
         task_service.feature_flags = feature_flags.clone();
-        task_service.composio = composio
-            .as_ref()
-            .map(|service| crate::composio::task_overlay_builder(service.clone()));
+        task_service.set_composio_overlay(
+            composio
+                .as_ref()
+                .map(|service| crate::composio::task_overlay_builder(service.clone())),
+        );
         let tasks = Arc::new(task_service);
         let autopilots = Arc::new(AutopilotService::new(
             pool.clone(),
@@ -575,6 +581,7 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             membership_cache: MembershipCache::disabled(),
             cloud_pat_verifier: None,
+            cloud_runtime_base_url: String::new(),
             hub,
             bus,
             channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
@@ -631,6 +638,36 @@ impl HandlerState {
 
     /// Wires the internal OpenAI-compatible assist layer. Invalid retry
     /// budgets fail startup rather than silently selecting another policy.
+    pub fn with_llm_from_config(self, llm: &cordy_config::LlmConfig) -> anyhow::Result<Self> {
+        const MAX_RETRIES: u32 = 5;
+        let max_retries = match llm.max_retries {
+            None => None,
+            Some(parsed) => {
+                anyhow::ensure!(
+                    parsed <= MAX_RETRIES,
+                    "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
+                );
+                Some(parsed)
+            }
+        };
+        let client = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
+            api_key: llm.api_key.clone().unwrap_or_default(),
+            base_url: llm.base_url.clone().unwrap_or_default(),
+            default_model: llm.default_model.clone().unwrap_or_default(),
+            max_retries,
+        }));
+        self.llm.replace(client.clone());
+        tracing::info!(
+            enabled = client.enabled(),
+            max_retries = client.max_retries(),
+            default_model = client.default_model(),
+            "llm assist policy"
+        );
+        Ok(self)
+    }
+
+    /// Wires the internal OpenAI-compatible assist layer from process env.
+    /// Production startup prefers [`Self::with_llm_from_config`].
     pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
         const MAX_RETRIES: u32 = 5;
         let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
@@ -649,20 +686,15 @@ impl HandlerState {
             );
             Some(parsed)
         };
-        let client = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
-            api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
-            base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
-            default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
+        self.with_llm_from_config(&cordy_config::LlmConfig {
+            api_key: Some(std::env::var("CORDY_LLM_API_KEY").unwrap_or_default())
+                .filter(|value| !value.is_empty()),
+            base_url: Some(std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default())
+                .filter(|value| !value.is_empty()),
+            default_model: Some(std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default())
+                .filter(|value| !value.is_empty()),
             max_retries,
-        }));
-        self.llm.replace(client.clone());
-        tracing::info!(
-            enabled = client.enabled(),
-            max_retries = client.max_retries(),
-            default_model = client.default_model(),
-            "llm assist policy"
-        );
-        Ok(self)
+        })
     }
 
     /// Wires the S7 Slack history service with the same secretbox key used by
@@ -706,6 +738,36 @@ impl HandlerState {
 
     pub fn with_integrations(mut self, integrations: cordy_config::IntegrationsConfig) -> Self {
         self.integrations = integrations;
+        self
+    }
+
+    /// Rebuilds the Composio HTTP service and task overlay from loaded config.
+    /// TOML-only deployments no longer depend on process environment after
+    /// `Config::load` has already merged env overrides into `config`.
+    pub fn with_composio_from_config(mut self, config: &cordy_config::Config) -> Self {
+        self.integrations = config.integrations.clone();
+        let enabled = self
+            .feature_flags
+            .as_deref()
+            .is_some_and(cordy_service::feature_flags::composio_mcp_apps_enabled);
+        if !enabled {
+            self.composio = None;
+            self.tasks.set_composio_overlay(None);
+            return self;
+        }
+        match crate::composio::build_service_from_config(self.pool.clone(), config) {
+            Ok(service) => {
+                let service = Arc::new(service);
+                self.composio = Some(service.clone());
+                self.tasks
+                    .set_composio_overlay(Some(crate::composio::task_overlay_builder(service)));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "composio disabled by incomplete configuration");
+                self.composio = None;
+                self.tasks.set_composio_overlay(None);
+            }
+        }
         self
     }
 
@@ -902,7 +964,15 @@ impl HandlerState {
     }
 
     pub fn with_cloud_pat_fleet_url(mut self, fleet_url: Option<&str>) -> Self {
-        self.cloud_pat_verifier = fleet_url.and_then(cordy_auth::cloud_pat::CloudPatVerifier::new);
+        let url = fleet_url
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_default()
+            .to_string();
+        self.cloud_pat_verifier = (!url.is_empty())
+            .then(|| cordy_auth::cloud_pat::CloudPatVerifier::new(&url))
+            .flatten();
+        self.cloud_runtime_base_url = url;
         self
     }
 
@@ -970,9 +1040,7 @@ impl HandlerState {
 
     /// Builds all handler/service Redis dependencies from the production
     /// client: auth/member caches, empty-claim cache, runtime liveness,
-    /// invitation/webhook gates, and pending request stores. Callers without
-    /// Redis keep the explicit disabled implementations and preserve the Go
-    /// nil-store behavior.
+    /// invitation/webhook gates, and pending request stores.
     pub fn with_redis(mut self, client: redis::Client) -> Self {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
@@ -1005,6 +1073,24 @@ impl HandlerState {
         ));
         self.local_skill_import_store = Some(Arc::new(
             crate::pending_store::LocalSkillImportStore::new(conn.clone()),
+        ));
+        self
+    }
+
+    /// Installs the Go-compatible single-node pending-request lifecycle when
+    /// Redis is intentionally absent. These stores are process-local by
+    /// design; configured Redis failures still fail closed at startup.
+    pub fn with_in_memory_pending_stores(mut self) -> Self {
+        self.update_store = Some(Arc::new(crate::pending_store::InMemoryUpdateStore::new()));
+        self.model_list_store = Some(Arc::new(crate::pending_store::InMemoryModelListStore::new()));
+        self.model_catalog_cache = Some(Arc::new(
+            crate::pending_store::InMemoryModelCatalogCache::new(),
+        ));
+        self.local_skill_list_store = Some(Arc::new(
+            crate::pending_store::InMemoryLocalSkillListStore::new(),
+        ));
+        self.local_skill_import_store = Some(Arc::new(
+            crate::pending_store::InMemoryLocalSkillImportStore::new(),
         ));
         self
     }
@@ -1193,5 +1279,39 @@ mod tests {
 
         assert!(state.plugin_events.is_none());
         assert!(runtime.is_none());
+    }
+
+    struct ComposioFlags(bool);
+
+    impl cordy_service::feature_flags::FlagSource for ComposioFlags {
+        fn is_enabled(&self, key: &str, default: bool) -> bool {
+            if key == cordy_service::feature_flags::COMPOSIO_MCP_APPS {
+                self.0
+            } else {
+                default
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn loaded_config_installs_composio_and_llm_without_process_env() {
+        let mut config = cordy_config::Config::default();
+        config.integrations.composio_api_key = Some("toml-api-key".into());
+        config.integrations.composio_callback_base_url = Some("https://api.example".into());
+        config.integrations.composio_state_secret = Some("toml-state-secret".into());
+        config.llm.api_key = Some("toml-llm-key".into());
+        config.llm.base_url = Some("https://llm.example/v1".into());
+        config.llm.default_model = Some("toml-model".into());
+        config.llm.max_retries = Some(3);
+
+        let state = test_state()
+            .with_feature_flags(Arc::new(ComposioFlags(true)))
+            .with_composio_from_config(&config)
+            .with_llm_from_config(&config.llm)
+            .unwrap();
+        assert!(state.composio.is_some());
+        assert!(state.llm.client().enabled());
+        assert_eq!(state.llm.client().default_model(), "toml-model");
+        assert_eq!(state.llm.client().max_retries(), 3);
     }
 }

@@ -303,14 +303,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 format!("workspace is not watched by this daemon: {workspace_id}"),
             )
         })?;
-        let cache_hit_on_entry = self.repo_state.is_allowed(workspace_id, repo_url)
-            && self.repo_cache.lookup(workspace_id, repo_url).is_some();
         let _guard = tokio::select! {
             () = ctx.cancelled() => return Err(checkout_failure(500, "repo checkout cancelled")),
             guard = refresh_lock.lock() => guard,
         };
-        if !cache_hit_on_entry
-            && self.repo_state.is_allowed(workspace_id, repo_url)
+        // Re-check under the workspace refresh lock. An authorized warm cache
+        // remains usable during transient server outages, and another request
+        // may have filled a prior miss while this request waited.
+        if self.repo_state.is_allowed(workspace_id, repo_url)
             && self.repo_cache.lookup(workspace_id, repo_url).is_some()
         {
             return Ok(());
@@ -637,6 +637,10 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
         request: RepoCheckoutRequest,
     ) -> Result<Value, RepoCheckoutFailure> {
         self.checkout_repo(ctx, active_task, request).await
+    }
+
+    async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()> {
+        self.registration.flush_deregistrations(&ctx).await
     }
 }
 

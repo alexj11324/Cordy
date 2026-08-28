@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -11,11 +11,12 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
+use chrono::{DateTime, Utc};
 use cordy_db::models::ChannelInstallation;
 use cordy_db::queries::{agent, channel, dingtalk};
 use cordy_lark::client::ApiClient as _;
 use cordy_middleware::workspace::WorkspaceContext;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -381,15 +382,178 @@ fn dingtalk_installation_bindings(
     value
 }
 
-#[derive(Clone)]
+const LARK_SESSION_PREFIX: &str = "mul:{lark_install_session}:";
+const LARK_SESSION_TTL: Duration = Duration::from_secs(15 * 60);
+const LARK_SESSION_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
+const LARK_SESSION_MEMORY_CAP: usize = 1024;
+
+#[derive(Clone, Serialize, Deserialize)]
 struct LarkSession {
     workspace_id: Uuid,
     initiator_id: Uuid,
-    status: &'static str,
+    status: String,
     installation_id: Option<Uuid>,
     error_reason: Option<String>,
     error_message: Option<String>,
-    expires_at: Instant,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+struct LarkSessionStore {
+    redis: Option<redis::Client>,
+}
+
+impl LarkSessionStore {
+    fn from_state(state: &HandlerState) -> Self {
+        Self {
+            redis: state.rate_limit_client.clone(),
+        }
+    }
+
+    fn key(session_id: &str) -> String {
+        format!("{LARK_SESSION_PREFIX}{session_id}")
+    }
+
+    fn memory() -> &'static Mutex<HashMap<String, LarkSession>> {
+        static SESSIONS: OnceLock<Mutex<HashMap<String, LarkSession>>> = OnceLock::new();
+        SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    fn ttl_secs(expires_at: DateTime<Utc>) -> u64 {
+        (expires_at - Utc::now()).num_seconds().max(1) as u64
+    }
+
+    async fn insert(&self, session_id: &str, session: LarkSession) -> Result<(), &'static str> {
+        if self.redis.is_some() {
+            return self.persist(session_id, &session).await;
+        }
+        let mut sessions = Self::memory().lock().unwrap();
+        let now = Utc::now();
+        sessions.retain(|_, value| value.expires_at > now);
+        if sessions.len() >= LARK_SESSION_MEMORY_CAP && !sessions.contains_key(session_id) {
+            return Err("too many install sessions");
+        }
+        sessions.insert(session_id.to_string(), session);
+        Ok(())
+    }
+
+    async fn persist(&self, session_id: &str, session: &LarkSession) -> Result<(), &'static str> {
+        if let Some(client) = &self.redis {
+            return self.redis_set(client, session_id, session).await;
+        }
+        Self::memory()
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string(), session.clone());
+        Ok(())
+    }
+
+    async fn get(&self, session_id: &str) -> Result<Option<LarkSession>, &'static str> {
+        if let Some(client) = &self.redis {
+            return self.redis_get(client, session_id).await;
+        }
+        let mut sessions = Self::memory().lock().unwrap();
+        let now = Utc::now();
+        sessions.retain(|_, value| value.expires_at > now);
+        Ok(sessions.get(session_id).cloned())
+    }
+
+    async fn remove(&self, session_id: &str) {
+        if let Some(client) = &self.redis {
+            let _ = self.redis_del(client, session_id).await;
+            return;
+        }
+        Self::memory().lock().unwrap().remove(session_id);
+    }
+
+    async fn finish(
+        &self,
+        session_id: &str,
+        installation_id: Option<Uuid>,
+        reason: Option<&str>,
+        message: Option<&str>,
+    ) {
+        let mut session = match self.get(session_id).await {
+            Ok(Some(session)) => session,
+            _ => return,
+        };
+        session.status = if installation_id.is_some() {
+            "success".into()
+        } else {
+            "error".into()
+        };
+        session.installation_id = installation_id;
+        session.error_reason = reason.map(str::to_string);
+        session.error_message = message.map(str::to_string);
+        let _ = self.persist(session_id, &session).await;
+    }
+
+    async fn redis_set(
+        &self,
+        client: &redis::Client,
+        session_id: &str,
+        session: &LarkSession,
+    ) -> Result<(), &'static str> {
+        let payload =
+            serde_json::to_string(session).map_err(|_| "failed to persist install session")?;
+        let key = Self::key(session_id);
+        let ttl = Self::ttl_secs(session.expires_at);
+        let operation = async {
+            let mut connection = client.get_multiplexed_async_connection().await?;
+            redis::cmd("SET")
+                .arg(key)
+                .arg(payload)
+                .arg("EX")
+                .arg(ttl)
+                .query_async::<()>(&mut connection)
+                .await
+        };
+        match tokio::time::timeout(LARK_SESSION_REDIS_TIMEOUT, operation).await {
+            Ok(Ok(())) => Ok(()),
+            _ => Err("failed to persist install session"),
+        }
+    }
+
+    async fn redis_get(
+        &self,
+        client: &redis::Client,
+        session_id: &str,
+    ) -> Result<Option<LarkSession>, &'static str> {
+        let key = Self::key(session_id);
+        let operation = async {
+            let mut connection = client.get_multiplexed_async_connection().await?;
+            redis::cmd("GET")
+                .arg(key)
+                .query_async::<Option<String>>(&mut connection)
+                .await
+        };
+        match tokio::time::timeout(LARK_SESSION_REDIS_TIMEOUT, operation).await {
+            Ok(Ok(Some(payload))) => Ok(serde_json::from_str(&payload)
+                .ok()
+                .filter(|session: &LarkSession| session.expires_at > Utc::now())),
+            Ok(Ok(None)) => Ok(None),
+            _ => Err("failed to load install session"),
+        }
+    }
+
+    async fn redis_del(
+        &self,
+        client: &redis::Client,
+        session_id: &str,
+    ) -> Result<(), &'static str> {
+        let key = Self::key(session_id);
+        let operation = async {
+            let mut connection = client.get_multiplexed_async_connection().await?;
+            redis::cmd("DEL")
+                .arg(key)
+                .query_async::<()>(&mut connection)
+                .await
+        };
+        match tokio::time::timeout(LARK_SESSION_REDIS_TIMEOUT, operation).await {
+            Ok(Ok(())) => Ok(()),
+            _ => Err("failed to persist install session"),
+        }
+    }
 }
 
 struct LarkRegistrationRuntime {
@@ -397,6 +561,7 @@ struct LarkRegistrationRuntime {
     bus: Arc<cordy_events::Bus>,
     http_base_url: String,
     cancel: CancellationToken,
+    sessions: LarkSessionStore,
 }
 
 fn can_manage_lark_agent(role: &str, owner_id: Option<Uuid>, actor: Uuid) -> bool {
@@ -421,14 +586,7 @@ FOR SHARE OF m, a"#,
     .bind(agent_id)
     .fetch_optional(&mut **tx)
     .await?;
-    Ok(current.is_some_and(|(role, owner_id)| {
-        can_manage_lark_agent(&role, owner_id, actor)
-    }))
-}
-
-fn lark_sessions() -> &'static Mutex<HashMap<String, LarkSession>> {
-    static SESSIONS: OnceLock<Mutex<HashMap<String, LarkSession>>> = OnceLock::new();
-    SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+    Ok(current.is_some_and(|(role, owner_id)| can_manage_lark_agent(&role, owner_id, actor)))
 }
 
 async fn begin_lark_install(
@@ -496,25 +654,30 @@ async fn begin_lark_install(
         }
     };
     let session_id = Uuid::new_v4().to_string();
-    let mut sessions = lark_sessions().lock().unwrap();
-    let now = Instant::now();
-    sessions.retain(|_, session| session.expires_at > now);
-    if sessions.len() >= 1024 {
-        return error_response(StatusCode::TOO_MANY_REQUESTS, "too many install sessions");
+    let sessions = LarkSessionStore::from_state(&state);
+    if let Err(message) = sessions
+        .insert(
+            &session_id,
+            LarkSession {
+                workspace_id,
+                initiator_id: actor,
+                status: "pending".into(),
+                installation_id: None,
+                error_reason: None,
+                error_message: None,
+                expires_at: Utc::now()
+                    + chrono::Duration::seconds(LARK_SESSION_TTL.as_secs() as i64),
+            },
+        )
+        .await
+    {
+        let status = if message == "too many install sessions" {
+            StatusCode::TOO_MANY_REQUESTS
+        } else {
+            StatusCode::SERVICE_UNAVAILABLE
+        };
+        return error_response(status, message);
     }
-    sessions.insert(
-        session_id.clone(),
-        LarkSession {
-            workspace_id,
-            initiator_id: actor,
-            status: "pending",
-            installation_id: None,
-            error_reason: None,
-            error_message: None,
-            expires_at: now + Duration::from_secs(15 * 60),
-        },
-    );
-    drop(sessions);
     let task_session = session_id.clone();
     let poll_interval = begun.interval.as_secs().max(1);
     let expires = begun.expires_in;
@@ -527,6 +690,7 @@ async fn begin_lark_install(
             .clone()
             .unwrap_or_default(),
         cancel: state.channel_cancel.clone(),
+        sessions: sessions.clone(),
     };
     if !state.channel_tasks.spawn(run_lark_registration(
         runtime,
@@ -536,7 +700,7 @@ async fn begin_lark_install(
         region,
         begun.clone(),
     )) {
-        lark_sessions().lock().unwrap().remove(&session_id);
+        sessions.remove(&session_id).await;
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "channel runtime is shutting down",
@@ -568,12 +732,15 @@ async fn run_lark_registration(
             return;
         }
         if tokio::time::Instant::now() >= deadline {
-            finish_lark_session(
-                &session_id,
-                None,
-                Some("expired"),
-                Some("install session expired"),
-            );
+            runtime
+                .sessions
+                .finish(
+                    &session_id,
+                    None,
+                    Some("expired"),
+                    Some("install session expired"),
+                )
+                .await;
             return;
         }
         tokio::select! {
@@ -587,12 +754,15 @@ async fn run_lark_registration(
         let result = match poll {
             Ok(value) => value,
             Err(error) if lark_poll_protocol_error(&error) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("lark_protocol_error"),
-                    Some(&format!("{error:#}")),
-                );
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("lark_protocol_error"),
+                        Some(&format!("{error:#}")),
+                    )
+                    .await;
                 return;
             }
             Err(error) => {
@@ -617,7 +787,10 @@ async fn run_lark_registration(
                 "expired_token" => "expired",
                 _ => "registration_failed",
             };
-            finish_lark_session(&session_id, None, Some(reason), Some(&error.to_string()));
+            runtime
+                .sessions
+                .finish(&session_id, None, Some(reason), Some(&error.to_string()))
+                .await;
             return;
         }
         if result.status == "slow_down" {
@@ -642,48 +815,60 @@ async fn run_lark_registration(
         let bot = match api.get_bot_info(credentials).await {
             Ok(value) => value,
             Err(error) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("bot_info_failed"),
-                    Some(&format!("{error:#}")),
-                );
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("bot_info_failed"),
+                        Some(&format!("{error:#}")),
+                    )
+                    .await;
                 return;
             }
         };
         let box_ = match secret_box(Provider::Lark) {
             Some(value) => value,
             None => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("not_configured"),
-                    Some("lark install not configured"),
-                );
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("not_configured"),
+                        Some("lark install not configured"),
+                    )
+                    .await;
                 return;
             }
         };
         let sealed = match box_.seal(result.client_secret.as_bytes()) {
             Ok(value) => value,
             Err(error) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("encryption_failed"),
-                    Some(&error.to_string()),
-                );
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("encryption_failed"),
+                        Some(&error.to_string()),
+                    )
+                    .await;
                 return;
             }
         };
         let mut tx = match runtime.pool.begin().await {
             Ok(value) => value,
             Err(error) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("internal_error"),
-                    Some(&error.to_string()),
-                );
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("internal_error"),
+                        Some(&error.to_string()),
+                    )
+                    .await;
                 return;
             }
         };
@@ -692,23 +877,29 @@ async fn run_lark_registration(
                 Ok(authorized) => authorized,
                 Err(error) => {
                     let _ = tx.rollback().await;
-                    finish_lark_session(
-                        &session_id,
-                        None,
-                        Some("internal_error"),
-                        Some(&error.to_string()),
-                    );
+                    runtime
+                        .sessions
+                        .finish(
+                            &session_id,
+                            None,
+                            Some("internal_error"),
+                            Some(&error.to_string()),
+                        )
+                        .await;
                     return;
                 }
             };
         if !authorized {
             let _ = tx.rollback().await;
-            finish_lark_session(
-                &session_id,
-                None,
-                Some("authorization_revoked"),
-                Some("workspace membership or agent-management permission changed"),
-            );
+            runtime
+                .sessions
+                .finish(
+                    &session_id,
+                    None,
+                    Some("authorization_revoked"),
+                    Some("workspace membership or agent-management permission changed"),
+                )
+                .await;
             return;
         }
         let app_id = result.client_id.clone();
@@ -721,12 +912,15 @@ async fn run_lark_registration(
         .await
         {
             let _ = tx.rollback().await;
-            finish_lark_session(
-                &session_id,
-                None,
-                Some("internal_error"),
-                Some(&format!("{error:#}")),
-            );
+            runtime
+                .sessions
+                .finish(
+                    &session_id,
+                    None,
+                    Some("internal_error"),
+                    Some(&format!("{error:#}")),
+                )
+                .await;
             return;
         }
         let installation = match cordy_lark::channel_store::upsert_lark_installation_with(
@@ -753,19 +947,25 @@ async fn run_lark_registration(
                     let message =
                         lark_live_owner_conflict_message(&runtime.pool, workspace_id, &app_id)
                             .await;
-                    finish_lark_session(
-                        &session_id,
-                        None,
-                        Some("installation_conflict"),
-                        Some(&message),
-                    );
+                    runtime
+                        .sessions
+                        .finish(
+                            &session_id,
+                            None,
+                            Some("installation_conflict"),
+                            Some(&message),
+                        )
+                        .await;
                 } else {
-                    finish_lark_session(
-                        &session_id,
-                        None,
-                        Some("internal_error"),
-                        Some(&format!("{error:#}")),
-                    );
+                    runtime
+                        .sessions
+                        .finish(
+                            &session_id,
+                            None,
+                            Some("internal_error"),
+                            Some(&format!("{error:#}")),
+                        )
+                        .await;
                 }
                 return;
             }
@@ -783,21 +983,27 @@ async fn run_lark_registration(
         .await
         {
             let _ = tx.rollback().await;
-            finish_lark_session(
-                &session_id,
-                None,
-                Some("installer_bind_failed"),
-                Some(&format!("{error:#}")),
-            );
+            runtime
+                .sessions
+                .finish(
+                    &session_id,
+                    None,
+                    Some("installer_bind_failed"),
+                    Some(&format!("{error:#}")),
+                )
+                .await;
             return;
         }
         if let Err(error) = tx.commit().await {
-            finish_lark_session(
-                &session_id,
-                None,
-                Some("internal_error"),
-                Some(&format!("{error:#}")),
-            );
+            runtime
+                .sessions
+                .finish(
+                    &session_id,
+                    None,
+                    Some("internal_error"),
+                    Some(&format!("{error:#}")),
+                )
+                .await;
             return;
         }
         runtime.bus.publish(&cordy_events::Event {
@@ -807,7 +1013,10 @@ async fn run_lark_registration(
             payload: json!({"installation_id": installation.id}),
             ..Default::default()
         });
-        finish_lark_session(&session_id, Some(installation.id), None, None);
+        runtime
+            .sessions
+            .finish(&session_id, Some(installation.id), None, None)
+            .await;
         return;
     }
 }
@@ -852,25 +1061,8 @@ fn lark_owner_conflict_message(
     .into()
 }
 
-fn finish_lark_session(
-    session_id: &str,
-    installation_id: Option<Uuid>,
-    reason: Option<&str>,
-    message: Option<&str>,
-) {
-    if let Some(session) = lark_sessions().lock().unwrap().get_mut(session_id) {
-        session.status = if installation_id.is_some() {
-            "success"
-        } else {
-            "error"
-        };
-        session.installation_id = installation_id;
-        session.error_reason = reason.map(str::to_string);
-        session.error_message = message.map(str::to_string);
-    }
-}
-
 async fn lark_install_status(
+    State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     headers: HeaderMap,
     Path((_workspace, session_id)): Path<(String, String)>,
@@ -883,14 +1075,17 @@ async fn lark_install_status(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let mut sessions = lark_sessions().lock().unwrap();
-    let now = Instant::now();
-    sessions.retain(|_, session| session.expires_at > now);
-    let session = sessions.get(session_id.trim()).cloned();
-    drop(sessions);
-    let Some(session) = session.filter(|value| value.workspace_id == workspace_id) else {
-        return error_response(StatusCode::NOT_FOUND, "install session not found");
+    let session = match LarkSessionStore::from_state(&state)
+        .get(session_id.trim())
+        .await
+    {
+        Ok(Some(session)) => session,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "install session not found"),
+        Err(message) => return error_response(StatusCode::SERVICE_UNAVAILABLE, message),
     };
+    if session.workspace_id != workspace_id {
+        return error_response(StatusCode::NOT_FOUND, "install session not found");
+    }
     if session.initiator_id != actor && !matches!(context.member.role.as_str(), "owner" | "admin") {
         return error_response(StatusCode::NOT_FOUND, "install session not found");
     }
@@ -2140,5 +2335,49 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn lark_install_session_redis_key_is_hash_tagged() {
+        let session_id = "11111111-1111-1111-1111-111111111111";
+        assert_eq!(
+            LarkSessionStore::key(session_id),
+            format!("mul:{{lark_install_session}}:{session_id}")
+        );
+    }
+
+    #[tokio::test]
+    async fn memory_lark_sessions_round_trip_and_finish() {
+        let store = LarkSessionStore { redis: None };
+        let session_id = Uuid::new_v4().to_string();
+        let workspace_id = Uuid::new_v4();
+        let initiator_id = Uuid::new_v4();
+        store
+            .insert(
+                &session_id,
+                LarkSession {
+                    workspace_id,
+                    initiator_id,
+                    status: "pending".into(),
+                    installation_id: None,
+                    error_reason: None,
+                    error_message: None,
+                    expires_at: chrono::Utc::now() + chrono::Duration::minutes(15),
+                },
+            )
+            .await
+            .expect("insert");
+        let loaded = store.get(&session_id).await.expect("get").expect("present");
+        assert_eq!(loaded.workspace_id, workspace_id);
+        assert_eq!(loaded.status, "pending");
+        let installation_id = Uuid::new_v4();
+        store
+            .finish(&session_id, Some(installation_id), None, None)
+            .await;
+        let finished = store.get(&session_id).await.expect("get").expect("present");
+        assert_eq!(finished.status, "success");
+        assert_eq!(finished.installation_id, Some(installation_id));
+        store.remove(&session_id).await;
+        assert!(store.get(&session_id).await.expect("get").is_none());
     }
 }

@@ -540,6 +540,25 @@ fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
         .ok_or_else(|| error_response(StatusCode::UNAUTHORIZED, "user not authenticated"))
 }
 
+fn is_machine_actor_source(headers: &HeaderMap) -> bool {
+    matches!(
+        headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    )
+}
+
+fn require_human(headers: &HeaderMap) -> Result<Uuid, Response> {
+    if is_machine_actor_source(headers) {
+        return Err(error_response(
+            StatusCode::FORBIDDEN,
+            "this endpoint is only available to human actors",
+        ));
+    }
+    user_id(headers)
+}
+
 fn invitation_id(raw: &str) -> Result<Uuid, Response> {
     Uuid::parse_str(raw)
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid invitation id"))
@@ -612,7 +631,7 @@ async fn load_user_and_invitation(
 }
 
 async fn list(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
-    let user_id = match user_id(&headers) {
+    let user_id = match require_human(&headers) {
         Ok(id) => id,
         Err(response) => return response,
     };
@@ -714,7 +733,7 @@ async fn get_one(
     Path(raw_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let user_id = match user_id(&headers) {
+    let user_id = match require_human(&headers) {
         Ok(id) => id,
         Err(response) => return response,
     };
@@ -742,7 +761,7 @@ async fn accept(
     Path(raw_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let user_id = match user_id(&headers) {
+    let user_id = match require_human(&headers) {
         Ok(id) => id,
         Err(response) => return response,
     };
@@ -771,7 +790,20 @@ async fn accept(
     };
     let accepted = match invitation::accept_invitation(&mut *transaction, invitation.id).await {
         Ok(Some(accepted)) => accepted,
-        Ok(None) | Err(_) => {
+        Ok(None) => {
+            let found = invitation::get_invitation(&mut *transaction, invitation.id)
+                .await
+                .ok()
+                .flatten();
+            if found
+                .as_ref()
+                .is_some_and(|found| found.expires_at < chrono::Utc::now())
+            {
+                return error_response(StatusCode::GONE, "invitation has expired");
+            }
+            return error_response(StatusCode::BAD_REQUEST, "invitation is not pending");
+        }
+        Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to accept invitation",
@@ -800,16 +832,17 @@ async fn accept(
             )
         }
     };
-    let first_onboarding_completion = current_user.onboarded_at.is_none();
-    let onboarded_user = match user::mark_user_onboarded(&mut *transaction, current_user.id).await {
-        Ok(Some(user)) => user,
-        Ok(None) | Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to mark user onboarded",
-            )
-        }
-    };
+    let (first_onboarding_completion, onboarded_user) =
+        match user::claim_first_onboarding(&mut *transaction, current_user.id).await {
+            Ok(Some(user)) => (true, user),
+            Ok(None) => (false, current_user.clone()),
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to mark user onboarded",
+                )
+            }
+        };
     if let Err(error) = transaction.commit().await {
         tracing::warn!(%error, invitation_id = %accepted.id, "failed to commit invitation acceptance");
         return error_response(
@@ -867,7 +900,7 @@ async fn decline(
     Path(raw_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let user_id = match user_id(&headers) {
+    let user_id = match require_human(&headers) {
         Ok(id) => id,
         Err(response) => return response,
     };
@@ -908,6 +941,8 @@ async fn decline(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::Request;
+    use tower::ServiceExt;
 
     #[test]
     fn ownership_accepts_case_folded_email_or_bound_user() {
@@ -1035,5 +1070,43 @@ mod tests {
             .admit(actor_id, workspace_id, "another@example.com")
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn current_user_invitation_routes_reject_machine_credentials() {
+        let state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let app = router().with_state(state);
+        let invitation_id = Uuid::nil();
+        for (method, uri) in [
+            ("GET", "/api/invitations".to_string()),
+            ("GET", format!("/api/invitations/{invitation_id}")),
+            ("POST", format!("/api/invitations/{invitation_id}/accept")),
+            ("POST", format!("/api/invitations/{invitation_id}/decline")),
+        ] {
+            for actor_source in ["task_token", "cloud_pat"] {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(&uri)
+                            .header("x-user-id", Uuid::nil().to_string())
+                            .header("x-actor-source", actor_source)
+                            .body(axum::body::Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    response.status(),
+                    StatusCode::FORBIDDEN,
+                    "{method} {uri} {actor_source}"
+                );
+            }
+        }
     }
 }

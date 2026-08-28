@@ -33,6 +33,7 @@ pub mod cloud_runtime;
 pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
+mod comment_trigger;
 pub mod composio;
 pub mod config;
 pub mod connectors;
@@ -251,8 +252,17 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
     ));
-    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> =
-        Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
+    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> = {
+        let fleet_url = if state.cloud_runtime_base_url.is_empty() {
+            cloud_runtime::fleet_base_url_from_env()
+        } else {
+            state.cloud_runtime_base_url.clone()
+        };
+        Arc::new(cloud_runtime::HttpCloudRuntimeProxy::new(
+            fleet_url,
+            reqwest::Client::new(),
+        ))
+    };
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
         .merge(
@@ -522,7 +532,13 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             issue::require_issue_workspace,
         )))
         .merge(
-            plugin_admin::router().route_layer(middleware::from_fn_with_state(
+            plugin_admin::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            plugin_admin::admin_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
                     "id",
@@ -604,7 +620,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(public_auth)
         .merge(session::public_router())
         .merge(workspace::public_router())
-        .merge(attachment::public_router())
+        .merge(attachment::public_router(&state))
         .merge(avatar::router())
         .merge(autopilot_webhook::router())
         .merge(github::public_router())
@@ -624,6 +640,9 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         ))
         .layer(middleware::from_fn(
             cordy_middleware::client::client_metadata,
+        ))
+        .layer(middleware::from_fn(
+            cordy_middleware::request_id::request_id,
         ));
 
     match http_metrics {

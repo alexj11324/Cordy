@@ -270,7 +270,7 @@ pub struct TaskService {
     pub feature_flags: Option<Arc<dyn FlagSource>>,
     /// Optional per-task MCP overlay builder; `None` makes the overlay step a
     /// no-op (deployments without Composio behave exactly as before).
-    pub composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,
+    pub composio: std::sync::RwLock<Option<std::sync::Arc<dyn ComposioOverlayBuilder>>>,
     /// Optional follow-up suggestion generator; `None` disables the feature.
     pub quick_actions: Option<std::sync::Arc<dyn ChatQuickActionsLlm>>,
     empty_claim: std::sync::RwLock<crate::empty_claim_cache::EmptyClaimCache>,
@@ -317,7 +317,7 @@ impl TaskService {
             metrics: None,
             wakeup: None,
             feature_flags: None,
-            composio: None,
+            composio: std::sync::RwLock::new(None),
             quick_actions: None,
             empty_claim: std::sync::RwLock::new(
                 crate::empty_claim_cache::EmptyClaimCache::disabled(),
@@ -326,6 +326,26 @@ impl TaskService {
             quick_actions_running: AtomicI64::new(0),
             side_effect_tasks: Arc::new(TaskSideEffectTasks::new()),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
+        }
+    }
+
+    /// Replaces the Composio overlay builder after the service has already
+    /// been shared with issue/autopilot owners. Startup installs the loaded
+    /// TOML/env snapshot this way instead of reconstructing TaskService.
+    pub fn set_composio_overlay(
+        &self,
+        composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,
+    ) {
+        match self.composio.write() {
+            Ok(mut current) => *current = composio,
+            Err(poisoned) => *poisoned.into_inner() = composio,
+        }
+    }
+
+    fn composio_overlay(&self) -> Option<std::sync::Arc<dyn ComposioOverlayBuilder>> {
+        match self.composio.read() {
+            Ok(current) => current.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
 
@@ -649,7 +669,7 @@ impl TaskService {
         originator_user_id: Uuid,
         agent: &Agent,
     ) -> RuntimeMcpOverlayData {
-        let Some(composio) = &self.composio else {
+        let Some(composio) = self.composio_overlay() else {
             return RuntimeMcpOverlayData::default();
         };
         let enabled = match &self.feature_flags {
@@ -1518,9 +1538,9 @@ impl TaskService {
         &self,
         task: &AgentTaskQueue,
     ) -> Result<(), TaskServiceError> {
-        let Some(_composio) = &self.composio else {
+        if self.composio_overlay().is_none() {
             return Ok(());
-        };
+        }
         let enabled = match &self.feature_flags {
             Some(f) => composio_mcp_apps_enabled(f.as_ref()),
             None => false,

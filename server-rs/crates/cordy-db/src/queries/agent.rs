@@ -6752,7 +6752,7 @@ pub async fn update_agent(
     avatar_url: Option<&str>,
     runtime_config: &serde_json::Value,
     runtime_mode: Option<&str>,
-    runtime_id: Uuid,
+    runtime_id: Option<Uuid>,
     visibility: Option<&str>,
     permission_mode: Option<&str>,
     status: Option<&str>,
@@ -6764,7 +6764,7 @@ pub async fn update_agent(
     model: Option<&str>,
     thinking_level: Option<&str>,
     service_tier: Option<&str>,
-    composio_toolkit_allowlist: &[String],
+    composio_toolkit_allowlist: Option<&[String]>,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
         r#"UPDATE agent SET

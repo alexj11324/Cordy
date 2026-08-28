@@ -542,10 +542,10 @@ pub(crate) struct DaemonHeartbeatProcessor {
     pool: sqlx::PgPool,
     heartbeat_scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
     liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
-    update_store: Option<Arc<crate::pending_store::UpdateStore>>,
-    model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
-    local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
-    local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+    update_store: Option<Arc<dyn crate::pending_store::UpdateStoreBackend>>,
+    model_list_store: Option<Arc<dyn crate::pending_store::ModelListStoreBackend>>,
+    local_skill_list_store: Option<Arc<dyn crate::pending_store::LocalSkillListStoreBackend>>,
+    local_skill_import_store: Option<Arc<dyn crate::pending_store::LocalSkillImportStoreBackend>>,
 }
 
 impl DaemonHeartbeatProcessor {
@@ -3960,7 +3960,7 @@ async fn report_local_skill_import_result(
     let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
     async fn fail_import(
-        store: &crate::pending_store::LocalSkillImportStore,
+        store: &Arc<dyn crate::pending_store::LocalSkillImportStoreBackend>,
         request_id: &str,
         fail_msg: &str,
     ) -> Response {

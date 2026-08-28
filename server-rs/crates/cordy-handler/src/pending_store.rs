@@ -1,12 +1,13 @@
-//! Redis-backed pending request stores — port of
+//! Pending request stores — port of
 //! `server/internal/handler/runtime_update_redis_store.go`,
 //! `runtime_models_redis_store.go` and `runtime_local_skills_redis_store.go`.
 //!
 //! CLI updates, model-list probes and runtime-local-skill requests share the
 //! same pending shape: the frontend creates the request, the daemon claims it
 //! on heartbeat (or its WS twin), the daemon reports a terminal result, and
-//! the UI polls by request id. In multi-node deploys every call can hit a
-//! different replica, so lifecycle state must live in shared storage.
+//! the UI polls by request id. Multi-node deploys store lifecycle in Redis;
+//! Redis-free single-node boots use the in-memory backends Go installs by
+//! default.
 //!
 //! Redis key formats are preserved byte-for-byte with Go:
 //! `mul:{runtime_pending}:update:req:{id}` etc. Envelope JSON (`{"r":..}` +
@@ -18,6 +19,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
 use std::time::Duration;
+
+#[path = "pending_store_memory.rs"]
+mod memory;
+pub use memory::{
+    InMemoryLocalSkillImportStore, InMemoryLocalSkillListStore, InMemoryModelCatalogCache,
+    InMemoryModelListStore, InMemoryUpdateStore, LocalSkillImportStoreBackend,
+    LocalSkillListStoreBackend, ModelCatalogCacheBackend, ModelListStoreBackend,
+    UpdateStoreBackend,
+};
 
 // Key namespaces (identical to Go).
 pub const UPDATE_KEY_PREFIX: &str = "mul:{runtime_pending}:update:req:";
@@ -1662,6 +1672,119 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error.to_string(), "model catalog Redis operation timed out");
+    }
+
+    #[tokio::test]
+    async fn in_memory_stores_preserve_pending_request_lifecycles() {
+        let updates = InMemoryUpdateStore::new();
+        let update = updates.create("runtime-1", "v2", "user-1").await.unwrap();
+        assert!(updates.has_pending("runtime-1").await.unwrap());
+        assert_eq!(
+            updates
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            UpdateStatus::Running
+        );
+        updates.complete(&update.id, "updated").await.unwrap();
+        let update = updates.get(&update.id).await.unwrap().unwrap();
+        assert_eq!(update.status, UpdateStatus::Completed);
+        assert_eq!(update.output, "updated");
+
+        let models = InMemoryModelListStore::new();
+        let model_request = models.create("runtime-1").await.unwrap();
+        assert_eq!(
+            models
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            ModelListStatus::Running
+        );
+        let entries = vec![ModelEntry {
+            id: "model-1".into(),
+            label: "Model 1".into(),
+            ..Default::default()
+        }];
+        models
+            .complete(&model_request.id, &entries, true)
+            .await
+            .unwrap();
+        let model_request = models.get(&model_request.id).await.unwrap().unwrap();
+        assert_eq!(model_request.status, ModelListStatus::Completed);
+        assert_eq!(model_request.models.len(), 1);
+
+        let catalog = InMemoryModelCatalogCache::new();
+        catalog.put("runtime-1", &entries, true).await.unwrap();
+        assert_eq!(
+            catalog
+                .get("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .models
+                .len(),
+            1
+        );
+
+        let skill_lists = InMemoryLocalSkillListStore::new();
+        let list_request = skill_lists.create("runtime-1").await.unwrap();
+        assert_eq!(
+            skill_lists
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            LocalSkillRequestStatus::Running
+        );
+        skill_lists
+            .complete(&list_request.id, &[], true, &[], true)
+            .await
+            .unwrap();
+        assert_eq!(
+            skill_lists
+                .get(&list_request.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            LocalSkillRequestStatus::Completed
+        );
+
+        let imports = InMemoryLocalSkillImportStore::new();
+        let import_request = imports
+            .create_import(
+                "runtime-1",
+                "user-1",
+                "review",
+                Some("Review".into()),
+                None,
+                "create",
+                "",
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            imports
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            LocalSkillRequestStatus::Running
+        );
+        imports
+            .complete(&import_request.id, serde_json::json!({ "id": "skill-1" }))
+            .await
+            .unwrap();
+        let import_request = imports.get(&import_request.id).await.unwrap().unwrap();
+        assert_eq!(import_request.status, LocalSkillRequestStatus::Completed);
+        assert_eq!(import_request.skill.unwrap()["id"], "skill-1");
     }
 
     #[tokio::test]

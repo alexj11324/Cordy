@@ -284,10 +284,12 @@ fn is_schedule_plan_stale(now: DateTime<Utc>, plan_time: DateTime<Utc>) -> bool 
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use chrono::TimeZone as _;
 
+    #[allow(clippy::expect_used)]
     fn at(hour: u32, minute: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 8, 23, hour, minute, 0)
             .single()

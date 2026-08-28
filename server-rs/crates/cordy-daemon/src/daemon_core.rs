@@ -54,7 +54,6 @@ pub trait DaemonCoreServices: Send + Sync + 'static {
         &self,
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
-        activity: Arc<DaemonActivity>,
         payload: RuntimeProfilesChangedPayload,
     );
     async fn handle_non_update_heartbeat_actions(
@@ -322,12 +321,7 @@ impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
         payload: RuntimeProfilesChangedPayload,
     ) {
         self.services
-            .refresh_workspace_runtime_profiles(
-                ctx,
-                Arc::clone(&self.registry),
-                Arc::clone(&self.activity),
-                payload,
-            )
+            .refresh_workspace_runtime_profiles(ctx, Arc::clone(&self.registry), payload)
             .await;
     }
 

@@ -1,11 +1,12 @@
 //! HTTP client foundation ported from `server/internal/cli/client.go`.
 
 use anyhow::{Context, Result};
-use reqwest::{header::HeaderMap, Client, Method, RequestBuilder, Response};
+use reqwest::{header::HeaderMap, Client, Method, RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
 use thiserror::Error;
+use url::Url;
 
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const ERROR_BODY_LIMIT: usize = 4096;
@@ -61,6 +62,23 @@ pub struct NetworkError {
     pub source: reqwest::Error,
 }
 
+/// Errors returned by the unauthenticated setup preflight.  The probe must
+/// not leak a bearer token, response body, or an untrusted redirect target in
+/// the command error: setup runs before a new profile is persisted.
+#[derive(Debug, Error)]
+pub enum HealthProbeError {
+    #[error("health probe URL is invalid")]
+    InvalidUrl,
+    #[error("health probe only supports http(s) URLs")]
+    UnsupportedScheme,
+    #[error("health probe timeout")]
+    Timeout,
+    #[error("health probe request failed ({kind})")]
+    Request { kind: ErrorKind },
+    #[error("health endpoint returned HTTP {status_code}")]
+    Unhealthy { status_code: u16 },
+}
+
 #[derive(Debug)]
 pub struct ApiClient {
     base_url: String,
@@ -89,6 +107,52 @@ pub struct FileUploadResponse {
 }
 
 impl ApiClient {
+    /// Probe a deployment before setup changes the persisted profile.
+    ///
+    /// This is deliberately unauthenticated and bounded by both reqwest's
+    /// request timeout and an outer future timeout. Redirects are disabled so
+    /// setup cannot silently validate a different host than the one supplied
+    /// by the user.
+    pub async fn probe_health(
+        base_url: &str,
+        timeout: Duration,
+    ) -> std::result::Result<(), HealthProbeError> {
+        if timeout.is_zero() {
+            return Err(HealthProbeError::Timeout);
+        }
+        let mut base = Url::parse(base_url.trim()).map_err(|_| HealthProbeError::InvalidUrl)?;
+        match base.scheme() {
+            "http" | "https" => {}
+            _ => return Err(HealthProbeError::UnsupportedScheme),
+        }
+        if base.query().is_some() || base.fragment().is_some() {
+            return Err(HealthProbeError::InvalidUrl);
+        }
+        let path = base.path().trim_end_matches('/');
+        base.set_path(&format!("{path}/health"));
+
+        let client = Client::builder()
+            .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| HealthProbeError::Request {
+                kind: ErrorKind::Unknown,
+            })?;
+        let request = client.get(base);
+        let response = tokio::time::timeout(timeout, request.send())
+            .await
+            .map_err(|_| HealthProbeError::Timeout)?
+            .map_err(|source| HealthProbeError::Request {
+                kind: classify_network_error(&source),
+            })?;
+        if response.status() != StatusCode::OK {
+            return Err(HealthProbeError::Unhealthy {
+                status_code: response.status().as_u16(),
+            });
+        }
+        Ok(())
+    }
+
     pub fn new(
         base_url: String,
         workspace_id: String,
@@ -187,6 +251,37 @@ impl ApiClient {
         .await
     }
 
+    /// Import a local skill archive through the same multipart endpoint used
+    /// by the Go CLI. Archive parsing and all decompression/path limits remain
+    /// server-side; this method only builds the authenticated request.
+    pub async fn import_skill_file<T: DeserializeOwned>(
+        &self,
+        file_data: Vec<u8>,
+        filename: &str,
+        on_conflict: &str,
+    ) -> Result<T> {
+        let filename = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("skill.zip")
+            .to_owned();
+        let mut form = reqwest::multipart::Form::new().part(
+            "file",
+            reqwest::multipart::Part::bytes(file_data).file_name(filename),
+        );
+        if !on_conflict.is_empty() {
+            form = form.text("on_conflict", on_conflict.to_owned());
+        }
+        self.send_json(
+            Method::POST,
+            "/api/skills/import",
+            self.request(Method::POST, "/api/skills/import")
+                .multipart(form),
+        )
+        .await
+    }
+
     pub async fn delete(&self, path: &str) -> Result<()> {
         let response = self
             .request(Method::DELETE, path)
@@ -227,6 +322,27 @@ impl ApiClient {
     pub async fn delete_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.send_json(Method::DELETE, path, self.request(Method::DELETE, path))
             .await
+    }
+
+    pub async fn delete_json_with_body<B: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let response = self
+            .request(Method::DELETE, path)
+            .json(body)
+            .send()
+            .await
+            .map_err(|source| NetworkError {
+                kind: classify_network_error(&source),
+                op: format!("DELETE {path}"),
+                source,
+            })?;
+        if response.status().is_client_error() || response.status().is_server_error() {
+            return Err(read_http_error(Method::DELETE, path, response).await.into());
+        }
+        Ok(())
     }
 
     pub async fn upload_file(
@@ -468,22 +584,35 @@ fn classify_network_error(error: &reqwest::Error) -> ErrorKind {
     if error.is_timeout() {
         return ErrorKind::NetworkTimeout;
     }
-    let message = error.to_string().to_lowercase();
-    match () {
-        () if message.contains("dns")
-            || message.contains("no such host")
-            || message.contains("name resolution") =>
-        {
-            ErrorKind::NetworkDns
+    classify_network_message(&error_chain_text(error))
+}
+
+fn error_chain_text(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut message = String::new();
+    let mut current = Some(error);
+    while let Some(err) = current {
+        if !message.is_empty() {
+            message.push(' ');
         }
-        () if message.contains("connection refused") => ErrorKind::NetworkRefused,
-        () if message.contains("tls")
-            || message.contains("certificate")
-            || message.contains("x509") =>
-        {
-            ErrorKind::NetworkTls
-        }
-        () => ErrorKind::NetworkOffline,
+        message.push_str(&err.to_string());
+        current = err.source();
+    }
+    message.to_ascii_lowercase()
+}
+
+fn classify_network_message(message: &str) -> ErrorKind {
+    if message.contains("dns")
+        || message.contains("no such host")
+        || message.contains("name resolution")
+    {
+        ErrorKind::NetworkDns
+    } else if message.contains("connection refused") {
+        ErrorKind::NetworkRefused
+    } else if message.contains("tls") || message.contains("certificate") || message.contains("x509")
+    {
+        ErrorKind::NetworkTls
+    } else {
+        ErrorKind::NetworkOffline
     }
 }
 
@@ -539,5 +668,58 @@ mod tests {
         assert_eq!(http_timeout(Some("45")), Duration::from_secs(45));
         assert_eq!(http_timeout(Some("0s")), DEFAULT_HTTP_TIMEOUT);
         assert_eq!(http_timeout(Some("nonsense")), DEFAULT_HTTP_TIMEOUT);
+    }
+
+    #[test]
+    fn network_classification_inspects_the_source_chain() {
+        #[derive(Debug)]
+        struct Outer(Inner);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("error sending request for url (https://example.test/)")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        #[derive(Debug)]
+        struct Inner;
+        impl std::fmt::Display for Inner {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("dns error: no such host")
+            }
+        }
+        impl std::error::Error for Inner {}
+
+        assert_eq!(
+            classify_network_message(&error_chain_text(&Outer(Inner))),
+            ErrorKind::NetworkDns
+        );
+        assert_eq!(
+            classify_network_message("error sending request for url (https://example.test/)"),
+            ErrorKind::NetworkOffline
+        );
+    }
+
+    #[tokio::test]
+    async fn health_probe_rejects_unsafe_or_unbounded_inputs_before_network() {
+        assert!(matches!(
+            ApiClient::probe_health("ftp://example.test", Duration::from_secs(2)).await,
+            Err(HealthProbeError::UnsupportedScheme)
+        ));
+        assert!(matches!(
+            ApiClient::probe_health(
+                "https://example.test/health?token=secret",
+                Duration::from_secs(2)
+            )
+            .await,
+            Err(HealthProbeError::InvalidUrl)
+        ));
+        assert!(matches!(
+            ApiClient::probe_health("https://example.test", Duration::ZERO).await,
+            Err(HealthProbeError::Timeout)
+        ));
     }
 }

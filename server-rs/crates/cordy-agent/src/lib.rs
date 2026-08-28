@@ -19,6 +19,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod deveco;
 pub mod dsh;
+mod env;
 mod kimi_usage;
 pub mod mcp;
 pub mod model;
@@ -34,7 +35,7 @@ pub mod stderr;
 pub mod stream;
 pub mod version;
 
-pub use acp::{AcpClient, AcpError, AcpNotification};
+pub use acp::{AcpClient, AcpError, AcpNotification, AcpPermissionDecision};
 pub use acp_mcp::{
     build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpCapabilities,
     AcpMcpCapabilityDeclaration, AcpMcpServer,

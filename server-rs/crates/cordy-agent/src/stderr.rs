@@ -6,6 +6,9 @@ use std::sync::{Arc, LazyLock, Mutex};
 use regex::Regex;
 
 pub const DEFAULT_TAIL_BYTES: usize = 2_048;
+/// Extra raw bytes retained so a credential split by the output bound can
+/// still match a secret pattern before the sanitized tail is truncated.
+const REDACTION_WINDOW_BYTES: usize = 4_096;
 
 static AUTH_HEADER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?im)(authorization\s*:\s*)[^\r\n]+")
@@ -91,14 +94,7 @@ static SECRET_PATTERNS: LazyLock<Vec<SecretPattern>> = LazyLock::new(|| {
     .collect()
 });
 
-static HOME_MASK: LazyLock<Option<(String, String)>> = LazyLock::new(|| {
-    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok()?;
-    let user = std::env::var(if cfg!(windows) { "USERNAME" } else { "USER" }).ok()?;
-    if home.is_empty() || user.is_empty() {
-        return None;
-    }
-    Some((home.clone(), home.replacen(&user, "****", 1)))
-});
+static HOME_MASK: LazyLock<Option<String>> = LazyLock::new(detect_home_path);
 
 #[derive(Debug)]
 struct State {
@@ -129,10 +125,7 @@ impl SharedDiagnosticBuffer {
         if let Ok(mut state) = self.state.lock() {
             state.total = state.total.saturating_add(buffer.len() as u64);
             state.bytes.extend_from_slice(buffer);
-            let excess = state.bytes.len().saturating_sub(self.max);
-            if excess > 0 {
-                state.bytes.drain(..excess);
-            }
+            retain_redaction_window(&mut state.bytes, self.max);
         }
     }
 
@@ -143,7 +136,7 @@ impl SharedDiagnosticBuffer {
     pub fn tail(&self) -> String {
         self.state.lock().map_or_else(
             |_| String::new(),
-            |state| sanitize_diagnostic(String::from_utf8_lossy(&state.bytes).trim()),
+            |state| bounded_sanitized_tail(&state.bytes, self.max),
         )
     }
 }
@@ -177,7 +170,7 @@ impl<W> DiagnosticTail<W> {
         let Ok(state) = self.state.lock() else {
             return String::new();
         };
-        sanitize_diagnostic(String::from_utf8_lossy(&state.bytes).trim())
+        bounded_sanitized_tail(&state.bytes, self.max)
     }
 }
 
@@ -187,10 +180,7 @@ impl<W: Write> Write for DiagnosticTail<W> {
         if let Ok(mut state) = self.state.lock() {
             state.total = state.total.saturating_add(buffer.len() as u64);
             state.bytes.extend_from_slice(buffer);
-            let excess = state.bytes.len().saturating_sub(self.max);
-            if excess > 0 {
-                state.bytes.drain(..excess);
-            }
+            retain_redaction_window(&mut state.bytes, self.max);
         }
         Ok(buffer.len())
     }
@@ -211,8 +201,8 @@ pub fn sanitize_diagnostic(value: &str) -> String {
             .replace_all(&clean, pattern.replacement)
             .into_owned();
     }
-    if let Some((home, masked)) = HOME_MASK.as_ref() {
-        clean = clean.replace(home, masked);
+    if let Some(home) = HOME_MASK.as_ref() {
+        clean = mask_home_path(&clean, home);
     }
     let clean = AUTH_HEADER.replace_all(&clean, "$1[REDACTED]");
     let clean = JSON_SECRET.replace_all(&clean, "$1\"[REDACTED]\"");
@@ -220,6 +210,50 @@ pub fn sanitize_diagnostic(value: &str) -> String {
         .replace_all(&clean, "$1$2[REDACTED]")
         .trim()
         .to_string()
+}
+
+fn detect_home_path() -> Option<String> {
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok()?;
+    let home = home.trim_end_matches(['/', '\\']);
+    if home.is_empty() {
+        None
+    } else {
+        Some(home.to_string())
+    }
+}
+
+fn mask_home_path(value: &str, home: &str) -> String {
+    if home.is_empty() {
+        value.to_string()
+    } else {
+        value.replace(home, "[HOME]")
+    }
+}
+
+fn retain_redaction_window(bytes: &mut Vec<u8>, output_max: usize) {
+    let keep = output_max.saturating_add(REDACTION_WINDOW_BYTES);
+    let excess = bytes.len().saturating_sub(keep);
+    if excess > 0 {
+        bytes.drain(..excess);
+    }
+}
+
+fn bounded_sanitized_tail(bytes: &[u8], output_max: usize) -> String {
+    let sanitized = sanitize_diagnostic(String::from_utf8_lossy(bytes).trim());
+    take_utf8_suffix(&sanitized, output_max).to_string()
+}
+
+fn take_utf8_suffix(value: &str, max_bytes: usize) -> &str {
+    if value.len() <= max_bytes {
+        return value;
+    }
+    let start = value.len() - max_bytes;
+    let start = value
+        .char_indices()
+        .find(|(index, _)| *index >= start)
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    &value[start..]
 }
 
 pub fn with_stderr(message: &str, label: &str, tail: &str) -> String {
@@ -260,5 +294,30 @@ mod tests {
         buffer.clone().push(b"def");
         assert_eq!(buffer.total_bytes(), 6);
         assert_eq!(buffer.tail(), "bcdef");
+    }
+
+    #[test]
+    fn sanitizes_before_truncating_a_split_credential() {
+        let secret = format!("token={}", "s".repeat(80));
+        let mut tail = DiagnosticTail::new(Vec::new(), 32);
+        assert!(tail.write_all(secret.as_bytes()).is_ok());
+        let rendered = tail.tail();
+        assert!(!rendered.contains('s'), "{rendered}");
+        assert!(
+            rendered.contains("REDACTED"),
+            "truncated tail should still carry the redaction marker: {rendered}"
+        );
+    }
+
+    #[test]
+    fn home_paths_are_masked_without_a_username() {
+        assert_eq!(
+            mask_home_path("/var/empty/.config/token", "/var/empty"),
+            "[HOME]/.config/token"
+        );
+        assert_eq!(
+            mask_home_path("C:\\Users\\svc\\.cordy", "C:\\Users\\svc"),
+            "[HOME]\\.cordy"
+        );
     }
 }

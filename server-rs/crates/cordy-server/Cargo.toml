@@ -36,11 +36,19 @@ async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["server"] }
+# Pin directly: the workspace table requests a `runtime` feature that this
+# toolchain's hyper-util 0.1 line does not provide (same reason as cordy-remotemcp).
+hyper-util = { version = "0.1.20", default-features = false, features = [
+    "http1",
+    "tokio",
+] }
 redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["tracing"] }
 tokio-util = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 console-subscriber = "0.5"
@@ -55,6 +63,3 @@ pprof = { version = "0.15", default-features = false, features = ["protobuf-code
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = "0.9"
 tikv-jemallocator = { version = "0.7", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
-
-[dev-dependencies]
-tower = { version = "0.5", features = ["util"] }

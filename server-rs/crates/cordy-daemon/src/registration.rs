@@ -171,6 +171,33 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    pending_deregistrations: PendingDeregistrations,
+    deregistration_flush: AsyncMutex<()>,
+}
+
+#[derive(Default)]
+struct PendingDeregistrations {
+    runtime_ids: Mutex<BTreeSet<String>>,
+}
+
+impl PendingDeregistrations {
+    fn queue(&self, runtime_ids: &[String]) {
+        self.runtime_ids
+            .lock()
+            .unwrap()
+            .extend(runtime_ids.iter().filter(|id| !id.is_empty()).cloned());
+    }
+
+    fn snapshot(&self) -> Vec<String> {
+        self.runtime_ids.lock().unwrap().iter().cloned().collect()
+    }
+
+    fn acknowledge(&self, runtime_ids: &[String]) {
+        let mut pending = self.runtime_ids.lock().unwrap();
+        for runtime_id in runtime_ids {
+            pending.remove(runtime_id);
+        }
+    }
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
@@ -188,6 +215,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             repo_warmups,
             source,
             serial: Mutex::new(HashMap::new()),
+            pending_deregistrations: PendingDeregistrations::default(),
+            deregistration_flush: AsyncMutex::new(()),
         }
     }
 
@@ -201,6 +230,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         reconcile_profiles: bool,
         activity: Option<&Arc<DaemonActivity>>,
     ) -> anyhow::Result<()> {
+        if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+            tracing::warn!(%error, "pending runtime deregistration retry failed");
+        }
         let workspaces =
             tokio::time::timeout(WORKSPACE_SYNC_TIMEOUT, self.client.list_workspaces(&ctx))
                 .await
@@ -250,8 +282,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 
         for workspace_id in tracked.difference(&api_ids) {
             self.source.workspace_removed(workspace_id);
-            registry.remove_workspace(workspace_id);
+            let dropped = registry.remove_workspace(workspace_id);
             self.repo_state.remove_workspace(workspace_id);
+            self.pending_deregistrations.queue(&dropped);
+            if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+                tracing::warn!(%workspace_id, %error, "removed workspace runtime deregistration deferred");
+            }
             tracing::info!(%workspace_id, "stopped watching workspace");
         }
 
@@ -703,9 +739,34 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .into_iter()
             .filter(|(runtime_id, _)| runtime_ids.contains(runtime_id))
             .collect();
+        match self.client.deregister(ctx, &runtime_ids, reasons).await {
+            Ok(()) => {
+                self.pending_deregistrations.acknowledge(&runtime_ids);
+                Ok(())
+            }
+            Err(error) => {
+                self.pending_deregistrations.queue(&runtime_ids);
+                Err(error)
+            }
+        }
+    }
+
+    /// Final retry for runtime rows whose earlier deregistration failed.
+    pub(crate) async fn flush_deregistrations(&self, ctx: &Ctx) -> anyhow::Result<()> {
+        self.flush_pending_deregistrations(ctx).await
+    }
+
+    async fn flush_pending_deregistrations(&self, ctx: &Ctx) -> anyhow::Result<()> {
+        let _flush = self.deregistration_flush.lock().await;
+        let runtime_ids = self.pending_deregistrations.snapshot();
+        if runtime_ids.is_empty() {
+            return Ok(());
+        }
         self.client
-            .deregister(ctx, &runtime_ids, reasons)
-            .await
+            .deregister(ctx, &runtime_ids, HashMap::new())
+            .await?;
+        self.pending_deregistrations.acknowledge(&runtime_ids);
+        Ok(())
     }
 
     fn workspace_lock(&self, workspace_id: &str) -> Arc<AsyncMutex<()>> {
