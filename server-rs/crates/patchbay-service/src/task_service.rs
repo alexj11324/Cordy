@@ -106,8 +106,8 @@ pub struct ErrAttributionFailClosed;
 pub struct ErrDuplicatePendingTask;
 
 /// Reports whether err is the pending-task unique-index violation (a
-/// concurrent enqueue won the race). Accept both index names while v1 and v2
-/// coexist during a rolling deploy.
+/// concurrent enqueue won the race). Accept every deployed index generation
+/// while schema migrations may overlap a rolling deploy.
 pub fn is_duplicate_pending_task_err(err: &sqlx::Error) -> bool {
     let Some(db_err) = err.as_database_error() else {
         return false;
@@ -119,6 +119,7 @@ pub fn is_duplicate_pending_task_err(err: &sqlx::Error) -> bool {
         db_err.constraint(),
         Some("idx_one_pending_task_per_issue_agent")
             | Some("idx_one_pending_task_per_issue_agent_v2")
+            | Some("idx_one_pending_task_per_issue_agent_v3")
     )
 }
 
