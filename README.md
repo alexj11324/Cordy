@@ -8,7 +8,7 @@
 
 **End to End Multi agent system Control panel for long-Horizon tasks**
 
-[![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
 **English | [简体中文](README.zh.md)**
 
@@ -64,7 +64,7 @@ Patchbay is an open-source control panel for orchestrating multi-agent systems o
 - Docker with Docker Compose for PostgreSQL
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git patchbay
+git clone https://github.com/alexj11324/Cordy.git patchbay
 cd patchbay
 make dev
 ```

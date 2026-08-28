@@ -171,7 +171,7 @@ export function DaemonSettingsTab() {
               size="sm"
               onClick={() =>
                 window.desktopAPI.openExternal(
-                  "https://github.com/patchbay-ai/patchbay#cli-installation",
+                  "https://github.com/alexj11324/Cordy#cli-installation",
                 )
               }
             >

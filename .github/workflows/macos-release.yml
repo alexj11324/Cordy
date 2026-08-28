@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
@@ -240,7 +240,7 @@ jobs:
 
   publish:
     needs: [prepare, package-macos]
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Verify macOS draft assets

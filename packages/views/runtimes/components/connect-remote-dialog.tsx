@@ -31,9 +31,9 @@ import { useT } from "../../i18n";
 type Step = "instructions" | "success";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash";
-const CLOUD_SERVER_URL = "https://api.patchbay.ai";
-const CLOUD_APP_URL = "https://patchbay.ai";
+  "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash";
+const CLOUD_SERVER_URL = "https://api.aspectlylabs.com";
+const CLOUD_APP_URL = "https://aspectlylabs.com";
 
 function normalizeCommandURL(url: string | undefined) {
   return url?.trim().replace(/\/+$/, "") ?? "";

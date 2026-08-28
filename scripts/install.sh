@@ -2,10 +2,10 @@
 # Patchbay installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
-#   curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 #
 # Install CLI + provision self-host server:
-#   curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
+#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 #
 # After installation, run `patchbay setup` to configure your environment.
 #
@@ -18,11 +18,10 @@ fi
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-REPO_URL="https://github.com/patchbay-ai/patchbay.git"
-REPO_WEB_URL="https://github.com/patchbay-ai/patchbay"  # without .git, for GitHub web APIs
+REPO_URL="https://github.com/alexj11324/Cordy.git"
+REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
 INSTALL_DIR="${PATCHBAY_INSTALL_DIR:-$HOME/.patchbay/server}"
 LEGACY_PATCHBAY_HOME="$HOME/.cordy" # legacy-brand-compat
-BREW_PACKAGE="patchbay-ai/tap/patchbay"
 
 # Host ports Compose reported after `up -d`; set by setup_server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -148,7 +147,7 @@ print_remote_server_token_hint() {
 
   printf "  ${BOLD}Looks like a remote/SSH session.${RESET} Browser login may not be able to call back to this machine's localhost.\n"
   printf "  Token login is usually simpler here:\n"
-  printf "     1. On your local computer, open ${CYAN}https://patchbay.ai/settings?tab=tokens${RESET}\n"
+  printf "     1. On your local computer, open ${CYAN}https://aspectlylabs.com/settings?tab=tokens${RESET}\n"
   printf "        and create a token under ${BOLD}Settings > API Tokens${RESET}.\n"
   printf "     2. On this server, run:\n"
   printf "        ${CYAN}patchbay login --token <YOUR_TOKEN>${RESET}\n"
@@ -184,7 +183,7 @@ detect_os() {
     Linux)  OS="linux" ;;
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
-  irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex" ;;
+  irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex" ;;
     *)      fail "Unsupported operating system: $(uname -s). Patchbay supports macOS, Linux, and Windows." ;;
   esac
 
@@ -200,41 +199,6 @@ detect_os() {
 # ---------------------------------------------------------------------------
 # CLI Installation
 # ---------------------------------------------------------------------------
-_dump_brew_log() {
-  local log="$1"
-  if [ -s "$log" ]; then
-    warn "Homebrew output (last 80 lines):"
-    tail -n 80 "$log" | sed 's/^/  /' >&2
-  fi
-}
-
-install_cli_brew() {
-  info "Installing Patchbay CLI via Homebrew..."
-  local brew_log
-  brew_log=$(mktemp)
-  if ! brew tap patchbay-ai/tap >"$brew_log" 2>&1; then
-    warn "Failed to add Homebrew tap. Falling back to GitHub Releases binary install."
-    _dump_brew_log "$brew_log"
-    rm -f "$brew_log"
-    return 1
-  fi
-  # brew install exits non-zero if already installed on older Homebrew versions
-  if ! brew install "$BREW_PACKAGE" >"$brew_log" 2>&1; then
-    if brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
-      rm -f "$brew_log"
-      ok "Patchbay CLI already installed via Homebrew"
-    else
-      warn "Failed to install patchbay via Homebrew. Falling back to GitHub Releases binary install."
-      _dump_brew_log "$brew_log"
-      rm -f "$brew_log"
-      return 1
-    fi
-  else
-    rm -f "$brew_log"
-    ok "Patchbay CLI installed via Homebrew"
-  fi
-}
-
 install_cli_binary() {
   info "Installing Patchbay CLI from GitHub Releases..."
 
@@ -246,7 +210,7 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/patchbay-ai/patchbay/releases/download/${latest}/patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/alexj11324/Cordy/releases/download/${latest}/patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -258,7 +222,7 @@ install_cli_binary() {
 
   local checksum_file="$tmp_dir/checksums.txt"
   local asset_name="patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
-  if ! curl -fsSL "https://github.com/patchbay-ai/patchbay/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
+  if ! curl -fsSL "https://github.com/alexj11324/Cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
     rm -rf "$tmp_dir"
     fail "Failed to download the CLI checksum manifest; refusing to install an unverified binary."
   fi
@@ -400,15 +364,13 @@ checkout_server_ref() {
 
 migrate_legacy_selfhost_branding() {
   local migrated=false
-  local canonical_backend="ghcr.io/patchbay-ai/patchbay-backend"
-  local canonical_web="ghcr.io/patchbay-ai/patchbay-web"
+  local canonical_backend="ghcr.io/alexj11324/patchbay-backend"
+  local canonical_web="ghcr.io/alexj11324/patchbay-web"
   local legacy_backend legacy_web
   local legacy_backends=(
-    "ghcr.io/cordy-ai/cordy-backend" # legacy-brand-compat
     "ghcr.io/alexj11324/cordy-backend" # legacy-brand-compat
   )
   local legacy_webs=(
-    "ghcr.io/cordy-ai/cordy-web" # legacy-brand-compat
     "ghcr.io/alexj11324/cordy-web" # legacy-brand-compat
   )
 
@@ -584,17 +546,6 @@ pull_official_selfhost_images() {
   exit 1
 }
 
-upgrade_cli_brew() {
-  info "Upgrading Patchbay CLI via Homebrew..."
-  brew update 2>/dev/null || true
-  if brew upgrade "$BREW_PACKAGE" 2>/dev/null; then
-    ok "Patchbay CLI upgraded via Homebrew"
-  else
-    # brew upgrade exits non-zero if already up to date
-    ok "Patchbay CLI is already the latest version"
-  fi
-}
-
 install_cli() {
   if command_exists patchbay; then
     local current_ver
@@ -614,11 +565,7 @@ install_cli() {
     fi
 
     info "Patchbay CLI $current_ver installed, latest is $latest_ver — upgrading..."
-    if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
-      upgrade_cli_brew
-    else
-      install_cli_binary
-    fi
+    install_cli_binary
 
     local new_ver
     new_ver=$(patchbay version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
@@ -626,11 +573,7 @@ install_cli() {
     return 0
   fi
 
-  if command_exists brew; then
-    install_cli_brew || install_cli_binary
-  else
-    install_cli_binary
-  fi
+  install_cli_binary
 
   # Verify
   if ! command_exists patchbay; then
@@ -775,12 +718,12 @@ run_default() {
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud (patchbay.ai)\n"
+  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud (aspectlylabs.com)\n"
   printf "     ${CYAN}patchbay setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   print_remote_server_token_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
 
@@ -821,7 +764,7 @@ run_with_server() {
   printf "  or read the generated code from backend logs when Resend is unset.\n"
   printf "\n"
   printf "  ${BOLD}To stop all services:${RESET}\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --stop\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --stop\n"
   printf "\n"
 }
 

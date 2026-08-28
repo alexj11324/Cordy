@@ -7,7 +7,7 @@
 Give this instruction to your AI agent:
 
 ```
-Fetch https://github.com/patchbay-ai/patchbay/blob/main/CLI_INSTALL.md and follow the instructions to install Patchbay CLI, log in, and start the daemon on this machine.
+Fetch https://github.com/alexj11324/Cordy/blob/main/CLI_INSTALL.md and follow the instructions to install Patchbay CLI, log in, and start the daemon on this machine.
 ```
 
 ---
@@ -45,11 +45,11 @@ if [ "$ARCH" = "x86_64" ]; then
 fi
 
 # Get the latest release tag from GitHub
-LATEST=$(curl -sI https://github.com/patchbay-ai/patchbay/releases/latest | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
+LATEST=$(curl -sI https://github.com/alexj11324/Cordy/releases/latest | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n')
 
 # Download and extract
 VERSION="${LATEST#v}"
-curl -sL "https://github.com/patchbay-ai/patchbay/releases/download/${LATEST}/patchbay-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/patchbay.tar.gz
+curl -sL "https://github.com/alexj11324/Cordy/releases/download/${LATEST}/patchbay-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/patchbay.tar.gz
 tar -xzf /tmp/patchbay.tar.gz -C /tmp patchbay
 sudo mv /tmp/patchbay /usr/local/bin/patchbay
 rm /tmp/patchbay.tar.gz
@@ -71,7 +71,7 @@ patchbay version
 Run in PowerShell (no admin required):
 
 ```powershell
-irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 This downloads the latest Windows binary from GitHub Releases, installs it to `%USERPROFILE%\.patchbay\bin\`, and adds it to your user PATH.
@@ -111,7 +111,7 @@ patchbay auth status
 Expected output should show the authenticated user and server URL.
 
 **If login fails:**
-- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://patchbay.ai/settings?tab=tokens` and run: `patchbay login --token <pby_...>` (use `--token=` with an empty value to be prompted interactively).
+- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://aspectlylabs.com/settings?tab=tokens` and run: `patchbay login --token <pby_...>` (use `--token=` with an empty value to be prompted interactively).
 - If the server URL needs to be customized: `patchbay config set server_url <url>` before logging in.
 
 ---

@@ -16,7 +16,7 @@ const E2E_WORKER =
   process.env.TEST_PARALLEL_INDEX ?? process.env.TEST_WORKER_INDEX ?? "0";
 const E2E_RUN_ID =
   process.env.E2E_RUN_ID ?? `${Date.now().toString(36)}-${process.pid.toString(36)}`;
-const EMAIL = `e2e-mcp-${E2E_WORKER}-${E2E_RUN_ID}@patchbay.ai`;
+const EMAIL = `e2e-mcp-${E2E_WORKER}-${E2E_RUN_ID}@example.test`;
 const NAME = "E2E MCP User";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";

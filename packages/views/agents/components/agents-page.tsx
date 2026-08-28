@@ -263,7 +263,7 @@ function PageHeaderBar({
       count={totalCount}
       description={t(($) => $.page.tagline)}
       learnMore={{
-        href: "https://patchbay.ai/docs/agents",
+        href: "https://aspectlylabs.com/docs/agents",
         label: t(($) => $.page.learn_more),
       }}
       actions={

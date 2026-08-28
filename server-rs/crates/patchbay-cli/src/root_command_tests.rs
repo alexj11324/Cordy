@@ -119,7 +119,7 @@ fn update_homebrew_warning_continues_without_latest_details() {
         resolved_version: None,
         already_current: false,
         latest_query_failed: true,
-        message: "Homebrew upgraded patchbay-ai/tap/patchbay".into(),
+        message: "Homebrew upgraded a legacy Patchbay installation".into(),
     });
     assert!(output
         .stderr

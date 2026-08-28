@@ -6,9 +6,9 @@ description: |
 type: application
 version: 0.1.0
 appVersion: "latest"
-home: https://patchbay.ai
+home: https://aspectlylabs.com
 sources:
-  - https://github.com/patchbay-ai/patchbay
+  - https://github.com/alexj11324/Cordy
 keywords:
   - patchbay
   - issue-tracker

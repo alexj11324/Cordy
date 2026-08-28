@@ -629,7 +629,7 @@ fn openclaw_override_from(cfg: &CliProfileConfig) -> Option<OpenClawOverride> {
 
 /// `officialCloudHost`: the only origin treated as "official" for defaults;
 /// staging/preview subdomains deliberately inherit the safer self-host default.
-pub const OFFICIAL_CLOUD_HOST: &str = "api.patchbay.ai";
+pub const OFFICIAL_CLOUD_HOST: &str = "api.aspectlylabs.com";
 
 /// `isOfficialCloudServer`: host-only, case-insensitive; port and path ignored.
 pub(crate) fn is_official_cloud_server(base_url: &str) -> bool {
@@ -1261,8 +1261,8 @@ mod tests {
             "http://localhost:8080"
         );
         assert_eq!(
-            normalize_server_base_url("wss://api.patchbay.ai/ws").unwrap(),
-            "https://api.patchbay.ai"
+            normalize_server_base_url("wss://api.aspectlylabs.com/ws").unwrap(),
+            "https://api.aspectlylabs.com"
         );
         assert_eq!(
             normalize_server_base_url("http://example.com/base/").unwrap(),
@@ -1274,17 +1274,17 @@ mod tests {
     #[test]
     fn official_cloud_detection_host_only() {
         assert!(is_official_cloud_server(
-            "https://API.PATCHBAY.AI:443/some/path"
+            "https://API.ASPECTLYLABS.COM:443/some/path"
         ));
         // Staging subdomains deliberately excluded.
-        assert!(!is_official_cloud_server("https://staging.patchbay.ai"));
+        assert!(!is_official_cloud_server("https://staging.aspectlylabs.com"));
         assert!(!is_official_cloud_server("not a url"));
     }
 
     #[test]
     fn completed_task_ttl_by_deployment_kind() {
         assert_eq!(
-            default_gc_completed_task_ttl("https://api.patchbay.ai"),
+            default_gc_completed_task_ttl("https://api.aspectlylabs.com"),
             DEFAULT_GC_COMPLETED_TASK_TTL_CLOUD
         );
         assert_eq!(

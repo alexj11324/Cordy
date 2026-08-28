@@ -4,15 +4,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Patchbay Desktop — native desktop client for the Patchbay platform.",
-  "homepage": "https://patchbay.ai",
+  "homepage": "https://aspectlylabs.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/patchbay-ai/patchbay.git",
+    "url": "https://github.com/alexj11324/Cordy.git",
     "directory": "apps/desktop"
   },
   "author": {
     "name": "Patchbay",
-    "email": "support@patchbay.ai"
+    "email": "support@aspectlylabs.com"
   },
   "license": "SEE LICENSE IN ../../LICENSE",
   "main": "./out/main/index.js",

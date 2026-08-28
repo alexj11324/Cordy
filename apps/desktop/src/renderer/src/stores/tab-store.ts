@@ -22,7 +22,7 @@ import { isReservedSlug } from "@patchbay/core/paths";
  *
  * `contentKey` is an optional fingerprint of the rendered content, used by
  * out-of-DOM scroll sources (the sandboxed HTML-attachment iframe — see
- * patchbay-ai#6405) to invalidate restoration when the content changed
+ * alexj11324#6405) to invalidate restoration when the content changed
  * (re-upload to the same attachment id). Plain `[data-tab-scroll-root]`
  * containers leave it undefined; identity comparison (undefined ===
  * undefined) means their behavior is unchanged.

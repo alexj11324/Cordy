@@ -112,7 +112,7 @@ fn resolve_from_email(smtp_host: &str) -> String {
         if !resend_from.is_empty() {
             return resend_from;
         }
-        return "noreply@patchbay.ai".to_string();
+        return "noreply@aspectlylabs.com".to_string();
     }
     let smtp_from = std::env::var("SMTP_FROM_EMAIL")
         .unwrap_or_default()
@@ -986,7 +986,7 @@ impl EmailService {
             .trim()
             .to_string();
         if app_url.is_empty() {
-            app_url = "https://patchbay.ai".to_string();
+            app_url = "https://aspectlylabs.com".to_string();
         }
         let invite_url = format!("{app_url}/invite/{invitation_id}");
 
@@ -1175,16 +1175,16 @@ mod tests {
     #[test]
     fn invitation_params_escapes_html_but_not_subject() {
         let req = build_invitation_params(
-            "noreply@patchbay.ai",
+            "noreply@aspectlylabs.com",
             "bob@example.com",
             "Eve <script>",
             "Acme & Co \"inc\"",
-            "https://patchbay.ai/invite/x",
+            "https://aspectlylabs.com/invite/x",
         );
         // Body escapes everything dangerous.
         assert!(req.html.contains("Eve &lt;script&gt;"));
         assert!(req.html.contains("Acme &amp; Co &#34;inc&#34;"));
-        assert!(req.html.contains(r#"href="https://patchbay.ai/invite/x""#));
+        assert!(req.html.contains(r#"href="https://aspectlylabs.com/invite/x""#));
         // Subject is sanitized (control chars stripped, length capped), not
         // HTML-escaped.
         assert_eq!(

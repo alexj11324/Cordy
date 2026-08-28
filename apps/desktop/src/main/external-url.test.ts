@@ -10,7 +10,7 @@ import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
 
 describe("isSafeExternalHttpUrl", () => {
   it("allows http and https URLs", () => {
-    expect(isSafeExternalHttpUrl("https://patchbay.ai")).toBe(true);
+    expect(isSafeExternalHttpUrl("https://aspectlylabs.com")).toBe(true);
     expect(isSafeExternalHttpUrl("http://localhost:3000/auth")).toBe(true);
   });
 
@@ -61,8 +61,8 @@ describe("openExternalSafely", () => {
   });
 
   it("forwards http/https URLs to shell.openExternal", () => {
-    openExternalSafely("https://patchbay.ai");
-    expect(shell.openExternal).toHaveBeenCalledWith("https://patchbay.ai");
+    openExternalSafely("https://aspectlylabs.com");
+    expect(shell.openExternal).toHaveBeenCalledWith("https://aspectlylabs.com");
   });
 
   it("does not call shell.openExternal for rejected schemes", () => {

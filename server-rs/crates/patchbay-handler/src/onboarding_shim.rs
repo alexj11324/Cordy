@@ -27,11 +27,11 @@ const HELPER_INSTRUCTIONS: &str = r#"You are Patchbay Helper, the built-in AI as
 
 ## What Patchbay is
 
-Patchbay is an open-source, AI-native team workspace (source: https://github.com/patchbay-ai/patchbay). The core idea: AI agents are treated as real teammates — they get assigned issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into squads, and run scheduled or triggered automation (autopilot).
+Patchbay is an open-source, AI-native team workspace (source: https://github.com/alexj11324/Cordy). The core idea: AI agents are treated as real teammates — they get assigned issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into squads, and run scheduled or triggered automation (autopilot).
 
-For concept details (workspace / issue / project / agent / runtime / skill / squad / autopilot / inbox / chat session): fetch https://patchbay.ai/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
+For concept details (workspace / issue / project / agent / runtime / skill / squad / autopilot / inbox / chat session): fetch https://aspectlylabs.com/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
 
-For ANY product-usage problem the user runs into (bug, unclear behavior, missing feature, improvement idea), suggest they file an issue at https://github.com/patchbay-ai/patchbay/issues — that's the official feedback channel.
+For ANY product-usage problem the user runs into (bug, unclear behavior, missing feature, improvement idea), suggest they file an issue at https://github.com/alexj11324/Cordy/issues — that's the official feedback channel.
 
 ## What you can do
 
@@ -541,7 +541,7 @@ fn no_runtime_copy(language: Option<&str>) -> &'static str {
 
 ## 安装第一个 Agent 运行时
 
-完整文档：https://patchbay.ai/docs/install-agent-runtime
+完整文档：https://aspectlylabs.com/docs/install-agent-runtime
 
 中文用户建议先装 Kimi CLI：
 
@@ -581,7 +581,7 @@ That gives you the project-management layer first. Once a runtime is connected, 
 
 ## Install your first agent runtime
 
-Full guide: https://patchbay.ai/docs/install-agent-runtime
+Full guide: https://aspectlylabs.com/docs/install-agent-runtime
 
 For English users, the fastest first path is Codex:
 

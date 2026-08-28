@@ -27,8 +27,8 @@ metadata:
     app.kubernetes.io/component: backend
 spec:
   # The backend entrypoint runs migrations before starting. Concurrent
-  # runs are protected by a Postgres advisory lock in patchbay-migrate (see
-  # GitHub patchbay-ai/patchbay#3647), so multiple replicas no longer race;
+  # runs are protected by a Postgres advisory lock in patchbay-migrate, so
+  # multiple replicas no longer race;
   # 1 is still the chart default (strategy: Recreate, no leader split).
   replicas: {{ .Values.backend.replicas }}
   strategy:

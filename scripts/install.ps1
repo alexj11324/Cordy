@@ -1,10 +1,10 @@
 # Patchbay installer for Windows — one command to get started.
 #
-# Install CLI (default): connects to patchbay.ai
-#   irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+# Install CLI (default): connects to aspectlylabs.com
+#   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 # Self-host: starts a local Patchbay server + installs CLI + configures
-#   $env:PATCHBAY_MODE="local"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+#   $env:PATCHBAY_MODE="local"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
@@ -15,8 +15,8 @@ if (-not $env:PATCHBAY_MODE -and $env:CORDY_MODE) { $env:PATCHBAY_MODE = $env:CO
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-$RepoUrl       = "https://github.com/patchbay-ai/patchbay.git"
-$RepoWebUrl    = "https://github.com/patchbay-ai/patchbay"
+$RepoUrl       = "https://github.com/alexj11324/Cordy.git"
+$RepoWebUrl    = "https://github.com/alexj11324/Cordy"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".patchbay\server"
 $PatchbayHome      = Join-Path $env:USERPROFILE ".patchbay"
 $LegacyPatchbayHome = Join-Path $env:USERPROFILE ".cordy" # legacy-brand-compat
@@ -98,7 +98,7 @@ function Get-ComposePublishedPort {
 
 function Get-LatestVersion {
     try {
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/patchbay-ai/patchbay/releases/latest" -ErrorAction Stop
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/alexj11324/Cordy/releases/latest" -ErrorAction Stop
         return $release.tag_name
     } catch {
         return $null
@@ -134,12 +134,10 @@ function Checkout-ServerRef {
 function Update-LegacySelfHostImageRepositories {
     param([Parameter(Mandatory = $true)][string]$EnvPath)
 
-    $canonicalBackend = "PATCHBAY_BACKEND_IMAGE=ghcr.io/patchbay-ai/patchbay-backend"
-    $canonicalWeb = "PATCHBAY_WEB_IMAGE=ghcr.io/patchbay-ai/patchbay-web"
+    $canonicalBackend = "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend"
+    $canonicalWeb = "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web"
     $legacyImages = @{
-        "PATCHBAY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend" = $canonicalBackend # legacy-brand-compat
         "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend" = $canonicalBackend # legacy-brand-compat
-        "PATCHBAY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web" = $canonicalWeb # legacy-brand-compat
         "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web" = $canonicalWeb # legacy-brand-compat
     }
     $changed = $false
@@ -306,7 +304,7 @@ function Install-CliBinary {
     }
 
     $version = $latest.TrimStart('v')
-    $url = "https://github.com/patchbay-ai/patchbay/releases/download/$latest/patchbay-cli-$version-windows-$arch.zip"
+    $url = "https://github.com/alexj11324/Cordy/releases/download/$latest/patchbay-cli-$version-windows-$arch.zip"
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "patchbay-install"
 
     if (Test-Path $tmpDir) { Remove-Item $tmpDir -Recurse -Force }
@@ -323,7 +321,7 @@ function Install-CliBinary {
     # Verify SHA256 checksum. A missing, malformed, or unavailable manifest is
     # fatal: the release workflow publishes one for every CLI archive, and
     # installing without it would silently remove the download integrity gate.
-    $checksumUrl = "https://github.com/patchbay-ai/patchbay/releases/download/$latest/checksums.txt"
+    $checksumUrl = "https://github.com/alexj11324/Cordy/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
         $checksumContent = if ($checksums.Content -is [byte[]]) {
@@ -560,11 +558,11 @@ function Start-DefaultInstall {
     Write-Host ""
     Write-Host "  Next: configure your environment"
     Write-Host ""
-    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Patchbay Cloud (patchbay.ai)" -ForegroundColor DarkGray
+    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Patchbay Cloud (aspectlylabs.com)" -ForegroundColor DarkGray
     Write-Host "     patchbay setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
-    Write-Host '     $env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -598,7 +596,7 @@ function Start-LocalInstall {
     Write-Host "  or read the generated code from backend logs when Resend is unset."
     Write-Host ""
     Write-Host "  To stop all services:"
-    Write-Host '     $env:PATCHBAY_MODE="stop"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:PATCHBAY_MODE="stop"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 

@@ -15,9 +15,9 @@ export type RuntimeConfigResult =
 
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
-  apiUrl: "https://api.patchbay.ai",
-  wsUrl: "wss://api.patchbay.ai/ws",
-  appUrl: "https://patchbay.ai",
+  apiUrl: "https://api.aspectlylabs.com",
+  wsUrl: "wss://api.aspectlylabs.com/ws",
+  appUrl: "https://aspectlylabs.com",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
@@ -93,8 +93,8 @@ export function deriveWsUrl(apiUrl: string): string {
   return trimTrailingSlash(url.toString());
 }
 
-// Convention: api hosts are exposed at `api.<web-host>` (api.patchbay.ai →
-// patchbay.ai, api.test.patchbay.ai → test.patchbay.ai). Strip the leading
+// Convention: api hosts are exposed at `api.<web-host>` (api.aspectlylabs.com →
+// aspectlylabs.com, api.test.aspectlylabs.com → test.aspectlylabs.com). Strip the leading
 // `api.` label so a single `apiUrl` configuration produces the right
 // shareable web URL. Hosts that don't match the convention (no leading
 // `api.` label, or short two-label hosts like `api.local`) fall through

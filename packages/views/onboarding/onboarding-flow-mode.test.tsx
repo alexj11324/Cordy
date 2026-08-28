@@ -18,7 +18,7 @@ vi.mock("@patchbay/core/config", () => ({
 }));
 
 vi.mock("@patchbay/core/api", () => ({
-  api: { getBaseUrl: () => "https://patchbay.ai" },
+  api: { getBaseUrl: () => "https://aspectlylabs.com" },
 }));
 
 vi.mock("@patchbay/core/workspace/mutations", () => ({

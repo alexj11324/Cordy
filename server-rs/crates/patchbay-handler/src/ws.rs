@@ -774,7 +774,7 @@ mod tests {
     fn origins() -> Vec<String> {
         vec![
             "http://localhost:3000".to_string(),
-            "https://patchbay.ai".to_string(),
+            "https://aspectlylabs.com".to_string(),
         ]
     }
 
@@ -784,7 +784,7 @@ mod tests {
         let empty = HeaderMap::new();
         assert!(check_origin_with_policy(&empty, false, &allowed));
         assert!(check_origin_with_policy(
-            &headers("API.Patchbay.AI", "https://api.patchbay.ai", None),
+            &headers("API.AspectlyLabs.COM", "https://api.aspectlylabs.com", None),
             false,
             &allowed,
         ));
@@ -794,7 +794,7 @@ mod tests {
             &allowed,
         ));
         assert!(!check_origin_with_policy(
-            &headers("api.patchbay.ai", "https://evil.example", None),
+            &headers("api.aspectlylabs.com", "https://evil.example", None),
             false,
             &allowed,
         ));

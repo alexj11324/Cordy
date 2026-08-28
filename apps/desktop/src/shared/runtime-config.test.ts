@@ -11,9 +11,9 @@ describe("runtime config", () => {
   it("uses cloud defaults without a desktop.json file", () => {
     expect(DEFAULT_RUNTIME_CONFIG).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.patchbay.ai",
-      wsUrl: "wss://api.patchbay.ai/ws",
-      appUrl: "https://patchbay.ai",
+      apiUrl: "https://api.aspectlylabs.com",
+      wsUrl: "wss://api.aspectlylabs.com/ws",
+      appUrl: "https://aspectlylabs.com",
     });
   });
 
@@ -36,13 +36,13 @@ describe("runtime config", () => {
   it("strips the leading api. label when deriving appUrl", () => {
     expect(
       parseRuntimeConfig(
-        JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.patchbay.ai" }),
+        JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.aspectlylabs.com" }),
       ),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.patchbay.ai",
-      wsUrl: "wss://api.patchbay.ai/ws",
-      appUrl: "https://patchbay.ai",
+      apiUrl: "https://api.aspectlylabs.com",
+      wsUrl: "wss://api.aspectlylabs.com/ws",
+      appUrl: "https://aspectlylabs.com",
     });
   });
 
@@ -127,26 +127,26 @@ describe("runtime config", () => {
     // api at `api.<web-host>`, so stripping the leading label gives the
     // right web origin without a separate VITE_APP_URL.
     expect(
-      runtimeConfigFromDevEnv({ apiUrl: "https://api.test.patchbay.ai" }),
+      runtimeConfigFromDevEnv({ apiUrl: "https://api.test.aspectlylabs.com" }),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.test.patchbay.ai",
-      wsUrl: "wss://api.test.patchbay.ai/ws",
-      appUrl: "https://test.patchbay.ai",
+      apiUrl: "https://api.test.aspectlylabs.com",
+      wsUrl: "wss://api.test.aspectlylabs.com/ws",
+      appUrl: "https://test.aspectlylabs.com",
     });
   });
 
   it("dev VITE_APP_URL still wins over apiUrl-derived value", () => {
     expect(
       runtimeConfigFromDevEnv({
-        apiUrl: "https://api.test.patchbay.ai",
-        appUrl: "https://staging.patchbay.ai",
+        apiUrl: "https://api.test.aspectlylabs.com",
+        appUrl: "https://staging.aspectlylabs.com",
       }),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.test.patchbay.ai",
-      wsUrl: "wss://api.test.patchbay.ai/ws",
-      appUrl: "https://staging.patchbay.ai",
+      apiUrl: "https://api.test.aspectlylabs.com",
+      wsUrl: "wss://api.test.aspectlylabs.com/ws",
+      appUrl: "https://staging.aspectlylabs.com",
     });
   });
 });

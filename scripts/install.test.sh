@@ -4,8 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Build a self-contained sandbox with stub `curl` and a tarball that the
-# release-binary fallback path will download. Each test supplies its own
-# `brew` stub to model a specific Homebrew failure mode.
+# release-binary installation path will download.
 _setup_sandbox() {
   local tmp="$1"
   local stub_bin="$tmp/stub-bin"
@@ -23,7 +22,7 @@ STUB
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *"-sI"* ]]; then
-  printf 'HTTP/2 302\r\nlocation: https://github.com/patchbay-ai/patchbay/releases/tag/v0.3.2\r\n'
+  printf 'HTTP/2 302\r\nlocation: https://github.com/alexj11324/Cordy/releases/tag/v0.3.2\r\n'
   exit 0
 fi
 
@@ -87,63 +86,14 @@ _run_installer() {
     return 1
   fi
 
-  if ! grep -q "Homebrew output (last 80 lines):" "$err"; then
-    echo "expected diagnostic tail in stderr" >&2
-    cat "$err" >&2 || true
-    return 1
-  fi
 }
 
-test_brew_install_failure_falls_back_to_release_binary() {
+test_release_binary_install() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
 
   _setup_sandbox "$tmp"
-  cat >"$tmp/stub-bin/brew" <<'STUB'
-#!/usr/bin/env bash
-case "${1:-}" in
-  tap)
-    exit 0
-    ;;
-  install)
-    echo "simulated brew install failure" >&2
-    exit 42
-    ;;
-  list)
-    exit 1
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-STUB
-  chmod +x "$tmp/stub-bin/brew"
-
-  _run_installer "$tmp"
-}
-
-test_brew_tap_failure_falls_back_to_release_binary() {
-  local tmp
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
-
-  _setup_sandbox "$tmp"
-  cat >"$tmp/stub-bin/brew" <<'STUB'
-#!/usr/bin/env bash
-case "${1:-}" in
-  tap)
-    echo "simulated brew tap failure" >&2
-    exit 17
-    ;;
-  *)
-    echo "brew $* should not be reached after tap failure" >&2
-    exit 99
-    ;;
-esac
-STUB
-  chmod +x "$tmp/stub-bin/brew"
-
   _run_installer "$tmp"
 }
 
@@ -183,7 +133,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://patchbay.ai/settings?tab=tokens" "$tmp/install.out"; then
+  if ! grep -q "https://aspectlylabs.com/settings?tab=tokens" "$tmp/install.out"; then
     echo "expected direct API Tokens settings URL in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -412,7 +362,7 @@ for arg in "$@"; do
   esac
 done
 if [ "$latest_request" = true ] && [ -n "${PATCHBAY_TEST_LATEST_TAG:-}" ]; then
-  printf 'HTTP/2 302\nlocation: https://github.com/patchbay-ai/patchbay/releases/tag/%s\n' "$PATCHBAY_TEST_LATEST_TAG"
+  printf 'HTTP/2 302\nlocation: https://github.com/alexj11324/Cordy/releases/tag/%s\n' "$PATCHBAY_TEST_LATEST_TAG"
 fi
 exit 0
 STUB
@@ -658,12 +608,12 @@ test_with_server_migrates_legacy_branding_without_overwriting_custom_repositorie
 
   _setup_server_sandbox "$tmp"
   cp "$tmp/server/.env.example" "$tmp/server/.env"
-  printf '\nCORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend\nCORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web\n' >>"$tmp/server/.env" # legacy-brand-compat
+  printf '\nCORDY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend\nCORDY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web\n' >>"$tmp/server/.env" # legacy-brand-compat
 
   _run_with_server "$tmp" PATCHBAY_SELFHOST_REF=v0.3.2 || return 1
 
-  grep -Fxq 'PATCHBAY_BACKEND_IMAGE=ghcr.io/patchbay-ai/patchbay-backend' "$tmp/server/.env" || return 1
-  grep -Fxq 'PATCHBAY_WEB_IMAGE=ghcr.io/patchbay-ai/patchbay-web' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web' "$tmp/server/.env" || return 1
 
   cp "$tmp/server/.env.example" "$tmp/server/.env"
   printf '\nCORDY_BACKEND_IMAGE=registry.example/custom-backend\nCORDY_WEB_IMAGE=registry.example/custom-web\n' >>"$tmp/server/.env" # legacy-brand-compat
@@ -886,8 +836,7 @@ STUB
   [ ! -f "$tmp/server-started" ] || { echo "entrypoint started server after interrupted migration" >&2; return 1; }
 }
 
-test_brew_install_failure_falls_back_to_release_binary
-test_brew_tap_failure_falls_back_to_release_binary
+test_release_binary_install
 test_remote_ssh_install_prints_token_login_hint
 test_local_install_does_not_print_token_login_hint
 test_with_server_uses_compose_published_ports

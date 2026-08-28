@@ -19,8 +19,8 @@ export function WebhookEventFilterSection({
   const [newEvent, setNewEvent] = useState("");
   const [newActions, setNewActions] = useState("");
   const docsHref = i18n.language?.startsWith("zh")
-    ? `https://patchbay.ai/docs/zh/autopilots#${encodeURIComponent("事件过滤")}`
-    : "https://patchbay.ai/docs/autopilots#event-filters";
+    ? `https://aspectlylabs.com/docs/zh/autopilots#${encodeURIComponent("事件过滤")}`
+    : "https://aspectlylabs.com/docs/autopilots#event-filters";
 
   const addFilter = () => {
     const event = newEvent.trim();

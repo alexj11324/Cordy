@@ -79,7 +79,7 @@ vi.mock("../editor/link-hover-card", () => ({
 
 import { RichContent } from "./rich-content";
 
-const APP_ORIGIN = "https://app.patchbay.ai";
+const APP_ORIGIN = "https://app.aspectlylabs.com";
 const PROJECT_ID = "8f14e45f-ceea-4d0e-a1a2-9b1c0d3e4f5a";
 const ISSUE_ID = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
 
@@ -186,7 +186,7 @@ describe("bare entity URLs in readonly content", () => {
 
   it("leaves an external URL as a plain link", () => {
     const { queryByTestId, container } = renderContent(
-      `https://github.com/patchbay-ai/patchbay/pull/1`,
+      `https://github.com/alexj11324/Cordy/pull/1`,
     );
     expect(queryByTestId("project-chip")).toBeNull();
     expect(queryByTestId("issue-chip")).toBeNull();

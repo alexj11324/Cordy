@@ -248,7 +248,7 @@ function slackDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.ai/docs${prefix}/slack-bot-integration`;
+  return `https://aspectlylabs.com/docs${prefix}/slack-bot-integration`;
 }
 
 // SlackAgentBindButton is the per-agent CTA exposed from the agent detail page.

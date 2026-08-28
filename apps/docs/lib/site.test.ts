@@ -41,11 +41,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.patchbay.ai/docs/agents",
+      canonical: "https://aspectlylabs.com/docs/agents",
       languages: {
-        en: "https://www.patchbay.ai/docs/agents",
-        zh: "https://www.patchbay.ai/docs/zh/agents",
-        "x-default": "https://www.patchbay.ai/docs/agents",
+        en: "https://aspectlylabs.com/docs/agents",
+        zh: "https://aspectlylabs.com/docs/zh/agents",
+        "x-default": "https://aspectlylabs.com/docs/agents",
       },
     });
   });
@@ -61,12 +61,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.patchbay.ai/docs/agents",
+      canonical: "https://aspectlylabs.com/docs/agents",
       languages: {
-        en: "https://www.patchbay.ai/docs/agents",
-        zh: "https://www.patchbay.ai/docs/zh/agents",
-        ko: "https://www.patchbay.ai/docs/ko/agents",
-        "x-default": "https://www.patchbay.ai/docs/agents",
+        en: "https://aspectlylabs.com/docs/agents",
+        zh: "https://aspectlylabs.com/docs/zh/agents",
+        ko: "https://aspectlylabs.com/docs/ko/agents",
+        "x-default": "https://aspectlylabs.com/docs/agents",
       },
     });
   });
@@ -76,12 +76,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.patchbay.ai/docs/agents",
+      canonical: "https://aspectlylabs.com/docs/agents",
       languages: {
-        en: "https://www.patchbay.ai/docs/agents",
-        zh: "https://www.patchbay.ai/docs/zh/agents",
-        ja: "https://www.patchbay.ai/docs/ja/agents",
-        "x-default": "https://www.patchbay.ai/docs/agents",
+        en: "https://aspectlylabs.com/docs/agents",
+        zh: "https://aspectlylabs.com/docs/zh/agents",
+        ja: "https://aspectlylabs.com/docs/ja/agents",
+        "x-default": "https://aspectlylabs.com/docs/agents",
       },
     });
   });
@@ -90,11 +90,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates([])).toEqual({
-      canonical: "https://www.patchbay.ai/docs",
+      canonical: "https://aspectlylabs.com/docs",
       languages: {
-        en: "https://www.patchbay.ai/docs",
-        zh: "https://www.patchbay.ai/docs/zh",
-        "x-default": "https://www.patchbay.ai/docs",
+        en: "https://aspectlylabs.com/docs",
+        zh: "https://aspectlylabs.com/docs/zh",
+        "x-default": "https://aspectlylabs.com/docs",
       },
     });
   });

@@ -82,10 +82,10 @@ describe("ConnectRemoteDialog", () => {
     expect(baseElement).toHaveTextContent("patchbay setup");
     expect(baseElement).not.toHaveTextContent("patchbay setup self-host");
     expect(baseElement).toHaveTextContent(
-      "patchbay config set server_url https://api.patchbay.ai",
+      "patchbay config set server_url https://api.aspectlylabs.com",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set app_url https://patchbay.ai",
+      "patchbay config set app_url https://aspectlylabs.com",
     );
   });
 

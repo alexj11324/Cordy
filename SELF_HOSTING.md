@@ -23,7 +23,7 @@ Two commands to set up everything — server, CLI, and configuration.
 
 ```bash
 # 1. Install CLI + provision the self-host server
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 
 # 2. Configure CLI, authenticate, and start the daemon
 patchbay setup self-host
@@ -36,7 +36,7 @@ patchbay setup self-host
 
 ```powershell
 # 1. Install CLI + provision the self-host server
-$env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+$env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 
 # 2. Configure CLI, authenticate, and start the daemon
 patchbay setup self-host
@@ -52,7 +52,7 @@ Open http://localhost:3000. To log in, configure `RESEND_API_KEY` in `.env` for 
 > **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, use the release installer:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+> curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 > ```
 
 ---
@@ -66,7 +66,7 @@ If you prefer to run each step manually:
 **Prerequisites:** Docker and Docker Compose.
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git
 cd patchbay
 make selfhost
 ```
@@ -105,7 +105,7 @@ Each team member who wants to run AI agents locally needs to:
 ### a) Install the CLI and an AI agent
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 You also need at least one AI agent CLI installed:
@@ -170,7 +170,7 @@ patchbay daemon status
 
 ## Kubernetes Deployment (Alternative)
 
-If you already run a Kubernetes cluster, you can deploy Patchbay there instead of Docker Compose using the released OCI Helm chart at `oci://ghcr.io/patchbay-ai/charts/patchbay` or the source chart at [`deploy/helm/patchbay/`](deploy/helm/patchbay/). It targets a typical k3s / k8s setup with an Ingress controller and a default `ReadWriteOnce` StorageClass — authored against k3s + Traefik + `local-path`, and should work on any cluster with minor tweaks.
+If you already run a Kubernetes cluster, you can deploy Patchbay there instead of Docker Compose using the released OCI Helm chart at `oci://ghcr.io/alexj11324/charts/patchbay` or the source chart at [`deploy/helm/patchbay/`](deploy/helm/patchbay/). It targets a typical k3s / k8s setup with an Ingress controller and a default `ReadWriteOnce` StorageClass — authored against k3s + Traefik + `local-path`, and should work on any cluster with minor tweaks.
 
 The chart creates the following resources in the target namespace:
 
@@ -227,7 +227,7 @@ Leave optional values empty for now — you can fill them in later (see [Step 5 
 ### Step 4 — Install the chart
 
 ```bash
-helm install patchbay oci://ghcr.io/patchbay-ai/charts/patchbay \
+helm install patchbay oci://ghcr.io/alexj11324/charts/patchbay \
   --version <chart-version> \
   -n patchbay
 ```
@@ -237,10 +237,10 @@ Released chart versions strip the leading `v` from the Git tag. For example, rel
 To override defaults, export the chart values, edit them, and pass them with `-f`:
 
 ```bash
-helm show values oci://ghcr.io/patchbay-ai/charts/patchbay \
+helm show values oci://ghcr.io/alexj11324/charts/patchbay \
   --version <chart-version> > my-values.yaml
 # edit my-values.yaml — e.g. change ingress hosts, image tags, resource limits
-helm install patchbay oci://ghcr.io/patchbay-ai/charts/patchbay \
+helm install patchbay oci://ghcr.io/alexj11324/charts/patchbay \
   --version <chart-version> \
   -n patchbay \
   -f my-values.yaml
@@ -290,7 +290,7 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
 - **Deterministic local/private testing:** set `backend.config.appEnv: development` in your values file and `PATCHBAY_DEV_VERIFICATION_CODE=888888` in the Secret, then `helm upgrade` and restart. This fixed code is ignored when `APP_ENV=production`.
 
   ```bash
-  helm upgrade patchbay oci://ghcr.io/patchbay-ai/charts/patchbay \
+  helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
     --version <chart-version> \
     -n patchbay \
     -f my-values.yaml --set backend.config.appEnv=development
@@ -326,7 +326,7 @@ kubectl -n patchbay rollout restart deploy/patchbay-backend deploy/patchbay-fron
 To upgrade to a specific Patchbay release, upgrade to the matching chart version. The released chart defaults its app images to the matching Git tag:
 
 ```bash
-helm upgrade patchbay oci://ghcr.io/patchbay-ai/charts/patchbay \
+helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
   --version <chart-version> \
   -n patchbay \
   -f my-values.yaml
@@ -345,7 +345,7 @@ images:
 Then run the same upgrade command with `-f my-values.yaml`:
 
 ```bash
-helm upgrade patchbay oci://ghcr.io/patchbay-ai/charts/patchbay \
+helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
   --version <chart-version> \
   -n patchbay \
   -f my-values.yaml
@@ -425,7 +425,7 @@ External cron / systemd timer / Kubernetes `CronJob` setups that call `SELECT ro
 If you installed via the install script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --stop
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --stop
 ```
 
 If you cloned the repo manually:
@@ -440,13 +440,13 @@ patchbay daemon stop
 
 ## Switching to Patchbay Cloud
 
-If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://patchbay.ai):
+If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://aspectlylabs.com):
 
 ```bash
 patchbay setup
 ```
 
-This reconfigures the CLI for patchbay.ai, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
+This reconfigures the CLI for aspectlylabs.com, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
 
 > Your local Docker services are unaffected. Stop them separately if you no longer need them.
 
@@ -505,7 +505,7 @@ automatic retry—the rollback command intentionally changes the schema.
 If you prefer running Docker Compose steps manually instead of `make selfhost`:
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git
 cd patchbay
 cp .env.example .env
 ```

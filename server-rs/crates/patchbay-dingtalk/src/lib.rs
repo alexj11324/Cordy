@@ -17,7 +17,7 @@
 //!
 //! Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 //! support boundary and the retirement rule are published at
-//! <https://patchbay.ai/docs/community-maintained>. That page is the single source
+//! <https://aspectlylabs.com/docs/community-maintained>. That page is the single source
 //! of truth — record ownership changes there, not here.
 
 pub mod ack;

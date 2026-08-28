@@ -1572,10 +1572,10 @@ describe("Plugin schemas", () => {
     // state where a component could render it.
     const parsed = PluginInstallationSchema.parse({
       id: "installation-1",
-      config: { repo: "patchbay-ai/patchbay" },
+      config: { repo: "alexj11324/Cordy" },
       configured_secrets: ["token"],
     });
-    expect(parsed.config).toEqual({ repo: "patchbay-ai/patchbay" });
+    expect(parsed.config).toEqual({ repo: "alexj11324/Cordy" });
     expect(parsed.configured_secrets).toEqual(["token"]);
     expect(Object.keys(parsed)).not.toContain("secrets");
   });

@@ -1125,16 +1125,16 @@ mod tests {
 
     #[test]
     fn signup_carries_set_once_and_email_domain() {
-        let e = signup("u1", "Dev@Patchbay.AI", "x");
+        let e = signup("u1", "Dev@Example.TEST", "x");
         assert_eq!(e.name, "signup");
         assert_eq!(
             e.properties.as_ref().unwrap()["email_domain"],
-            json!("patchbay.ai")
+            json!("aspectlylabs.com")
         );
         assert_eq!(e.properties.as_ref().unwrap()["signup_source"], json!("x"));
         assert_eq!(
             e.set_once.as_ref().unwrap()["email"],
-            json!("Dev@Patchbay.AI")
+            json!("Dev@Example.TEST")
         );
     }
 

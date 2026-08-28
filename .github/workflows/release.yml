@@ -29,7 +29,7 @@ jobs:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization
     # credential is present in the canonical repository's Actions secrets.
-    if: github.event_name == 'push' && github.repository == 'patchbay-ai/patchbay'
+    if: github.event_name == 'push' && github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -154,7 +154,7 @@ jobs:
         run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
   self-hosted-prepare:
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
@@ -323,7 +323,7 @@ jobs:
     needs: [macos-release-preflight, verify, rust-cli-build]
     # Only the canonical repository may publish release assets. A fork can
     # still run verification and builds without creating a Release.
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -663,7 +663,7 @@ jobs:
 
   helm-chart:
     needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-helm-chart-${{ needs.self-hosted-prepare.outputs.tag_name }}
@@ -709,7 +709,7 @@ jobs:
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
-      github.repository == 'patchbay-ai/patchbay'
+      github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Setup Docker Buildx
@@ -921,7 +921,7 @@ jobs:
 
   publish-release:
     needs: [verify, release, desktop]
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives

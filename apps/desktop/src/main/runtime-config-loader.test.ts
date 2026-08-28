@@ -47,9 +47,9 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://api.patchbay.ai",
-        wsUrl: "wss://api.patchbay.ai/ws",
-        appUrl: "https://patchbay.ai",
+        apiUrl: "https://api.aspectlylabs.com",
+        wsUrl: "wss://api.aspectlylabs.com/ws",
+        appUrl: "https://aspectlylabs.com",
       },
     });
   });

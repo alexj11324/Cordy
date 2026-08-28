@@ -8,7 +8,7 @@
 
 **让编码智能体的工作从需求顺畅流转到审核，全程不丢上下文。**
 
-[![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
 **[English](README.md) | 简体中文**
 
@@ -68,7 +68,7 @@ Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
 - Docker 与 Docker Compose，用于 PostgreSQL
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git patchbay
+git clone https://github.com/alexj11324/Cordy.git patchbay
 cd patchbay
 make dev
 ```

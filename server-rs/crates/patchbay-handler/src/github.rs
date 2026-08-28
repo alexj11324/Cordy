@@ -1166,7 +1166,7 @@ mod tests {
     fn status_webhook_preserves_top_level_sha_for_pr_lookup() {
         let event: CiEvent = serde_json::from_value(json!({
             "installation": {"id": 42},
-            "repository": {"name": "patchbay", "owner": {"login": "patchbay-ai"}},
+            "repository": {"name": "patchbay", "owner": {"login": "alexj11324"}},
             "sha": "abc123"
         }))
         .unwrap();
@@ -1178,7 +1178,7 @@ mod tests {
         let event: PullRequestEvent = serde_json::from_value(json!({
             "action": "closed",
             "installation": {"id": 42},
-            "repository": {"name": "patchbay", "owner": {"login": "patchbay-ai"}},
+            "repository": {"name": "patchbay", "owner": {"login": "alexj11324"}},
             "pull_request": {
                 "number": 1, "html_url": "https://example.test/pr/1", "title": "CORD-1",
                 "body": null, "state": "closed", "draft": false, "merged": false,

@@ -513,8 +513,8 @@ pub async fn run(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
     run_with_input(cli, environment, &mut stdin).await
 }
 
-const CLOUD_SERVER_URL: &str = "https://api.patchbay.ai";
-const CLOUD_APP_URL: &str = "https://patchbay.ai";
+const CLOUD_SERVER_URL: &str = "https://api.aspectlylabs.com";
+const CLOUD_APP_URL: &str = "https://aspectlylabs.com";
 
 const VALID_ISSUE_SORT_COLUMNS: &[&str] = &[
     "position",

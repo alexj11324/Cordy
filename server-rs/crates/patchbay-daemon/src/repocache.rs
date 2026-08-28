@@ -1042,7 +1042,7 @@ pub(crate) struct WorktreeParams {
     /// instead of a linked worktree whose gitdir lives under the shared
     /// cache. Codex tasks need this because workspace-write keeps a resolved
     /// external worktree gitdir read-only even when explicitly listed as a
-    /// writable root (patchbay-ai/patchbay#2925, patchbay-ai/patchbay#6449).
+    /// writable root in sandboxed Codex sessions.
     pub isolated_git_metadata: bool,
 }
 
@@ -2266,7 +2266,7 @@ case "$COMMIT_SOURCE" in
   merge|squash) exit 0 ;;
 esac
 
-TRAILER="Co-authored-by: patchbay-agent <github@patchbay.ai>"
+TRAILER="Co-authored-by: patchbay-agent <github@aspectlylabs.com>"
 
 # Don't add if already present.
 if grep -qF "$TRAILER" "$COMMIT_MSG_FILE"; then
