@@ -13,12 +13,8 @@
 //!   extended-length-prefix trimming, instead of calling the Win32 APIs
 //!   directly (no windows-sys dependency available to this crate).
 //! - Go's test-injection var `executablePathForLaunch` becomes a plain
-//!   function returning `Option`; integration swaps the implementation at
-//!   the call site.
-
-// S9-integration: consumed by daemon.go executable discovery wiring that
-// lands with integration; silence dead-code until then.
-#![allow(dead_code)]
+//!   function returning `Option`; the daemon launch selector injects this
+//!   function at its testable call boundary.
 
 use std::path::{Path, PathBuf};
 

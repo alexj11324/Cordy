@@ -875,6 +875,37 @@ pub(crate) fn agent_executable_present(path: &str) -> bool {
     !path.is_empty() && look_path(path).is_ok()
 }
 
+/// Strict launch-boundary check for an already-resolved executable path.
+/// Unlike [`agent_executable_present`], this preserves the underlying I/O
+/// error so callers can self-heal a genuinely vanished path without treating
+/// permission, filesystem, or executable-policy failures as a PATH miss.
+pub(crate) fn check_agent_executable_for_launch(path: &str) -> std::io::Result<()> {
+    if path.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "agent executable path is empty",
+        ));
+    }
+    let metadata = std::fs::metadata(path)?;
+    if metadata.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "agent executable path is a directory",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "agent executable path is not executable",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// `reresolveAgentCommand` (config.go:764): re-runs startup resolution on the
 /// miss path only, with the login-shell fallback for bare names.
 pub(crate) fn reresolve_agent_command(cmd: &str) -> Option<String> {
