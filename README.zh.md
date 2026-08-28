@@ -8,7 +8,7 @@
 
 **让编码智能体的工作从需求顺畅流转到审核，全程不丢上下文。**
 
-[![CI](https://github.com/alexj11324/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/patchbay/actions/workflows/ci.yml)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
 **[English](README.md) | 简体中文**
 
@@ -70,7 +70,7 @@ Rust server、CLI、迁移 runner 和 backfill 二进制已经是默认生产入
 在最终迁移门禁关闭前，只有临时的旧版兼容性检查仍需要 Go。
 
 ```bash
-git clone https://github.com/alexj11324/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git patchbay
 cd patchbay
 make dev
 ```
