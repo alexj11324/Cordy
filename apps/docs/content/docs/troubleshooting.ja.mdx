@@ -176,8 +176,8 @@ SELECT rollup_task_usage_hourly();
 それでも backend の起動が `refusing to drop legacy daily rollups` で失敗する場合は、自動バックフィルが完了していません（途中で失敗した、または `migrate up` を通さず SQL を直接適用した、など）。その場合はバックフィルコマンドを手動で実行し、完了後に backend を再起動します:
 
 ```bash
-cd server
-DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
+# ソース checkout で先に `make rust-build` を実行します:
+DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
 ```
 
 よく使うフラグ: `--dry-run` は書き込まずプレビューのみ、`--sleep-between-slices` はスライスの間に間隔を挟み、負荷の高いインスタンスへの読み取り圧力を下げます。コマンドは月単位のスライスで動作し、冪等なので、中断してもそのまま再実行できます。advisory lock を保持してサーバー側の定期ロールアップと相互排他になるため、重複や不整合なロールアップデータは生じません。完了後は backend を再起動し、`/readyz` で `migrations` が `ok` になっていることを確認してください。

@@ -309,11 +309,11 @@ Migrations run automatically when the backend starts; migrations that backfill h
 
 ### Verify with `/readyz`, not `/health`
 
-`/health` is a **liveness** probe — it returns `{"status":"ok"}` as long as the process is up, including when migrations failed. `/readyz` (`server/cmd/server/router.go:680`; `/healthz` is an alias) checks the database and the applied migration set, so it is the one that catches a bad upgrade:
+`/health` is a **liveness** probe — it returns `{"status":"ok"}` as long as the process is up. `/readyz` (implemented in `server-rs/crates/cordy-handler/src/health.rs`; `/healthz` is an alias) checks database reachability and returns `ready` only when the Rust entrypoint's migration step has completed, so use it to catch a failed startup:
 
 ```bash
 curl -s localhost:8080/readyz
-# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+# {"status":"ready"}
 ```
 
 Anything other than HTTP 200 with both checks `ok` means the new version did not finish migrating — check the backend logs before sending traffic at it.

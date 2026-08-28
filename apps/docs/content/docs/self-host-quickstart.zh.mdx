@@ -309,11 +309,11 @@ Migration 在 backend 启动时自动运行；需要回填历史数据的 migrat
 
 ### 用 `/readyz` 验证，不要用 `/health`
 
-`/health` 是 **liveness** 探针，只要进程还活着就返回 `{"status":"ok"}`，migration 失败了它照样是 ok。`/readyz`（`server/cmd/server/router.go:680`，`/healthz` 是它的别名）会真正检查数据库和已应用的 migration 集合，升级出问题能被它拦下来：
+`/health` 是 **liveness** 探针，只要进程还活着就返回 `{"status":"ok"}`。`/readyz`（由 `server-rs/crates/cordy-handler/src/health.rs` 实现，`/healthz` 是它的别名）会检查数据库是否可达；Rust 入口在提供服务前先执行 migration，因此启动失败时不会进入 ready：
 
 ```bash
 curl -s localhost:8080/readyz
-# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+# {"status":"ready"}
 ```
 
 只要不是 HTTP 200 且两项都是 `ok`，就说明新版本没把 migration 跑完，先去看 backend 日志，别急着放流量进来。

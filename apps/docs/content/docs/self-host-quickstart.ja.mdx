@@ -309,11 +309,11 @@ migration は backend の起動時に自動で実行されます。過去デー�
 
 ### `/health` ではなく `/readyz` で検証する
 
-`/health` は **liveness** プローブで、プロセスが生きている限り `{"status":"ok"}` を返します — migration が失敗していても同じです。`/readyz`（`server/cmd/server/router.go:680`、`/healthz` はそのエイリアス）はデータベースと適用済み migration の集合をチェックするため、失敗したアップグレードを捕捉できるのはこちらです。
+`/health` は **liveness** プローブで、プロセスが動いている限り `{"status":"ok"}` を返します。`/readyz`（`server-rs/crates/cordy-handler/src/health.rs`で実装され、`/healthz` はそのエイリアス）はデータベースへの接続を確認し、Rust エントリーポイントの migration が完了してから `ready` を返すため、起動失敗の確認にはこちらを使います。
 
 ```bash
 curl -s localhost:8080/readyz
-# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+# {"status":"ready"}
 ```
 
 HTTP 200 かつ両方のチェックが `ok` でない場合、新しいバージョンは migration を完了していません。トラフィックを流す前にバックエンドのログを確認してください。

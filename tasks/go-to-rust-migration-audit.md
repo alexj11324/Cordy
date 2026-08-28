@@ -200,7 +200,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding，并在 T-60 执行新鲜 PostgreSQL、镜像启动、operator recovery 和 backfill 产物矩阵；不重复创建脱离 backend image 的第二套 release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42、§75 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576；高风险 API/DB/provider/daemon/security/backfill/CLI 回归统一沿 T-53 冻结矩阵收口，不另建重复任务 | 收口 #576 的异步 V/R/F，并按 T-53 矩阵补直接 Rust contract evidence；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008；不拆为按文件/测试的微任务 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract；T-54D 已把 realtime created_at/heartbeat 切到 Go-compatible RFC3339Nano，并创建 Ready PR #582；T-54E 已将 handler/service 已迁移的 RFC3339Nano 输出统一到 `cordy-util`，并创建 Ready PR #583；T-54F 已将 PostHog batch timestamp 切到同一 helper，并创建 Ready PR #584；T-57 已实现共享 HTTP 错误 envelope framing 并创建 Ready PR #585；T-58 已实现 issue response projection 的 null/empty 与 activity timestamp 契约并创建 Ready PR #586；T-59 已收口 DB model/query serializers 的 reserved-key、nullable legacy-row 和 cross-language JSON residual，并创建 Ready PR #588 | 收口 #577/#579/#580/#581/#582/#583/#584/#585/#586/#588 异步 V/R/F；在可用 workspace resolver 与数据库后补跑真实编译、测试和旧行读取，继续按 T-59 的完整 residual wire/schema 契约收口 AUDIT-008，避免单字段微型 PR | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口；T-57/T-58/T-59 复用现有 helper、投影、model/query/event/serde 入口 | PR #577/#579/#580/#581/#582/#583/#584/#585/#586/#588；§6.2、§64、§66、§67、§68、§69、§70、§71、§72、§73、§74 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578；T-61 将一次性复核文档与新鲜产物 | 收口 #578 异步 V/R/F，并在 T-61 完成 install/systemd/release/rollback/pprof/metrics 文档逐项复核 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65、§76 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578；T-61 已将四种语言的 troubleshooting backfill 命令和 self-host readiness 说明对齐 Rust 入口/响应，并补充 pprof 客户端边界说明 | 收口 #578/#590 异步 V/R/F，并在 T-60 新鲜产物可用后完成 install/systemd/release/rollback/pprof/metrics 文档逐项复核 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径与 T-60 产物证据 | PR #523/#524/#525/#578/#590；§6.2、§65、§76 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009、T-59..T-61 退出且生产验证通过后，执行全仓引用审计、删除全部 Go 源文件和剩余 Go assets | 严格依赖 AUDIT-001..009、T-59..T-61 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
 ### 6.1.1 时间顺序执行计划
@@ -293,7 +293,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 63. `[~]` `T-58 / §73` AUDIT-008 issue response projection null/empty 与 activity timestamp contract（Ready PR #586，待异步退出证据）
 64. `[~]` `T-59 / §74` AUDIT-008 DB model/query reserved-key 与 nullable legacy-row wire contract（Ready PR #588，待异步退出证据）
 65. `[~]` `T-60 / §75` AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（Ready PR #589；locked workspace check、daemon 定向门和六个新鲜 Rust 产物通过，完整运行矩阵仍待执行）
-66. `[ ]` `T-61 / §76` AUDIT-009 运维文档与新鲜产物复核（已登记，待复核）
+66. `[~]` `T-61 / §76` AUDIT-009 运维文档与新鲜产物复核（文档对齐已提交，待新鲜产物复核）
 67. `[ ]` `T-56` AUDIT-010 Go 源码退休（仅在 T-53、T-59、T-60、T-61、T-57、T-58 及 AUDIT-001..009 退出后）
 
 每一步都按同一个交付门执行：登记缺口 → 实现完整业务契约 → 接入唯一 Rust 生产入口 →
@@ -3189,7 +3189,7 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   `--help` 均 exit 0；server 会先加载生产配置，`--help` 因缺 `DATABASE_URL` exit 1。仅 cordy 支持 `--version`
   （exit 0）；server exit 1，其余四个入口对未定义的 `--version` 均 exit 2，不把这些接口差异记为通过。
 
-## 76. [ ] AUDIT-009 运维文档与新鲜产物复核（T-61）
+## 76. [~] AUDIT-009 运维文档与新鲜产物复核（T-61）
 
 本项一次性复核 `README`、install/self-host、Docker/Helm、systemd、release/compatibility/rollback、
 pprof/metrics/logger/operator troubleshooting 文档与 T-60 实际产物和命令一致性。清除或标记仍属兼容回滚路径的
@@ -3203,4 +3203,15 @@ Go 命令，不把文档文字更新当作生产切换证据。
 - Go 是否可下线：不能。T-61 是 T-56 的文档/运维证据前置，不代表 Go 已删除。
 - 依赖：T-60 新鲜产物与 AUDIT-001/006 已有入口；T-53/T-59 提供契约名称和错误/兼容边界。
 - owner：主 agent 负责文档切换和证据回写；独立 verification/reviewer/fixer 负责命令复核、生产边界和回归检查。
-- 证据/PR：本次冻结阶段无实现证据；复核清单、产物/命令结果和 Ready PR 待回写。
+- 本次文档对齐（同一切片，不拆语言/命令 PR）：
+  - `apps/docs/content/docs/troubleshooting.{mdx,zh.mdx,ko.mdx,ja.mdx}` 的 migration 103 手动回填示例统一使用
+    `./server/bin/backfill_task_usage_hourly`（源码 checkout 先执行 `make rust-build`），删除仍指向 Go `go run` 的生产操作。
+  - `apps/docs/content/docs/self-host-quickstart.{mdx,zh.mdx,ko.mdx,ja.mdx}` 的 readiness 说明统一指向
+    `server-rs/crates/cordy-handler/src/health.rs`，反映 Rust `/readyz` 的数据库可达性和 `{"status":"ready"}` 响应；
+    不再引用已下线语义的 Go `router.go` 行号或虚构的 `checks.migrations` 字段。
+  - `SELF_HOSTING_ADVANCED.md` 中 `go tool pprof` 仅作为可选的 profile 客户端明确标注；它读取 Rust pprof 输出，
+    不构建或运行 Cordy Go 服务。迁移审计/源码映射中的 Go 路径仍是历史证据，不属于默认生产操作，保持不改。
+- 证据/PR：T-61 是一个运维文档切片，已准备 Ready PR #590（基于 T-60 最新 tip），本项只改上述直接相关文档，
+  不新增脚本、安装器、抽象、任务号或运行时 fallback。主 agent 仅运行 `git diff --check`；T-60 新鲜 binary/image/unit
+  的命令和版本由独立 verifier 复核，reviewer 检查文档是否与实际 Rust 产物一致，fixer 只处理 scoped finding。新鲜
+  产物尚未可用前，本项保持 `[~]`，不得把静态文档 diff 当作生产验证或 Go 可删除证据。

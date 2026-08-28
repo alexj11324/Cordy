@@ -176,8 +176,8 @@ A normal upgrade needs no action for 103: `migrate up` automatically backfills h
 If the backend still fails to start with `refusing to drop legacy daily rollups`, the automatic backfill did not complete (for example, it failed partway, or the SQL was applied directly instead of through `migrate up`). Run the backfill command manually, then restart the backend:
 
 ```bash
-cd server
-DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
+# From a source checkout after `make rust-build`:
+DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
 ```
 
 Useful flags: `--dry-run` previews without writing; `--sleep-between-slices` adds a pause between slices to reduce read pressure on a busy instance. The command works in monthly slices and is idempotent — rerun it directly after an interruption. It holds an advisory lock and is mutually exclusive with the server's scheduled rollup, so it cannot produce duplicate or inconsistent rollup data. When it finishes, restart the backend and confirm `migrations` is `ok` on `/readyz`.

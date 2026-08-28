@@ -586,6 +586,10 @@ trusted network, for example a host-local mapping such as
 The Rust backend exposes CPU pprof and, on Linux, allocation-stack heap pprof
 on the fixed loopback-only management listener `127.0.0.1:6060`:
 
+The `go tool pprof` commands below use Go's standalone profile client to inspect
+the Rust server's pprof output. A Go Cordy binary or Go backend is not required;
+the client is optional and can be replaced by any pprof-compatible viewer.
+
 ```bash
 go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
 curl -fsS http://127.0.0.1:6060/debug/pprof/heap -o heap.pb.gz

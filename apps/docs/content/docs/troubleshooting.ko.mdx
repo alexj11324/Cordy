@@ -176,8 +176,8 @@ SELECT rollup_task_usage_hourly();
 backend 시작 중 `refusing to drop legacy daily rollups` 오류가 계속 발생하면 자동 backfill이 완료되지 않은 것입니다. 예를 들어 도중에 실패했거나 `migrate up`을 사용하지 않고 SQL을 직접 적용했을 수 있습니다. 이때는 backfill 명령을 직접 실행하고 완료된 뒤 backend를 다시 시작하세요.
 
 ```bash
-cd server
-DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
+# 소스 checkout에서 먼저 `make rust-build`를 실행합니다:
+DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
 ```
 
 자주 쓰는 flag: `--dry-run`은 쓰지 않고 미리 보기만 하며, `--sleep-between-slices`는 slice 사이에 간격을 두어 사용량이 많은 인스턴스의 읽기 부하를 낮춥니다. 명령은 월별 slice로 실행되고 멱등성을 가지므로 중단 후 바로 다시 실행할 수 있습니다. advisory lock을 보유해 서버의 정기 집계와 상호 배제되므로 중복되거나 일관되지 않은 집계 데이터가 생기지 않습니다. 완료 후 backend를 다시 시작하고 `/readyz`에서 `migrations`가 `ok`인지 확인하세요.
