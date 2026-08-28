@@ -972,7 +972,7 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
         }
         match read_gc_meta(&task_dir) {
             Ok(meta)
-                if meta.kind.as_ref() == Some(&GcMetaKind::Issue)
+                if meta.kind.as_ref() == Some(&GCMetaKind::Issue)
                     && !meta.issue_id.trim().is_empty() =>
             {
                 issue_candidates.push(IssueGcCandidate { task_dir, meta });
@@ -1217,7 +1217,7 @@ fn apply_managed_artifact_fallback<H: GcHost>(
     }
     tracing::info!(
         dir = %task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-        kind = %meta.kind.as_ref().map(GcMetaKind::as_str).unwrap_or(""),
+        kind = %meta.kind.as_ref().map(GCMetaKind::as_str).unwrap_or(""),
         completed_at = %completed_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "gc: eligible for managed artifact cleanup"
     );
@@ -1255,16 +1255,16 @@ async fn should_clean_task_dir_for_kind<H: GcHost>(
     meta: &GcMeta,
 ) -> GcAction {
     match meta.kind.as_ref() {
-        Some(GcMetaKind::Issue) => gc_decision_issue(host, ctx, task_dir, meta).await,
-        Some(GcMetaKind::Chat) => gc_decision_chat(host, ctx, task_dir, meta).await,
-        Some(GcMetaKind::AutopilotRun) => {
+        Some(GCMetaKind::Issue) => gc_decision_issue(host, ctx, task_dir, meta).await,
+        Some(GCMetaKind::Chat) => gc_decision_chat(host, ctx, task_dir, meta).await,
+        Some(GCMetaKind::AutopilotRun) => {
             gc_decision_autopilot_run(host, ctx, task_dir, meta).await
         }
-        Some(GcMetaKind::QuickCreate) => gc_decision_quick_create(host, ctx, task_dir, meta).await,
+        Some(GCMetaKind::QuickCreate) => gc_decision_quick_create(host, ctx, task_dir, meta).await,
         // Unknown or absent kind: fall back to mtime-based
         // orphan cleanup so a future daemon writing a kind we don't recognize
         // doesn't get insta-wiped.
-        Some(GcMetaKind::Other(_)) | None => orphan_by_mtime(host, task_dir, "unknown kind"),
+        Some(GCMetaKind::Other(_)) | None => orphan_by_mtime(host, task_dir, "unknown kind"),
     }
 }
 

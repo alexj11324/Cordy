@@ -789,8 +789,9 @@ async fn open_wakeup_proxy_tunnel(
         }
         let remaining = WAKEUP_PROXY_RESPONSE_MAX_BYTES - response.len();
         let mut chunk = [0_u8; 1024];
+        let chunk_len = remaining.min(chunk.len());
         let read = stream
-            .read(&mut chunk[..remaining.min(chunk.len())])
+            .read(&mut chunk[..chunk_len])
             .await
             .map_err(|error| anyhow::anyhow!("read wakeup proxy CONNECT response: {error}"))?;
         if read == 0 {

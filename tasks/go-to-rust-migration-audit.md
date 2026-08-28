@@ -3163,8 +3163,10 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   阻塞必须原样记录，未执行不计为通过。Fixer 在修正 `hyper-util` feature 并由 Cargo offline 重建 lock 后运行
   `(cd server-rs && cargo metadata --locked --offline --format-version 1)` 与
   `(cd server-rs && cargo check --locked --offline -p cordy-remotemcp)` 均通过；组合 daemon check 已越过 resolver，但因
-  `manager.rs` 1 个 E0502 和 `gc.rs` 7 个 `GcMetaKind` E0433 以 exit 101 失败，因此 daemon/runtime 矩阵仍是 0 executed，
-  不能标记通过。
+  `manager.rs` 1 个 E0502 和 `gc.rs` 7 个 `GcMetaKind` E0433 首次以 exit 101 失败、0 tests executed。Fixer 最小修正
+  borrow 长度与既有 `GCMetaKind` 名称后，组合 locked/offline check 和 daemon lib `--no-run` 均通过；GC 与 proxy 精确
+  测试各 1/1 通过（proxy 首次在受限 sandbox 因 `Operation not permitted` 失败，允许 loopback 后重跑通过）。其余完整
+  runtime/provider/发布矩阵尚未执行，不能由这些定向结果标记通过。
 
 ## 76. [ ] AUDIT-009 运维文档与新鲜产物复核（T-61）
 
