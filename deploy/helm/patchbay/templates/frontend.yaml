@@ -11,13 +11,12 @@ spec:
   replicas: {{ .Values.frontend.replicas }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: patchbay
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "patchbay.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: frontend
   template:
     metadata:
       labels:
-        {{- include "patchbay.labels" . | nindent 8 }}
+        {{- include "patchbay.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
       containers:
@@ -67,8 +66,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: patchbay
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "patchbay.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
   ports:
     - port: 3000

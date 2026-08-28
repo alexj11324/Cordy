@@ -19,12 +19,17 @@ FOR EACH ROW
 WHEN (current_setting('cordy.workspace_teardown', true) IS DISTINCT FROM 'on')
 EXECUTE FUNCTION enqueue_task_usage_hourly_dirty_for_tu();
 
+DROP TRIGGER IF EXISTS trg_channel_user_binding_brand_identity ON channel_user_binding;
+DROP TRIGGER IF EXISTS trg_lark_user_binding_brand_identity ON lark_user_binding;
+
+ALTER TABLE channel_user_binding
+    DROP COLUMN patchbay_user_id;
+
+ALTER TABLE lark_user_binding
+    DROP COLUMN patchbay_user_id;
+
+DROP FUNCTION IF EXISTS sync_patchbay_user_id_columns();
+
 UPDATE agent_runtime
 SET provider = 'cordy_agent'
 WHERE provider = 'patchbay_agent';
-
-ALTER TABLE channel_user_binding
-    RENAME COLUMN patchbay_user_id TO cordy_user_id;
-
-ALTER TABLE lark_user_binding
-    RENAME COLUMN patchbay_user_id TO cordy_user_id;

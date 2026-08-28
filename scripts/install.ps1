@@ -10,6 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 if (-not $env:PATCHBAY_INSTALL_DIR -and $env:CORDY_INSTALL_DIR) { $env:PATCHBAY_INSTALL_DIR = $env:CORDY_INSTALL_DIR } # legacy-brand-compat
+if (-not $env:PATCHBAY_MODE -and $env:CORDY_MODE) { $env:PATCHBAY_MODE = $env:CORDY_MODE } # legacy-brand-compat
 
 # ---------------------------------------------------------------------------
 # Configuration

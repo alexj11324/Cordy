@@ -35,8 +35,7 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: patchbay
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "patchbay.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: backend
   template:
     metadata:
@@ -51,9 +50,9 @@ spec:
         # lookup returns empty during `helm template`/`--dry-run`, so the
         # rendered value there is a placeholder; on a real install/upgrade it
         # reflects the actual Secret and rolls pods on rotation.
-        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace .Values.existingSecret).data | toYaml | sha256sum }}
+        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace (include "patchbay.existingSecret" .)).data | toYaml | sha256sum }}
       labels:
-        {{- include "patchbay.labels" . | nindent 8 }}
+        {{- include "patchbay.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
       containers:
@@ -67,7 +66,7 @@ spec:
             - configMapRef:
                 name: {{ .Release.Name }}-config
             - secretRef:
-                name: {{ .Values.existingSecret }}
+                name: {{ include "patchbay.existingSecret" . }}
           {{- if not .Values.postgres.external.enabled }}
           env:
             - name: DATABASE_URL
@@ -132,8 +131,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: patchbay
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "patchbay.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: backend
   ports:
     - port: 8080

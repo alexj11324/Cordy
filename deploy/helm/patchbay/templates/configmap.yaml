@@ -33,6 +33,6 @@ data:
 
   {{- if not .Values.postgres.external.enabled }}
   # --- PostgreSQL (consumed by the backend to build DATABASE_URL) ---
-  POSTGRES_DB: {{ .Values.postgres.database | quote }}
-  POSTGRES_USER: {{ .Values.postgres.user | quote }}
+  POSTGRES_DB: {{ include "patchbay.postgresDatabase" . | quote }}
+  POSTGRES_USER: {{ include "patchbay.postgresUser" . | quote }}
   {{- end }}

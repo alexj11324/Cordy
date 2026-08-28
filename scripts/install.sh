@@ -63,8 +63,66 @@ normalize_install_dir() {
 migrate_legacy_patchbay_home() {
   local patchbay_home="$HOME/.patchbay"
   if [ -z "${PATCHBAY_INSTALL_DIR:-}" ] && [ ! -e "$patchbay_home" ] && [ -d "$LEGACY_PATCHBAY_HOME" ]; then
+    local unit_dir legacy_unit new_unit legacy_compose new_compose
+    local legacy_compose_pattern legacy_description
+    local systemd_available=false was_enabled=false
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    legacy_unit="$unit_dir/cordy-selfhost.service" # legacy-brand-compat
+    new_unit="$unit_dir/patchbay-selfhost.service"
+    legacy_compose_pattern='\.cordy-systemd\.compose\.yml' # legacy-brand-compat
+    legacy_description='Cordy self-hosted' # legacy-brand-compat
+
+    if command_exists systemctl && systemctl --user show-environment >/dev/null 2>&1; then
+      systemd_available=true
+    fi
+
+    if [ -f "$legacy_unit" ] && [ "$systemd_available" = true ]; then
+      if systemctl --user is-enabled cordy-selfhost.service >/dev/null 2>&1; then # legacy-brand-compat
+        was_enabled=true
+      fi
+      systemctl --user disable --now cordy-selfhost.service || # legacy-brand-compat
+        fail "Could not stop the legacy Patchbay systemd service before migrating its home directory."
+    fi
+
     mv -- "$LEGACY_PATCHBAY_HOME" "$patchbay_home"
     ok "Migrated the existing Patchbay home directory to $patchbay_home"
+
+    legacy_compose="$patchbay_home/server/.cordy-systemd.compose.yml" # legacy-brand-compat
+    new_compose="$patchbay_home/server/.patchbay-systemd.compose.yml"
+    if [ -f "$legacy_compose" ] && [ ! -e "$new_compose" ]; then
+      mv -- "$legacy_compose" "$new_compose"
+    fi
+
+    if [ -f "$legacy_unit" ]; then
+      if [ -e "$new_unit" ]; then
+        fail "Both legacy and Patchbay systemd units exist; remove the duplicate unit and retry."
+      fi
+      if [ "$(uname -s)" = "Darwin" ]; then
+        sed -i '' \
+          -e "s#$LEGACY_PATCHBAY_HOME/server#$patchbay_home/server#g" \
+          -e "s#$legacy_compose_pattern#.patchbay-systemd.compose.yml#g" \
+          -e "s#$legacy_description#Patchbay self-hosted#g" \
+          "$legacy_unit" # legacy-brand-compat
+      else
+        sed -i \
+          -e "s#$LEGACY_PATCHBAY_HOME/server#$patchbay_home/server#g" \
+          -e "s#$legacy_compose_pattern#.patchbay-systemd.compose.yml#g" \
+          -e "s#$legacy_description#Patchbay self-hosted#g" \
+          "$legacy_unit" # legacy-brand-compat
+      fi
+      mv -- "$legacy_unit" "$new_unit"
+
+      if [ "$systemd_available" = true ]; then
+        systemctl --user daemon-reload || fail "Could not reload systemd after migrating the Patchbay unit."
+        if [ "$was_enabled" = true ]; then
+          systemctl --user enable --now patchbay-selfhost.service ||
+            fail "Could not enable the migrated patchbay-selfhost.service."
+        fi
+      else
+        warn "Migrated the Patchbay systemd unit file; run 'systemctl --user daemon-reload' before using it."
+      fi
+      ok "Migrated the existing systemd unit to patchbay-selfhost.service"
+    fi
   fi
 }
 
@@ -271,6 +329,9 @@ existing_selfhost_image_pin() {
 
   local image_tag
   image_tag="$(sed -n 's/^PATCHBAY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)"
+  if [ -z "$image_tag" ]; then
+    image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)" # legacy-brand-compat
+  fi
   [ -n "$image_tag" ] || return 1
   printf '%s' "$image_tag"
 }
@@ -462,11 +523,12 @@ persist_systemd_compose_configuration() {
 install_selfhost_systemd() {
   preflight_selfhost_systemd
 
-  local account docker_path unit_dir unit_path install_dir_q docker_q configuration_q
+  local account docker_path unit_dir unit_path legacy_unit_path install_dir_q docker_q configuration_q
   account="${USER:-$(id -un)}"
   docker_path="$(command -v docker)"
   unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
   unit_path="$unit_dir/patchbay-selfhost.service"
+  legacy_unit_path="$unit_dir/cordy-selfhost.service" # legacy-brand-compat
   install_dir_q="$(systemd_quote "$INSTALL_DIR")"
   docker_q="$(systemd_quote "$docker_path")"
   configuration_q="$(systemd_quote "$INSTALL_DIR/.patchbay-systemd.compose.yml")"
@@ -498,6 +560,11 @@ install_selfhost_systemd() {
   } >"$unit_path"
   chmod 0644 "$unit_path"
 
+  if [ -f "$legacy_unit_path" ]; then
+    systemctl --user disable --now cordy-selfhost.service || # legacy-brand-compat
+      fail "Could not retire the legacy Patchbay systemd service."
+    rm -f -- "$legacy_unit_path"
+  fi
   systemctl --user daemon-reload || fail "Could not reload the systemd user manager."
   systemctl --user enable --now patchbay-selfhost.service ||
     fail "Could not enable and start patchbay-selfhost.service."
@@ -772,6 +839,15 @@ run_stop() {
     systemctl --user disable --now patchbay-selfhost.service ||
       fail "Could not stop and disable patchbay-selfhost.service; it may restart the stack on the next login or boot."
     ok "Systemd service stopped and disabled"
+  fi
+
+  local legacy_unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cordy-selfhost.service" # legacy-brand-compat
+  if [ -f "$legacy_unit_path" ]; then
+    command_exists systemctl ||
+      fail "The legacy Patchbay systemd service exists, but systemctl is unavailable; refusing to report the service stopped."
+    systemctl --user disable --now cordy-selfhost.service || # legacy-brand-compat
+      fail "Could not stop and disable the legacy Patchbay systemd service."
+    ok "Legacy systemd service stopped and disabled"
   fi
 
   if [ -d "$INSTALL_DIR" ]; then

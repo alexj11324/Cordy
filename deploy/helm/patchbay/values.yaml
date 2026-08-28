@@ -59,6 +59,9 @@ postgres:
     enabled: false
   database: patchbay
   user: patchbay
+  # Keep the database/role recorded by an existing release ConfigMap. Set false
+  # only after explicitly migrating the live PostgreSQL database and role.
+  preserveExistingIdentity: true
   persistence:
     size: 10Gi
     # Leave empty to use the cluster's default StorageClass.

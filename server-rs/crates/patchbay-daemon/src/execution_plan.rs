@@ -29,6 +29,21 @@ use crate::thread_name::derive_task_thread_name_from_task;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
 const TASK_CONFIG_ROOT_ENV: &str = "PATCHBAY_TASK_CONFIG_ROOT";
+// Child-process aliases retained for one brand-transition compatibility window.
+const LEGACY_TOKEN_ENV: &str = "CORDY_TOKEN"; // legacy-brand-compat
+const LEGACY_TASK_WORKSPACES_ROOT_ENV: &str = "CORDY_TASK_WORKSPACES_ROOT"; // legacy-brand-compat
+const LEGACY_SERVER_URL_ENV: &str = "CORDY_SERVER_URL"; // legacy-brand-compat
+const LEGACY_DAEMON_PORT_ENV: &str = "CORDY_DAEMON_PORT"; // legacy-brand-compat
+const LEGACY_WORKSPACE_ID_ENV: &str = "CORDY_WORKSPACE_ID"; // legacy-brand-compat
+const LEGACY_AGENT_NAME_ENV: &str = "CORDY_AGENT_NAME"; // legacy-brand-compat
+const LEGACY_AGENT_ID_ENV: &str = "CORDY_AGENT_ID"; // legacy-brand-compat
+const LEGACY_TASK_ID_ENV: &str = "CORDY_TASK_ID"; // legacy-brand-compat
+const LEGACY_TASK_SLOT_ENV: &str = "CORDY_TASK_SLOT"; // legacy-brand-compat
+const LEGACY_AUTOPILOT_RUN_ID_ENV: &str = "CORDY_AUTOPILOT_RUN_ID"; // legacy-brand-compat
+const LEGACY_AUTOPILOT_ID_ENV: &str = "CORDY_AUTOPILOT_ID"; // legacy-brand-compat
+const LEGACY_QUICK_CREATE_TASK_ID_ENV: &str = "CORDY_QUICK_CREATE_TASK_ID"; // legacy-brand-compat
+const LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV: &str =
+    "CORDY_QUICK_CREATE_ATTACHMENT_IDS"; // legacy-brand-compat
 
 /// Non-claim values resolved by the daemon before building a task plan.
 ///
@@ -296,15 +311,27 @@ impl ProviderExecutionPlan {
             validate_env_pair(key, value)?;
         }
         let canonical = [
-            ("PATCHBAY_TOKEN", token),
+            ("PATCHBAY_TOKEN", token.clone()),
+            (LEGACY_TOKEN_ENV, token),
             (TASK_WORKSPACES_ROOT_ENV, config.workspaces_root.clone()),
+            (
+                LEGACY_TASK_WORKSPACES_ROOT_ENV,
+                config.workspaces_root.clone(),
+            ),
             ("PATCHBAY_SERVER_URL", config.server_base_url.clone()),
+            (LEGACY_SERVER_URL_ENV, config.server_base_url.clone()),
             ("PATCHBAY_DAEMON_PORT", config.health_port.to_string()),
+            (LEGACY_DAEMON_PORT_ENV, config.health_port.to_string()),
             ("PATCHBAY_WORKSPACE_ID", task.workspace_id.clone()),
+            (LEGACY_WORKSPACE_ID_ENV, task.workspace_id.clone()),
             ("PATCHBAY_AGENT_NAME", agent.name.clone()),
+            (LEGACY_AGENT_NAME_ENV, agent.name.clone()),
             ("PATCHBAY_AGENT_ID", task.agent_id.clone()),
+            (LEGACY_AGENT_ID_ENV, task.agent_id.clone()),
             ("PATCHBAY_TASK_ID", task.id.clone()),
+            (LEGACY_TASK_ID_ENV, task.id.clone()),
             ("PATCHBAY_TASK_SLOT", inputs.slot.to_string()),
+            (LEGACY_TASK_SLOT_ENV, inputs.slot.to_string()),
             ("TMPDIR", inputs.temp_dir.clone()),
             ("TMP", inputs.temp_dir.clone()),
             ("TEMP", inputs.temp_dir),
@@ -317,19 +344,36 @@ impl ProviderExecutionPlan {
                 "PATCHBAY_AUTOPILOT_RUN_ID".to_string(),
                 task.autopilot_run_id.clone(),
             );
+            values.insert(
+                LEGACY_AUTOPILOT_RUN_ID_ENV.to_string(),
+                task.autopilot_run_id.clone(),
+            );
         }
         if !task.autopilot_id.is_empty() {
             values.insert(
                 "PATCHBAY_AUTOPILOT_ID".to_string(),
                 task.autopilot_id.clone(),
             );
+            values.insert(
+                LEGACY_AUTOPILOT_ID_ENV.to_string(),
+                task.autopilot_id.clone(),
+            );
         }
         if !task.quick_create_prompt.is_empty() {
             values.insert("PATCHBAY_QUICK_CREATE_TASK_ID".to_string(), task.id.clone());
+            values.insert(
+                LEGACY_QUICK_CREATE_TASK_ID_ENV.to_string(),
+                task.id.clone(),
+            );
             if !task.quick_create_attachment_ids.is_empty() {
+                let attachment_ids = serde_json::to_string(&task.quick_create_attachment_ids)?;
                 values.insert(
                     "PATCHBAY_QUICK_CREATE_ATTACHMENT_IDS".to_string(),
-                    serde_json::to_string(&task.quick_create_attachment_ids)?,
+                    attachment_ids.clone(),
+                );
+                values.insert(
+                    LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV.to_string(),
+                    attachment_ids,
                 );
             }
         }
@@ -961,6 +1005,10 @@ mod tests {
             bound.child_env.get("PATCHBAY_TOKEN"),
             Some("mat_task_secret")
         );
+        assert_eq!(
+            bound.child_env.get(LEGACY_TOKEN_ENV),
+            Some("mat_task_secret")
+        );
         assert!(
             !bound
                 .child_env
@@ -1077,11 +1125,25 @@ mod tests {
             Some("run-1")
         );
         assert_eq!(
+            bound.child_env.get(LEGACY_AUTOPILOT_RUN_ID_ENV),
+            Some("run-1")
+        );
+        assert_eq!(
             bound.child_env.get("PATCHBAY_QUICK_CREATE_TASK_ID"),
             Some("task-1")
         );
         assert_eq!(
+            bound.child_env.get(LEGACY_QUICK_CREATE_TASK_ID_ENV),
+            Some("task-1")
+        );
+        assert_eq!(
             bound.child_env.get("PATCHBAY_QUICK_CREATE_ATTACHMENT_IDS"),
+            Some("[\"attachment-1\"]")
+        );
+        assert_eq!(
+            bound
+                .child_env
+                .get(LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV),
             Some("[\"attachment-1\"]")
         );
     }

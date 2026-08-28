@@ -605,6 +605,29 @@ test_with_server_preserves_existing_image_pin_without_explicit_ref() {
   fi
 }
 
+test_with_server_preserves_legacy_image_pin_before_brand_migration() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_IMAGE_TAG=v0.2.8\n' >>"$tmp/server/.env" # legacy-brand-compat
+
+  _run_with_server "$tmp" PATCHBAY_SELFHOST_REF= || return 1
+
+  if [ "$(grep '^PATCHBAY_IMAGE_TAG=' "$tmp/server/.env")" != "PATCHBAY_IMAGE_TAG=v0.2.8" ]; then
+    echo "installer did not preserve and migrate the legacy image pin" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -Fq "fetch origin v0.2.8 --depth 1" "$tmp/git.log"; then
+    echo "installer selected assets before reading the legacy image pin" >&2
+    cat "$tmp/git.log" >&2 || true
+    return 1
+  fi
+}
+
 test_with_server_resolves_latest_pin_to_matching_release_assets() {
   local tmp
   tmp="$(mktemp -d)"
@@ -649,6 +672,61 @@ test_with_server_migrates_legacy_branding_without_overwriting_custom_repositorie
 
   grep -Fxq 'PATCHBAY_BACKEND_IMAGE=registry.example/custom-backend' "$tmp/server/.env" || return 1
   grep -Fxq 'PATCHBAY_WEB_IMAGE=registry.example/custom-web' "$tmp/server/.env" || return 1
+}
+
+test_default_home_migrates_legacy_systemd_unit() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "skipping Linux-only legacy systemd migration test on $(uname -s)"
+    return 0
+  fi
+
+  local tmp legacy_home unit_dir legacy_unit legacy_compose legacy_description
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  legacy_home="$tmp/.cordy" # legacy-brand-compat
+  mv "$tmp/server" "$legacy_home"
+  unit_dir="$tmp/.config/systemd/user"
+  legacy_unit="$unit_dir/cordy-selfhost.service" # legacy-brand-compat
+  legacy_compose="$legacy_home/server/.cordy-systemd.compose.yml" # legacy-brand-compat
+  legacy_description="Cordy self-hosted Rust services" # legacy-brand-compat
+  mkdir -p "$unit_dir" "$legacy_home/server"
+  touch "$legacy_compose"
+  {
+    printf '%s\n' '[Unit]'
+    printf 'Description=%s\n' "$legacy_description"
+    printf '%s\n' '[Service]'
+    printf 'WorkingDirectory=%s\n' "$legacy_home/server"
+    printf 'ExecStart=docker compose -f %s up -d\n' "$legacy_compose"
+  } >"$legacy_unit"
+  : >"$tmp/systemctl.log"
+
+  cat >"$tmp/stub-bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$PATCHBAY_TEST_SYSTEMCTL_LOG"
+exit 0
+STUB
+  chmod +x "$tmp/stub-bin/systemctl"
+
+  if ! env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    PATCHBAY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    bash "$ROOT_DIR/scripts/install.sh" \
+    >"$tmp/legacy-systemd.out" 2>"$tmp/legacy-systemd.err"; then
+    cat "$tmp/legacy-systemd.out" >&2 || true
+    cat "$tmp/legacy-systemd.err" >&2 || true
+    return 1
+  fi
+
+  [ ! -e "$legacy_home" ] || return 1
+  [ -f "$tmp/.patchbay/server/.patchbay-systemd.compose.yml" ] || return 1
+  [ -f "$unit_dir/patchbay-selfhost.service" ] || return 1
+  grep -Fq "WorkingDirectory=$tmp/.patchbay/server" "$unit_dir/patchbay-selfhost.service" || return 1
+  grep -Fq 'Description=Patchbay self-hosted Rust services' "$unit_dir/patchbay-selfhost.service" || return 1
+  grep -Fq -- '--user disable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1 # legacy-brand-compat
+  grep -Fq -- '--user enable --now patchbay-selfhost.service' "$tmp/systemctl.log" || return 1
 }
 
 test_systemd_preflight_fails_before_server_mutation() {
@@ -816,8 +894,10 @@ test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
 test_with_server_pins_selected_release_images
 test_with_server_preserves_existing_image_pin_without_explicit_ref
+test_with_server_preserves_legacy_image_pin_before_brand_migration
 test_with_server_resolves_latest_pin_to_matching_release_assets
 test_with_server_migrates_legacy_branding_without_overwriting_custom_repositories
+test_default_home_migrates_legacy_systemd_unit
 test_systemd_preflight_fails_before_server_mutation
 test_with_server_systemd_owns_compose_lifecycle
 test_container_entrypoint_forwards_migration_signal

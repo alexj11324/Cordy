@@ -30,15 +30,19 @@
 # read it back with `docker compose port`, so the health check and the printed
 # URL always match what was actually published.
 
-name: patchbay
+# Compose project and database identities are durable storage namespaces. Keep
+# them stable so a branded upgrade reattaches the existing volumes and role;
+# all user-facing services, images, commands, and environment variables use
+# Patchbay names.
+name: cordy # legacy-brand-compat
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-patchbay}
-      POSTGRES_USER: ${POSTGRES_USER:-patchbay}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-patchbay}
+      POSTGRES_DB: ${POSTGRES_DB:-cordy} # legacy-brand-compat
+      POSTGRES_USER: ${POSTGRES_USER:-cordy} # legacy-brand-compat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -46,7 +50,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-patchbay} -d ${POSTGRES_DB:-patchbay}",
+          "pg_isready -U ${POSTGRES_USER:-cordy} -d ${POSTGRES_DB:-cordy}", # legacy-brand-compat
         ]
       interval: 5s
       timeout: 5s
@@ -62,7 +66,7 @@ services:
     volumes:
       - backend_uploads:/app/data/uploads
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-patchbay}:${POSTGRES_PASSWORD:-patchbay}@postgres:5432/${POSTGRES_DB:-patchbay}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-cordy}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-cordy}?sslmode=disable # legacy-brand-compat
       PORT: "8080"
       METRICS_ADDR: ${METRICS_ADDR:-}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value — generate one with 'openssl rand -hex 32'}

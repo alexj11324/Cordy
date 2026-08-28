@@ -28,13 +28,12 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: patchbay
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "patchbay.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: postgres
   template:
     metadata:
       labels:
-        {{- include "patchbay.labels" . | nindent 8 }}
+        {{- include "patchbay.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgres
     spec:
       containers:
@@ -58,7 +57,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.existingSecret }}
+                  name: {{ include "patchbay.existingSecret" . }}
                   key: POSTGRES_PASSWORD
             # local-path PVCs mount with a lost+found directory — point PGDATA
             # at a subdir so initdb sees an empty target.
@@ -100,8 +99,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: patchbay
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "patchbay.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
   ports:
     - port: 5432
