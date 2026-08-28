@@ -7,13 +7,14 @@
 //! `ask`, which cannot be answered by an unattended daemon task.
 
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 
-use super::context::{is_pre_exists, record_write_file, SidecarManifest};
+use super::context::SidecarManifest;
 use super::execenv::clean_path;
 
 const PROJECT_CONFIG_FILE: &str = "reasonix.toml";
@@ -334,6 +335,37 @@ fn render_project_config(user_path: &str) -> Result<Vec<u8>> {
     Ok(content)
 }
 
+/// Atomically claims a previously absent project-config path. `create_new`
+/// closes the stat/write race and refuses to follow a symlink installed by a
+/// concurrent actor. Every kind of pre-existing entry is left untouched.
+fn write_new_project_config(
+    path: &Path,
+    content: &[u8],
+    manifest: Option<&mut SidecarManifest>,
+) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("inspect {}", path.display()));
+        }
+    }
+
+    let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(error) => {
+            return Err(error).with_context(|| format!("create {}", path.display()));
+        }
+    };
+    file.write_all(content)
+        .with_context(|| format!("write {}", path.display()))?;
+    if let Some(manifest) = manifest {
+        manifest.files.push(path.to_string_lossy().into_owned());
+    }
+    Ok(true)
+}
+
 /// Writes the task-scoped Reasonix config, preserving an existing repository
 /// file and refusing to replace an unreadable owner permission table.
 pub(crate) fn write_reasonix_project_config(
@@ -357,11 +389,10 @@ pub(crate) fn write_reasonix_project_config(
         }
     };
     let path = Path::new(work_dir).join(PROJECT_CONFIG_FILE);
-    let path_string = path.to_string_lossy().into_owned();
-    match record_write_file(&path_string, &content, manifest) {
-        Ok(()) => Ok(()),
-        Err(error) if is_pre_exists(&error) => {
-            tracing::warn!(path = %path_string, "execenv: project reasonix.toml already exists; leaving it untouched");
+    match write_new_project_config(&path, &content, manifest) {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            tracing::warn!(path = %path.display(), "execenv: project reasonix.toml already exists; leaving it untouched");
             Ok(())
         }
         Err(error) => Err(error).with_context(|| format!("write {PROJECT_CONFIG_FILE}")),
@@ -415,6 +446,51 @@ mod tests {
         let path = temp.path().join(PROJECT_CONFIG_FILE);
         fs::write(&path, "[permissions]\ndeny = [\"custom\"]\n").unwrap();
         write_reasonix_project_config(&work_dir, &HashMap::new(), None).unwrap();
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "[permissions]\ndeny = [\"custom\"]\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_project_config_symlink_is_not_followed() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("custom.toml");
+        fs::write(&target, "[permissions]\ndeny = [\"custom\"]\n").unwrap();
+        let path = temp.path().join(PROJECT_CONFIG_FILE);
+        symlink(&target, &path).unwrap();
+
+        write_reasonix_project_config(&temp.path().to_string_lossy(), &HashMap::new(), None)
+            .unwrap();
+
+        assert!(fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            fs::read_to_string(target).unwrap(),
+            "[permissions]\ndeny = [\"custom\"]\n"
+        );
+    }
+
+    #[test]
+    fn existing_project_config_is_not_recorded_as_managed() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(PROJECT_CONFIG_FILE);
+        fs::write(&path, "[permissions]\ndeny = [\"custom\"]\n").unwrap();
+        let mut manifest = SidecarManifest::default();
+
+        write_reasonix_project_config(
+            &temp.path().to_string_lossy(),
+            &HashMap::new(),
+            Some(&mut manifest),
+        )
+        .unwrap();
+
+        assert!(manifest.files.is_empty());
         assert_eq!(
             fs::read_to_string(path).unwrap(),
             "[permissions]\ndeny = [\"custom\"]\n"

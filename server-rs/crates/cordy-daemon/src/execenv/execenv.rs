@@ -1900,7 +1900,9 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn test_task_temp_dir_is_private_distinct_and_removed_with_guard() {
-        let _env_lock = TASK_TEMP_ENV_LOCK.lock().unwrap();
+        let _env_lock = TASK_TEMP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         struct EnvRestore(Option<std::ffi::OsString>);
         impl Drop for EnvRestore {
             fn drop(&mut self) {
@@ -1942,7 +1944,9 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn test_task_temp_dir_reports_unusable_configured_base() {
-        let _env_lock = TASK_TEMP_ENV_LOCK.lock().unwrap();
+        let _env_lock = TASK_TEMP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         struct EnvRestore(Option<std::ffi::OsString>);
         impl Drop for EnvRestore {
             fn drop(&mut self) {
@@ -1961,10 +1965,14 @@ mod tests {
         assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
     }
 
-    #[cfg(unix)]
+    // macOS rejects this deliberately malformed pathname before the
+    // filesystem assertion can exercise the Linux non-UTF-8 path contract.
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_task_temp_dir_accepts_non_unicode_absolute_override() {
-        let _env_lock = TASK_TEMP_ENV_LOCK.lock().unwrap();
+        let _env_lock = TASK_TEMP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         use std::os::unix::ffi::OsStringExt;
 
         struct EnvRestore(Option<std::ffi::OsString>);
