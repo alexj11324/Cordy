@@ -918,8 +918,11 @@ mod tests {
             .expect("release reordered status row");
         let (status, _) = body(pending_reorder.await.expect("reorder task")).await;
         assert_eq!(status, StatusCode::OK);
+        // Archive may commit as soon as reorder releases the shared catalog
+        // lock, so include archived custom rows when checking the committed
+        // positions. Archival is asserted separately below.
         let ordered: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM issue_status WHERE workspace_id = $1 AND category = 'in_progress' AND is_system = FALSE AND archived_at IS NULL ORDER BY position, key",
+            "SELECT id FROM issue_status WHERE workspace_id = $1 AND category = 'in_progress' AND is_system = FALSE ORDER BY position, key",
         )
         .bind(workspace_id)
         .fetch_all(&pool)
