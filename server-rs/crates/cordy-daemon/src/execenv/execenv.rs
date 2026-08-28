@@ -586,7 +586,10 @@ fn task_temp_base_dir() -> anyhow::Result<(PathBuf, bool)> {
         let Some(configured) = std::env::var_os("CORDY_AGENT_TEMP_BASE") else {
             return Ok((socket_safe_temp_base_dir(), false));
         };
-        let path = PathBuf::from(configured);
+        let path = match configured.to_str() {
+            Some(configured) => PathBuf::from(configured.trim()),
+            None => PathBuf::from(configured.as_os_str()),
+        };
         if path.as_os_str().is_empty() {
             return Ok((socket_safe_temp_base_dir(), false));
         }
@@ -1949,6 +1952,15 @@ mod tests {
         std::env::set_var("CORDY_AGENT_TEMP_BASE", "relative/base");
         let error = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap_err();
         assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
+
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", "   ");
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        assert_ne!(directory.path().parent(), Some(Path::new("   ")));
+
+        let spaced = format!("  {}  ", base.path().display());
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", spaced);
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        assert_eq!(directory.path().parent(), Some(base.path()));
     }
 
     #[cfg(not(windows))]
