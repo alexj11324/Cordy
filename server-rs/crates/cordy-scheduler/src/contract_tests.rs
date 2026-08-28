@@ -142,22 +142,18 @@ async fn production_scheduler_assembly_registers_both_real_jobs() {
     let task_usage_error = scheduler
         .register(crate::task_usage_hourly_job(rows.pool.clone()))
         .expect_err("production assembly omitted task usage job");
-    assert!(
-        task_usage_error
-            .to_string()
-            .contains(crate::TASK_USAGE_HOURLY_JOB)
-    );
+    assert!(task_usage_error
+        .to_string()
+        .contains(crate::TASK_USAGE_HOURLY_JOB));
     let autopilot_error = scheduler
         .register(crate::autopilot_schedule_dispatch_job(
             rows.pool.clone(),
             dispatcher,
         ))
         .expect_err("production assembly omitted autopilot schedule job");
-    assert!(
-        autopilot_error
-            .to_string()
-            .contains(crate::AUTOPILOT_SCHEDULE_DISPATCH_JOB)
-    );
+    assert!(autopilot_error
+        .to_string()
+        .contains(crate::AUTOPILOT_SCHEDULE_DISPATCH_JOB));
 
     let cancel = CancellationToken::new();
     cancel.cancel();

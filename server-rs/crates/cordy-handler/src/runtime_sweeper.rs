@@ -188,11 +188,8 @@ impl RuntimeTaskSweeper {
         let mut deleted = 0;
         let mut workspaces = HashSet::new();
         for runtime_id in candidates {
-            match tokio::time::timeout(
-                operation_timeout,
-                self.gc_runtime(runtime_id, stale_before),
-            )
-            .await
+            match tokio::time::timeout(operation_timeout, self.gc_runtime(runtime_id, stale_before))
+                .await
             {
                 Ok(Ok(Some(workspace_id))) => {
                     deleted += 1;
@@ -2647,12 +2644,8 @@ mod tests {
             let mut later_runtimes = Vec::with_capacity(GC_BATCH as usize - 1);
             for index in 1..GC_BATCH {
                 later_runtimes.push(
-                    rows.runtime(
-                        &format!("operation-next-{index}"),
-                        "offline",
-                        "999 years",
-                    )
-                    .await?,
+                    rows.runtime(&format!("operation-next-{index}"), "offline", "999 years")
+                        .await?,
                 );
             }
 
@@ -2700,12 +2693,10 @@ mod tests {
                 "a bad candidate starved later runtime GC candidates"
             );
             anyhow::ensure!(
-                sqlx::query_scalar::<_, i64>(
-                    "SELECT count(*) FROM agent_runtime WHERE id = $1"
-                )
-                .bind(blocked_runtime)
-                .fetch_one(&rows.pool)
-                .await?
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(blocked_runtime)
+                    .fetch_one(&rows.pool)
+                    .await?
                     == 1
                     && sqlx::query_scalar::<_, i64>(
                         "SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2"
@@ -2739,7 +2730,9 @@ mod tests {
             "DATABASE_URL and migrated PostgreSQL are required for runtime GC tick contract",
         );
         let result = async {
-            let runtime_id = rows.runtime("tick-timeout", "offline", "1000 years").await?;
+            let runtime_id = rows
+                .runtime("tick-timeout", "offline", "1000 years")
+                .await?;
             let issue_id = rows.issue(651).await?;
             let task_id = rows.task(runtime_id, issue_id, "completed").await?;
             mark_task_terminal(&rows.pool, task_id, "completed").await?;
@@ -2784,12 +2777,10 @@ mod tests {
             chat_holder.commit().await?;
             anyhow::ensure!(deleted == 0, "timed-out GC tick reported {deleted} deletes");
             anyhow::ensure!(
-                sqlx::query_scalar::<_, i64>(
-                    "SELECT count(*) FROM agent_runtime WHERE id = $1"
-                )
-                .bind(runtime_id)
-                .fetch_one(&rows.pool)
-                .await?
+                sqlx::query_scalar::<_, i64>("SELECT count(*) FROM agent_runtime WHERE id = $1")
+                    .bind(runtime_id)
+                    .fetch_one(&rows.pool)
+                    .await?
                     == 1
                     && sqlx::query_scalar::<_, i64>(
                         "SELECT count(*) FROM agent_task_queue WHERE id = $1 AND runtime_id = $2"

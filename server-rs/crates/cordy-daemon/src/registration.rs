@@ -53,9 +53,7 @@ fn has_registered_builtin_for_demotion(
         registry
             .workspace_runtimes(&workspace_id)
             .into_iter()
-            .any(|runtime| {
-                runtime.profile_id.is_empty() && causes.contains_key(&runtime.provider)
-            })
+            .any(|runtime| runtime.profile_id.is_empty() && causes.contains_key(&runtime.provider))
     })
 }
 
@@ -502,12 +500,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 async move {
                     let _guard = serial.lock().await;
                     service
-                        .deregister_dropped(
-                            demotion_ctx,
-                            runtime_registry,
-                            &runtime_ids,
-                            reasons,
-                        )
+                        .deregister_dropped(demotion_ctx, runtime_registry, &runtime_ids, reasons)
                         .await
                 }
             },

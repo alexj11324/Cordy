@@ -45,7 +45,11 @@ pub(crate) const DAEMON_LOG_COMPONENT: &str = "daemon";
 /// event, and this keeps its component/owner fields available to every enabled
 /// warning or error even when lower log levels are filtered out.
 pub(crate) fn daemon_owner_span(owner: &'static str) -> tracing::Span {
-    tracing::error_span!("daemon_owner", component = DAEMON_LOG_COMPONENT, owner = owner)
+    tracing::error_span!(
+        "daemon_owner",
+        component = DAEMON_LOG_COMPONENT,
+        owner = owner
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

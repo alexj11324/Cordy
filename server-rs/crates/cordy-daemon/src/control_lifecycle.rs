@@ -212,8 +212,7 @@ mod tests {
                 "/api/daemon/ws",
                 axum::routing::get({
                     let ws_assertions_tx = ws_assertions_tx.clone();
-                    move |headers: axum::http::HeaderMap,
-                          ws: axum::extract::WebSocketUpgrade| {
+                    move |headers: axum::http::HeaderMap, ws: axum::extract::WebSocketUpgrade| {
                         let ws_assertions_tx = ws_assertions_tx.clone();
                         async move {
                             assert_eq!(headers["authorization"], "Bearer token");

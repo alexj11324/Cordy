@@ -459,10 +459,8 @@ async fn build_production_router(
         lark_backfill_metrics,
     )
     .await?;
-    let scheduler = cordy_scheduler::production_manager(
-        state.pool.clone(),
-        state.autopilots.clone(),
-    )?;
+    let scheduler =
+        cordy_scheduler::production_manager(state.pool.clone(), state.autopilots.clone())?;
     let scheduler = scheduler.start(root_cancel.child_token())?;
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),

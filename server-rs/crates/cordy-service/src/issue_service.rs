@@ -1191,7 +1191,10 @@ mod tests {
                 .fetch_one(&mut *probe)
                 .await
                 .expect("probe duplicate lock");
-                probe.rollback().await.expect("release duplicate lock probe");
+                probe
+                    .rollback()
+                    .await
+                    .expect("release duplicate lock probe");
                 if !available {
                     return;
                 }

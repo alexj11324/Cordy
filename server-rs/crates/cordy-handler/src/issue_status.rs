@@ -812,7 +812,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(updated["id"], first_id.to_string());
         assert_eq!(updated["name"], "Human Review Updated");
-        assert_eq!(updated["description"], "Updated through the production handler");
+        assert_eq!(
+            updated["description"],
+            "Updated through the production handler"
+        );
         assert_eq!(updated["color"], "#7c3aed");
 
         let built_in: Uuid = sqlx::query_scalar(
@@ -909,7 +912,10 @@ mod tests {
                 .is_err(),
             "archive must wait for the production reorder's shared catalog lock"
         );
-        row_holder.commit().await.expect("release reordered status row");
+        row_holder
+            .commit()
+            .await
+            .expect("release reordered status row");
         let (status, _) = body(pending_reorder.await.expect("reorder task")).await;
         assert_eq!(status, StatusCode::OK);
         let ordered: Vec<Uuid> = sqlx::query_scalar(

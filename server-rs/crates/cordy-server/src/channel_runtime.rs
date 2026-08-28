@@ -1617,11 +1617,9 @@ mod tests {
             .expect("production Slack factory decrypts and builds the channel");
         assert_eq!(channel.r#type(), slack);
         assert!(channel.capabilities().has(cordy_channel::Capability::TEXT));
-        assert!(
-            channel
-                .capabilities()
-                .has(cordy_channel::Capability::THREAD_REPLY)
-        );
+        assert!(channel
+            .capabilities()
+            .has(cordy_channel::Capability::THREAD_REPLY));
     }
 
     #[tokio::test]
