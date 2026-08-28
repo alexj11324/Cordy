@@ -199,7 +199,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | [~] | AUDIT-005 | 进行中 | `/health`、provider refresh、GC metadata、runtime/Remote/plugin-hook MCP、local-skills、wakeup/control、auto-update、poisoned-session、Codex rollout durability、confirmed provider demotion/recovery、private task temp 与 wakeup environment proxy production chain 已交付；heartbeat HTTP pool recovery 已交付；deferred cancelled chat finalization 已提交 Ready PR #575 | 收口 #558/#559/#561/#562/#563 与 #575 的异步 V/R/F；异步结果不阻塞主线 | 依赖 AUDIT-001 Rust daemon 产物及唯一 `RuntimeTaskSweeper::run_once`；可与前序 Ready PR 的异步验证并行 | PR #542..#550/#558..#563/#575；§5.2、§6.2、§29..§37、§45..§51、§62 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-006 | Ready PR | 三个 backfill 业务能力、Rust Makefile产物和唯一 production backend image 发布路径已交付；migration operator lifecycle 已接入有界锁等待、信号退出、locked status 与恢复文档 | 异步收口 #555 PostgreSQL/entrypoint finding；不重复创建脱离 backend image 的第二套 backfill release assets | Rust image/package 入口可执行；真实生命周期交异步 V/R/F | PR #518/#519/#520/#523/#555；§6.2、§42 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-007 | 进行中 | feature-flag 等局部契约测试已有；T-53 高风险 Go 回归映射索引已提交 Ready PR #576 | 收口 #576 的异步 V/R/F；继续按索引补 API/DB/provider/daemon/security/backfill/CLI contract，标出 Rust 已有证据、待补 contract 与不适用理由；异步结果不阻塞主线 | 依赖 AUDIT-002..006 的能力矩阵；wire/schema/ID 细节转 AUDIT-008 | PR #576；§6.2、§63 | 主 agent；独立 V/R/F subagent |
-| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract；T-54D 已把 realtime created_at/heartbeat 切到 Go-compatible RFC3339Nano，并创建 Ready PR #582；T-54E 已将 handler/service 已迁移的 RFC3339Nano 输出统一到 `cordy-util`，并创建 Ready PR #583；T-54F 已将 PostHog batch timestamp 切到同一 helper，并创建 Ready PR #584 | 收口 #577/#579/#580/#581/#582/#583/#584 异步 V/R/F；继续按完整业务契约合并 JSON/时间/DB/旧数据兼容切片，避免单字段微型 PR | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口 | PR #577/#579/#580/#581/#582/#583/#584；§6.2、§64、§66、§67、§68、§69、§70、§71 | 主 agent；独立 V/R/F subagent |
+| [~] | AUDIT-008 | 进行中 | route parity 和部分 wire tests 已有；T-54 已把未接入生产字段的 `cordy-util::Ulid` utility 切到 Go-compatible Crockford codec，并创建 Ready PR #577；T-54A 已把 daemon event ID 生成器切到共享 `ulid` crate，并创建 Ready PR #579；T-54B 已把 realtime/daemon 的全部 ULID 生产调用收口到 `cordy-util`，创建 Ready PR #580；T-54C 已补齐 Go/Rust Redis event envelope 的固定字段、缺失字段和 scope routing contract；T-54D 已把 realtime created_at/heartbeat 切到 Go-compatible RFC3339Nano，并创建 Ready PR #582；T-54E 已将 handler/service 已迁移的 RFC3339Nano 输出统一到 `cordy-util`，并创建 Ready PR #583；T-54F 已将 PostHog batch timestamp 切到同一 helper，并创建 Ready PR #584；T-57 已登记共享 HTTP 错误 envelope framing 契约 | 收口 #577/#579/#580/#581/#582/#583/#584 异步 V/R/F；完成 T-57 的共享错误响应 framing 后，再按完整业务契约合并 JSON/DB/旧数据兼容切片，避免单字段微型 PR | utility contract 不是生产兼容或 Go 下线证据；事件切片依赖 AUDIT-002 daemon/realtime 入口；T-57 依赖现有 `error_response`/`error_code_response` 调用链 | PR #577/#579/#580/#581/#582/#583/#584；T-57 待创建；§6.2、§64、§66、§67、§68、§69、§70、§71、§72 | 主 agent；独立 V/R/F subagent |
 | [~] | AUDIT-009 | 进行中 | 默认入口、pprof 和 logger 文档已有部分更新；T-55 已将 backfill runbook 切到 Rust 入口并创建 Ready PR #578 | 收口 #578 异步 V/R/F；继续对齐 install/systemd/release/rollback 及剩余运维文档 | 增量文档依赖对应实现；最终退出依赖 AUDIT-001..008 的真实路径 | PR #523/#524/#525/#578；§6.2、§65 | 主 agent；独立 V/R/F subagent |
 | [ ] | AUDIT-010 | 待办（最终门） | 尚无 Go 目录可删除 | 仅在 AUDIT-001..009 退出、生产验证通过后，做全仓引用审计并删除全部 Go 源文件 | 严格依赖 AUDIT-001..009 全部退出 | §6.2、§10 | 主 agent；独立 V/R/F subagent |
 
@@ -289,7 +289,8 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 59. `[~]` `T-54E / §70` AUDIT-008 handler/service RFC3339Nano helper centralization（Ready PR #583，待异步退出证据）
 60. `[~]` `T-54F / §71` AUDIT-008 analytics PostHog RFC3339Nano timestamp wire compatibility（Ready PR #584，待异步退出证据）
 61. `[~]` `T-55 / §65` AUDIT-009 backfill runbook Rust 入口对齐（Ready PR #578，待异步退出证据）
-62. `[ ]` `T-56` AUDIT-010 Go 源码退休
+62. `[ ]` `T-57 / §72` AUDIT-008 shared HTTP error envelope framing（已登记，待实现）
+63. `[ ]` `T-56` AUDIT-010 Go 源码退休（仅在 T-57 及 AUDIT-001..009 退出后）
 
 每一步都按同一个交付门执行：登记缺口 → 实现完整业务契约 → 接入唯一 Rust 生产入口 →
 运行机械检查 → 提交/推送 → 创建 Ready PR → 记录异步 V/R/F → 收齐退出证据后才把该步改为 `[x]`。
@@ -2992,3 +2993,26 @@ check/clippy/build/test-no-run 及四个精确 PostHog 测试仍在 discovery �
 feature 阻断（exit 101，matched/executed 均为 0；不能登记为编译或测试通过）。未执行真实 PostHog smoke、外部凭证、
 release 或 cross-platform smoke。该切片在粒度规则收紧前已登记并创建，后续相邻契约优先合并以减少 CI 次数；本项仍不能
 声称 AUDIT-008 已完成或删除 Go。
+
+## 72. [ ] AUDIT-008 shared HTTP error envelope framing（T-57）
+
+本项在开始编码前登记，选择 AUDIT-008 中仍未收口的“错误 envelope 与 JSON framing”完整契约面。Go
+`server/internal/handler/handler.go` 的 `writeError`/`writeErrorCode` 委托 `writeJSON`，其生产错误响应有固定的
+`application/json` content type、精确 `Content-Length`、尾部换行，以及 `encoding/json` 对 `<`、`>`、`&` 和
+U+2028/U+2029 的安全转义；Rust `cordy-handler::error::{error_response,error_code_response}` 当前直接使用 Axum
+`Json`，没有这些 framing 约束，现有测试也只检查可解析的 JSON 字段，不能证明 Go-compatible wire contract。
+
+范围只收口公共 HTTP 错误响应 helper 及其所有现有生产调用：保持 `{"error": ...}`、
+`{"error": ..., "code": ...}` 字段、HTTP status、错误 taxonomy、日志和 fail-closed 语义不变；让 helper 输出
+Go-compatible UTF-8 JSON bytes、尾部换行、`Content-Type: application/json` 和准确 `Content-Length`，并为错误消息的
+HTML-sensitive 字符及 Unicode line separator 建固定向量。`domain_error`、daemon claim failure、connector error
+和其他调用方继续复用现有 helper；不批量改写成功响应、不开第二套 error service、不新增 fallback client 或测试框架。
+
+- 默认生产路径：`cordy-handler` 的 `error_response`/`error_code_response` 仍由现有 HTTP router、daemon claim、provider
+  connector 和 API handler 调用；只改变错误 body framing，不改变路由、状态码、错误文本、配置选择或生产 assembly。
+- Go 是否可下线：不能。T-57 只证明共享错误 envelope 的 Rust wire framing；其他 JSON null/empty、DB/旧数据兼容、真实 API
+  smoke、AUDIT-001..009 和最终 Go 退休门仍未完成。
+- 依赖：已迁移并稳定的 `cordy-handler::error` 调用链；不依赖外部凭证或数据库，验证可使用现有 handler crate。
+- owner：主 agent 负责 Rust helper、生产调用保持、固定 wire vectors、机械检查、提交/推送和 Ready PR；独立
+  verification/reviewer/fixer 负责编译、测试、契约审查和回归修复。
+- 证据/PR：登记阶段无实现证据；实现 commit、Ready PR、精确 verifier/reviewer/fixer 结果待回写。
