@@ -1098,6 +1098,22 @@ mod tests {
             .expect("connect contract PostgreSQL")
     }
 
+    async fn tagged_pool(application_name: &str) -> PgPool {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue creation transaction contracts");
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .expect("connect tagged contract PostgreSQL");
+        sqlx::query("SELECT set_config('application_name', $1, false)")
+            .bind(application_name)
+            .execute(&pool)
+            .await
+            .expect("tag contract PostgreSQL connection");
+        pool
+    }
+
     async fn workspace(pool: &PgPool) -> Uuid {
         let slug = format!("issue-create-contract-{}", Uuid::now_v7().simple());
         sqlx::query_scalar(
@@ -1158,6 +1174,54 @@ mod tests {
             .execute(pool)
             .await
             .expect("delete workspace");
+    }
+
+    async fn wait_for_duplicate_lock(pool: &PgPool, workspace_id: Uuid, title: &str) {
+        let key = format!(
+            "issue-active-duplicate|{workspace_id}|||{}",
+            crate::issue_guard::normalize_title(title)
+        );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let mut probe = pool.begin().await.expect("duplicate lock probe");
+                let available: bool = sqlx::query_scalar(
+                    "SELECT pg_try_advisory_xact_lock(hashtextextended($1::text, 0))",
+                )
+                .bind(&key)
+                .fetch_one(&mut *probe)
+                .await
+                .expect("probe duplicate lock");
+                probe.rollback().await.expect("release duplicate lock probe");
+                if !available {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("production create did not acquire the duplicate lock");
+    }
+
+    async fn wait_for_tagged_advisory_wait(pool: &PgPool, application_name: &str) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
+                     WHERE application_name = $1 AND state = 'active' \
+                       AND wait_event_type = 'Lock' AND wait_event = 'advisory')",
+                )
+                .bind(application_name)
+                .fetch_one(pool)
+                .await
+                .expect("observe duplicate advisory lock wait");
+                if waiting {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second production create did not wait for the duplicate lock");
     }
 
     #[tokio::test]
@@ -1389,8 +1453,10 @@ mod tests {
             first_params.allow_duplicate = true;
             create(&first_service, first_params).await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let second_service = service.clone();
+        wait_for_duplicate_lock(&pool, workspace_id, "Concurrent identity").await;
+        let waiter_name = format!("cordy-duplicate-contract-{}", Uuid::now_v7());
+        let waiter_pool = tagged_pool(&waiter_name).await;
+        let second_service = service(&waiter_pool);
         let second = tokio::spawn(async move {
             create(
                 &second_service,
@@ -1398,7 +1464,7 @@ mod tests {
             )
             .await
         });
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        wait_for_tagged_advisory_wait(&pool, &waiter_name).await;
         blocker.commit().await.expect("release workspace counter");
 
         let results = [
