@@ -1,9 +1,25 @@
 # --- Rust production binaries ---
-FROM rust:1-alpine AS builder
+FROM rust:1-alpine AS chef
 
-RUN apk add --no-cache build-base
+RUN apk add --no-cache build-base \
+    && cargo install --locked --version 0.1.78 cargo-chef
 
 WORKDIR /src/server-rs
+
+# Compute a dependency-only recipe from the workspace manifests. Source-only
+# changes (including a new commit SHA) leave this recipe unchanged.
+FROM chef AS planner
+COPY server-rs/ ./
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+
+# Build third-party dependencies before copying application sources or
+# declaring volatile build metadata. BuildKit can therefore restore this layer
+# from the mode=max GitHub Actions cache across commits.
+COPY server-rs/.cargo/ ./.cargo/
+COPY --from=planner /src/server-rs/recipe.json recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
 
 # Keep the Rust build self-contained and lockfile-reproducible. The workspace
 # embeds only the narrow Go-owned asset paths copied below; no Go toolchain or
