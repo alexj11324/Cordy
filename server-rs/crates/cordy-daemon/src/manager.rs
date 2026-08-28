@@ -751,10 +751,7 @@ fn normalize_proxy_url(proxy_url: &str) -> anyhow::Result<String> {
         !trimmed.chars().any(|c| matches!(c, '/' | '?' | '#')),
         "unsupported or malformed proxy URL"
     );
-    anyhow::ensure!(
-        !trimmed.contains('@'),
-        "unsupported or malformed proxy URL"
-    );
+    anyhow::ensure!(!trimmed.contains('@'), "unsupported or malformed proxy URL");
     Ok(format!("http://{trimmed}"))
 }
 
@@ -1220,10 +1217,12 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(malformed.contains("malformed"));
-        assert!(configured_proxy_for_target(&target, "https", "proxy.example/path", "")
-            .unwrap_err()
-            .to_string()
-            .contains("malformed"));
+        assert!(
+            configured_proxy_for_target(&target, "https", "proxy.example/path", "")
+                .unwrap_err()
+                .to_string()
+                .contains("malformed")
+        );
         let unsupported =
             configured_proxy_for_target(&target, "https", "https://proxy.example:8443", "")
                 .unwrap_err()
