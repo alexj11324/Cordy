@@ -4,6 +4,7 @@ description = "Migration runner — faithful Rust port of server/cmd/migrate"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+default-run = "cordy-migrate"
 
 [[bin]]
 name = "cordy-migrate"

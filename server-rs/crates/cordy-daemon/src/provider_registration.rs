@@ -534,6 +534,7 @@ pub struct RuntimeLaunchRegistry {
 }
 
 impl RuntimeLaunchRegistry {
+    #[cfg(test)]
     pub(crate) fn replace_builtins(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
         let builtins = specs
             .into_iter()
@@ -601,6 +602,7 @@ impl RuntimeLaunchRegistry {
         state.profiles.remove(workspace_id);
     }
 
+    #[cfg(test)]
     fn builtin_refresh_needed(&self, workspace_id: &str, incoming: &[RuntimeLaunchSpec]) -> bool {
         self.builtin_refresh_needed_preserving(workspace_id, incoming, &BTreeSet::new())
     }

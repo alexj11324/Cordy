@@ -461,7 +461,6 @@ impl<S: DaemonCoreServices> GcHost for DaemonCoreHost<S> {
                         (
                             id,
                             IssueGCCheckResult {
-                                id: result.id,
                                 found: result.found,
                                 status: result.status,
                                 updated_at: result.updated_at,

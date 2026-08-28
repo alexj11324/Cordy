@@ -1,8 +1,8 @@
 //! Daemon manager (port of server/internal/daemon + internal/daemonws).
 //!
 //! Module map mirrors the Go package layout one-to-one; each module header
-//! records the Go source file it ports. S9 lanes own disjoint files — see
-//! tasks/go-to-rust-migration.md for the lane split.
+//! records the Go source file it ports. Current migration status and remaining
+//! retirement gates live in `tasks/go-to-rust-migration-audit.md`.
 //!
 //! Slices:
 //! - W  (daemonws): hub.rs, notifier.rs
@@ -12,9 +12,9 @@
 //!   codex_multi_agent,codex_user_skills,codex_skill_strip,cursor_mcp}
 //! - R  (repo lifecycle): repocache.rs, gc.rs
 //!
-//! All modules are ports awaiting daemon wiring (lanes A/B/D + S8); until
-//! then dead_code is expected and silenced crate-wide.
-#![allow(dead_code)]
+//! The production daemon stack is wired. Any intentionally dormant
+//! compatibility seam must carry a narrow module/item-level allowance with a
+//! local rationale; the crate must not hide unwired code globally.
 
 pub mod execenv;
 

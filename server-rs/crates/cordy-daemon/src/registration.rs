@@ -45,6 +45,37 @@ async fn acquire_registration_demotion_barrier(
         })
 }
 
+fn has_registered_builtin_for_demotion(
+    registry: &RuntimeRegistry,
+    causes: &BTreeMap<String, RuntimeVerdict>,
+) -> bool {
+    registry.workspace_ids().into_iter().any(|workspace_id| {
+        registry
+            .workspace_runtimes(&workspace_id)
+            .into_iter()
+            .any(|runtime| runtime.profile_id.is_empty() && causes.contains_key(&runtime.provider))
+    })
+}
+
+async fn deregister_demoted_workspaces<F, Fut>(
+    workspaces: BTreeMap<String, Vec<String>>,
+    mut operation: F,
+) where
+    F: FnMut(String, Vec<String>) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    for (workspace_id, runtime_ids) in workspaces {
+        let failed_workspace_id = workspace_id.clone();
+        if let Err(error) = operation(workspace_id, runtime_ids).await {
+            tracing::warn!(
+                workspace_id = %failed_workspace_id,
+                %error,
+                "provider deregistration failed; continuing remaining workspaces"
+            );
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RegistrationPayload {
     /// Exact `/api/daemon/register` runtime entries. The provider integration
@@ -436,27 +467,45 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         if causes.is_empty() {
             return Ok(());
         }
-        let _claim_barrier = activity
-            .pause_claims_until_idle(&ctx)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("provider demotion cancelled while draining tasks"))?;
+        let _claim_barrier = if has_registered_builtin_for_demotion(registry, &causes) {
+            Some(
+                activity
+                    .pause_claims_until_idle(&ctx)
+                    .await
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("provider demotion cancelled while draining tasks")
+                    })?,
+            )
+        } else {
+            None
+        };
         let partition = registry.demote_builtins(&causes);
         let providers: BTreeSet<String> = causes.keys().cloned().collect();
         for workspace_id in registry.workspace_ids() {
             round.demotion_applied(&workspace_id, &providers);
         }
-        for (workspace_id, runtime_ids) in partition.demoted_by_workspace {
-            let serial = self.workspace_lock(&workspace_id);
-            let _guard = serial.lock().await;
-            let reasons = partition
-                .offline_reasons
-                .iter()
-                .filter(|(runtime_id, _)| runtime_ids.contains(runtime_id))
-                .map(|(runtime_id, reason)| (runtime_id.clone(), reason.clone()))
-                .collect();
-            self.deregister_dropped(&ctx, registry, &runtime_ids, reasons)
-                .await?;
-        }
+        let offline_reasons = &partition.offline_reasons;
+        let service = self;
+        let demotion_ctx = &ctx;
+        let runtime_registry = registry;
+        deregister_demoted_workspaces(
+            partition.demoted_by_workspace,
+            move |workspace_id, runtime_ids| {
+                let serial = service.workspace_lock(&workspace_id);
+                let reasons = offline_reasons
+                    .iter()
+                    .filter(|(runtime_id, _)| runtime_ids.contains(runtime_id))
+                    .map(|(runtime_id, reason)| (runtime_id.clone(), reason.clone()))
+                    .collect();
+                async move {
+                    let _guard = serial.lock().await;
+                    service
+                        .deregister_dropped(demotion_ctx, runtime_registry, &runtime_ids, reasons)
+                        .await
+                }
+            },
+        )
+        .await;
         Ok(())
     }
 
@@ -829,6 +878,58 @@ mod tests {
         assert_eq!(
             wire["failed_profiles"][0]["profile_id"],
             Value::String("profile-2".into())
+        );
+    }
+
+    #[test]
+    fn provider_demotion_barrier_requires_an_actual_builtin_runtime() {
+        let registry = RuntimeRegistry::new(Arc::new(crate::runtime_set::RuntimeSet::new()));
+        let mut custom = runtime("custom-runtime", "codex");
+        custom.profile_id = "profile-1".to_string();
+        registry
+            .apply_registration("workspace-1", "One", vec![custom])
+            .unwrap();
+        let causes = BTreeMap::from([("codex".to_string(), RuntimeVerdict::default())]);
+
+        assert!(!has_registered_builtin_for_demotion(&registry, &causes));
+
+        registry
+            .apply_registration(
+                "workspace-1",
+                "One",
+                vec![runtime("builtin-runtime", "codex")],
+            )
+            .unwrap();
+        assert!(has_registered_builtin_for_demotion(&registry, &causes));
+    }
+
+    #[tokio::test]
+    async fn provider_deregistration_continues_after_a_workspace_error() {
+        let visited = Arc::new(Mutex::new(Vec::new()));
+        deregister_demoted_workspaces(
+            BTreeMap::from([
+                ("workspace-1".to_string(), vec!["runtime-1".to_string()]),
+                ("workspace-2".to_string(), vec!["runtime-2".to_string()]),
+            ]),
+            {
+                let visited = Arc::clone(&visited);
+                move |workspace_id, _runtime_ids| {
+                    let visited = Arc::clone(&visited);
+                    async move {
+                        visited.lock().unwrap().push(workspace_id.clone());
+                        if workspace_id == "workspace-1" {
+                            anyhow::bail!("fixture deregistration failure");
+                        }
+                        Ok(())
+                    }
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(
+            *visited.lock().unwrap(),
+            vec!["workspace-1".to_string(), "workspace-2".to_string()]
         );
     }
 

@@ -1,7 +1,10 @@
 # Go → Rust 全量迁移计划（server/）
 
+> **已由 [`go-to-rust-migration-audit.md`](go-to-rust-migration-audit.md) 取代。**
+> 本文件仅保留为历史执行记录，不再提供当前状态、任务游标或验收指令。
+>
 > 决策记录：战略技术栈决策 · 范围全量 server/ · 策略一次性替换（big-bang）
-> 日期：2026-08-20 · 状态：执行中
+> 日期：2026-08-20 · 状态：历史记录（已停止维护）
 
 ## 一、Codemap（现状）
 

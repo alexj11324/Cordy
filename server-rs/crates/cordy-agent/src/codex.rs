@@ -544,6 +544,21 @@ pub fn build_codex_args(options: &ExecOptions) -> Vec<String> {
     args
 }
 
+fn build_codex_launch_prefix(
+    prefix: &[String],
+    managed_mcp: bool,
+    service_tier: &str,
+) -> Vec<String> {
+    let mut prefix = filter_launch_prefix(prefix, &BLOCKED_ARGS).args;
+    if managed_mcp {
+        prefix = filter_managed_mcp_overrides(prefix);
+    }
+    if service_tier == "priority" {
+        prefix = strip_fast_mode_conflicts(prefix);
+    }
+    prefix
+}
+
 fn strip_fast_mode_conflicts(args: Vec<String>) -> Vec<String> {
     let mut filtered = Vec::with_capacity(args.len());
     let mut index = 0;
@@ -961,10 +976,11 @@ impl CodexBackend {
         } else {
             self.config.command.path.as_str()
         };
-        let mut prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS).args;
-        if managed_mcp {
-            prefix = filter_managed_mcp_overrides(prefix);
-        }
+        let prefix = build_codex_launch_prefix(
+            &self.config.command.prefix,
+            managed_mcp,
+            &options.service_tier,
+        );
         let diagnostic_prefix = prefix.clone();
         let diagnostic_env = self.config.env.clone();
         let diagnostic_command_path = command_path.to_string();
@@ -1517,14 +1533,7 @@ async fn run_protocol(
             Err(error) => return ProtocolOutcome::failed(error),
         }
     } else {
-        let mut resume_params = serde_json::json!({
-            "threadId": options.resume_session_id.clone(),
-            "cwd": cwd,
-            "model": null,
-            "developerInstructions": null,
-        });
-        apply_reasoning_effort(&mut resume_params, &options.thinking_level, false);
-        apply_service_tier(&mut resume_params, &options.service_tier);
+        let resume_params = codex_resume_params(&options, cwd);
         match client
             .request("thread/resume", resume_params, handshake_timeout)
             .await
@@ -1633,7 +1642,7 @@ async fn run_protocol(
                     last_activity,
                     thread_id: client.state.thread_id.clone(),
                     turn_id: client.state.turn_id.clone(),
-                    model: configured_model(&client.state, &options),
+                    model: configured_model_for_diagnostic(&client.state, &options),
                     ..CodexTimeoutDiagnostic::default()
                 };
                 let error = build_codex_timeout_diagnostic_error(&diagnostic, "");
@@ -1772,6 +1781,21 @@ where
     let thread_id = extract_thread_id(&value)
         .ok_or_else(|| "codex thread/start returned no thread ID".to_string())?;
     Ok((thread_id, false, value))
+}
+
+fn codex_resume_params(options: &ExecOptions, cwd: &str) -> Value {
+    let mut params = serde_json::json!({
+        "threadId": options.resume_session_id.clone(),
+        "cwd": cwd,
+        "model": null,
+        "developerInstructions": null,
+    });
+    if !options.model.is_empty() {
+        params["model"] = Value::String(options.model.clone());
+    }
+    apply_reasoning_effort(&mut params, &options.thinking_level, false);
+    apply_service_tier(&mut params, &options.service_tier);
+    params
 }
 
 fn apply_reasoning_effort(params: &mut Value, level: &str, turn_start: bool) {
@@ -2419,22 +2443,12 @@ where
                     .get("status")
                     .and_then(Value::as_str)
                     .unwrap_or("completed");
-                let error = item
-                    .get("error")
-                    .and_then(|value| value.get("message"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                let output = if error.is_empty() {
-                    status.to_string()
-                } else {
-                    format!("{status}\nerror: {}", sanitize_diagnostic(error))
-                };
                 self.send(tool_message_with_status(
                     item_id,
                     item.get("tool")
                         .and_then(Value::as_str)
                         .unwrap_or("mcp_tool"),
-                    output,
+                    mcp_result_output(item),
                     normalize_status(status),
                 ));
             }
@@ -2913,6 +2927,14 @@ fn configured_model(state: &CodexState, options: &ExecOptions) -> String {
     }
 }
 
+fn configured_model_for_diagnostic(state: &CodexState, options: &ExecOptions) -> String {
+    if !options.model.is_empty() {
+        options.model.clone()
+    } else {
+        state.model.clone()
+    }
+}
+
 fn usage_map(state: &CodexState, model: &str) -> BTreeMap<String, TokenUsage> {
     if state.usage == TokenUsage::default() {
         BTreeMap::new()
@@ -3127,6 +3149,30 @@ fn normalize_status(status: &str) -> String {
     }
 }
 
+fn mcp_result_output(item: &Map<String, Value>) -> String {
+    let status = item
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("completed");
+    let mut output = status.to_string();
+    if let Some(duration_ms) = ["durationMs", "duration_ms"]
+        .into_iter()
+        .find_map(|key| item.get(key).and_then(Value::as_u64))
+        .filter(|duration_ms| *duration_ms > 0)
+    {
+        output.push_str(&format!("\nduration: {duration_ms} ms"));
+    }
+    let error = item
+        .get("error")
+        .and_then(|value| value.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !error.is_empty() {
+        output.push_str(&format!("\nerror: {}", sanitize_diagnostic(error)));
+    }
+    output
+}
+
 fn redact_value(value: &Value) -> Value {
     match value {
         Value::Object(object) => Value::Object(
@@ -3226,10 +3272,19 @@ fn normalize_raw_changes(value: Option<&Value>) -> Vec<Value> {
                 normalized.insert("move_path".to_string(), move_path.clone());
             }
             if let Some(diff) = object.get("diff") {
+                let diff = diff.as_str().map_or_else(
+                    || diff.clone(),
+                    |diff| {
+                        Value::String(strip_moved_to_suffix(
+                            diff,
+                            move_path.and_then(Value::as_str),
+                        ))
+                    },
+                );
                 if matches!(kind, Some("add" | "delete")) {
-                    normalized.insert("content".to_string(), diff.clone());
+                    normalized.insert("content".to_string(), diff);
                 } else {
-                    normalized.insert("diff".to_string(), diff.clone());
+                    normalized.insert("diff".to_string(), diff);
                 }
             } else if let Some(content) = object.get("content") {
                 normalized.insert("content".to_string(), content.clone());
@@ -3237,6 +3292,14 @@ fn normalize_raw_changes(value: Option<&Value>) -> Vec<Value> {
             (!normalized.is_empty()).then_some(Value::Object(normalized))
         })
         .collect()
+}
+
+fn strip_moved_to_suffix(diff: &str, move_path: Option<&str>) -> String {
+    let Some(move_path) = move_path.filter(|move_path| !move_path.is_empty()) else {
+        return diff.to_string();
+    };
+    let suffix = format!("\n\nMoved to: {move_path}");
+    diff.strip_suffix(&suffix).unwrap_or(diff).to_string()
 }
 
 fn patch_input(changes: Vec<Value>) -> BTreeMap<String, Value> {
@@ -3566,6 +3629,40 @@ exit 1
                 "fast_mode"
             ]
         );
+    }
+
+    #[test]
+    fn priority_launch_prefix_drops_fast_mode_conflicts() {
+        let prefix = vec![
+            "--disable".to_string(),
+            "fast_mode".to_string(),
+            "--disable=fast_mode".to_string(),
+            "-c".to_string(),
+            "features.fast_mode=false".to_string(),
+            "--disable".to_string(),
+            "memory_tool".to_string(),
+        ];
+        assert_eq!(
+            build_codex_launch_prefix(&prefix, false, "priority"),
+            vec!["--disable", "memory_tool"]
+        );
+    }
+
+    #[test]
+    fn resume_params_include_the_selected_model() {
+        let options = ExecOptions {
+            resume_session_id: "thread-1".to_string(),
+            model: "gpt-5.6-sol".to_string(),
+            thinking_level: "high".to_string(),
+            service_tier: "priority".to_string(),
+            ..ExecOptions::default()
+        };
+        let params = codex_resume_params(&options, "/workspace");
+        assert_eq!(params["threadId"], "thread-1");
+        assert_eq!(params["cwd"], "/workspace");
+        assert_eq!(params["model"], "gpt-5.6-sol");
+        assert_eq!(params["config"]["model_reasoning_effort"], "high");
+        assert_eq!(params["serviceTier"], "priority");
     }
 
     #[test]
@@ -3963,6 +4060,46 @@ exit 1
         assert!(error.contains("model=\"default(empty)\""));
         assert!(error.contains("diagnosis: Codex could not load its model catalog"));
         assert!(error.contains("codex stderr: failed to refresh available models: timeout"));
+    }
+
+    #[test]
+    fn timeout_diagnostic_preserves_an_empty_model_selection() {
+        let state = CodexState::default();
+        let options = ExecOptions::default();
+        let model = configured_model_for_diagnostic(&state, &options);
+        assert!(model.is_empty());
+        assert_eq!(format_codex_diagnostic_model(&model), "default(empty)");
+        assert_eq!(configured_model(&state, &options), "unknown");
+    }
+
+    #[test]
+    fn mcp_result_summary_includes_duration_without_provider_content() {
+        let item = serde_json::json!({
+            "status": "completed",
+            "durationMs": 1429,
+            "result": {
+                "content": [{"type": "text", "text": "private provider payload"}]
+            }
+        });
+        let output = mcp_result_output(
+            item.as_object()
+                .unwrap_or_else(|| panic!("MCP item must be an object")),
+        );
+        assert_eq!(output, "completed\nduration: 1429 ms");
+        assert!(!output.contains("private provider payload"));
+    }
+
+    #[test]
+    fn raw_moved_file_change_strips_the_redundant_diff_suffix() {
+        let value = serde_json::json!([{
+            "path": "old/name.rs",
+            "kind": {"type": "update", "move_path": "new/name.rs"},
+            "diff": "@@ -1 +1 @@\n-old\n+new\n\n\nMoved to: new/name.rs"
+        }]);
+        let changes = normalize_raw_changes(Some(&value));
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0]["move_path"], "new/name.rs");
+        assert_eq!(changes[0]["diff"], "@@ -1 +1 @@\n-old\n+new\n");
     }
 
     #[test]

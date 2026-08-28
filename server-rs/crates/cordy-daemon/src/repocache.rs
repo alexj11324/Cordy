@@ -326,16 +326,6 @@ pub(crate) struct RepoInfo {
     pub url: String,
 }
 
-/// `CachedRepo` (cache.go:155–158): describes a cached bare clone ready for
-/// worktree creation.
-#[derive(Debug, Clone)]
-pub(crate) struct CachedRepo {
-    /// remote URL
-    pub url: String,
-    /// absolute path to the bare clone
-    pub local_path: PathBuf,
-}
-
 /// `ErrRepoBusy` (cache.go:176): means a foreground checkout could not
 /// acquire its repository within the caller's bounded wait.
 #[derive(Debug, thiserror::Error)]
@@ -359,24 +349,6 @@ pub(crate) struct Activity {
 // ---------------------------------------------------------------------------
 // repoLock: foreground-priority mutex (cache.go lines 185–293).
 // ---------------------------------------------------------------------------
-
-/// `ErrMaintenancePreempted` (cache.go:201): the cancellation cause delivered
-/// to a running maintenance callback when foreground work needs the same
-/// repository.
-#[derive(Debug, thiserror::Error)]
-#[error("repository maintenance preempted by foreground work")]
-pub(crate) struct MaintenancePreemptedError;
-
-pub(crate) fn err_maintenance_preempted() -> anyhow::Error {
-    anyhow::Error::new(MaintenancePreemptedError)
-}
-
-/// True when `err`'s chain contains the maintenance-preempted cause
-/// (`errors.Is(err, ErrMaintenancePreempted)`).
-pub(crate) fn is_maintenance_preempted(err: &anyhow::Error) -> bool {
-    err.chain()
-        .any(|c| c.downcast_ref::<MaintenancePreemptedError>().is_some())
-}
 
 /// True when `err`'s chain contains the repo-busy sentinel
 /// (`errors.Is(err, ErrRepoBusy)`).
@@ -605,11 +577,6 @@ impl Cache {
         }
     }
 
-    /// `Sync` (cache.go:347–349).
-    pub(crate) async fn sync(&self, workspace_id: &str, repos: &[RepoInfo]) -> anyhow::Result<()> {
-        self.sync_ctx(&Ctx::new(), workspace_id, repos).await
-    }
-
     /// `SyncContext` (cache.go:353–395): ensures all repos for a workspace
     /// are cloned (or fetched if already cached). Repos no longer in the list
     /// are left in place (cheap to keep, avoids re-cloning if a repo is
@@ -747,35 +714,6 @@ fn parse_rfc3339_nano(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 // ---------------------------------------------------------------------------
 
 impl Cache {
-    /// `WithRepoLock` (cache.go:463–465): serializes caller-supplied mutations
-    /// on a bare repo against all other same-repo operations that use the
-    /// cache's lock (Sync, Fetch, CreateWorktree, and daemon GC maintenance).
-    pub(crate) async fn with_repo_lock<T>(
-        &self,
-        bare_path: &Path,
-        f: impl AsyncFnOnce() -> anyhow::Result<T>,
-    ) -> anyhow::Result<T> {
-        self.with_repo_lock_ctx(&Ctx::new(), bare_path, f).await
-    }
-
-    /// `WithRepoLockContext` (cache.go:468–475): cancellable form of
-    /// WithRepoLock.
-    pub(crate) async fn with_repo_lock_ctx<T>(
-        &self,
-        ctx: &Ctx,
-        bare_path: &Path,
-        f: impl AsyncFnOnce() -> anyhow::Result<T>,
-    ) -> anyhow::Result<T> {
-        let repo_lock = self.lock_for_repo(bare_path);
-        repo_lock
-            .lock(ctx)
-            .await
-            .map_err(|cause| anyhow::anyhow!(cause.to_string()))?;
-        let result = f().await;
-        repo_lock.unlock();
-        result
-    }
-
     /// `WithRepoMaintenance` (cache.go:481–489): runs fn only when the
     /// repository is idle. A foreground waiter cancels the context passed to
     /// fn, then waits for fn to stop its process tree and release the
@@ -792,13 +730,6 @@ impl Cache {
         let repo_lock = self.lock_for_repo(bare_path);
         let maintenance_ctx = repo_lock.try_lock_maintenance(ctx)?;
         Some((maintenance_ctx, MaintenanceGuard { repo_lock }))
-    }
-
-    /// `Fetch` (cache.go:492–496): runs `git fetch origin` on a cached bare
-    /// clone to get latest refs.
-    pub(crate) async fn fetch(&self, bare_path: &Path) -> anyhow::Result<()> {
-        self.with_repo_lock(bare_path, async || git_fetch(bare_path).await)
-            .await
     }
 }
 
@@ -947,11 +878,6 @@ fn extract_combined_output(err: &anyhow::Error) -> String {
 #[error("{output}")]
 pub(crate) struct CombinedOutputFailure {
     pub(crate) output: String,
-}
-
-/// `gitFetch` (cache.go:615–617).
-pub(crate) async fn git_fetch(bare_path: &Path) -> anyhow::Result<()> {
-    git_fetch_ctx(&Ctx::new(), bare_path).await
 }
 
 /// `gitFetchContext` (cache.go:619–634): runs `git fetch origin` on a bare
@@ -1134,14 +1060,6 @@ pub(crate) struct WorktreeResult {
 }
 
 impl Cache {
-    /// `CreateWorktree` (cache.go:745–747).
-    pub(crate) async fn create_worktree(
-        &self,
-        params: WorktreeParams,
-    ) -> anyhow::Result<WorktreeResult> {
-        self.create_worktree_ctx(&Ctx::new(), params).await
-    }
-
     /// `CreateWorktreeContext` (cache.go:753–…): CreateWorktree with
     /// cancellation propagated through lock acquisition and every Git
     /// subprocess. Git work begins only after the lock is held, so a client

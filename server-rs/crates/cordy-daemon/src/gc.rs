@@ -548,7 +548,6 @@ fn is_access_not_found(err: &anyhow::Error) -> bool {
 /// `IssueGCCheckResult` (daemon client): outcome of one issue GC check.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct IssueGCCheckResult {
-    pub(crate) id: String,
     pub(crate) found: bool,
     pub(crate) status: String,
     pub(crate) updated_at: Option<DateTime<Utc>>,
@@ -1228,10 +1227,6 @@ async fn gc_workspace_issues<H: GcHost>(
     cleaned
 }
 
-fn candidates_len_hint(_: &[IssueGcCandidate]) -> i32 {
-    0
-}
-
 // ---------------------------------------------------------------------------
 // Decision plumbing (gc.go lines 266–350).
 // ---------------------------------------------------------------------------
@@ -1467,7 +1462,6 @@ async fn gc_decision_issue<H: GcHost>(
         task_dir,
         meta,
         IssueGCCheckResult {
-            id: meta.issue_id.clone(),
             found: true,
             status: status.status,
             updated_at: status.updated_at,

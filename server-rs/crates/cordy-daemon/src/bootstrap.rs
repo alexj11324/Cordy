@@ -38,6 +38,19 @@ const DEFAULT_LOG_MAX_SIZE_MB: u64 = 20;
 const DEFAULT_LOG_MAX_BACKUPS: usize = 5;
 const DEFAULT_LOG_MAX_AGE_DAYS: u64 = 30;
 const CRASH_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+pub(crate) const DAEMON_LOG_COMPONENT: &str = "daemon";
+
+/// A daemon owner may outlive the task that spawned it, so it cannot rely on
+/// implicit span inheritance. ERROR is deliberate: the span itself emits no
+/// event, and this keeps its component/owner fields available to every enabled
+/// warning or error even when lower log levels are filtered out.
+pub(crate) fn daemon_owner_span(owner: &'static str) -> tracing::Span {
+    tracing::error_span!(
+        "daemon_owner",
+        component = DAEMON_LOG_COMPONENT,
+        owner = owner
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileStatePaths {
@@ -159,7 +172,7 @@ where
         launched_by: std::env::var("CORDY_LAUNCHED_BY").unwrap_or_default(),
         shutdown: shutdown.clone(),
     };
-    let stack = run_stack(context).instrument(tracing::info_span!("daemon", component = "daemon"));
+    let stack = run_stack(context).instrument(daemon_owner_span("stack"));
     let stack_result = drive_stack(
         shutdown,
         options.graceful_shutdown_timeout,
@@ -932,6 +945,21 @@ mod tests {
         assert_eq!(chain[0], "install daemon tracing subscriber");
         assert_eq!(chain[1], "tracing subscriber initialization failed");
         assert_eq!(chain[2], "subscriber already installed");
+    }
+
+    #[test]
+    fn daemon_owner_span_survives_filtered_info_and_carries_component() {
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::ERROR)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            let span = daemon_owner_span("test-owner");
+            let metadata = span.metadata().expect("enabled daemon owner span");
+            assert_eq!(*metadata.level(), tracing::Level::ERROR);
+            assert!(metadata.fields().field("component").is_some());
+            assert!(metadata.fields().field("owner").is_some());
+            assert_eq!(DAEMON_LOG_COMPONENT, "daemon");
+        });
     }
 
     #[tokio::test]
