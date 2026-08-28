@@ -1124,11 +1124,10 @@ mod tests {
         .expect("archive update target")
         .expect("archived update target");
         exclusive.commit().await.expect("commit archive first");
-        let (status, conflict) =
-            timeout(std::time::Duration::from_secs(2), pending_update)
-                .await
-                .expect("archive-winner update deadline")
-                .expect("update task");
+        let (status, conflict) = timeout(std::time::Duration::from_secs(2), pending_update)
+            .await
+            .expect("archive-winner update deadline")
+            .expect("update task");
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(
             conflict,

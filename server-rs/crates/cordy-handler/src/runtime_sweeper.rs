@@ -3216,6 +3216,7 @@ mod tests {
         let empty_cleanup = empty.cleanup().await;
         empty_result?;
         empty_cleanup?;
+        drop(empty);
 
         let nonempty = ChatFinalizeRows::required("running", true).await?;
         let nonempty_result = async {
@@ -3253,6 +3254,7 @@ mod tests {
         let nonempty_cleanup = nonempty.cleanup().await;
         nonempty_result?;
         nonempty_cleanup?;
+        drop(nonempty);
 
         let deferred = ChatFinalizeRows::required("running", true).await?;
         let deferred_result = async {
@@ -3418,6 +3420,7 @@ mod tests {
         let channel_cleanup = channel.cleanup().await;
         channel_result?;
         channel_cleanup?;
+        drop(channel);
 
         let gone = ChatFinalizeRows::required("running", true).await?;
         let gone_result = async {
