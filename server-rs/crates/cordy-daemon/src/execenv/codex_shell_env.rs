@@ -412,12 +412,8 @@ mod tests {
         entries.iter().map(|s| s.to_string()).collect()
     }
 
-    // Port of TestCodexShellEnvAllowlistUsesExactTaskAndSafeInheritedNames.
-    // NOTE: the checked-in Go test currently disagrees with the checked-in Go
-    // implementation (running it fails: the impl emits plain
-    // case-insensitive-alphabetical order, the test wants CORDY_* entries
-    // shuffled after LOCALAPPDATA). We follow the implementation — the actual
-    // runtime contract — and assert its verified output below.
+    // The runtime contract is plain case-insensitive alphabetical order; keep
+    // the exact task and safe inherited names pinned below.
     #[test]
     fn test_codex_shell_env_allowlist_exact_task_and_safe_inherited() {
         let got = codex_shell_env_allowlist(

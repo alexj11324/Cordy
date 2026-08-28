@@ -299,4 +299,4 @@ cordy agent skills list <agent-id> --output json
 ## References
 
 - `references/skill-importing-source-map.md` — every behavior above mapped to
-  `file:line` in `server/`, plus the verification command to re-derive the lines.
+  its authoritative Rust source.

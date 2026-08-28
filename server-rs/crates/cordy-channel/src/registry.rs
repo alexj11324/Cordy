@@ -47,9 +47,8 @@ impl Registry {
     /// guaranteed failure at build time, so the Registry refuses to
     /// record it.
     ///
-    /// Port note: Go tests `factory == nil`; Arc has no nil, so callers
-    /// express "no factory" by simply not calling register. The empty-
-    /// type guard is preserved verbatim.
+    /// Callers express "no factory" by not calling `register`; an empty type
+    /// is rejected here as an invalid registration.
     pub fn register(&self, t: Type, factory: Factory) {
         if t.0.is_empty() {
             return;

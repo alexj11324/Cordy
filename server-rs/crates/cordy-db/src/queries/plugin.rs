@@ -800,8 +800,7 @@ pub async fn upsert_plugin_secret(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     installation_id: Uuid,
     key: &str,
-    // plugin_secret.ciphertext is BYTEA; the generator could not see the
-    // column type through the sqlc param and defaulted to JSON.
+    // plugin_secret.ciphertext is BYTEA and remains opaque encrypted bytes.
     ciphertext: &[u8],
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(

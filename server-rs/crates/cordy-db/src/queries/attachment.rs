@@ -88,9 +88,8 @@ pub async fn create_attachment(
     url: &str,
     content_type: &str,
     size_bytes: i64,
-    // Port note: nullable FK columns hand-edited to Option<Uuid> — the
-    // generator cannot see column nullability from the sqlc param block
-    // (same pattern as create_comment's project_id fix).
+    // Attachment foreign keys are nullable because a record may be bound to
+    // any one of these owners.
     issue_id: Option<Uuid>,
     comment_id: Option<Uuid>,
     chat_session_id: Option<Uuid>,

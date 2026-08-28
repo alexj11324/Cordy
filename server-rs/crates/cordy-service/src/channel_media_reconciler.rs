@@ -1,5 +1,4 @@
-//! Channel-media intent ledger reconciler — full port of
-//! `service/channel_media_reconciler.go`.
+//! Channel-media intent ledger reconciler.
 //!
 //! Settles ledger rows written before each upload and cleared inside the
 //! attachment-bind transaction. Whatever survives — upload errors, resolve
@@ -8,7 +7,7 @@
 //! attachment reference AFTER the claim (race-free: a bind can never attach a
 //! claimed key), then either kept or deleted from object storage.
 //!
-//! Fencing model (from the Go source, preserved verbatim in spirit):
+//! Fencing model:
 //!   - bind vs. delete is fenced by STATE — once claimed 'deleting', neither
 //!     an upload nor BindMediaRefs can resurrect the key;
 //!   - an abandoned PUT that materializes after its DELETE is fenced by the
