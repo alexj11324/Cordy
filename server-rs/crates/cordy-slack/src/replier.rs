@@ -1,5 +1,5 @@
 //! The Slack OutboundReplier — the engine seam that delivers a verdict-driven
-//! reply back to the user (MUL-3666). Port of
+//! reply back to the user (PB-3666). Port of
 //!
 //! Posts through the same bot-token send path as the chat:done outbound
 //! subscriber, so it needs no new transport.

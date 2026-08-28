@@ -58,7 +58,7 @@ pub struct Installation {
 pub trait InstallationStore: Send + Sync {
     /// Returns every active installation across ALL channel types. There
     /// is no per-platform filter here — that hard-coded "feishu" was the
-    /// whole limitation MUL-3620 removes.
+    /// whole limitation PB-3620 removes.
     async fn list_active_installations(&self) -> anyhow::Result<Vec<Installation>>;
 }
 

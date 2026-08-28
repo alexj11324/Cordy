@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Inline media re-sign (MUL-3254).
+ * Inline media re-sign (PB-3254).
  *
  * Extracted from editor/attachment.tsx so the preview modal can run the same
- * upgrade: gallery navigation (MUL-5752) hands the modal an attachment the
+ * upgrade: gallery navigation (PB-5752) hands the modal an attachment the
  * user never clicked, so the modal can no longer rely on the inline renderer
  * having already resolved a loadable URL for it.
  */
@@ -48,7 +48,7 @@ const INLINE_BLOB_GC_MS = 5 * 60 * 1000;
 //
 // The server only has a signed URL to offer under CloudFront signing or
 // presign mode. In **proxy** download mode `GetAttachmentByID` hands back the
-// auth-gated API path again, and before MUL-5445 the renderer simply kept the
+// auth-gated API path again, and before PB-5445 the renderer simply kept the
 // original URL — the image stayed broken and the metadata request was pure
 // overhead. Proxy is not an exotic setting: the default `auto` mode forces it
 // whenever the storage URL points at an internal host, which is exactly the

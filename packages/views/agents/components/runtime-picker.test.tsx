@@ -90,7 +90,7 @@ describe("RuntimePicker (creation studio)", () => {
   // A builder session rebinds its execution runtime on the server. While that
   // request is in flight the selection cannot be honoured yet, so the picker
   // must refuse to open rather than let the user queue a second, conflicting
-  // choice (MUL-5163).
+  // choice (PB-5163).
   it("cannot be opened while disabled", () => {
     const { container, onSelect } = renderPicker({ disabled: true });
     expect(trigger(container).disabled).toBe(true);

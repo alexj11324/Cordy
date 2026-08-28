@@ -1,7 +1,7 @@
 //! Production data layer for the Feishu integration.
 //!
 //! ChannelStore is the Feishu-flavored facade over the channel_* queries
-//! (MUL-3515 generalized lark_* into channel_*). It adds the feishu-specific
+//! (PB-3515 generalized lark_* into channel_*). It adds the feishu-specific
 //! store methods, each backed by a channel_* query and translating at the
 //! JSONB-config boundary ([`crate::store`]).
 //!
@@ -110,7 +110,7 @@ impl ChannelStore {
     }
 
     /// Reports whether user_id is currently a member of workspace_id. With
-    /// the lark_user_binding → member foreign key removed (MUL-3515 §4), a
+    /// the lark_user_binding → member foreign key removed (PB-3515 §4), a
     /// binding row no longer proves membership, so the inbound identity step
     /// calls this to re-check it explicitly. No rows → not a member.
     pub async fn is_workspace_member(

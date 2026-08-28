@@ -249,7 +249,7 @@ async fn normalize_page(
 /// promises. Alerting/webhook bots (Grafana cards, incoming webhooks) carry
 /// their whole body in attachments or Block Kit blocks and leave the top-level
 /// Text empty; without this fallback such a message is indistinguishable from
-/// a join/system marker and gets dropped (MUL-3931 / #4803). Order: top-level
+/// a join/system marker and gets dropped (PB-3931 / #4803). Order: top-level
 /// text, then each attachment's rendered text/fields, then last-resort
 /// fallback text, then a best-effort blocks flatten. Returns "" only when
 /// nothing renderable exists — a real system marker.

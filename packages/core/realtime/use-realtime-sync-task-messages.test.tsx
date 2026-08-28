@@ -72,7 +72,7 @@ function cached(qc: QueryClient, taskId: string) {
   return qc.getQueryData<TaskMessagePayload[]>(chatKeys.taskMessages(taskId));
 }
 
-describe("useRealtimeSync — task:message fanout guards (MUL-6396)", () => {
+describe("useRealtimeSync — task:message fanout guards (PB-6396)", () => {
   let qc: QueryClient;
   let handlers: Handlers;
   let listTaskMessages: ReturnType<typeof vi.fn>;

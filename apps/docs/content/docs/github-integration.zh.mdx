@@ -43,14 +43,14 @@ GitHub 集成只读取安装时授权的仓库，不会提交代码、评论或 
 
 ## 让 PR 关联到 issue
 
-最简单的做法，是把 issue 编号写进分支名或 PR 标题。例如 issue 为 `MUL-123`：
+最简单的做法，是把 issue 编号写进分支名或 PR 标题。例如 issue 为 `PB-123`：
 
 ```text
-mul-123-fix-login-redirect
+pb-123-fix-login-redirect
 ```
 
 ```text
-MUL-123 修复登录后的跳转
+PB-123 修复登录后的跳转
 ```
 
 Cordy 会忽略大小写，并且只匹配当前工作区的 issue 前缀。一个 PR 可以关联多个 issue。
@@ -58,19 +58,19 @@ Cordy 会忽略大小写，并且只匹配当前工作区的 issue 前缀。一�
 只在 PR 正文中写编号时，需要使用 GitHub 的关闭语句：
 
 ```text
-Closes MUL-123
-Fixes MUL-123
-Resolves MUL-123
+Closes PB-123
+Fixes PB-123
+Resolves PB-123
 ```
 
-正文中的普通提及，例如 `Related to MUL-123`，不会作为该 issue 的工作 PR 显示。Commit message 和 PR 评论也不会触发关联。
+正文中的普通提及，例如 `Related to PB-123`，不会作为该 issue 的工作 PR 显示。Commit message 和 PR 评论也不会触发关联。
 
 ### 创建时直接挂上（CLI / 智能体）
 
 编号扫描依赖 GitHub webhook，因此需要连接 GitHub 应用。还有一条不依赖它的路径：打开 PR 的人当时就知道 URL，可以立刻把它挂到 issue 上。
 
 ```bash
-cordy issue pull-request attach MUL-123 --url https://github.com/acme/api/pull/6
+cordy issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
 ```
 
 - 工作区没有安装 GitHub App 时同样可用——侧栏至少显示 PR 编号和可点击的链接。
@@ -98,11 +98,11 @@ CI 状态和可合并性来自 Cordy 从 GitHub API 拉取的快照，两者互�
 
 PR 合并不一定代表 issue 已完成。Cordy 只有在以下条件同时成立时，才把 issue 改为 `Done`：
 
-1. 至少一个已合并的关联 PR 使用了紧跟编号的关闭语句，例如 `Closes MUL-123`（`Closes login MUL-123` 这类中间隔词的写法不生效）；
+1. 至少一个已合并的关联 PR 使用了紧跟编号的关闭语句，例如 `Closes PB-123`（`Closes login PB-123` 这类中间隔词的写法不生效）；
 2. 该 issue 没有其他仍为 `Open` 或 `Draft` 的工作 PR（正文中的普通提及不算）；
 3. issue 当前不是 `done` 或 `cancelled`。
 
-因此，仅在分支名或标题中写 `MUL-123` 会建立关联，但不会单独触发完成。PR 关闭但没有合并，也不会完成 issue。
+因此，仅在分支名或标题中写 `PB-123` 会建立关联，但不会单独触发完成。PR 关闭但没有合并，也不会完成 issue。
 
 状态变化会以系统操作写入时间线，订阅该 issue 的成员会收到通知。
 
@@ -110,7 +110,7 @@ PR 合并不一定代表 issue 已完成。Cordy 只有在以下条件同时成�
 
 同一个 GitHub App installation 可以连接到多个 Cordy 工作区。GitHub 事件会分别进入每个工作区，再按照各自的 issue 前缀匹配。
 
-例如一个 PR 同时引用 `MUL-1` 和 `ENG-2`，它可以在两个不同前缀的工作区中分别关联。工作区之间不会看到对方的 issue。
+例如一个 PR 同时引用 `PB-1` 和 `ENG-2`，它可以在两个不同前缀的工作区中分别关联。工作区之间不会看到对方的 issue。
 
 ## 断开连接
 
@@ -190,7 +190,7 @@ make migrate-up
 - **连接按钮不可用**：检查 `GITHUB_APP_SLUG` 和 `GITHUB_WEBHOOK_SECRET` 是否已进入 API 进程。
 - **Webhook 返回 401**：确认 GitHub App 与 API 使用同一个 Webhook secret，然后在 GitHub 的 **Recent Deliveries** 中重新投递。
 - **PR 没有关联**：检查仓库是否在 App 授权范围内、自动关联是否开启，以及编号是否属于当前工作区。
-- **正文写了编号但没显示**：改用 `Closes MUL-123`，或把编号放到分支名、PR 标题中。
+- **正文写了编号但没显示**：改用 `Closes PB-123`，或把编号放到分支名、PR 标题中。
 - **没有 CI 状态**：确认 `GITHUB_APP_ID` 和 `GITHUB_APP_PRIVATE_KEY` 已配置，App 具有 Checks 与 Commit statuses 的只读权限并订阅了对应事件。给已安装的 App 补加权限后，还需要各 installation 的所有者在 GitHub 上批准才会生效。
 - **PR 合并后 issue 没完成**：确认 PR 使用了关闭语句，并检查是否还有其他关联 PR 处于 Open 或 Draft。
 

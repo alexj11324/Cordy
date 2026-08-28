@@ -19,7 +19,7 @@ import { useT } from "../../i18n";
 
 const EMPTY_GROUPS: IssueTaskGroups = { running: [], queued: [] };
 
-// Dwell threshold before the activity card opens (MUL-5189).
+// Dwell threshold before the activity card opens (PB-5189).
 //
 // This badge is a passive cue riding on the right edge of dense scrolling
 // lists (inbox rows, issue rows, board cards), and it appears on every issue
@@ -70,7 +70,7 @@ interface IssueAgentActivityIndicatorProps {
  * navigation target for issue detail.
  *
  * Surfaces that only need the cue can pass `hoverCard={false}` and get the
- * badge alone. Inbox does (MUL-5189): the badge already shows who is running
+ * badge alone. Inbox does (PB-5189): the badge already shows who is running
  * and whether they are working or queued, so on a triage surface the card's
  * only incremental fact is elapsed time — which never changes the one
  * decision an inbox row exists to support ("do I open this?"). Issue lists
@@ -83,7 +83,7 @@ interface IssueAgentActivityIndicatorProps {
  * unchanged, so a snapshot invalidation (WS task:* events, driven by
  * use-realtime-sync) only re-renders the rows whose own tasks actually moved
  * — not the whole list. This is the de-amplification that keeps large issue
- * lists cheap when agents are busy (MUL-4474). 30s staleTime is the offline
+ * lists cheap when agents are busy (PB-4474). 30s staleTime is the offline
  * fallback only.
  */
 export const IssueAgentActivityIndicator = memo(function IssueAgentActivityIndicator({

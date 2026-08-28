@@ -103,7 +103,7 @@ export function ChatWindow() {
     chatQuickActionsPendingOptions(activeSessionId ?? ""),
   );
   // Drop a stuck pending marker (dead daemon / failed supplement) so the pill
-  // spinner stops and a later refresh starts clean (MUL-5149).
+  // spinner stops and a later refresh starts clean (PB-5149).
   useQuickActionsPendingTimeout(activeSessionId ?? null, quickActionsPending);
   // Toast when an accepted refresh later fails in the daemon (async half).
   useQuickActionsFailureToast(activeSessionId ?? null);
@@ -245,9 +245,9 @@ export function ChatWindow() {
   // A session outlives the permission that created it: the agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the transcript (MUL-4525). Judge the SESSION's agent, not just the
+  // serving the transcript (PB-4525). Judge the SESSION's agent, not just the
   // picker list, so the composer goes read-only up front rather than after the
-  // user types (MUL-6380). Mirrors use-chat-controller.ts.
+  // user types (PB-6380). Mirrors use-chat-controller.ts.
   const isAgentAccessRevoked =
     !!activeAgent && !canAssignAgent(activeAgent, user?.id, memberRole);
 
@@ -316,7 +316,7 @@ export function ChatWindow() {
   // chat:done so a reply arriving while the user watches triggers this effect
   // again and is instantly cleared. `appForeground` gates the "is looking"
   // assumption: a reply landing while the window is open but the app is
-  // backgrounded must stay unread so the sidebar badges it (MUL-4485), then
+  // backgrounded must stay unread so the sidebar badges it (PB-4485), then
   // clears when the user refocuses and this effect re-runs.
   const currentHasUnread =
     sessions.find((s) => s.id === activeSessionId)?.has_unread ?? false;
@@ -397,7 +397,7 @@ export function ChatWindow() {
   );
 
   // Upload transport moved into the coordinated-upload engine inside ChatInput
-  // (MUL-5181 L2); the host only says whether the affordance exists. Uploads
+  // (PB-5181 L2); the host only says whether the affordance exists. Uploads
   // remain workspace-scoped drafts — sending is still the point where a
   // session is created (if needed) and attachment_ids bind to the message.
 
@@ -521,7 +521,7 @@ export function ChatWindow() {
         created_at: result.created_at,
         attachments: draftAttachments,
       };
-      // Single door into the message caches (MUL-5711): idempotent by id, so
+      // Single door into the message caches (PB-5711): idempotent by id, so
       // this row and the chat:message echo of the same send converge in either
       // arrival order, and this richer row (it carries the draft attachments)
       // is never downgraded by the echo, which has no attachments field.

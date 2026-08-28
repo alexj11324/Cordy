@@ -55,7 +55,7 @@ import { GanttView } from "./gantt-view";
 
 const ISSUE = {
   id: "issue-1",
-  identifier: "MUL-1",
+  identifier: "PB-1",
   number: 1,
   title: "Ship the thing",
   description: "",

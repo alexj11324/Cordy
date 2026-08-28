@@ -479,7 +479,7 @@ export function useToggleIssueReaction(issueId: string) {
 
 /**
  * Keeps `status_category` consistent with an optimistic `status` write
- * (MUL-6243).
+ * (PB-6243).
  *
  * A cached issue looks like `{status: "todo", status_category: "todo"}` while a
  * patch carries only `{status: "human_review"}`, so a bare spread would leave

@@ -186,7 +186,7 @@ impl IssueService {
         // commit between the caller's pre-flight validation and here, and
         // re-checking under the lock makes the status provably active at
         // write time. Built-ins skip both — the common path is unchanged.
-        // (MUL-6243)
+        // (PB-6243)
         let status_category = if !issue_status::is_built_in(&p.status) {
             lock_issue_status_catalog_shared(&mut *tx, p.workspace_id)
                 .await
@@ -618,7 +618,7 @@ impl IssueService {
     /// Leaves the refusal on the issue when an assignment cannot be enqueued
     /// because the assignee's CLI cannot run on its machine. Assignment has
     /// no reply anyone reads, so without this the user gets exactly the
-    /// silence MUL-6164 removes. Best-effort: logged, never returned.
+    /// silence PB-6164 removes. Best-effort: logged, never returned.
     async fn note_runtime_unusable(&self, issue: &Issue, verdict: &AgentVerdict) {
         let name = get_agent(&self.pool, issue.assignee_id.unwrap_or_else(Uuid::nil))
             .await
@@ -678,8 +678,8 @@ impl IssueService {
         });
     }
 
-    /// Assignment-time enqueue decision: backlog parks silently (MUL-6243),
-    /// blocked runtimes leave a visible refusal notice (MUL-6164), ready
+    /// Assignment-time enqueue decision: backlog parks silently (PB-6243),
+    /// blocked runtimes leave a visible refusal notice (PB-6164), ready
     /// agents enqueue immediately, squads route to their leader when ready.
     async fn maybe_enqueue_on_assign(
         &self,
@@ -692,7 +692,7 @@ impl IssueService {
         issue.assignee_type.as_deref()?;
         // Backlog is the parking lot: nothing runs from it, so nothing here
         // needs explaining either — a custom status in the backlog category
-        // parks the same way. (MUL-6243)
+        // parks the same way. (PB-6243)
         if issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await
             == issue_status::BACKLOG
         {
@@ -709,7 +709,7 @@ impl IssueService {
         };
         if !admitted && verdict.reason == ReasonCode::RuntimeUnusable {
             // Assignment has no response the assigner reads, so the refusal
-            // explains itself on the issue instead of vanishing (MUL-6164).
+            // explains itself on the issue instead of vanishing (PB-6164).
             self.note_runtime_unusable(issue, &verdict).await;
         }
         if admitted {
@@ -732,7 +732,7 @@ impl IssueService {
     }
 
     /// True when an issue create should trigger the assigned agent. Runs
-    /// INSIDE the create transaction against its snapshot (MUL-6243), where
+    /// INSIDE the create transaction against its snapshot (PB-6243), where
     /// there is nothing to tell anyone yet — unlike the assignment path,
     /// which learns WHY via agent_assignee_verdict.
     async fn should_enqueue_agent_task_with_queries(
@@ -930,7 +930,7 @@ pub struct IssueRunTrigger {
 impl IssueService {
     /// The single predicate answering "will this issue write start an agent
     /// run, and for whom" — one source of truth shared by update /
-    /// batch-update write paths and the preview endpoint (MUL-3375 replaced
+    /// batch-update write paths and the preview endpoint (PB-3375 replaced
     /// four drifting per-site copies).
     ///
     /// Intentionally distinct from the comment trigger: issue writes park on
@@ -939,7 +939,7 @@ impl IssueService {
     /// — the status source mirrors the pending-task unique index so preview
     /// never promises a run the write coalesces away, while the assign source
     /// skips that check (creates target fresh issues; reassignment no longer
-    /// cancels existing tasks #4963/MUL-4113, and the insert simply no-ops on
+    /// cancels existing tasks #4963/PB-4113, and the insert simply no-ops on
     /// the shared slot in the rare collision).
     pub async fn will_enqueue_run(
         &self,
@@ -957,9 +957,9 @@ impl IssueService {
 
         // Both transition sides normalize to the canonical inherited status:
         // a custom status in the backlog category parks exactly like Backlog,
-        // one in the todo category starts exactly like Todo (MUL-6243). So
+        // one in the todo category starts exactly like Todo (PB-6243). So
         // the status source requires LEAVING the backlog CATEGORY, not merely
-        // changing the key (MUL-6463). Built-ins resolve to themselves
+        // changing the key (PB-6463). Built-ins resolve to themselves
         // without a query, keeping workspaces with no custom statuses on the
         // identical path.
         let current_status =
@@ -1074,7 +1074,7 @@ fn classify_origin(issue: &Issue) -> (&'static str, String, String) {
     let origin_id = issue.origin_id.unwrap_or_else(Uuid::nil).to_string();
     match origin_type {
         // Both link back to the agent_task_queue row that created the issue
-        // (agent_create is the ordinary `issue create` path, MUL-4305);
+        // (agent_create is the ordinary `issue create` path, PB-4305);
         // surface that task id under the manual source label.
         "quick_create" | "agent_create" => (analytics::SOURCE_MANUAL, origin_id, String::new()),
         "autopilot" => (analytics::SOURCE_AUTOPILOT, String::new(), origin_id),

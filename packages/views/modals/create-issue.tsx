@@ -101,7 +101,7 @@ import { useT } from "../i18n";
 // shell's local mode state.
 // ---------------------------------------------------------------------------
 
-// CreateRunHint is the create modal's passive pre-trigger label (MUL-3375 §4):
+// CreateRunHint is the create modal's passive pre-trigger label (PB-3375 §4):
 // whether saving will start a run, driven by the unified backend predicate
 // (preview, isCreate) — never a frontend guess. No dialog, no blocking.
 //
@@ -346,7 +346,7 @@ export function ManualCreatePanel({
   // mode (which assist-inits the agent prompt from the description and would
   // carry a stripped body across).
   const uploadGate = useUploadGate(descEditorRef);
-  // Coordinator-owned uploads in the shared pool (MUL-5181, L2): a file picked
+  // Coordinator-owned uploads in the shared pool (PB-5181, L2): a file picked
   // here survives dialog close, aborts on logout, and is dropped after a
   // reload. `gate` widens the editor gate with the pool's placeholders.
   const {
@@ -439,7 +439,7 @@ export function ManualCreatePanel({
   // editor body — a title-only issue is valid — so `normalize` ignores the
   // description markdown and feeds the title through as the empty-guard/content;
   // the body is read separately inside onSubmit.
-  // Stale-submit guard (MUL-5181 P0): the issue draft is a SINGLETON store
+  // Stale-submit guard (PB-5181 P0): the issue draft is a SINGLETON store
   // and the editors stay interactive during a request. Snapshot the draft's
   // object identity at submit; success clears ONLY an untouched draft —
   // whether the edit came mid-flight or from a reopened dialog.
@@ -584,7 +584,7 @@ export function ManualCreatePanel({
       }
 
       // The old post-create "agent paused in Backlog" blocking panel is gone —
-      // a passive inline hint now warns before submit (MUL-3375). The draft
+      // a passive inline hint now warns before submit (PB-3375). The draft
       // reset + close/keep-open happens in onAccepted once we report success.
       {
         toast.custom((toastId) => (
@@ -679,7 +679,7 @@ export function ManualCreatePanel({
       // draft — an issue was created, so record them regardless of the guard.
       setLastAssignee(assigneeType, assigneeId);
       setLastMode("manual");
-      // Success may only consume the draft it submitted (MUL-5181 P0): any
+      // Success may only consume the draft it submitted (PB-5181 P0): any
       // edit after the submit snapshot — typing while the request is in
       // flight, or a reopened dialog — survives, and the dialog then stays
       // open on the newer draft instead of closing/resetting over it. Flush
@@ -1280,7 +1280,7 @@ export function ManualCreatePanel({
 
             {/* Footer — same 2x2-grid-on-phones / single-row-from-`sm` shape
                 as the agent panel; see the note on AgentCreatePanel's footer
-                for why (MUL-6236). TooltipProvider/Tooltip render no DOM and
+                for why (PB-6236). TooltipProvider/Tooltip render no DOM and
                 TooltipContent is portaled, so the Create button stays a direct
                 grid child in both branches below. */}
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-2.5 border-t px-4 py-3 shrink-0 sm:flex sm:flex-wrap">
@@ -1339,7 +1339,7 @@ export function manualDialogContentClass(isExpanded: boolean) {
     // Phone gutter — see the matching note in create-issue-dialog.tsx: the
     // `!important` widths below also override DialogContent's
     // `max-w-[calc(100%-2rem)]`, leaving the card edge to edge on a phone
-    // (MUL-6236). `!h-96` stays a hard height; it already fits the shortest
+    // (PB-6236). `!h-96` stays a hard height; it already fits the shortest
     // phone we support.
     "!w-full !max-w-[calc(100vw-1.5rem)]",
     isExpanded

@@ -80,7 +80,7 @@ async fn auth_caches_round_trip_expire_and_invalidate() -> anyhow::Result<()> {
     assert_eq!(pat.get("pat-hash").await.as_deref(), Some("user-a"));
     let mut connection = client.get_multiplexed_async_connection().await?;
     let pat_ttl: i64 = redis::cmd("TTL")
-        .arg("mul:auth:pat:pat-hash")
+        .arg("patchbay:auth:pat:pat-hash")
         .query_async(&mut connection)
         .await?;
     assert!(pat_ttl > 0 && pat_ttl <= 5);
@@ -98,7 +98,7 @@ async fn auth_caches_round_trip_expire_and_invalidate() -> anyhow::Result<()> {
     daemon.invalidate("daemon-hash").await;
     assert_eq!(daemon.get("daemon-hash").await, None);
     redis::cmd("SET")
-        .arg("mul:auth:daemon:malformed")
+        .arg("patchbay:auth:daemon:malformed")
         .arg("not-json")
         .query_async::<()>(&mut connection)
         .await?;
@@ -113,7 +113,7 @@ async fn auth_caches_round_trip_expire_and_invalidate() -> anyhow::Result<()> {
     assert!(membership.get("user-b", "workspace-a").await);
 
     let ttl: i64 = redis::cmd("TTL")
-        .arg("mul:auth:member:user-b:workspace-a")
+        .arg("patchbay:auth:member:user-b:workspace-a")
         .query_async(&mut connection)
         .await?;
     assert!(ttl > 0 && ttl <= 5 * 60);

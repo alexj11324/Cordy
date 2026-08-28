@@ -1325,7 +1325,7 @@ export function IssueFilterMenu({
                     be narrowed to. One flat list in category order: the icon
                     already carries the category, and a heading per category
                     doubled the menu's height for no added information
-                    (MUL-6243, MUL-6399). */}
+                    (PB-6243, PB-6399). */}
                 {statusOptions.map((option) => {
                   const checked = statusFilters.includes(option.key);
                   const count = counts.status.get(option.key) ?? 0;

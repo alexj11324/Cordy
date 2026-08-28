@@ -194,7 +194,7 @@ describe("useTabStore actions", () => {
     expect(s.byWorkspace.acme.tabs[0].url).toBe("/acme/issues");
   });
 
-  describe("openTab insertion position (MUL-5860)", () => {
+  describe("openTab insertion position (PB-5860)", () => {
     const urls = () =>
       useTabStore.getState().byWorkspace.acme.tabs.map((t) => t.url);
 
@@ -745,7 +745,7 @@ describe("bulk tab closing", () => {
   });
 });
 
-describe("closeTab activation order (MUL-5665)", () => {
+describe("closeTab activation order (PB-5665)", () => {
   // Tabs are appended at the end of the strip, so the tab you opened from a
   // list is rarely that list's neighbour. Landing on a positional neighbour
   // dropped users on a page they hadn't looked at in a while.
@@ -1061,7 +1061,7 @@ describe("migrateV2ToV3", () => {
   });
 });
 
-describe("migrateV3ToV4 (legacy view-state import, MUL-4741)", () => {
+describe("migrateV3ToV4 (legacy view-state import, PB-4741)", () => {
   it("converts path→url and seeds identity, history, and memento", () => {
     const v3 = {
       activeWorkspaceSlug: "acme",
@@ -1105,7 +1105,7 @@ describe("migrateV3ToV4 (legacy view-state import, MUL-4741)", () => {
   });
 });
 
-describe("mergePersistedTabs (rehydration, MUL-4370)", () => {
+describe("mergePersistedTabs (rehydration, PB-4370)", () => {
   const emptyState = (): {
     activeWorkspaceSlug: string | null;
     byWorkspace: Record<string, WorkspaceTabGroup>;

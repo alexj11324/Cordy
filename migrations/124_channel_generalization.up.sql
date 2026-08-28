@@ -1,5 +1,5 @@
 -- Generalize the Feishu/Lark-specific integration tables into
--- platform-agnostic channel_* tables (MUL-3515, parent MUL-3506). Each
+-- platform-agnostic channel_* tables (PB-3515, parent PB-3506). Each
 -- lark_* table gains a `channel_type` discriminator and moves its
 -- platform-specific identifiers/config into a JSONB `config` column; the
 -- cross-platform columns stay flat. Existing Feishu rows are backfilled
@@ -7,7 +7,7 @@
 --
 -- Two hard rules from the design:
 --
---   * NO foreign keys and NO cascades (MUL-3515 §4). The lark_* tables
+--   * NO foreign keys and NO cascades (PB-3515 §4). The lark_* tables
 --     leaned on composite FKs to enforce "a binding's workspace matches
 --     its installation" and "a binding dies when workspace membership is
 --     revoked / a chat_session is deleted". Those integrity rules now
@@ -43,7 +43,7 @@
 --     A one-time CORDY_LARK_HUB_DISABLED park-switch existed during the
 --     cutover to hold a hub dormant while the API stayed up, so only one hub
 --     was ever live (invariant b). That cutover is complete and the switch has
---     since been removed (MUL-3515); this note is kept as history. Rollback to
+--     since been removed (PB-3515); this note is kept as history. Rollback to
 --     a pre-cutover build is not lossless once the new hub has written Feishu
 --     state into channel_*.
 --
@@ -83,7 +83,7 @@ CREATE TABLE channel_installation (
     -- natural generalization adds it to the key. In the current feishu-only
     -- world this is behaviorally identical (one row per agent). If the
     -- product later wants "one agent, at most one IM regardless of type",
-    -- that is an application-layer rule (MUL-3515 §4), not a DB constraint.
+    -- that is an application-layer rule (PB-3515 §4), not a DB constraint.
     UNIQUE (workspace_id, agent_id, channel_type)
 );
 

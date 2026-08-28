@@ -178,7 +178,7 @@ async fn fetch_skill_resource(
 ///
 /// Trimmed because both fields are single-line labels wherever they are
 /// consumed, while YAML block scalars carry a trailing newline by clip chomping
-/// (MUL-5645).
+/// (PB-5645).
 pub fn parse_skill_frontmatter(content: &str) -> (String, String) {
     let Some(block) = frontmatter_block(content) else {
         return (String::new(), String::new());

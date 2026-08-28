@@ -617,7 +617,7 @@ mod tests {
             sender: "ou_x".to_string(),
             issue_id: Some(Uuid::nil()),
             issue_number: 7,
-            issue_identifier: "MUL-7".to_string(),
+            issue_identifier: "PB-7".to_string(),
             issue_title: "t".to_string(),
             issue_duplicate: true,
             issue_usage_had_media: false,
@@ -627,7 +627,7 @@ mod tests {
         assert!(d.outcome_is("needs_binding"));
         assert_eq!(d.sender_open_id.0, "ou_x");
         assert_eq!(d.issue_number, 7);
-        assert_eq!(d.issue_identifier, "MUL-7");
+        assert_eq!(d.issue_identifier, "PB-7");
         assert!(d.issue_duplicate);
     }
 }

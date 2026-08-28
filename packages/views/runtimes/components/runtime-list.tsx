@@ -196,7 +196,7 @@ function RuntimeNameCell({
    * The containing machine's title. Lets a per-runtime alias surface here
    * while a machine-level rename (shared by every runtime on the daemon)
    * collapses to the provider base so it isn't repeated on every row
-   * (MUL-5248). Omitted when the row has no machine context (orphan custom
+   * (PB-5248). Omitted when the row has no machine context (orphan custom
    * runtime profiles), where any alias is shown verbatim.
    */
   machineTitle?: string;
@@ -556,7 +556,7 @@ export function RuntimeRowMenu({
   // Delete is the row's only management action; if the row can't run it, drop
   // the kebab entirely so the column doesn't render a near-empty popover. We
   // used to also hide it for self-healing runtimes (live local daemon
-  // re-registers within seconds), but MUL-3352 surfaced that owners read
+  // re-registers within seconds), but PB-3352 surfaced that owners read
   // a missing kebab as "I lost my permission" rather than "the daemon
   // would undo this". The dialog now carries the self-heal warning and
   // the user gets to decide.
@@ -658,7 +658,7 @@ export function RuntimeList({
   /**
    * The containing machine's title, when this list renders the runtimes of a
    * single machine. Used so a machine-level alias doesn't repeat on every row
-   * while a per-runtime alias still shows (MUL-5248).
+   * while a per-runtime alias still shows (PB-5248).
    */
   machineTitle?: string;
 }) {

@@ -1,4 +1,4 @@
--- MUL-5483: an agent creating an issue on a human's behalf must carry that
+-- PB-5483: an agent creating an issue on a human's behalf must carry that
 -- human's visibility with it.
 --
 -- Two changes, both required by the same rule ("delegation preserves

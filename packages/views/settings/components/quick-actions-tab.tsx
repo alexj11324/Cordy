@@ -64,7 +64,7 @@ import { AgentPicker } from "../../autopilots/components/pickers/agent-picker";
 import { useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
-// Quick Actions catalog (MUL-5465).
+// Quick Actions catalog (PB-5465).
 //
 // Ordering is by use_count DESC, not created_at: the list's job is to answer
 // "what does this workspace actually use", and recency of creation says

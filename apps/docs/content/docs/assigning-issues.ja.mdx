@@ -68,10 +68,10 @@ Cordy はエージェントのために[タスク](/tasks)を作成します。�
 ## CLI での操作
 
 ```bash
-cordy issue assign MUL-42 --to "Agent name"
-cordy issue assign MUL-42 --to-id <agent-uuid> --no-start
-cordy issue status MUL-42 in_progress --no-start
-cordy issue assign MUL-42 --unassign
+cordy issue assign PB-42 --to "Agent name"
+cordy issue assign PB-42 --to-id <agent-uuid> --no-start
+cordy issue status PB-42 in_progress --no-start
+cordy issue assign PB-42 --unassign
 ```
 
 スクリプトでは `--to-id <uuid>` を使うと、同名のオブジェクトへの誤マッチを避けられます。UUID は `cordy agent list --output json` または `cordy workspace member list --output json` で確認できます。

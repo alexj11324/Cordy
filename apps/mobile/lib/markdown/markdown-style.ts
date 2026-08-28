@@ -272,7 +272,7 @@ export function useMarkdownStyle() {
       // List — bullets in muted-foreground so they don't compete with content.
       // `color` is REQUIRED: enriched's default text color does NOT track
       // dark mode, so list items render in hardcoded near-black and are
-      // invisible on dark backgrounds. This was the visible bug in #MUL-2395
+      // invisible on dark backgrounds. This was the visible bug in #PB-2395
       // dark-mode screenshot (2026-05-19).
       list: {
         color: t.foreground,

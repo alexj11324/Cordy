@@ -134,7 +134,7 @@ pub struct LarkMessageMention {
 ///   returns and what the OUTBOUND send paths use to address a user.
 /// - `union_id` is the cross-app stable identifier scoped to the Lark
 ///   tenant. It is the only field that is consistent across the two WS
-///   perspectives in a multi-bot group chat — see MUL-2671 group-@-mention
+///   perspectives in a multi-bot group chat — see PB-2671 group-@-mention
 ///   triage. The decoder matches inbound `mentions[].id` against `union_id`
 ///   so the right bot's supervisor handles the event when several bots are
 ///   bound to the same group.

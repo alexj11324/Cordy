@@ -66,9 +66,9 @@ pub(crate) fn resolve_goos(goos: &str) -> String {
 /// (see codex_sandbox_policy_for_config).
 ///
 ///   - Linux (and any other non-darwin, non-windows platform):
-///     danger-full-access on the daemon user's real HOME (MUL-5578 / #6218).
+///     danger-full-access on the daemon user's real HOME (PB-5578 / #6218).
 ///   - Windows: danger-full-access as a deliberate compatibility choice
-///     (MUL-4957); a user who opted into windows.sandbox keeps workspace-write
+///     (PB-4957); a user who opted into windows.sandbox keeps workspace-write
 ///     via codex_sandbox_policy_for_windows instead.
 ///   - darwin at or above CODEX_DARWIN_NETWORK_ACCESS_FIXED_VERSION:
 ///     workspace-write with network access (upstream bug fixed).
@@ -79,7 +79,7 @@ pub(crate) fn codex_sandbox_policy_for(goos: &str, detected_version: &str) -> Co
     if goos == "windows" {
         return CodexSandboxPolicy {
             mode: "danger-full-access".to_string(),
-            reason: "codex on windows: compatibility fallback; no native windows.sandbox configured, so workspace-write cannot be enforced (MUL-4957)".to_string(),
+            reason: "codex on windows: compatibility fallback; no native windows.sandbox configured, so workspace-write cannot be enforced (PB-4957)".to_string(),
             ..Default::default()
         };
     }
@@ -87,7 +87,7 @@ pub(crate) fn codex_sandbox_policy_for(goos: &str, detected_version: &str) -> Co
         return CodexSandboxPolicy {
             mode: "danger-full-access".to_string(),
             reason: format!(
-                "codex on {goos}: tasks run with the daemon user's real HOME and full filesystem access; isolation comes from the boundary the daemon runs inside (MUL-5578)"
+                "codex on {goos}: tasks run with the daemon user's real HOME and full filesystem access; isolation comes from the boundary the daemon runs inside (PB-5578)"
             ),
             hint: codex_linux_isolation_hint(),
             ..Default::default()
@@ -117,7 +117,7 @@ pub(crate) fn codex_sandbox_policy_for(goos: &str, detected_version: &str) -> Co
 
 /// Tri-state of a native Codex Windows sandbox selection. Three-valued (not a
 /// bool) so an undecidable config fails closed — the daemon never loosens to
-/// danger-full-access when it cannot confirm the user's intent (MUL-4957).
+/// danger-full-access when it cannot confirm the user's intent (PB-4957).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WindowsSandboxConfig {
     /// Confidently no native sandbox selected anywhere, so the
@@ -135,7 +135,7 @@ pub(crate) enum WindowsSandboxConfig {
 /// linux/darwin. On Windows it applies the resolved native-sandbox state: a
 /// user who opted into windows.sandbox keeps workspace-write, an undecidable
 /// config fails closed to workspace-write, and only a confidently absent
-/// sandbox gets the danger-full-access compatibility fallback (MUL-4957).
+/// sandbox gets the danger-full-access compatibility fallback (PB-4957).
 ///
 /// This is intentionally the branch point for the eventual native-sandbox
 /// rollout: flipping the Windows default later means writing windows.sandbox
@@ -167,12 +167,12 @@ fn codex_sandbox_policy_for_windows(state: WindowsSandboxConfig) -> CodexSandbox
         WindowsSandboxConfig::Undecidable => CodexSandboxPolicy {
             mode: "workspace-write".to_string(),
             network_access: true,
-            reason: "codex on windows: windows.sandbox config undecidable (unreadable/unparseable/invalid); failing closed to workspace-write rather than loosening (MUL-4957)".to_string(),
+            reason: "codex on windows: windows.sandbox config undecidable (unreadable/unparseable/invalid); failing closed to workspace-write rather than loosening (PB-4957)".to_string(),
             ..Default::default()
         },
         WindowsSandboxConfig::Absent => CodexSandboxPolicy {
             mode: "danger-full-access".to_string(),
-            reason: "codex on windows: compatibility fallback; no native windows.sandbox configured (MUL-4957)".to_string(),
+            reason: "codex on windows: compatibility fallback; no native windows.sandbox configured (PB-4957)".to_string(),
             ..Default::default()
         },
     }
@@ -205,7 +205,7 @@ fn codex_windows_sandbox_override_re() -> &'static Regex {
 /// Classifies a native Windows sandbox selection passed via Codex `-c
 /// windows.sandbox=...` / `--config windows.sandbox=...` args. These never land
 /// in config.toml (they stay in argv and are applied on top of it), so
-/// config-only detection would miss them — the MUL-4957 review's second
+/// config-only detection would miss them — the PB-4957 review's second
 /// must-fix. Supports inline (`-c=windows.sandbox=x`) and two-token (`-c
 /// windows.sandbox=x`) forms, last occurrence winning (Codex is last-wins).
 pub(crate) fn windows_sandbox_from_custom_args(args: &[String]) -> WindowsSandboxConfig {
@@ -500,16 +500,16 @@ mod tests {
     // Port of TestCodexSandboxPolicyFor platform table.
     #[test]
     fn test_codex_sandbox_policy_for_platform_table() {
-        // Linux: deliberate full access with isolation hint (MUL-5578).
+        // Linux: deliberate full access with isolation hint (PB-5578).
         let p = codex_sandbox_policy_for("linux", "0.121.0");
         assert_eq!(p.mode, "danger-full-access");
-        assert!(p.reason.contains("MUL-5578"));
+        assert!(p.reason.contains("PB-5578"));
         assert_eq!(p.hint, codex_linux_isolation_hint());
 
-        // Windows baseline: compatibility fallback (MUL-4957).
+        // Windows baseline: compatibility fallback (PB-4957).
         let p = codex_sandbox_policy_for("windows", "");
         assert_eq!(p.mode, "danger-full-access");
-        assert!(p.reason.contains("MUL-4957"));
+        assert!(p.reason.contains("PB-4957"));
 
         // darwin with no fixed release known: always broken.
         let p = codex_sandbox_policy_for("darwin", "9.9.9");

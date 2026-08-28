@@ -294,7 +294,7 @@ function BackgroundLayer({
 // Keyed by CATEGORY, not by status key: an issue on a custom status draws in
 // the color of the category it behaves as. Keying this by IssueStatus made the
 // lookup `undefined` for every custom key, so the bar lost its color entirely.
-// (MUL-6243)
+// (PB-6243)
 const STATUS_BAR_BG: Record<IssueStatusCategory, string> = {
   backlog: "bg-muted-foreground/60",
   todo: "bg-muted-foreground/70",
@@ -466,7 +466,7 @@ export function GanttView({ issues }: { issues: Issue[] }) {
   // filters, drops undated rows, and honours `ganttShowCompleted` before
   // handing it over (see `ganttCanvasRows` in use-issue-surface-data.ts).
   // Those rules used to live here, which meant the header chip could count
-  // rows this canvas would never draw (MUL-4884). Keep this view a renderer:
+  // rows this canvas would never draw (PB-4884). Keep this view a renderer:
   // it orders rows, it does not decide which ones exist.
   const scheduled = useMemo(() => {
     // "position" makes no sense on a gantt — default to start_date asc when

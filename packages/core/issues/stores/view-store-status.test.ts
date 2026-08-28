@@ -6,7 +6,7 @@ import { baselineFromQuery } from "../../issue-views/baseline";
 
 /**
  * Column visibility and the status filter used to be the same field. That was
- * only ever correct while a category held exactly one status; since MUL-6243 a
+ * only ever correct while a category held exactly one status; since PB-6243 a
  * category can hold several, and the two questions have different answers.
  */
 describe("column visibility vs status filter", () => {

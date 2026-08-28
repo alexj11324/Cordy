@@ -275,7 +275,7 @@ export function useUpdateIssue() {
       // the specific list keys the coordinator flagged as drifted (unknown
       // membership, enter/leave beyond the loaded window, bucket-count drift).
       // Those stale keys are the surgical replacement for the old blanket
-      // "invalidate myAll on project move" safety net (MUL-3669 / #4548): the
+      // "invalidate myAll on project move" safety net (PB-3669 / #4548): the
       // old project's loaded list already had the card removed in onMutate,
       // and only genuinely undecidable lists refetch here.
       invalidateIssueDerivatives(qc, wsId, {
@@ -553,7 +553,7 @@ export function useBatchUpdateIssues() {
       // caches that cannot be recomputed from a single-issue patch are
       // refreshed below, plus the specific keys the coordinator flagged as
       // drifted — the surgical replacement for the old blanket "invalidate
-      // myAll on project move" safety net (MUL-3669 / #4548).
+      // myAll on project move" safety net (PB-3669 / #4548).
       invalidateIssueDerivatives(qc, wsId, {
         statusOrProjectChanged:
           _vars.updates.status !== undefined ||
@@ -1087,7 +1087,7 @@ export function useToggleIssueSubscriber(issueId: string) {
 }
 
 /**
- * Leave an issue AND its whole sub-tree (MUL-5483). Not optimistic: it writes
+ * Leave an issue AND its whole sub-tree (PB-5483). Not optimistic: it writes
  * to an unknown number of other issues' subscriber lists, so there is nothing
  * determinate to patch — invalidate every subscriber query instead and let the
  * server be the source of truth.

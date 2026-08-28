@@ -9,7 +9,7 @@ import { createEditorExtensions } from ".";
  * with and falls back to `levels[0]` for anything else. With the old
  * `levels: [1, 2, 3]`, `#### Identity & Trust` parsed to a level-4 node (the
  * Markdown source and the saved value were always fine) but drew as an `<h1>`,
- * so a fourth-level heading looked like the document title (MUL-6060).
+ * so a fourth-level heading looked like the document title (PB-6060).
  *
  * These tests exercise the production extension array, not a hand-built one,
  * so narrowing `levels` again fails here.

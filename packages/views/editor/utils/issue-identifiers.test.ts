@@ -11,55 +11,55 @@ import {
  */
 describe("preprocessIssueIdentifiers", () => {
   it("rewrites a bare identifier into a canonical mention link", () => {
-    expect(preprocessIssueIdentifiers("Related to MUL-1745")).toBe(
-      "Related to [MUL-1745](mention://issue/MUL-1745)",
+    expect(preprocessIssueIdentifiers("Related to PB-1745")).toBe(
+      "Related to [PB-1745](mention://issue/PB-1745)",
     );
   });
 
   it("rewrites multiple identifiers in one string", () => {
-    expect(preprocessIssueIdentifiers("Created TES-1 and MUL-2")).toBe(
-      "Created [TES-1](mention://issue/TES-1) and [MUL-2](mention://issue/MUL-2)",
+    expect(preprocessIssueIdentifiers("Created TES-1 and PB-2")).toBe(
+      "Created [TES-1](mention://issue/TES-1) and [PB-2](mention://issue/PB-2)",
     );
   });
 
   it("links an identifier at a sentence end (trailing dot + space)", () => {
-    expect(preprocessIssueIdentifiers("See MUL-1. Done.")).toBe(
-      "See [MUL-1](mention://issue/MUL-1). Done.",
+    expect(preprocessIssueIdentifiers("See PB-1. Done.")).toBe(
+      "See [PB-1](mention://issue/PB-1). Done.",
     );
   });
 
   it("links identifiers wrapped in prose punctuation", () => {
-    expect(preprocessIssueIdentifiers("(MUL-1) and [MUL-2]")).toContain(
-      "([MUL-1](mention://issue/MUL-1))",
+    expect(preprocessIssueIdentifiers("(PB-1) and [PB-2]")).toContain(
+      "([PB-1](mention://issue/PB-1))",
     );
   });
 
   // --- skip: code -------------------------------------------------------
   it("skips identifiers inside inline code", () => {
-    expect(preprocessIssueIdentifiers("use `MUL-1` here")).toBe(
-      "use `MUL-1` here",
+    expect(preprocessIssueIdentifiers("use `PB-1` here")).toBe(
+      "use `PB-1` here",
     );
   });
 
   it("skips identifiers inside fenced code blocks", () => {
-    const input = "```\nMUL-1 in code\n```";
+    const input = "```\nPB-1 in code\n```";
     expect(preprocessIssueIdentifiers(input)).toBe(input);
   });
 
   // --- skip: existing links / mentions ----------------------------------
   it("does not double-process an existing mention link", () => {
-    const input = "[MUL-1](mention://issue/00000000-0000-0000-0000-000000000001)";
+    const input = "[PB-1](mention://issue/00000000-0000-0000-0000-000000000001)";
     expect(preprocessIssueIdentifiers(input)).toBe(input);
   });
 
   it("skips an identifier used as a markdown link label", () => {
-    const input = "[MUL-1](https://example.com/x)";
+    const input = "[PB-1](https://example.com/x)";
     expect(preprocessIssueIdentifiers(input)).toBe(input);
   });
 
   // --- skip: urls / filenames / paths -----------------------------------
   it("skips an identifier inside a URL", () => {
-    const input = "https://example.com/board/MUL-1";
+    const input = "https://example.com/board/PB-1";
     expect(preprocessIssueIdentifiers(input)).toBe(input);
   });
 
@@ -75,12 +75,12 @@ describe("preprocessIssueIdentifiers", () => {
 
   // --- non-matches ------------------------------------------------------
   it("ignores lowercase tokens", () => {
-    const input = "some-word-1 and mul-1";
+    const input = "some-word-1 and pb-1";
     expect(preprocessIssueIdentifiers(input)).toBe(input);
   });
 
   it("ignores a token embedded in a larger word", () => {
-    const input = "XMUL-1A stays";
+    const input = "XPB-1A stays";
     expect(preprocessIssueIdentifiers(input)).toBe(input);
   });
 
@@ -92,7 +92,7 @@ describe("preprocessIssueIdentifiers", () => {
 
 describe("isIssueIdentifier", () => {
   it("accepts a bare identifier", () => {
-    expect(isIssueIdentifier("MUL-1745")).toBe(true);
+    expect(isIssueIdentifier("PB-1745")).toBe(true);
     expect(isIssueIdentifier("TES-1")).toBe(true);
   });
 
@@ -103,8 +103,8 @@ describe("isIssueIdentifier", () => {
   });
 
   it("rejects lowercase and malformed tokens", () => {
-    expect(isIssueIdentifier("mul-1")).toBe(false);
-    expect(isIssueIdentifier("MUL-")).toBe(false);
-    expect(isIssueIdentifier("MUL1")).toBe(false);
+    expect(isIssueIdentifier("pb-1")).toBe(false);
+    expect(isIssueIdentifier("PB-")).toBe(false);
+    expect(isIssueIdentifier("PB1")).toBe(false);
   });
 });

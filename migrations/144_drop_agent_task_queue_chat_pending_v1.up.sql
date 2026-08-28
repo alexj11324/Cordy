@@ -1,4 +1,4 @@
--- Drop the superseded partial index from migration 040 (MUL-4159).
+-- Drop the superseded partial index from migration 040 (PB-4159).
 --
 -- idx_agent_task_queue_chat_pending_v2 (migration 143) covers all four
 -- in-flight statuses and the same (chat_session_id, created_at DESC) column

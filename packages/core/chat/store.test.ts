@@ -36,7 +36,7 @@ function makeAttachment(id: string): Attachment {
   };
 }
 
-// The pre-MUL-4864 scheme kept one new-chat draft per agent, in `__new__:<id>`
+// The pre-PB-4864 scheme kept one new-chat draft per agent, in `__new__:<id>`
 // slots. Those slots have no timestamp, so on upgrade only one can survive:
 // the one for the agent the workspace has selected — the draft the user would
 // have been shown. The rest were the invisible multi-draft state, and go.
@@ -72,7 +72,7 @@ describe("chat store — legacy per-agent new-chat draft migration", () => {
 
     const store = createChatStore({ storage });
 
-    // Legacy bare Attachment rows load as `uploaded` entries (MUL-5181 L2).
+    // Legacy bare Attachment rows load as `uploaded` entries (PB-5181 L2).
     expect(
       store
         .getState()
@@ -308,7 +308,7 @@ describe("chat store — applied draft-restore ledger", () => {
   });
 });
 
-// Coordinator-owned upload lifecycle in the draft slots (MUL-5181 L2).
+// Coordinator-owned upload lifecycle in the draft slots (PB-5181 L2).
 describe("chat store — draft upload ops", () => {
   const ATTACHMENTS_KEY = "cordy:chat:draft-attachments";
 

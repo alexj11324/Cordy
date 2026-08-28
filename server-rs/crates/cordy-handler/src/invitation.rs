@@ -123,19 +123,19 @@ impl InvitationAdmission {
         [
             AdmissionGate {
                 name: "actor",
-                key: format!("mul:invitation:actor:{actor_id}"),
+                key: format!("patchbay:invitation:actor:{actor_id}"),
                 limit: self.limits.actor,
                 window: Duration::from_secs(600),
             },
             AdmissionGate {
                 name: "workspace",
-                key: format!("mul:invitation:workspace:{workspace_id}"),
+                key: format!("patchbay:invitation:workspace:{workspace_id}"),
                 limit: self.limits.workspace,
                 window: Duration::from_secs(86_400),
             },
             AdmissionGate {
                 name: "recipient",
-                key: format!("mul:invitation:recipient:{recipient}"),
+                key: format!("patchbay:invitation:recipient:{recipient}"),
                 limit: self.limits.recipient,
                 window: Duration::from_secs(86_400),
             },

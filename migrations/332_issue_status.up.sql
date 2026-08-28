@@ -1,4 +1,4 @@
--- Custom Issue Status catalog (MUL-6243).
+-- Custom Issue Status catalog (PB-6243).
 --
 -- MODEL: the 7 categories map ONE-TO-ONE onto the 7 built-in statuses, and a
 -- category's value IS its canonical status key. A custom status names a

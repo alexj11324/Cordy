@@ -10,7 +10,7 @@
 -- read alongside the task row that is already being fetched by primary key.
 ALTER TABLE agent_task_queue ADD COLUMN IF NOT EXISTS branch_name TEXT;
 
--- Rollout / rollback note for worktree mode (MUL-5707).
+-- Rollout / rollback note for worktree mode (PB-5707).
 --
 -- Isolation for a worktree resource is enforced in two places, both of which
 -- live in server code shipped with this migration: the save-time daemon-version

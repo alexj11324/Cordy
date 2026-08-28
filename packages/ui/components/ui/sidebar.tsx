@@ -77,7 +77,7 @@ type SidebarContextProps = {
    *
    * Surfaces that would otherwise supply a fallback trigger read this and
    * supply nothing: the shell's own is always reachable, so a second one is
-   * duplicate chrome rather than a way back to a nav that had none (MUL-6218).
+   * duplicate chrome rather than a way back to a nav that had none (PB-6218).
    * It describes the shell, not the current viewport, so it does not track
    * whether that trigger happens to be mounted this render.
    */

@@ -117,7 +117,7 @@ describe("DesktopShell sidebar trigger", () => {
   // windows sit below `xl`, exactly the band where `PageHeader`'s fallback
   // trigger renders, so every page used to stack an identical icon 50px under
   // this one — and a third when a list/detail surface brought its own header
-  // along (MUL-6218).
+  // along (PB-6218).
   it("keeps exactly one trigger and tells page headers not to add another", () => {
     const { container, getByTestId } = renderShell();
 

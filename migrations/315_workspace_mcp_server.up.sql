@@ -1,5 +1,5 @@
 -- Workspace MCP servers as an explicit per-agent assignment (GH #6062,
--- MUL-5421), replacing the inherit-by-default document added in 314.
+-- PB-5421), replacing the inherit-by-default document added in 314.
 --
 -- A workspace-level library of MCP servers plus an explicit per-agent binding,
 -- deliberately shaped like `skill` + `agent_skill`: creating a server here

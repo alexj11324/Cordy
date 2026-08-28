@@ -227,7 +227,7 @@ export function rowMatchesFilters(
 
 /**
  * Bulk-access dialog confirm-button enablement is centralized in
- * `@cordy/core/agents` as `isAccessChangeReady` (MUL-3963). The dialog
+ * `@cordy/core/agents` as `isAccessChangeReady` (PB-3963). The dialog
  * consumes it; the picker also gates its internal Save button on the same
  * predicate (its own Save button is hidden via `hideFooter` in the bulk flow).
  */

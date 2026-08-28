@@ -1,4 +1,4 @@
--- Extend the pending-chat partial index to deferred retries (MUL-5750).
+-- Extend the pending-chat partial index to deferred retries (PB-5750).
 --
 -- The session pending endpoint now treats a deferred retry as a visible head,
 -- and the workspace FAB aggregate must use the same in-flight status set.

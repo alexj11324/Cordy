@@ -7,7 +7,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title";
 export function IssueDetailPage({ onDelete }: { onDelete?: () => void }) {
   const { id } = useParams<{ id: string }>();
   const wsId = useWorkspaceId();
-  // `id` may be an identifier (`MUL-123`); resolving here means the title
+  // `id` may be an identifier (`PB-123`); resolving here means the title
   // watches the same UUID-keyed entry realtime events patch. Shares its
   // queries with the IssueDetailRoute below, so it costs no extra request.
   const { issue } = useCanonicalIssue(wsId, id ?? "");

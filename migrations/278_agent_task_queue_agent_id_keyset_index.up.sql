@@ -2,7 +2,7 @@
 -- or share a multi-command migration file.
 --
 -- Workspace teardown pages a busy agent's tasks with
--- `agent_id = $1 AND id > $cursor ORDER BY id LIMIT n` (MUL-5999). The existing
+-- `agent_id = $1 AND id > $cursor ORDER BY id LIMIT n` (PB-5999). The existing
 -- idx_agent_task_queue_agent is (agent_id, status), which cannot produce id
 -- order, so every page would read the agent's entire task set and sort it before
 -- applying LIMIT — quadratic in the number of pages, which is exactly the busy

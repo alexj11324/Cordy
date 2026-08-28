@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Scroll root for near-viewport rich-block mounting (MUL-4922).
+ * Scroll root for near-viewport rich-block mounting (PB-4922).
  *
  * IntersectionObserver clips against its `root`. Left unset it uses the browser
  * viewport, and `rootMargin` then expands the *viewport* box — which says

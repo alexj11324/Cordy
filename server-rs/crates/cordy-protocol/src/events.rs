@@ -109,7 +109,7 @@ pub const EVENT_PROPERTY_CREATED: &str = "property:created";
 pub const EVENT_PROPERTY_UPDATED: &str = "property:updated";
 pub const EVENT_ISSUE_PROPERTIES_CHANGED: &str = "issue_properties:changed";
 
-/// ONE event for all four issue-status-catalog writes (MUL-6243) — create,
+/// ONE event for all four issue-status-catalog writes (PB-6243) — create,
 /// edit, archive, reorder — because the catalog is read as a whole table and
 /// every client answers all four the same way: re-read it. The `action` in
 /// the payload is advisory; nothing routes on it.
@@ -148,10 +148,10 @@ pub const EVENT_DAEMON_WORKSPACES_CHANGED: &str = "daemon:workspaces_changed";
 /// A runtime-scoped hint that a heartbeat-carried request (today: model-list
 /// discovery) is queued for that runtime. The hint carries no work itself:
 /// the daemon still pulls through the normal heartbeat claim, so a lost or
-/// duplicated hint is harmless (MUL-5444).
+/// duplicated hint is harmless (PB-5444).
 pub const EVENT_DAEMON_PENDING_WORK: &str = "daemon:pending_work";
 /// Generic daemon→server request/response over the WebSocket control
-/// connection (MUL-4257): correlation id + method + body, replied with the
+/// connection (PB-4257): correlation id + method + body, replied with the
 /// same request id. Transport for WS-first claim (with HTTP fallback).
 pub const EVENT_DAEMON_RPC_REQUEST: &str = "daemon:rpc_request";
 pub const EVENT_DAEMON_RPC_RESPONSE: &str = "daemon:rpc_response";
@@ -173,7 +173,7 @@ pub const EVENT_VCS_CONNECTION_DELETED: &str = "vcs_connection:deleted";
 pub const EVENT_LARK_INSTALLATION_CREATED: &str = "lark_installation:created";
 pub const EVENT_LARK_INSTALLATION_REVOKED: &str = "lark_installation:revoked";
 
-// Slack installation lifecycle (MUL-3666). Same semantics as the Lark pair.
+// Slack installation lifecycle (PB-3666). Same semantics as the Lark pair.
 pub const EVENT_SLACK_INSTALLATION_CREATED: &str = "slack_installation:created";
 pub const EVENT_SLACK_INSTALLATION_REVOKED: &str = "slack_installation:revoked";
 

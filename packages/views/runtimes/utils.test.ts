@@ -323,7 +323,7 @@ describe("estimateCost", () => {
     // Dash-normalized 5.6 ids must also miss: the real Codex slug is dotted
     // (`gpt-5.6-luna`) and this resolver does NOT dash-normalize non-claude
     // ids, so a dashed variant surfaces as unmapped — matching the backend's
-    // literal-dot alias in the Rust pricing catalog (MUL-4347).
+    // literal-dot alias in the Rust pricing catalog (PB-4347).
     expect(isModelPriced("gpt-5-6-luna")).toBe(false);
     expect(isModelPriced("gpt-5-6-sol")).toBe(false);
     expect(
@@ -1097,7 +1097,7 @@ describe("sliceWindow (timezone-aware)", () => {
 });
 
 describe("aggregateByDate", () => {
-  // MUL-6334: the daily cost stack computed `estimateCostBreakdown` and then
+  // PB-6334: the daily cost stack computed `estimateCostBreakdown` and then
   // summed only three of its four components, silently dropping cache-read
   // spend from every bar and from the tooltip Total that sums them.
   function makeUsage(
@@ -1285,7 +1285,7 @@ describe("aggregateByWeek", () => {
     expect(weeklyCostStack[0]?.total).toBeCloseTo(36, 2);
   });
 
-  it("bills cache reads in the weekly stack and its total (MUL-6334)", () => {
+  it("bills cache reads in the weekly stack and its total (PB-6334)", () => {
     vi.setSystemTime(new Date("2026-05-17T12:00:00Z"));
     // claude-sonnet-4-6: input $3/M, output $15/M, cacheRead $0.30/M,
     // cacheWrite $3.75/M. Row: $3 + $15 + $6 (20M cache reads) + $3.75 = $27.75.
@@ -1304,7 +1304,7 @@ describe("aggregateByWeek", () => {
   });
 
   it("emits trailing calendar weeks pinned to today, dropping older populated weeks", () => {
-    // Regression for MUL-2382 weekly window scoping:
+    // Regression for PB-2382 weekly window scoping:
     // before the fix, aggregateByWeek built buckets only for weeks that had
     // data and the caller did `.slice(-weekCount)`. With sparse data (an old
     // populated week far outside the selected window plus an empty stretch

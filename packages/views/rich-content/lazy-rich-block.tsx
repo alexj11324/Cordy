@@ -2,7 +2,7 @@
 
 /**
  * LazyRichBlock — near-viewport, stable-size mount gate for rich blocks
- * (MUL-4922 performance contract).
+ * (PB-4922 performance contract).
  *
  * A long chat session or a long comment thread can contain dozens of Mermaid
  * diagrams and sandboxed HTML iframes. Instantiating them all at once costs a

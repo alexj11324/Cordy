@@ -31,8 +31,8 @@ const EMPTY_CLAIM_VERSION_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// cache" instead.
 const EMPTY_CLAIM_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 
-const EMPTY_CLAIM_CACHE_PREFIX: &str = "mul:claim:runtime:empty:";
-const EMPTY_CLAIM_VERSION_PREFIX: &str = "mul:claim:runtime:version:";
+const EMPTY_CLAIM_CACHE_PREFIX: &str = "patchbay:claim:runtime:empty:";
+const EMPTY_CLAIM_VERSION_PREFIX: &str = "patchbay:claim:runtime:version:";
 
 fn empty_claim_key(runtime_id: &str) -> String {
     format!("{EMPTY_CLAIM_CACHE_PREFIX}{runtime_id}")

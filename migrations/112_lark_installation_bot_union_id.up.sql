@@ -2,14 +2,14 @@
 -- match group-chat @-mentions against the bot's stable cross-app identity
 -- (union_id) instead of the per-app open_id.
 --
--- Why this column exists: Bohan's live-env triage on MUL-2671 showed that
+-- Why this column exists: Bohan's live-env triage on PB-2671 showed that
 -- in a group chat where two Cordy-installed bots are bound, Lark's
 -- `mentions[].id.open_id` field on `im.message.receive_v1` is structurally
 -- inverse to /open-apis/bot/v3/info's `bot.open_id`. The bot whose WS
 -- receives the event sees its OWN payload-form open_id when the OTHER
 -- bot was @-mentioned, and a different open_id when itself was the
 -- target. The only payload field consistent across both perspectives is
--- `union_id` — see the diag-log capture in MUL-2671 review.
+-- `union_id` — see the diag-log capture in PB-2671 review.
 --
 -- Nullable on purpose: installations created before this migration won't
 -- have a union_id until the registration service backfills them (next

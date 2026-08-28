@@ -10,7 +10,7 @@
 --      verification. signing_secret is plaintext at rest, mirroring how
 --      webhook_token already lives — HMAC verification needs the cleartext
 --      and there is no general secrets-at-rest infrastructure to layer on
---      yet (see issue MUL-2334 for the design rationale).
+--      yet (see issue PB-2334 for the design rationale).
 --   2. Create webhook_delivery, one row per inbound HTTP request the public
 --      ingress endpoint accepted (including rejected / ignored outcomes).
 --      Duplicate requests don't get their own row — they bump attempt_count

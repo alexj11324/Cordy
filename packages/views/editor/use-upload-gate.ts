@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The submit gate for composers that accept attachments (MUL-4808).
+ * The submit gate for composers that accept attachments (PB-4808).
  *
  * While a file is still uploading, the editor holds a `blob:` placeholder and
  * the attachment's id does not exist yet. Serializing at that moment emits

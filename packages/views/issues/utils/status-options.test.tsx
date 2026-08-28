@@ -78,7 +78,7 @@ describe("useStatusOptions", () => {
     ]);
   });
 
-  // One flat list, never nested by category (MUL-6399): a custom status sits
+  // One flat list, never nested by category (PB-6399): a custom status sits
   // directly after the built-in of the category it behaves as, so the whole
   // catalog reads top to bottom in canonical order.
   it("places a custom status inline, after the built-in of its category", () => {

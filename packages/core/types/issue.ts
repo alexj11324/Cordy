@@ -7,7 +7,7 @@ import type { IssuePropertyValues } from "./property";
  * defines it, which is why this stayed a closed union while `Issue.status`
  * became open. Board columns, filters and the presentation config are all keyed
  * off categories, so their shape is fixed no matter how many custom statuses a
- * workspace defines. (MUL-6243)
+ * workspace defines.
  */
 export type IssueStatusCategory =
   | "backlog"
@@ -26,7 +26,7 @@ export type IssueStatusCategory =
  * while accepting any catalog key, which is what the server has always been
  * able to send. Anything that needs presentation (label, colour, board column)
  * must resolve the key to its CATEGORY first — `useIssueStatuses(wsId)` in a
- * component, `statusCategoryOfKey` in a pure path. (MUL-6243)
+ * component, `statusCategoryOfKey` in a pure path.
  */
 export type IssueStatus = IssueStatusCategory | (string & {});
 
@@ -66,7 +66,6 @@ export interface Issue {
    * The category `status` belongs to, when the endpoint resolved it. Optional
    * because a BUILT-IN status is its own category and needs no resolution —
    * use `issueStatusCategory(issue)` rather than reading this directly.
-   * (MUL-6243)
    */
   status_category?: IssueStatusCategory;
   priority: IssuePriority;

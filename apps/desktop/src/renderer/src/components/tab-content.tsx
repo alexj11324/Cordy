@@ -13,7 +13,7 @@ import {
 
 /**
  * Renders the active tab session through THE single app router
- * (MUL-4741 single-router session architecture).
+ * (PB-4741 single-router session architecture).
  *
  * Exactly one tab is mounted at a time. Switching tabs remounts this host
  * (the key includes the tab id), and reload() remounts it without switching

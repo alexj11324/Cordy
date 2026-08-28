@@ -64,7 +64,7 @@ interface Props {
   /** Plumbed through so each CommentBody can wire its reaction toggle to
    *  the correct issue's mutation key. */
   issueId: string;
-  /** Human-readable identifier (e.g. `MUL-123`) used to build the shareable
+  /** Human-readable identifier (e.g. `PB-123`) used to build the shareable
    *  web URL for the long-press "Copy Link" item. Optional — that item
    *  hides when missing. */
   issueIdentifier: string | undefined;

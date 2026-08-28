@@ -1,6 +1,6 @@
 /**
  * Names an issue's status when the surface around it only shows the CATEGORY
- * (MUL-6243).
+ * (PB-6243).
  *
  * List sections are categories, so two issues sitting in the same "In Review"
  * section can be on different statuses — "Code Review" and "QA" — with nothing

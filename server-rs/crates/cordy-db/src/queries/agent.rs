@@ -3753,7 +3753,7 @@ WHERE session_id NOT IN (SELECT session_id FROM retired_sessions)
                AND COALESCE(error, '') ~* 'role[^a-z0-9]{0,2}assistant|assistant message|message at position|messages\.[0-9]|messages\[[0-9]')
     )
   )
-  -- MUL-5722: a resume that overflowed the reader names no session, so it can
+  -- PB-5722: a resume that overflowed the reader names no session, so it can
   -- only be excluded by time, not by matching the failed row. Drop every
   -- session whose last terminal activity predates the newest such failure: one
   -- of them IS the oversized thread, and the row that would tell us which is
@@ -5540,7 +5540,7 @@ SET coalesced_comment_ids = (
     ),
     trigger_comment_id = $1::uuid,
     trigger_summary = COALESCE($2, trigger_summary),
-    -- Re-attribution is ATOMIC (MUL-4302): folding a newly-arrived comment moves the
+    -- Re-attribution is ATOMIC (PB-4302): folding a newly-arrived comment moves the
     -- WHOLE attribution snapshot to that comment's human — person columns, source
     -- label, delegation lineage, rule version, and evidence — computed by the caller
     -- as one attribution.Result. Re-stamping only the person columns would leave a

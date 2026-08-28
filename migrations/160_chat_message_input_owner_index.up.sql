@@ -1,4 +1,4 @@
--- Index the task-owned input-batch lookup added in MUL-4351.
+-- Index the task-owned input-batch lookup added in PB-4351.
 --
 -- The direct-chat claim path loads its input with
 --   SELECT * FROM chat_message WHERE task_id = $1 AND role = 'user' ORDER BY created_at

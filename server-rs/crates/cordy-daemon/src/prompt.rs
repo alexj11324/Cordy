@@ -1,6 +1,6 @@
 //! Per-turn prompt assembly for
 //! issue / comment / chat / autopilot / quick-create tasks, plus the
-//! run-scoped context blocks (MUL-5377) appended after the cached prefix.
+//! run-scoped context blocks (PB-5377) appended after the cached prefix.
 //! Shared context sections live in [`crate::runtime_config_sections`].
 
 use crate::execenv::channel_type::{
@@ -107,7 +107,7 @@ fn build_active_sibling_runs_block(
 }
 
 /// `BuildPrompt`: constructs the task prompt for an agent CLI. Run-scoped
-/// context is appended, never prepended (MUL-5377).
+/// context is appended, never prepended (PB-5377).
 pub(crate) fn build_prompt(task: Task, provider: &str) -> String {
     let mut body = build_prompt_body(&task, provider);
     let blocks = per_turn_context_blocks(&task);
@@ -136,7 +136,7 @@ fn build_prompt_body(task: &Task, provider: &str) -> String {
     let mut b = String::new();
     b.push_str("You are running as a local coding agent for a Cordy workspace.\n\n");
     b.push_str(&format!("Your assigned issue ID is: {}\n\n", task.issue_id));
-    // Assignment handoff (MUL-3375).
+    // Assignment handoff (PB-3375).
     if !task.handoff_note.is_empty() {
         b.push_str("You were handed this issue with a handoff note. Treat it as the assigner's scoping instruction for this run; follow it before doing anything broader, and do not reply to it as if it were a comment:\n\n");
         b.push_str(&format!("> {}\n\n", task.handoff_note));
@@ -177,7 +177,7 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
         ));
         b.push_str(&format!("> {}\n\n", task.trigger_comment_content));
 
-        // MUL-4195: folded comments must be addressed too.
+        // PB-4195: folded comments must be addressed too.
         if !task.coalesced_comments.is_empty() {
             b.push_str(&format!(
                 "This run also covers {} earlier comment(s) posted before it started — you must read and address them too, not just the one above. They may be in different threads, so each is reproduced here with its own thread:\n\n",
@@ -222,7 +222,7 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
                 task.issue_id
             ));
         } else if !task.coalesced_comment_ids.is_empty() {
-            // MUL-5442 replacement: per-id lookup instead of `--recent 30`.
+            // PB-5442 replacement: per-id lookup instead of `--recent 30`.
             b.push_str(&format!(
                 "This run also covers {} earlier comment(s) posted before it started — you must read and address every one of them, not just the one above: {}. They may be in DIFFERENT threads, so do not assume they share the triggering thread.\n\n",
                 task.coalesced_comment_ids.len(),
@@ -281,7 +281,7 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
         ));
     }
 
-    // Reply routing (MUL-4348): more than one distinct root thread fans out.
+    // Reply routing (PB-4348): more than one distinct root thread fans out.
     let targets = comment_reply_threads(task);
     if targets.len() >= 2 {
         b.push_str(
@@ -368,7 +368,7 @@ pub(crate) fn build_chat_prompt(task: &Task) -> String {
         ChatAudience::Unknown => b.push_str("Audience: unknown.\n\n"),
         _ => b.push_str("Audience: direct room.\n\n"),
     }
-    // Channel awareness (MUL-3871 / MUL-4899): where the conversation lives is
+    // Channel awareness (PB-3871 / PB-4899): where the conversation lives is
     // per-branch, the no-narration rule is a third axis emitted for every type.
     if !task.chat_channel_type.is_empty() {
         let platform = channel_display_name(&task.chat_channel_type);
@@ -453,7 +453,7 @@ pub(crate) fn build_chat_prompt(task: &Task) -> String {
         b.push_str("When creating an issue that should preserve one of these attachments, pass `--attachment-id <id>` to `cordy issue create` in addition to keeping the attachment markdown inline.\n");
     }
 
-    // Outbound attachments: three answers, not two (MUL-4899). The ONLY place
+    // Outbound attachments: three answers, not two (PB-4899). The ONLY place
     // the verdict is stated.
     if task.chat_channel_type.is_empty() {
         b.push_str("\nTo include a file or image you produced in your reply, run `cordy attachment upload <local-path>`. The file binds to your reply automatically and appears as an attachment card below it even if you paste nothing. The command also returns a `markdown` snippet you may paste on its own line to place the item where you want it (files render as a card, images inline).\n");
@@ -532,7 +532,7 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
     b.push_str("     CC exception: `cordy issue create` has no `--subscriber` flag, and the platform auto-subscribes members whose `[@Name](mention://member/<uuid>)` link appears in the description. When the user wrote \"cc @Y\", strip the verbal \"cc\" wrapper from the User request body and append a final `CC: <mention link(s)>` line to the description so the cc routing still fires.\n\n");
     b.push_str("  2. **Context** — include ONLY when the input cited external resources AND you successfully fetched them AND they produced verifiable facts worth recording. Summarize facts only (e.g. \"PR #45 changes auth to JWT\"), not interpretation or unsolicited reference implementations. If you have nothing factual to add, omit the section entirely — never use it as an apology log for resources you could not fetch.\n\n");
     b.push_str("  Hard rules: never invent requirements, implementation details, or acceptance criteria the user did not express; never reduce multi-sentence input to a single vague sentence; never echo the title.\n\n");
-    b.push_str("  Passing the description: a short, single-line body with no code, quotes, backticks, `$()`, or other special characters may go inline via `--description \"...\"`. Anything multi-line, or containing code snippets / file paths / quotes / backticks / `$()` / special characters, or otherwise long — which quick-create descriptions usually are — MUST be written to `./description.md` and passed with `--description-file ./description.md`; passing rich text inline lets the shell rewrite or truncate it (MUL-2904). That file MUST live inside your current working directory (e.g. `./description.md`) — never `/tmp` or any machine-shared path, where a different run may have left a stale file that would silently become this issue's description. If the file write fails for any reason, stop and fix it; never run `--description-file` against a file whose write did not succeed.\n\n");
+    b.push_str("  Passing the description: a short, single-line body with no code, quotes, backticks, `$()`, or other special characters may go inline via `--description \"...\"`. Anything multi-line, or containing code snippets / file paths / quotes / backticks / `$()` / special characters, or otherwise long — which quick-create descriptions usually are — MUST be written to `./description.md` and passed with `--description-file ./description.md`; passing rich text inline lets the shell rewrite or truncate it (PB-2904). That file MUST live inside your current working directory (e.g. `./description.md`) — never `/tmp` or any machine-shared path, where a different run may have left a stale file that would silently become this issue's description. If the file write fails for any reason, stop and fix it; never run `--description-file` against a file whose write did not succeed.\n\n");
 
     if !task.quick_create_priority.is_empty() {
         b.push_str(&format!(
@@ -626,7 +626,7 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
 
     b.push_str("Output format:\n");
     b.push_str("- Run exactly one `cordy issue create --output json` invocation. Do not retry for any reason — even on non-zero exit. The issue may already exist; another attempt would create a duplicate.\n");
-    b.push_str("- Parse the JSON response to read the created issue's `identifier` (preferred) or `id` (fallback). Do not scrape human output and do not assume any workspace issue prefix such as `MUL-`; workspaces can use custom prefixes.\n");
+    b.push_str("- Parse the JSON response to read the created issue's `identifier` (preferred) or `id` (fallback). Do not scrape human output and do not assume any workspace issue prefix such as `PB-`; workspaces can use custom prefixes.\n");
     b.push_str("- After success, print exactly one line: `Created <identifier-or-id>: <title>` and exit. No commentary, no follow-up tool calls.\n");
     b.push_str("- Do NOT call `cordy issue get` or `cordy issue comment add` — there is no issue to query or comment on.\n");
     b.push_str("- On CLI error or JSON parse error, exit with the error as the only output. The platform writes a failure notification automatically.\n");
@@ -634,7 +634,7 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
 }
 
 /// `taskIsSquadLeader`: leadership is a PER-TASK role. Servers without the
-/// capability fall back to the legacy briefing-marker sniff (MUL-5811).
+/// capability fall back to the legacy briefing-marker sniff (PB-5811).
 pub(crate) fn task_is_squad_leader(task: &Task) -> bool {
     if !task.leader_role_resolved {
         return task

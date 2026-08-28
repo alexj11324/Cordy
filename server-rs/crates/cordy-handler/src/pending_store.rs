@@ -9,7 +9,7 @@
 //! default.
 //!
 //! Redis key formats are preserved byte-for-byte with Go:
-//! `mul:{runtime_pending}:update:req:{id}` etc. Envelope JSON (`{"r":..}` +
+//! `patchbay:{runtime_pending}:update:req:{id}` etc. Envelope JSON (`{"r":..}` +
 //! private side fields) matches as well.
 
 use chrono::{DateTime, Utc};
@@ -29,17 +29,17 @@ pub use memory::{
 };
 
 // Key namespaces (identical to Go).
-pub const UPDATE_KEY_PREFIX: &str = "mul:{runtime_pending}:update:req:";
-pub const UPDATE_PENDING_PREFIX: &str = "mul:{runtime_pending}:update:pending:";
-pub const UPDATE_ACTIVE_PREFIX: &str = "mul:{runtime_pending}:update:active:";
-pub const MODEL_LIST_KEY_PREFIX: &str = "mul:{runtime_pending}:model_list:req:";
-pub const MODEL_LIST_PENDING_PREFIX: &str = "mul:{runtime_pending}:model_list:pending:";
-pub const MODEL_CATALOG_KEY_PREFIX: &str = "mul:runtime_model_catalog:";
-pub const LOCAL_SKILL_LIST_KEY_PREFIX: &str = "mul:{runtime_pending}:local_skill:list:";
-pub const LOCAL_SKILL_LIST_PENDING_PREFIX: &str = "mul:{runtime_pending}:local_skill:list:pending:";
-pub const LOCAL_SKILL_IMPORT_KEY_PREFIX: &str = "mul:{runtime_pending}:local_skill:import:";
+pub const UPDATE_KEY_PREFIX: &str = "patchbay:{runtime_pending}:update:req:";
+pub const UPDATE_PENDING_PREFIX: &str = "patchbay:{runtime_pending}:update:pending:";
+pub const UPDATE_ACTIVE_PREFIX: &str = "patchbay:{runtime_pending}:update:active:";
+pub const MODEL_LIST_KEY_PREFIX: &str = "patchbay:{runtime_pending}:model_list:req:";
+pub const MODEL_LIST_PENDING_PREFIX: &str = "patchbay:{runtime_pending}:model_list:pending:";
+pub const MODEL_CATALOG_KEY_PREFIX: &str = "patchbay:runtime_model_catalog:";
+pub const LOCAL_SKILL_LIST_KEY_PREFIX: &str = "patchbay:{runtime_pending}:local_skill:list:";
+pub const LOCAL_SKILL_LIST_PENDING_PREFIX: &str = "patchbay:{runtime_pending}:local_skill:list:pending:";
+pub const LOCAL_SKILL_IMPORT_KEY_PREFIX: &str = "patchbay:{runtime_pending}:local_skill:import:";
 pub const LOCAL_SKILL_IMPORT_PENDING_PREFIX: &str =
-    "mul:{runtime_pending}:local_skill:import:pending:";
+    "patchbay:{runtime_pending}:local_skill:import:pending:";
 
 fn update_key(id: &str) -> String {
     format!("{UPDATE_KEY_PREFIX}{id}")

@@ -182,7 +182,7 @@ function SubscriberPopoverContent({
    * rewrites the target's reason to 'manual' and clears any opt-out scope
    * in the Rust subscriber query module, which would quietly discard a
    * delegated subscription or someone's deliberate opt-out. So these rows wait
-   * for a real answer, not just for the in-flight mutation (MUL-5714).
+   * for a real answer, not just for the in-flight mutation (PB-5714).
    */
   togglesDisabled: boolean;
   t: ActivityT;
@@ -269,7 +269,7 @@ type ActivityT = ReturnType<typeof useT<"issues">>["t"];
  * Labels a status key from the activity feed. `resolveLabel` is the workspace
  * catalog resolver, which names custom statuses; without it — or for a status
  * since deleted — a built-in still gets its i18n name and anything else falls
- * back to the raw key. (MUL-6243)
+ * back to the raw key. (PB-6243)
  */
 function statusLabel(
   status: string,
@@ -715,7 +715,7 @@ function SubIssueRow({
   const selected = useIssueSelectionStore((s) => s.selectedIds.has(child.id));
   const toggleSelected = useIssueSelectionStore((s) => s.toggle);
   // Category, not key: a custom status in the done/cancelled categories is
-  // finished work and has to strike through like any other. (MUL-6243)
+  // finished work and has to strike through like any other. (PB-6243)
   const isDone = issueBehavesAsAny(child, ["done", "cancelled"]);
   const labels = rowProps.labels ? (child.labels ?? []) : [];
   const customPropsWithValue = customProperties.filter(
@@ -1164,7 +1164,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: allIssues = [] } = useQuery(issueListOptions(wsId));
   const { getActorName } = useActorName();
   const resolveStatusLabel = useStatusLabel(wsId);
-  // The glyph set is per CATEGORY (MUL-6243), so a status-change entry for a
+  // The glyph set is per CATEGORY (PB-6243), so a status-change entry for a
   // custom status drew the same icon as the built-in it sits beside — an
   // "In Review → Awaiting Response" line looked like nothing had moved. Colour
   // is what carries a custom status's own identity, as the inbox row and the
@@ -1237,7 +1237,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Bottom comment composer. Measured when scrolling a freshly posted comment
   // into view so its bottom lands above the composer rather than behind it.
   const composerRef = useRef<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (MUL-4741): the platform serves the offset
+  // Pull-based scroll restoration (PB-4741): the platform serves the offset
   // captured when this route was last left. The ref-attach assignment covers
   // the flat render modes (real heights at commit); the virtualized browsing
   // mode feeds the offset into Virtuoso's initialScrollTop below so the
@@ -1734,7 +1734,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // the panel because the global shortcut has to be able to open it already
   // pinned, and because the rail needs `threadNavHoverId` to light the tick
   // the panel's pointer is resting on — the two navigators share one
-  // coordinate system (MUL-5755).
+  // coordinate system (PB-5755).
   const [threadNavOpen, setThreadNavOpen] = useState(false);
   const [threadNavPinned, setThreadNavPinned] = useState(false);
   const [threadNavHoverId, setThreadNavHoverId] = useState<string | null>(null);
@@ -1819,7 +1819,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // re-fetched on every mount and isSuccess alone still describes the previous
   // visit. The unsubscribe control below picks a different server write from
   // this answer, so a defaulted or stale empty array must not count as "no
-  // sub-issues" (MUL-5714).
+  // sub-issues" (PB-5714).
   const childCountKnown = childIssuesLoaded && !childIssuesFetching;
   // Parent's children — used to render the "x/y" progress next to the
   // "Sub-issue of …" breadcrumb under the title.
@@ -2047,7 +2047,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   // Every image in this issue, in the order the page renders them: the
   // description first, then each timeline comment with its thread replies
-  // nested under it (MUL-5752). Built from `items` rather than the flat
+  // nested under it (PB-5752). Built from `items` rather than the flat
   // timeline so a reply sits next to the root it renders under, and from data
   // rather than the DOM because Virtuoso only mounts the visible window.
   //
@@ -2745,7 +2745,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             z-30: must beat every sticky affordance pinned at the timeline's
             top-0 (comment headers z-10, resolve collapse bars z-20) — at equal
             z the later-in-DOM sticky bar paints over the find bar and orphans
-            its close button (MUL-4414). On desktop it also steps inside the
+            its close button (PB-4414). On desktop it also steps inside the
             thread rail's right-edge strip, so an open find bar can't cover
             the topmost ticks. */}
         {find.open && (
@@ -2872,7 +2872,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         {/* scrollbar-gutter both-edges: with classic (space-taking) scrollbars —
             macOS with a mouse or "always show", Windows, Linux — the global
             `scrollbar-width: thin` carves ~11px off the right side only, so the
-            centered column reads 32px left vs 43px right (MUL-4404). Mirroring
+            centered column reads 32px left vs 43px right (PB-4404). Mirroring
             the gutter restores symmetry; overlay-scrollbar platforms reserve
             nothing and render unchanged. */}
         <div
@@ -3056,7 +3056,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 // whose origin isn't the API host (Desktop/Electron, mobile
                 // webview) — while still working on web via the cookie/proxy.
                 // This mirrors the comment/reply/chat composers, which already
-                // bind via `contentReferencesAttachment` (MUL-3130 / MUL-3192).
+                // bind via `contentReferencesAttachment` (PB-3130 / PB-3192).
                 const ids = descPendingAttachmentsRef.current
                   .filter((a) => contentReferencesAttachment(md, a))
                   .map((a) => a.id);
@@ -3070,7 +3070,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               debounceMs={1500}
               // Closing the issue modal must save what the user last saw —
               // without the flush, a paste followed by a quick close loses
-              // the image markdown and its attachment_ids bind (MUL-3254).
+              // the image markdown and its attachment_ids bind (PB-3254).
               flushPendingOnUnmount
               currentIssueId={id}
               attachments={descEditorAttachments}
@@ -3279,13 +3279,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 {/* A delegated subscription is one the user never opted into
                     by hand — their agent created this issue for them. Saying
                     so is what keeps it from reading as the product quietly
-                    adding them to things (MUL-5483). */}
+                    adding them to things (PB-5483). */}
                 {isSubscribed && subscriptionReason === "delegated" && (
                   <Tooltip>
                     {/* Quiet surface, not plain body text: this is metadata
                         explaining a state, and must not read as a second
                         action sitting next to Unsubscribe. Uses the shared
-                        caption role rather than an ad-hoc size (MUL-5451). */}
+                        caption role rather than an ad-hoc size (PB-5451). */}
                     <TooltipTrigger className="cursor-default rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
                       {t(($) => $.detail.delegated_subscription_badge)}
                     </TooltipTrigger>
@@ -3300,7 +3300,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     subscribed, and a click landing in that window sends a
                     subscribe instead of the unsubscribe they meant. An
                     unresolved state is better shown as no control than as the
-                    wrong one (MUL-5714). */}
+                    wrong one (PB-5714). */}
                 {subscriptionKnown &&
                   (!isSubscribed || (childCountKnown && childIssues.length === 0) ? (
                     /* One button, no menu, when there is nothing for the
@@ -3337,7 +3337,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                           props extend the full div attribute set, an onSelect
                           typechecks and silently lands on the DOM node as the
                           native text-selection event — the handler never runs
-                          (MUL-5710). */}
+                          (PB-5710). */}
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={handleToggleSubscribe}
@@ -3507,7 +3507,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
         {/* Thread quick-jump rail — rides the scroll container's right edge,
             next to the scrollbar, where the pointer already is while
-            scrolling (MUL-4522). right-3 is the inset that works in both
+            scrolling (PB-4522). right-3 is the inset that works in both
             scrollbar modes: it clears a classic scrollbar's ~11px gutter,
             and the rail's own 20px width lands it exactly on the content
             column's px-8 padding when the gutter is 0 (overlay scrollbars),

@@ -66,7 +66,7 @@ export function ChatPage() {
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
   );
   // Drop a stuck pending marker (dead daemon / failed supplement) so the pill
-  // spinner stops and a later refresh starts clean (MUL-5149).
+  // spinner stops and a later refresh starts clean (PB-5149).
   useQuickActionsPendingTimeout(c.activeSessionId ?? null, quickActionsPending);
   // Toast when an accepted refresh later fails in the daemon (async half).
   useQuickActionsFailureToast(c.activeSessionId ?? null);

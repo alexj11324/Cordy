@@ -312,7 +312,7 @@ const PRIMARY_RESERVED_KEYS = new Set([
 // new tab/window, bookmark, view source. A web page cannot reliably own
 // them, but the Electron renderer receives the bare primary chords as plain
 // keydowns — neither Electron's default menu nor the desktop shell binds
-// any of them — so exactly those are recordable on desktop (MUL-4457).
+// any of them — so exactly those are recordable on desktop (PB-4457).
 // Variants with extra modifiers stay reserved on both runtimes: several
 // belong to the OS or window manager (Option+Cmd+D toggles the macOS Dock,
 // Ctrl+Alt+T opens a terminal on common Linux desktops), which even the

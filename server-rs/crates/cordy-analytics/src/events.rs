@@ -40,7 +40,7 @@ pub const EVENT_AUTOPILOT_CREATED: &str = "autopilot_created";
 pub const EVENT_SCHEMA_VERSION: i64 = 2;
 
 /// Every server-side event recorded to Prometheus but deliberately NOT shipped
-/// to PostHog. As of MUL-4127 PostHog no longer receives server-side product
+/// to PostHog. As of PB-4127 PostHog no longer receives server-side product
 /// analytics (the funnel is read from the operational DB and Grafana counters),
 /// so ALL server-side events are metrics-only. PostHog now only receives
 /// frontend error/crash telemetry.
@@ -718,7 +718,7 @@ pub fn onboarding_questionnaire_submitted(
 
 /// Fires when the user's acquisition source transitions from unresolved to
 /// resolved — answered or explicitly declined. Asked by the workspace backfill
-/// prompt after agents have completed work (MUL-5159). The property key is
+/// prompt after agents have completed work (PB-5159). The property key is
 /// `acquisition_source`, not `source`: core properties stamp the event-source
 /// dimension into props["source"] and the acquisition answer must not fight it.
 pub fn onboarding_source_submitted(

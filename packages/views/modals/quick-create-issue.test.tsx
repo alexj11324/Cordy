@@ -18,7 +18,7 @@ const mockSetKeepOpen = vi.hoisted(() => vi.fn());
 const mockSetLastMode = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
 // Uploads flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (MUL-5181 L2).
+// `api.uploadFile(file, ctx, signal)` (PB-5181 L2).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
 const mockNavigationPush = vi.hoisted(() => vi.fn());
 const mockSetShared = vi.hoisted(() => vi.fn());
@@ -67,7 +67,7 @@ const mockQuickCreateStore = {
   setLastActor: mockSetLastActor,
   keepOpen: false,
   setKeepOpen: mockSetKeepOpen,
-  // Not part of the store's interface any more (MUL-5862), but an older
+  // Not part of the store's interface any more (PB-5862), but an older
   // build persisted it and localStorage still hands it back on rehydrate.
   // Kept here so the tests can prove the panel ignores it.
   lastProjectId: null as string | null,
@@ -412,7 +412,7 @@ vi.mock("@cordy/ui/components/ui/switch", () => ({
 
 vi.mock("@cordy/ui/components/common/file-upload-button", () => ({
   // `disabled` is forwarded so the "can still queue another file mid-upload"
-  // guarantee is actually assertable here (MUL-4808).
+  // guarantee is actually assertable here (PB-4808).
   FileUploadButton: ({ disabled }: { disabled?: boolean }) => (
     <button type="button" disabled={disabled}>Upload file</button>
   ),
@@ -644,7 +644,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // MUL-5181 P0: success may only consume the draft it submitted — the editor
+  // PB-5181 P0: success may only consume the draft it submitted — the editor
   // stays interactive during the request, so mid-flight edits must survive.
   it("typing draft B while draft A's quick-create is pending survives the success (mounted)", async () => {
     let resolveCreate!: (v: unknown) => void;
@@ -676,7 +676,7 @@ describe("AgentCreatePanel", () => {
     expect(mockIssueDraftStore.draft.agent.prompt).toBe("Draft B prompt");
   });
 
-  // MUL-5181 P0: a submit that outlives its dialog may only consume the draft
+  // PB-5181 P0: a submit that outlives its dialog may only consume the draft
   // it submitted — never one typed after closing and reopening.
   it("a late quick-create success does NOT clear a draft replaced after close", async () => {
     let resolveCreate!: (v: unknown) => void;
@@ -812,7 +812,7 @@ describe("AgentCreatePanel", () => {
   // re-seeded the pill with it and quietly filed the following issue into the
   // same place. The target project belongs to the issue being filed, not to
   // the user as a standing preference — the actor is the only thing that
-  // carries over now (MUL-5862).
+  // carries over now (PB-5862).
   describe("project is not remembered across creates", () => {
     it("ignores a lastProjectId left behind by an older build", () => {
       mockQuickCreateStore.lastProjectId = "proj-1";
@@ -862,7 +862,7 @@ describe("AgentCreatePanel", () => {
   // BOTH local state and the draft; dropping only local state would leave the
   // next open re-seeding the same dead value and trigger the server's
   // `project not found` rejection. The draft is now the only persisted copy —
-  // the last-create memory is gone (MUL-5862).
+  // the last-create memory is gone (PB-5862).
   it("clears a stale drafted project once the projects list resolves without it", async () => {
     mockIssueDraftStore.draft.shared.projectId = "deleted-proj";
     mockProjectsQuery.data = [];
@@ -878,7 +878,7 @@ describe("AgentCreatePanel", () => {
 
   // Dropping a project used to cost two clicks — open the popover, hit
   // "No project" — because the pill had no clear affordance of its own
-  // (MUL-5862). The × is part of the pill, so it only exists once the field
+  // (PB-5862). The × is part of the pill, so it only exists once the field
   // has a value to drop.
   describe("project pill quick-clear", () => {
     it("has no × while no project is selected", () => {
@@ -935,7 +935,7 @@ describe("AgentCreatePanel", () => {
       setIsExpanded: vi.fn(),
       data: {
         parent_issue_id: "parent-uuid-1",
-        parent_issue_identifier: "MUL-2534",
+        parent_issue_identifier: "PB-2534",
       },
     });
 
@@ -970,7 +970,7 @@ describe("AgentCreatePanel", () => {
     expect(screen.queryByTestId("agent-sub-issue-chip")).toBeNull();
   });
 
-  // MUL-4808 — Quick Create already gated Create; these pin the two gaps:
+  // PB-4808 — Quick Create already gated Create; these pin the two gaps:
   // the mode switch (which re-serializes the prompt into the manual draft)
   // and the file button that used to lock during an upload for no reason.
   describe("upload submit gate", () => {
@@ -1011,7 +1011,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // MUL-4931 — this path files a real issue, so a double-fire is a duplicate
+  // PB-4931 — this path files a real issue, so a double-fire is a duplicate
   // issue, not a cosmetic glitch. `submitting` is state: two chords landing in
   // one tick both read the pre-update value, so only a synchronously-flipped
   // ref can gate it. Mirrors the manual-create regression.
@@ -1047,7 +1047,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // MUL-6236 — the footer reflows to a 2x2 grid on phones. jsdom has no
+  // PB-6236 — the footer reflows to a 2x2 grid on phones. jsdom has no
   // layout, so these pin the two structural preconditions the grid depends
   // on rather than the rendered geometry.
   describe("phone footer layout", () => {

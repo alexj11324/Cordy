@@ -72,8 +72,8 @@ describe("worktree-dev-env", () => {
   });
 
   it("suffix is '<folder>-<offset>' so it stays recognizable and unique", () => {
-    expect(appSuffixForPath("/work/MUL-3724_Desktop")).toBe(
-      `mul-3724-desktop-${offsetForPath("/work/MUL-3724_Desktop")}`,
+    expect(appSuffixForPath("/work/PB-3724_Desktop")).toBe(
+      `pb-3724-desktop-${offsetForPath("/work/PB-3724_Desktop")}`,
     );
     expect(appSuffixForPath("/work/feat/some thing")).toBe(
       `some-thing-${offsetForPath("/work/feat/some thing")}`,

@@ -141,7 +141,7 @@ export function initAnalytics(config: AnalyticsConfig | null | undefined): boole
     //
     // After scrubbing, a session-level fuse drops repeats of the same error so
     // a render loop or a polling fetch that keeps throwing can't emit 100+
-    // identical `$exception` events per session (MUL-3331). The fingerprint is
+    // identical `$exception` events per session (PB-3331). The fingerprint is
     // built only from the already-redacted fields, so no PII reaches storage.
     // Order matters: redact first, then fingerprint the redacted shape.
     capture_exceptions: true,
@@ -252,7 +252,7 @@ export interface CaptureEventOptions {
    * Bypass posthog-js's batching timer and put the event on the wire now.
    * Batching is a JS timer in the same thread that is about to freeze or be
    * killed, so a failure report queued normally can be lost exactly when it
-   * matters (MUL-4115: three deterministic hangs, zero events delivered).
+   * matters (PB-4115: three deterministic hangs, zero events delivered).
    * Reserve this for failure telemetry — routine events should batch.
    */
   sendInstantly?: boolean;

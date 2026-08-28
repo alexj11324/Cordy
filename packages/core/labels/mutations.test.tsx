@@ -42,7 +42,7 @@ const issue: Issue = {
   id: "issue-1",
   workspace_id: "ws-1",
   number: 1,
-  identifier: "MUL-1",
+  identifier: "PB-1",
   title: "Child",
   description: null,
   status: "todo",

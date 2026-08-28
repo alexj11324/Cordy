@@ -196,7 +196,7 @@ fn is_trusted_proxy(ip: &IpAddr, cidrs: &[IpNetwork]) -> bool {
 
 fn rate_limit_key(path: &str, ip: &str) -> String {
     let sanitized = path.strip_prefix('/').unwrap_or(path).replace('/', ":");
-    format!("mul:ratelimit:{sanitized}:{ip}")
+    format!("patchbay:ratelimit:{sanitized}:{ip}")
 }
 
 #[cfg(test)]
@@ -215,9 +215,9 @@ mod tests {
     fn key_sanitizes_path_segments() {
         assert_eq!(
             rate_limit_key("/api/issues/123", "1.2.3.4"),
-            "mul:ratelimit:api:issues:123:1.2.3.4"
+            "patchbay:ratelimit:api:issues:123:1.2.3.4"
         );
-        assert_eq!(rate_limit_key("/", "1.2.3.4"), "mul:ratelimit::1.2.3.4");
+        assert_eq!(rate_limit_key("/", "1.2.3.4"), "patchbay:ratelimit::1.2.3.4");
     }
 
     #[test]

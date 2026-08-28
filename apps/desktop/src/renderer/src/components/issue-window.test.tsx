@@ -78,10 +78,10 @@ import { IssueWindow } from "./issue-window";
 
 const context = {
   kind: "issue" as const,
-  path: "/acme/issues/MUL-1",
-  title: "MUL-1",
+  path: "/acme/issues/PB-1",
+  title: "PB-1",
   workspaceSlug: "acme",
-  issueId: "MUL-1",
+  issueId: "PB-1",
 };
 
 beforeEach(() => {

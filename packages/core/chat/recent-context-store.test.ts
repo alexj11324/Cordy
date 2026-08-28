@@ -39,7 +39,7 @@ describe("useRecentContextStore.recordVisit", () => {
     recordVisit("ws-a", {
       type: "issue",
       id: "issue-1",
-      label: "MUL-1",
+      label: "PB-1",
       subtitle: "Fix login redirect",
       status: "todo",
       projectStatus: "in_progress",
@@ -49,7 +49,7 @@ describe("useRecentContextStore.recordVisit", () => {
     expect(useRecentContextStore.getState().byWorkspace["ws-a"]?.[0]).toMatchObject({
       type: "issue",
       id: "issue-1",
-      label: "MUL-1",
+      label: "PB-1",
       subtitle: "Fix login redirect",
       status: "todo",
       projectStatus: "in_progress",

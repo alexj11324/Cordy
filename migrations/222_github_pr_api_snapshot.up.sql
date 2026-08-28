@@ -1,4 +1,4 @@
--- MUL-5265: GitHub API snapshot for PR cards (Plan C).
+-- PB-5265: GitHub API snapshot for PR cards (Plan C).
 --
 -- The PR card's CI status and mergeability are now sourced from an
 -- authenticated GitHub API snapshot (GraphQL pullRequest query) rather than

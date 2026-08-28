@@ -121,7 +121,7 @@ pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(30);
 /// `DefaultHeartbeatInterval`.
 pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 /// `DefaultAgentTimeout`: optional absolute wall-clock cap on a single agent
-/// run. 0 = no cap (MUL-3064); set CORDY_AGENT_TIMEOUT for a hard ceiling.
+/// run. 0 = no cap (PB-3064); set CORDY_AGENT_TIMEOUT for a hard ceiling.
 pub const DEFAULT_AGENT_TIMEOUT: Duration = Duration::ZERO;
 /// `DefaultCodexSemanticInactivityTimeout`.
 pub const DEFAULT_CODEX_SEMANTIC_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(600);
@@ -130,11 +130,11 @@ pub const DEFAULT_CODEX_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 /// `DefaultOpenCodeIdleWatchdog`: OpenCode streams incrementally, so its
 /// no-message budget is shorter than the generic idle watchdog.
 pub const DEFAULT_OPENCODE_IDLE_WATCHDOG: Duration = Duration::from_secs(600);
-/// `DefaultAgentIdleWatchdog` (MUL-2300): per-task safety net for runs whose
+/// `DefaultAgentIdleWatchdog` (PB-2300): per-task safety net for runs whose
 /// backend went fully silent with an empty queue; 30 min keeps the net for
 /// truly stuck runs while leaving headroom for long writes.
 pub const DEFAULT_AGENT_IDLE_WATCHDOG: Duration = Duration::from_secs(1800);
-/// `DefaultAgentToolWatchdog` (MUL-3064): bounds a single in-flight tool call
+/// `DefaultAgentToolWatchdog` (PB-3064): bounds a single in-flight tool call
 /// now that there is no wall-clock cap. 0 disables.
 pub const DEFAULT_AGENT_TOOL_WATCHDOG: Duration = Duration::from_secs(7200);
 /// `DefaultRuntimeName`.
@@ -254,7 +254,7 @@ pub struct Config {
     pub qwen_args: Vec<String>,
     pub qwenpaw_args: Vec<String>,
     /// Custom runtime profile_id → absolute executable path on THIS machine
-    /// (MUL-3284). Empty means always resolve via PATH.
+    /// (PB-3284). Empty means always resolve via PATH.
     pub profile_command_overrides: BTreeMap<String, String>,
 }
 
@@ -344,7 +344,7 @@ pub(crate) fn load_config(
         }
     }
 
-    // Discover installed agent CLIs (MUL-5439 re-runs this live).
+    // Discover installed agent CLIs (PB-5439 re-runs this live).
     let agents = probe_agents();
     if agents.is_empty() && !overrides.allow_no_agents {
         anyhow::bail!(
@@ -536,7 +536,7 @@ pub(crate) fn load_config(
         &default_gc_artifact_patterns(),
     );
 
-    // Auto-update: opt-in on official cloud, opt-out self-host (MUL-2381).
+    // Auto-update: opt-in on official cloud, opt-out self-host (PB-2381).
     let mut auto_update_enabled = crate::helpers::bool_from_env(
         "CORDY_DAEMON_AUTO_UPDATE",
         is_official_cloud_server(&server_base_url),
@@ -860,7 +860,7 @@ pub(crate) fn resolve_agent_executable_path(cmd: &str) -> anyhow::Result<String>
 }
 
 /// `agentExecutablePresent` (config.go:748): a pinned path that no longer
-/// LookPaths has vanished from disk (MUL-4486).
+/// LookPaths has vanished from disk (PB-4486).
 pub(crate) fn agent_executable_present(path: &str) -> bool {
     !path.is_empty() && look_path(path).is_ok()
 }

@@ -23,7 +23,7 @@ describe("nameToWorkspaceSlug", () => {
     expect(nameToWorkspaceSlug("a.b.c")).toBe("a-b-c");
   });
 
-  // MUL-6050: a Chinese name used to produce no slug at all, which left the
+  // PB-6050: a Chinese name used to produce no slug at all, which left the
   // create form with an empty URL *and* an empty issue prefix — the two
   // fields that make a workspace identifiable.
   it("romanizes Chinese names into a slug", () => {

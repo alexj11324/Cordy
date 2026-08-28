@@ -1,5 +1,5 @@
 //! Canonical execution-admission vocabulary — port of
-//! Execution-admission vocabulary (MUL-4525).
+//! Execution-admission vocabulary (PB-4525).
 //!
 //! A [`ReasonCode`] is decided at the branch that blocks/skips a run and
 //! carried through to the response verbatim; it is never reverse-engineered
@@ -33,14 +33,14 @@ pub enum ReasonCode {
     /// The target is bound to a runtime whose machine is reachable, but whose
     /// agent CLI cannot be executed there — the npm placeholder stub left
     /// behind when a package's postinstall was blocked is the case in the
-    /// field (MUL-6164). Distinct from [`ReasonCode::RuntimeOffline`] for the
+    /// field (PB-6164). Distinct from [`ReasonCode::RuntimeOffline`] for the
     /// same reason agent_runtime_required is: waiting changes nothing here.
     /// The machine is already on, and the fix is a command the user runs on
     /// it, which the daemon reports with this verdict so clients can show it.
     RuntimeUnusable,
     /// The target is permitted but bound to no runtime at all
     /// (agent.runtime_id IS NULL), which is where an agent lands when its
-    /// runtime is deleted (MUL-5559). Distinct from
+    /// runtime is deleted (PB-5559). Distinct from
     /// [`ReasonCode::RuntimeOffline`] on purpose: there is no machine to
     /// bring back, nothing will ever claim work for this agent, and the only
     /// fix is binding it to a runtime. Clients that collapse the two send the

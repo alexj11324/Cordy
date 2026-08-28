@@ -12,12 +12,12 @@ describe("issue window request", () => {
     expect(
       parseIssueWindowRequest({
         path: "/acme/issues/issue-123?comment=comment-1#activity",
-        title: "  MUL-1: Fix tabs  ",
+        title: "  PB-1: Fix tabs  ",
       }),
     ).toEqual({
       kind: "issue",
       path: "/acme/issues/issue-123?comment=comment-1#activity",
-      title: "MUL-1: Fix tabs",
+      title: "PB-1: Fix tabs",
       workspaceSlug: "acme",
       issueId: "issue-123",
     });
@@ -50,13 +50,13 @@ describe("issue window request", () => {
   it("round-trips a validated request through Electron additionalArguments", () => {
     const argument = encodeIssueWindowArgument({
       path: "/acme/issues/issue-1",
-      title: "MUL-1: Fix tabs",
+      title: "PB-1: Fix tabs",
     });
 
     expect(readDesktopWindowContext(["electron", argument])).toEqual({
       kind: "issue",
       path: "/acme/issues/issue-1",
-      title: "MUL-1: Fix tabs",
+      title: "PB-1: Fix tabs",
       workspaceSlug: "acme",
       issueId: "issue-1",
     });

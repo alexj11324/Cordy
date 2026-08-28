@@ -9,7 +9,7 @@ import type { DaemonStatus } from "../../../shared/daemon-types";
  * The onboarding runtime step reads this so it keeps showing the scanning
  * skeleton instead of flashing "no runtime found" while the daemon is still
  * probing CLI versions — a false negative on a machine that does have coding
- * tools installed (MUL-5119). The daemon's `/health` `agents` list comes from
+ * tools installed (PB-5119). The daemon's `/health` `agents` list comes from
  * its boot-time PATH scan, so it is populated well before the slower
  * version-registration finishes, which is exactly what makes it a reliable
  * "runtimes are coming" hint.

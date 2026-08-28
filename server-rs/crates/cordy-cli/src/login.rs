@@ -99,10 +99,10 @@ pub(crate) fn build_workspace_creation_url(app_url: &str) -> Result<String> {
 }
 
 pub(crate) fn validate_login_token(token: &str) -> Result<()> {
-    if token.starts_with("mul_") || token.starts_with("mcn_") {
+    if token.starts_with("pby_") || token.starts_with("mcn_") {
         return Ok(());
     }
-    bail!("invalid token format: must start with mul_ or mcn_")
+    bail!("invalid token format: must start with pby_ or mcn_")
 }
 
 pub(crate) async fn run_browser_login(

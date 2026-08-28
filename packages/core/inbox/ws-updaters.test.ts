@@ -80,7 +80,7 @@ describe("onInboxIssueDeleted", () => {
 describe("onInboxInvalidate", () => {
   it("invalidates the workspace prefix, covering both the main and archived lists", () => {
     // Every inbox event can move an item across the two lists, so they are
-    // always refreshed together (MUL-3736).
+    // always refreshed together (PB-3736).
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
 

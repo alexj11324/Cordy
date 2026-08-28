@@ -299,7 +299,7 @@ pub fn resolve_mentions(
 /// is_bot_mention identifies whether a payload mention refers to THIS bot.
 /// Stays in lockstep with contains_mention: when union_id is known we trust
 /// it exclusively (open_id is structurally inverted in multi-bot groups —
-/// matching on it would re-introduce the MUL-2671 routing bug). Only when
+/// matching on it would re-introduce the PB-2671 routing bug). Only when
 /// union_id is missing do we fall back to open_id, which is correct in
 /// single-bot installs and the best we can do in pre-backfill rows.
 fn is_bot_mention(m: &LarkMention, bot_open_id: &str, bot_union_id: &str) -> bool {
@@ -323,7 +323,7 @@ pub(crate) fn normalize_chat_type(t: &str) -> ChatType {
 /// contains_mention answers "was THIS bot @-mentioned in this group event".
 ///
 /// The bot's stable identifier across WS perspectives is `union_id` — see
-/// MUL-2671 group-@-mention triage. In a Lark group with several Cordy bots,
+/// PB-2671 group-@-mention triage. In a Lark group with several Cordy bots,
 /// each bot's WS receives the event, and Lark fills
 /// `mentions[].id.open_id` with the per-app form for whichever bot it is
 /// talking to: bot X's WS sees X's payload-form open_id when bot Y was @-ed,

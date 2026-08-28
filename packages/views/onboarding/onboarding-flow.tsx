@@ -120,7 +120,7 @@ interface OnboardingFlowProps {
   onRuntimeRefresh?: () => void | Promise<void>;
   /** Desktop wires this to the local daemon's live status so the runtime
    *  step doesn't flash "no runtime found" while the daemon is still booting
-   *  or probing CLI versions (MUL-5119). Web omits it. */
+   *  or probing CLI versions (PB-5119). Web omits it. */
   runtimesPending?: boolean;
 }
 

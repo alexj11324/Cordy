@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Comment-composer binding for the coordinated-upload engine (MUL-5181, L2).
+ * Comment-composer binding for the coordinated-upload engine (PB-5181, L2).
  *
  * All upload mechanics — coordinator ownership, generation guards, the
  * confirmed write-back of a finished upload's link into the draft body, the

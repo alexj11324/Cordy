@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Import boundary guard (MUL-4922, Howard's contract #3).
+ * Import boundary guard (PB-4922, Howard's contract #3).
  *
  * The point of this sweep is that there is exactly ONE product-level readonly
  * renderer. That property is not self-enforcing: the cheapest way to add a
@@ -102,7 +102,7 @@ describe("RichContent import boundary", () => {
     // The Tiptap NodeView is the one sanctioned exception (constraint 6): the
     // EDITABLE code block owns its own preview-toggle lifecycle while the user
     // types, and reuses the same leaf components rather than the readonly
-    // renderer. Rewriting the editor is explicitly out of scope for MUL-4922.
+    // renderer. Rewriting the editor is explicitly out of scope for PB-4922.
     // Narrow, named, and justified — not a general loophole.
     const TIPTAP_NODEVIEW = "editor/extensions/code-block-view.tsx";
 

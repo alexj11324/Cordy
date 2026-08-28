@@ -87,32 +87,32 @@ cordy workspace member invite admin@example.com --role admin
 ```bash
 # View and search
 cordy issue list
-cordy issue get MUL-123
+cordy issue get PB-123
 cordy issue search "login failure"
 
 # Create and update
 cordy issue create --title "Fix login failure"
-cordy issue status MUL-123 in_progress
-cordy issue assign MUL-123 --to "Backend Agent"
+cordy issue status PB-123 in_progress
+cordy issue assign PB-123 --to "Backend Agent"
 
 # Comments and runs
-cordy issue comment list MUL-123
-cordy issue comment add MUL-123 --content "Check the regression tests first"
-cordy issue runs MUL-123
+cordy issue comment list PB-123
+cordy issue comment add PB-123 --content "Check the regression tests first"
+cordy issue runs PB-123
 ```
 
 Read long descriptions or comments from stdin to avoid dealing with newlines and quoting:
 
 ```bash
 cordy issue create --title "Upgrade notes" --description-stdin < notes.md
-cordy issue comment add MUL-123 --content-stdin < review.md
+cordy issue comment add PB-123 --content-stdin < review.md
 ```
 
 View the messages of a single run, or stop a task:
 
 ```bash
-cordy issue run-messages <task-id> --issue MUL-123
-cordy issue cancel-task <task-id> --issue MUL-123
+cordy issue run-messages <task-id> --issue PB-123
+cordy issue cancel-task <task-id> --issue PB-123
 ```
 
 ## Agents and skills
@@ -180,7 +180,7 @@ See [Daemon and runtimes](/daemon-runtimes) for how it works and for custom prof
 
 ## IDs and output formats
 
-Issues use keys like `MUL-123` or full UUIDs; short UUID prefixes are not accepted.
+Issues use keys like `PB-123` or full UUIDs; short UUID prefixes are not accepted.
 
 `list` commands for other resources usually print copyable short IDs and support `--full-id` for the full UUID. When a short ID is ambiguous, the CLI asks for more characters or the full UUID. Short task IDs also require `--issue` to identify the owning issue.
 

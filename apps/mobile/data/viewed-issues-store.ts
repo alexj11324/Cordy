@@ -9,7 +9,7 @@
  *   - Persistence can be a follow-up if users miss it
  *
  * Why per-workspace:
- *   - Viewing MUL-1 in workspace A shouldn't surface it in workspace B's
+ *   - Viewing PB-1 in workspace A shouldn't surface it in workspace B's
  *     chat — different agents, different context
  *
  * Capacity 10 per workspace: enough for "the last few things I looked

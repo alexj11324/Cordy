@@ -136,7 +136,7 @@ newly-added color fields** — they will also ship light-mode defaults.
 
 **Inline code chip top-heavy padding** — visible as `~13pt empty space
 above` vs `~3pt below` glyphs in chips inside CJK paragraphs (seen in
-#MUL-2397 and #MUL-2395 dark screenshots, 2026-05-19).
+#PB-2397 and #PB-2395 dark screenshots, 2026-05-19).
 
 - **Root cause**: enriched-markdown applies hardcoded internal padding
   to inline code that cannot be turned off via `markdownStyle.code`. The

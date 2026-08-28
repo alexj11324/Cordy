@@ -30,7 +30,7 @@ function makeRuntime(overrides: Partial<AgentRuntime> = {}): AgentRuntime {
 // the identical predicate (canUseRuntimeForAgent in
 // Rust runtime handler). Keep the two in step: a runtime this
 // says is usable but the server refuses is a picker that 403s on submit —
-// the MUL-6126 bug — and the reverse is a runtime the UI hides for no reason.
+// the PB-6126 bug — and the reverse is a runtime the UI hides for no reason.
 describe("isRuntimeUsableForUser", () => {
   it("lets the owner use their own private runtime", () => {
     expect(isRuntimeUsableForUser(makeRuntime(), OWNER)).toBe(true);
@@ -47,7 +47,7 @@ describe("isRuntimeUsableForUser", () => {
   });
 
   it("refuses an ownerless runtime whatever its visibility", () => {
-    // No owner means no task token at claim time (MUL-3292), so a bind here
+    // No owner means no task token at claim time (PB-3292), so a bind here
     // could only produce agents that fail the moment they run.
     expect(isRuntimeUsableForUser(makeRuntime({ owner_id: null }), OTHER)).toBe(
       false,

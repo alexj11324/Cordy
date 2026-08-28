@@ -261,23 +261,14 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   },
 
   about: {
-    title: "About Cordy",
-    nameLine: {
-      prefix: "Cordy \u2014 ",
-      mul: "Mul",
-      tiplexed: "tiplexed ",
-      i: "I",
-      nformationAnd: "nformation and ",
-      c: "C",
-      omputing: "omputing ",
-      a: "A",
-      gent: "gent.",
-    },
+    title: "About Patchbay",
+    nameLine:
+      "Patchbay is a visible routing surface for human and AI work.",
     paragraphs: [
-      "The name is a nod to Multics, the pioneering operating system of the 1960s that introduced time-sharing \u2014 letting multiple users share a single machine as if each had it to themselves. Unix was born as a deliberate simplification of Multics: one user, one task, one elegant philosophy.",
-      "We think the same inflection is happening again. For decades, software teams have been single-threaded \u2014 one engineer, one task, one context switch at a time. AI agents change that equation. Cordy brings time-sharing back, but for an era where the \u201cusers\u201d multiplexing the system are both humans and autonomous agents.",
-      "In Cordy, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code \u2014 just like their human colleagues. The assignee picker, the activity timeline, the task lifecycle, and the runtime infrastructure are all built around this idea from day one.",
-      "Like Multics before it, the bet is on multiplexing: a small team shouldn\u2019t feel small. With the right system, two engineers and a fleet of agents can move like twenty.",
+      "The name comes from a physical patch bay: a panel where connections are visible, intentional, and easy to reroute without hiding the path between inputs and outputs.",
+      "AI agents make it possible to move many tasks at once, but parallel work is only useful when goals, dependencies, ownership, and handoffs stay connected. Patchbay keeps that routing on one shared surface.",
+      "In Patchbay, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code alongside their human colleagues. The assignee picker, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
+      "Small teams can coordinate a fleet of agents without giving up visibility or human control. People set direction and review outcomes; agents keep well-scoped work moving.",
       "The platform is fully open source and self-hostable. Your data stays on your infrastructure. Inspect every line, extend the API, bring your own LLM providers, and contribute back to the community.",
     ],
     cta: "View on GitHub",
@@ -1195,7 +1186,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "You can now run your agents on the new Codex gpt-5.6 models — Sol, Terra, and Luna.",
-          "Type or paste an issue key like MUL-123 and it turns into a clickable issue link on its own.",
+          "Type or paste an issue key like PB-123 and it turns into a clickable issue link on its own.",
           "When you upload an avatar, you can now crop, zoom, and rotate it before saving.",
           "When an agent ends without a text reply, chat now shows a clear no-reply note instead of a blank message.",
           "Mention a busy agent across several separate comment threads and each thread now gets its own answer.",
@@ -1306,7 +1297,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The Codex agent's MCP settings are applied correctly again.",
           "The Pi agent's task result now shows only the final answer — intermediate thinking is hidden.",
           "Autopilots no longer accidentally run the same Issue twice in a row when a run takes longer than expected.",
-          "An Issue's PR list only shows PRs that really target that Issue — PRs that just mention the key in passing (\"Related to MUL-…\") no longer appear.",
+          "An Issue's PR list only shows PRs that really target that Issue — PRs that just mention the key in passing (\"Related to PB-…\") no longer appear.",
           "The Issue action menu's nested \"More\" item is now called \"Relations\", so you can tell what's inside without opening it.",
           "Every attachment upload button — chat, Issue creation, Issue description, feedback — now lets you pick multiple files at once from the system file dialog.",
         ],
@@ -1403,7 +1394,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Slack channels can backfill their conversation history into Cordy, so an agent has the prior context the moment it joins.",
           "Slack messages show a 👀 reaction while an agent is preparing its reply, and the reaction is always cleared on the way out.",
           "Skill bundles can be installed from a local .skill or .zip archive.",
-          "cordy issue commands no longer accept short UUID prefixes — use the issue key (MUL-123) or the full UUID.",
+          "cordy issue commands no longer accept short UUID prefixes — use the issue key (PB-123) or the full UUID.",
           "The Agents page is now usable on mobile.",
         ],
         improvements: [
@@ -2335,7 +2326,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "New `cordy daemon disk-usage` CLI surfaces per-task and per-workspace disk footprint",
           "Skill picker in agent settings has a search box for fast lookup",
           "Daemon GC extends to chat, autopilot, and quick-create tasks",
-          "Issue detail breadcrumb now shows the MUL-xxxx identifier for quick reference",
+          "Issue detail breadcrumb now shows the PB-xxxx identifier for quick reference",
         ],
         improvements: [
           "Timeline page size bumped to 50, with per-pool keyset cursors for comments and activities",
@@ -2857,7 +2848,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Sidebar redesign — Personal / Workspace grouping, user profile footer, ⌘K search input",
-          "Search ranking — case-insensitive matching, identifier search (MUL-123), multi-word support",
+          "Search ranking — case-insensitive matching, identifier search (PB-123), multi-word support",
           "Search result keyword highlighting",
           "Daily token usage chart with cleaner Y-axis and per-category tooltip",
           "Master Agent multiline input support",

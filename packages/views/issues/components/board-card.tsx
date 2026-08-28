@@ -202,7 +202,7 @@ export const BoardCardContent = memo(function BoardCardContent({
 
       {/* Chip row: status + project + labels + custom property values.
           The status chip renders only for a CUSTOM status — the column header
-          already names the category. (MUL-6243) */}
+          already names the category. (PB-6243) */}
       {(showCustomStatus || showProject || showLabels || cardCustomProperties.length > 0) && (
         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
           <CustomStatusChip status={issue.status} />

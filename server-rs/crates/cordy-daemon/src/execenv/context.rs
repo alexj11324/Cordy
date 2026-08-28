@@ -422,7 +422,7 @@ fn roll_back_manifest(m: &SidecarManifest, manifest_path: Option<&str>) -> anyho
 
 /// Undoes the sidecar writes of a Prepare that failed before it could persist
 /// the manifest, using the in-memory manifest Prepare was still filling in
-/// (MUL-6132). There is no manifest file to remove.
+/// (PB-6132). There is no manifest file to remove.
 pub(crate) fn roll_back_prepared_sidecars(m: &SidecarManifest) -> anyhow::Result<()> {
     roll_back_manifest(m, None)
 }
@@ -709,7 +709,7 @@ pub(crate) fn sanitize_skill_name(name: &str) -> String {
 /// `name` is the one key Cordy must own: runtimes disagree on which field
 /// identifies a skill (Claude routes on the directory name, OpenCode on the
 /// frontmatter `name`), so letting the two diverge gives a single skill two
-/// different invocable names depending on where it runs (MUL-5529).
+/// different invocable names depending on where it runs (PB-5529).
 pub(crate) fn ensure_skill_frontmatter(content: &str, slug: &str, description: &str) -> String {
     let Some(fm_start) = frontmatter_body_start(content) else {
         return synthesize_frontmatter(content, slug, description);
@@ -1184,7 +1184,7 @@ pub(crate) fn render_issue_context(ctx: &TaskContextForEnv) -> String {
         b.push_str("**Trigger:** New Assignment\n\n");
     }
 
-    // Assignment handoff note (MUL-3375): the assigner's scoping instruction
+    // Assignment handoff note (PB-3375): the assigner's scoping instruction
     // for this run. Distinct from a comment — there is no thread to reply to.
     if !ctx.handoff_note.is_empty() {
         b.push_str("## Handoff Note\n\n");
@@ -1203,7 +1203,7 @@ pub(crate) fn render_issue_context(ctx: &TaskContextForEnv) -> String {
 
 /// Renders issue_context.md for quick-create tasks. This file carries only
 /// task data (the user input); behavioral rules live in AGENTS.md and the
-/// per-turn prompt (MUL-5529).
+/// per-turn prompt (PB-5529).
 fn render_quick_create_context(ctx: &TaskContextForEnv) -> String {
     let mut b = String::new();
     b.push_str("# Quick Create\n\n");

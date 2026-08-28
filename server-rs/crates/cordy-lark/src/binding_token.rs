@@ -107,7 +107,7 @@ pub struct ErrBindingTokenInvalid;
 pub struct ErrBindingAlreadyAssigned;
 
 /// Returned when the user is not (or no longer) a member of the target
-/// workspace, detected by an explicit membership check (MUL-3515 §4 removed
+/// workspace, detected by an explicit membership check (PB-3515 §4 removed
 /// the member FK that used to enforce this). Translated to 403 at the HTTP
 /// boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -200,7 +200,7 @@ impl BindingTokenService {
             };
 
         // Explicit membership gate. The binding → member FK that used to
-        // reject a non-member redeemer is gone (MUL-3515 §4), so we check it
+        // reject a non-member redeemer is gone (PB-3515 §4), so we check it
         // here. Returning before Commit rolls the consume back, so a
         // non-member's attempt does not burn the token — same outcome the FK
         // violation produced.
@@ -289,7 +289,7 @@ impl InstallerBinder for BindingTokenService {
         p: InstallerBindParams,
     ) -> anyhow::Result<()> {
         // Explicit membership gate, replacing the removed member FK
-        // (MUL-3515 §4): the installer must be a member of the workspace they
+        // (PB-3515 §4): the installer must be a member of the workspace they
         // are binding into.
         let is_member = is_workspace_member_on(&mut *executor, p.workspace_id, p.cordy_user_id)
             .await

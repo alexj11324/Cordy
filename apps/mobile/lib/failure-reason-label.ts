@@ -6,8 +6,8 @@
  *
  * Keyed by the raw wire value rather than a closed enum, same as the web map:
  * `failure_reason` is an open string that grows as classifier rules land, and
- * an installed build will meet reasons it predates. Before MUL-5370 this was a
- * `Record<TaskFailureReason, string>` holding only the six pre-MUL-1949 coarse
+ * an installed build will meet reasons it predates. Before PB-5370 this was a
+ * `Record<TaskFailureReason, string>` holding only the six pre-PB-1949 coarse
  * values, so every refined `agent_error.*` the backend has written since
  * missed the lookup and rendered a bare "Failed".
  *
@@ -47,7 +47,7 @@ const LABELS: Record<string, string> = {
   "agent_error.runtime_missing_executable": "Runner CLI not installed",
   "agent_error.unknown": "Agent execution error",
 
-  // Pre-MUL-1949 coarse values, still present on historical rows.
+  // Pre-PB-1949 coarse values, still present on historical rows.
   agent_error: "Agent execution error",
   codex_semantic_inactivity: "Codex semantic inactivity timeout",
   manual: "Cancelled by user",

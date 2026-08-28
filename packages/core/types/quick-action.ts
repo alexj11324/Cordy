@@ -1,5 +1,5 @@
 /**
- * Issue Quick Actions (MUL-5465) — workspace-level presets for "who to call
+ * Issue Quick Actions (PB-5465) — workspace-level presets for "who to call
  * and what to say" on an existing issue.
  *
  * Running one is not a separate dispatch path: the server renders the prompt,

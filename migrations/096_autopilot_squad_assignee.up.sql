@@ -1,4 +1,4 @@
--- Autopilot: support assigning to a squad (MUL-2429).
+-- Autopilot: support assigning to a squad (PB-2429).
 --
 -- Path A "Squad-as-Leader": when an autopilot's assignee is a squad, dispatch
 -- still resolves to a single agent (squad.leader_id) — same semantics as a

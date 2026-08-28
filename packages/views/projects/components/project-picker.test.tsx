@@ -111,7 +111,7 @@ describe("ProjectPicker", () => {
   });
 
   it("locks every mutation path when disabled", async () => {
-    // Regression (MUL-5150): a keyboard user could Tab to the inline clear
+    // Regression (PB-5150): a keyboard user could Tab to the inline clear
     // button and detach the project while a chat send was in flight,
     // retargeting the lazily-created session. With clearing moved into the
     // popover, `disabled` has a single path to close — the popover.

@@ -1,6 +1,6 @@
 //! Channel-backed store domain types for the Feishu integration.
 //!
-//! MUL-3515 generalized the lark_* tables into channel_* (a channel_type
+//! PB-3515 generalized the lark_* tables into channel_* (a channel_type
 //! discriminator + a JSONB `config` blob for the platform-specific
 //! identifiers/credentials). This module owns the one boundary where that
 //! JSONB is (de)serialized: the rest of the crate keeps working with flat

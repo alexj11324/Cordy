@@ -1,4 +1,4 @@
--- Open `issue.status` to catalog keys (MUL-6243).
+-- Open `issue.status` to catalog keys (PB-6243).
 --
 -- The old constraint hard-coded the 7 built-in statuses, which is exactly the
 -- thing a per-workspace catalog has to be able to extend. Membership validation

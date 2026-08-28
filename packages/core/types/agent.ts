@@ -7,7 +7,7 @@ export type AgentRuntimeMode = "local" | "cloud";
 export type AgentVisibility = "workspace" | "private";
 
 // ---------------------------------------------------------------------------
-// Agent invocation permissions (MUL-3963)
+// Agent invocation permissions (PB-3963)
 //
 // `permission_mode` + `invocation_targets` are the AUTHORITATIVE gate for who
 // may TRIGGER / assign / @mention / chat an agent. The legacy `visibility`
@@ -50,8 +50,8 @@ export interface AgentInvocationTargetInput {
 // Runtime visibility is a separate axis from agent visibility — different
 // vocabulary because it gates a different action. "private" (default) means
 // only the runtime owner can bind agents to it — workspace admins included,
-// and only the owner may flip the flag (MUL-6126); "public" opens binding to
-// any workspace member. Older backends that haven't shipped MUL-2062 omit the
+// and only the owner may flip the flag (PB-6126); "public" opens binding to
+// any workspace member. Older backends that haven't shipped PB-2062 omit the
 // field; the consumer must default to "private" so the strictest behavior is
 // the fallback.
 export type RuntimeVisibility = "private" | "public";
@@ -62,7 +62,7 @@ export interface RuntimeDevice {
   daemon_id: string | null;
   name: string;
   /**
-   * Optional user-set display name override (MUL-4217). Overrides `name` for
+   * Optional user-set display name override (PB-4217). Overrides `name` for
    * display; the daemon never writes it, so it survives heartbeats. Older
    * backends omit the field — consumers must treat missing / empty as "use
    * name" (see runtimeDisplayName).
@@ -93,7 +93,7 @@ export interface RuntimeDevice {
 export type AgentRuntime = RuntimeDevice;
 
 // ---------------------------------------------------------------------------
-// Custom runtime profiles (MUL-3284)
+// Custom runtime profiles (PB-3284)
 //
 // A RuntimeProfile is a workspace-level *definition* of a custom runtime
 // backend — distinct from a RuntimeDevice, which is a daemon-registered
@@ -233,7 +233,7 @@ export type WorkspaceWorkingAgentMineRelation =
  * A departed-member-safe user ref resolved from the global user table. `name` /
  * `email` / `avatar_url` are absent until the server hydrates them (present on
  * user-facing task surfaces). Render defensively — fall back to a generic label
- * when only `id` is available. See MUL-4302 §9.
+ * when only `id` is available. See PB-4302 §9.
  */
 export interface AttributionUser {
   id: string;
@@ -249,7 +249,7 @@ export interface TaskEvidence {
 }
 
 /**
- * The resolved accountable-human provenance of an agent run (MUL-4302 §9). Free-text
+ * The resolved accountable-human provenance of an agent run (PB-4302 §9). Free-text
  * `source` (server may add new levels), so switch on it with a default branch.
  */
 export interface TaskAttribution {
@@ -304,7 +304,7 @@ export interface AgentTask {
   // `omitempty`, so the field may also be missing on non-failed tasks).
   // Open string on the wire, not a closed enum: the backend's classifier
   // taxonomy has grown far past TaskFailureReason (21+ refined
-  // `agent_error.*` reasons since MUL-1949, `local_directory_error`, …) and
+  // `agent_error.*` reasons since PB-1949, `local_directory_error`, …) and
   // keeps growing — an installed client will meet reasons its build
   // predates. TaskFailureReason stays in the union for autocomplete on the
   // coarse values; `string & {}` admits the rest without collapsing the
@@ -346,7 +346,7 @@ export interface AgentTask {
    */
   trigger_summary?: string;
   /**
-   * Handoff instruction the assigner attached when starting this run (MUL-3375).
+   * Handoff instruction the assigner attached when starting this run (PB-3375).
    * Present only on assignment-triggered runs that carried a note; the execution
    * log shows it inline as the trigger reason. Absent (legacy / no note) falls
    * back to the generic "initial run" label.
@@ -405,7 +405,7 @@ export interface AgentTask {
    */
   branch_name?: string;
   /**
-   * Resolved accountable-human provenance of this run (MUL-4302 §9): who it ran
+   * Resolved accountable-human provenance of this run (PB-4302 §9): who it ran
    * "on behalf of", how that was resolved, and the evidence/lineage. Present on
    * user-facing task surfaces; older backends omit it — render conditionally.
    */
@@ -464,7 +464,7 @@ export interface Agent {
   /**
    * Empty string when the agent is unbound: it kept its configuration, chats and
    * task history when its runtime was deleted, and needs a new runtime before it
-   * can run again (MUL-5559). Use `isAgentRuntimeBound` so additive and legacy
+   * can run again (PB-5559). Use `isAgentRuntimeBound` so additive and legacy
    * signals stay compatible, and do not confuse it with a bound-but-offline
    * runtime — that one just needs the machine back.
    */
@@ -491,9 +491,9 @@ export interface Agent {
    * Coarse metadata signalling whether the agent has any custom env
    * vars configured, without exposing the keys or values. Reads of
    * the real map go through the dedicated `GET /api/agents/{id}/env`
-   * endpoint (agent owner or workspace owner/admin, audited). MUL-2600.
+   * endpoint (agent owner or workspace owner/admin, audited). PB-2600.
    *
-   * Optional in the type so older backends (pre-MUL-2600) that omit
+   * Optional in the type so older backends (pre-PB-2600) that omit
    * the field don't crash the renderer; downstream code should treat
    * `undefined` as "unknown — assume no env" rather than "definitely
    * has env".
@@ -501,7 +501,7 @@ export interface Agent {
   has_custom_env?: boolean;
   /**
    * Number of keys in the agent's custom_env map. Always present
-   * alongside `has_custom_env`. Treat `undefined` as zero. MUL-2600.
+   * alongside `has_custom_env`. Treat `undefined` as zero. PB-2600.
    */
   custom_env_key_count?: number;
   /**
@@ -511,7 +511,7 @@ export interface Agent {
    * config.toml, ACP session params, OpenCode env config, OpenClaw
    * wrapper config, etc. `null` (or the field omitted on legacy backends)
    * means no managed config; the daemon falls back to the CLI's own
-   * default. MUL-2764.
+   * default. PB-2764.
    *
    * When the caller can't see secrets (an agent actor, or a non-owner
    * non-admin), the server replaces the value with `null` and sets
@@ -530,7 +530,7 @@ export interface Agent {
   /**
    * The subset of Composio toolkit slugs this agent is allowed to mount as
    * MCP servers at task dispatch — but only when the run originator is the
-   * agent owner (MUL-3869 / MUL-3721). `null`/`[]`/omitted all mean "no
+   * agent owner (PB-3869 / PB-3721). `null`/`[]`/omitted all mean "no
    * overlay regardless of who triggers". Owner-only data: the server hands
    * it through verbatim to the owner and redacts it to `undefined` +
    * `composio_toolkit_allowlist_redacted=true` for everyone else (same
@@ -547,7 +547,7 @@ export interface Agent {
   composio_toolkit_allowlist_redacted?: boolean;
   visibility: AgentVisibility;
   /**
-   * Authoritative invocation permission mode (MUL-3963). The `visibility`
+   * Authoritative invocation permission mode (PB-3963). The `visibility`
    * field above is DERIVED from this on the backend. The current backend
    * always returns this field.
    */
@@ -568,7 +568,7 @@ export interface Agent {
    * config / built-in default decides at run time. The picker is
    * per-runtime per-model — the API never normalises across providers.
    * Older backends omit this field entirely; treat undefined as ""
-   * (MUL-2339).
+   * (PB-2339).
    */
   thinking_level?: string;
   /**
@@ -631,7 +631,7 @@ export interface CreateAgentRequest {
   custom_args?: string[];
   visibility?: AgentVisibility;
   /**
-   * Invocation permission mode (MUL-3963). When present it is authoritative;
+   * Invocation permission mode (PB-3963). When present it is authoritative;
    * when absent the backend maps the legacy `visibility` field
    * (private -> private, workspace -> public_to + workspace target). On
    * UPDATE, permission changes are OWNER-ONLY (the backend silently ignores
@@ -693,7 +693,7 @@ export interface AgentBuilderSessionSummary {
   title: string;
   /** The carrier's runtime — where this conversation actually executes. The
    *  picker seeds from it so it can never disagree with what answers the next
-   *  message (MUL-5163). */
+   *  message (PB-5163). */
   runtime_id: string;
   created_at: string;
   updated_at: string;
@@ -729,11 +729,11 @@ export interface UpdateAgentRequest {
    * persistent audit row. The
    * server REJECTS any `PUT /api/agents/{id}` body that includes
    * `custom_env` with a 400; do not put the field in this payload.
-   * MUL-2600.
+   * PB-2600.
    */
   custom_args?: string[];
   /**
-   * MCP server configuration. Tri-state semantics (MUL-2764):
+   * MCP server configuration. Tri-state semantics (PB-2764):
    *   - field omitted → no change
    *   - `null` → clear the column; the daemon falls back to the CLI's
    *     built-in default at launch
@@ -743,7 +743,7 @@ export interface UpdateAgentRequest {
   mcp_config?: unknown | null;
   /**
    * Composio toolkit allowlist. Tri-state semantics, mirroring the backend
-   * gate (MUL-3869):
+   * gate (PB-3869):
    *   - field omitted → no change
    *   - `null` → clear the column (no MCP overlay for anyone)
    *   - string[] → wholesale replace; the server lowercases / trims / dedupes
@@ -755,7 +755,7 @@ export interface UpdateAgentRequest {
   composio_toolkit_allowlist?: string[] | null;
   visibility?: AgentVisibility;
   /**
-   * Invocation permission mode (MUL-3963). When present it is authoritative;
+   * Invocation permission mode (PB-3963). When present it is authoritative;
    * when absent the backend maps the legacy `visibility` field
    * (private -> private, workspace -> public_to + workspace target). On
    * UPDATE, permission changes are OWNER-ONLY (the backend silently ignores
@@ -768,7 +768,7 @@ export interface UpdateAgentRequest {
   max_concurrent_tasks?: number;
   model?: string;
   /**
-   * Runtime-native reasoning/effort token. Tri-state semantics (MUL-2339):
+   * Runtime-native reasoning/effort token. Tri-state semantics (PB-2339):
    *   - field omitted → no change
    *   - "" → clear the override; backend omits the effort flag and the
    *     local CLI config / built-in default decides what the model runs at
@@ -787,7 +787,7 @@ export interface UpdateAgentRequest {
  * Wire shape for the dedicated env-management endpoints
  * (`GET /api/agents/{id}/env` and `PUT /api/agents/{id}/env`). Kept
  * deliberately separate from `Agent` so generic agent reads cannot
- * accidentally surface env values. MUL-2600.
+ * accidentally surface env values. PB-2600.
  */
 export interface AgentEnvResponse {
   agent_id: string;
@@ -1071,7 +1071,7 @@ export interface RuntimeModel {
    * Per-model reasoning/effort catalog discovered by the daemon. Currently
    * populated for claude, codex, and opencode runtimes; omitted (or undefined)
    * for every other provider, which the UI treats as "no thinking-level
-   * picker for this model". See MUL-2339.
+   * picker for this model". See PB-2339.
    */
   thinking?: RuntimeModelThinking;
   /** Runtime-native execution tiers advertised for this exact model. */
@@ -1126,7 +1126,7 @@ export interface RuntimeModelListRequest {
   updated_at: string;
   /**
    * True when the server answered from its own catalog cache instead of a live
-   * daemon round trip (MUL-5444). Informational only: such a response already
+   * daemon round trip (PB-5444). Informational only: such a response already
    * arrives with `status: "completed"` and a populated `models`, so callers
    * that ignore this field behave exactly as before. `cached_at` is the
    * snapshot's capture time.
@@ -1143,7 +1143,7 @@ export interface RuntimeModelsResult {
   supported: boolean;
   /**
    * True when the server answered from its catalog cache rather than a live
-   * daemon round trip (MUL-5444). Drives the query's freshness policy: a
+   * daemon round trip (PB-5444). Drives the query's freshness policy: a
    * cached answer is immediately revalidatable so the client never extends the
    * server's staleness window.
    */

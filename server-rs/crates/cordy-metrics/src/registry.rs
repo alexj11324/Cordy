@@ -30,7 +30,7 @@ pub struct RegistryOptions {
     pub version: String,
     pub commit: String,
     /// When `Some`, opts the registry into the scrape-time SQL sampler
-    /// (MUL-2947). Intentionally separate from `pool` so existing callers
+    /// (PB-2947). Intentionally separate from `pool` so existing callers
     /// cannot accidentally start hitting the database on every /metrics
     /// scrape.
     pub sampler: Option<crate::sampler::BusinessSamplerOptions>,

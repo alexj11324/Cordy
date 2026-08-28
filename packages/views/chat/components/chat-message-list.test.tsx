@@ -7,7 +7,7 @@ import type { TaskMessagePayload } from "@cordy/core/types";
 import type { ReactElement } from "react";
 import enChat from "../../locales/en/chat.json";
 
-// The live timeline is a real list row rather than Virtuoso chrome (MUL-4922),
+// The live timeline is a real list row rather than Virtuoso chrome (PB-4922),
 // so it shares one identity with the persisted assistant row and keeps its
 // Mermaid/HTML blocks mounted across task completion. Real react-virtuoso
 // renders its Footer but NO data rows under jsdom's zero-height viewport, so
@@ -99,7 +99,7 @@ function pushTaskMessage(qc: QueryClient, msg: TaskMessagePayload) {
   });
 }
 
-describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
+describe("ChatMessageList live timeline (PB-3960 regression)", () => {
   // The live turn is a keyed Virtuoso row. Streaming must update that row in
   // place instead of remounting its Markdown and reasoning subtrees.
   it("does not remount the live timeline when a streamed message arrives", async () => {
@@ -551,8 +551,8 @@ describe("ChatMessageList onboarding kickoff", () => {
   });
 });
 
-describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
-  // The backend moved to the refined taxonomy (agent_error.*) in MUL-2946 but
+describe("ChatMessageList failure copy (PB-5370 regression)", () => {
+  // The backend moved to the refined taxonomy (agent_error.*) in PB-2946 but
   // the copy map stayed on the six coarse values, so an exact-key lookup
   // missed every refined reason and fell through to the generic fallback.
   // A user whose skill bundle download stalled was told only "Something went

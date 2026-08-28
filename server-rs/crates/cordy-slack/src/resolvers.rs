@@ -199,7 +199,7 @@ impl cordy_channel_engine::resolvers::IdentityResolver for IdentityResolver {
             None => {
                 // Not linked to THIS installation. Before prompting, reuse a
                 // link the same Slack user already made to another installation
-                // of the same team in this workspace (MUL-3911): one link per
+                // of the same team in this workspace (PB-3911): one link per
                 // Slack workspace, not per app.
                 match self.reusable_binding(inst, sender_id).await? {
                     Some(cand) => (cand, true),
@@ -252,7 +252,7 @@ impl cordy_channel_engine::resolvers::IdentityResolver for IdentityResolver {
 impl IdentityResolver {
     /// Looks for a link the same Slack user already made to ANOTHER
     /// installation of the SAME workspace + SAME Slack team, so a second app in
-    /// one Slack workspace need not re-prompt (MUL-3911). Ok(None) means "no
+    /// one Slack workspace need not re-prompt (PB-3911). Ok(None) means "no
     /// reuse — prompt to link": the installation records no team (legacy), its
     /// Platform is not a ChannelInstallation, or no matching binding exists.
     async fn reusable_binding(

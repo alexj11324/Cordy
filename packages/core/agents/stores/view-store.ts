@@ -52,7 +52,7 @@ export interface AgentListFilters {
   owners: string[];
   /** Runtime-native model identifiers (e.g. claude / codex / gpt-…). */
   models: string[];
-  /** Effective access-scope values (MUL-3963): workspace | specific-people | owner-only. */
+  /** Effective access-scope values (PB-3963): workspace | specific-people | owner-only. */
   access: AccessScope[];
 }
 

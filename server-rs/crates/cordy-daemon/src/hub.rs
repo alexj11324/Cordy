@@ -82,7 +82,7 @@ pub const PONG_WAIT: Duration = Duration::from_secs(60);
 /// Go `pingPeriod = (pongWait * 9) / 10`.
 pub const PING_PERIOD: Duration = Duration::from_millis((60 * 9 * 1000) / 10);
 /// Go `c.conn.SetReadLimit(64 * 1024)` — sized for daemon:rpc_request frames
-/// carrying a machine's full runtime_id set (MUL-4257).
+/// carrying a machine's full runtime_id set (PB-4257).
 pub const MAX_FRAME_READ_BYTES: usize = 64 * 1024;
 /// Go `make(chan []byte, 16)` — per-connection outbound buffer.
 const SEND_BUFFER_CAPACITY: usize = 16;
@@ -272,13 +272,13 @@ impl RpcHandlerError {
     }
 }
 
-/// Processes a generic `daemon:rpc_request` (MUL-4257). Dispatches on `method`
+/// Processes a generic `daemon:rpc_request` (PB-4257). Dispatches on `method`
 /// (e.g. "tasks.claim"), scoping work to identity (daemon ID + authenticated
 /// runtime IDs). The handler runs in its own spawned task, so it must not
 /// assume it owns the read pump. `ctx` is cancelled when the connection tears
 /// down or when the request's `timeout_ms` budget elapses server-side, so a
 /// slow RPC is cancelled — and its work rolled back — rather than committing
-/// after the daemon has already timed out and fallen back to HTTP (MUL-4257).
+/// after the daemon has already timed out and fallen back to HTTP (PB-4257).
 #[async_trait]
 pub trait RpcHandler: Send + Sync {
     async fn handle_rpc(
@@ -450,7 +450,7 @@ impl DaemonHub {
             .clone()
     }
 
-    /// Installs the callback used for `daemon:rpc_request` frames (MUL-4257).
+    /// Installs the callback used for `daemon:rpc_request` frames (PB-4257).
     /// Like [`Self::set_heartbeat_handler`] it is wired after handler
     /// construction. `None` disables WS RPC — daemons fall back to the HTTP
     /// claim endpoint.
@@ -641,7 +641,7 @@ impl DaemonHub {
 
     /// Tells daemons watching `runtime_id` that a heartbeat-carried request is
     /// queued, so they can heartbeat now instead of waiting for the next
-    /// scheduled tick (MUL-5444). Best-effort like every other hub
+    /// scheduled tick (PB-5444). Best-effort like every other hub
     /// notification: the daemon's own heartbeat schedule remains the
     /// correctness path.
     pub fn notify_pending_work(&self, runtime_id: &str, kind: &str) {
@@ -955,7 +955,7 @@ impl DaemonHub {
         }
     }
 
-    /// Processes a generic `daemon:rpc_request` (MUL-4257): runs the registered
+    /// Processes a generic `daemon:rpc_request` (PB-4257): runs the registered
     /// RPC handler in its own task (so a DB-bound claim does not stall the read
     /// pump or the next heartbeat) and writes back a `daemon:rpc_response`
     /// echoing the request id. A missing handler or a full in-flight slot yields
@@ -1013,7 +1013,7 @@ impl DaemonHub {
             // Bound server-side execution by the caller's requested budget (in
             // addition to the connection token), so a slow RPC is cancelled —
             // and its work rolled back — rather than committing after the
-            // daemon has already timed out and fallen back to HTTP (MUL-4257).
+            // daemon has already timed out and fallen back to HTTP (PB-4257).
             // The daemon waits a grace period beyond this budget, so a claim
             // that DID commit before the deadline still reports back in time.
             let call = handler.handle_rpc(&ctx, &client.identity, &method, body.as_ref());

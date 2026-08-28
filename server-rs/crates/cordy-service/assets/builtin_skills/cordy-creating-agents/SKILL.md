@@ -25,7 +25,7 @@ cordy agent env get <agent-id> --output json  # plaintext env (agent owner or ws
 
 An agent can also be **unbound**: `runtime_id` is `NULL` (served as `""` with
 `runtime_bound: false`) after its runtime was deleted, which unbinds instead of
-deleting its agents (MUL-5559). An unbound agent keeps everything it owns and
+deleting its agents (PB-5559). An unbound agent keeps everything it owns and
 stays editable, but no trigger path will run it — they all refuse with
 `agent_runtime_required` — until `agent update <id> --runtime-id <runtime-id>` binds
 it again. Unbound is orthogonal to archived.

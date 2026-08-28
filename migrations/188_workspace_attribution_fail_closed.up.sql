@@ -1,4 +1,4 @@
--- Human Attribution, Phase 1 — per-workspace fail-closed policy (MUL-4302 §1/§3.5).
+-- Human Attribution, Phase 1 — per-workspace fail-closed policy (PB-4302 §1/§3.5).
 --
 -- The accountable-human waterfall degrades to owner_fallback (accountable = agent
 -- owner) when no precise human resolves, so every run has an accountable human by
@@ -14,4 +14,4 @@ ALTER TABLE workspace
     ADD COLUMN attribution_fail_closed BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON COLUMN workspace.attribution_fail_closed IS
-    'When TRUE, an agent run that resolves to no precise accountable human (would be owner_fallback) is refused at enqueue instead of degrading to the agent owner (MUL-4302 §3.5). Default FALSE = owner_fallback. Never affects authorization (originator_user_id).';
+    'When TRUE, an agent run that resolves to no precise accountable human (would be owner_fallback) is refused at enqueue instead of degrading to the agent owner (PB-4302 §3.5). Default FALSE = owner_fallback. Never affects authorization (originator_user_id).';

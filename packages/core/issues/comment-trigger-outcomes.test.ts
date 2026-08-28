@@ -6,7 +6,7 @@ import {
   blockedTriggerLabel,
 } from "./comment-trigger-outcomes";
 
-// MUL-4525 §2: the create/edit comment response's trigger_outcomes drive the
+// PB-4525 §2: the create/edit comment response's trigger_outcomes drive the
 // "posted, but N not triggered" warning, so parsing must be defensive (drop
 // malformed entries, tolerate older servers) and count only real blocks.
 describe("comment trigger outcomes", () => {

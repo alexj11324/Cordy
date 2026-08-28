@@ -1,5 +1,5 @@
 /**
- * Near-viewport lazy shell (MUL-4922 performance contract).
+ * Near-viewport lazy shell (PB-4922 performance contract).
  *
  * jsdom has no IntersectionObserver, so these tests install a controllable
  * fake: it records observed elements and lets a test decide when a block

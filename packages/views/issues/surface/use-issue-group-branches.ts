@@ -97,7 +97,7 @@ function issueMatchesDescriptor(
    * the status key itself. A category cell holds every custom status in it, so
    * matching on the raw key would drop exactly the cards the category contract
    * exists to deliver — `qa !== "in_review"` threw the QA card away after the
-   * server correctly returned it. (MUL-6243)
+   * server correctly returned it. (PB-6243)
    */
   secondaryIsCategory: boolean,
 ) {

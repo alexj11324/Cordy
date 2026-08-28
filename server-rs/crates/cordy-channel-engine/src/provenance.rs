@@ -13,7 +13,7 @@ pub struct ProvenanceQueries;
 /// Reports whether a completed chat task took its input from the channel,
 /// so its reply (or failure notice) belongs on the external platform.
 /// Direct (web/mobile) tasks can reuse a channel-bound session, but their
-/// replies stay in Cordy (MUL-4988).
+/// replies stay in Cordy (PB-4988).
 ///
 /// chat_input_task_id alone cannot discriminate: sealed channel tasks own
 /// an input batch exactly like direct tasks do. The verdict is the
@@ -21,7 +21,7 @@ pub struct ProvenanceQueries;
 /// batch OWNER id so an auto-retry clone (which inherits
 /// chat_input_task_id while its messages stay tagged with the parent)
 /// reaches the same verdict as its parent. A NULL owner is a pre-sealing
-/// channel task — direct tasks have owned their batch since MUL-4351 — so
+/// channel task — direct tasks have owned their batch since PB-4351 — so
 /// it keeps the deliver-by-default behavior #5645 shipped with.
 ///
 /// `task_chat_input_task_id` is `AgentTaskQueue.chat_input_task_id`

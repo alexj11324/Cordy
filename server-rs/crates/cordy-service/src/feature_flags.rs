@@ -151,7 +151,7 @@ pub const BILLING_WORKSPACE_SUBSCRIPTIONS: &str = "billing_workspace_subscriptio
 pub const COMPOSIO_MCP_APPS: &str = "composio_mcp_apps";
 pub const PLUGINS_V1: &str = "plugins_v1";
 
-/// Gates CREATING a custom issue status (MUL-6243) — a rollout gate, not a
+/// Gates CREATING a custom issue status (PB-6243) — a rollout gate, not a
 /// behavior switch, deliberately one-way. Readers ship unconditionally (the
 /// built-in keys behave identically); gating creation means a custom value
 /// cannot come into existence until the whole fleet can read it. Once a

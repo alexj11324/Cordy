@@ -1,4 +1,4 @@
--- Seed the 7 built-in statuses for every EXISTING workspace (MUL-6243).
+-- Seed the 7 built-in statuses for every EXISTING workspace (PB-6243).
 --
 -- New workspaces are seeded inside their create transaction; this covers the
 -- ones that already exist. Idempotent via the unique (workspace_id, key)

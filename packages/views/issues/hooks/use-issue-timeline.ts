@@ -323,7 +323,7 @@ export function useIssueTimeline(issueId: string, userId?: string) {
 
   // The comment saved, but a mention did not clearly trigger (blocked, or an
   // unknown/future status we must not assume succeeded). Warn instead of a
-  // silent no-op (MUL-4525 §2): the comment IS posted, but N explicitly-named
+  // silent no-op (PB-4525 §2): the comment IS posted, but N explicitly-named
   // targets were not triggered.
   const warnUnhandledTriggers = useCallback(
     (triggerOutcomes: unknown, content?: string) => {

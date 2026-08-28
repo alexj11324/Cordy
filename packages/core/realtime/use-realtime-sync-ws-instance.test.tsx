@@ -259,7 +259,7 @@ describe("useRealtimeSync — ws instance change", () => {
     // color and category are resolved from the catalog at render time, so no
     // cached issue field can go stale here. Dragging every board and list along
     // would turn one admin rename into a workspace-wide refetch storm on every
-    // connected client. (MUL-6458)
+    // connected client. (PB-6458)
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: issueKeys.all("ws-1"),
     });

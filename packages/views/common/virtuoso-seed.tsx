@@ -9,7 +9,7 @@ import { Fragment, type Key, type ReactNode } from "react";
  * One screen's worth of rows is enough to fill the viewport on a route-return
  * remount; the real Virtuoso trims to its measured window on the next frame.
  * Capped so a large list never pays a full synchronous mount — the crash the
- * un-capped pre-virtualization path hit on real Desktop (MUL-4750).
+ * un-capped pre-virtualization path hit on real Desktop (PB-4750).
  */
 export const VIRTUOSO_SEED_COUNT = 30;
 
@@ -22,7 +22,7 @@ export const VIRTUOSO_SEED_COUNT = 30;
  * `scrollParent === null` and Virtuoso cannot mount yet. Rendering nothing
  * there paints an empty card area (group/column headers present, rows blank)
  * until the ref settles and measurement completes — the flash that got the
- * MUL-4474 virtualization reverted. Seeding a bounded slice of the real rows
+ * PB-4474 virtualization reverted. Seeding a bounded slice of the real rows
  * keeps that first frame populated; once the parent is set the list switches
  * to `<Virtuoso>` with a matching `initialItemCount`, so the handoff is
  * visually continuous.

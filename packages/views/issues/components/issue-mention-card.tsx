@@ -9,7 +9,7 @@ import { useCurrentIssueRenderContext } from "../current-issue-render-context";
 
 interface IssueMentionCardProps {
   issueId: string;
-  /** Fallback text when issue is not in store (e.g. "MUL-7") */
+  /** Fallback text when issue is not in store (e.g. "PB-7") */
   fallbackLabel?: string;
 }
 

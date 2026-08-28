@@ -59,7 +59,7 @@ const REGISTRATION_TENANT_BRAND_LARK: &str = "lark";
 
 /// Mirror brand label for the reverse direction: a user who picked the
 /// "Bind to Lark" CTA but actually authorized with a mainland Feishu account.
-/// The split-CTA UX (MUL-3083) rendered a QR against
+/// The split-CTA UX (PB-3083) rendered a QR against
 /// accounts.larksuite.com, but Lark's poll stream surfaces
 /// tenant_brand="feishu" once authorization completes on the wrong cloud, and
 /// we honor that signal symmetrically — re-aim polling at accounts.feishu.cn
@@ -191,7 +191,7 @@ pub struct PollResult {
     /// there." It is paired with switched_region so the caller can update both
     /// the polling host AND the per-install region in one step. Originally
     /// this only fired in the Feishu→Lark direction (Lark international users
-    /// authorizing on a Feishu-first begin); after MUL-3083 follow-up it is
+    /// authorizing on a Feishu-first begin); after PB-3083 follow-up it is
     /// symmetric, so a user who picked the "wrong" Bind CTA also recovers —
     /// the service must update the session's stored domain AND region and
     /// re-poll WITHOUT honoring the interval (the SDK does the same — the
@@ -367,7 +367,7 @@ impl RegistrationClient {
         // Feishu QR with a Lark-international account, AND lark→feishu for
         // users who picked the new "Bind to Lark" CTA but actually authorized
         // with a mainland Feishu account. Symmetry matters because the
-        // split-CTA UI (MUL-3083) also begins on accounts.larksuite.com
+        // split-CTA UI (PB-3083) also begins on accounts.larksuite.com
         // directly — without the reverse swap, a "wrong entry" install on that
         // side would carry Region::Lark all the way through finish_success and
         // fail (or commit a wrong-region row) at get_bot_info. The check is

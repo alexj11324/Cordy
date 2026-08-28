@@ -9,7 +9,7 @@ import { quickActionListOptions } from "@cordy/core/quick-actions";
 
 /**
  * Supplies the comment composer's `/` menu with this workspace's quick actions
- * (MUL-5465).
+ * (PB-5465).
  *
  * Picking one INSERTS the rendered body rather than running it — the composer
  * path exists precisely for the "this time is different" case, so the user

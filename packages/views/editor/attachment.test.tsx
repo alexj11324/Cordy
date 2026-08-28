@@ -216,7 +216,7 @@ describe("Attachment — image dispatch", () => {
     // carries a signed download_url (CloudFront / S3 presign style) it
     // wins over the raw stored url so token-mode <img> loads work
     // without an Authorization header. See pickInlineMediaURL in
-    // attachment.tsx for the rationale (MUL-3130 review follow-up).
+    // attachment.tsx for the rationale (PB-3130 review follow-up).
     expect(img?.getAttribute("src")).toBe(att.download_url);
     expect(img?.getAttribute("alt")).toBe("shot.png");
     expect(screen.getByTitle("View")).toBeTruthy();
@@ -260,7 +260,7 @@ describe("Attachment — image dispatch", () => {
     // Once the URL resolves to a record, the rendered src swaps to
     // the record's signed download_url so the image is loadable in
     // token-mode clients that can't attach Authorization headers
-    // (MUL-3130 review). The raw stored url is the fallback for
+    // (PB-3130 review). The raw stored url is the fallback for
     // unresolved markdown only.
     expect(img?.getAttribute("src")).toBe(att.download_url);
     fireEvent.click(screen.getByTitle("Download"));
@@ -367,7 +367,7 @@ describe("Attachment — image dispatch", () => {
     expect(imageSrcs).not.toContain("");
   });
 
-  it("does not pick the raw CDN url when the server reports cdn_signed (MUL-3254)", () => {
+  it("does not pick the raw CDN url when the server reports cdn_signed (PB-3254)", () => {
     // CloudFront signed-URL mode: the CDN domain serves PRIVATE content and
     // a raw (unsigned) storage URL is a guaranteed 403. The pick must fall
     // through to the durable markdown_url instead.
@@ -438,7 +438,7 @@ describe("Attachment — image dispatch", () => {
     expect(getAttachmentMock).toHaveBeenCalledWith(id);
   });
 
-  it("re-signs the inline media URL through getAttachment on token-mode clients (MUL-3254)", async () => {
+  it("re-signs the inline media URL through getAttachment on token-mode clients (PB-3254)", async () => {
     // Desktop / mobile webview: file:// document origin, Bearer-token auth.
     // The auth-gated /api/attachments/<id>/download endpoint 401s as a
     // native <img> fetch, so the renderer must swap in a freshly signed URL
@@ -476,7 +476,7 @@ describe("Attachment — image dispatch", () => {
     expect(getAttachmentMock).toHaveBeenCalledWith(id);
   });
 
-  it("re-signs URL-only inline media when no resolver record is available (MUL-3254)", async () => {
+  it("re-signs URL-only inline media when no resolver record is available (PB-3254)", async () => {
     // If the markdown parser has only the durable API URL, the attachment id
     // is still recoverable from the URL itself. Token-mode clients must not
     // depend on the context resolver having a hydrated record before they can
@@ -506,7 +506,7 @@ describe("Attachment — image dispatch", () => {
     expect(getAttachmentMock).toHaveBeenCalledWith(id);
   });
 
-  it("falls back to an authenticated byte fetch when the deployment has no signed URL (MUL-5445)", async () => {
+  it("falls back to an authenticated byte fetch when the deployment has no signed URL (PB-5445)", async () => {
     // Proxy download mode — the default `auto` classification for a storage
     // endpoint on an internal host (docker-compose MinIO). GET
     // /api/attachments/{id} hands back the auth-gated API path again, so
@@ -552,7 +552,7 @@ describe("Attachment — image dispatch", () => {
     expect(revokeObjectURLMock).toHaveBeenCalledWith(OBJECT_URL);
   });
 
-  it("copies the durable URL, not the session-local object URL (MUL-5445)", async () => {
+  it("copies the durable URL, not the session-local object URL (PB-5445)", async () => {
     // A `blob:` URL resolves only inside this renderer session, so Copy Link
     // must keep handing out the persisted attachment URL.
     getBaseUrlMock.mockReturnValue("https://cordy-api.copilothub.ai");
@@ -596,7 +596,7 @@ describe("Attachment — image dispatch", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(markdownUrl));
   });
 
-  it("does not pull bytes for non-image attachments (MUL-5445)", async () => {
+  it("does not pull bytes for non-image attachments (PB-5445)", async () => {
     // A file card only needs a link. Downloading a large archive into
     // renderer memory to draw a chip would be a bad trade, so the byte
     // fallback stays image-only.
@@ -636,7 +636,7 @@ describe("Attachment — image dispatch", () => {
     expect(getAttachmentBlobMock).not.toHaveBeenCalled();
   });
 
-  it("prefers the signed URL over a byte fetch when the server can presign (MUL-5445)", async () => {
+  it("prefers the signed URL over a byte fetch when the server can presign (PB-5445)", async () => {
     // Presign / CloudFront deployments already hand back a natively-loadable
     // URL. Pulling the bytes as well would double every image download.
     getBaseUrlMock.mockReturnValue("https://cordy-api.copilothub.ai");
@@ -713,8 +713,8 @@ describe("Attachment — image dispatch", () => {
     expect(screen.queryByTitle("Download")).toBeNull();
   });
 
-  it("stable /api/attachments/<id>/download download_url falls through to the durable record.markdown_url for native <img> loadability (MUL-3192)", () => {
-    // After MUL-3192, pickInlineMediaURL prefers `record.markdown_url`
+  it("stable /api/attachments/<id>/download download_url falls through to the durable record.markdown_url for native <img> loadability (PB-3192)", () => {
+    // After PB-3192, pickInlineMediaURL prefers `record.markdown_url`
     // (the server-chosen durable URL — public CDN passthrough or absolute
     // API endpoint) over the raw `record.url` (which can be a private
     // bucket URL on S3 / R2 / MinIO presign deployments). The signed
@@ -737,7 +737,7 @@ describe("Attachment — image dispatch", () => {
   });
 
   it("legacy backend (no markdown_url on record) still falls back to record.url", () => {
-    // A backend old enough to predate MUL-3192 omits markdown_url; the
+    // A backend old enough to predate PB-3192 omits markdown_url; the
     // fallback chain bottoms out on record.url, preserving render
     // behaviour for legacy attachment metadata in the cache.
     const att = makeRecord({
@@ -842,13 +842,13 @@ describe("Attachment — file-card dispatch", () => {
   });
 });
 
-// MUL-3192 — Desktop quick-create: site-relative `/api/attachments/<id>/
+// PB-3192 — Desktop quick-create: site-relative `/api/attachments/<id>/
 // download` and `/uploads/<key>` URLs only resolve in environments where the
 // document origin proxies them to the API host (web via Next.js rewrites).
 // In Electron desktop the renderer origin is `file://`, so the same path
 // can't load. The Attachment renderer runs the picked URL through an
 // absolutize pass that prefixes `apiBaseUrl` when one is configured.
-describe("Attachment — absolutize site-relative URLs (MUL-3192)", () => {
+describe("Attachment — absolutize site-relative URLs (PB-3192)", () => {
   it("prefixes site-relative /api/attachments/<id>/download with apiBaseUrl in Desktop-like environments", () => {
     getBaseUrlMock.mockReturnValue("https://api.example.test");
     renderWithQuery(
@@ -868,7 +868,7 @@ describe("Attachment — absolutize site-relative URLs (MUL-3192)", () => {
   });
 
   it("absolutizes the legacy site-relative /uploads/<key> when record.markdown_url is empty (legacy backend)", () => {
-    // Legacy compat: a backend old enough to predate MUL-3192 omits
+    // Legacy compat: a backend old enough to predate PB-3192 omits
     // markdown_url, so pickInlineMediaURL falls through to record.url.
     // For LocalStorage with no LOCAL_UPLOAD_BASE_URL configured that's
     // a site-relative `/uploads/<key>` — the absolutize pass at the

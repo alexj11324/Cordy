@@ -295,7 +295,7 @@ pub struct PrepareParams {
     pub agent_name: String,
     /// The daemon's profile name (empty = default). Namespaces the per-issue
     /// Codex session store so a second profile-daemon sharing the same
-    /// ~/.codex cannot see or GC this daemon's stores (MUL-4424).
+    /// ~/.codex cannot see or GC this daemon's stores (PB-4424).
     pub profile: String,
     /// Agent provider (determines runtime config and skill injection paths).
     pub provider: String,
@@ -315,7 +315,7 @@ pub struct PrepareParams {
     pub openclaw_gateway: OpenclawGatewayPin,
     /// When non-empty, redirects the agent's working directory to a
     /// user-supplied absolute path instead of the synthesised envRoot/workdir
-    /// (local_directory flow, MUL-2663). Not copied or mounted.
+    /// (local_directory flow, PB-2663). Not copied or mounted.
     pub local_work_dir: String,
     /// Worktree-mode counterpart of local_work_dir: the task gets its own git
     /// worktree of that repo inside envRoot and delivers work as a branch.
@@ -336,7 +336,7 @@ pub struct PrepareParams {
     /// (reasonix only).
     pub reasonix_env: HashMap<String, String>,
     /// Effective Codex CLI args this task launches with. Only the Windows
-    /// sandbox decision reads them (MUL-4957).
+    /// sandbox decision reads them (PB-4957).
     pub codex_custom_args: Vec<String>,
     /// Context data for writing files.
     pub task: TaskContextForEnv,
@@ -370,7 +370,7 @@ pub struct TaskContextForEnv {
     /// trigger_comment_id when empty.
     pub trigger_thread_id: String,
     /// Set for a comment run that coalesced comments spanning MORE THAN ONE
-    /// root thread (MUL-4348); >=2 entries fan the reply step out per thread.
+    /// root thread (PB-4348); >=2 entries fan the reply step out per thread.
     pub comment_reply_targets: Vec<ThreadReplyTarget>,
     /// Issue-wide comments since this agent's last run (excludes its own and
     /// the injected trigger).
@@ -381,7 +381,7 @@ pub struct TaskContextForEnv {
     /// True when the daemon will resume an existing provider session.
     pub prior_session_resumed: bool,
     /// True when a prior session was expected but could NOT be resumed —
-    /// surfaced so the agent tells the user context is gone (MUL-4424).
+    /// surfaced so the agent tells the user context is gone (PB-4424).
     pub prior_session_resume_unavailable: bool,
     /// Unique ID of the dispatched agent.
     pub agent_id: String,
@@ -403,11 +403,11 @@ pub struct TaskContextForEnv {
     /// Non-empty for chat tasks.
     pub chat_session_id: String,
     /// IM platform behind a chat session ("slack", "feishu", "wecom"); empty
-    /// for web/mobile chat. Names the surface in brief copy (MUL-4899).
+    /// for web/mobile chat. Names the surface in brief copy (PB-4899).
     pub chat_channel_type: String,
     /// Server's verdict, for THIS turn, on whether produced files reach the
     /// reader. Carried but deliberately NOT rendered into the brief — it is a
-    /// per-turn value and the brief is the prompt-cache prefix (MUL-5377).
+    /// per-turn value and the brief is the prompt-cache prefix (PB-5377).
     pub chat_channel_delivers_files: bool,
 
     /// Non-empty for autopilot run_only tasks.
@@ -420,11 +420,11 @@ pub struct TaskContextForEnv {
     /// Non-empty for quick-create tasks.
     pub quick_create_prompt: String,
     /// Assignment handoff instruction; rendered into issue_context.md
-    /// (MUL-3375).
+    /// (PB-3375).
     pub handoff_note: String,
     /// True when THIS TASK runs the squad-leader role; derived from the
     /// claim's is_leader_task / squad_id, never sniffed from instruction text
-    /// (MUL-5811).
+    /// (PB-5811).
     pub is_squad_leader: bool,
     /// Workspace-level system prompt (workspace.context in the DB), rendered
     /// into the brief as `## Workspace Context` when non-empty.
@@ -435,7 +435,7 @@ pub struct TaskContextForEnv {
     /// as `## Requesting User` only when the description is non-empty.
     pub requesting_user_name: String,
     pub requesting_user_profile_description: String,
-    /// Initiator* identify the actor who triggered THIS task (MUL-2645);
+    /// Initiator* identify the actor who triggered THIS task (PB-2645);
     /// rendered as `## Task Initiator` when a name is present.
     pub initiator_type: String,
     pub initiator_id: String,
@@ -679,7 +679,7 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
     // Rollback state: everything after worktree creation can still fail, and
     // on those paths the caller never receives an Environment, so nothing
     // downstream knows a worktree exists to clean up. The manifest rollback is
-    // armed before the first context write for the same reason (MUL-6132).
+    // armed before the first context write for the same reason (PB-6132).
     let mut local_worktree: Option<LocalWorktree> = None;
     let mut manifest = SidecarManifest::default();
 
@@ -772,7 +772,7 @@ async fn prepare_body(
     .map_err(|e| anyhow!("execenv: write context files: {e:#}"))?;
 
     // Persist managed-env provenance for non-local resumable envs at Prepare
-    // time (not on completion, where .gc_meta.json is written) — MUL-4886.
+    // time (not on completion, where .gc_meta.json is written) — PB-4886.
     // Non-fatal: a write failure only costs the next follow-up its session
     // reuse.
     if params.local_work_dir.is_empty()
@@ -887,7 +887,7 @@ async fn prepare_body(
 
     // Persist the sidecar manifest. In place the manifest is the ONLY record
     // of what we wrote into the user's own directory, so losing it strands
-    // the sidecar tree there permanently (MUL-6132) — fail so the rollback
+    // the sidecar tree there permanently (PB-6132) — fail so the rollback
     // registered by prepare removes the tree now. Elsewhere the manifest is a
     // convenience the GC can do without, so a warning stays the right
     // response.
@@ -936,7 +936,7 @@ pub struct ReuseParams {
     pub codex_version: String,
     /// Prior Codex thread/session ID this reused task intends to resume;
     /// consulted while migrating a legacy per-task home whose sessions/ still
-    /// symlinks the shared ~/.codex/sessions (MUL-4424).
+    /// symlinks the shared ~/.codex/sessions (PB-4424).
     pub resume_session_id: String,
     /// Only used when provider == "openclaw"; empty = PATH lookup.
     pub openclaw_bin: String,
@@ -946,7 +946,7 @@ pub struct ReuseParams {
     pub cursor_mcp_auth_source: String,
     /// Per-task Gateway pin re-applied on reuse.
     pub openclaw_gateway: OpenclawGatewayPin,
-    /// Profile name mirroring PrepareParams.profile (MUL-4424).
+    /// Profile name mirroring PrepareParams.profile (PB-4424).
     pub profile: String,
     /// True when the reused work_dir is a user-supplied directory; propagated
     /// into the returned Environment so downstream callers keep the "never
@@ -960,7 +960,7 @@ pub struct ReuseParams {
     pub hermes_session_store: String,
     /// Reasonix mirror of PrepareParams.reasonix_env on reuse.
     pub reasonix_env: HashMap<String, String>,
-    /// Windows sandbox decision input mirrored on reuse (MUL-4957).
+    /// Windows sandbox decision input mirrored on reuse (PB-4957).
     pub codex_custom_args: Vec<String>,
     /// Refreshed context files / skills.
     pub task: TaskContextForEnv,
@@ -1392,7 +1392,7 @@ pub const MANAGED_ENV_PROVENANCE_MANAGED_BY: &str = "cordy-daemon-managed-env";
 /// at Prepare time (NOT on completion, unlike .gc_meta.json). Its whole reason
 /// to exist is timing: a squad-leader follow-up can be claimed the instant the
 /// prior task completes — before the prior handler writes .gc_meta.json
-/// (MUL-4886). Written only for non-local managed issue or chat envs, so its
+/// (PB-4886). Written only for non-local managed issue or chat envs, so its
 /// presence is itself the "safe to reuse, not a user local_directory"
 /// assertion.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

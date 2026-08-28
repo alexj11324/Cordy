@@ -30,7 +30,7 @@ const makeWorkspace = (id: string, slug: string): Workspace => ({
   context: null,
   settings: {},
   repos: [],
-  issue_prefix: "MUL",
+  issue_prefix: "PB",
   avatar_url: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",

@@ -18,7 +18,7 @@ export interface StatusOption {
 
 /**
  * The statuses a user can pick or filter by, as one flat list in canonical
- * category order (MUL-6243, MUL-6399).
+ * category order (PB-6243, PB-6399).
  *
  * Category is carried per option rather than expressed as a heading: it is the
  * behavior a status inherits, which the icon and hover color already say, and

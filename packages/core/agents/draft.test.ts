@@ -102,7 +102,7 @@ describe("duplicate access", () => {
   });
 });
 
-// MUL-5390: thinking_level / service_tier are runtime + model scoped. The create
+// PB-5390: thinking_level / service_tier are runtime + model scoped. The create
 // flow never exposed them, so a Fast Codex agent could only be configured after
 // the fact and a Duplicate silently dropped the setting.
 describe("agent draft execution overrides", () => {
@@ -222,7 +222,7 @@ describe("agent draft execution overrides", () => {
   it("drops the execution config when the duplicate falls back to another runtime", () => {
     // Source runtime is gone from the list (deleted, or private to someone
     // else), so the draft lands on the fallback. Keeping the source model here
-    // is what persisted a cross-provider model before MUL-5390.
+    // is what persisted a cross-provider model before PB-5390.
     const duplicate = buildDuplicateDraft(sourceAgent(), {
       runtimes: [OTHER_RUNTIME],
       currentUserId: "user-1",

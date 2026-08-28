@@ -99,7 +99,7 @@ async function cancelIssuePropertyMutationQueries(
 /**
  * Optimistic single-property write on an issue.
  *
- * Concurrency contract (MUL-4463 review round 1/2):
+ * Concurrency contract (PB-4463 review round 1/2):
  *   - Mutations for the SAME issue serialize via TanStack's mutation
  *     `scope`, so full-bag responses cannot land out of order and rapid
  *     multi-select toggles cannot interleave.

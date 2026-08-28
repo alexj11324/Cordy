@@ -61,7 +61,7 @@ export function CreateIssueDialog({
           // Phone gutter. The widths below are `!important` so they beat
           // DialogContent's own sizing — which also made them beat its
           // `max-w-[calc(100%-2rem)]` safety margin, leaving the card flush
-          // against both screen edges on a 430px viewport (MUL-6236). Restore
+          // against both screen edges on a 430px viewport (PB-6236). Restore
           // the margin here and let the `sm:` widths take over above 640px.
           "!w-full !max-w-[calc(100vw-1.5rem)]",
           // Expanded matches manual's expanded footprint so toggling expand

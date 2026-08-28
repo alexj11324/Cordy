@@ -40,7 +40,7 @@ function previewSignature(params: UseIssueTriggerPreviewParams): string {
 }
 
 /** Reads the unified backend predicate via POST /api/issues/preview-trigger so
- *  the four entry points never re-implement "will this start a run" (MUL-3375).
+ *  the four entry points never re-implement "will this start a run" (PB-3375).
  *
  *  The verdict changes only with the inputs (assignee / status), so the query
  *  refetches solely on signature change — it is deliberately NOT invalidated by
@@ -49,7 +49,7 @@ function previewSignature(params: UseIssueTriggerPreviewParams): string {
  *  the status source's pending dedup could, but the preview is advisory and the
  *  write path re-evaluates authoritatively, so a rare stale status label is
  *  harmless — far better than refetching every mounted preview on every
- *  workspace task event (the source of the visible flicker, MUL-3375).
+ *  workspace task event (the source of the visible flicker, PB-3375).
  *
  *  Mirrors the comment-trigger preview's data handling: keepPreviousData so an
  *  input switch swaps the answer in place instead of collapsing, and only the

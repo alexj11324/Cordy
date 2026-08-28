@@ -2,7 +2,7 @@
  * Slim header for the issue detail screen.
  *
  * Linear iOS-inspired layout:
- *   - identifier (MUL-NN) above as a small muted label
+ *   - identifier (PB-NN) above as a small muted label
  *   - title in a large bold treatment
  *   - attribute chip row below (status / priority / assignee / labels /
  *     project / due date) — tappable, opens picker sheets

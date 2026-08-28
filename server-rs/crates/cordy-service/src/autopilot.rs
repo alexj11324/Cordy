@@ -78,7 +78,7 @@ impl AutopilotService {
 }
 
 /// Accountability-bearing config snapshot stored on each rule-version for
-/// audit display (MUL-4302 §7). Cosmetic fields are intentionally excluded —
+/// audit display (PB-4302 §7). Cosmetic fields are intentionally excluded —
 /// changing them does not transfer accountability.
 #[derive(Debug, serde::Serialize)]
 struct AutopilotRuleConfigSummary<'a> {
@@ -88,7 +88,7 @@ struct AutopilotRuleConfigSummary<'a> {
     execution_mode: &'a str,
 }
 
-/// Appends one rule-version snapshot for a substantive publish (MUL-4302
+/// Appends one rule-version snapshot for a substantive publish (PB-4302
 /// §3.4). Shared by handler publish paths (tx-scoped via the caller's
 /// executor) and the failure monitor's system-pause. System publishers pass
 /// `None` with type "system".
@@ -212,7 +212,7 @@ pub fn format_admission_reason(assignee_type: &str, raw: &str) -> String {
         "agent is archived" => format!("{prefix}agent is archived"),
         "agent has no runtime bound" => format!("{prefix}agent has no runtime bound"),
         // raw is "agent runtime is X" — surface the runtime status while
-        // preserving the legacy MUL-1899 suffix so alert queries do not change.
+        // preserving the legacy PB-1899 suffix so alert queries do not change.
         other => format!("{other} at dispatch time"),
     }
 }
@@ -302,7 +302,7 @@ impl AutopilotService {
     }
 
     /// Squad-id attribution hook for an autopilot_run row; only populated for
-    /// assignee_type='squad' (RFC §4.e / MUL-2429).
+    /// assignee_type='squad' (RFC §4.e / PB-2429).
     pub fn squad_attribution(ap: &Autopilot) -> Option<Uuid> {
         if ap.assignee_type == "squad" {
             Some(ap.assignee_id)
@@ -1057,7 +1057,7 @@ impl AutopilotService {
     /// Updates the run when its linked create_issue issue reaches a terminal
     /// status. A custom status finalizes exactly like its canonical inherited
     /// status; the failure audit deliberately keeps issue.status so it names
-    /// what a human actually chose (MUL-6243).
+    /// what a human actually chose (PB-6243).
     pub async fn sync_run_from_issue(&self, issue: &cordy_db::models::Issue) {
         if issue.origin_type.as_deref() != Some("autopilot") {
             return;
@@ -1649,7 +1649,7 @@ impl AutopilotService {
             }
         }
 
-        // Invocation gate at the autopilot layer (MUL-3963 / MUL-4525): a
+        // Invocation gate at the autopilot layer (PB-3963 / PB-4525): a
         // MANUAL "run now" is gated by the CURRENT clicker's access, not the
         // creator's; automation falls back to the creator. Admins do NOT
         // bypass a private agent they do not own; agent-created autopilots are
@@ -1689,7 +1689,7 @@ impl AutopilotService {
 
     /// Mirrors handler.canInvokeAgent with a member effective user — used for
     /// a manual autopilot "run now" where the clicker, not the creator, is
-    /// the admission principal (MUL-3963).
+    /// the admission principal (PB-3963).
     async fn can_member_invoke_agent(
         &self,
         agent: &Agent,
@@ -2032,7 +2032,7 @@ impl AutopilotService {
     /// recent-duplicate guard → counter/position → issue with autopilot origin
     /// → template subscriber fan-out → run link + reservation consume, commit,
     /// then issue:created broadcast, analytics, subscriber inbox rows and the
-    /// actor-aware enqueue path (MUL-2429 Path A / MUL-4302 §4).
+    /// actor-aware enqueue path (PB-2429 Path A / PB-4302 §4).
     async fn dispatch_create_issue(
         &self,
         ap: &Autopilot,
@@ -2175,7 +2175,7 @@ impl AutopilotService {
 
         // MANUAL triggers enqueue via actor-carrying entry points so
         // attribution resolves direct_human to the triggering member
-        // (MUL-4302 §4); automation takes the plain paths where the
+        // (PB-4302 §4); automation takes the plain paths where the
         // autopilot-origin issue resolves to rule_owner.
         if ap.assignee_type == "squad" {
             if !self
@@ -2353,7 +2353,7 @@ impl AutopilotService {
         }
 
         // MANUAL triggers attribute direct_human to the clicker (both
-        // originator and accountable, MUL-4302 §4); automation resolves the
+        // originator and accountable, PB-4302 §4); automation resolves the
         // firing trigger's responsible human (trigger_owner → rule_owner →
         // unattributed) with evidence pinned to the run.
         let attr = match actor_user_id {
@@ -2375,7 +2375,7 @@ impl AutopilotService {
             }
         };
         // No precise human resolved → owner_fallback, or refuse when the
-        // workspace is fail-closed (MUL-4302 §3.5).
+        // workspace is fail-closed (PB-4302 §3.5).
         let attr = self
             .task_svc
             .apply_attribution_fallback(attr, &agent)
@@ -2505,7 +2505,7 @@ impl AutopilotService {
     }
 
     /// "Run now" for a member: a direct human action attributed direct_human
-    /// to the clicker across both execution modes (MUL-4302 §4). A nil actor
+    /// to the clicker across both execution modes (PB-4302 §4). A nil actor
     /// behaves exactly like source="manual" automation dispatch.
     pub async fn dispatch_autopilot_manual(
         &self,

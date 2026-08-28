@@ -34,10 +34,10 @@ interface ProviderProps {
  * raw URL via `openExternal` — same behaviour as before this hook existed.
  *
  * URL → attachment matching has two fallbacks (in order). New comments
- * (post-MUL-3130) persist the stable `/api/attachments/<id>/download`
+ * (post-PB-3130) persist the stable `/api/attachments/<id>/download`
  * shape; legacy comments persist whatever was in `att.url` at upload
  * time, including the short-lived `/uploads/<key>?exp&sig` pattern that
- * triggered MUL-3130. The id-from-URL extractor handles new content;
+ * triggered PB-3130. The id-from-URL extractor handles new content;
  * exact-url equality covers legacy and S3/CloudFront markdown that
  * never got the new shape.
  */
@@ -45,7 +45,7 @@ export function AttachmentDownloadProvider({ attachments, children }: ProviderPr
   const download = useDownloadAttachment();
   const value = useMemo<ResolvedDownload>(
     () => {
-      // Shared with the gallery sequence builder (MUL-5752) so a markdown URL
+      // Shared with the gallery sequence builder (PB-5752) so a markdown URL
       // can never resolve to one record here and a different one there.
       const lookup = (url: string): Attachment | undefined =>
         matchAttachmentByURL(url, attachments);

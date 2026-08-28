@@ -68,10 +68,10 @@ Cordy가 에이전트의 [실행 태스크](/tasks)를 만듭니다. 온라인 �
 ## CLI 사용
 
 ```bash
-cordy issue assign MUL-42 --to "Agent name"
-cordy issue assign MUL-42 --to-id <agent-uuid> --no-start
-cordy issue status MUL-42 in_progress --no-start
-cordy issue assign MUL-42 --unassign
+cordy issue assign PB-42 --to "Agent name"
+cordy issue assign PB-42 --to-id <agent-uuid> --no-start
+cordy issue status PB-42 in_progress --no-start
+cordy issue assign PB-42 --unassign
 ```
 
 스크립트에서는 `--to-id <uuid>`를 사용하면 이름이 같은 객체를 잘못 매칭하는 일을 피할 수 있습니다. UUID는 `cordy agent list --output json` 또는 `cordy workspace member list --output json`으로 확인합니다.

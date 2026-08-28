@@ -481,7 +481,7 @@ function DiagnosticsCard({
   runtime: AgentRuntime;
   /**
    * Runtime owner only — narrower than the card's other affordances on
-   * purpose (MUL-6126). Sharing a machine with the workspace is the owner's
+   * purpose (PB-6126). Sharing a machine with the workspace is the owner's
    * call, so a workspace admin sees the read-only chip here even though they
    * may still rename or delete the runtime.
    */
@@ -509,7 +509,7 @@ function DiagnosticsCard({
         {canDelete && (
           // The button stays clickable even when the runtime is a live
           // local daemon (self-healing). The owner explicitly asked for
-          // it (MUL-3352) — disabling here left them looking at a button
+          // it (PB-3352) — disabling here left them looking at a button
           // they had every permission to click but couldn't. The dialog
           // raises a self-heal banner so the user sees the trade-off
           // before confirming.
@@ -531,7 +531,7 @@ function DiagnosticsCard({
 }
 
 // VisibilityReadout renders a static "Private" / "Public" pill for everyone
-// who is not the runtime owner — workspace admins included (MUL-6126). Its
+// who is not the runtime owner — workspace admins included (PB-6126). Its
 // tooltip is phrased in the third person for that reason; the editor's own
 // hints stay in the second person. The description used to sit under the
 // chip; it now lives in the hover tooltip so the Diagnostics column stays

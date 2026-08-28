@@ -7,7 +7,7 @@
 //! consumed through the [`Sdk`] trait so handler/service tests can inject a
 //! fake without hitting Composio.
 //!
-//! MVP scope (MUL-3720): toolkits are discovered dynamically. The
+//! MVP scope (PB-3720): toolkits are discovered dynamically. The
 //! toolkit→auth-config mapping is resolved at request time from Composio's
 //! /auth_configs endpoint (cached briefly), so a toolkit becomes
 //! connectable the moment an auth config is enabled for it in the Composio
@@ -553,7 +553,7 @@ impl Service {
 
     /// Returns only the Composio toolkits the project can actually connect
     /// (those with an enabled auth config). Toolkits with no enabled auth
-    /// config are filtered out entirely (MUL-4009): a card the user can't
+    /// config are filtered out entirely (PB-4009): a card the user can't
     /// act on is noise. A resolver error is NOT masked into an
     /// everything-not-connectable catalog — we return the error so the
     /// handler can surface a 502.
@@ -835,7 +835,7 @@ pub struct McpSession {
 }
 
 /// The API-facing descriptor for one Composio toolkit. `connectable` is
-/// always true on the wire since MUL-4009 (only connectable toolkits are
+/// always true on the wire since PB-4009 (only connectable toolkits are
 /// returned); the field is retained for backward compatibility with older
 /// desktop clients that branch on it.
 #[derive(Debug, Clone, serde::Serialize)]

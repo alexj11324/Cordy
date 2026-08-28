@@ -11,13 +11,13 @@ import type {
 } from "../types";
 
 /**
- * Catalog mutations (MUL-6243).
+ * Catalog mutations (PB-6243).
  *
  * No mutation invalidates the catalog on success. The refresh is the
  * `issue_status:changed` realtime event, which reaches the writing tab as well
  * as every other one, so a catalog edit costs each client exactly ONE catalog
  * read. Invalidating here too would make the admin who did the writing the
- * only client that reads it twice. (MUL-6458)
+ * only client that reads it twice. (PB-6458)
  *
  * That refetch is what CONVERGES the cache, and it is ordered correctly by
  * construction: the event is published after the write commits, so the refetch
@@ -133,7 +133,7 @@ export function useUpdateIssueStatus() {
     // catalog at render time (`useStatusLabel`, `colorOf`), so no cached issue
     // field can go stale here — refreshing the catalog is what repaints the
     // boards. The old invalidate refetched every board, list and table in the
-    // workspace to change one word. (MUL-6458)
+    // workspace to change one word. (PB-6458)
     onError: (_err, _vars, ctx) => {
       if (ctx?.previous) qc.setQueryData(listKey, ctx.previous);
       invalidate();

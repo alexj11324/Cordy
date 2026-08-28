@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * RichCodeBlock — the ONLY fenced-code dispatcher in the product (MUL-4922).
+ * RichCodeBlock — the ONLY fenced-code dispatcher in the product (PB-4922).
  *
  * Every product surface (Chat, Issue description, Comment) reaches fenced code
  * through this file. Adding a language branch anywhere else — a per-surface

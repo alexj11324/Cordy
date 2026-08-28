@@ -31,7 +31,7 @@ export const MODELS_GC_TIME_MS = 30 * 60_000;
 // wouldn't be honoured at runtime.
 //
 // `cached` reports that the server answered from its catalog cache rather than
-// a live daemon round trip (MUL-5444). It is not cosmetic: it feeds the
+// a live daemon round trip (PB-5444). It is not cosmetic: it feeds the
 // staleTime policy below so the client never extends the server's staleness
 // window past what the server itself promises.
 export async function resolveRuntimeModels(
@@ -77,7 +77,7 @@ export async function resolveRuntimeModels(
 // bound at the server's window alone: the next mount / focus revalidates, the
 // refreshed snapshot is picked up, and because the query already holds data
 // React Query refetches in the background — `isLoading` stays false, so no
-// picker flashes an empty loading state (MUL-5444).
+// picker flashes an empty loading state (PB-5444).
 export function staleTimeFor(data: RuntimeModelsResult | undefined): number {
   if (!data) return 0;
   return data.cached ? 0 : LIVE_MODELS_STALE_TIME_MS;

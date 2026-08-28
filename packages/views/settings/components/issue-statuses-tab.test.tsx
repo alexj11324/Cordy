@@ -140,7 +140,7 @@ describe("IssueStatusesTab", () => {
   });
 
   // The category header used to repeat the sentence its built-in row already
-  // carried, so every category said the same thing twice. (MUL-6422)
+  // carried, so every category said the same thing twice. (PB-6422)
   it("states a category's behavior once, on its built-in row", () => {
     catalog = [BUILT_IN_IN_REVIEW];
     render(<IssueStatusesTab />);

@@ -79,7 +79,7 @@ export function AttributeRow({ issue }: { issue: Issue }) {
   const { getName } = useActorLookup();
   // The chip shows the issue's own status, which may be a custom one — name
   // and colour come from the workspace catalog, the glyph from its category.
-  // (MUL-6243)
+  // (PB-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
 
   // Project read-only — fetch list to look up the title + icon. Cheap

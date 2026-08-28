@@ -54,7 +54,7 @@
 //! - os.Root root-scoped writes have no stable std equivalent; the symlink
 //!   identity check of openVerifiedCodexHomeRoot is preserved lexically
 //!   (refuse when the task home is a symlink, verify dir-ness before each
-//!   write) and the residual TOCTOU window is documented as Go's MUL-5647.
+//!   write) and the residual TOCTOU window is documented as Go's PB-5647.
 //! - filepath.Glob → walkdir-based matching (std glob semantics differ).
 
 use std::collections::HashSet;
@@ -122,16 +122,16 @@ pub struct CodexHomeOptions {
     /// Empty means use the host platform.
     pub goos: String,
     /// ResumeSessionID is the Codex thread/session ID this run intends to
-    /// resume, when any (MUL-4424).
+    /// resume, when any (PB-4424).
     pub resume_session_id: String,
     /// IsLocalDirectory marks a task whose env root is never reused across
-    /// task IDs (MUL-4424).
+    /// task IDs (PB-4424).
     pub is_local_directory: bool,
     /// SessionStoreKey is a stable, per-(agent, issue-or-chat) relative path
-    /// identifying this task's persistent Codex sessions store (MUL-4424).
+    /// identifying this task's persistent Codex sessions store (PB-4424).
     pub session_store_key: String,
     /// Effective Codex CLI args this task launches with. Only the Windows
-    /// sandbox decision reads them (MUL-4957).
+    /// sandbox decision reads them (PB-4957).
     pub codex_custom_args: Vec<String>,
 }
 
@@ -165,7 +165,7 @@ pub fn prepare_codex_home_with_opts(
 
     // Give the task its own local sessions/ directory instead of symlinking the
     // shared ~/.codex/sessions in — a huge shared history would otherwise stall
-    // Codex's `initialize` state backfill (MUL-4424). See prepare_codex_sessions_dir.
+    // Codex's `initialize` state backfill (PB-4424). See prepare_codex_sessions_dir.
     if let Err(err) = prepare_codex_sessions_dir(codex_home, &shared_home, &opts) {
         tracing::warn!(error = %format!("{err:#}"), "execenv: codex-home sessions dir prepare failed");
     }
@@ -188,7 +188,7 @@ pub fn prepare_codex_home_with_opts(
     // Sync isolated files from the shared source. Track the config.toml sync
     // outcome specifically: on Windows a failed sync makes the per-task config
     // untrustworthy, so the sandbox decision must fail closed rather than read
-    // a stale or absent copy as "unconfigured" and loosen (MUL-4957).
+    // a stale or absent copy as "unconfigured" and loosen (PB-4957).
     let mut config_sync_err: Option<String> = None;
     for name in CODEX_COPIED_FILES {
         let src = join_path(&[&shared_home, name]);
@@ -301,7 +301,7 @@ pub(crate) fn resolve_shared_codex_home() -> String {
 /// sharedConfigPresence is the tri-state existence of the shared
 /// ~/.codex/config.toml copy source. Three-valued so a stat that fails for a
 /// reason other than "not found" never masquerades as a confident "the user
-/// has no config" (MUL-4957).
+/// has no config" (PB-4957).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SharedConfigPresence {
     /// The shared config.toml is confidently not present.
@@ -328,7 +328,7 @@ fn stat_shared_codex_config(shared_home: &str) -> SharedConfigPresence {
 /// resolve_windows_sandbox_state determines, for a Windows task, whether a
 /// native Codex sandbox is configured — across the per-task config.toml and
 /// the effective custom args — failing closed (Undecidable) when it cannot
-/// tell (MUL-4957).
+/// tell (PB-4957).
 pub(crate) fn resolve_windows_sandbox_state(
     config_file: &str,
     config_sync_err: Option<&str>,
@@ -397,7 +397,7 @@ pub(crate) fn codex_session_store_dir(shared_home: &str, key: &str) -> String {
 /// segment isolating its stores from another profile-daemon sharing one
 /// ~/.codex. Collision-free AND fixed-length: the empty profile gets a
 /// reserved bare literal and every named profile is hex(SHA-256) under "p_"
-/// (MUL-4424).
+/// (PB-4424).
 pub(crate) fn codex_session_store_namespace(profile: &str) -> String {
     if profile.is_empty() {
         return "default".to_string();
@@ -445,7 +445,7 @@ fn sanitize_path_segment(s: &str) -> String {
 /// PruneCodexSessionStores reclaims per-issue Codex session stores under the
 /// shared home's cordy-sessions root idle past retention. retention <= 0
 /// disables pruning entirely. Scans ONLY the caller profile's namespace
-/// (MUL-4424). `reserve` atomically claims a store for deletion: ok=false
+/// (PB-4424). `reserve` atomically claims a store for deletion: ok=false
 /// leaves the store; otherwise the returned commit runs once removal finishes.
 /// None disables the guard (tests).
 /// Reservation callback handed to store pruners: Ok(commit) claims the store;
@@ -553,7 +553,7 @@ fn codex_store_stat(dir: &str) -> (Option<std::time::SystemTime>, i64) {
 
 /// prepare_codex_sessions_dir points codex-home/sessions at a sessions store
 /// holding ONLY this task's own history, never the machine's whole
-/// ~/.codex/sessions (MUL-4424). See the Go doc for the four-way layout table.
+/// ~/.codex/sessions (PB-4424). See the Go doc for the four-way layout table.
 fn prepare_codex_sessions_dir(
     codex_home: &str,
     shared_home: &str,
@@ -990,7 +990,7 @@ fn link_codex_rollout(src: &str, dst: &str) -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 /// sync_codex_referenced_files materialises every file the copied config.toml
-/// points at inside the per-task CODEX_HOME (MUL-5623 / #6271). Only the three
+/// points at inside the per-task CODEX_HOME (PB-5623 / #6271). Only the three
 /// keys below are followed — copying every path a config could mention would
 /// turn any user config into a channel for pulling arbitrary host files into a
 /// task sandbox.
@@ -1072,7 +1072,7 @@ fn sync_codex_referenced_file(
 /// symlink-refusal check Go binds to an opened os.Root handle. std has no
 /// stable root-scoped write API, so the identity check degrades to: refuse
 /// when the task home itself is a symlink, verify dir-ness before mkdir, and
-/// document the residual swap-after-check window as Go's MUL-5647.
+/// document the residual swap-after-check window as Go's PB-5647.
 fn materialise_in_codex_home(
     codex_home: &str,
     rel_path: &str,
@@ -1380,7 +1380,7 @@ fn log_codex_auth_state(auth_path: &str) {
 // ---------------------------------------------------------------------------
 
 /// sync_copied_file mirrors a per-task dst onto the current state of the
-/// shared src across Reuse() runs (regression fix MUL-2646):
+/// shared src across Reuse() runs (regression fix PB-2646):
 /// present→refresh, removed-source→drop dst, absent→no-op.
 #[allow(dead_code)]
 fn sync_copied_file(src: &str, dst: &str) -> anyhow::Result<()> {

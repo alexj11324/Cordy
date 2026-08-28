@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import { useTabStore, useActiveTabHistory } from "@/stores/tab-store";
 
 /**
- * Shell back/forward for the active tab (MUL-4741 session architecture).
+ * Shell back/forward for the active tab (PB-4741 session architecture).
  *
  * Per-tab history is a virtual stack on the tab session — the single app
  * router has no usable history of its own (the Coordinator always navigates

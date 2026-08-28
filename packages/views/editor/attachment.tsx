@@ -141,7 +141,7 @@ function normalize(
     // is the only working media src in that mode. `pickInlineMediaURL`
     // picks the URL with embedded credentials when one exists and
     // falls back to the input URL otherwise so legacy / unresolved
-    // markdown stays on its existing path. See MUL-3130 review.
+    // markdown stays on its existing path. See PB-3130 review.
     //
     // After picking the credential-bearing URL we run the absolutize
     // pass so a site-relative `/api/attachments/...` or `/uploads/...`
@@ -149,7 +149,7 @@ function normalize(
     // document origin doesn't proxy /api or /uploads to the API host
     // (Electron desktop, mobile webview). Web with a same-origin
     // proxy keeps `apiBaseUrl=""` and the helper is a no-op there.
-    // See MUL-3192 — quick-create modal regressed because the freshly-
+    // See PB-3192 — quick-create modal regressed because the freshly-
     // uploaded image URL stayed site-relative and Electron's renderer
     // origin (file://) couldn't load it.
     url: absolutizeMediaURL(
@@ -167,10 +167,10 @@ function normalize(
 // that persisted a site-relative `/api/attachments/<id>/download` or
 // `/uploads/<key>` URL.
 //
-// The current (post-MUL-3192) write path persists an absolute URL chosen
+// The current (post-PB-3192) write path persists an absolute URL chosen
 // server-side by the Rust file handler,
 // so new content already loads natively on every client. This helper only
-// matters for content written BEFORE MUL-3192 — those bodies still carry
+// matters for content written BEFORE PB-3192 — those bodies still carry
 // the old relative shape, and rendering them on a surface whose document
 // origin is NOT the API host (Electron desktop, mobile webview) needs the
 // API base URL pinned in at render time.
@@ -211,7 +211,7 @@ function absolutizeMediaURL(rawUrl: string): string {
 //                             load as a native img on a non-same-site
 //                             origin like Desktop's file://.
 //   - `record.markdown_url` — the durable URL the server picked for
-//                             persistence (MUL-3192 / `buildMarkdownURL`):
+//                             persistence (PB-3192 / `buildMarkdownURL`):
 //                             public CDN passthrough when the storage is
 //                             public-readable, or `CORDY_PUBLIC_URL +
 //                             /api/attachments/<id>/download` for
@@ -239,17 +239,17 @@ function absolutizeMediaURL(rawUrl: string): string {
 //     can remain the stable attachment endpoint. Skipped when the server
 //     reports `cdn_signed` — in CloudFront signed-URL mode the same
 //     domain serves PRIVATE content and a raw (unsigned) storage URL is
-//     a guaranteed 403 (MUL-3254).
+//     a guaranteed 403 (PB-3254).
 //  3. Local disk `record.url` — self-host LocalStorage without
 //     LOCAL_UPLOAD_BASE_URL stores a site-relative `/uploads/...` path.
 //     It is the direct static object URL and is loadable once
 //     `absolutizeMediaURL` prefixes apiBaseUrl in split-origin clients.
 //  4. `record.markdown_url` — the durable, server-policy-aligned URL.
 //     Beats raw `record.url` because it never points at a private
-//     bucket (must-fix 2 from MUL-3192 review), except for the explicit
+//     bucket (must-fix 2 from PB-3192 review), except for the explicit
 //     site-relative local upload path above.
 //  5. `record.url` — legacy fallback for responses that omit
-//     `markdown_url` (a backend old enough to predate MUL-3192).
+//     `markdown_url` (a backend old enough to predate PB-3192).
 //  6. The input URL — when there's no record at all.
 function pickInlineMediaURL(
   record: AttachmentRecord,

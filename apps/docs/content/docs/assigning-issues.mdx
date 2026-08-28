@@ -72,10 +72,10 @@ Changing the assignee, unassigning, or changing the issue status doesn't stop a 
 ## Use the CLI
 
 ```bash
-cordy issue assign MUL-42 --to "Agent name"
-cordy issue assign MUL-42 --to-id <agent-uuid> --no-start
-cordy issue status MUL-42 in_progress --no-start
-cordy issue assign MUL-42 --unassign
+cordy issue assign PB-42 --to "Agent name"
+cordy issue assign PB-42 --to-id <agent-uuid> --no-start
+cordy issue status PB-42 in_progress --no-start
+cordy issue assign PB-42 --unassign
 ```
 
 In scripts, use `--to-id <uuid>` to avoid matching the wrong object with the same name. Look up UUIDs with `cordy agent list --output json` or `cordy workspace member list --output json`.

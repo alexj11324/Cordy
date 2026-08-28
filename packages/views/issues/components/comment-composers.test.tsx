@@ -18,7 +18,7 @@ type QuickActionMenuProp = {
 };
 
 // Uploads now flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (MUL-5181). Tests drive uploads by
+// `api.uploadFile(file, ctx, signal)` (PB-5181). Tests drive uploads by
 // mocking that call directly rather than the old `uploadWithToast` hook.
 const apiUploadFile = vi.hoisted(() => vi.fn());
 const apiListWorkspaces = vi.hoisted(() => vi.fn());
@@ -29,11 +29,11 @@ const editorDefaultValues = vi.hoisted(() => ({
   values: [] as Array<string | undefined>,
 }));
 // The `/` quick-action menu is wired through a ContentEditor prop, so the mock
-// editor records it — that prop being absent is exactly the MUL-5588 bug.
+// editor records it — that prop being absent is exactly the PB-5588 bug.
 const editorQuickActionMenu = vi.hoisted(() => ({
   last: undefined as QuickActionMenuProp | undefined,
 }));
-// Observability + failure control for the write-back insert path (MUL-5181):
+// Observability + failure control for the write-back insert path (PB-5181):
 // `insertMarkdownAtEnd` returns false while the (simulated) Tiptap instance
 // doesn't exist yet, exactly like the real handle.
 // Post-send caret policy: the top-level composer blurs (the page scrolls to the
@@ -282,7 +282,7 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Quick action `/` menu (MUL-5588)
+// Quick action `/` menu (PB-5588)
 // ---------------------------------------------------------------------------
 
 describe("quick action `/` menu", () => {
@@ -307,7 +307,7 @@ describe("quick action `/` menu", () => {
   }
 
   // Both composers post to the same issue, so `/` must offer the same catalog in
-  // both. The reply box shipped without the prop entirely (MUL-5588): its menu
+  // both. The reply box shipped without the prop entirely (PB-5588): its menu
   // listed only the built-in `/note` while the top-level composer listed the
   // workspace's quick actions.
   const composers = [
@@ -571,7 +571,7 @@ describe("comment composers", () => {
     });
   });
 
-  // MUL-5181 P0: the editor stays interactive during a send — text typed
+  // PB-5181 P0: the editor stays interactive during a send — text typed
   // while draft A is in flight must survive A's success, in store AND editor.
   it("text typed while a comment send is in flight survives the success", async () => {
     let resolveSubmit!: (v: boolean) => void;
@@ -626,7 +626,7 @@ describe("comment composers", () => {
     expect(focusCalls.focused).toBe(0);
   });
 
-  // MUL-5181 P0: a submit that outlives its composer may only clear the draft
+  // PB-5181 P0: a submit that outlives its composer may only clear the draft
   // it submitted — never one typed after the composer unmounted and reopened.
   it("a late comment success does NOT clear a draft typed after unmount", async () => {
     let resolveSubmit!: (v: boolean) => void;
@@ -681,7 +681,7 @@ describe("comment composers", () => {
   });
 });
 
-// MUL-4808 — posting mid-upload strips the pending image's blob URL out of the
+// PB-4808 — posting mid-upload strips the pending image's blob URL out of the
 // body and binds no attachment id, so the comment lands without the file.
 describe("comment composers — upload submit gate", () => {
   const uploadAttachment = (id: string, url: string) =>
@@ -763,7 +763,7 @@ describe("comment composers — upload submit gate", () => {
   });
 
   it("does not redraw a placeholder the user deleted mid-upload", async () => {
-    // MUL-5181's rule: a placeholder the user removed stays removed. The
+    // PB-5181's rule: a placeholder the user removed stays removed. The
     // rebuild runs once per id per mount, so the next store write cannot undo
     // that decision — the send button is what still says the upload is live.
     useCommentDraftStore.getState().addUpload("new:issue-1", {
@@ -979,7 +979,7 @@ describe("comment composers — upload submit gate", () => {
     });
 
     // The completed upload's link is in the body; the user deletes it. What
-    // is not referenced must not ship — deleting really unbinds (MUL-5181).
+    // is not referenced must not ship — deleting really unbinds (PB-5181).
     fireEvent.change(editor, { target: { value: "keep this, dropped the image" } });
     fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
 

@@ -41,7 +41,7 @@
 //! are not listed as supported. If the bootstrap call returns a structured
 //! error from Lark, this connector exits run with the error wrapped and the
 //! Hub's backoff loop logs it on every retry — making the misconfiguration
-//! visible. See MUL-2671 review thread for the smoke-test path.
+//! visible. See PB-2671 review thread for the smoke-test path.
 
 use std::sync::Arc;
 use std::time::Duration;

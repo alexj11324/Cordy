@@ -51,7 +51,7 @@ function contentClass() {
 }
 
 describe("CreateIssueDialog sizing", () => {
-  // MUL-6236: every width the shell sets is `!important` so it can beat
+  // PB-6236: every width the shell sets is `!important` so it can beat
   // DialogContent's own sizing — which also beat DialogContent's
   // `max-w-[calc(100%-2rem)]` gutter, so the card ran the full width of a
   // phone screen with no margin on either side.

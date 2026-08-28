@@ -1,4 +1,4 @@
--- Fix a partial-index predicate mismatch on agent_task_queue (MUL-4159).
+-- Fix a partial-index predicate mismatch on agent_task_queue (PB-4159).
 --
 -- Migration 040 created idx_agent_task_queue_chat_pending with the predicate
 -- `status IN ('queued', 'dispatched', 'running')`. Migration 109 later added a

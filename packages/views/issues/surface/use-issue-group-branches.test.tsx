@@ -20,7 +20,7 @@ function makeIssue(id: string, status: Issue["status"]): Issue {
     id,
     workspace_id: "ws-1",
     number: id === "child-1" ? 1 : 2,
-    identifier: id === "child-1" ? "MUL-1" : "MUL-2",
+    identifier: id === "child-1" ? "PB-1" : "PB-2",
     title: id,
     description: null,
     status,
@@ -130,7 +130,7 @@ describe("useIssueGroupBranches", () => {
             parent: {
               id: "parent-1",
               number: 10,
-              identifier: "MUL-10",
+              identifier: "PB-10",
               title: "Parent",
               status: "in_progress",
             },

@@ -10,9 +10,9 @@ use super::execenv::TaskContextForEnv;
 
 /// TaskKind labels the dispatch path that the runtime brief should
 /// follow for a given TaskContextForEnv. Used by
-/// `buildMetaSkillContentSlim` (MUL-3560 brief; the `runtime_brief_slim`
+/// `buildMetaSkillContentSlim` (PB-3560 brief; the `runtime_brief_slim`
 /// flag that once gated it against a legacy verbose brief was retired in
-/// MUL-4297, so this is now the only brief).
+/// PB-4297, so this is now the only brief).
 ///
 /// Four kinds, mutually exclusive in practice. [`classify_task`] documents the
 /// tiebreak rule that applies if a future caller accidentally violates the
@@ -22,7 +22,7 @@ pub enum TaskKind {
     /// This run operates on a real Cordy issue. It deliberately does NOT
     /// distinguish comment-triggered from assignment-triggered runs.
     ///
-    /// Those were two kinds until MUL-5377. Splitting them made the rendered
+    /// Those were two kinds until PB-5377. Splitting them made the rendered
     /// brief — which Claude Code loads into messages[0], ahead of the entire
     /// conversation — differ between the first (on-assign) run and every
     /// later (comment) run on the same resumed session, which invalidated the
@@ -46,7 +46,7 @@ pub enum TaskKind {
 ///
 /// Deliberately does not read ctx.trigger_comment_id: the classification must
 /// not vary across runs of the same resumed session, or the brief's bytes
-/// change and the prompt cache is lost from messages[0] onward (MUL-5377).
+/// change and the prompt cache is lost from messages[0] onward (PB-5377).
 pub fn classify_task(ctx: &TaskContextForEnv) -> TaskKind {
     if !ctx.chat_session_id.is_empty() {
         return TaskKind::Chat;

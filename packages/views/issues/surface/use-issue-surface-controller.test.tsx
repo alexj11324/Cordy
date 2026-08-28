@@ -30,7 +30,7 @@ function makeIssue(
   return {
     workspace_id: "ws-1",
     number: 1,
-    identifier: "MUL-1",
+    identifier: "PB-1",
     title: overrides.id,
     description: null,
     priority: "none",
@@ -183,7 +183,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       ...tableMethods,
@@ -241,13 +241,13 @@ describe("useIssueSurfaceController", () => {
           scope: { kind: "project", project_id: "p1" },
         }),
         // A workspace with no custom statuses keeps the original contract —
-        // that is what makes this safe across a rolling deploy. (MUL-6243)
+        // that is what makes this safe across a rolling deploy. (PB-6243)
         group: { kind: "status" },
       }),
     );
   });
 
-  // MUL-5477. `tableQuerySpec` is the identity every downstream consumer keys
+  // PB-5477. `tableQuerySpec` is the identity every downstream consumer keys
   // off: the facet request, the status/group branch hooks, and — the expensive
   // one — the Table's `useQueries` branch list, which is rebuilt whenever this
   // object changes. Two of the queries feeding the spec defaulted their data to
@@ -258,7 +258,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -344,7 +344,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues: legacyListIssues,
       listIssueTableRows: tableRows,
@@ -708,7 +708,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableFacets,
@@ -797,7 +797,7 @@ describe("useIssueSurfaceController", () => {
       setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
         listIssues,
         ...tableMethods,
@@ -862,7 +862,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -916,7 +916,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -973,7 +973,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listGroupedIssues: vi.fn(() => never()),
@@ -1018,7 +1018,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (MUL-6243)
+      // a built-in key IS its own category. (PB-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listGroupedIssues: vi.fn(() => never()),
@@ -1219,7 +1219,7 @@ describe("useIssueSurfaceController", () => {
     expect(result.current.isEmpty).toBe(true);
   });
 
-  // --- cancelled as a default status (MUL-4290) ------------------------
+  // --- cancelled as a default status (PB-4290) ------------------------
   // Cancelled is a first-class default lifecycle status: fetched into the
   // cache, surfaced by default, narrowed (not unlocked) by the status filter,
   // and hideable like any other status.
@@ -1343,7 +1343,7 @@ describe("useIssueSurfaceController", () => {
     );
   });
 
-  // --- working-chip scope (MUL-4884, MUL-5525) ---------------------------
+  // --- working-chip scope (PB-4884, PB-5525) ---------------------------
   // The header chip promises "N agents working" where N is the number of agents
   // holding rows that clicking it leaves. The running-issue ids still come from
   // the working-agents endpoint and go to the server as a filter; the COUNT
@@ -1404,7 +1404,7 @@ describe("useIssueSurfaceController", () => {
       makeWorkingAgent("agent-1", ["todo-1"]),
       // Working on an issue this project does not contain. The old
       // workspace-wide chip counted it here and then opened an empty list
-      // (MUL-5525).
+      // (PB-5525).
       makeWorkingAgent("agent-elsewhere", ["other-project-1"]),
     ]);
 

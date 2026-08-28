@@ -82,7 +82,7 @@ export function BuilderWorkspace({
   // Resuming: the conversation already runs somewhere, and only the server
   // knows where. Until it answers, the form seeds no runtime at all — falling
   // back to the first usable one would put the picker on a runtime that
-  // executes nothing (MUL-5163).
+  // executes nothing (PB-5163).
   const runtimeSeed = useMemo(
     () => ({
       ready: sessionSettled,

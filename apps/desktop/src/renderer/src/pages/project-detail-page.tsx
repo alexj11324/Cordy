@@ -11,7 +11,7 @@ export function ProjectDetailPage() {
   const { data: project } = useQuery(projectDetailOptions(wsId, id!));
 
   // Plain text only — the project's icon is shown by the tab's leading visual,
-  // not concatenated into the title (MUL-4370).
+  // not concatenated into the title (PB-4370).
   useDocumentTitle(project ? project.title : "Project");
 
   if (!id) return null;

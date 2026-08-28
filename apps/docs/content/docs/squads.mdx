@@ -59,7 +59,7 @@ After the first dispatch, the leader is woken up automatically by **most subsequ
 | A squad member posts a progress update with no `@mention` | **Yes** — the leader re-evaluates whether the next step is needed |
 | Anyone posts a comment that explicitly `@`-mentions another agent / member / squad / `@all` | **No** — the explicit `@` is the routing signal; the leader gets out of the way |
 | The leader's own comment (self-trigger) | **No** — guarded to prevent a loop |
-| A comment containing only an issue cross-reference (`[MUL-123](mention://issue/...)`) | **Yes** — issue references aren't routing |
+| A comment containing only an issue cross-reference (`[PB-123](mention://issue/...)`) | **Yes** — issue references aren't routing |
 
 Dedup applies on top of these rules: if the leader already has a `queued` or `dispatched` task on this issue, a new trigger won't enqueue a duplicate.
 

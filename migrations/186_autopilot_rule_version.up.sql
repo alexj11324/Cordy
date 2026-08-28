@@ -1,4 +1,4 @@
--- Human Attribution, Phase 1 — autopilot rule_owner snapshot table (MUL-4302 §3.4/§7).
+-- Human Attribution, Phase 1 — autopilot rule_owner snapshot table (PB-4302 §3.4/§7).
 --
 -- An autopilot trigger (schedule / webhook / manual) enqueues a run that NO human
 -- authorized in the moment, so its authorization originator_user_id stays NULL. But
@@ -18,7 +18,7 @@
 -- rule_version_id always resolves to the exact config/publisher that was live when it
 -- fired, even after the rule is later re-published or the publisher leaves.
 --
--- Constraints (MUL-4302 §7 + workspace DB rules): NO foreign key, NO cascade —
+-- Constraints (PB-4302 §7 + workspace DB rules): NO foreign key, NO cascade —
 -- integrity is resolved in the application layer. published_by_id is nullable
 -- (system-published rules have no member); a NULL publisher degrades the run to
 -- 'unattributed' rather than fabricating a human.
@@ -40,4 +40,4 @@ ALTER TABLE autopilot_rule_version
     DROP CONSTRAINT IF EXISTS autopilot_rule_version_published_by_id_fkey;
 
 COMMENT ON TABLE autopilot_rule_version IS
-    'Append-only snapshot of autopilot rule publishes (MUL-4302 §3.4). One row per substantive publish (create / enable / resume / trigger-condition / target / instructions change), recording the publisher + effective-config summary. Dispatch resolves the latest row for an autopilot as the run''s rule_owner accountable human. No FK, no cascade.';
+    'Append-only snapshot of autopilot rule publishes (PB-4302 §3.4). One row per substantive publish (create / enable / resume / trigger-condition / target / instructions change), recording the publisher + effective-config summary. Dispatch resolves the latest row for an autopilot as the run''s rule_owner accountable human. No FK, no cascade.';

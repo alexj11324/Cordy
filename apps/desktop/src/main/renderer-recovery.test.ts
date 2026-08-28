@@ -86,7 +86,7 @@ describe("installRendererRecoveryHandlers", () => {
     const showReloadPrompt = vi.fn(async () => "dismiss" as const);
     const desktopRoute = {
       surface: "tab",
-      path: "/acme/issues/MUL-3239",
+      path: "/acme/issues/PB-3239",
       workspaceSlug: "acme",
       tabId: "tab-1",
       reportedAt: "2026-06-15T00:00:00.000Z",

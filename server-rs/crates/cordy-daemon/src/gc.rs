@@ -990,7 +990,7 @@ pub(crate) async fn run_gc<H: GcHost>(host: &H, ctx: &Ctx) {
     // directory and are never reclaimed by the task walk above.
     prune_repo_worktrees_ctx(host, ctx, root, &mut stats).await;
 
-    // Reclaim per-issue Codex session stores idle past their TTL (MUL-4424).
+    // Reclaim per-issue Codex session stores idle past their TTL (PB-4424).
     let now = Utc::now();
     let reserve = |p: &Path| host.activity().reserve_store_for_gc(p);
     let (stores_removed, store_bytes) =
@@ -1454,7 +1454,7 @@ fn gc_decision_issue_result<H: GcHost>(
 
     // result.Status is a CATEGORY, normalized server-side, so this literal
     // comparison covers custom statuses too — an issue on a `done`-category
-    // custom status is terminal here. (MUL-6243)
+    // custom status is terminal here. (PB-6243)
     let stale = result
         .updated_at
         .map(|u| {

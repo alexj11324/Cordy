@@ -1,5 +1,5 @@
 //! Seeds `task_usage_hourly` from historical `task_usage` rows before
-//! migration 103's fail-closed watermark guard (MUL-2957).
+//! migration 103's fail-closed watermark guard (PB-2957).
 //!
 //! The hook does NOT
 //! fail when task_usage is empty (fresh DB — the watermark is stamped so

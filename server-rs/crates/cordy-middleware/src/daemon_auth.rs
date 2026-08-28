@@ -192,8 +192,8 @@ pub async fn daemon_auth_middleware(
         return Ok(next.run(req).await);
     }
 
-    // Fallback: PAT tokens ("mul_" prefix).
-    if token.starts_with("mul_") {
+    // Fallback: PAT tokens ("pby_" prefix).
+    if token.starts_with("pby_") {
         if let Some(user_id) = state.pat_cache.get(&hash).await {
             if reject_disabled(&user_id, "", DAEMON_AUTH_PATH_PAT) {
                 return Err(err_disabled());

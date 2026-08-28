@@ -2,10 +2,10 @@
  * Stable URL helpers for attachment references that get persisted into
  * markdown bodies (issue descriptions, comment bodies, chat messages).
  *
- * Background — MUL-3130:
+ * Background — PB-3130:
  *
  *   The original upload flow returned `att.url` as the link to embed in
- *   markdown. After PR #3903 (MUL-3132), `att.url` for the LocalStorage
+ *   markdown. After PR #3903 (PB-3132), `att.url` for the LocalStorage
  *   backend became a 30-minute HMAC-signed `/uploads/<key>?exp&sig` URL.
  *   That URL is short-lived by design — it's the in-memory token that
  *   keeps native browser <img>/<video> resource loads working without an
@@ -120,8 +120,8 @@ function contentReferencesURL(content: string, url?: string): boolean {
  * but not rendered as a card below).
  *
  * The two checks must both run because:
- *   - new uploads from a post-MUL-3130 client write the stable URL
- *   - edits to a pre-MUL-3130 comment may still have the legacy URL
+ *   - new uploads from a post-PB-3130 client write the stable URL
+ *   - edits to a pre-PB-3130 comment may still have the legacy URL
  *     in `entry.content`
  *   - mixed content (one image uploaded before the fix, one after)
  *     is possible during the rollout window
