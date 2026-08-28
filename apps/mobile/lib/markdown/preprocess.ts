@@ -28,7 +28,7 @@ import { preprocessMentionShortcodes } from "@cordy/core/markdown";
 //
 //   - Label allows backslash-escaped metacharacters (`\[ \] \\ \( \)`) so a
 //     filename like `a]b.pdf` — which the CLI escapes to `a\]b.pdf` in its
-//     `!file[...]` output (see cmd_attachment.go escapeMarkdownLabel) — is
+//     `!file[...]` output — is
 //     captured whole. Backslash is excluded from the negated class so
 //     overlapping alternatives can't backtrack (ReDoS, web #4881).
 //   - URL is restricted to the same allowlist web accepts: site-relative

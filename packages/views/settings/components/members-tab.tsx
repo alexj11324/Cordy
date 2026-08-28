@@ -101,7 +101,7 @@ function MemberRow({
   canManage: boolean;
   canManageOwners: boolean;
   /** Total number of owners in this workspace — needed to gate demoting the
-   *  last owner per `workspace.go:497-507`. */
+   *  last owner per the Rust workspace handler. */
   ownerCount: number;
   isSelf: boolean;
   busy: boolean;

@@ -9,8 +9,8 @@
  * Display while editing: plain text `Hi @bohan please` (sentinel invisible).
  * On send: scan for `⁣@<word>` runs, zip with the ordered `markers`
  * list to produce `[@<name>](mention://<type>/<id>)` markdown that the
- * backend's `util.ParseMentions` regex (server/internal/util/mention.go:16)
- * already accepts. **Issues drop the `@` in the label** — they render as
+ * backend's mention parser already accepts. **Issues drop the `@` in the
+ * label** — they render as
  * `[MUL-123](mention://issue/<uuid>)` to match web (mention-extension.ts).
  *
  * Sentinel mismatch (e.g. user copy-paste broke a marker) → serializer

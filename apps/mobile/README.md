@@ -1,6 +1,6 @@
 # Cordy Mobile (iOS)
 
-Expo + React Native iOS client for Cordy. Independent from web/desktop — shares only types from `@cordy/core/`. See [`CLAUDE.md`](./CLAUDE.md) for the locked tech-stack baseline and import rules.
+Expo + React Native iOS client for Cordy. Independent from web/desktop — shares only types from `@cordy/core/`. See [`AGENTS.md`](./AGENTS.md) for the locked tech-stack baseline and import rules.
 
 ## Just want to use it on your phone? (no development)
 

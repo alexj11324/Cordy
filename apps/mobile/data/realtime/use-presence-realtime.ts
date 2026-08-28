@@ -8,7 +8,7 @@
  *   - agentTaskSnapshotOptions← task:queued / dispatch / completed / failed /
  *                               cancelled
  *
- * Deliberately NOT subscribed (cellular-data rule, apps/mobile/CLAUDE.md):
+ * Deliberately NOT subscribed (cellular-data rule, apps/mobile/AGENTS.md):
  *   - daemon:heartbeat — every 15s × in-online runtime; web also skips it
  *     (packages/core/realtime/use-realtime-sync.ts:147). An invalidate per
  *     heartbeat would refetch agents+runtimes+snapshot 4× a minute per

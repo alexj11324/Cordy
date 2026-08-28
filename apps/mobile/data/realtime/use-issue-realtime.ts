@@ -81,7 +81,7 @@ export function useIssueRealtime(
       // AgentActivityRow + RunsSheet can refresh without forcing a full
       // timeline rebuild. WS task payloads only carry { task_id, agent_id,
       // issue_id, status } — not the full AgentTask object — so per
-      // apps/mobile/CLAUDE.md "Patch over invalidate" rule #1 (payload is
+      // apps/mobile/AGENTS.md "Patch over invalidate" rule #1 (payload is
       // just an id), invalidate is the correct primitive.
       const invalidateTaskQueries = () => {
         qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });

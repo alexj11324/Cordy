@@ -5,7 +5,7 @@
  * Copy mirrors packages/views/settings/components/notifications-tab.tsx but
  * hardcoded English (mobile has no i18n infra yet). The group labels MUST
  * stay in sync with web — they describe the same server-side semantics,
- * and divergent labels would violate behavioral parity (apps/mobile/CLAUDE.md).
+ * and divergent labels would violate behavioral parity (apps/mobile/AGENTS.md).
  */
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";

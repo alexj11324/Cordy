@@ -90,7 +90,7 @@ export function readRuntimeCliVersion(metadata: Record<string, unknown> | undefi
 
 /**
  * Frontend mirror of the server's `MinHandoffCLIVersion` soft gate
- * (`server/pkg/agent/version.go`). The assignment handoff note is only rendered
+ * in the Rust agent-version module. The assignment handoff note is only rendered
  * into the run's opening prompt by daemons at or above this cordy CLI version
  * (MUL-3375); older daemons silently drop it. Unlike the quick-create gate this
  * never blocks the assignment — the UI just grays out the note box and warns.
@@ -148,7 +148,7 @@ function meetsMinCliVersion(detected: string | undefined | null, minimum: string
 /**
  * Capability a daemon advertises when it implements worktree mode for
  * local_directory resources. Mirrors `DaemonCapabilityLocalWorktreeV1` in
- * `server/pkg/protocol/messages.go`.
+ * the Rust protocol crate.
  */
 export const LOCAL_WORKTREE_CAPABILITY = "local-worktree-v1";
 

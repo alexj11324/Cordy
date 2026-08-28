@@ -46,7 +46,7 @@ export function formatLastSeen(lastSeenAt: string | null): string {
 // Turns the back-end's `device_info` string ("MacBook-Pro · darwin-amd64",
 // "some-host · linux-amd64") into something humans recognise. We don't have
 // hardware model or geo data on the wire today, so we settle for an OS-aware
-// rewrite of the GOOS/GOARCH suffix while preserving the hostname.
+// rewrite of the daemon OS/architecture suffix while preserving the hostname.
 export function formatDeviceInfo(raw: string | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -178,7 +178,7 @@ export function formatUsd(n: number): string {
 // variants (`gpt-5.5-mini`, hypothetical `gpt-5.4-foo`) from silently
 // inheriting the price of a near-named relative; they surface in the
 // unmapped diagnostic instead. Mirror new entries in
-// `server/pkg/agent/models.go` so the catalog and pricing stay in sync.
+// the Rust agent model catalog so the catalog and pricing stay in sync.
 //
 // Provider-qualified keys: a model id that is NOT vendor-prefixed
 // (`claude-*`, `gpt-*`, `o3*`/`o4*`, `glm-*`, `deepseek-*`, `kimi-*`,
@@ -220,7 +220,7 @@ const MODEL_PRICING: Record<
 
   // -- OpenAI: dotted-minor Codex catalog SKUs. Each generation is priced
   //    independently — no fallback to `gpt-5`. Entries track
-  //    `server/pkg/agent/models.go` (Codex provider list).
+  //    the Rust Codex provider model list.
   //    gpt-5.6 (sol/terra/luna) uses OpenAI's official announcement rates.
   //    5.6+ is the first OpenAI generation to bill cache writes separately:
   //    cacheRead = 0.1x input (90% cached-input discount), cacheWrite = 1.25x
@@ -300,7 +300,7 @@ const MODEL_PRICING: Record<
   //    them resolve at all, since the daemon tags the rows with the runtime
   //    provider `grok`, not `xai`.
   //    `grok-composer-*` ships in the Grok Build catalog
-  //    (server/pkg/agent/models.go) but is absent from the price sheet; it
+  //    but is absent from the price sheet; it
   //    deliberately stays unmapped rather than inheriting a guessed rate. --
   "grok-4.5":                     { input: 2,    output: 6,    cacheRead: 0.30, cacheWrite: 2 },
   "grok-4.3":                     { input: 1.25, output: 2.50, cacheRead: 0.20, cacheWrite: 1.25 },

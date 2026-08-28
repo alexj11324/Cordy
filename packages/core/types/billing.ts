@@ -142,7 +142,7 @@ export interface BillingPriceTier {
   // When `bonus_expires_in` is omitted but `bonus_credits` is present,
   // the bonus credits never expire.
   bonus_credits?: number;
-  // Go time.Duration string, e.g. "720h0m0s" = 30 days.
+  // Duration string, e.g. "720h0m0s" = 30 days.
   bonus_expires_in?: string;
 }
 

@@ -340,7 +340,7 @@ describe("canEditComment / canDeleteComment", () => {
   });
   it("admin CAN delete an agent-authored comment", () => {
     // delete is broader than edit — admins moderate any comment regardless of
-    // author type. Mirrors backend `comment.go:507-512`.
+    // author type. Mirrors the backend comment permission gate.
     const c = makeComment({ author_type: "agent", author_id: "agt_1" });
     expect(canDeleteComment(c, { userId: BOB, role: "admin" }).allowed).toBe(
       true,

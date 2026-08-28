@@ -86,7 +86,7 @@ export function applyDraftModelChange(
 }
 
 /**
- * Mirrors the server's `utf8.RuneCountInString` check (agent.go:1013). The
+ * Mirrors the server's Unicode scalar-count check. The
  * textarea's `maxLength` covers typing and pasting, but a duplicated agent or
  * an AI-builder draft can seed a longer value programmatically — without this
  * the create button would submit into a guaranteed 400.
@@ -162,7 +162,7 @@ export function deriveDuplicateAccess(
  * exact runtime. When the source runtime is gone, private to somebody else or
  * offline, the draft falls back to another runtime and the three are cleared
  * for the user to pick again — the same rule `cordy agent copy` already
- * enforces server-side (cmd_agent_copy.go). Before MUL-5390 the fallback kept
+ * enforces server-side. Before MUL-5390 the fallback kept
  * the source `model` and silently persisted a cross-provider value.
  */
 export function buildDuplicateDraft(

@@ -22,7 +22,7 @@
  * the More cell and stripping the label. The Option B pattern here
  * leaves the real tab button entirely alone.
  *
- * Visual conventions inside the popover (apps/mobile/CLAUDE.md):
+ * Visual conventions inside the popover (apps/mobile/AGENTS.md):
  *   - All glyphs are SF Symbols rendered via expo-image (`sf:` source),
  *     so they share the visual language of the bottom tab bar icons.
  *   - All colours route through THEME tokens (foreground /

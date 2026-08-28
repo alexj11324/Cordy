@@ -4,7 +4,7 @@
  * Prefix shape mirrors web's `packages/core/issues/queries.ts` so the same
  * WS invalidation surface (e.g. `invalidateQueries({ queryKey: issueKeys.myAll(wsId) })`)
  * eventually drives both clients. Keys are workspace-scoped — switching
- * workspace flips wsId and the cache moves automatically (root CLAUDE.md
+ * workspace flips wsId and the cache moves automatically (root AGENTS.md
  * "Workspace-scoped queries must key on wsId").
  */
 import type { ListIssuesParams } from "@cordy/core/types";

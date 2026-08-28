@@ -281,7 +281,7 @@ export function createSlashCommandSuggestion(qc: QueryClient): Omit<
  * chat `/` picker (which lists the active agent's skills), these are a fixed,
  * hand-curated set. Currently only `/note`, which marks a comment as a
  * human-only note that won't trigger the assigned agent — mirrors the backend
- * `noteCommentPrefix` in server/internal/handler/comment.go.
+ * the note-comment prefix in the Rust comment handler.
  */
 export const BUILTIN_COMMANDS: SlashCommandItem[] = [
   { id: "note", label: "note", descriptionKey: "note" },

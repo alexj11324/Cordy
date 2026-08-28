@@ -129,7 +129,7 @@ export function useIssueSubscribers(issueId: string, userId?: string) {
   // the default, and that means the subscriber picker too, not just the
   // subscribe button: an unchecked row for someone already subscribed sends an
   // explicit subscribe, which rewrites their reason to 'manual' and clears any
-  // opt-out scope (server/pkg/db/queries/subscriber.sql). A failed query stays
+  // opt-out scope in the Rust subscriber query module. A failed query stays
   // unknown as well; only a resolved one is truth (MUL-5714).
   const subscriptionKnown = isSuccess;
   // Why the current user is watching. Drives the "your agent created this on

@@ -11,7 +11,7 @@ import type { Workspace } from "@cordy/core/types";
 
 // Hook tests for @cordy/core/paths live here because packages/core/ runs
 // Vitest in node environment (no jsdom). packages/views/ already has jsdom +
-// @testing-library/react configured, so it's the correct home per CLAUDE.md
+// @testing-library/react configured, so it's the correct home per AGENTS.md
 // testing rules ("shared UI components live in packages/views/*.test.tsx").
 
 function makeWorkspace(over: Partial<Workspace>): Workspace {

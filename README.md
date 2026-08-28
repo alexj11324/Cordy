@@ -64,10 +64,8 @@ agent CLIs that you install and authenticate separately.
 | Database | PostgreSQL 17 with pgvector |
 | Local runtime | Rust CLI and daemon launching installed agent CLIs |
 
-The Rust server, CLI, migration runner, and backfill binaries are the default
-production entrypoints. Legacy Go source remains temporarily as migration
-evidence and for compatibility checks; its final removal is tracked in the
-[Go-to-Rust migration audit](tasks/go-to-rust-migration-audit.md).
+The Rust server, CLI, migration runner, and backfill binaries are the production
+entrypoints.
 
 ## Run from source
 
@@ -77,9 +75,6 @@ evidence and for compatibility checks; its final removal is tracked in the
 - pnpm 10.28.2
 - a stable Rust toolchain
 - Docker with Docker Compose for PostgreSQL
-
-Go is only needed for the temporary legacy compatibility suite while the final
-migration gate remains open.
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git patchbay

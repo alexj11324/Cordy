@@ -9,7 +9,7 @@
  * Pure derivation is shared though — `deriveAgentPresenceDetail` /
  * `buildPresenceMap` are imported from `@cordy/core/agents` (pure functions,
  * on the whitelist). Don't re-implement the three-state logic locally; the
- * web/desktop/mobile semantics MUST agree (apps/mobile/CLAUDE.md
+ * web/desktop/mobile semantics MUST agree (apps/mobile/AGENTS.md
  * "State enums and transitions must agree").
  *
  * Two differences from the web hook:

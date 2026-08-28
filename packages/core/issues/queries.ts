@@ -485,7 +485,7 @@ export function childIssuesOptions(wsId: string, id: string) {
 
 /**
  * Server cap on parent_ids per `GET /api/issues/children` request — must
- * match `listChildrenByParentsLimit` in server/internal/handler/issue.go.
+ * match `list_children_by_parents` in the Rust issue query layer.
  * Exceeding it returns 400, so the client chunks larger requests.
  */
 export const CHILDREN_BY_PARENTS_CHUNK_SIZE = 200;

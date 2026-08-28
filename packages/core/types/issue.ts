@@ -79,7 +79,7 @@ export interface Issue {
   position: number;
   // Ordered barrier group among sibling sub-issues (null = unstaged). The
   // parent assignee is notified/woken only when every sub-issue in a stage
-  // finishes; see server/internal/handler/issue_child_done.go.
+  // finishes; see the Rust issue child-completion flow.
   stage: number | null;
   // Calendar days as date-only "YYYY-MM-DD" (no time, no timezone). Use the
   // helpers in @cordy/core/issues/date to format/compare — never `new Date()`

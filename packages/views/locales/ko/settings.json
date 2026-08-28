@@ -805,7 +805,7 @@
     "description": "이 워크스페이스와 연결된 Git 저장소입니다. 에이전트는 이 저장소를 클론해 코드 작업을 합니다.",
     "url_placeholder": "https://git.example.com/org/repo.git 또는 git@git.example.com:org/repo.git",
     "url_empty": "(빈 URL)",
-    "description_placeholder": "설명(예: Go 백엔드 + Next.js 프런트엔드)",
+    "description_placeholder": "설명(예: Rust 백엔드 + Next.js 프런트엔드)",
     "add": "저장소 추가",
     "connect_github": "GitHub 연결",
     "choose_from_github": "GitHub에서 선택",

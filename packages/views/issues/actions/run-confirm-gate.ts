@@ -75,7 +75,7 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  *
  * - **assign**: giving the issue an agent/squad owner. Skipped only when the
  *   issue is KNOWN to be parked, because assigning into the backlog category
- *   never starts a run (`server/internal/service/issue_trigger.go`) and the
+ *   never starts a run (the Rust issue-trigger service) and the
  *   dialog would promise something that cannot happen.
  * - **promote**: moving an already-owned issue out of the backlog category.
  *   That status change alone starts the run (`RunSourceStatus`), so it earns

@@ -46,7 +46,7 @@ export function isRefreshableOrigin(origin: OriginInfo): boolean {
 }
 
 // Hosts each hosted origin type may legitimately point at — the client-side
-// mirror of the server's `detectImportSource` allowlist (skill.go). Keyed by
+// mirror of the Rust skill import-source allowlist. Keyed by
 // origin type so a hand-edited config can't dress an arbitrary host up as a
 // GitHub / Skills.sh / ClawHub link.
 const ORIGIN_SOURCE_HOSTS: Partial<Record<OriginInfo["type"], readonly string[]>> = {

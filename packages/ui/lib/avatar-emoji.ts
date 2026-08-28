@@ -3,7 +3,7 @@ const AVATAR_EMOJI_PREFIX = "emoji:";
 /**
  * Emojis offered as one-click choices by the avatar picker. Deliberately the
  * same set the server hands a brand-new agent at random
- * (`agentEmojiAvatars` in server/internal/handler/agent_avatar.go), so the
+ * (the Rust agent-avatar handler), so the
  * suggestions read as the product's own family of faces rather than an
  * unrelated second list. Eight per row.
  */

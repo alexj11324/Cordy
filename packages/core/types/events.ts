@@ -8,7 +8,7 @@ import type { Workspace, MemberWithUser, Invitation } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
 
-// WebSocket event types (matching Go server protocol/events.go)
+// WebSocket event types (matching the Rust protocol crate)
 export type WSEventType =
   | "issue:created"
   | "issue:updated"
@@ -105,7 +105,7 @@ export interface IssueCreatedPayload {
 export interface IssueUpdatedPayload {
   issue: Issue;
   // The server stamps issue:updated with which fields actually changed
-  // (server/internal/handler/issue.go publish). assignee_changed lets the
+  // in the Rust issue publisher. assignee_changed lets the
   // realtime layer keep filtered myList caches in place on a non-membership
   // change instead of refetching; status_changed lets it reconcile board column
   // counts when a status change lands on an off-screen (unloaded) issue;

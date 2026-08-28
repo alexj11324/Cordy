@@ -9,7 +9,7 @@ import type { AgentInvocationTarget, AgentPermissionMode } from "../types";
  * three-state value instead.
  *
  * Mapping mirrors the server's `canInvokeAgent` gate
- * (`server/internal/handler/agent_access.go`):
+ * in the Rust agent-access handler:
  *   - owner-only      = `private` (only the owner may invoke)
  *   - workspace       = `public_to` with a workspace target (any member/agent/system)
  *   - specific-people = `public_to` without a workspace target (member/team targets)

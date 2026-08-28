@@ -47,7 +47,7 @@ Web 和 Desktop 都有的逻辑，**必须**抽到共享包。"小段重复"也�
 - 测试：与源文件同目录，命名 `<file>.test.ts(x)`
 - Zustand store：`<feature>-store.ts`，导出名 `use<Feature>Store`
 
-### 数据库（Go + sqlc）
+### 数据库（Rust + SQLx）
 
 - 表名：`snake_case` 单数（`user`、`workspace`、`agent_runtime`）
 - 字段：`snake_case`（`workspace_id`、`created_at`、`last_seen_at`）
@@ -57,12 +57,12 @@ Web 和 Desktop 都有的逻辑，**必须**抽到共享包。"小段重复"也�
 - 不创建数据库 foreign key，也不使用级联删除或级联更新；关系校验和清理由应用层完成
 - 所有索引都使用 `CREATE INDEX CONCURRENTLY` 或 `CREATE UNIQUE INDEX CONCURRENTLY`，每条 concurrent index 单独占一个 migration 文件
 
-### Go
+### Rust
 
-- 标准 `gofmt` + `go vet`，无例外
-- Handler 文件按域命名：`agent.go`、`auth.go`、`runtime.go`
-- 测试：`<file>_test.go` 同目录
-- handler 里 UUID 解析遵守根 `CLAUDE.md` 的规则：边界输入用 `parseUUIDOrBadRequest`，可信回环用 `parseUUID`（panic 版），永远不要直接用 `util.ParseUUID` 不查 error
+- 标准 `rustfmt` + `clippy`，无例外
+- Handler 文件按域命名：`agent.rs`、`auth.rs`、`runtime.rs`
+- 测试放在同文件的 `#[cfg(test)]` module 或 crate 的 `tests/` directory
+- 对边界输入显式 parse 和 validate，不要因不可信 UUID 或其他 request field 而 panic
 
 ### TypeScript
 
@@ -95,7 +95,7 @@ Web 和 Desktop 都有的逻辑，**必须**抽到共享包。"小段重复"也�
 
 ### 代码注释
 
-**只允许英文**。Go 和 TypeScript 都强制。如果在代码里看到中文注释，那就是 bug，替换掉。
+**只允许英文**。Rust 和 TypeScript 都强制。如果在代码里看到中文注释，那就是 bug，替换掉。
 
 ### Commit message
 
@@ -318,7 +318,7 @@ i18next 用 `_one` / `_other`；中文不区分语法单复数，只填 `_other`
 
 改本页规则的同时还要：
 
-1. 把规则在相关 locale JSON / CLAUDE.md / docs 页面里同步落地
+1. 把规则在相关 locale JSON / AGENTS.md / docs 页面里同步落地
 2. PR 描述里写明改了什么，方便 reviewer 检查下游是否跟着改了
 
 本页是契约，其他文档不能 override。

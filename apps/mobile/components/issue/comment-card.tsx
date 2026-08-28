@@ -5,7 +5,7 @@
  * recursive indentation. This matches the user's design call: "放在一个 card
  * 内部就行了 / no need for the Replying to label".
  *
- * Mobile flat-list rule (apps/mobile/CLAUDE.md): same comments as web,
+ * Mobile flat-list rule (apps/mobile/AGENTS.md): same comments as web,
  * different layout — web shows recursive tree, mobile shows one bubble per
  * thread. Counts agree (no comment is dropped or duplicated).
  *

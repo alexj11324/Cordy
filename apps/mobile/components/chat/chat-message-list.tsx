@@ -4,7 +4,7 @@
  * when the user is anchored near the bottom; reading history is never
  * yanked down.
  *
- * Behavioral parity (apps/mobile/CLAUDE.md):
+ * Behavioral parity (apps/mobile/AGENTS.md):
  *   - Render ALL message roles. Unknown role values are downgraded to
  *     "assistant" by ChatMessageSchema's `.catch()`, so this list never
  *     needs to silently drop a row.
@@ -28,7 +28,7 @@
  * in `./message-long-press.tsx`.
  *
  * List engine: FlashList v2 (Shopify). FlatList was the original choice
- * (per the now-outdated "no FlashList" baseline in apps/mobile/CLAUDE.md
+ * (per the now-outdated "no FlashList" baseline in apps/mobile/AGENTS.md
  * — written before FlashList v2 stabilised). FlatList's `scrollToEnd` is
  * janky on variable-height lists by RN's own docs admission, and our
  * markdown bubbles render in multiple async passes (Shiki highlight,

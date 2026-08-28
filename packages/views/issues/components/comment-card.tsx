@@ -102,7 +102,7 @@ interface CommentCardProps {
   /**
    * True when the current user is a workspace owner/admin and can therefore
    * moderate comments authored by anyone — restoring the admin override that
-   * the backend already grants at `comment.go:507-512`. Computed once in
+   * the backend already grants in the Rust comment handler. Computed once in
    * `issue-detail.tsx` and threaded down so neither this component nor
    * `CommentRow` has to rerun the rule per row.
    */

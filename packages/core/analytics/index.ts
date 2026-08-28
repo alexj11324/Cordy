@@ -1,11 +1,11 @@
 // Frontend analytics glue. Thin wrapper over posthog-js.
 //
-// The source-of-truth event catalog is `server/internal/analytics/events.go`. This module only
+// The source-of-truth event catalog is owned by the Rust analytics backend. This module only
 // handles the two things the backend can't do itself: attribution capture on
 // first anonymous pageview, and person-identity merge on login. Every funnel
 // event (signup, workspace_created, runtime_registered, issue_executed,
 // invite_sent, invite_accepted) is emitted server-side — see
-// `server/internal/analytics`.
+// the backend analytics module.
 //
 // Configuration comes from the backend's `/api/config` response (populated
 // from POSTHOG_API_KEY on the server), NOT from NEXT_PUBLIC_* envs. That
@@ -117,7 +117,7 @@ export function initAnalytics(config: AnalyticsConfig | null | undefined): boole
     // our funnel is set up: signup is the first real funnel step.
     person_profiles: "identified_only",
     // Turn off every on-by-default auto-capture surface. Our funnel is
-    // narrow and explicit (the events in server/internal/analytics/events.go + a manual
+    // narrow and explicit (the backend event catalog + a manual
     // $pageview). Autocapture floods the Activity view with anonymous
     // "clicked button" / "clicked link" noise, burns the billed event
     // budget, and risks capturing user-typed content in input values.
@@ -239,7 +239,7 @@ export function resetAnalytics(): void {
 
 /**
  * Capture a frontend-emitted event. Most funnel events fire server-side
- * (see `server/internal/analytics`); this wrapper is reserved for the
+ * in the backend analytics module; this wrapper is reserved for the
  * handful of signals the backend can't see — primarily the Step 3
  * platform-fork choice on web, where the user's click never round-trips
  * to a handler.

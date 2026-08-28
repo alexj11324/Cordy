@@ -5,7 +5,7 @@
  * independent and may drift).
  *
  * Optimistic policy: patch cache → fire PATCH → rollback on error → invalidate
- * on settle (mirrors mobile inbox mutations + CLAUDE.md "Mutations are
+ * on settle (mirrors mobile inbox mutations + AGENTS.md "Mutations are
  * optimistic by default"). Toggle latency on cellular is real — the Switch
  * snapping back if the request hangs would look broken.
  */

@@ -6,7 +6,7 @@
  *
  * Visual structure mirrors web's InboxListItem
  * (packages/views/inbox/components/inbox-list-item.tsx). Per
- * apps/mobile/CLAUDE.md "Visual alignment is baseline":
+ * apps/mobile/AGENTS.md "Visual alignment is baseline":
  *   - Right column stacks vertically: status icon on top row, time on bottom.
  *   - Secondary line uses the type-aware `InboxDetailLabel`, not raw body.
  */

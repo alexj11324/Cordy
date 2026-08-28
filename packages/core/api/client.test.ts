@@ -1959,7 +1959,7 @@ describe("ApiClient model discovery response schema", () => {
  *
  * Web/desktop staging deploys on merge while the backend is deployed by hand,
  * so this client routinely runs against an older server. Subtree unsubscribe
- * must therefore be carried by its own PATH, never by a body field: Go's JSON
+ * must therefore be carried by its own PATH, never by a body field: JSON
  * decoder drops unknown fields, so an old server would unsubscribe only the
  * root and still answer 200 — telling the user the whole tree was muted while
  * every child kept notifying. An unknown path 404s, which surfaces as a

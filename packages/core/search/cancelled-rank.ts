@@ -24,7 +24,7 @@ import { issueBehavesAs } from "../issues/status-category";
 
 /**
  * Mirrors the server's identifier pattern (parseQueryNumber in
- * server/internal/handler/issue.go): "MUL-123" or a bare "123".
+ * the Rust issue handler): "MUL-123" or a bare "123".
  */
 const IDENTIFIER_NUMBER_RE = /^[a-z]+-(\d+)$/i;
 

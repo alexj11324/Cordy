@@ -109,7 +109,7 @@ export function SquadDetailPage() {
   const isWorkspaceAdmin = myRole === "owner" || myRole === "admin";
   // Per-squad management gate: workspace owner/admin manage every squad; the
   // creator manages the squads they created. Mirrors canManageSquad in
-  // server/internal/handler/squad.go so editable controls appear exactly when
+  // the Rust squad handler so editable controls appear exactly when
   // the API will accept the write, and everyone else gets a read-only view
   // instead of controls that 403 (MUL-4223).
   const canManage =
@@ -959,7 +959,7 @@ function SquadOverviewPane({
   memberStatusById: Map<string, SquadMemberStatus>;
   // Gates every mutating control in the Members and Instructions tabs. When
   // false the tabs render read-only (no add/remove/leader/role edits, no
-  // Save). See canManageSquad in server/internal/handler/squad.go.
+  // Save). Keep this aligned with the Rust squad management gate.
   canManage: boolean;
   isLeader: (m: SquadMember) => boolean;
   isArchived: (m: SquadMember) => boolean;
@@ -1072,7 +1072,7 @@ function SquadOverviewPane({
 // same semantic tokens so a status dot here matches the agent page's dot.
 // Unknown / null statuses (human members, server-side enum drift) render as
 // a neutral muted pill; this is the "downgrade, don't crash" defense from
-// CLAUDE.md > API Response Compatibility.
+// AGENTS.md > API Response Compatibility.
 const SQUAD_STATUS_DOT_CLASS: Record<SquadMemberStatusValue, string> = {
   working: "bg-success",
   idle: "bg-muted-foreground/40",
@@ -1303,7 +1303,7 @@ function SquadMembersTab({
 
 // Instructions tab body — mirrors agent's InstructionsTab. ContentEditor +
 // Save button. The squad leader's prompt picks these up at task claim time
-// (server/internal/handler/daemon.go).
+// in the Rust daemon handler.
 function SquadInstructionsTab({
   squad,
   canManage,

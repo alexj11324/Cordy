@@ -10,7 +10,7 @@
  *     ship kanban either — list with status grouping is the established
  *     small-screen pattern for the same data.
  *   - This is a UI divergence, NOT semantic divergence (per
- *     mobile/CLAUDE.md "Behavioral parity"): same issues, same status
+ *     mobile/AGENTS.md "Behavioral parity"): same issues, same status
  *     categories, same 6 visible groups as web — only the layout
  *     differs. UI may diverge when semantics agree.
  *

@@ -24,7 +24,7 @@ Web / Desktop / Mobile / CLI
 | ディレクトリ | 責務 | 主な技術 |
 | --- | --- | --- |
 | `server-rs/` | 本番 API、認証、タスクスケジューリング、インテグレーション、CLI、migration runner、デーモン | Rust、Axum、Tokio、SQLx |
-| `server/` | 共有 SQL migration、パッケージ済みバイナリ、退役期間中の legacy compatibility コード | SQL、shell、Go compatibility |
+| `migrations/` | Rust migration runner が実行する共有 SQL migration | SQL |
 | `apps/web/` | ブラウザクライアントとランディングページ | Next.js App Router |
 | `apps/desktop/` | デスクトップクライアントとローカルプロセス管理 | Electron、electron-vite |
 | `apps/mobile/` | 独立した iOS クライアント | Expo、React Native |
@@ -78,7 +78,7 @@ API レスポンスは `packages/core/api/` の境界で zod schema により解
 | --- | --- |
 | `server-rs/crates/cordy-server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
 | `server-rs/crates/cordy-cli`（`cordy`） | CLI とローカルデーモン |
-| `server-rs/crates/cordy-migrate` | `server/migrations/` のデータベース migration を実行 |
+| `server-rs/crates/cordy-migrate` | `migrations/` のデータベース migration を実行 |
 | `cordy-migrate` の `backfill_*` バイナリ | 特定バージョン向けのデータ backfill ツール |
 
 リクエストは通常、次の方向に流れます。
@@ -100,7 +100,7 @@ PostgreSQL がビジネスデータの信頼できる情報源です。Redis は
 
 Cordy には異なる 2 つの WebSocket パスがあります。
 
-- `cordy-realtime` と `cordy-server/src/realtime_runtime.rs` はイシュー、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
+- `cordy-realtime` と `server-rs/crates/cordy-server/src/realtime_runtime.rs` はイシュー、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
 - `cordy-handler` の daemon WebSocket route と `cordy-daemon` は実行用コンピューターを接続し、ランタイムの起動通知と daemon RPC に使います。
 
 WebSocket は遅延を減らしますが、最終的な状態はデータベースにあります。クライアントは再接続後にクエリで再同期する必要があります。デーモンも polling 経路を保持し、1 回の切断で queued タスクが永久に止まらないようにします。

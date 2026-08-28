@@ -10,8 +10,8 @@
  *   2. Members — sorted alphabetically
  *   3. Agents — sorted alphabetically
  *   4. Squads — sorted alphabetically (archived hidden). Selecting a squad
- *      emits `mention://squad/<uuid>`; backend wakes the squad's leader
- *      agent (server/internal/handler/comment.go:444).
+ *      emits `mention://squad/<uuid>`; the Rust backend wakes the squad's
+ *      leader agent.
  *
  * `chat` sections (chat is user ↔ single agent — `@member`/`@agent` are
  * noise; `@` here means "reference a resource for the agent"):

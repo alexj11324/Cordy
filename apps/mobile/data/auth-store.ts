@@ -5,7 +5,7 @@
  *     the next launch can retry
  *   - logout = clear token + clear in-memory user + setToken(null)
  *
- * NOT shared with web/desktop (per Sharing Principles in root CLAUDE.md).
+ * NOT shared with web/desktop (per Sharing Principles in root AGENTS.md).
  * Storage backend is expo-secure-store (mobile only); web uses HttpOnly
  * cookies, desktop uses localStorage via StorageAdapter.
  */

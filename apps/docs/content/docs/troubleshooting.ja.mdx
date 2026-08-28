@@ -184,7 +184,7 @@ Rust toolchain がインストールされている場合に限り、ソース c
 
 ```bash
 make rust-build
-DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
+DATABASE_URL='postgres://...' ./bin/backfill_task_usage_hourly
 ```
 
 よく使うフラグ: `--dry-run` は書き込まずプレビューのみ、`--sleep-between-slices` はスライスの間に間隔を挟み、負荷の高いインスタンスへの読み取り圧力を下げます。コマンドは月単位のスライスで動作し、冪等なので、中断してもそのまま再実行できます。advisory lock を保持してサーバー側の定期ロールアップと相互排他になるため、重複や不整合なロールアップデータは生じません。完了後は backend を再起動し、`/readyz` が HTTP 200 と `{"status":"ready"}` を返すことを確認してください。handler が確認するのはデータベースへの到達性だけであり、サーバーが正常に起動したことが entrypoint migration の完了を別途示します。

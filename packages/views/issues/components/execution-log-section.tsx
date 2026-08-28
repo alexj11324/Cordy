@@ -358,7 +358,7 @@ export function ActiveTaskRow({
   };
 
   // Deliberately no token figure on an active row: the daemon reports usage
-  // once, after `runner.run` returns (server/internal/daemon/daemon.go), and
+  // once, after the Rust daemon runner returns, and
   // the write publishes no realtime event — so a running task has no usage to
   // show, and would not learn of it mid-run if it did. Rendering the branch
   // anyway would only ever be exercised by hand-written fixtures, which is a

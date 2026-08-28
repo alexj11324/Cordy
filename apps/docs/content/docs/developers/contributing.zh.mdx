@@ -12,7 +12,6 @@ Cordy 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `ma
 - Node.js 22；
 - pnpm 10.28.2；
 - Rust stable 与 Cargo；
-- Go 1.26.6，仅由 legacy `make check` compatibility gate 临时需要，不是生产 backend 依赖；
 - Docker Engine 或 Docker Desktop；
 - Git 和 Make。
 
@@ -90,7 +89,7 @@ pnpm lint
 pnpm test
 ```
 
-根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/CLAUDE.md`。
+根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/AGENTS.md`。
 
 ### Backend
 
@@ -119,13 +118,13 @@ Web 与 Desktop 都需要的功能按职责放置：
 4. Next.js、Electron 和路由适配留在对应 app；
 5. 共享页面需要同时接入 Web 与 Desktop。
 
-服务端数据由 TanStack Query 管理，筛选、草稿和布局等客户端状态由 Zustand 管理。具体边界见[项目架构](/developers/architecture)和根目录 `CLAUDE.md`。
+服务端数据由 TanStack Query 管理，筛选、草稿和布局等客户端状态由 Zustand 管理。具体边界见[项目架构](/developers/architecture)和根目录 `AGENTS.md`。
 
 新增或修改 API 时，要同步更新 `packages/core/api/` 中的 zod schema，并为缺失字段、未知枚举或格式错误增加解析测试。
 
 ## 修改数据库
 
-Migration 仍位于 `server/migrations/`；生产 query module 位于 `server-rs/crates/cordy-db/src/queries/`。
+Migration 位于 `migrations/`；生产 query module 位于 `server-rs/crates/cordy-db/src/queries/`。
 
 1. 使用下一个未占用的数字前缀，同时创建 `.up.sql` 和 `.down.sql`；
 2. 不添加数据库 foreign key、级联删除或级联更新；关系检查和清理由应用层完成；
@@ -171,7 +170,7 @@ make test
 make check
 ```
 
-`make check` 会执行 TypeScript 检查、locked Rust workspace 测试、legacy Go compatibility gate 和 Playwright E2E。CI 还会按改动范围构建、lint，并运行平台或安装器专项测试。
+`make check` 会执行 TypeScript 检查、locked Rust workspace 测试和 Playwright E2E。CI 还会按改动范围构建、lint，并运行平台或安装器专项测试。
 
 ## 重置当前开发数据库
 
@@ -187,7 +186,7 @@ make start
 
 ## 提交前检查
 
-- 阅读根目录 `CLAUDE.md` 和相关子目录说明；
+- 阅读根目录 `AGENTS.md` 和相关子目录说明；
 - 只修改当前任务需要的范围；
 - 代码注释使用英文；
 - 不提交 `.env`、令牌、构建产物或本机路径；

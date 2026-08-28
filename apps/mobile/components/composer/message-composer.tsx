@@ -11,9 +11,8 @@
  * input. The input itself is a plain RN `<TextInput multiline>` — no
  * controlled selection, no inline overlays. On submit the composer
  * prepends mention markdown links to the typed text and attaches
- * `attachmentIds`. Server-side mention regex
- * (`server/internal/util/mention.go:16`) parses them as if they were
- * inline.
+ * `attachmentIds`. The server-side mention parser handles them as if they
+ * were inline.
  *
  * Mention picker is a formSheet route, pushed via `mentionPickerPath`.
  * That route writes selections into `useMentionDraftStore`; this composer

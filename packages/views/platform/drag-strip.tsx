@@ -17,7 +17,7 @@ import type { CSSProperties } from "react";
  *
  * Flex child, **not** absolute overlay: `-webkit-app-region` hit-testing
  * with z-index stacking has been empirically unreliable in this codebase
- * (see CLAUDE.md "Drag region" note).
+ * (see AGENTS.md "Drag region" note).
  */
 export function DragStrip() {
   return (

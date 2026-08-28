@@ -12,7 +12,6 @@ Cordy は Rust バックエンドと pnpm monorepo で構成されています�
 - Node.js 22
 - pnpm 10.28.2
 - Rust stable と Cargo
-- Go 1.26.6（本番 backend の依存ではなく、legacy `make check` compatibility gate のためだけに一時的に必要）
 - Docker Engine または Docker Desktop
 - Git と Make
 
@@ -90,7 +89,7 @@ pnpm lint
 pnpm test
 ```
 
-ルートコマンドはデフォルトで Mobile を除外します。Mobile には独自のスクリプトと CI があるため、変更前に `apps/mobile/CLAUDE.md` を読んでください。
+ルートコマンドはデフォルトで Mobile を除外します。Mobile には独自のスクリプトと CI があるため、変更前に `apps/mobile/AGENTS.md` を読んでください。
 
 ### バックエンド
 
@@ -119,13 +118,13 @@ Web と Desktop の両方で必要な機能は、責務に応じて配置しま�
 4. Next.js、Electron、ルーティングアダプターは対応する app に残します。
 5. 共有ページは Web と Desktop の両方へ接続します。
 
-サーバーデータは TanStack Query、フィルター、下書き、レイアウトなどのクライアント状態は Zustand が管理します。具体的な境界は[プロジェクトアーキテクチャ](/developers/architecture)とルートの `CLAUDE.md` を参照してください。
+サーバーデータは TanStack Query、フィルター、下書き、レイアウトなどのクライアント状態は Zustand が管理します。具体的な境界は[プロジェクトアーキテクチャ](/developers/architecture)とルートの `AGENTS.md` を参照してください。
 
 API を追加または変更するときは `packages/core/api/` の zod schema も更新し、欠落フィールド、未知の enum、形式不正に対する解析テストを追加します。
 
 ## データベースの変更
 
-Migration は引き続き `server/migrations/` にあり、本番 query module は `server-rs/crates/cordy-db/src/queries/` にあります。
+Migration は `migrations/` にあり、本番 query module は `server-rs/crates/cordy-db/src/queries/` にあります。
 
 1. 次の未使用の数値 prefix を使い、`.up.sql` と `.down.sql` の両方を作成します。
 2. データベースの foreign key、cascade delete、cascade update を追加しません。関係の検証とクリーンアップはアプリケーション層で行います。
@@ -171,7 +170,7 @@ make test
 make check
 ```
 
-`make check` は TypeScript のチェック、locked Rust workspace テスト、legacy Go compatibility gate、Playwright E2E を実行します。CI は変更範囲に応じて build と lint を行い、プラットフォームまたはインストーラー専用テストも実行します。
+`make check` は TypeScript のチェック、locked Rust workspace テスト、Playwright E2E を実行します。CI は変更範囲に応じて build と lint を行い、プラットフォームまたはインストーラー専用テストも実行します。
 
 ## 現在の開発データベースをリセット
 
@@ -187,7 +186,7 @@ make start
 
 ## 提出前の確認
 
-- ルートの `CLAUDE.md` と関連するサブディレクトリの説明を読みます。
+- ルートの `AGENTS.md` と関連するサブディレクトリの説明を読みます。
 - 現在のタスクに必要な範囲だけを変更します。
 - コードコメントは英語で記述します。
 - `.env`、トークン、ビルド成果物、ローカルパスをコミットしません。
