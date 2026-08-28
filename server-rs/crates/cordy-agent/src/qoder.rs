@@ -1729,7 +1729,6 @@ async fn run_protocol(
                     session_id,
                     usage,
                     resume_rejected: rejected,
-                    ..ProtocolOutcome::default()
                 };
             }
             let rejected = rejected

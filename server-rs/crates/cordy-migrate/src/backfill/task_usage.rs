@@ -404,12 +404,6 @@ async fn rollup_slice(
     .context("execute task_usage hourly rollup window")
 }
 
-async fn stamp_and_report(pool: &PgPool) -> anyhow::Result<()> {
-    let rows_affected = stamp_watermark(pool).await?;
-    report_watermark(rows_affected);
-    Ok(())
-}
-
 async fn stamp_and_report_cancellable(
     pool: &PgPool,
     shutdown: &CancellationToken,

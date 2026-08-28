@@ -1465,6 +1465,7 @@ fn terminal_outcome_from_live(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_protocol(
     stdin: ChildStdin,
     stdout: ChildStdout,
