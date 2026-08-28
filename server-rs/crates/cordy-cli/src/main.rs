@@ -3,6 +3,10 @@ use cordy_cli::{error, run, run_private_helper, Cli};
 
 #[tokio::main]
 async fn main() {
+    if let Err(error) = cordy_util::install_rustls_crypto_provider() {
+        eprintln!("{error:#}");
+        std::process::exit(1);
+    }
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();

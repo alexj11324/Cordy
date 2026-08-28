@@ -101,9 +101,9 @@ flate2 = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 httpdate = "1"
 structured-email-address = { version = "0.0.16", default-features = false }
-# ring is the single crypto provider across the graph (sqlx/reqwest/jsonwebtoken
-# all enable rustls/ring); default features would also pull aws-lc-rs, and two
-# compiled-in providers make ClientConfig::builder() ambiguous (panic).
+# Cordy's direct TLS clients use Ring. aws-config's rustls client also enables
+# AWS-LC, so every production binary explicitly installs Ring before any
+# ClientConfig::builder() call rather than relying on ambiguous auto-selection.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 rustls-native-certs = "0.8"

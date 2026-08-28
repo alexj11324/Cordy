@@ -548,6 +548,7 @@ fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    cordy_util::install_rustls_crypto_provider()?;
     let log_filter = tracing_subscriber::EnvFilter::try_new(cordy_util::logging::env_filter())
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"));
     let console_addr: SocketAddr = profiling::TOKIO_CONSOLE_ADDR.parse()?;

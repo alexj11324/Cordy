@@ -48,6 +48,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    cordy_util::install_rustls_crypto_provider()?;
     cordy_migrate::init_logging();
 
     let args = Args::parse();

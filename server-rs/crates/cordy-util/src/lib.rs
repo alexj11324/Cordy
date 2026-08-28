@@ -9,6 +9,15 @@ pub mod secretbox;
 
 use serde::{Deserialize, Serialize};
 
+/// Selects the workspace's Ring-backed rustls provider before any TLS client
+/// builds a `ClientConfig`. This is required when transitive dependencies also
+/// enable the AWS-LC provider on rustls.
+pub fn install_rustls_crypto_provider() -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("a rustls crypto provider was installed before Cordy startup"))
+}
+
 /// Typed ULID wrapper.
 ///
 /// Go side uses `oklog/ulid/v2`; canonical ULIDs are 26-char uppercase
