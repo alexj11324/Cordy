@@ -10,7 +10,7 @@ import { isIssueStatusCategory, type IssueStatusCatalog } from "@cordy/core/issu
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<
   Issue,
-  "id" | "status" | "status_category" | "assignee_type" | "assignee_id"
+  "id" | "revision" | "status" | "status_category" | "assignee_type" | "assignee_id"
 >;
 
 /** Payload for the `issue-run-confirm` modal, or null when nothing to confirm. */
@@ -36,6 +36,7 @@ export type RunConfirmIntent =
       fromAssigneeId: string | null;
       assigneeType: IssueAssigneeType | null;
       assigneeId: string | null;
+      issueRevision?: number;
     };
 
 /**
@@ -108,6 +109,7 @@ export function runConfirmIntent(
         fromAssigneeId: issue.assignee_id,
         assigneeType: assigneeWasProvided ? updates.assignee_type ?? null : null,
         assigneeId: assigneeWasProvided ? updates.assignee_id ?? null : null,
+        issueRevision: issue.revision,
       };
     }
   }

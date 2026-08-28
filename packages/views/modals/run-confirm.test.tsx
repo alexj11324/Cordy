@@ -215,6 +215,7 @@ const review = {
   fromAssigneeId: "agent-1",
   assigneeType: null,
   assigneeId: null,
+  issueRevision: 7,
 };
 
 describe("RunConfirmModal", () => {
@@ -328,6 +329,7 @@ describe("RunConfirmModal", () => {
       status: "in_review",
       assignee_type: "agent",
       assignee_id: "agent-2",
+      expected_revision: 7,
     });
   });
 

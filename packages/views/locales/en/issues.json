@@ -609,6 +609,7 @@
   },
   "batch": {
     "selected": "{{count}} selected",
+    "selected_owners": "Selected owners",
     "status": "Status",
     "priority": "Priority",
     "assignee": "Assignee",

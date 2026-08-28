@@ -265,6 +265,7 @@ describe("useIssueActions", () => {
       fromAssigneeId: "agent-1",
       assigneeType: null,
       assigneeId: null,
+      issueRevision: active.revision,
     });
     expect(mockUpdateMutate).not.toHaveBeenCalled();
   });

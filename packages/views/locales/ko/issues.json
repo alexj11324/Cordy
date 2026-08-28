@@ -583,6 +583,7 @@
   },
   "batch": {
     "selected": "{{count}}개 선택됨",
+    "selected_owners": "선택한 담당자",
     "status": "상태",
     "priority": "우선순위",
     "assignee": "담당자",

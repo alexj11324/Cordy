@@ -5295,6 +5295,65 @@ fn issue_workflow_violation_response(violation: IssueWorkflowViolation) -> Respo
     }
 }
 
+async fn prevalidate_issue_workflow_update(
+    state: &HandlerState,
+    previous: &Issue,
+    fields: &serde_json::Map<String, Value>,
+) -> Result<(), Response> {
+    let next_status = match update_field::<String>(fields, "status")? {
+        UpdateField::Value(value) => cordy_service::issue_status::resolve(
+            &state.pool,
+            previous.workspace_id,
+            &value,
+        )
+        .await
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid status"))?
+        .key,
+        UpdateField::Missing | UpdateField::Null => previous.status.clone(),
+    };
+    let mut next_type = previous.assignee_type.clone();
+    let mut next_id = previous.assignee_id;
+    match update_field::<String>(fields, "assignee_type")? {
+        UpdateField::Missing => {}
+        UpdateField::Null => next_type = None,
+        UpdateField::Value(value) => next_type = Some(value),
+    }
+    match update_field::<String>(fields, "assignee_id")? {
+        UpdateField::Missing => {}
+        UpdateField::Null => next_id = None,
+        UpdateField::Value(value) => {
+            next_id = Some(
+                Uuid::parse_str(&value)
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"))?,
+            );
+        }
+    }
+    if next_type.is_some() != next_id.is_some() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "assignee_type and assignee_id must be set together",
+        ));
+    }
+    let previous_category = cordy_service::issue_status::effective(
+        &state.pool,
+        previous.workspace_id,
+        &previous.status,
+    )
+    .await;
+    let next_category =
+        cordy_service::issue_status::effective(&state.pool, previous.workspace_id, &next_status)
+            .await;
+    if let Some(violation) = issue_workflow_violation(
+        &previous_category,
+        &next_category,
+        issue_owner(previous),
+        next_type.as_deref().zip(next_id),
+    ) {
+        return Err(issue_workflow_violation_response(violation));
+    }
+    Ok(())
+}
+
 async fn update_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -6416,8 +6475,7 @@ async fn batch_update_issues(
         }
     }
 
-    let mut updated = 0usize;
-    let mut parent_notifications = HashMap::<Uuid, (Issue, Issue)>::new();
+    let mut pending = Vec::new();
     for raw_id in issue_ids {
         let Ok(id) = Uuid::parse_str(&raw_id) else {
             continue;
@@ -6429,23 +6487,33 @@ async fn batch_update_issues(
                 Ok(Some(issue)) => issue,
                 _ => continue,
             };
+        pending.push(previous);
+    }
+    for previous in &pending {
+        if let Err(response) = prevalidate_issue_workflow_update(&state, previous, updates).await {
+            return response;
+        }
+    }
+
+    let mut updated = 0usize;
+    let mut parent_notifications = HashMap::<Uuid, (Issue, Issue)>::new();
+    for previous in pending {
         let previous_snapshot = previous.clone();
-        let issue =
-            match apply_issue_update(&state, &context, &headers, previous, updates, false).await {
-                Ok(issue) => issue,
-                Err(response) => return response,
-            };
-        if previous_snapshot.status != issue.status {
-            if let Some(parent_id) = issue.parent_issue_id {
-                let replace = parent_notifications
-                    .get(&parent_id)
-                    .is_none_or(|(_, current)| issue.stage > current.stage);
-                if replace {
-                    parent_notifications.insert(parent_id, (previous_snapshot, issue));
+        if let Ok(issue) =
+            apply_issue_update(&state, &context, &headers, previous, updates, false).await
+        {
+            if previous_snapshot.status != issue.status {
+                if let Some(parent_id) = issue.parent_issue_id {
+                    let replace = parent_notifications
+                        .get(&parent_id)
+                        .is_none_or(|(_, current)| issue.stage > current.stage);
+                    if replace {
+                        parent_notifications.insert(parent_id, (previous_snapshot, issue));
+                    }
                 }
             }
+            updated += 1;
         }
-        updated += 1;
     }
     for (_, (previous, issue)) in parent_notifications {
         notify_parent_of_child_done(&state, &previous, &issue).await;

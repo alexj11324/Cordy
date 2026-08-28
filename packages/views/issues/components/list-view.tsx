@@ -82,7 +82,7 @@ function ListViewImpl({
   projectMap?: Map<string, Project>;
   statusPagination: IssueStatusPagination;
   projectId?: string;
-  onMoveIssue?: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
+  onMoveIssue?: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => boolean | void;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
 }) {
   const listCollapsedStatuses = useViewStore(
@@ -275,14 +275,20 @@ function ListViewImpl({
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [finalCol]: targetIds };
         });
-        onMoveIssue(
+        const settle = beginSettle();
+        const committed = onMoveIssue(
           activeId,
           {
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          beginSettle(),
+          settle,
         );
+        if (committed === false) {
+          settle();
+          resetColumns();
+          return;
+        }
         return;
       }
 
@@ -301,14 +307,19 @@ function ListViewImpl({
       // beginSettle() also bumps settleVersion on settle (board-view did, this
       // branch did not) so a failed position move reverts instead of stranding
       // the row at the drop target.
-      onMoveIssue(
+      const settle = beginSettle();
+      const committed = onMoveIssue(
         activeId,
         {
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        beginSettle(),
+        settle,
       );
+      if (committed === false) {
+        settle();
+        resetColumns();
+      }
     },
     [issues, groups, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, setColumns, columnsRef, isDraggingRef],
   );

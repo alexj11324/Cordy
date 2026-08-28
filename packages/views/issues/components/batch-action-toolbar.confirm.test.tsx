@@ -29,6 +29,10 @@ const openModal = vi.hoisted(() => vi.fn());
 vi.mock("@cordy/core/modals", () => ({
   useModalStore: (selector: (s: { open: typeof openModal }) => unknown) => selector({ open: openModal }),
 }));
+vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@cordy/core/issue-statuses/hooks", () => ({
+  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
+}));
 
 vi.mock("../../i18n", () => ({ useT: () => ({ t: () => "label" }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -100,8 +104,8 @@ beforeEach(() => {
 });
 
 describe("BatchActionToolbar status routing (MUL-4155)", () => {
-  it("applies every status target directly, never opening the run-confirm modal", () => {
-    for (const status of [...ACTIVE_STATUSES, ...TERMINAL_STATUSES, "backlog"]) {
+  it("applies non-review status targets directly", () => {
+    for (const status of ["todo", "in_progress", "blocked", ...TERMINAL_STATUSES, "backlog"]) {
       batchUpdate.mockClear();
       openModal.mockClear();
       // A backlog issue in the selection is the case that historically could
@@ -112,6 +116,27 @@ describe("BatchActionToolbar status routing (MUL-4155)", () => {
       expect(batchUpdate).toHaveBeenCalledWith({ ids: ["a"], updates: { status } });
       unmount();
     }
+  });
+
+  it("routes entry into review through reviewer selection", () => {
+    render(
+      <BatchActionToolbar
+        issues={[
+          makeIssue({ assignee_type: "agent", assignee_id: "agent-1" }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("status-in_review"));
+    expect(openModal).toHaveBeenCalledWith(
+      "issue-run-confirm",
+      expect.objectContaining({
+        issueIds: ["a"],
+        mode: "review",
+        status: "in_review",
+        excludedAssignees: [{ type: "agent", id: "agent-1" }],
+      }),
+    );
+    expect(batchUpdate).not.toHaveBeenCalled();
   });
 
   it("still routes agent assignment through the run-confirm modal", () => {

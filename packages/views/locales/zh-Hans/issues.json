@@ -583,6 +583,7 @@
   },
   "batch": {
     "selected": "已选择 {{count}} 个",
+    "selected_owners": "所选任务的负责人",
     "status": "状态",
     "priority": "优先级",
     "assignee": "负责人",

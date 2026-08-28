@@ -15,6 +15,7 @@ import type {
 } from "@cordy/core/types";
 import { workspaceWorkingAgentsOptions } from "@cordy/core/agents";
 import { useWorkspaceId } from "@cordy/core/hooks";
+import { useModalStore } from "@cordy/core/modals";
 import { ALL_STATUSES } from "@cordy/core/issues/config";
 import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
 import { statusFilterColumns } from "@cordy/core/issues";
@@ -35,6 +36,7 @@ import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
 import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
 import type { IssueFilters } from "../utils/filter";
 import type { ChildProgress } from "../components/list-row";
+import { runConfirmIntent } from "../actions/run-confirm-gate";
 import { IssueTableExportIntegrityError } from "../components/table-view-model";
 import type { IssueSurfaceMode } from "./types";
 import type { IssueSurfaceActions } from "./actions-context";
@@ -133,7 +135,7 @@ export interface IssueSurfaceController {
     issueId: string,
     updates: MoveIssueUpdates,
     onSettled?: () => void,
-  ) => void;
+  ) => boolean;
 }
 
 function issueDateFilterToApiParams(filter: IssueDateFilter | null) {
@@ -236,6 +238,7 @@ export function useIssueSurfaceController({
   const listCollapsedStatuses = useViewStore((s) => s.listCollapsedStatuses);
   const hiddenStatusCategories = useViewStore((s) => s.hiddenStatusCategories);
   const catalog = useIssueStatuses(wsId);
+  const openModal = useModalStore((state) => state.open);
   const { hasCustomStatuses } = catalog;
   const [tableSearch, setTableSearch] = useState("");
 
@@ -820,9 +823,29 @@ export function useIssueSurfaceController({
     return issues;
   }, [tableQuerySpec]);
 
-  const { actions, openCreateIssue, moveIssue } = useIssueSurfaceActions({
+  const { actions, openCreateIssue, moveIssue: commitMoveIssue } = useIssueSurfaceActions({
     createDefaults: resolvedCreateDefaults,
   });
+  const moveIssue = useCallback(
+    (issueId: string, updates: MoveIssueUpdates, onSettled?: () => void) => {
+      const issue = data.issues.find((candidate) => candidate.id === issueId);
+      const intent = issue && runConfirmIntent(issue, updates, catalog);
+      if (intent?.mode === "review") {
+        const { before_id, after_id, ...fields } = updates;
+        openModal("issue-run-confirm", {
+          ...intent,
+          additionalUpdates: {
+            ...fields,
+            move_intent: { before_id, after_id },
+          },
+        });
+        return false;
+      }
+      commitMoveIssue(issueId, updates, onSettled);
+      return true;
+    },
+    [catalog, commitMoveIssue, data.issues, openModal],
+  );
 
   const { ganttWorkingScopeIssues: _ganttWorkingScope, ...surfaceData } = data;
 

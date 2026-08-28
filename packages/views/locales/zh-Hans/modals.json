@@ -157,6 +157,7 @@
     "description_placeholder": "添加描述...",
     "more_options_aria": "更多选项",
     "title_required": "请输入标题后再创建",
+    "active_assignee_required": "进行中的任务必须指定负责人。",
     "submit": "创建任务",
     "submitting": "创建中...",
     "toast_created": "已创建任务",

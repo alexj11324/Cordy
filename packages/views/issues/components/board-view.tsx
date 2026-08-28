@@ -170,7 +170,7 @@ function BoardViewImpl({
   issues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
-  onMoveIssue: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
+  onMoveIssue: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => boolean | void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** When set, the per-column "+" pre-fills the project on the create form. */
@@ -511,14 +511,20 @@ function BoardViewImpl({
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [overCol]: targetIds };
         });
-        onMoveIssue(
+        const settle = beginSettle();
+        const committed = onMoveIssue(
           activeId,
           {
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          beginSettle(),
+          settle,
         );
+        if (committed === false) {
+          settle();
+          resetColumns();
+          return;
+        }
         applyPropertyGroupValue(finalGroup, activeId);
         return;
       }
@@ -540,14 +546,20 @@ function BoardViewImpl({
       // success (onSuccess already patched the moved card in place), the revert
       // on error (onError restored the snapshot). Without it a failed move would
       // strand the card at the drop target, since onSettled no longer refetches.
-      onMoveIssue(
+      const settle = beginSettle();
+      const committed = onMoveIssue(
         activeId,
         {
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        beginSettle(),
+        settle,
       );
+      if (committed === false) {
+        settle();
+        resetColumns();
+        return;
+      }
       applyPropertyGroupValue(finalGroup, activeId);
     },
     [groupedIssues, groups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue],

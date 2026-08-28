@@ -16,7 +16,11 @@ import { Button } from "@cordy/ui/components/ui/button";
 import { Textarea } from "@cordy/ui/components/ui/textarea";
 import { Spinner } from "@cordy/ui/components/ui/spinner";
 import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@cordy/core/types";
-import { useUpdateIssue, useBatchUpdateIssues } from "@cordy/core/issues/mutations";
+import {
+  useUpdateIssue,
+  useBatchUpdateIssues,
+  type UpdateIssueMutationInput,
+} from "@cordy/core/issues/mutations";
 import { errorCode } from "@cordy/core/api";
 import { useActorName } from "@cordy/core/workspace/hooks";
 import { useWorkspaceId } from "@cordy/core/hooks";
@@ -75,6 +79,9 @@ type RunConfirmData = {
   assigneeName?: string;
   fromAssigneeType?: IssueAssigneeType | null;
   fromAssigneeId?: string | null;
+  fromAssigneeName?: string;
+  excludedAssignees?: Array<{ type: IssueAssigneeType; id: string }>;
+  additionalUpdates?: Partial<Omit<UpdateIssueMutationInput, "id">>;
   issueRevision?: number;
 };
 
@@ -172,8 +179,10 @@ export function RunConfirmModal({
   const isPromote = d.mode === "promote" && !!d.status;
   const isSameReviewer =
     isReview &&
-    reviewerType === d.fromAssigneeType &&
-    reviewerId === d.fromAssigneeId;
+    ((reviewerType === d.fromAssigneeType && reviewerId === d.fromAssigneeId) ||
+      d.excludedAssignees?.some(
+        (owner) => owner.type === reviewerType && owner.id === reviewerId,
+      ) === true);
   const reviewReady =
     !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
   const noteApplies =
@@ -185,6 +194,9 @@ export function RunConfirmModal({
           status: d.status,
           assignee_type: reviewerType,
           assignee_id: reviewerId,
+          ...(d.issueRevision !== undefined
+            ? { expected_revision: d.issueRevision }
+            : {}),
         }
       : isPromote
       ? { status: d.status }
@@ -192,7 +204,7 @@ export function RunConfirmModal({
           assignee_type: d.assigneeType ?? null,
           assignee_id: d.assigneeId ?? null,
         };
-    return { ...base, ...extra };
+    return { ...d.additionalUpdates, ...base, ...extra };
   };
 
   // The copy names whoever the issue is handed to; for a squad that is the
@@ -203,9 +215,10 @@ export function RunConfirmModal({
       ? getActorName(targetAssigneeType, targetAssigneeId)
       : "");
   const previousAssigneeName =
-    d.fromAssigneeType && d.fromAssigneeId
+    d.fromAssigneeName ??
+    (d.fromAssigneeType && d.fromAssigneeId
       ? getActorName(d.fromAssigneeType, d.fromAssigneeId)
-      : t(($) => $.run_confirm.unassigned);
+      : t(($) => $.run_confirm.unassigned));
 
   const submit = async (suppressRun: boolean) => {
     if (issueIds.length === 0 || submitting || !reviewReady) return;

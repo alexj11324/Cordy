@@ -583,6 +583,7 @@
   },
   "batch": {
     "selected": "{{count}} 件選択中",
+    "selected_owners": "選択した担当者",
     "status": "ステータス",
     "priority": "優先度",
     "assignee": "担当者",

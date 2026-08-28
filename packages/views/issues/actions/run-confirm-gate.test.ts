@@ -36,6 +36,7 @@ const COLD = buildIssueStatusCatalog(undefined);
 function issue(overrides: Partial<GateIssue> = {}): GateIssue {
   return {
     id: "issue-1",
+    revision: 7,
     status: "backlog",
     assignee_type: "agent",
     assignee_id: "agent-1",
@@ -152,6 +153,7 @@ describe("runConfirmIntent — review handoff", () => {
       fromAssigneeId: "agent-1",
       assigneeType: null,
       assigneeId: null,
+      issueRevision: 7,
     });
   });
 

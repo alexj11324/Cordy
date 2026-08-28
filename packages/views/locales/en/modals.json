@@ -159,6 +159,7 @@
     "description_placeholder": "Add description...",
     "more_options_aria": "More options",
     "title_required": "Enter a title to create",
+    "active_assignee_required": "Choose an owner for an issue with work underway.",
     "submit": "Create Issue",
     "submitting": "Creating...",
     "toast_created": "Issue created",
