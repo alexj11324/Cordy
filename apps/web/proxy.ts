@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAuth, createRouteMatcher } from "@clerk/nextjs/server";
+import { createRouteMatcher } from "@clerk/nextjs/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
   PATCHBAY_LOCALE_HEADER,
@@ -64,6 +64,9 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // edge.
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const hasSession =
+    req.cookies.has("patchbay_logged_in") ||
+    req.cookies.has("cordy_logged_in"); // legacy-brand-compat
 
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
   if (runtimeDestination) {
@@ -73,8 +76,7 @@ export async function proxy(req: NextRequest) {
   }
 
   if (!clerkPublicRoutes(req)) {
-    const { userId } = await getAuth(req);
-    if (!userId) {
+    if (!hasSession) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
       loginUrl.searchParams.set("redirect_url", pathname);
@@ -82,9 +84,6 @@ export async function proxy(req: NextRequest) {
     }
   }
 
-  const hasSession =
-    req.cookies.has("patchbay_logged_in") ||
-    req.cookies.has("cordy_logged_in"); // legacy-brand-compat
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
@@ -121,8 +120,8 @@ export async function proxy(req: NextRequest) {
 
   // --- Root path: redirect logged-in users to their last workspace ---
   // The official cloud host also serves the public marketing site. Visiting
-  // https://aspectlylabs.com/ must remain a public-site navigation even when a local
-  // desktop/runtime session has fresh auth cookies; explicit app routes such
+  // https://aspectlylabs.com/ must remain a public-site navigation even when
+  // a local desktop/runtime session has fresh auth cookies; explicit app routes such
   // as /acme/issues and legacy /issues still route to the workspace app.
   if (
     pathname === "/" &&
