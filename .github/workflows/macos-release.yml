@@ -1,0 +1,274 @@
+name: macOS Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to package and publish (for example, v0.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-desktop-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'alexj11324/Cordy'
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      version: ${{ steps.meta.outputs.version }}
+      is_stable: ${{ steps.meta.outputs.is_stable }}
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Require macOS signing and notarization credentials
+        shell: bash
+        run: |
+          missing=()
+          for name in \
+            CSC_LINK \
+            CSC_KEY_PASSWORD \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing required macOS release secret: %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Checkout requested version tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate immutable release tag
+        id: meta
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::macOS release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$REQUESTED_TAG'."
+            exit 1
+          fi
+          if [[ "$REQUESTED_TAG" == *-dirty* ]]; then
+            echo "::error::Refusing to release from dirty tag '$REQUESTED_TAG'."
+            exit 1
+          fi
+
+          commit_sha="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "$REQUESTED_TAG^{commit}")"
+          if [ "$tag_commit" != "$commit_sha" ]; then
+            echo "::error::Checked out commit '$commit_sha' does not match requested tag '$REQUESTED_TAG' ($tag_commit)."
+            exit 1
+          fi
+
+          is_stable=true
+          if [[ "$REQUESTED_TAG" == *-* ]]; then
+            is_stable=false
+          fi
+          {
+            echo "tag_name=$REQUESTED_TAG"
+            echo "version=${REQUESTED_TAG#v}"
+            echo "is_stable=$is_stable"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse draft macOS release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          IS_STABLE: ${{ steps.meta.outputs.is_stable }}
+        shell: bash
+        run: |
+          release_channel=(--latest=true)
+          if [ "$IS_STABLE" != "true" ]; then
+            release_channel=(--prerelease --latest=false)
+          fi
+
+          if release_json="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease 2>/dev/null)"; then
+            is_draft="$(jq -r '.isDraft' <<< "$release_json")"
+            is_prerelease="$(jq -r '.isPrerelease' <<< "$release_json")"
+            expected_prerelease=false
+            if [ "$IS_STABLE" != "true" ]; then
+              expected_prerelease=true
+            fi
+            if [ "$is_draft" != "true" ] || [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with incompatible draft/channel state."
+              exit 1
+            fi
+          else
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft \
+              "${release_channel[@]}"
+          fi
+
+  package-macos:
+    name: Package macOS (${{ matrix.arch }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+            rust_target: x86_64-apple-darwin
+            metadata: latest-x64-mac.yml
+          - runner: macos-14
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            metadata: latest-mac.yml
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout requested version tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag_name }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.rust_target }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package signed and notarized macOS installers
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
+
+      - name: Verify Developer ID signature and notarization
+        working-directory: apps/desktop
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          app_path="$(find dist -type d -name 'Cordy.app' -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "::error::Packaged Cordy.app was not found."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=4 "$app_path"
+          signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
+          printf '%s\n' "$signature_details"
+          grep -Fq 'Authority=Developer ID Application:' <<< "$signature_details" || {
+            echo "::error::Cordy.app is not signed with a Developer ID Application identity."
+            exit 1
+          }
+          grep -Fq "TeamIdentifier=$APPLE_TEAM_ID" <<< "$signature_details" || {
+            echo "::error::Cordy.app was signed by an unexpected Apple team."
+            exit 1
+          }
+
+          xcrun stapler validate "$app_path"
+          assessment="$(spctl --assess --type execute --verbose=4 "$app_path" 2>&1)"
+          printf '%s\n' "$assessment"
+          grep -Fq 'source=Notarized Developer ID' <<< "$assessment" || {
+            echo "::error::Gatekeeper did not recognize Cordy.app as notarized Developer ID software."
+            exit 1
+          }
+
+      - name: Upload verified macOS assets
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          required_assets=(
+            "dist/cordy-desktop-$VERSION-mac-${{ matrix.arch }}.dmg"
+            "dist/cordy-desktop-$VERSION-mac-${{ matrix.arch }}.zip"
+            "dist/${{ matrix.metadata }}"
+          )
+          for asset in "${required_assets[@]}"; do
+            if [ ! -f "$asset" ]; then
+              echo "::error::Missing verified macOS release asset $asset."
+              exit 1
+            fi
+          done
+
+          blockmap="dist/cordy-desktop-$VERSION-mac-${{ matrix.arch }}.zip.blockmap"
+          if [ -f "$blockmap" ]; then
+            required_assets+=("$blockmap")
+          fi
+          gh release upload "$TAG_NAME" \
+            "${required_assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+  publish:
+    needs: [prepare, package-macos]
+    if: github.repository == 'alexj11324/Cordy'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify macOS draft assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          published_assets="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name')"
+          for asset in \
+            "cordy-desktop-$VERSION-mac-arm64.dmg" \
+            "cordy-desktop-$VERSION-mac-arm64.zip" \
+            "cordy-desktop-$VERSION-mac-x64.dmg" \
+            "cordy-desktop-$VERSION-mac-x64.zip" \
+            latest-mac.yml \
+            latest-x64-mac.yml; do
+            grep -Fxq "$asset" <<< "$published_assets" || {
+              echo "::error::Draft release is missing required macOS asset $asset."
+              exit 1
+            }
+          done
+
+      - name: Publish macOS release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
