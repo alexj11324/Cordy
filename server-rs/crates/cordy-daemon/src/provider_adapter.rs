@@ -736,13 +736,13 @@ impl ProductionProviderAdapter {
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
-            client
-                .start_task(&ctx, &task.id)
-                .await
-                .map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            let start_result = client.start_task(&ctx, &task.id).await;
             // The dispatched-task lease remains owned through temp allocation
-            // and stops only after the server confirms the running transition.
+            // and stops only after the server returns the running transition.
+            // Join it on both success and failure instead of relying on Drop's
+            // abort path for a failed StartTask request.
             prepare_lease.stop().await;
+            start_result.map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
             if let Err(error) = client
                 .report_progress(
                     &ctx,
@@ -773,11 +773,11 @@ impl ProductionProviderAdapter {
                     ctx.token().clone(),
                 ),
             )?;
-            let mut backend_config = runtime.backend_config(
-                &task.workspace_id,
-                &target,
-                bound.child_env.into_inner(),
-            )?;
+            // Keep the exact launch snapshot accepted before preparation. A
+            // concurrent registration refresh must not change the executable
+            // after this task has already passed its launch gate.
+            let mut backend_config =
+                runtime.backend_config_for_launch(&launch, bound.child_env.into_inner())?;
             // The selected Hermes overlay is authoritative. Keep the latest
             // accepted launch from the runtime registry, but remove any
             // profile selector in its fixed prefix before spawning the child.

@@ -921,6 +921,20 @@ mod tests {
     }
 
     #[test]
+    fn connected_apps_keep_go_wire_field_names() {
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        let prepare_json = serde_json::to_value(plan.prepare_params()).unwrap();
+        let connected_app = &prepare_json["Task"]["ConnectedApps"][0];
+
+        assert_eq!(connected_app["provider"], "composio");
+        assert_eq!(connected_app["server_name"], "composio");
+        assert_eq!(connected_app["toolkit_slug"], "notion");
+        assert_eq!(connected_app["toolkit_name"], "Notion");
+        assert!(connected_app.get("serverName").is_none());
+        assert!(connected_app.get("toolkitSlug").is_none());
+    }
+
+    #[test]
     fn binds_task_token_only_to_child_env_and_preserves_exec_options() {
         let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
         let bound = plan

@@ -172,15 +172,18 @@ pub fn validate_thinking_level(
         }
     }
 
-    catalog.models.iter().any(|entry| {
-        entry.id == target
-            && entry.thinking.as_ref().is_some_and(|thinking| {
+    catalog
+        .models
+        .iter()
+        .find(|entry| entry.id == target)
+        .is_some_and(|entry| {
+            entry.thinking.as_ref().is_some_and(|thinking| {
                 thinking
                     .supported_levels
                     .iter()
                     .any(|level| level.value == value)
             })
-    })
+        })
 }
 
 /// Reports whether a task's service-tier override is advertised for the
@@ -195,7 +198,8 @@ pub fn validate_service_tier(catalog: &Catalog, provider: &str, model: &str, val
     catalog
         .models
         .iter()
-        .any(|entry| entry.id == model && entry.service_tiers.iter().any(|tier| tier.id == value))
+        .find(|entry| entry.id == model)
+        .is_some_and(|entry| entry.service_tiers.iter().any(|tier| tier.id == value))
 }
 
 fn model_id_for_capability_lookup<'a>(provider: &str, model: &'a str) -> &'a str {
@@ -483,5 +487,38 @@ mod tests {
         };
         assert!(!validate_thinking_level(&catalog, "pi", "", "high"));
         assert!(validate_thinking_level(&catalog, "opencode", "", "high"));
+    }
+
+    #[test]
+    fn capability_validation_uses_the_first_matching_model_entry() {
+        let catalog = Catalog {
+            models: vec![
+                Model {
+                    id: "gpt-5".to_string(),
+                    ..Model::default()
+                },
+                Model {
+                    id: "gpt-5".to_string(),
+                    thinking: Some(ModelThinking {
+                        supported_levels: vec![ThinkingLevel {
+                            value: "high".to_string(),
+                            ..ThinkingLevel::default()
+                        }],
+                        ..ModelThinking::default()
+                    }),
+                    service_tiers: vec![ModelServiceTier {
+                        id: "priority".to_string(),
+                        ..ModelServiceTier::default()
+                    }],
+                    ..Model::default()
+                },
+            ],
+            ..Catalog::default()
+        };
+
+        assert!(!validate_thinking_level(&catalog, "codex", "gpt-5", "high"));
+        assert!(!validate_service_tier(
+            &catalog, "codex", "gpt-5", "priority"
+        ));
     }
 }

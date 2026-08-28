@@ -20,7 +20,9 @@ use crate::registration::{
 use crate::repocache::Ctx;
 use crate::types::RuntimeExecutionTarget;
 use cordy_agent::version::VersionError;
-use cordy_agent::{build_backend, check_provider_minimum, extract_version_line};
+use cordy_agent::{
+    build_backend, check_provider_minimum, extract_version_line, filter_launch_prefix_for_provider,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderProbeReason {
@@ -151,6 +153,13 @@ impl LocalProviderCatalog {
         build_backend(runtime_id, cordy_agent::BackendConfig::default()).is_ok()
     }
 
+    fn supports_profile_backend(runtime_id: &str) -> bool {
+        // Built-in identities such as `omp` can map to a provider family for
+        // execution, but custom profile protocol families must be explicit
+        // provider identities.
+        cordy_agent::provider(runtime_id).is_some() && Self::supports_backend(runtime_id)
+    }
+
     fn display_name(provider: &str) -> Option<&'static str> {
         cordy_agent::provider(provider)
             .map(|descriptor| descriptor.display_name)
@@ -271,7 +280,7 @@ impl LocalProviderCatalog {
         profile: &RuntimeProfile,
         command_override: Option<&str>,
     ) -> Result<ResolvedProfileCommand, ProfileResolutionError> {
-        if !Self::supports_backend(&profile.protocol_family) {
+        if !Self::supports_profile_backend(&profile.protocol_family) {
             return Err(ProfileResolutionError {
                 reason: format!("unsupported protocol family: {}", profile.protocol_family),
             });
@@ -287,7 +296,8 @@ impl LocalProviderCatalog {
                 reason: format!("runtime command not executable: {}", profile.command_name),
             })?;
 
-        let fixed_args = profile.fixed_args.clone();
+        let fixed_args =
+            filter_launch_prefix_for_provider(&profile.protocol_family, &profile.fixed_args);
         let version = self
             .probe_version(ctx, &command_path, &fixed_args)
             .await
@@ -724,6 +734,12 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                 ));
                 continue;
             }
+            if !LocalProviderCatalog::supports_profile_backend(&profile.protocol_family) {
+                payload
+                    .failed_profiles
+                    .push(profile_failure(&profile, "unsupported protocol family"));
+                continue;
+            }
             let command_override = self
                 .config
                 .profile_command_overrides
@@ -742,6 +758,10 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                     ));
                 }
                 Ok(command) => {
+                    let fixed_args = filter_launch_prefix_for_provider(
+                        &profile.protocol_family,
+                        &command.fixed_args,
+                    );
                     let target = RuntimeExecutionTarget {
                         provider: profile.protocol_family.clone(),
                         profile_id: profile.id.clone(),
@@ -757,7 +777,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                         target,
                         display_name: name,
                         command_path: command.command_path,
-                        fixed_args: command.fixed_args,
+                        fixed_args,
                         version: command.version,
                     });
                 }
@@ -930,10 +950,10 @@ mod tests {
 
     #[test]
     fn custom_profiles_require_a_real_protocol_backend() {
-        assert!(LocalProviderCatalog::supports_backend("codex"));
-        assert!(!LocalProviderCatalog::supports_backend("omp"));
-        assert!(LocalProviderCatalog::supports_backend("claude"));
-        assert!(!LocalProviderCatalog::supports_backend("unknown"));
+        assert!(LocalProviderCatalog::supports_profile_backend("codex"));
+        assert!(LocalProviderCatalog::supports_profile_backend("claude"));
+        assert!(!LocalProviderCatalog::supports_profile_backend("omp"));
+        assert!(!LocalProviderCatalog::supports_profile_backend("unknown"));
     }
 
     #[test]

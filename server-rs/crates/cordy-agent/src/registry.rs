@@ -282,6 +282,54 @@ pub fn model_selection_supported(id: &str) -> bool {
         .is_none_or(|provider| provider.model_selection_supported)
 }
 
+/// Filters a custom profile's fixed argv prefix with the same provider-owned
+/// policy used by the eventual task launch. Unknown families remain unchanged;
+/// the daemon rejects them before publishing a profile.
+pub fn filter_launch_prefix_for_provider(provider_id: &str, prefix: &[String]) -> Vec<String> {
+    let family = protocol_family(provider_id).unwrap_or(provider_id);
+    let blocked = match family {
+        "antigravity" => Some(&*crate::antigravity::BLOCKED_ARGS),
+        "codebuddy" => Some(&*crate::codebuddy::BLOCKED_ARGS),
+        "claude" => Some(&*crate::claude::BLOCKED_ARGS),
+        "copilot" => Some(&*crate::copilot::BLOCKED_ARGS),
+        "codex" => Some(&*crate::codex::BLOCKED_ARGS),
+        "cursor" => Some(&*crate::cursor::BLOCKED_ARGS),
+        "deveco" => Some(&*crate::deveco::BLOCKED_ARGS),
+        "openclaw" => Some(&*crate::openclaw::BLOCKED_ARGS),
+        "opencode" => Some(&*crate::opencode::BLOCKED_ARGS),
+        "qwen" => Some(&*crate::qwen::BLOCKED_ARGS),
+        "qoder" | "qoderclicn" | "traecli" | "kiro" | "kimi" | "qwenpaw" | "grok"
+        | "mcode" | "dim" | "reasonix" => Some(crate::qoder::blocked_args(family)),
+        "pi" => {
+            return crate::command::filter_launch_prefix(prefix, &crate::pi::pi_blocked_args())
+                .args;
+        }
+        // DSH's profile selector is a provider identity token and is allowed
+        // to live in the accepted fixed prefix.
+        _ => None,
+    };
+    blocked.map_or_else(
+        || prefix.to_vec(),
+        |blocked| crate::command::filter_launch_prefix(prefix, blocked).args,
+    )
+}
+
+fn qoder_config(runtime_id: &str, config: BackendConfig) -> QoderConfig {
+    QoderConfig {
+        command: config.command,
+        env: config.env,
+        default_command: if runtime_id == "qoderclicn" {
+            "qoderclicn".to_string()
+        } else {
+            "qodercli".to_string()
+        },
+        // Qoder and Qoder CN share a transport, but discovery and runtime
+        // behavior must remain scoped to the identity that was requested.
+        provider: runtime_id.to_string(),
+        ..QoderConfig::default()
+    }
+}
+
 /// Reports whether a runtime rejects a model selector without its provider
 /// prefix. This is an execution contract: only these runtimes need a catalog
 /// read before launching a task with a pinned model.
@@ -507,16 +555,9 @@ pub fn build_backend(
             command: config.command,
             env: config.env,
         }))),
-        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(QoderConfig {
-            command: config.command,
-            env: config.env,
-            default_command: if runtime_id == "qoderclicn" {
-                "qoderclicn".to_string()
-            } else {
-                "qodercli".to_string()
-            },
-            ..QoderConfig::default()
-        }))),
+        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(qoder_config(
+            runtime_id, config,
+        )))),
         "traecli" => Ok(Arc::new(TraecliBackend::new(TraecliConfig {
             command: config.command,
             env: config.env,
@@ -659,6 +700,42 @@ mod tests {
                 Err(AgentError::UnsupportedRuntime(value)) if value == runtime
             ));
         }
+    }
+
+    #[test]
+    fn factory_preserves_qoder_runtime_identity() {
+        let qoder = qoder_config("qoder", backend_config());
+        assert_eq!(qoder.provider, "qoder");
+        assert_eq!(qoder.default_command, "qodercli");
+
+        let qoderclicn = qoder_config("qoderclicn", backend_config());
+        assert_eq!(qoderclicn.provider, "qoderclicn");
+        assert_eq!(qoderclicn.default_command, "qoderclicn");
+    }
+
+    #[test]
+    fn launch_prefix_filter_uses_current_provider_policies() {
+        let prefix = vec![
+            "start".to_string(),
+            "--output-format".to_string(),
+            "text".to_string(),
+            "--model".to_string(),
+            "untrusted-model".to_string(),
+            "q36".to_string(),
+        ];
+        assert_eq!(
+            filter_launch_prefix_for_provider("qwen", &prefix),
+            vec!["start", "q36"]
+        );
+        assert_eq!(
+            filter_launch_prefix_for_provider("unknown", &prefix),
+            prefix
+        );
+        assert!(filter_launch_prefix_for_provider(
+            "omp",
+            &["--mode".to_string(), "unsafe".to_string()]
+        )
+        .is_empty());
     }
 
     #[tokio::test]

@@ -48,7 +48,7 @@ static EFFORT_RE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap_or_else(|error| panic!("invalid Claude effort regex: {error}"))
 });
 
-static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
         ("-p", BlockedArgMode::Standalone),
         ("--output-format", BlockedArgMode::WithValue),
