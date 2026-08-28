@@ -6482,7 +6482,7 @@ impl IssueResponse {
             created_at: timestamp(issue.created_at),
             updated_at: timestamp(issue.updated_at),
             revision: issue.revision,
-            last_activity_at: issue.last_activity_at.map(timestamp),
+            last_activity_at: issue.last_activity_at.map(cordy_util::rfc3339_nano),
             metadata: object_or_empty(issue.metadata.clone()),
             properties: object_or_empty(issue.properties.clone()),
             reactions: Vec::new(),
@@ -6652,6 +6652,11 @@ mod tests {
 
     fn fixture_issue() -> Issue {
         let timestamp = Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap();
+        let last_activity_at = chrono::DateTime::parse_from_rfc3339(
+            "2026-08-23T03:30:00.123400Z",
+        )
+        .unwrap()
+        .to_utc();
         Issue {
             acceptance_criteria: json!([]),
             assignee_id: None,
@@ -6664,7 +6669,7 @@ mod tests {
             due_date: None,
             first_executed_at: None,
             id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap(),
-            last_activity_at: Some(timestamp),
+            last_activity_at: Some(last_activity_at),
             metadata: Value::Null,
             number: 14,
             origin_id: None,
@@ -6710,8 +6715,17 @@ mod tests {
         assert_eq!(value["identifier"], "CORD-14");
         assert_eq!(value["status_category"], "in_progress");
         assert_eq!(value["created_at"], "2026-08-23T03:30:00Z");
+        assert_eq!(value["last_activity_at"], "2026-08-23T03:30:00.1234Z");
+        assert!(value.get("description").is_some_and(Value::is_null));
+        assert!(value.get("assignee_id").is_some_and(Value::is_null));
+        assert!(value.get("parent_issue_id").is_some_and(Value::is_null));
+        assert!(value.get("project_id").is_some_and(Value::is_null));
+        assert!(value.get("start_date").is_some_and(Value::is_null));
+        assert!(value.get("due_date").is_some_and(Value::is_null));
         assert_eq!(value["metadata"], json!({}));
         assert_eq!(value["properties"], json!({}));
+        assert!(value.get("reactions").is_none());
+        assert!(value.get("attachments").is_none());
         assert!(value.get("labels").is_none());
     }
 
