@@ -1030,7 +1030,7 @@ impl ProductionProviderAdapter {
     async fn acquire_local_path(
         &self,
         ctx: &Ctx,
-        client: &Client,
+        client: &Arc<Client>,
         task: &Task,
         assignment: Option<&LocalDirectoryAssignment>,
     ) -> anyhow::Result<Option<PathLockRelease>> {
@@ -1040,7 +1040,7 @@ impl ProductionProviderAdapter {
         let wait_counted = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let wait_counted_callback = Arc::clone(&wait_counted);
         let resource_wait_tasks = &self.resource_wait_tasks;
-        let wait_client = Arc::clone(&client);
+        let wait_client = Arc::clone(client);
         let wait_ctx = ctx.clone();
         let wait_task_id = task.id.clone();
         let on_wait = move |holder: &str| {
@@ -3221,8 +3221,13 @@ mod tests {
         batch.push(Message {
             message_type: MessageType::Text,
             content: content.clone(),
+            tool: String::new(),
+            call_id: String::new(),
+            input: BTreeMap::new(),
             output: output.clone(),
-            ..Message::default()
+            status: String::new(),
+            level: String::new(),
+            session_id: String::new(),
         });
         assert_eq!(batch.messages[0].content, content);
         assert_eq!(batch.messages[0].output, output);
@@ -3230,8 +3235,13 @@ mod tests {
         batch.push(Message {
             message_type: MessageType::ToolResult,
             content: content.clone(),
+            tool: String::new(),
+            call_id: String::new(),
+            input: BTreeMap::new(),
             output,
-            ..Message::default()
+            status: String::new(),
+            level: String::new(),
+            session_id: String::new(),
         });
         assert_eq!(batch.messages[1].content, content);
         assert_eq!(batch.messages[1].output.len(), TOOL_OUTPUT_BYTES);
