@@ -3156,8 +3156,9 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   5. **升级与回滚**：使用两个 immutable image/tag 和 disposable DB 记录迁移前后 schema、服务可用性、向后/向前
      兼容边界、`cordy-migrate up/down`（或已支持 operator rollback）退出码、exact-image rollback 后的
      `/readyz` 与数据完整性；不得把局部 route parity 或静态编译当作回滚通过。
-- 证据/PR：T-60 是一个生产验收切片，已创建 Ready PR #589；本分支仅登记上述矩阵并修复阻断该矩阵的 dependency
-  resolver 配置，不新增脚本/抽象。产物 SHA、每个命令的 matched/executed/blocked、日志与回滚记录仍待实际执行后
+- 证据/PR：T-60 是一个生产验收切片，已创建 Ready PR #589；本分支登记上述矩阵，并修复阻断该矩阵的 dependency
+  resolver 及其暴露的两个 daemon compile blockers，不新增脚本/抽象。产物 SHA、每个命令的
+  matched/executed/blocked、日志与回滚记录仍待实际执行后
   回写；长编译、测试、DB、Docker、Helm、systemd
   和真实 provider smoke 由独立 verifier 执行，reviewer 检查默认生产边界，fixer 只处理 scoped finding。任何环境
   阻塞必须原样记录，未执行不计为通过。Fixer 在修正 `hyper-util` feature 并由 Cargo offline 重建 lock 后运行
