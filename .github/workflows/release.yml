@@ -7,6 +7,17 @@ on:
       # tags broadly at the trigger layer, then enforce strict semver below.
       - "v*.*.*"
       - "!v*-dirty*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish self-hosted artifacts for (for example, v0.2.1)
+        required: true
+        type: string
+      promote_latest:
+        description: Also promote the backend and web images to the latest tag
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -18,7 +29,7 @@ jobs:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization
     # credential is present in the canonical repository's Actions secrets.
-    if: github.repository == 'alexj11324/Cordy'
+    if: github.event_name == 'push' && github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -47,6 +58,7 @@ jobs:
           fi
 
   verify:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -140,6 +152,52 @@ jobs:
       - name: Record emergency vulnerability-scan bypass
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
         run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
+
+  self-hosted-prepare:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      is_stable: ${{ steps.meta.outputs.is_stable }}
+    steps:
+      - name: Checkout requested version tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate self-hosted release tag
+        id: meta
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Self-hosted release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$REQUESTED_TAG'."
+            exit 1
+          fi
+          if [[ "$REQUESTED_TAG" == *-dirty* ]]; then
+            echo "::error::Refusing to publish self-hosted artifacts for dirty tag '$REQUESTED_TAG'."
+            exit 1
+          fi
+
+          commit_sha="$(git rev-parse HEAD)"
+          tag_commit="$(git rev-parse "$REQUESTED_TAG^{commit}")"
+          if [ "$tag_commit" != "$commit_sha" ]; then
+            echo "::error::Checked out commit '$commit_sha' does not match requested tag '$REQUESTED_TAG' ($tag_commit)."
+            exit 1
+          fi
+
+          echo "tag_name=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${commit_sha:0:7}" >> "$GITHUB_OUTPUT"
+          if [[ "$REQUESTED_TAG" == *-* ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
 
   rust-cli-build:
     name: Build Rust CLI (${{ matrix.os }}-${{ matrix.arch }})
@@ -260,7 +318,7 @@ jobs:
           retention-days: 1
 
   release:
-    needs: [macos-release-preflight, verify, rust-cli-build, docker-backend-merge, docker-web-merge]
+    needs: [macos-release-preflight, verify, rust-cli-build]
     # Only the canonical repository may publish release assets. A fork can
     # still run verification and builds without creating a Release.
     if: github.repository == 'alexj11324/Cordy'
@@ -337,9 +395,10 @@ jobs:
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
   # manifest list. This avoids QEMU emulation, which was making the Next.js
-  # arm64 build run for 30+ minutes per release.
+  # arm64 build run for 30+ minutes. These self-hosted artifacts are manual
+  # so desktop releases never wait for container publication.
   docker-backend-build:
-    needs: verify
+    needs: self-hosted-prepare
     strategy:
       fail-fast: false
       matrix:
@@ -357,6 +416,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
 
       - name: Compute backend image labels
         id: meta
@@ -389,8 +450,8 @@ jobs:
           cache-from: type=gha,scope=release-backend-${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=release-backend-${{ env.PLATFORM_PAIR }}
           build-args: |
-            VERSION=${{ needs.verify.outputs.tag_name }}
-            COMMIT=${{ github.sha }}
+            VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
+            COMMIT=${{ needs.self-hosted-prepare.outputs.commit_sha }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/cordy-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -408,10 +469,10 @@ jobs:
           retention-days: 1
 
   docker-backend-merge:
-    needs: [verify, docker-backend-build]
+    needs: [self-hosted-prepare, docker-backend-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: release-docker-backend-${{ github.ref }}
+      group: self-hosted-docker-backend-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     steps:
       - name: Download digests
@@ -432,8 +493,8 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=${{ needs.verify.outputs.tag_name }}
-            type=sha,prefix=sha-
+            type=raw,value=${{ needs.self-hosted-prepare.outputs.tag_name }}
+            type=raw,value=sha-${{ needs.self-hosted-prepare.outputs.short_sha }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -468,7 +529,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/cordy-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
-    needs: verify
+    needs: self-hosted-prepare
     strategy:
       fail-fast: false
       matrix:
@@ -486,6 +547,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
 
       - name: Compute web image labels
         id: meta
@@ -519,7 +582,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=release-web-${{ env.PLATFORM_PAIR }}
           build-args: |
             REMOTE_API_URL=http://backend:8080
-            NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
+            NEXT_PUBLIC_APP_VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/cordy-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -537,10 +600,10 @@ jobs:
           retention-days: 1
 
   docker-web-merge:
-    needs: [verify, docker-web-build]
+    needs: [self-hosted-prepare, docker-web-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: release-docker-web-${{ github.ref }}
+      group: self-hosted-docker-web-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     steps:
       - name: Download digests
@@ -561,8 +624,8 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=${{ needs.verify.outputs.tag_name }}
-            type=sha,prefix=sha-
+            type=raw,value=${{ needs.self-hosted-prepare.outputs.tag_name }}
+            type=raw,value=sha-${{ needs.self-hosted-prepare.outputs.short_sha }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -597,11 +660,11 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/cordy-web:${{ steps.meta.outputs.version }}
 
   helm-chart:
-    needs: [verify, docker-backend-merge, docker-web-merge]
+    needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
     if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
-      group: release-helm-chart-${{ github.ref }}
+      group: self-hosted-helm-chart-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     env:
       CHART_DIR: deploy/helm/cordy
@@ -609,13 +672,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
       - name: Sync chart metadata with release tag
         env:
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
         run: |
           chart_version="${TAG_NAME#v}"
           sed -i -E "s/^version:.*/version: ${chart_version}/" "$CHART_DIR/Chart.yaml"
@@ -636,6 +701,36 @@ jobs:
 
       - name: Verify published chart
         run: helm show chart "$OCI_REGISTRY/cordy" --version "$CHART_VERSION"
+
+  promote-self-hosted-latest:
+    needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
+    if: >-
+      inputs.promote_latest &&
+      needs.self-hosted-prepare.outputs.is_stable == 'true' &&
+      github.repository == 'alexj11324/Cordy'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote stable image tags
+        env:
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+        run: |
+          for image in cordy-backend cordy-web; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest" \
+              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:${TAG_NAME}"
+            docker buildx imagetools inspect \
+              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
+          done
 
   # Build the Desktop installers for every supported platform and upload them
   # to the draft GitHub Release created above. The release remains private
@@ -823,7 +918,7 @@ jobs:
             --clobber
 
   publish-release:
-    needs: [verify, release, desktop, helm-chart]
+    needs: [verify, release, desktop]
     if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
@@ -879,25 +974,6 @@ jobs:
               echo "::error::Draft release is missing required asset $asset"
               exit 1
             }
-          done
-
-      - name: Setup Docker Buildx for final promotion
-        if: needs.verify.outputs.is_stable == 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Promote stable image tags
-        if: needs.verify.outputs.is_stable == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-        run: |
-          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          for image in cordy-backend cordy-web; do
-            docker buildx imagetools create \
-              --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest" \
-              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:${TAG_NAME}"
-            docker buildx imagetools inspect \
-              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
           done
 
       - name: Publish complete GitHub release
