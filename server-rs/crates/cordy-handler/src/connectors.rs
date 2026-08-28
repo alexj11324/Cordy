@@ -546,11 +546,11 @@ async fn begin_weixin_install(
             );
         }
     };
+    let decrypt = move |sealed: &[u8]| box_.open(sealed).map_err(anyhow::Error::from);
     let local_tokens = installations
         .into_iter()
         .filter(|row| row.agent_id == agent_id)
         .filter_map(|row| {
-            let decrypt = |sealed: &[u8]| box_.open(sealed).map_err(anyhow::Error::from);
             cordy_weixin::config::decode_credentials(&row.config, Some(&decrypt))
                 .ok()
                 .map(|credentials| credentials.bot_token)
@@ -567,12 +567,13 @@ async fn begin_weixin_install(
         }
     };
     let session_id = Uuid::new_v4().to_string();
+    let qrcode = qr.qrcode;
     let expires_at = Utc::now() + chrono::Duration::seconds(WEIXIN_SESSION_TTL.as_secs() as i64);
     let session = WeixinInstallSession {
         workspace_id,
         agent_id,
         initiator_id: actor,
-        qrcode: qr.qrcode,
+        qrcode: qrcode.clone(),
         base_url: cordy_weixin::api::DEFAULT_BASE_URL.to_string(),
         status: "pending".into(),
         installation_id: None,
@@ -587,7 +588,7 @@ async fn begin_weixin_install(
     }
     Json(json!({
         "session_id": session_id,
-        "qr_code_url": qr.qrcode,
+        "qr_code_url": qrcode,
         "expires_in_seconds": WEIXIN_SESSION_TTL.as_secs(),
         "poll_interval_seconds": 2,
     }))
