@@ -30,7 +30,7 @@ use crate::auto_update::{auto_update_loop, AutoUpdateProbes};
 use crate::bootstrap::{daemon_owner_span, BootstrapClock, DaemonStackExit, SystemBootstrapClock};
 use crate::client::Client;
 use crate::config::Config;
-use crate::control_lifecycle::{run_daemon_control, ControlEventConsumer};
+use crate::control_lifecycle::{run_daemon_control, ControlEventConsumer, DaemonControlLifecycle};
 use crate::daemon_core::{DaemonCoreDependencies, DaemonCoreHost, DaemonCoreServices};
 use crate::gc::gc_loop;
 use crate::health::{
@@ -49,6 +49,40 @@ const TASK_WAKEUP_CAPACITY: usize = 256;
 const OWNED_DRAIN_TIMEOUT: Duration = Duration::from_secs(35);
 const DEREGISTER_TIMEOUT: Duration = Duration::from_secs(5);
 const CHECKOUT_MODE_ISOLATED: &str = "isolated";
+
+/// Constructs and owns the production control-event consumer together with
+/// its transport. Keeping this assembly in one entry point prevents the
+/// production stack from accidentally dropping the event receiver or running
+/// the transport without its lifecycle consumer.
+pub(crate) fn spawn_control_owner<H: DaemonControlLifecycle>(
+    owners: &mut JoinSet<()>,
+    root_ctx: &Ctx,
+    lifecycle: Arc<H>,
+    control: Arc<DaemonControl>,
+    events: tokio::sync::mpsc::UnboundedReceiver<ControlEvent>,
+    task_wakeups: tokio::sync::mpsc::Sender<crate::wakeup::TaskWakeup>,
+    reconcile: Arc<ReconcileBroadcaster>,
+    workspace_changes: Arc<WorkspaceChangeSignal>,
+) {
+    let consumer = Arc::new(ControlEventConsumer::new(
+        lifecycle,
+        task_wakeups,
+        reconcile,
+        workspace_changes,
+    ));
+    let control_ctx = root_ctx.child();
+    let control_root = root_ctx.clone();
+    owners.spawn(
+        async move {
+            run_daemon_control(control_ctx.clone(), control, consumer, events).await;
+            if control_ctx.err().is_none() {
+                tracing::error!("daemon control owner stopped unexpectedly");
+                control_root.cancel_with(CancelCause::Shutdown);
+            }
+        }
+        .instrument(daemon_owner_span("control")),
+    );
+}
 
 /// Provider/runtime operations that cannot be implemented by the daemon
 /// control plane itself. A production stack cannot be constructed without a
@@ -293,12 +327,6 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         }
         let registered_control = Arc::clone(&control);
 
-        let consumer = Arc::new(ControlEventConsumer::new(
-            Arc::clone(&host),
-            task_wakeups_tx,
-            Arc::clone(&reconcile),
-            Arc::clone(&workspace_changes),
-        ));
         let orchestrator = match TaskExecutionOrchestrator::new(
             TaskExecutionConfig {
                 max_concurrent_tasks: self.config.max_concurrent_tasks as usize,
@@ -339,17 +367,15 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             }
             .instrument(daemon_owner_span("token_renewal")),
         );
-        let control_ctx = root_ctx.child();
-        let control_root = root_ctx.clone();
-        owners.spawn(
-            async move {
-                run_daemon_control(control_ctx.clone(), control, consumer, events_rx).await;
-                if control_ctx.err().is_none() {
-                    tracing::error!("daemon control owner stopped unexpectedly");
-                    control_root.cancel_with(CancelCause::Shutdown);
-                }
-            }
-            .instrument(daemon_owner_span("control")),
+        spawn_control_owner(
+            &mut owners,
+            &root_ctx,
+            Arc::clone(&host),
+            control,
+            events_rx,
+            task_wakeups_tx,
+            Arc::clone(&reconcile),
+            Arc::clone(&workspace_changes),
         );
         let task_ctx = root_ctx.child();
         let task_root = root_ctx.clone();
