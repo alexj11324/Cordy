@@ -1,6 +1,6 @@
 use super::*;
 use axum::extract::Request;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use clap::Parser;

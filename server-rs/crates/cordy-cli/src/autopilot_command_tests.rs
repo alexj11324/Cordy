@@ -1,7 +1,7 @@
 use super::*;
 use axum::extract::Request;
-use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{delete as delete_route, get, patch, post, put};
+use axum::http::HeaderMap;
+use axum::routing::{delete as delete_route, get, patch, post};
 use axum::{Json, Router};
 use clap::Parser;
 use std::io::Cursor;
@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 
 #[test]
 fn autopilot_read_parser_matches_go_registry() {
-    let list = Cli::try_parse_from([
+    let _list = Cli::try_parse_from([
         "cordy",
         "autopilot",
         "list",

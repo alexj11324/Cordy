@@ -1,6 +1,5 @@
 use super::*;
-use axum::extract::Request;
-use axum::routing::{delete as delete_route, get, post, put};
+use axum::routing::{get, put};
 use axum::{Json, Router};
 use clap::Parser;
 use std::io::Cursor;

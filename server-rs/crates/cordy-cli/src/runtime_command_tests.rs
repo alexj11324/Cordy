@@ -1,6 +1,5 @@
 use super::*;
 use axum::extract::Request;
-use axum::http::StatusCode;
 use axum::routing::{delete as delete_route, get, patch, post};
 use axum::{Json, Router};
 use clap::Parser;

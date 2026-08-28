@@ -616,7 +616,7 @@ async fn skill_import_matches_go_url_and_multipart_contracts() {
 async fn skill_import_rejects_ambiguous_input_and_preserves_legacy_conflict_output() {
     let home = tempfile::tempdir().expect("temp home");
     let cwd = tempfile::tempdir().expect("temp cwd");
-    let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+    let environment = Environment::for_test(home.path().into(), cwd.path().into());
     let cli = Cli::try_parse_from([
         "cordy",
         "skill",

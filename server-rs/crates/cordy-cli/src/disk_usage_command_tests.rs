@@ -1,6 +1,5 @@
 use super::*;
 use clap::Parser;
-use serde_json::Value;
 
 #[test]
 fn daemon_disk_usage_parses_all_typed_flags() {

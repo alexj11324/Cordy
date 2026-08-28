@@ -115,7 +115,7 @@ pub(crate) async fn run_daemon_start(
     let options = start.bootstrap_options();
     let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
     cordy_daemon::assembly::run_production_daemon(options, move |context| {
-        start.production_assembly_with_local_catalog(&context, CLIENT_VERSION, checkout_registry)
+        start.production_assembly_with_local_catalog(context, CLIENT_VERSION, checkout_registry)
     })
     .await
     .context("run foreground daemon")?;
@@ -763,7 +763,7 @@ where
     O: IoWrite,
 {
     if args.len() != 2
-        || args[1] != OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG)
+        || args[1] != cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG
     {
         return Ok(false);
     }

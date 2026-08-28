@@ -112,6 +112,7 @@ pub(crate) fn read_setup_confirmation<R: Read>(input: &mut R) -> Result<String> 
     Ok(String::from_utf8_lossy(&answer).trim().to_ascii_lowercase())
 }
 
+#[cfg(test)]
 pub(crate) async fn prepare_setup_profile(
     cli: &Cli,
     environment: &Environment,
