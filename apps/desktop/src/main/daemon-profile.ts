@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { join } from "path";
 
-// Keep the Go impl in sync: server/cmd/cordy/cmd_daemon.go healthPortForProfile.
+// Keep this in sync with cordy_daemon::control_client::health_port_for_profile.
 export const DEFAULT_HEALTH_PORT = 19514;
 
 /**

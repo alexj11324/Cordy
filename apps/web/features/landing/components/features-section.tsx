@@ -649,7 +649,7 @@ function SkillsVisual() {
                       <ol className="list-decimal pl-4 space-y-0.5">
                         <li>Analyze the current schema from migrations/</li>
                         <li>Generate migration SQL with proper ordering</li>
-                        <li>Validate with sqlc compile</li>
+                        <li>Validate with SQLx and cargo check</li>
                         <li>Run tests against a fresh database</li>
                       </ol>
                     </div>
