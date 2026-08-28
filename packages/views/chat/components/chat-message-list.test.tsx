@@ -112,7 +112,7 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
     );
 
     // The reasoning disclosure re-renders in place: same DOM node, new prose.
-    await screen.findByText("Still checking.");
+    await screen.findByText(/Still checking\./);
     expect(screen.getByText("Thinking…").closest("button")).toBe(triggerBefore);
     expect(document.contains(trigger)).toBe(true);
   });
@@ -137,7 +137,7 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
     );
 
     expect(await screen.findByText("Thinking…")).toBeInTheDocument();
-    expect(screen.queryByText("Still checking.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Still checking\./)).not.toBeInTheDocument();
   });
 
   it("shows reasoning inline and omits tool call details", async () => {
@@ -344,6 +344,7 @@ describe("ChatMessageList message geometry", () => {
                 chat_session_id: "session-1",
                 role: "user",
                 content: "Short user message",
+                task_id: null,
                 created_at: "2026-08-28T12:00:00Z",
               },
             ]}
