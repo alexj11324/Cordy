@@ -36,6 +36,7 @@
     "autopilots",
     "---連携---",
     "channels",
+    "weixin-integration",
     "lark-bot-integration",
     "slack-bot-integration",
     "dingtalk-bot-integration",

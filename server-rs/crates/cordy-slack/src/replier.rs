@@ -143,7 +143,7 @@ impl OutboundReplier {
         // protects these from its markdown passes, so the base64url token's
         // `_`/`-` chars are not mangled into italics.
         let text = format!(
-            "👋 To start chatting with me, link your Slack account to Cordy: <{bind_url}|link your account>\n(This link expires in 15 minutes.)"
+            "👋 To start chatting with me, link your Slack account to Patchbay: <{bind_url}|link your account>\n(This link expires in 15 minutes.)"
         );
         self.post(ctx, inst, msg, &text).await
     }

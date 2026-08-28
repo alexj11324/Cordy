@@ -49,6 +49,7 @@ DELETE	/api/workspaces/{}/slack/installations/{}
 DELETE	/api/workspaces/{}/telegram/installations/{}
 DELETE	/api/workspaces/{}/vcs/connections/{}
 DELETE	/api/workspaces/{}/wecom/installations/{}
+DELETE	/api/workspaces/{}/weixin/installations/{}
 GET	/api/agent-activity-30d
 GET	/api/agent-builder/sessions
 GET	/api/agent-run-counts
@@ -209,6 +210,8 @@ GET	/api/workspaces/{}/slack/installations
 GET	/api/workspaces/{}/telegram/installations
 GET	/api/workspaces/{}/vcs/connections
 GET	/api/workspaces/{}/wecom/installations
+GET	/api/workspaces/{}/weixin/install/{}/status
+GET	/api/workspaces/{}/weixin/installations
 GET	/health
 GET	/health/realtime
 GET	/healthz
@@ -373,6 +376,7 @@ POST	/api/webhooks/github
 POST	/api/webhooks/stripe
 POST	/api/webhooks/vcs/{}
 POST	/api/wecom/binding/redeem
+POST	/api/weixin/binding/redeem
 POST	/api/workspaces
 POST	/api/workspaces/{}/dingtalk/install/byo
 POST	/api/workspaces/{}/lark/install/begin
@@ -391,6 +395,7 @@ POST	/api/workspaces/{}/telegram/install
 POST	/api/workspaces/{}/vcs/connections
 POST	/api/workspaces/{}/vcs/connections/{}/rotate-webhook
 POST	/api/workspaces/{}/wecom/install/byo
+POST	/api/workspaces/{}/weixin/install/begin
 POST	/auth/google
 POST	/auth/logout
 POST	/auth/send-code

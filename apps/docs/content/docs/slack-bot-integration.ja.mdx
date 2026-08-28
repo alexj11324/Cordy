@@ -5,13 +5,13 @@ description: エージェント用の Slack Bot を作成し、DM、チャンネ
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Cordy では、自分で作成した Slack app を使います。接続すると、チームメンバーは Bot へ DM を送る、チャンネルで @メンションする、`/issue` でイシューを作成するといった操作ができます。
+Patchbay では、自分で作成した Slack app を使います。接続すると、チームメンバーは Bot へ DM を送る、チャンネルで @メンションする、`/issue` でイシューを作成するといった操作ができます。
 
-1 つの Slack app に接続できる Cordy エージェントは 1 つです。複数のエージェントを接続する場合は、エージェントごとに app を作成してください。
+1 つの Slack app に接続できる Patchbay エージェントは 1 つです。複数のエージェントを接続する場合は、エージェントごとに app を作成してください。
 
 ## 始める前に
 
-接続はワークスペースの owner または admin が行います。最終的に次の 2 つの認証情報を Cordy へ入力します。
+接続はワークスペースの owner または admin が行います。最終的に次の 2 つの認証情報を Patchbay へ入力します。
 
 - `xoxb-` で始まる Bot User OAuth Token
 - `xapp-` で始まる App-level Token
@@ -22,18 +22,18 @@ Cordy では、自分で作成した Slack app を使います。接続すると
 
 ```yaml
 display_information:
-  name: Cordy
+  name: Patchbay
 features:
   app_home:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Cordy
+    display_name: Patchbay
     always_online: true
   slash_commands:
     - command: /issue
-      description: Create a Cordy issue
+      description: Create a Patchbay issue
       usage_hint: "[description]"
 oauth_config:
   scopes:
@@ -63,7 +63,7 @@ settings:
   token_rotation_enabled: false
 ```
 
-作成前に、2 か所の `Cordy` をエージェント名に変更してもかまいません。manifest の権限やイベントは削除しないでください。削除すると、DM、チャンネルでのメンション、返信、`/issue` が動作しないことがあります。
+作成前に、2 か所の `Patchbay` をエージェント名に変更してもかまいません。manifest の権限やイベントは削除しないでください。削除すると、DM、チャンネルでのメンション、返信、`/issue` が動作しないことがあります。
 
 <Callout type="warning">
 添付ファイル対応が追加される前にこの Slack app をインストールしていた場合は、Bot scope に `files:read` を追加し、workspace に app を再インストールしてください。app を再インストールするまで、新しい scope は既存の Bot token に反映されません。
@@ -88,24 +88,24 @@ Bot は Socket Mode で Slack へ接続するため、公開 Request URL や OAu
 
 ## 3. エージェントへ接続する
 
-1. Cordy で**エージェント**を開き、Slack に接続するエージェントを選びます。
+1. Patchbay で**エージェント**を開き、Slack に接続するエージェントを選びます。
 2. **連携**を開き、**Slack に接続**をクリックします。
 3. Bot token と App-level token を入力します。
 4. **接続**をクリックします。
 
-Cordy は 2 つの token が同じ app のものか確認します。接続に成功すると、画面に **Slack に接続済み**と表示されます。
+Patchbay は 2 つの token が同じ app のものか確認します。接続に成功すると、画面に **Slack に接続済み**と表示されます。
 
 <Callout type="warning">
-2 つの token は暗号化して Cordy サーバーに保存されます。Token は認証情報です。イシュー、コメント、コードリポジトリには書き込まないでください。ほかのエージェントやワークスペースに接続済みの app をそのまま再利用することはできません。先に元の接続を解除してください。
+2 つの token は暗号化して Patchbay サーバーに保存されます。Token は認証情報です。イシュー、コメント、コードリポジトリには書き込まないでください。ほかのエージェントやワークスペースに接続済みの app をそのまま再利用することはできません。先に元の接続を解除してください。
 </Callout>
 
 ## 初回利用
 
-メンバーが初めて Bot に DM を送るか @メンションすると、アカウント連携用のリンクが届きます。そのワークスペースで使う Cordy アカウントにログインしてから、Slack に戻ってもう一度メッセージを送ってください。
+メンバーが初めて Bot に DM を送るか @メンションすると、アカウント連携用のリンクが届きます。そのワークスペースで使う Patchbay アカウントにログインしてから、Slack に戻ってもう一度メッセージを送ってください。
 
-リンクは 1 回だけ使用でき、15 分後に期限切れになります。期限が切れた場合は、Bot にもう一度メッセージを送ると新しいリンクが届きます。同じ Cordy ワークスペースにある複数の Bot が同じ Slack workspace のものなら、通常は既存のアカウント連携を再利用できます。
+リンクは 1 回だけ使用でき、15 分後に期限切れになります。期限が切れた場合は、Bot にもう一度メッセージを送ると新しいリンクが届きます。同じ Patchbay ワークスペースにある複数の Bot が同じ Slack workspace のものなら、通常は既存のアカウント連携を再利用できます。
 
-Bot を利用できるのは、現在の Cordy ワークスペースのメンバーだけです。
+Bot を利用できるのは、現在の Patchbay ワークスペースのメンバーだけです。
 
 ## Slack から仕事を依頼する
 
@@ -133,7 +133,7 @@ DM、または Bot を @ メンションしたチャンネルのメッセージ�
 /issue Safari ではログインに成功してもログイン画面に残る
 ```
 
-このコマンドでは Bot の @メンションは不要です。Cordy は説明を現在の Bot に対応するエージェントへ渡し、エージェントがタイトルと本文を整理してイシューを作成します。Slack には最初に自分だけが見える受付メッセージが表示されます。作成が完了すると、Cordy のインボックスに通知が届きます。
+このコマンドでは Bot の @メンションは不要です。Patchbay は説明を現在の Bot に対応するエージェントへ渡し、エージェントがタイトルと本文を整理してイシューを作成します。Slack には最初に自分だけが見える受付メッセージが表示されます。作成が完了すると、Patchbay のインボックスに通知が届きます。
 
 ## 接続を管理する
 
@@ -143,7 +143,7 @@ DM、または Bot を @ メンションしたチャンネルのメッセージ�
 
 ## セルフホスト設定
 
-Cordy Cloud では追加設定は不要です。セルフホスト環境では、Slack token を暗号化するキーを先に設定してください。
+Patchbay Cloud では追加設定は不要です。セルフホスト環境では、Slack token を暗号化するキーを先に設定してください。
 
 ```dotenv
 CORDY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
@@ -157,7 +157,7 @@ openssl rand -base64 32
 
 API サービスを再起動してから Slack app を接続します。このキーは継続して保管してください。変更または紛失すると既存の token を復号できなくなり、app の再接続が必要になります。
 
-アカウント連携用リンクには `CORDY_APP_URL` が使われ、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Cordy のアドレスを指定してください。
+アカウント連携用リンクには `CORDY_APP_URL` が使われ、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Patchbay のアドレスを指定してください。
 
 ## よくある問題
 

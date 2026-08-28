@@ -28,7 +28,7 @@ const MAX_MARKDOWN_FENCE_INFO_BYTES: usize = 256;
 /// The chat-list notification preview used when the body carries no leading
 /// heading. DingTalk shows the title only in the push preview, not in the
 /// message body.
-pub const DEFAULT_MARKDOWN_TITLE: &str = "Cordy has replied.";
+pub const DEFAULT_MARKDOWN_TITLE: &str = "Patchbay has replied.";
 
 /// Derives the sampleMarkdown title (the notification preview) from the body's
 /// first ATX heading, falling back to a default. The heading is left in the

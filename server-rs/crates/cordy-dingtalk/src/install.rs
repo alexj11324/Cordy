@@ -40,7 +40,9 @@ pub enum InstallError {
     /// app_id) routing index. A DingTalk robot is one bot identity and maps to
     /// one installation/default agent; group-specific routes may target other
     /// agents inside that workspace.
-    #[error("dingtalk: this DingTalk robot is already connected to a different Cordy workspace")]
+    #[error(
+        "dingtalk: this DingTalk robot is already connected to a different Patchbay workspace"
+    )]
     RobotOwnedByAnotherWorkspace,
     /// The robot is already connected to a DIFFERENT (live, non-archived)
     /// agent in the SAME workspace, pointing the user at the Disconnect they
@@ -284,7 +286,7 @@ mod tests {
         );
         assert_eq!(
             InstallError::RobotOwnedByAnotherWorkspace.to_string(),
-            "dingtalk: this DingTalk robot is already connected to a different Cordy workspace"
+            "dingtalk: this DingTalk robot is already connected to a different Patchbay workspace"
         );
         assert_eq!(
             InstallError::RobotOwnedBySameWorkspace.to_string(),

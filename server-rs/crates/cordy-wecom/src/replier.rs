@@ -198,7 +198,7 @@ impl OutboundReplier {
             let encoded: String =
                 url::form_urlencoded::byte_serialize(token.raw.as_bytes()).collect();
             format!(
-                "👋 请先绑定你的 Cordy 账号，才能与我对话：\n{}{}?token={}\n（链接 15 分钟内有效）",
+                "👋 请先绑定你的 Patchbay 账号，才能与我对话：\n{}{}?token={}\n（链接 15 分钟内有效）",
                 self.app_url, self.binding_path, encoded
             )
         };

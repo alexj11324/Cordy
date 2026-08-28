@@ -75,6 +75,13 @@ vi.mock("@cordy/core/telegram", () => ({
   }),
 }));
 
+vi.mock("@cordy/core/weixin", () => ({
+  weixinInstallationsOptions: () => ({
+    queryKey: ["weixin", "installations"],
+    queryFn: vi.fn(),
+  }),
+}));
+
 vi.mock("@cordy/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
@@ -119,6 +126,12 @@ vi.mock("../../../settings/components/wecom-tab", () => ({
 vi.mock("../../../settings/components/telegram-tab", () => ({
   TelegramAgentBindButton: ({ agentId }: { agentId: string }) => (
     <div data-testid="telegram-bind-button" data-agent-id={agentId} />
+  ),
+}));
+
+vi.mock("../../../settings/components/weixin-tab", () => ({
+  WeixinAgentBindButton: ({ agentId }: { agentId: string }) => (
+    <div data-testid="weixin-bind-button" data-agent-id={agentId} />
   ),
 }));
 
@@ -187,6 +200,9 @@ describe("IntegrationsTab", () => {
     expect(screen.getByTestId("telegram-bind-button").getAttribute("data-agent-id")).toBe(
       "agent-1",
     );
+    expect(screen.getByTestId("weixin-bind-button").getAttribute("data-agent-id")).toBe(
+      "agent-1",
+    );
   });
 
   it("renders the DingTalk brand mark in the DingTalk integration card", () => {
@@ -231,21 +247,20 @@ describe("IntegrationsTab", () => {
     expect(screen.queryByTestId("telegram-bind-button")).toBeNull();
   });
 
-  it("lets a non-admin agent owner bind Lark but keeps Slack admin-only", () => {
-    // The agent's owner (user-1) is only a plain workspace member. Lark
-    // authorizes the agent owner (canManageAgent), so the Lark bind entry
-    // renders and receives owner_id; Slack, DingTalk, WeCom and Telegram routes stay
-    // admin-only, so each shows the read-only note instead of a CTA (PB-4213).
+  it("lets a non-admin agent owner bind Lark and WeChat while keeping BYO apps admin-only", () => {
+    // Lark and personal WeChat authorize the agent owner. Slack, DingTalk,
+    // WeCom and Telegram stay workspace-admin-only because their flows accept
+    // user-supplied app credentials or revoke an existing installation.
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     renderTab(<IntegrationsTab agent={agent} />);
     const larkButton = screen.getByTestId("lark-bind-button");
     expect(larkButton.getAttribute("data-agent-id")).toBe("agent-1");
     expect(larkButton.getAttribute("data-agent-owner-id")).toBe("user-1");
+    expect(screen.getByTestId("weixin-bind-button")).toBeTruthy();
     expect(screen.queryByTestId("slack-bind-button")).toBeNull();
     expect(screen.queryByTestId("wecom-bind-button")).toBeNull();
     expect(screen.queryByTestId("telegram-bind-button")).toBeNull();
-    // The Slack, DingTalk, WeCom and Telegram sections each fall back to the shared
-    // members note.
+    // The four BYO/admin-only sections fall back to the shared members note.
     expect(
       screen.getAllByText(/Only workspace owners and admins can connect an agent/i),
     ).toHaveLength(4);

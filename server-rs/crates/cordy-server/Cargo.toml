@@ -30,6 +30,7 @@ cordy-slack = { path = "../cordy-slack" }
 cordy-telegram = { path = "../cordy-telegram" }
 cordy-util = { path = "../cordy-util" }
 cordy-wecom = { path = "../cordy-wecom" }
+cordy-weixin = { path = "../cordy-weixin" }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }

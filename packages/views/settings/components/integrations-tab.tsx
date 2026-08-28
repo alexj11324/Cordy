@@ -8,6 +8,7 @@ import { DingTalkTab } from "./dingtalk-tab";
 import { VCSTab } from "./vcs-tab";
 import { WecomTab } from "./wecom-tab";
 import { TelegramTab } from "./telegram-tab";
+import { WeixinTab } from "./weixin-tab";
 import { ApiError } from "@cordy/core/api";
 import { composioToolkitsOptions } from "@cordy/core/composio";
 import { useConfigStore, useFeatureEnabled } from "@cordy/core/config";
@@ -41,6 +42,17 @@ export function IntegrationsTab() {
 
   return (
     <SettingsTab title={t(($) => $.page.tabs.integrations)}>
+      <SettingsSection
+        title={
+          <span className="flex items-center gap-2">
+            <IntegrationChannelIcon channel="weixin" />
+            {t(($) => $.weixin.section_title)}
+          </span>
+        }
+        description={t(($) => $.weixin.page_description)}
+      >
+        <WeixinTab />
+      </SettingsSection>
       <SettingsSection
         title={
           <span className="flex items-center gap-2">

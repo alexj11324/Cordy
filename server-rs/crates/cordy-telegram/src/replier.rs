@@ -21,13 +21,13 @@ use crate::config::{decode_credentials, DecrypterFn};
 const AGENT_OFFLINE_TEXT: &str =
     "⚠️ 智能体当前离线，消息已记录。下次 daemon 上线后会自动继续处理。";
 const AGENT_ARCHIVED_TEXT: &str = "⚠️ 该智能体已归档，无法回复。请联系工作区管理员。";
-const BINDING_GROUP_HINT: &str = "请先私聊我发送一条消息，再完成 Cordy 账号绑定。";
+const BINDING_GROUP_HINT: &str = "请先私聊我发送一条消息，再完成 Patchbay 账号绑定。";
 const FRESH_PENDING_TEXT: &str = "✅ 已准备开始新对话。你的下一条聊天消息将不带之前的上下文运行。";
 const ISSUE_USAGE_TEXT: &str = "请填写任务标题，格式如下：\n\n/issue <标题>\n[描述]（可选）";
 const ISSUE_NOT_MEMBER_TEXT: &str =
-    "你不是该 Cordy 工作区的成员，因此无法创建任务。请让工作区管理员邀请你后重试。";
+    "你不是该 Patchbay 工作区的成员，因此无法创建任务。请让工作区管理员邀请你后重试。";
 const ISSUE_DISABLED_TEXT: &str =
-    "该 Telegram 机器人未连接到 Cordy（或已断开连接）。请让工作区管理员重新连接。";
+    "该 Telegram 机器人未连接到 Patchbay（或已断开连接）。请让工作区管理员重新连接。";
 
 #[derive(Debug, Clone)]
 pub struct BindingToken {
@@ -185,7 +185,7 @@ impl OutboundReplier {
         let token = binding.mint(inst.workspace_id, inst.id, sender).await?;
         let encoded: String = url::form_urlencoded::byte_serialize(token.raw.as_bytes()).collect();
         let text = format!(
-            "👋 要开始和我对话，请先绑定你的 Cordy 账号：\n{}{}?token={}\n（链接 15 分钟内有效）",
+            "👋 要开始和我对话，请先绑定你的 Patchbay 账号：\n{}{}?token={}\n（链接 15 分钟内有效）",
             self.app_url, self.binding_path, encoded
         );
         self.post(ctx, inst, msg, &text).await

@@ -191,6 +191,10 @@ import type {
   ListTelegramInstallationsResponse,
   RegisterTelegramRequest,
   RedeemTelegramBindingTokenResponse,
+  ListWeixinInstallationsResponse,
+  BeginWeixinInstallResponse,
+  WeixinInstallStatusResponse,
+  RedeemWeixinBindingTokenResponse,
   Squad,
   SquadMember,
   SquadMemberStatusListResponse,
@@ -342,6 +346,14 @@ import {
   EMPTY_TELEGRAM_INSTALLATION,
   EMPTY_LIST_TELEGRAM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
+  ListWeixinInstallationsResponseSchema,
+  BeginWeixinInstallResponseSchema,
+  WeixinInstallStatusResponseSchema,
+  RedeemWeixinBindingTokenResponseSchema,
+  EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE,
+  EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE,
+  EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE,
+  EMPTY_REDEEM_WEIXIN_BINDING_TOKEN_RESPONSE,
   EMPTY_BILLING_BALANCE,
   EMPTY_BILLING_TRANSACTIONS_PAGE,
   EMPTY_BILLING_BATCHES_PAGE,
@@ -4380,6 +4392,82 @@ export class ApiClient {
       RedeemTelegramBindingTokenResponseSchema,
       EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
       { endpoint: "POST /api/telegram/binding/redeem" },
+    );
+  }
+
+  async listWeixinInstallations(
+    workspaceId: string,
+  ): Promise<ListWeixinInstallationsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/weixin/installations`,
+    );
+    return parseWithFallback(
+      raw,
+      ListWeixinInstallationsResponseSchema,
+      EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/weixin/installations" },
+    );
+  }
+
+  async beginWeixinInstall(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<BeginWeixinInstallResponse> {
+    const search = new URLSearchParams({ agent_id: agentId });
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/weixin/install/begin?${search.toString()}`,
+      { method: "POST" },
+    );
+    return parseWithFallback(
+      raw,
+      BeginWeixinInstallResponseSchema,
+      EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/weixin/install/begin" },
+    );
+  }
+
+  async getWeixinInstallStatus(
+    workspaceId: string,
+    sessionId: string,
+    verifyCode?: string,
+  ): Promise<WeixinInstallStatusResponse> {
+    const search = new URLSearchParams();
+    if (verifyCode) search.set("verify_code", verifyCode);
+    const query = search.toString();
+    const suffix = query ? `?${query}` : "";
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/weixin/install/${sessionId}/status${suffix}`,
+    );
+    return parseWithFallback(
+      raw,
+      WeixinInstallStatusResponseSchema,
+      EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/weixin/install/:session/status" },
+    );
+  }
+
+  async deleteWeixinInstallation(
+    workspaceId: string,
+    installationId: string,
+  ): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/weixin/installations/${installationId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async redeemWeixinBindingToken(
+    token: string,
+  ): Promise<RedeemWeixinBindingTokenResponse> {
+    const raw = await this.fetch<unknown>("/api/weixin/binding/redeem", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    return parseWithFallback(
+      raw,
+      RedeemWeixinBindingTokenResponseSchema,
+      EMPTY_REDEEM_WEIXIN_BINDING_TOKEN_RESPONSE,
+      { endpoint: "POST /api/weixin/binding/redeem" },
     );
   }
 }

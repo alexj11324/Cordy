@@ -37,7 +37,7 @@ pub enum InstallError {
     /// (channel_type, app_id) routing index. A Slack app is one bot identity
     /// and maps to one agent; reusing it here requires disconnecting it in the
     /// other workspace first.
-    #[error("slack: this Slack app is already connected to a different Cordy workspace")]
+    #[error("slack: this Slack app is already connected to a different Patchbay workspace")]
     TeamOwnedByAnotherWorkspace,
     /// The app is already connected to a DIFFERENT (live, non-archived) agent
     /// in the SAME workspace. The old catch-all wrongly blamed "another
@@ -116,16 +116,27 @@ impl InstallService {
     /// The (channel_type, app_id) routing index is the only OTHER unique
     /// constraint, and it is NOT this upsert's conflict target, so a unique
     /// violation here means the pasted Slack app is already connected to a
-    /// DIFFERENT agent or Cordy workspace — refuse it
+    /// DIFFERENT agent or Patchbay workspace — refuse it
     /// ([`InstallError::TeamOwnedByAnotherWorkspace`]) rather than steal it.
-    /// No chat-session retire is needed: a row's agent_id never changes (it is
-    /// part of the key), so existing sessions stay valid for the same agent.
+    /// Swapping the upstream Slack app retires provider-owned session and
+    /// identity state: Slack channel/user ids are scoped to the old app/team
+    /// and must never be sent through the new credentials.
     pub async fn persist_install(&self, p: &InstallPersist) -> anyhow::Result<ChannelInstallation> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("begin install tx: {e:#}"))?;
+        cordy_db::queries::channel::lock_channel_installation_agent_slot(
+            &mut *tx, TYPE_SLACK, p.ws_id, p.agent_id,
+        )
+        .await?;
+        cordy_db::queries::channel::lock_channel_installation_app_id_slot(
+            &mut *tx,
+            TYPE_SLACK,
+            &p.app_id_key,
+        )
+        .await?;
 
         // Free the (slack, app_id) routing slot from any DEAD prior owner — a
         // revoked placeholder, or an orphan whose owning workspace/agent was
@@ -143,6 +154,22 @@ impl InstallService {
         )
         .await
         .map_err(|e| anyhow::anyhow!("reclaim dead slack installation: {e:#}"))?;
+
+        let current = cordy_db::queries::channel::list_channel_installations_by_workspace(
+            &mut *tx, p.ws_id, TYPE_SLACK,
+        )
+        .await?
+        .into_iter()
+        .find(|row| row.agent_id == p.agent_id);
+        if let Some(current) = current.filter(|row| {
+            row.config.get("app_id").and_then(serde_json::Value::as_str)
+                != Some(p.app_id_key.as_str())
+        }) {
+            cordy_db::queries::channel::delete_channel_installation_for_replacement(
+                &mut *tx, current.id,
+            )
+            .await?;
+        }
 
         let inst = match upsert_channel_installation(
             &mut *tx,
@@ -290,7 +317,7 @@ mod tests {
         );
         assert_eq!(
             InstallError::TeamOwnedByAnotherWorkspace.to_string(),
-            "slack: this Slack app is already connected to a different Cordy workspace"
+            "slack: this Slack app is already connected to a different Patchbay workspace"
         );
         assert_eq!(
             InstallError::TeamOwnedBySameWorkspace.to_string(),

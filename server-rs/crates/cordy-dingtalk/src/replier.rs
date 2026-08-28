@@ -42,8 +42,8 @@ pub const ISSUE_USAGE_WITH_MEDIA_TEXT: &str = "Please add a title and resend wit
 // Refusals for dropped /issue commands, carried over from the deleted
 // pre-engine IssueCommandProcessor: without them the user's command vanishes
 // with no signal that it will never be handled.
-pub const ISSUE_NOT_MEMBER_TEXT: &str = "You're not a member of this Cordy workspace, so I can't file an issue for you. Ask a workspace admin to invite you, then send the command again.";
-pub const ISSUE_DISABLED_TEXT: &str = "This DingTalk robot isn't connected to Cordy (or was disconnected). Ask a workspace admin to reconnect it.";
+pub const ISSUE_NOT_MEMBER_TEXT: &str = "You're not a member of this Patchbay workspace, so I can't file an issue for you. Ask a workspace admin to invite you, then send the command again.";
+pub const ISSUE_DISABLED_TEXT: &str = "This DingTalk robot isn't connected to Patchbay (or was disconnected). Ask a workspace admin to reconnect it.";
 
 /// The binding-token surface the replier needs. [`crate::binding::BindingTokenService`]
 /// satisfies it.
@@ -130,7 +130,7 @@ impl OutboundReplier {
             .map_err(|e| anyhow::anyhow!("invalid app url: {e}"))?;
         bind_url.query_pairs_mut().append_pair("token", &token.raw);
         let text = format!(
-            "👋 To start chatting with me, link your DingTalk account to Cordy: [link your account]({bind_url})\n\n(This link expires in 15 minutes.)"
+            "👋 To start chatting with me, link your DingTalk account to Patchbay: [link your account]({bind_url})\n\n(This link expires in 15 minutes.)"
         );
         // Deliver the single-use binding link privately (1:1) to the sender,
         // never via targetFromMessage: in a group that would post the token
