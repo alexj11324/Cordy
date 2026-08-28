@@ -6,8 +6,8 @@ use std::io::Read;
 use std::path::Path;
 
 use super::{
-    encoded_path_segment, format_table, new_api_client, resolve_workspace_arg, Cli,
-    Environment, OutputFormat, RunOutput, WorkspaceMcpAddArgs, WorkspaceMcpUpdateArgs,
+    encoded_path_segment, format_table, new_api_client, resolve_workspace_arg, Cli, Environment,
+    OutputFormat, RunOutput, WorkspaceMcpAddArgs, WorkspaceMcpUpdateArgs,
 };
 
 #[derive(Debug, Deserialize, Serialize)]

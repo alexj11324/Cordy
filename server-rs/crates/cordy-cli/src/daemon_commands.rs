@@ -762,9 +762,7 @@ where
     I: Read,
     O: IoWrite,
 {
-    if args.len() != 2
-        || args[1] != cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG
-    {
+    if args.len() != 2 || args[1] != cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG {
         return Ok(false);
     }
     cordy_daemon::execenv::isolation::run_preparation_helper(input, output).await?;

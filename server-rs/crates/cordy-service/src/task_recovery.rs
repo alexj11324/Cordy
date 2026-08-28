@@ -1573,110 +1573,109 @@ mod tests {
         let rows = RecoveryRows::required().await.expect(
             "DATABASE_URL and migrated PostgreSQL are required for dispatched recovery contract",
         );
-        let result =
-            async {
-                let coordinator = rows.coordinator_task("dispatched").await?;
-                let failed_id = rows
-                    .worker_task(
-                        "failed",
-                        "comment",
-                        1,
-                        1,
-                        Some("provider_auth"),
-                        Some("worker exited"),
-                    )
-                    .await?;
-                let failed = rows.failed_task(failed_id).await?;
-                let (svc, _bus, events) = rows.service_arc();
-                svc.handle_failed_tasks(&[failed]).await;
-                let recovery = rows.recovery_comment(failed_id).await?;
-                let planned: Vec<Uuid> = sqlx::query_scalar(
-                    "SELECT coalesced_comment_ids FROM agent_task_queue WHERE id = $1",
+        let result = async {
+            let coordinator = rows.coordinator_task("dispatched").await?;
+            let failed_id = rows
+                .worker_task(
+                    "failed",
+                    "comment",
+                    1,
+                    1,
+                    Some("provider_auth"),
+                    Some("worker exited"),
                 )
-                .bind(coordinator)
-                .fetch_one(&rows.pool)
                 .await?;
-                anyhow::ensure!(
-                    planned.contains(&recovery.id),
-                    "dispatched coordinator did not record planned recovery comment"
-                );
-                anyhow::ensure!(
-                    rows.recovery_count(failed_id).await? == 0,
-                    "dispatched coordinator received a premature successor"
-                );
+            let failed = rows.failed_task(failed_id).await?;
+            let (svc, _bus, events) = rows.service_arc();
+            svc.handle_failed_tasks(&[failed]).await;
+            let recovery = rows.recovery_comment(failed_id).await?;
+            let planned: Vec<Uuid> = sqlx::query_scalar(
+                "SELECT coalesced_comment_ids FROM agent_task_queue WHERE id = $1",
+            )
+            .bind(coordinator)
+            .fetch_one(&rows.pool)
+            .await?;
+            anyhow::ensure!(
+                planned.contains(&recovery.id),
+                "dispatched coordinator did not record planned recovery comment"
+            );
+            anyhow::ensure!(
+                rows.recovery_count(failed_id).await? == 0,
+                "dispatched coordinator received a premature successor"
+            );
 
-                let running = svc.start_task(coordinator).await?;
+            let running = svc.start_task(coordinator).await?;
+            anyhow::ensure!(
+                running.status == "running",
+                "coordinator start status = {}",
+                running.status
+            );
+            let completed = svc
+                .complete_task(
+                    coordinator,
+                    &serde_json::json!({"output": "coordinator completed recovery"}),
+                    "",
+                    "",
+                    "",
+                    false,
+                    "",
+                    "",
+                )
+                .await?;
+            anyhow::ensure!(
+                completed.status == "completed",
+                "coordinator completion status = {}",
+                completed.status
+            );
+            svc.dispatch_delegated_failure_recovery_comment(&recovery, Some(coordinator))
+                .await?;
+            anyhow::ensure!(
+                rows.recovery_count(failed_id).await? == 1,
+                "completion reconciliation did not create one successor"
+            );
+            let coordinator_id = coordinator.to_string();
+            let workspace_id = rows.workspace_id.to_string();
+            {
+                let captured = events
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 anyhow::ensure!(
-                    running.status == "running",
-                    "coordinator start status = {}",
-                    running.status
+                    captured.iter().any(|event| event.event_type
+                        == cordy_protocol::EVENT_TASK_RUNNING
+                        && event.task_id == coordinator_id),
+                    "production start path did not publish task-running"
                 );
-                let completed = svc
-                    .complete_task(
-                        coordinator,
-                        &serde_json::json!({"output": "coordinator completed recovery"}),
-                        "",
-                        "",
-                        "",
-                        false,
-                        "",
-                        "",
-                    )
-                    .await?;
                 anyhow::ensure!(
-                    completed.status == "completed",
-                    "coordinator completion status = {}",
-                    completed.status
+                    captured.iter().any(|event| event.event_type
+                        == cordy_protocol::EVENT_TASK_COMPLETED
+                        && event.task_id == coordinator_id),
+                    "production completion path did not publish task-completed"
                 );
-                svc.dispatch_delegated_failure_recovery_comment(&recovery, Some(coordinator))
-                    .await?;
                 anyhow::ensure!(
-                    rows.recovery_count(failed_id).await? == 1,
-                    "completion reconciliation did not create one successor"
+                    captured.iter().any(|event| event.event_type
+                        == cordy_protocol::EVENT_AGENT_STATUS
+                        && event.workspace_id == workspace_id),
+                    "production terminal path did not reconcile agent status"
                 );
-                let coordinator_id = coordinator.to_string();
-                let workspace_id = rows.workspace_id.to_string();
-                {
-                    let captured = events
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    anyhow::ensure!(
-                        captured.iter().any(|event| event.event_type
-                            == cordy_protocol::EVENT_TASK_RUNNING
-                            && event.task_id == coordinator_id),
-                        "production start path did not publish task-running"
-                    );
-                    anyhow::ensure!(
-                        captured.iter().any(|event| event.event_type
-                            == cordy_protocol::EVENT_TASK_COMPLETED
-                            && event.task_id == coordinator_id),
-                        "production completion path did not publish task-completed"
-                    );
-                    anyhow::ensure!(
-                        captured.iter().any(|event| event.event_type
-                            == cordy_protocol::EVENT_AGENT_STATUS
-                            && event.workspace_id == workspace_id),
-                        "production terminal path did not reconcile agent status"
-                    );
-                }
-                let (agent_status, issue_status): (String, String) = sqlx::query_as(
+            }
+            let (agent_status, issue_status): (String, String) = sqlx::query_as(
                 "SELECT a.status, i.status FROM agent a JOIN issue i ON i.id = $2 WHERE a.id = $1",
             )
             .bind(rows.coordinator_id)
             .bind(rows.source_issue_id)
             .fetch_one(&rows.pool)
             .await?;
-                anyhow::ensure!(
-                    agent_status == "idle",
-                    "coordinator agent terminal status = {agent_status}"
-                );
-                anyhow::ensure!(
-                    issue_status == "in_progress",
-                    "terminal completion changed source issue status to {issue_status}"
-                );
-                Ok::<(), anyhow::Error>(())
-            }
-            .await;
+            anyhow::ensure!(
+                agent_status == "idle",
+                "coordinator agent terminal status = {agent_status}"
+            );
+            anyhow::ensure!(
+                issue_status == "in_progress",
+                "terminal completion changed source issue status to {issue_status}"
+            );
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
         let cleanup = rows.cleanup().await;
         result.expect("dispatched coordinator recovery contract failed");
         cleanup.expect("dispatched recovery fixture cleanup failed");
