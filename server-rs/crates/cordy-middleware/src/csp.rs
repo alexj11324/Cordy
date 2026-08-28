@@ -1,4 +1,4 @@
-//! Content-Security-Policy header — port of `server/internal/middleware/csp.go`.
+//! Content-Security-Policy header.
 
 use axum::extract::Request;
 use axum::http::{header, HeaderValue};

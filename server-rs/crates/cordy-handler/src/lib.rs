@@ -1,8 +1,7 @@
 //! cordy-handler — HTTP handler layer (S8).
 //!
-//! Port of `server/cmd/server/router.go` + `server/internal/handler` +
-//! `server/internal/realtime` WS pump (HandleWebSocket/readPump/writePump),
-//! on axum. Routes are ported domain-by-domain; each domain module exposes a
+//! Production HTTP routing, handler, and WebSocket pump implementation on
+//! axum. Each domain module exposes a
 //! `router()` merged into the app router in this file.
 //!
 //! Handler validation helpers intentionally return complete Axum responses so

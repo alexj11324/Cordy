@@ -1379,7 +1379,7 @@ export const DashboardRunTimeDailyListSchema = z.array(DashboardRunTimeDailySche
 
 // Failure rollups. `failure_reason` is an open string on purpose — it carries
 // the backend's canonical taxonomy, which grows as new classifier rules land
-// (server/pkg/taskfailure). Pinning it to a z.enum would make an installed
+// (the `cordy-task-failure` crate). Pinning it to a z.enum would make an installed
 // desktop client drop rows for a reason its build predates; the client folds
 // unrecognised reasons into an "other" display class instead. The empty
 // string is the succeeded bucket, so `.default("")` is a meaningful default
@@ -2627,7 +2627,7 @@ export const EMPTY_REDEEM_DINGTALK_BINDING_TOKEN_RESPONSE: RedeemDingTalkBinding
 
 // WeCom smart-bot ("智能机器人" / aibot) installation responses. `.loose()` so a
 // newer backend field never fails the parse on an older desktop build (see
-// CLAUDE.md → API Compatibility). Defaults are chosen so a malformed response
+// AGENTS.md → API Compatibility). Defaults are chosen so a malformed response
 // degrades safely: `configured` defaults false (renders the "ask your operator"
 // state rather than a Connect dialog whose submit is guaranteed to fail), and a
 // missing `status` defaults to "revoked" rather than "active" so a broken read

@@ -1,4 +1,4 @@
-//! Per-IP fixed-window rate limiter — port of `server/internal/middleware/ratelimit.go`.
+//! Per-IP fixed-window rate limiter.
 
 use axum::body::Body;
 use axum::extract::{Request, State};

@@ -1,4 +1,4 @@
-//! MCP config merge helpers — port of `server/internal/handler/workspace_mcp.go`
+//! MCP config merge helpers
 //! (`ResolveAgentMcpConfig`) and `mcp_overlay.go` (`mergeMCPOverlay`).
 //!
 //! Precedence: bound workspace servers < agent's own servers < per-task overlay.
@@ -72,7 +72,7 @@ pub struct WorkspaceMcpBinding {
     pub config: Value,
 }
 
-/// Port of Go `ResolveAgentMcpConfig`: folds workspace MCP servers BOUND to an
+/// Folds workspace MCP servers bound to an
 /// agent into the agent's own mcp_config, normalized onto `mcpServers`.
 /// Failure returns the original config unchanged alongside the error so a
 /// malformed shared entry never takes away servers the agent runs with today.
@@ -139,7 +139,7 @@ pub fn resolve_agent_mcp_config(
     Ok(Some(Value::Object(out)))
 }
 
-/// Port of Go `mergeMCPOverlay`: layers the per-task overlay (Composio) on top
+/// Layers the per-task overlay (Composio) on top
 /// of the agent's saved mcp_config. Overlay wins on server-name collisions
 /// because it carries the live user-scoped session URL. On malformed input the
 /// agent config is returned unchanged alongside the error.

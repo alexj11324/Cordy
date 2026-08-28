@@ -1,17 +1,15 @@
-//! Mints primary keys for rows the application inserts — port of
-//! `server/pkg/dbid`.
+//! Mints primary keys for rows the application inserts.
 //!
 //! Every id is a UUIDv7: a 48-bit millisecond timestamp followed by random
 //! bits, so consecutive inserts cluster in a narrow key range instead of
 //! scattering across the primary-key B-tree.
 //!
-//! Rules of use (from the Go package doc):
+//! Rules of use:
 //! - Only for identity columns of rows we insert and keep — NOT for lease /
 //!   claim tokens, idempotency keys, or secrets (those stay on v4 /
 //!   gen_random_uuid()).
-//! - The DB-side `DEFAULT gen_random_uuid()` plus the queries'
-//!   `COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())` stay in place; a
-//!   table holds a mix of v4/v7 ids forever.
+//! - The DB-side `DEFAULT gen_random_uuid()` plus query-side `COALESCE` for an
+//!   optional id stay in place; a table holds a mix of v4/v7 ids forever.
 //! - Suitable ONLY when the id is used solely as the inserted row's identity.
 //!   If the id doubles as an object key / filename / correlation id, mint
 //!   directly and handle errors instead.

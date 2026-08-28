@@ -296,7 +296,7 @@ export function removeTimelineEntry(
 
 /**
  * Cascade-delete a comment and every descendant reply (reply-to-reply
- * chains included). Mirrors the server's cascade in `comment.go:DeleteComment`
+ * chains included). Mirrors the server's comment-delete cascade
  * and web's `comment:deleted` handler at
  * `packages/views/issues/hooks/use-issue-timeline.ts:164-194`.
  *

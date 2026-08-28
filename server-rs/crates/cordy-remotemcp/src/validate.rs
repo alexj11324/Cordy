@@ -1,6 +1,6 @@
 //! Public-endpoint validation: the SSRF guard for outbound plugin traffic.
 //!
-//! Ported from the validation half of `server/pkg/remotemcp/client.go`.
+//! Remote MCP endpoint and response validation.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

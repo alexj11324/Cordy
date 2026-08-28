@@ -1,4 +1,4 @@
-//! Cordy HTTP server — Rust replacement for `server/cmd/server`.
+//! Cordy HTTP server entry point.
 //!
 //! This is the S1 vertical slice from the migration plan: config loading,
 //! pg pool, and health endpoints. Routes are ported domain-by-domain in

@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemon/slash_skill.go` — extraction of
+//! Extraction of
 //! `[label](slash://skill/<id>)` references from markdown chat messages.
 //!
 //! Symbol map:

@@ -1,12 +1,4 @@
-//! Port of `server/internal/daemon/config.go` (in progress — lane A2).
-//!
-//! Chunk 1 seeded first so `canonical_path.rs` compiles: the executable-path
-//! helpers (config.go:815–855). The full `Config` struct + loader
-//! (config.go:1–814, 857–1143) lands as later chunks in this same file.
-
-// S9-integration: consumed by daemon bootstrap wiring that lands with
-// integration; silence dead-code until then.
-#![allow(dead_code)]
+//! Daemon configuration and executable-path resolution.
 
 use std::path::{Path, PathBuf};
 
@@ -303,8 +295,7 @@ pub(crate) struct Overrides {
     pub launched_by: String,
 }
 
-/// Minimal port of the CLI-config fields LoadConfig reads (Go:
-/// internal/cli/config.go). Full CLI config lands with the S10 CLI bins.
+/// CLI profile fields consumed by daemon configuration.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CliProfileConfig {
     pub profile_command_overrides: BTreeMap<String, String>,
@@ -320,13 +311,9 @@ pub(crate) struct CliProfileConfig {
 /// `LoadConfig`: builds the daemon configuration from environment variables
 /// and optional CLI flag overrides.
 ///
-/// S9-integration notes:
-/// - `probeAgentCLIs()` (agents_probe.go) and `cli.LoadCLIConfigForProfile`
-///   belong to lane B / the CLI crate respectively. Until they land, agent
-///   discovery is left as an injected [`ProbeAgents`] hook defaulting to an
-///   empty map (which errors exactly like Go when AllowNoAgents is false),
-///   and the openclaw backend override is applied only when a loaded CLI
-///   config is supplied via [`Overrides::openclaw_override`].
+/// Agent discovery remains an injected [`ProbeAgents`] hook so production and
+/// tests share the same validation path. OpenClaw overrides are applied from
+/// the loaded CLI profile supplied through [`Overrides::openclaw_override`].
 #[allow(clippy::too_many_lines)]
 pub(crate) fn load_config(
     overrides: Overrides,
@@ -621,8 +608,7 @@ pub(crate) fn load_config(
     })
 }
 
-/// Injected agent-CLI discovery seam standing in for Go's package-level
-/// `probeAgentCLIs()` (lane B owns agents_probe.go). Returns provider → entry.
+/// Injected agent-CLI discovery seam. Returns provider → entry.
 pub(crate) type ProbeAgents<'a> = &'a dyn Fn() -> BTreeMap<String, crate::types::AgentEntry>;
 
 /// `openclawOverrideFrom` + navigation over the nullable chain (config.go:1100).
@@ -877,6 +863,37 @@ pub(crate) fn resolve_agent_executable_path(cmd: &str) -> anyhow::Result<String>
 /// LookPaths has vanished from disk (MUL-4486).
 pub(crate) fn agent_executable_present(path: &str) -> bool {
     !path.is_empty() && look_path(path).is_ok()
+}
+
+/// Strict launch-boundary check for an already-resolved executable path.
+/// Unlike [`agent_executable_present`], this preserves the underlying I/O
+/// error so callers can self-heal a genuinely vanished path without treating
+/// permission, filesystem, or executable-policy failures as a PATH miss.
+pub(crate) fn check_agent_executable_for_launch(path: &str) -> std::io::Result<()> {
+    if path.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "agent executable path is empty",
+        ));
+    }
+    let metadata = std::fs::metadata(path)?;
+    if metadata.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "agent executable path is a directory",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "agent executable path is not executable",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// `reresolveAgentCommand` (config.go:764): re-runs startup resolution on the

@@ -1,9 +1,7 @@
 //! A small, standalone SDK for the Composio v3.1 REST API.
 //!
-//! Port of `server/pkg/composio` (client.go / errors.go / auth_configs.go /
-//! connected_accounts.go / sessions.go / toolkits.go / webhook.go). The
-//! tools.go execute surface is not consumed by the integration yet and
-//! lands with its first caller.
+//! Covers authentication configs, connected accounts, sessions, toolkits, and
+//! webhooks. Tool execution is intentionally omitted because no caller uses it.
 //!
 //! Wire notes: every non-2xx response surfaces as [`ApiError`] parsed from
 //! the upstream `{"error": {...}}` envelope; transport failures are plain

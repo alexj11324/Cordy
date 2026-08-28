@@ -1,5 +1,5 @@
 //! Event types for WebSocket communication between server, web clients, and
-//! daemon — port of `server/pkg/protocol/events.go`.
+//! daemon.
 //!
 //! Wire stability: these strings are part of the client contract. Renaming a
 //! value is a breaking change.

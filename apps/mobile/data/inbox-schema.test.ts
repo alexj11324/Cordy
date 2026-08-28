@@ -6,12 +6,11 @@ import { InboxListSchema } from "./schemas";
  *
  * Scope, stated precisely because the name of this file used to overclaim:
  * these are hand-written fixtures run against `InboxListSchema`. They pin how
- * this client REACTS to a given payload. They cannot fail when the Go server
+ * this client REACTS to a given payload. They cannot fail when the Rust server
  * starts sending something new — nothing here executes server code.
  *
- * The matching server-side guarantee is structural rather than a test: every
- * `details` map in server/cmd/server/notification_listeners.go is typed
- * `map[string]string`, so a non-string value is a compile error there.
+ * The matching server-side contract is covered independently by the Rust
+ * notification and inbox modules.
  *
  * Why both halves exist: during MUL-5483 a new inbox type was added and the
  * mobile label map was updated so `tsc` passed — but a NUMBER went into
@@ -19,7 +18,7 @@ import { InboxListSchema } from "./schemas";
  * Because the endpoint parses an ARRAY, one bad row fails the whole parse and
  * `listInbox` falls back to `EMPTY_INBOX_LIST`: the entire mobile inbox
  * renders empty, not just that row. The blast radius is what these tests
- * document; the compile-time type is what prevents it.
+ * document.
  */
 describe("inbox list schema", () => {
   it("parses a row shaped like the documented server payload", () => {
@@ -80,7 +79,7 @@ describe("inbox list schema", () => {
   });
 
   it("renders an unknown server type instead of dropping the row", () => {
-    // Mirrors the root CLAUDE.md API-compatibility rule and mobile's own
+    // Mirrors the root AGENTS.md API-compatibility rule and mobile's own
     // "render every inbox type, never silently drop a category" parity rule: a
     // type this build has never heard of must still parse.
     const future = {

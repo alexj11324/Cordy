@@ -1,7 +1,7 @@
 //! Seeds `task_usage_hourly` from historical `task_usage` rows before
 //! migration 103's fail-closed watermark guard (MUL-2957).
 //!
-//! Port of `server/internal/taskusagebackfill/backfill.go`. The hook does NOT
+//! The hook does NOT
 //! fail when task_usage is empty (fresh DB — the watermark is stamped so
 //! migration 103 accepts the empty state) or when the rollup state tables are
 //! missing (migrations 101/102 not yet applied). It DOES fail when the rollup

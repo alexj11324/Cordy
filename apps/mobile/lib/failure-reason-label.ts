@@ -2,7 +2,7 @@
  * Mirror of `packages/views/agents/components/tabs/task-failure.ts:REASON_LABEL`.
  *
  * Why mirror: mobile cannot import from packages/views per the apps/mobile
- * CLAUDE.md sharing rule. Only the human copy is mobile-owned.
+ * AGENTS.md sharing rule. Only the human copy is mobile-owned.
  *
  * Keyed by the raw wire value rather than a closed enum, same as the web map:
  * `failure_reason` is an open string that grows as classifier rules land, and

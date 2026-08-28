@@ -1,4 +1,4 @@
-//! Port of `server/internal/daemonws/hub.go` — the daemon-facing WebSocket hub.
+//! The daemon-facing WebSocket hub.
 //!
 //! This is the second WebSocket face of the server (the user-realtime twin
 //! lives in `cordy-realtime::hub`). The daemon hub indexes connections by
@@ -21,8 +21,7 @@
 //! - `SetHeartbeatHandler` / `heartbeatHandler` → [`DaemonHub::set_heartbeat_handler`]
 //! - `SetRPCHandler` / `rpcHandler` → [`DaemonHub::set_rpc_handler`]
 //! - `SetMessageKindRecorder` / `messageKindRecorder` → [`DaemonHub::set_message_kind_recorder`]
-//! - `HandleWebSocket` → identity guard in [`DaemonHub::validate_identity`]; the
-//!   HTTP upgrade itself is an axum-lane concern (S9-integration below)
+//! - `HandleWebSocket` → identity guard in [`DaemonHub::validate_identity`]
 //! - `NotifyTaskAvailable` / `NotifyRuntimeProfilesChanged` /
 //!   `NotifyWorkspacesChanged` / `NotifyPendingWork` → same-named methods
 //! - `DeliverDaemonRuntime` → [`DaemonHub::deliver_daemon_runtime`]
@@ -39,11 +38,6 @@
 //!   axum handler lane; the pure bookkeeping halves are ported as
 //!   [`DaemonHub::handle_frame`] / [`DaemonHub::handle_rpc_frame`] /
 //!   [`DaemonHub::handle_heartbeat_frame`] / [`DaemonHub::send_rpc_response`]
-//!
-//! S9-integration: this module also carries a faithful stand-in for
-//! `internal/daemonws/metrics.go` ([`Metrics`] + [`M`]) because both hub.go and
-//! notifier.go reference the package-level `M`; reconcile if a dedicated
-//! metrics lane lands.
 //!
 //! Port notes vs Go (mirroring `cordy-realtime/src/hub.rs`):
 //! - Go serialises mutations through `sync.RWMutex` around plain maps; here a
@@ -304,10 +298,10 @@ pub trait MessageKindRecorder: Send + Sync {
     fn record_daemon_ws_message_received(&self, kind: &str);
 }
 
-// ---- metrics (S9-integration: ports internal/daemonws/metrics.go) --------
+// ---- metrics -------------------------------------------------------------
 
-/// Lightweight daemon-WS counters. Field names mirror the Go struct; the JSON
-/// keys in [`Metrics::snapshot`] match Go's exactly.
+/// Lightweight daemon-WS counters. The JSON keys in [`Metrics::snapshot`]
+/// form the diagnostics contract.
 pub struct Metrics {
     pub connects_total: AtomicI64,
     pub disconnects_total: AtomicI64,

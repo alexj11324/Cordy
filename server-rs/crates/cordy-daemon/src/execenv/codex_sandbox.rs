@@ -206,8 +206,7 @@ fn codex_windows_sandbox_override_re() -> &'static Regex {
 /// windows.sandbox=...` / `--config windows.sandbox=...` args. These never land
 /// in config.toml (they stay in argv and are applied on top of it), so
 /// config-only detection would miss them — the MUL-4957 review's second
-/// must-fix. Mirrors the override-parsing shape in server/pkg/agent's
-/// buildCodexArgs: inline (`-c=windows.sandbox=x`) and two-token (`-c
+/// must-fix. Supports inline (`-c=windows.sandbox=x`) and two-token (`-c
 /// windows.sandbox=x`) forms, last occurrence winning (Codex is last-wins).
 pub(crate) fn windows_sandbox_from_custom_args(args: &[String]) -> WindowsSandboxConfig {
     let mut state = WindowsSandboxConfig::Absent;

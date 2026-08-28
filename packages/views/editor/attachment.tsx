@@ -168,7 +168,7 @@ function normalize(
 // `/uploads/<key>` URL.
 //
 // The current (post-MUL-3192) write path persists an absolute URL chosen
-// server-side by `buildMarkdownURL` (see server/internal/handler/file.go),
+// server-side by the Rust file handler,
 // so new content already loads natively on every client. This helper only
 // matters for content written BEFORE MUL-3192 — those bodies still carry
 // the old relative shape, and rendering them on a surface whose document

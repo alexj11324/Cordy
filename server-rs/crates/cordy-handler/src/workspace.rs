@@ -1,7 +1,6 @@
 //! Workspace domain handlers — first slice of the route port (S8).
 //!
-//! Port of `server/internal/handler/workspace.go` (ListWorkspaces /
-//! GetWorkspace) and `share_link.go` GetShareLinkInfo. Wire shapes match the
+//! Implements workspace listing/detail and share-link lookup. Wire shapes match the
 //! Go structs field-for-field: UUIDs as hyphenated strings, timestamps as
 //! RFC3339, nullable columns as absent-or-null JSON.
 
@@ -468,10 +467,8 @@ fn reserved_slug(slug: &str) -> bool {
     struct Group {
         slugs: Vec<String>,
     }
-    let file: File = serde_json::from_str(include_str!(
-        "../../../../server/internal/handler/reserved_slugs.json"
-    ))
-    .expect("reserved_slugs.json must be valid");
+    let file: File = serde_json::from_str(include_str!("../assets/reserved_slugs.json"))
+        .expect("reserved_slugs.json must be valid");
     file.groups
         .iter()
         .any(|group| group.slugs.iter().any(|item| item == slug))

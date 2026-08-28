@@ -1,6 +1,5 @@
 //! Shared `/new` fresh-session command parsing.
 //!
-//! Port of `server/internal/integrations/channel/engine/fresh_command.go`.
 
 const FRESH_SESSION_COMMAND_PREFIX: &str = "/new";
 

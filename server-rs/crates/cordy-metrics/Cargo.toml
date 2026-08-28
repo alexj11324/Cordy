@@ -1,6 +1,6 @@
 [package]
 name = "cordy-metrics"
-description = "Prometheus metrics — port of server/internal/metrics"
+description = "Prometheus metrics"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

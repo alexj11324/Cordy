@@ -410,7 +410,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
         // event_filters from the same dialog. PATCH only when the snapshot
         // taken on open differs from the live state. Sending an explicit
         // empty array clears filters server-side (tri-state semantics — see
-        // UpdateAutopilotTriggerRequest in autopilot.go).
+        // the Rust autopilot update request).
         if (
           triggerKind === "webhook" &&
           eventFiltersDirty &&

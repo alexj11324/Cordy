@@ -1,6 +1,4 @@
-//! Inbox notification side effects — port of
-//! `server/cmd/server/notification_listeners.go`.
-
+//! Inbox notification side effects.
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, OnceLock};

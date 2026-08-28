@@ -1,5 +1,4 @@
 //! Managed-relay lifecycle and the mirrored dual-write rollout helper —
-//! port of `server/internal/relay_lifecycle.go`.
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};

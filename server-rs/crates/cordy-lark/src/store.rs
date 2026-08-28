@@ -1,5 +1,4 @@
-//! Channel-backed store domain types for the Feishu integration — port of
-//! `server/internal/integrations/lark/store.go`.
+//! Channel-backed store domain types for the Feishu integration.
 //!
 //! MUL-3515 generalized the lark_* tables into channel_* (a channel_type
 //! discriminator + a JSONB `config` blob for the platform-specific

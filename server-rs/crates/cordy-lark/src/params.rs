@@ -1,5 +1,4 @@
-//! Domain parameter types for the channel-backed Feishu store — port of
-//! `server/internal/integrations/lark/params.go`.
+//! Domain parameter types for the channel-backed Feishu store.
 //!
 //! They replace the retired db.*LarkParams shapes generated from
 //! queries/lark.sql, using the same channel-neutral field names as the

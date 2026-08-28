@@ -1,7 +1,6 @@
 //! The single GraphQL query, contexts pagination, and normalization into a
 //! flat per-check snapshot.
 //!
-//! Port of `server/internal/integrations/ghsnapshot/snapshot.go`.
 
 use anyhow::{anyhow, Result};
 use serde::Deserialize;

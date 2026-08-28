@@ -24,7 +24,7 @@ For a product-facing explanation, see [How Cordy works](/how-cordy-works). This 
 | Directory | Responsibility | Main technologies |
 | --- | --- | --- |
 | `server-rs/` | Production API, authentication, scheduling, integrations, CLI, migration runner, and daemon | Rust, Axum, Tokio, SQLx |
-| `server/` | Shared SQL migrations, packaged binaries, and legacy compatibility code during retirement | SQL, shell, Go compatibility |
+| `migrations/` | Shared SQL migrations executed by the Rust migration runner | SQL |
 | `apps/web/` | Browser client and landing page | Next.js App Router |
 | `apps/desktop/` | Desktop client and local process management | Electron, electron-vite |
 | `apps/mobile/` | Standalone iOS client | Expo, React Native |
@@ -78,7 +78,7 @@ The production entry points are Cargo packages in `server-rs/crates/`:
 | --- | --- |
 | `server-rs/crates/cordy-server` | Starts the HTTP API, WebSocket services, scheduler, and integration workers |
 | `server-rs/crates/cordy-cli` (`cordy`) | CLI and local daemon |
-| `server-rs/crates/cordy-migrate` | Runs database migrations from `server/migrations/` |
+| `server-rs/crates/cordy-migrate` | Runs database migrations from `migrations/` |
 | `cordy-migrate` `backfill_*` binaries | Data backfill tools for specific releases |
 
 Requests usually flow in this direction:
@@ -100,7 +100,7 @@ PostgreSQL is the source of truth for business data. Redis is optional and is us
 
 Cordy has two distinct WebSocket paths:
 
-- `cordy-realtime` plus `cordy-server/src/realtime_runtime.rs` push issue, comment, inbox, and other changes to user clients.
+- `cordy-realtime` plus `server-rs/crates/cordy-server/src/realtime_runtime.rs` push issue, comment, inbox, and other changes to user clients.
 - `cordy-handler` daemon WebSocket routes and `cordy-daemon` connect execution computers for wakeups and daemon RPC.
 
 WebSocket reduces latency, but the database remains the final state. Clients must recalibrate through queries after reconnecting. The daemon also keeps a polling path so that one disconnect cannot leave a queued task stuck forever.

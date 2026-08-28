@@ -1,6 +1,6 @@
 [package]
 name = "cordy-handler"
-description = "HTTP handler + router layer — port of server/internal/handler and cmd/server/router.go (S8)"
+description = "HTTP handler and router layer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

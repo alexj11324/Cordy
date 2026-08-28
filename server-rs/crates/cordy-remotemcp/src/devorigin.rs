@@ -1,7 +1,7 @@
 //! Operator opt-in that lets a Plugin author point an `mcp` hook at a server
 //! running on their own machine.
 //!
-//! Ported from `server/pkg/remotemcp/devorigin.go`. With no entries in the
+//! With no entries in the
 //! environment every check below returns false and the original validation
 //! runs unmodified — which is every production deployment.
 

@@ -1,6 +1,4 @@
-//! The "processing" reaction lifecycle — port of
-//! `server/internal/integrations/lark/typing_indicator.go`.
-
+//! The "processing" reaction lifecycle.
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};

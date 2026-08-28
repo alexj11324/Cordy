@@ -1,6 +1,5 @@
 //! The pluggable seams the Router runs the inbound pipeline through.
 //!
-//! Port of `server/internal/integrations/channel/engine/resolvers.go`.
 //! Everything platform-specific lives behind these traits; a platform
 //! registers a [`ResolverSet`] and the channel-agnostic Router stays
 //! unchanged. The Feishu implementation is the first ResolverSet.

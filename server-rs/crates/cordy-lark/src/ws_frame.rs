@@ -1,6 +1,5 @@
 //! Wire-compatible re-implementation of the Lark/Feishu long-connection
-//! binary Frame envelope — port of
-//! `server/internal/integrations/lark/ws_frame.go`.
+//! binary Frame envelope.
 //!
 //! The encoded bytes are byte-identical to what the official SDK's
 //! github.com/larksuite/oapi-sdk-go/v3/ws Frame produces, which matters

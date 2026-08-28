@@ -1,5 +1,4 @@
-//! The Feishu adapter's native-ish inbound/outbound value types — port of
-//! `server/internal/integrations/lark/feishu_types.go`.
+//! The Feishu adapter's native-ish inbound/outbound value types.
 //!
 //! The WS connector decodes a raw Lark event into an [`InboundMessage`];
 //! the channel adapter translates that into a

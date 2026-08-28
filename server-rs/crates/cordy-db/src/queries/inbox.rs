@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/inbox.sql (generated inbox.sql.go).
+//! Typed SQL queries for inbox records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

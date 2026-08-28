@@ -7,7 +7,7 @@ import type { useT } from "../i18n";
 // name it already has from the user's own mention markup.
 //
 // A label must not assert a cause the code does not carry. `invocation_not_allowed`
-// is deliberately ambiguous server-side (see dispatch/reason.go): it covers BOTH
+// is deliberately ambiguous server-side: it covers BOTH
 // "you may not invoke this target" and "this id resolved to nothing here". Copy
 // that blamed permission alone sent people to audit agent visibility settings over
 // what was really a mistyped mention uuid (MUL-5548), so both labels name the two

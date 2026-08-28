@@ -3,7 +3,7 @@
 //! X-Gitlab-Token compare (no HMAC), an X-Gitlab-Event header,
 //! "merge request" terminology, and pipeline events for CI.
 //!
-//! Port of `server/internal/integrations/vcs/gitlab.go`. The normalized
+//! The normalized
 //! [`PullRequestEvent`](super::PullRequestEvent) /
 //! [`CiStatusEvent`](super::CiStatusEvent) hide all of that from the
 //! handler.

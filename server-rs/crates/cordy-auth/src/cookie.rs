@@ -1,4 +1,4 @@
-//! Session cookie and CSRF logic — port of `server/internal/auth/cookie.go`
+//! Session cookie and CSRF logic
 //! (pure-logic parts; HTTP response wiring lands with the axum middleware).
 
 use hmac::{Hmac, Mac};

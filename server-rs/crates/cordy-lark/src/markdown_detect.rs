@@ -1,6 +1,4 @@
-//! Markdown detection — port of
-//! `server/internal/integrations/lark/markdown_detect.go`.
-
+//! Markdown detection.
 use regex::Regex;
 use std::sync::OnceLock;
 

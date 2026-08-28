@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/autopilot.sql (generated autopilot.sql.go).
+//! Typed SQL queries for autopilot records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

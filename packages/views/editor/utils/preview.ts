@@ -5,7 +5,7 @@
  *   1. Add a new branch returning a new PreviewKind literal.
  *   2. Add the corresponding renderer in attachment-preview-modal.tsx's dispatch.
  *   3. If the renderer needs the file body as text, also extend isTextPreviewable
- *      in server/internal/handler/file.go so the proxy endpoint accepts it.
+ *      in the Rust file handler so the proxy endpoint accepts it.
  *   4. If the renderer fetches a binary, decide whether to use download_url
  *      (CloudFront, no auth on the client side) or a new authenticated proxy.
  */
@@ -89,12 +89,12 @@ const BASENAME_LANGUAGE_MAP: Record<string, string> = {
 };
 
 // IMPORTANT — KEEP IN SYNC with isTextPreviewable() in
-// server/internal/handler/file.go. If an extension lands here but the proxy
+// the Rust file handler. If an extension lands here but the proxy
 // rejects it, the user sees a 415 fallback in the modal. If the proxy accepts
 // but this set doesn't, the Eye button doesn't appear at all.
 //
 // TODO(follow-up): extract to a JSON single-source-of-truth + generator
-// (mirror reserved-slugs pattern in server/internal/handler/reserved_slugs.json).
+// (mirror the backend's reserved-slugs pattern).
 const TEXT_EXTENSIONS = new Set<string>([
   "md", "markdown", "txt", "log", "csv", "tsv",
   "html", "htm", "json", "xml",

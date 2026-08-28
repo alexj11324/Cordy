@@ -1,4 +1,4 @@
-//! Domain services — port of `server/internal/service`.
+//! Domain services.
 
 pub mod agent_ready;
 pub mod attribution;

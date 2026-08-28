@@ -1,5 +1,4 @@
 //! Product telemetry shipping to an external analytics backend (PostHog) —
-//! port of `server/internal/analytics`.
 //!
 //! Design (from the Go package):
 //! - [`AnalyticsClient::capture`] is non-blocking. Request handlers must never

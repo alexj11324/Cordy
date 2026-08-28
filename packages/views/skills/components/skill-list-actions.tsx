@@ -71,7 +71,7 @@ export interface SkillActionsContext {
 // ---------------------------------------------------------------------------
 
 // Attaching is permission-gated by the TARGET agent (its owner, or a
-// workspace owner/admin — server/internal/handler/agent.go canManageAgent).
+// workspace owner/admin — the Rust agent handler's management gate).
 // Members therefore only see their own agents; admins additionally see
 // everyone else's. Agents that already have every selected skill render
 // checked-out and disabled; partial overlap stays selectable because the

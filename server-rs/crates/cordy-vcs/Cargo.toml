@@ -1,6 +1,6 @@
 [package]
 name = "cordy-vcs"
-description = "VCS integration (port of server/internal/integrations/vcs): forgejo + gitlab clients"
+description = "VCS integration: Forgejo and GitLab clients"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

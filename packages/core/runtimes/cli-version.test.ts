@@ -41,7 +41,7 @@ describe("checkQuickCreateFieldsCliVersion", () => {
   });
 });
 
-// Mirrors server/pkg/agent/handoff_version_test.go so the frontend soft-gate
+// Mirrors the Rust handoff-version contract tests so the frontend soft-gate
 // signal and the server's authoritative one agree by construction.
 describe("handoffSupported", () => {
   it("supports a tagged release at or above the minimum", () => {

@@ -16,6 +16,7 @@ use futures_util::stream::{FuturesUnordered, StreamExt};
 use crate::agents_refresh::RuntimeVerdict;
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
+use crate::health::AgentHealthSnapshot;
 use crate::registration::{
     BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound, RuntimeRegistrationSource,
 };
@@ -61,6 +62,10 @@ pub struct ProviderProbeResult {
     pub detected: Vec<DetectedProviderRuntime>,
     pub demotable: BTreeMap<String, RuntimeVerdict>,
     pub unavailable: BTreeMap<String, String>,
+    /// Diagnostic-only reasons for discovered CLIs that cannot participate in
+    /// registration. Unlike `unavailable` and `demotable`, this map never
+    /// steers preservation or demotion behavior.
+    pub skipped: BTreeMap<String, String>,
 }
 
 /// Provider-owned resolution of a workspace profile after applying its safe
@@ -437,11 +442,15 @@ impl ProviderCatalog for LocalProviderCatalog {
         let mut probes = FuturesUnordered::new();
         for (provider, entry) in agents {
             if !Self::supports_backend(&provider) {
-                tracing::debug!(%provider, "provider CLI discovered without a Rust backend; withholding registration");
+                let reason = "provider CLI has no Rust backend".to_string();
+                tracing::debug!(%provider, %reason, "withholding provider registration");
+                result.skipped.insert(provider, reason);
                 continue;
             }
             let Some(display_name) = Self::display_name(&provider) else {
-                tracing::warn!(%provider, "provider CLI discovered without catalog metadata; withholding registration");
+                let reason = "provider CLI has no catalog metadata".to_string();
+                tracing::warn!(%provider, %reason, "withholding provider registration");
+                result.skipped.insert(provider, reason);
                 continue;
             };
             let fixed_args = Self::fixed_args(&provider);
@@ -656,6 +665,7 @@ pub struct ProviderRegistrationSource<C: ProviderCatalog> {
     client: Arc<Client>,
     catalog: Arc<C>,
     launches: Arc<RuntimeLaunchRegistry>,
+    agent_health: RwLock<AgentHealthSnapshot>,
 }
 
 impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
@@ -665,11 +675,16 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         catalog: Arc<C>,
         launches: Arc<RuntimeLaunchRegistry>,
     ) -> Self {
+        let agent_health = AgentHealthSnapshot {
+            agents: config.agents.keys().cloned().collect(),
+            skipped_agents: HashMap::new(),
+        };
         Self {
             config,
             client,
             catalog,
             launches,
+            agent_health: RwLock::new(agent_health),
         }
     }
 
@@ -680,6 +695,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         sampled_after_demotion_seq: u64,
     ) -> anyhow::Result<BuiltinSnapshot> {
         let probe = self.catalog.probe_builtins(ctx, reason).await?;
+        let agent_health = agent_health_snapshot_from_probe(&probe);
         let mut detected = probe.detected;
         detected.sort_by(|left, right| left.provider.cmp(&right.provider));
         let mut payload = Vec::with_capacity(detected.len());
@@ -720,6 +736,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             .iter()
             .map(|launch| launch.target.provider.clone())
             .collect();
+        *self.agent_health.write().unwrap() = agent_health;
         Ok(BuiltinSnapshot {
             payload,
             launches,
@@ -997,6 +1014,28 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
     fn workspace_removed(&self, workspace_id: &str) {
         self.launches.remove_workspace(workspace_id);
     }
+
+    fn agent_health_snapshot(&self) -> AgentHealthSnapshot {
+        self.agent_health.read().unwrap().clone()
+    }
+}
+
+fn agent_health_snapshot_from_probe(probe: &ProviderProbeResult) -> AgentHealthSnapshot {
+    let mut agents: BTreeSet<String> = probe
+        .detected
+        .iter()
+        .map(|runtime| runtime.provider.clone())
+        .collect();
+    let mut skipped_agents: HashMap<String, String> = probe.skipped.clone().into_iter().collect();
+    skipped_agents.extend(probe.unavailable.clone());
+    for (provider, verdict) in &probe.demotable {
+        skipped_agents.insert(provider.clone(), verdict.reason.clone());
+    }
+    agents.extend(skipped_agents.keys().cloned());
+    AgentHealthSnapshot {
+        agents: agents.into_iter().collect(),
+        skipped_agents,
+    }
 }
 
 fn display_name(name: &str, device_name: &str) -> String {
@@ -1035,7 +1074,129 @@ fn profile_failure(profile: &RuntimeProfile, reason: &str) -> BTreeMap<String, S
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use super::*;
+
+    struct ProbeSequence {
+        probes: Mutex<VecDeque<anyhow::Result<ProviderProbeResult>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ProviderCatalog for ProbeSequence {
+        async fn probe_builtins(
+            &self,
+            _ctx: Ctx,
+            _reason: ProviderProbeReason,
+        ) -> anyhow::Result<ProviderProbeResult> {
+            self.probes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(anyhow::anyhow!("no probe result queued")))
+        }
+
+        async fn resolve_profile(
+            &self,
+            _ctx: Ctx,
+            _profile: &RuntimeProfile,
+            _command_override: Option<&str>,
+        ) -> Result<ResolvedProfileCommand, ProfileResolutionError> {
+            unreachable!("profile resolution is not used by this test")
+        }
+    }
+
+    #[tokio::test]
+    async fn successful_probe_replaces_dynamic_health_diagnostics() {
+        let first = ProviderProbeResult {
+            detected: vec![DetectedProviderRuntime {
+                provider: "claude".to_string(),
+                display_name: "Claude".to_string(),
+                version: "1.0.0".to_string(),
+                command_path: "/bin/claude".to_string(),
+                fixed_args: Vec::new(),
+            }],
+            demotable: BTreeMap::from([(
+                "kiro".to_string(),
+                RuntimeVerdict {
+                    reason: "below minimum".to_string(),
+                    offline: None,
+                },
+            )]),
+            unavailable: BTreeMap::from([(
+                "codex".to_string(),
+                "version probe timed out".to_string(),
+            )]),
+            skipped: BTreeMap::from([(
+                "unsupported".to_string(),
+                "provider CLI has no Rust backend".to_string(),
+            )]),
+        };
+        let second = ProviderProbeResult {
+            detected: vec![DetectedProviderRuntime {
+                provider: "codex".to_string(),
+                display_name: "Codex".to_string(),
+                version: "2.0.0".to_string(),
+                command_path: "/bin/codex".to_string(),
+                fixed_args: Vec::new(),
+            }],
+            ..ProviderProbeResult::default()
+        };
+        let catalog = Arc::new(ProbeSequence {
+            probes: Mutex::new(VecDeque::from([
+                Ok(first),
+                Ok(second),
+                Err(anyhow::anyhow!("discovery unavailable")),
+            ])),
+        });
+        let mut config = Config::default();
+        config
+            .agents
+            .insert("startup".to_string(), crate::types::AgentEntry::default());
+        let source = ProviderRegistrationSource::new(
+            Arc::new(config),
+            Arc::new(Client::new("http://localhost")),
+            catalog,
+            Arc::new(RuntimeLaunchRegistry::default()),
+        );
+
+        assert_eq!(source.agent_health_snapshot().agents, vec!["startup"]);
+
+        source
+            .probe(Ctx::new(), ProviderProbeReason::Discovery, 0)
+            .await
+            .unwrap();
+        let first_health = source.agent_health_snapshot();
+        assert_eq!(
+            first_health.agents,
+            vec!["claude", "codex", "kiro", "unsupported"]
+        );
+        assert_eq!(
+            first_health.skipped_agents,
+            HashMap::from([
+                ("codex".to_string(), "version probe timed out".to_string()),
+                ("kiro".to_string(), "below minimum".to_string()),
+                (
+                    "unsupported".to_string(),
+                    "provider CLI has no Rust backend".to_string(),
+                ),
+            ])
+        );
+
+        source
+            .probe(Ctx::new(), ProviderProbeReason::Version, 1)
+            .await
+            .unwrap();
+        let second_health = source.agent_health_snapshot();
+        assert_eq!(second_health.agents, vec!["codex"]);
+        assert!(second_health.skipped_agents.is_empty());
+
+        assert!(source
+            .probe(Ctx::new(), ProviderProbeReason::Discovery, 1)
+            .await
+            .is_err());
+        assert_eq!(source.agent_health_snapshot(), second_health);
+    }
 
     #[test]
     fn custom_profiles_require_a_real_protocol_backend() {

@@ -77,7 +77,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
   const isAgentOwner =
     !!user?.id && agent.owner_id != null && agent.owner_id === user.id;
   // Lark bind/manage is authorized for the agent's owner OR a workspace
-  // owner/admin (server/internal/handler/lark.go canManageAgent, MUL-4213).
+  // owner/admin (the Rust Lark handler's agent-management gate, MUL-4213).
   // Slack's install/revoke routes are still workspace owner/admin-only, so
   // its gate stays admin-only — the agent owner must not see a Slack CTA the
   // backend would 403.
@@ -171,7 +171,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             // so we surface the "coming soon" notice instead of a broken CTA.
             // An agent that is ALREADY bound is exempt: install_supported only
             // governs NEW installs, so the bound state must still render below
-            // (server/internal/handler/lark.go).
+            // in the Rust Lark handler.
             <div className="space-y-1">
               <p className="text-caption font-medium">{ts(($) => $.lark.preview_title)}</p>
               <p className="text-caption text-muted-foreground">

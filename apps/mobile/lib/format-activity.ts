@@ -6,7 +6,7 @@
  *
  * Unknown actions fall through to the raw string in `entry.action`. NEVER
  * throw and NEVER drop the row — that's the API Response Compatibility rule
- * from repo-root CLAUDE.md (server may add new action enum values; older
+ * from repo-root AGENTS.md (server may add new action enum values; older
  * mobile clients in the wild must render them as a generic fallback, not
  * crash).
  */
@@ -126,4 +126,3 @@ export function formatActivity(
       return entry.action ?? "";
   }
 }
-

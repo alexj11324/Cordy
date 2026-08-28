@@ -23,16 +23,16 @@ describe("feature-flags hash", () => {
   });
 
   // Pinned (key, identifier) -> bucket values that MUST agree with the
-  // Go-side server/pkg/featureflag/hash_test.go::TestPercentBucketCrossLanguageGolden.
+  // Rust-side feature-flag golden vectors.
   // The shared golden table is the single source of truth for "same user,
   // same bucket" across backend and frontend; if either side drifts, both
   // tests fail and one must be brought back in sync.
   //
-  // The non-ASCII cases (CJK, accented, emoji) exist on purpose: Go hashes
+  // The non-ASCII cases (CJK, accented, emoji) exist on purpose: the backend hashes
   // the UTF-8 byte representation of a string. The TS side must do the
   // same. A regression that swaps UTF-8 encoding for charCodeAt would
   // only be caught by these inputs.
-  it("cross-language golden: bucket values match the Go side exactly", () => {
+  it("cross-language golden: bucket values match the Rust backend exactly", () => {
     const cases: ReadonlyArray<[string, string, number]> = [
       // ASCII baseline.
       ["billing_new_invoice", "user-42", 97],

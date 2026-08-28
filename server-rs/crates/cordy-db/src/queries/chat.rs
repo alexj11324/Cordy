@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/chat.sql (generated chat.sql.go).
+//! Typed SQL queries for chat records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

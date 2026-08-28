@@ -180,7 +180,6 @@ async function main() {
           CORDY_BUILD_VERSION: version,
           CORDY_BUILD_COMMIT: commit,
           CORDY_BUILD_DATE: date,
-          CORDY_BUILD_GO_VERSION: "unknown",
           CORDY_GIT_COMMIT: commit,
         },
       },

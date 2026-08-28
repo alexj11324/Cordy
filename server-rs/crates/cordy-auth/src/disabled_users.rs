@@ -1,5 +1,4 @@
-//! Temporary emergency denylist — port of
-//! `server/internal/auth/temporary_disabled_users.go`.
+//! Temporary emergency denylist.
 //!
 //! Remove this once account suspension is persisted and enforced from the
 //! user model.

@@ -1,5 +1,4 @@
-//! Structured HTTP request logging — port of
-//! `server/internal/middleware/request_logger.go`.
+//! Structured HTTP request logging.
 //!
 //! Port notes (axum vs chi runtime differences):
 //! - Body capture for soft-404 classification only intercepts 404 responses

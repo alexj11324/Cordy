@@ -1,6 +1,6 @@
 [package]
 name = "cordy-middleware"
-description = "HTTP middleware — port of server/internal/middleware"
+description = "HTTP middleware"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

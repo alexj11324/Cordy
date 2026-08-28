@@ -2,7 +2,7 @@ import { parse as parseYaml } from "yaml";
 
 // Keeping the trailing newline inside the capture group matters: yaml's `|`
 // clip chomping only preserves a final newline when the input itself contains
-// one. Mirrors the regex used by the Go side in `server/internal/skill`.
+// one. Mirrors the regex used by the Rust skill parser.
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?\r?\n)---\r?\n?/;
 
 export type SkillFrontmatter = Record<string, string>;

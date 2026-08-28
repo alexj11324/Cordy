@@ -1,7 +1,7 @@
 //! Platform-agnostic foundation for Cordy's inbound IM integrations
 //! (Feishu/Lark, Slack, WeCom, …).
 //!
-//! Port of `server/internal/integrations/channel` (MUL-3506 / MUL-3515).
+//! Shared channel contract (MUL-3506 / MUL-3515).
 //! This crate owns the contract every integration implements so the core
 //! never learns what a given platform's event JSON looks like.
 //!

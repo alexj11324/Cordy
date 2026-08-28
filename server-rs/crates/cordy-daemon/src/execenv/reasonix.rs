@@ -1,7 +1,6 @@
 //! Reasonix task configuration and permission isolation.
 //!
-//! This is the Rust port of `server/internal/daemon/execenv/reasonix_*`. A
-//! Reasonix project config replaces the owner's permission table rather than
+//! A Reasonix project config replaces the owner's permission table rather than
 //! merging it, so resolving the exact user config and restating every key is a
 //! correctness and safety contract. The only task-specific change is denying
 //! `ask`, which cannot be answered by an unattended daemon task.

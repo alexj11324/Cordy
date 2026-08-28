@@ -1,6 +1,5 @@
 //! Untrusted-text Markdown link guard.
 //!
-//! Port of `server/internal/integrations/channel/member_text.go`.
 
 /// Separates the standard inline Markdown `](` link adjacency in
 /// untrusted text. Platform-native markup needs its own guard. Text

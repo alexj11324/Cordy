@@ -20,7 +20,7 @@
  *
  * This hook is independent of `useMyIssuesRealtime` (different cache key
  * `list(wsId)` vs `myAll(wsId)`). Both are listing-level and run in
- * parallel — apps/mobile/CLAUDE.md "Mobile-owned updaters" / "list-level
+ * parallel — apps/mobile/AGENTS.md "Mobile-owned updaters" / "list-level
  * global, per-record per-screen".
  */
 import { useQueryClient } from "@tanstack/react-query";

@@ -1,16 +1,13 @@
 //! Reply-origin check: did a completed chat task take its input from an
 //! external channel?
 //!
-//! Port of `server/internal/integrations/channel/engine/provenance.go`.
 
 use cordy_db::queries::chat::task_has_channel_ingested_messages;
 
 /// The single query the reply-origin check needs.
 ///
-/// Port note: Go defines a one-method interface satisfied by `*db.Queries`
-/// and takes it as a parameter; here the query function itself is the
-/// seam (callers inject any executor — pool or transaction), so the trait
-/// collapses into the direct call.
+/// The query function itself is the seam: callers may inject a pool or a
+/// transaction through the SQLx executor.
 pub struct ProvenanceQueries;
 
 /// Reports whether a completed chat task took its input from the channel,
@@ -28,7 +25,7 @@ pub struct ProvenanceQueries;
 /// it keeps the deliver-by-default behavior #5645 shipped with.
 ///
 /// `task_chat_input_task_id` is `AgentTaskQueue.chat_input_task_id`
-/// (`None` = Go's NULL pgtype).
+/// (`None` represents SQL NULL).
 pub async fn task_input_is_channel_ingested(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_chat_input_task_id: Option<uuid::Uuid>,
@@ -37,9 +34,8 @@ pub async fn task_input_is_channel_ingested(
         return Ok(true);
     };
     match task_has_channel_ingested_messages(executor, task_id).await? {
-        // Go's sqlc-generated bool query treats no-rows as false via the
-        // EXISTS wrapper; the Rust generator returns Option<Option<bool>>
-        // shaped helpers, so None reads as false here too.
+        // The EXISTS-shaped query treats no rows as false; the SQLx helper
+        // returns an optional value, so None reads as false here too.
         Some(v) => Ok(v),
         None => Ok(false),
     }

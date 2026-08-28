@@ -1,4 +1,4 @@
-//! Connector seams — port of `server/internal/integrations/lark/connector.go`.
+//! Connector seams.
 
 use std::future::Future;
 use std::pin::Pin;

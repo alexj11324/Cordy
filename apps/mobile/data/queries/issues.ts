@@ -14,7 +14,7 @@ export { issueKeys } from "./issue-keys";
 
 /**
  * Workspace-wide issue list. Backend filters by `X-Workspace-Slug` header
- * (root CLAUDE.md "All queries filter by workspace_id"), so we pass an
+ * (root AGENTS.md "All queries filter by workspace_id"), so we pass an
  * empty params object — server returns every issue the user is allowed to
  * see in the current workspace.
  *

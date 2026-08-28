@@ -1,5 +1,5 @@
-//! Coalesced comment loading + claim delivery budget — port of the comment
-//! half of `server/internal/handler/daemon.go` (`buildCoalescedCommentData`,
+//! Coalesced comment loading and claim delivery budgeting
+//! (`buildCoalescedCommentData`,
 //! `selectCommentDelivery`, `formatLegacyCommentBundle` and friends).
 
 use std::collections::HashSet;
@@ -188,7 +188,7 @@ pub fn comment_data_ids(comments: &[CoalescedCommentData]) -> Vec<uuid::Uuid> {
 /// resolves to "missing" (skipped) instead of leaking another tenant's text
 /// into the prompt (MUL-4252). Chronologically sorted, de-duplicated.
 ///
-/// Port of Go `buildCoalescedCommentData`.
+/// Builds coalesced comment data for claim delivery.
 pub async fn build_coalesced_comment_data(
     pool: &sqlx::PgPool,
     workspace_id: uuid::Uuid,

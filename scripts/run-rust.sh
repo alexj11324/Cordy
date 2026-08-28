@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run Cargo from the Rust workspace while preserving the Go server's relative
+# Run Cargo from the Rust workspace while preserving the established relative
 # local-upload path. Keeping this boundary in one wrapper avoids duplicating
 # Cargo path detection across Makefile, dev, and check entrypoints.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,5 +1,4 @@
 //! Subscriber and activity side effects — ports of
-//! `server/cmd/server/{subscriber,activity}_listeners.go`.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;

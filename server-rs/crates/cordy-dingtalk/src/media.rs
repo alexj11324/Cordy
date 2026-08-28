@@ -1,5 +1,4 @@
-//! DingTalk media resolution — port of
-//! `server/internal/integrations/dingtalk/media.go`.
+//! DingTalk media resolution.
 //!
 //! DingTalk publishes no inbound image limits. Keep the adapter's memory and
 //! remote-I/O budget deliberately below the shared Router's 45-second media
@@ -170,7 +169,7 @@ fn v6_in_prefix(v6: Ipv6Addr, base: Ipv6Addr, bits: u8) -> bool {
     }
 }
 
-/// Reports whether `addr` may carry a media download connection. Port of Go's
+/// Reports whether `addr` may carry a media download connection. This preserves the
 /// `isPublicDownloadAddress`: std helper checks plus the special-purpose
 /// ranges those helpers miss, evaluated on the unmapped address (Go's
 /// `Addr.Unmap`).

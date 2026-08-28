@@ -1,7 +1,7 @@
 /**
  * Project list row. Mirrors the IssueRow layout shape from
  * `(tabs)/my-issues.tsx` (left icon + flex title + right column for
- * counts + time), per apps/mobile/CLAUDE.md "Visual alignment is baseline
+ * counts + time), per apps/mobile/AGENTS.md "Visual alignment is baseline
  * → row's right-side elements stack vertically into a column".
  *
  * Layout:

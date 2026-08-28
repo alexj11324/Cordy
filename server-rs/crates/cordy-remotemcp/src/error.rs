@@ -1,7 +1,6 @@
 //! Error taxonomy for the remote MCP security boundary.
 //!
-//! Messages mirror `server/pkg/remotemcp` so Go-side and Rust-side logs stay
-//! greppable against each other during the migration window.
+//! Messages remain stable so service and client logs can be correlated.
 
 use std::net::IpAddr;
 

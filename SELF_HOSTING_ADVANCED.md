@@ -331,10 +331,10 @@ If you prefer to build and run services manually:
 make build
 
 # Run database migrations
-DATABASE_URL="your-database-url" ./server/bin/migrate up
+DATABASE_URL="your-database-url" ./bin/migrate up
 
 # Start the backend server
-DATABASE_URL="your-database-url" PORT=8080 JWT_SECRET="your-secret" ./server/bin/server
+DATABASE_URL="your-database-url" PORT=8080 JWT_SECRET="your-secret" ./bin/server
 ```
 
 For the frontend:
@@ -574,7 +574,7 @@ for operator familiarity.
 The backend can expose Prometheus metrics on a separate management listener:
 
 ```bash
-METRICS_ADDR=127.0.0.1:9090 ./server/bin/server
+METRICS_ADDR=127.0.0.1:9090 ./bin/server
 curl http://127.0.0.1:9090/metrics
 ```
 
@@ -596,14 +596,13 @@ trusted network, for example a host-local mapping such as
 The Rust backend exposes CPU pprof and, on Linux, allocation-stack heap pprof
 on the fixed loopback-only management listener `127.0.0.1:6060`:
 
-The `go tool pprof` commands below use Go's standalone profile client to inspect
-the Rust server's pprof output. A Go Cordy binary or Go backend is not required;
-the client is optional and can be replaced by any pprof-compatible viewer.
+Use a pprof-compatible viewer to inspect the Rust server's profile output. The
+examples below use the standalone `pprof` client.
 
 ```bash
-go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
 curl -fsS http://127.0.0.1:6060/debug/pprof/heap -o heap.pb.gz
-go tool pprof heap.pb.gz
+pprof heap.pb.gz
 ```
 
 The `/debug/pprof/`, `/debug/pprof/cmdline`, and `/debug/pprof/symbol`
@@ -625,8 +624,8 @@ trends between captures, enable the private metrics listener and graph:
 - `process_threads`
 - `process_open_fds`
 
-Go runtime traces are not a Rust wire contract, so the legacy
-`/debug/pprof/trace` URL returns `410 Gone`. The Rust server instead exports live
+The `/debug/pprof/trace` URL is intentionally unavailable and returns `410
+Gone`. The Rust server instead exports live
 Tokio task, resource, and operation diagnostics over the fixed loopback-only
 console endpoint `127.0.0.1:6669`. Install the official client and connect from
 the same host or container network namespace:
@@ -649,12 +648,12 @@ capture the profile inside the backend container and copy it out:
 docker compose -f docker-compose.selfhost.yml exec backend \
   wget -qO /tmp/cpu.pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
 docker compose -f docker-compose.selfhost.yml cp backend:/tmp/cpu.pprof ./cpu.pprof
-go tool pprof ./cpu.pprof
+pprof ./cpu.pprof
 
 docker compose -f docker-compose.selfhost.yml exec backend \
   wget -qO /tmp/heap.pb.gz http://127.0.0.1:6060/debug/pprof/heap
 docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pb.gz ./heap.pb.gz
-go tool pprof ./heap.pb.gz
+pprof ./heap.pb.gz
 ```
 
 For an interactive Tokio console session against Compose, run the locally

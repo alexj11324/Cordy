@@ -1,8 +1,8 @@
 //! Provider-neutral execution contracts and launch safety for local agent
 //! runtimes.
 //!
-//! This crate is the Rust counterpart of `server/pkg/agent`. Provider families
-//! become constructible only when their real transport implementation lands;
+//! Provider families become constructible only when their real transport
+//! implementation exists;
 //! metadata alone never manufactures a backend that cannot execute.
 
 pub mod acp;

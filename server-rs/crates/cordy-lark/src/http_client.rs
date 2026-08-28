@@ -1,5 +1,4 @@
-//! Real Lark/飞书 Open Platform HTTP ApiClient — port of
-//! `server/internal/integrations/lark/http_client.go`.
+//! Real Lark/飞书 Open Platform HTTP ApiClient.
 //!
 //! Scope: tenant_access_token acquisition + caching, IM v1 interactive-card
 //! send / patch, the dedicated binding-prompt outbound, AND the install-time

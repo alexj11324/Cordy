@@ -1,4 +1,4 @@
-//! Auth middleware — port of `server/internal/middleware/auth.go`.
+//! Auth middleware.
 //!
 //! Validates JWT tokens or Personal Access Tokens. Token sources (in
 //! priority order):
@@ -475,8 +475,8 @@ pub async fn auth_middleware(
         return Ok(next.run(req).await);
     }
 
-    // JWT (HS256). Matches golang-jwt v5 Parse semantics: exp validated when
-    // present but not required, no leeway, aud unchecked.
+    // JWT (HS256): exp is validated when present but is not required, with no
+    // leeway and no audience requirement.
     let claims = decode_jwt_claims(&token);
     let Some(claims) = claims else {
         tracing::warn!(path = ?req.uri().path(), "auth: invalid token");
@@ -526,15 +526,15 @@ fn csrf_ok(req: &Request, auth_token: &str) -> bool {
     verify_csrf_signature(auth_token, csrf_header)
 }
 
-/// HS256-only decode with Go-compatible claim requirements.
+/// HS256-only decode with the service's claim requirements.
 pub fn decode_jwt_claims(token: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
     let mut validation = Validation::new(Algorithm::HS256);
-    // golang-jwt v5 validates exp when present but does not require it;
-    // jsonwebtoken defaults to requiring ["exp"].
+    // Validate exp when present without requiring it; jsonwebtoken defaults
+    // to requiring ["exp"].
     validation.required_spec_claims = HashSet::new();
-    // Go applies no clock skew by default.
+    // The authentication contract applies no clock skew.
     validation.leeway = 0;
 
     let data = decode::<serde_json::Value>(

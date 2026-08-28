@@ -1,6 +1,5 @@
 //! Outbound delivery of an agent's chat reply back to Slack — the outbound
 //! half of the round trip. Port of
-//! `server/internal/integrations/slack/outbound.go`.
 //!
 //! Mirrors the Feishu Patcher: on chat:done it finds the Slack chat binding for
 //! the finished task's session and posts the reply into the originating

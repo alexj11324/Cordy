@@ -1,13 +1,11 @@
 //! Configuration loading for the Cordy Rust server.
 //!
-//! The Go server is env-driven; this crate keeps those exact variable names
-//! so the big-bang cutover needs no deployment changes (migration plan §二
-//! hard constraints #1/#4), while additionally accepting a TOML file for
-//! local development. Env vars win over file values, matching Go precedence.
+//! Stable environment-variable names preserve the deployment contract, while
+//! a TOML file is also accepted for local development. Environment variables
+//! take precedence over file values.
 //!
-//! Inventory source of truth: `os.Getenv` calls in `server/cmd/server/*.go`
-//! plus startup-critical reads in `internal/auth`, `internal/middleware`,
-//! `internal/storage`.
+//! The inventory covers startup-critical reads across authentication,
+//! middleware, and storage.
 
 use std::path::Path;
 

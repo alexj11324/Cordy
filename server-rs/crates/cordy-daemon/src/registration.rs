@@ -16,6 +16,7 @@ use crate::activity::{ClaimBarrierGuard, DaemonActivity};
 use crate::agents_refresh::RuntimeVerdict;
 use crate::client::{Client, WorkspaceInfo};
 use crate::config::Config;
+use crate::health::AgentHealthSnapshot;
 use crate::repo_state::DaemonRepoState;
 use crate::repocache::{Ctx, RepoInfo};
 use crate::runtime_registry::RuntimeRegistry;
@@ -193,6 +194,11 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
     /// longer authoritative. Implementations without launch state can keep
     /// the default no-op.
     fn workspace_removed(&self, _workspace_id: &str) {}
+
+    /// Latest successful machine-level provider discovery snapshot. This is
+    /// diagnostic only: registration and demotion decisions remain scoped to
+    /// the round that produced them.
+    fn agent_health_snapshot(&self) -> AgentHealthSnapshot;
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -254,6 +260,10 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             pending_deregistrations: PendingDeregistrations::default(),
             deregistration_flush: AsyncMutex::new(()),
         }
+    }
+
+    pub(crate) fn agent_health_snapshot(&self) -> AgentHealthSnapshot {
+        self.source.agent_health_snapshot()
     }
 
     /// One workspace membership/reconciliation round. Startup calls this with

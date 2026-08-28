@@ -1,9 +1,9 @@
 /** A Composio toolkit as surfaced by GET /api/integrations/composio/toolkits.
  *
  * Wire shape mirrors `ComposioToolkitResponse` in
- * `server/internal/handler/integrations_composio.go`. New fields the backend
+ * the Rust Composio handler. New fields the backend
  * adds later MUST stay optional so older desktop builds keep parsing — see
- * CLAUDE.md → API Response Compatibility. */
+ * AGENTS.md → API Response Compatibility. */
 export interface ComposioToolkit {
   slug: string;
   name: string;

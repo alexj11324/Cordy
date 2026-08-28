@@ -1,5 +1,4 @@
-//! Composio integration (port of server/internal/integrations/composio +
-//! the server/pkg/composio SDK): signed-state connect handshake, local
+//! Composio integration: signed-state connect handshake, local
 //! connection mirror, idempotent disconnect, MCP session helper, and the
 //! per-task MCP overlay builder.
 

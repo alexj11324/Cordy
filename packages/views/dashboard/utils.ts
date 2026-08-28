@@ -262,7 +262,7 @@ export const DELETED_AGENTS_ROW_ID = "__deleted_agents__";
 // refuses to name (MUL-5409): agents the viewer may not see, plus the hidden
 // system carriers behind agent-builder sessions, which no client can resolve to
 // a name for anyone. Mirrors `restrictedAgentsRowID` in
-// server/internal/handler/dashboard.go — the two strings must stay in sync.
+// the Rust dashboard handler — the two strings must stay in sync.
 //
 // Distinct from DELETED_AGENTS_ROW_ID on purpose: those agents are gone, these
 // are alive and still running. Labelling them "Deleted agents" told the user

@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/project_resource.sql (generated project_resource.sql.go).
+//! Typed SQL queries for project_resource records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

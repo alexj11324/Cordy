@@ -1,4 +1,4 @@
-//! Query modules ported from sqlc sources (positional extraction).
+//! Handwritten SQLx query modules.
 
 pub mod activity;
 pub mod agent;

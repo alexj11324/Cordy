@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/issue_property.sql (generated issue_property.sql.go).
+//! Typed SQL queries for issue_property records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

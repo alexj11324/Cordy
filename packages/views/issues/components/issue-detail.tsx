@@ -180,7 +180,7 @@ function SubscriberPopoverContent({
    * list until the query resolves — so an unresolved query renders everyone as
    * unsubscribed. Acting on that is not a harmless no-op: an explicit subscribe
    * rewrites the target's reason to 'manual' and clears any opt-out scope
-   * (server/pkg/db/queries/subscriber.sql), which would quietly discard a
+   * in the Rust subscriber query module, which would quietly discard a
    * delegated subscription or someone's deliberate opt-out. So these rows wait
    * for a real answer, not just for the in-flight mutation (MUL-5714).
    */
@@ -1155,7 +1155,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   // Workspace owners and admins moderate any comment authored by anyone
-  // (mirrors backend `comment.go:507-512`). Computed here so per-comment
+  // (mirrors the Rust comment handler). Computed here so per-comment
   // rendering doesn't have to re-derive it for every row.
   const currentUserRole =
     members.find((m) => m.user_id === user?.id)?.role ?? null;
@@ -3309,7 +3309,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                        zero children the two are different server writes,
                        because a subtree tombstone also keeps FUTURE children
                        from re-subscribing the user
-                       (server/pkg/db/queries/subscriber.sql). Declining one
+                       in the Rust subscriber query module. Declining one
                        issue must not silently opt someone out of a tree that
                        does not exist yet. While the child count is unknown we
                        keep the menu below — it never picks a scope for the

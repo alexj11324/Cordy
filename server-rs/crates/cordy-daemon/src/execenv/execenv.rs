@@ -268,10 +268,6 @@ impl<'de> Deserialize<'de> for ProjectResourceForEnv {
     }
 }
 
-// S9-integration: ThreadReplyTarget lives in reply_instructions.go (lane E3);
-// TaskContextForEnv.CommentReplyTargets needs the shape now so the wire
-// structs round-trip. Replace with the reply_instructions.rs port when it
-// lands — field names must stay ThreadID/ParentID on the wire.
 /// One root-thread group a coalesced run must answer (reply_instructions.go).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
@@ -466,10 +462,7 @@ pub struct SkillFileContextForEnv {
     pub content: String,
 }
 
-// S9-integration: ConnectedApp lives in internal/runtimeapps (ported with the
-// service layer elsewhere); TaskContextForEnv.ConnectedApps needs the wire
-// shape now. Field names mirror the Go json tags byte-for-byte.
-/// Per-run external app capability (internal/runtimeapps/connected_app.go).
+/// Per-run external app capability.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", default)]
 pub struct ConnectedApp {

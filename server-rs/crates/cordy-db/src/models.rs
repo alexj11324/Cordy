@@ -1,5 +1,4 @@
-//! Table models generated from the live schema (information_schema).
-//! Mirrors server/pkg/db/generated/models.go.
+//! Table models generated from the live schema (`information_schema`).
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;

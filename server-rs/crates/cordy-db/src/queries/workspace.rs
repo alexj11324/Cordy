@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/workspace.sql (generated workspace.sql.go).
+//! Typed SQL queries for workspace records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

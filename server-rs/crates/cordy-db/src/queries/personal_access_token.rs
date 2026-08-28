@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/personal_access_token.sql (generated personal_access_token.sql.go).
+//! Typed SQL queries for personal_access_token records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

@@ -1,37 +1,8 @@
-//! Port of execenv/isolation.go (+ isolation_unix.go).
+//! Isolated execution-environment preparation and reuse.
 //!
-//! Symbol map:
-//! - PreparationHelperArg          → PREPARATION_HELPER_ARG
-//! - preparationActionPrepare/Reuse → PREPARATION_ACTION_PREPARE / _REUSE
-//! - preparationWaitDelay          → PREPARATION_WAIT_DELAY
-//! - preparationRequest            → PreparationRequest
-//! - preparationPrepareParams /
-//!   preparationReuseParams        → (folded: the gateway token is carried
-//!   plainly on the wire structs; see note)
-//! - preparationResponse           → PreparationResponse
-//! - preparationErrorKindOpenclawCLITimeout → PREPARATION_ERROR_KIND_OPENCLAW_CLI_TIMEOUT
-//! - preparationErrorKind          → preparation_error_kind
-//! - rehydratePreparationError     → rehydrate_preparation_error
-//! - PrepareIsolated / ReuseIsolated → prepare_isolated / reuse_isolated
-//! - runPreparationProcess         → run_preparation_process
-//! - marshalPreparationRequest     → (serde handles the payload directly)
-//! - decodePreparationRequest      → decode_preparation_request
-//! - RunPreparationHelper          → run_preparation_helper
-//! - preparationProcessController  → Unix process group / Windows Job Object;
-//!   cancellation terminates the complete helper process tree
-//!
-//! Deviations:
-//! - Go's DisallowUnknownFields is approximated with serde deny_unknown_fields.
-//! - The OpenclawGateway token-masking dance exists in Go because the public
-//!   type's MarshalJSON redacts Token. Our stand-in type serializes plainly
-//!   already, so the private view types collapse into the request structs.
-//! - slog logger dropped (tracing).
-//! - WaitDelay semantics: cancellation terminates the platform process-tree
-//!   boundary before awaiting the child and pipe readers.
-//!
-//! NOTE: the parent-side entry points are wired into the task launcher; the
-//! helper executes both Prepare and Reuse against the real implementations.
-#![allow(dead_code)]
+//! Preparation runs in a private helper process so cancellation can terminate
+//! the complete Unix process group or Windows Job Object before awaiting the
+//! child and pipe readers. Serde rejects unknown request fields.
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -50,7 +21,7 @@ pub const PREPARATION_HELPER_ARG: &str = "__cordy_execenv_prepare";
 
 pub(crate) const PREPARATION_ACTION_PREPARE: &str = "prepare";
 pub(crate) const PREPARATION_ACTION_REUSE: &str = "reuse";
-/// Grace period matching Go's cmd.WaitDelay before the group kill escalates.
+/// Grace period before process-tree termination escalates.
 pub(crate) const PREPARATION_WAIT_DELAY: Duration = Duration::from_secs(2);
 
 /// Marks a helper failure caused by the local openclaw CLI missing its
@@ -68,7 +39,7 @@ pub(crate) struct PreparationRequest {
 }
 
 // The helper-protocol views carry the gateway pin plainly over this trusted
-// local stdin pipe (Go's preparationOpenclawGatewayPin rationale).
+// local stdin pipe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PreparationWireParams {
@@ -99,8 +70,7 @@ pub(crate) struct PreparationResponse {
     pub error_kind: String,
 }
 
-/// Sentinel mirroring execenv.ErrOpenclawCLITimeout (defined by lane E2's
-/// openclaw_config port; until then only the wire kind survives the boundary).
+/// Sentinel for an OpenClaw preparation timeout.
 #[derive(Debug, thiserror::Error)]
 #[error("execenv: openclaw CLI timed out")]
 pub struct ErrOpenclawCliTimeout;
@@ -186,7 +156,7 @@ async fn run_preparation_process(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    // Own process group (controller_unix.go): descendants die with the helper.
+    // Descendants share the helper's process group and die with it.
     #[cfg(unix)]
     {
         cmd.process_group(0);
@@ -212,11 +182,11 @@ async fn run_preparation_process(
     let mut stdout = child.stdout.take();
     let stderr_pipe = child.stderr.take();
 
-    // Attach-to-kill ordering from Go: the group is set at spawn time, so the
+    // The group is set at spawn time, so the
     // payload can be released immediately afterwards.
     let write_task = tokio::spawn(async move {
         // Write then shutdown so the helper's decoder sees EOF. Both failures
-        // ride back joined, mirroring Go's errors.Join at this boundary.
+        // ride back joined at this boundary.
         let write_res = stdin.write_all(&payload).await.map(|_| ());
         let close_res = stdin.shutdown().await;
         match (write_res.err(), close_res.err()) {
@@ -459,7 +429,7 @@ pub(crate) fn decode_preparation_request<R: std::io::Read>(
 ///
 /// Both actions call the real execenv implementations. A reuse cache miss is
 /// encoded as a successful response without an environment so the parent can
-/// fall back to a fresh prepare, matching the Go contract.
+/// fall back to a fresh prepare.
 pub async fn run_preparation_helper<I, O>(input: I, output: &mut O) -> anyhow::Result<()>
 where
     I: std::io::Read,
@@ -531,7 +501,7 @@ mod tests {
         }
     }
 
-    // Port of TestDecodePreparationRequestRejectsUnknownFields.
+    // Unknown request fields are rejected.
     #[test]
     fn test_decode_rejects_unknown_fields() {
         let good = serde_json::json!({
@@ -644,7 +614,7 @@ mod tests {
         assert!(response.error.is_empty());
     }
 
-    // Port of TestPreparationErrorKindRoundTrip.
+    // Preparation error kinds survive the helper boundary.
     #[test]
     fn test_error_kind_round_trip() {
         let plain: anyhow::Error = anyhow!("something else");

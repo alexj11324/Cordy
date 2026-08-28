@@ -1,4 +1,4 @@
-//! Daemon WebSocket collector — port of `server/internal/metrics/daemonws.go`.
+//! Daemon WebSocket collector.
 
 use std::collections::HashMap;
 use std::sync::atomic::Ordering::Relaxed;

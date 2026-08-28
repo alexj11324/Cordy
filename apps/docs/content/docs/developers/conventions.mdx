@@ -47,7 +47,7 @@ If logic appears in both apps, it MUST be extracted to a shared package. There a
 - Tests: colocated as `<file>.test.ts(x)`
 - Stores (Zustand): `<feature>-store.ts`, exported as `use<Feature>Store`
 
-### Database (Go + sqlc)
+### Database (Rust + SQLx)
 
 - Tables: `snake_case` singular (`user`, `workspace`, `agent_runtime`)
 - Columns: `snake_case` (`workspace_id`, `created_at`, `last_seen_at`)
@@ -57,12 +57,12 @@ If logic appears in both apps, it MUST be extracted to a shared package. There a
 - Do not create database foreign keys or use cascade deletes or updates; enforce relationships and cleanup in the application layer.
 - Every index must use `CREATE INDEX CONCURRENTLY` or `CREATE UNIQUE INDEX CONCURRENTLY`, with each concurrent index in its own single-statement migration file.
 
-### Go
+### Rust
 
-- Standard `gofmt` + `go vet`. No exceptions.
-- Handler files mirror domain: `agent.go`, `auth.go`, `runtime.go`
-- Tests: `<file>_test.go` colocated
-- For UUID parsing in handlers, follow the rule in the root `CLAUDE.md` — `parseUUIDOrBadRequest` for boundary input, `parseUUID` (panicking) for trusted round-trips, never `util.ParseUUID` directly without checking the error.
+- Standard `rustfmt` + `clippy`. No exceptions.
+- Handler files mirror domains: `agent.rs`, `auth.rs`, `runtime.rs`.
+- Tests live in colocated `#[cfg(test)]` modules or the crate's `tests/` directory.
+- Parse and validate boundary input explicitly; never panic on untrusted UUIDs or other request fields.
 
 ### TypeScript
 
@@ -95,7 +95,7 @@ Every issue has a human-readable key like `MUL-123`: workspace `issue_prefix` (u
 
 ### Comments in code
 
-English only. The repo enforces this for both Go and TypeScript. If you find a Chinese comment in code, it's a bug — replace it.
+English only. The repo enforces this for both Rust and TypeScript. If you find a Chinese comment in code, it's a bug — replace it.
 
 ### Commit messages
 
@@ -318,7 +318,7 @@ When the glossary doesn't cover a term, look at:
 
 If you change a rule here, also:
 
-1. Apply it in the relevant locale JSONs / CLAUDE.md / docs page
+1. Apply it in the relevant locale JSONs / AGENTS.md / docs page
 2. Note the change in the PR description so reviewers know to look for downstream sweep
 
 This page is the contract; nothing else overrides it.

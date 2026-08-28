@@ -2,8 +2,7 @@
 //! and the outbound work queue (dedup, single in-flight per PR, bounded
 //! concurrency, Retry-After backoff, head-SHA-guarded atomic write).
 //!
-//! Port of `server/internal/integrations/ghsnapshot` (client.go /
-//! snapshot.go / refresh.go). [`manager::Manager`] owns the orchestration
+//! [`manager::Manager`] owns the orchestration
 //! half: queue, worker pool, rate-limit pauses, chase backoff, TTL sweep,
 //! and the guarded snapshot-write transaction.
 

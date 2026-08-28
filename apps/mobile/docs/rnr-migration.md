@@ -2,7 +2,7 @@
 
 **Status**: Phase 0 (research & docs) — complete. Phase 1 (base infrastructure) — complete: `global.css` CSS variables, `tailwind.config.js` `darkMode: "class"` + `hsl(var(--))` mappings, `lib/theme.ts`, `lib/use-color-scheme.ts`, `components.json`, `ThemeProvider` + `PortalHost` in `app/_layout.tsx`, and the Settings → Appearance picker are all shipped. Phase 2 (canary component) — not started.
 
-**Audience**: anyone touching `apps/mobile/components/ui/` or adding new UI to the mobile app. Read this once; refer to `apps/mobile/CLAUDE.md` "UI components & theming" for the durable rules.
+**Audience**: anyone touching `apps/mobile/components/ui/` or adding new UI to the mobile app. Read this once; refer to `apps/mobile/AGENTS.md` "UI components & theming" for the durable rules.
 
 ---
 
@@ -10,10 +10,10 @@
 
 > **Baseline note.** Everything in this section describes the state **before Phase 1**, which is the problem this migration was written to solve. Phase 1 has since shipped — see the Status line above and §6. The theming half of this list is fixed; the component half is not.
 
-The mobile baseline (`apps/mobile/CLAUDE.md`) has named **react-native-reusables (RNR)** as the shadcn equivalent since SDK 55 was bootstrapped. RNR was never actually installed. As a result, at the time of writing:
+The mobile baseline (`apps/mobile/AGENTS.md`) has named **react-native-reusables (RNR)** as the shadcn equivalent since SDK 55 was bootstrapped. RNR was never actually installed. As a result, at the time of writing:
 
 - `apps/mobile/components/ui/` contained **21 hand-written components, ~1,379 lines**, all built from raw `<View/Text/Pressable/Modal>`. *(Still true — Phase 2/3 work.)*
-- `apps/mobile/components/` contained **18 hand-written sheet/modal files**, all copying the same shape (`Modal transparent fade` + hand-drawn backdrop). CLAUDE.md Lesson 6 already documents that this pattern is wrong for most content and has produced a series of bugs (keyboard squashing, `maxHeight` clipping FlatLists, `useSafeAreaInsets` returning 0 inside `Modal`). *(Partly resolved — `sheet-shell.tsx` is deleted and long-list/form sheets are now Expo Router `formSheet` routes.)*
+- `apps/mobile/components/` contained **18 hand-written sheet/modal files**, all copying the same shape (`Modal transparent fade` + hand-drawn backdrop). AGENTS.md Lesson 6 already documents that this pattern is wrong for most content and has produced a series of bugs (keyboard squashing, `maxHeight` clipping FlatLists, `useSafeAreaInsets` returning 0 inside `Modal`). *(Partly resolved — `sheet-shell.tsx` is deleted and long-list/form sheets are now Expo Router `formSheet` routes.)*
 - There was no dark/light theming infrastructure: `tailwind.config.js` used hard-coded hex values, `global.css` had only the three `@tailwind` directives, and there were no CSS variables, no `darkMode`, and no theme switcher. **✅ Resolved in Phase 1** — `global.css` now defines `:root` / `.dark:root` variable blocks, `tailwind.config.js` sets `darkMode: "class"` with `hsl(var(--))` mappings, and Settings → Appearance switches Light / Dark / System.
 
 This doc records why we migrated to RNR, what alternatives we evaluated, and how the migration is sequenced.
@@ -73,7 +73,7 @@ Class-based dark mode (`darkMode: 'class'`) + CSS variables, with an in-app `lig
 
 We are not blanket-migrating every file. Some legacy components are domain UI, not generic primitives; they stay where they are but use RNR's foundation (the `Text` component, semantic tokens, CVA variants).
 
-### 3.5 Hard rule (lives in CLAUDE.md)
+### 3.5 Hard rule (lives in AGENTS.md)
 
 **New components come from RNR — or from the native-API tier first.** The migration removes legacy hand-written variants; the rule prevents accumulating more.
 
@@ -98,7 +98,7 @@ Total: ~270 lines to replace. ~4 hours of work including caller sweeps.
 
 ### Tier B — sheets / modals (apply the §3.2 waterfall)
 
-This tier is where the biggest payoff lives (Lesson 6 in CLAUDE.md catalogues the recurring sheet bugs). Applying the iOS-native > RNR > discuss waterfall, the 18 sheets split three ways:
+This tier is where the biggest payoff lives (Lesson 6 in AGENTS.md catalogues the recurring sheet bugs). Applying the iOS-native > RNR > discuss waterfall, the 18 sheets split three ways:
 
 **B.1 — replaced by a native API (file deletes outright)**
 
@@ -141,7 +141,7 @@ Mobile now ships the full emoji set behind the "More reactions" overflow
 in the per-comment actions sheet, matching web parity.
 
 **Rules**:
-- Do not bulk-replace `sheet-shell.tsx`. It is imported by 18 files; an atomic swap = 18 simultaneous breakages. Per CLAUDE.md Lesson 6: one PR per sheet, one verification per PR. Sequencing tracked in `~/.claude/plans/mobile-sheet-rollout.md`.
+- Do not bulk-replace `sheet-shell.tsx`. It is imported by 18 files; an atomic swap = 18 simultaneous breakages. Per AGENTS.md Lesson 6: one PR per sheet, one verification per PR. Sequencing tracked in `~/.claude/plans/mobile-sheet-rollout.md`.
 - B.1 sheets are deletions — they should go first, because each one removes a file with zero replacement code (just call `ActionSheetIOS` from the parent). Compound win: less code + matches "defaults first" + matches "iOS native first".
 - B.2 sheets simplify the callsite (open a `Select` instead of pushing a sheet), but the imported component IS new code. Do these after B.1.
 - B.3 sheets keep their structural complexity; the migration is mostly swapping `Modal` for RNR `Dialog`. Smallest visual change, but the biggest bug fix (drag-dismiss, focus management, safe-area handled by RNR).
@@ -211,7 +211,7 @@ When the user picks `system`, we call `setColorScheme('system')` (NativeWind v4 
 
 - [x] Read RNR's installation and customization docs verbatim
 - [x] Inspect current mobile state (`tailwind.config.js`, `global.css`, `app/_layout.tsx`, `metro.config.js`, `babel.config.js`)
-- [x] Update `apps/mobile/CLAUDE.md` with the new UI & theming rules
+- [x] Update `apps/mobile/AGENTS.md` with the new UI & theming rules
 - [x] Write this migration doc
 - [x] **User verification gate**
 
@@ -284,10 +284,10 @@ These are the gotchas that came up during research; encode in your reflexes befo
 2. **`setColorScheme()` is from NativeWind, not React Native.** Importing from `react-native` gives you the read-only OS value. The NativeWind version supports `setColorScheme('light' | 'dark' | 'system')` and triggers re-render. Source: NativeWind 4 docs.
 3. **Sync gotcha**: `lib/theme.ts` and `global.css` must mirror each other. If you change one without the other, components styled by Tailwind classes will look right but anything reading `THEME` directly (e.g. inline styles, animations, React Navigation chrome) will be wrong. The RNR docs ship a sync prompt template — use it.
 4. **`AbortSignal.timeout` / `AbortSignal.any` still don't exist in Hermes** (Lesson 5). No bearing on RNR migration but worth re-stating since any new component that does its own network calls (autosize-textarea uses no network, button uses none — but in general) needs the manual AbortController pattern.
-5. **`useSafeAreaInsets` inside RNR `Dialog`** has the same flakiness as inside raw `Modal`. The pageSheet pitfall from CLAUDE.md Lesson 6 still applies — read insets in the parent, pass `bottomInset` as a prop.
+5. **`useSafeAreaInsets` inside RNR `Dialog`** has the same flakiness as inside raw `Modal`. The pageSheet pitfall from AGENTS.md Lesson 6 still applies — read insets in the parent, pass `bottomInset` as a prop.
 6. **`@rn-primitives/portal` `<PortalHost />` placement matters.** It must be the last child of all providers; if mounted inside a provider that re-renders frequently, dialogs unmount unexpectedly. Place once, in `app/_layout.tsx`.
 7. **CLI overwrites files without confirmation.** If `components/ui/button.tsx` exists, `add button` replaces it. This is desirable for the migration but disastrous if run accidentally on a Tier C file. Always check git status after each `add`.
-8. **NativeWind 5 is on the horizon**, not adopted. CLAUDE.md baseline pins us to v4. RNR v1 supports both; we stay on the v4 install path.
+8. **NativeWind 5 is on the horizon**, not adopted. AGENTS.md baseline pins us to v4. RNR v1 supports both; we stay on the v4 install path.
 
 ## 8. Open questions
 
@@ -307,4 +307,4 @@ These are the gotchas that came up during research; encode in your reflexes befo
 - shadcn theming reference (CSS variable list): <https://ui.shadcn.com/docs/theming>
 - RN-Primitives Portal: <https://rnprimitives.com/portal>
 - Mobile sheet rollout plan (existing): `~/.claude/plans/mobile-sheet-rollout.md`
-- Mobile baseline rules (durable): `apps/mobile/CLAUDE.md`
+- Mobile baseline rules (durable): `apps/mobile/AGENTS.md`

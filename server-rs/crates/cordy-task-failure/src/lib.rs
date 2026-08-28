@@ -1,5 +1,5 @@
 //! Canonical failure-reason taxonomy for `agent_task_queue.failure_reason`
-//! and `chat_message.failure_reason` — port of `server/pkg/taskfailure`.
+//! and `chat_message.failure_reason`.
 //!
 //! Two groups: platform-side values (no `agent_error.` prefix, written by
 //! server sweepers / daemon classifiers) and 14 agent-side sub-reasons

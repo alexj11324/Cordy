@@ -4,7 +4,7 @@
  * Geometry mirrors packages/views/issues/components/status-icon.tsx (14×14
  * viewBox, center 7,7) so the visual identity of each issue status is
  * recognizable across web/desktop and mobile. This is a behavioral parity
- * concern (apps/mobile/CLAUDE.md): users should not get a different mental
+ * concern (apps/mobile/AGENTS.md): users should not get a different mental
  * model of "what status this is" depending on the client.
  *
  * Code is mobile-owned — we read and adapt the SVG primitives, we don't

@@ -1,4 +1,4 @@
-//! Live PostHog client — port of `server/internal/analytics/posthog.go`.
+//! Live PostHog client.
 //!
 //! Ships events to PostHog's /batch/ endpoint: enqueues into a bounded buffer
 //! (non-blocking capture) and flushes them from a background worker.

@@ -1,6 +1,5 @@
 //! The per-task Composio MCP overlay builder.
 //!
-//! Port of `server/internal/integrations/composio/dispatch.go`.
 
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};

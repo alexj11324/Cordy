@@ -7,7 +7,7 @@
  *
  * If web/desktop later need these same schemas, promote them to core; until
  * then they live here so mobile satisfies its "Parse, don't cast" rule
- * (root CLAUDE.md "API Response Compatibility") for these endpoints.
+ * (root AGENTS.md "API Response Compatibility") for these endpoints.
  */
 import { z } from "zod";
 import type {
@@ -116,7 +116,7 @@ export const EMPTY_COMMENT: Comment = {
  *  Value type is z.string() (not z.enum) so a future server-side value like
  *  "snoozed" downgrades gracefully (read sites treat unknown as enabled)
  *  instead of failing schema parse and dropping the entire preferences map.
- *  Per CLAUDE.md "Enum drift downgrades, not crashes". */
+ *  Per AGENTS.md "Enum drift downgrades, not crashes". */
 export const NotificationPreferenceResponseSchema = z.object({
   workspace_id: z.string().default(""),
   preferences: z.record(z.string(), z.string()).default({}),
@@ -248,7 +248,7 @@ export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   agent_id: z.string().default(""),
   creator_id: z.string().default(""),
   title: z.string().default(""),
-  // Enum drift defense (root CLAUDE.md "Enum drift downgrades, not crashes"):
+  // Enum drift defense (root AGENTS.md "Enum drift downgrades, not crashes"):
   // unknown server values fall back to "active" so the row still renders.
   status: z.enum(["active", "archived"]).catch("active"),
   has_unread: z.boolean().default(false),
@@ -341,7 +341,7 @@ export const TaskMessagePayloadSchema: z.ZodType<TaskMessagePayload> = z.object(
   seq: z.number().default(0),
   // Enum drift defense: unknown server-side types fall back to "text" so
   // the row still renders (as a plain markdown chunk) instead of crashing
-  // the timeline. Matches root CLAUDE.md "Enum drift downgrades, not crashes".
+  // the timeline. Matches root AGENTS.md "Enum drift downgrades, not crashes".
   type: z
     .enum(["text", "thinking", "tool_use", "tool_result", "error"])
     .catch("text"),
@@ -365,7 +365,7 @@ export const EMPTY_TASK_MESSAGE_LIST: TaskMessagePayload[] = [];
 // defense.
 //
 // match_source is the server's hint of which field matched. Enum-drift defense
-// (root CLAUDE.md "Enum drift downgrades, not crashes"): unknown values fall
+// (root AGENTS.md "Enum drift downgrades, not crashes"): unknown values fall
 // back to "title" so the row still renders without a snippet line.
 
 const SearchIssueResultSchema = IssueSchema.safeExtend({
@@ -406,7 +406,7 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
 //   GET  /api/issues/{id}/task-runs   → AgentTask[]
 // Lenient on every field — status / kind / failure_reason all use `.catch()`
 // so a future server-side enum value renders a generic fallback rather than
-// crashing the row (root CLAUDE.md "Enum drift downgrades, not crashes").
+// crashing the row (root AGENTS.md "Enum drift downgrades, not crashes").
 
 export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   id: z.string(),
@@ -422,8 +422,8 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   completed_at: z.string().nullable().default(null),
   result: z.unknown().default(null),
   error: z.string().nullable().default(null),
-  // Backend uses empty string ("") as the "not failed" sentinel (Go
-  // `omitempty` on a custom string-typed enum). Normalize that to `undefined`
+  // Backend uses empty string ("") as the "not failed" sentinel in the wire
+  // contract. Normalize that to `undefined`
   // so downstream truthy checks (`if (task.failure_reason)`) don't have to
   // special-case both null/undefined AND "".
   failure_reason: z

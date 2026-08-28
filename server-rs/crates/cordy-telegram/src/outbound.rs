@@ -1,7 +1,6 @@
 //! The outbound half of the Telegram round trip: streaming placeholder
 //! edits and the terminal-reply delivery queue.
 //!
-//! Port of `server/internal/integrations/telegram/outbound.go`.
 //!
 //! Streaming: Telegram has no stream-update protocol, so the "stream
 //! frame" UX is simulated with the platform's canonical pattern — post one

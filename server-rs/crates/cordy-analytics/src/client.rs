@@ -1,4 +1,4 @@
-//! Client surface — port of `server/internal/analytics/client.go`.
+//! Client surface.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

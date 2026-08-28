@@ -1,5 +1,4 @@
-//! Inbound enricher — port of
-//! `server/internal/integrations/lark/inbound_enricher.go`.
+//! Inbound enricher.
 //!
 //! Expands an inbound message's body with context the user EXPLICITLY
 //! attached — a quoted reply or a merged-and-forwarded bundle — by calling

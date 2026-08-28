@@ -1,7 +1,7 @@
 //! Comment agent-trigger computation.
 //!
-//! Ports `computeCommentAgentTriggers` / `isNoteComment` /
-//! `retriggerCancelledTaskSurvivors` from `server/internal/handler/comment.go`
+//! Implements `computeCommentAgentTriggers`, `isNoteComment`, and
+//! `retriggerCancelledTaskSurvivors`
 //! without the full coalesce/defer enqueue machine. The P1 contract is: wake
 //! the right agents (mentions, assignee, thread parent, conversation, `/note`
 //! opt-out) and restore surviving coalesced comments after cancel.

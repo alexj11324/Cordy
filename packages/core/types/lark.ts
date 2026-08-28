@@ -1,9 +1,9 @@
 /** A Lark Bot installation bound to a single Cordy agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
- * `server/internal/handler/lark.go`. New fields the backend adds in the
+ * the Rust Lark handler. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing
- * the response — see CLAUDE.md → API Response Compatibility. */
+ * the response — see AGENTS.md → API Response Compatibility. */
 export interface LarkInstallation {
   id: string;
   workspace_id: string;
@@ -17,7 +17,7 @@ export interface LarkInstallation {
    * (international). Auto-detected at install time. Optional so an older
    * desktop build parsing a newer server — or a newer build hitting a
    * server that predates the field — defaults to Feishu in the UI
-   * (see CLAUDE.md → API Response Compatibility). */
+   * (see AGENTS.md → API Response Compatibility). */
   region?: "feishu" | "lark" | string;
   installed_at: string;
   created_at: string;

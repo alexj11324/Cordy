@@ -1,6 +1,6 @@
 [package]
 name = "cordy-dingtalk"
-description = "DingTalk adapter (port of server/internal/integrations/dingtalk): WS link, token/ack, markdown, media"
+description = "DingTalk adapter: WS link, token/ack, markdown, media"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

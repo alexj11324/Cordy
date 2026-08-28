@@ -1,4 +1,4 @@
-//! APIClient surface — port of `server/internal/integrations/lark/client.go`.
+//! APIClient surface.
 //!
 //! The narrow async trait this crate needs from the Lark Open Platform HTTP
 //! API. It is intentionally defined here (rather than taken from a vendor

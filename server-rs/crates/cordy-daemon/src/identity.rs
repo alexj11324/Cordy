@@ -1,22 +1,16 @@
-//! Port of `server/internal/daemon/identity.go` (lines 1–243).
+//! Machine-scoped daemon identity management.
 //!
 //! Machine-scoped daemon identity: a stable UUID persisted at
 //! `~/.cordy/daemon.id`, shared by every profile on the machine, with
 //! one-time promotion of pre-#1220 per-profile ids and legacy hostname-based
 //! id enumeration for server-side row merges.
 //!
-//! Deviations from Go:
-//! - `cli.ProfileDir` (internal/cli/config.go:251–296) is ported here as
-//!   [`profile_dir`] until the CLI crate lands; same CORDY_TASK_CONFIG_ROOT
-//!   semantics and error text.
-//! - `uuid.NewV7` → [`uuid::Uuid::now_v7`].
-//! - File bytes are decoded lossily before trimming so a non-UTF-8 daemon.id
-//!   regenerates (Go would fail uuid.Parse the same way) instead of surfacing
-//!   as a read error.
-
-// S9-integration: consumed by daemon registration wiring that lands with
-// integration; silence dead-code until then.
-#![allow(dead_code)]
+//! [`profile_dir`] is the daemon-wide contract for resolving identity, GC,
+//! and execution-store paths. Keeping those consumers on one resolver avoids
+//! platform and task-local environment drift.
+//!
+//! File bytes are decoded lossily before trimming so a non-UTF-8 daemon id is
+//! regenerated instead of surfacing as a read error.
 
 use std::fs;
 use std::io;
@@ -25,14 +19,14 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use uuid::Uuid;
 
-/// `daemonIDFileName` (identity.go:18): stores this machine's stable daemon
+/// Stores this machine's stable daemon
 /// identifier. Once created, the UUID inside is the daemon's identity forever.
 pub(crate) const DAEMON_ID_FILE_NAME: &str = "daemon.id";
 
-/// `cli.TaskConfigRootEnv` (internal/cli/config.go:19).
+/// Optional task-local configuration root.
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
 
-/// `EnsureDaemonID` (identity.go:39–74): stable UUID for this daemon instance,
+/// Stable UUID for this daemon instance,
 /// persisted on first call. Identity is machine-scoped — every profile shares
 /// one UUID at `~/.cordy/daemon.id`. A corrupt file is regenerated rather than
 /// hard-failing startup.
@@ -66,7 +60,7 @@ pub(crate) fn ensure_daemon_id(profile: &str) -> anyhow::Result<String> {
     Ok(id)
 }
 
-/// `promoteProfileDaemonID` (identity.go:81–102): copy a pre-change
+/// Copies a pre-change
 /// per-profile daemon.id into the canonical machine-scoped location. Returns
 /// None when there is nothing valid to promote (empty profile, missing/corrupt
 /// source, any I/O failure) — best-effort, falls through to fresh mint.
@@ -87,9 +81,8 @@ fn promote_profile_daemon_id(profile: &str, target_path: &Path) -> Option<String
     Some(id)
 }
 
-/// `writeDaemonIDFile` (identity.go:105–132): write the UUID atomically via
-/// temp file + rename, mode 0600. The tempfile guard removes the temp file on
-/// any failure path, mirroring Go's explicit remove calls.
+/// Writes the UUID atomically via temp file + rename, mode 0600. The tempfile
+/// guard removes the temp file on any failure path.
 fn write_daemon_id_file(path: &Path, id: &str) -> anyhow::Result<()> {
     use std::io::Write;
 
@@ -192,12 +185,12 @@ pub(crate) fn filter_legacy_ids(ids: Vec<String>, current: &str) -> Vec<String> 
 }
 
 // ---------------------------------------------------------------------------
-// cli.ProfileDir port (internal/cli/config.go:251–296).
+// Shared profile directory contract.
 // ---------------------------------------------------------------------------
 
-/// `ProfileDir` (internal/cli/config.go:251–271): base directory for a
-/// profile's state files. Empty profile → `<root>/.cordy`; named profile →
-/// `<root>/.cordy/profiles/<name>` (task-local roots skip the `.cordy` hop).
+/// Base directory for a profile's state files. Empty profile →
+/// `<root>/.cordy`; named profile → `<root>/.cordy/profiles/<name>`
+/// (task-local roots skip the `.cordy` hop).
 pub(crate) fn profile_dir(profile: &str) -> anyhow::Result<PathBuf> {
     let (root, task_local) = cordy_config_root().context("resolve profile dir")?;
     if task_local {
@@ -217,7 +210,7 @@ pub(crate) fn profile_dir(profile: &str) -> anyhow::Result<PathBuf> {
     }
 }
 
-/// `cordyConfigRoot` (internal/cli/config.go:273–286).
+/// Resolves the task-local root when configured, otherwise the platform home.
 fn cordy_config_root() -> anyhow::Result<(PathBuf, bool)> {
     if let Ok(raw_root) = std::env::var(TASK_CONFIG_ROOT_ENV) {
         let raw_root = raw_root.trim();
@@ -232,21 +225,23 @@ fn cordy_config_root() -> anyhow::Result<(PathBuf, bool)> {
     Ok((home_dir()?, false))
 }
 
-/// `os.UserHomeDir`.
+const fn platform_home_env_key(windows: bool) -> &'static str {
+    if windows {
+        "USERPROFILE"
+    } else {
+        "HOME"
+    }
+}
+
+/// Resolves the native home environment variable for this platform.
 fn home_dir() -> anyhow::Result<PathBuf> {
-    #[cfg(unix)]
-    let key = "HOME";
-    #[cfg(windows)]
-    let key = "USERPROFILE";
+    let key = platform_home_env_key(cfg!(windows));
     std::env::var(key)
         .map(PathBuf::from)
         .map_err(|_| anyhow::anyhow!("${} is not defined", key))
 }
 
-/// `validateTaskLocalProfile` (internal/cli/config.go:288–296). The redundant
-/// `filepath.Clean(profile) != profile` arm needs no separate check here:
-/// every Clean-changing shape (`.`/`..` segments, duplicate or trailing
-/// separators) already contains `/` or `\` and is rejected above.
+/// Task-local roots accept only a single safe profile-name segment.
 fn validate_task_local_profile(profile: &str) -> anyhow::Result<()> {
     if profile.is_empty() {
         return Ok(());
@@ -304,6 +299,66 @@ mod tests {
         };
         std::env::set_var(HOME_ENV, home.path());
         f(home.path());
+    }
+
+    fn set_task_root(value: impl AsRef<std::ffi::OsStr>) -> EnvRestore {
+        let restore = EnvRestore {
+            key: TASK_CONFIG_ROOT_ENV,
+            previous: std::env::var_os(TASK_CONFIG_ROOT_ENV),
+        };
+        std::env::set_var(TASK_CONFIG_ROOT_ENV, value);
+        restore
+    }
+
+    #[test]
+    fn profile_dir_ignores_empty_task_root() {
+        with_home(|home| {
+            let _task_root_restore = set_task_root("");
+            assert_eq!(profile_dir("").unwrap(), home.join(".cordy"));
+            assert_eq!(
+                profile_dir("staging").unwrap(),
+                home.join(".cordy").join("profiles").join("staging")
+            );
+        });
+    }
+
+    #[test]
+    fn profile_dir_prefers_absolute_task_root() {
+        with_home(|_| {
+            let task_root = tempfile::tempdir().unwrap();
+            let _task_root_restore = set_task_root(task_root.path());
+            assert_eq!(profile_dir("").unwrap(), task_root.path());
+            assert_eq!(
+                profile_dir("staging").unwrap(),
+                task_root.path().join("profiles").join("staging")
+            );
+        });
+    }
+
+    #[test]
+    fn profile_dir_rejects_non_absolute_task_root_and_unsafe_profile() {
+        with_home(|_| {
+            let _task_root_restore = set_task_root("relative/task-root");
+            let err = profile_dir("").unwrap_err();
+            let rendered = format!("{err:#}");
+            assert!(
+                rendered.contains("CORDY_TASK_CONFIG_ROOT must be an absolute path"),
+                "{rendered}"
+            );
+
+            std::env::set_var(TASK_CONFIG_ROOT_ENV, std::env::temp_dir());
+            for profile in [".", "..", "nested/profile", "nested\\profile"] {
+                assert!(profile_dir(profile).is_err(), "accepted {profile:?}");
+            }
+        });
+    }
+
+    #[test]
+    fn windows_home_uses_userprofile() {
+        assert_eq!(platform_home_env_key(true), "USERPROFILE");
+        assert_eq!(platform_home_env_key(false), "HOME");
+        #[cfg(windows)]
+        assert_eq!(platform_home_env_key(cfg!(windows)), "USERPROFILE");
     }
 
     /// TestEnsureDaemonID_Persists (identity_test.go:14–42).

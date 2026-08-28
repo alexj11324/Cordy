@@ -1,5 +1,4 @@
-//! InstallationService — port of
-//! `server/internal/integrations/lark/installation.go`.
+//! InstallationService.
 //!
 //! Creates, refreshes and revokes per-agent Lark installations. It owns the
 //! at-rest encryption of `app_secret` so that no caller (and no test fixture)

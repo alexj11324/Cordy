@@ -1,6 +1,6 @@
 [package]
 name = "cordy-lark"
-description = "Feishu/Lark adapter (port of server/internal/integrations/lark): WS long-conn, card builder, docx content, resolvers"
+description = "Feishu/Lark adapter: WS long-conn, card builder, docx content, resolvers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

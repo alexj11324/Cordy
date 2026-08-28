@@ -1,6 +1,6 @@
 [package]
 name = "cordy-events"
-description = "In-process pub/sub event bus — port of server/internal/events"
+description = "In-process pub/sub event bus"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

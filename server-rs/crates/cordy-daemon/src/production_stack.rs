@@ -139,8 +139,8 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<()>;
 
-    /// Provider-owned health fields: agents, skipped-agent diagnostics, and
-    /// task execution counters not represented by `DaemonActivity`.
+    /// Service-owned health fields: registration diagnostics and task
+    /// execution counters not represented by `DaemonActivity`.
     fn health_snapshot(&self) -> HealthResponse;
 
     /// Performs the real ensure-repo/default-ref/worktree operation after the

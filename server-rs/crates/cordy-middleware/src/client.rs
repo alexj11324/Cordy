@@ -1,4 +1,4 @@
-//! Client metadata capture — port of `server/internal/middleware/client.go`.
+//! Client metadata capture.
 //!
 //! Populated from `X-Client-Platform` / `X-Client-Version` / `X-Client-OS`
 //! request headers. Sent by every first-party client (Web, Desktop, CLI,

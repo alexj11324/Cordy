@@ -1,5 +1,5 @@
 //! Runtime-profile wire shape — port of Go `runtimeProfileToResponse`
-//! (server/internal/handler/runtime_profile.go:48).
+//! Runtime-profile wire-shape builder.
 
 use serde_json::{json, Value};
 

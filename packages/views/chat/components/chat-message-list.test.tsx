@@ -66,7 +66,10 @@ function taskMsg(
 const INITIAL_MESSAGES: TaskMessagePayload[] = [
   taskMsg(0, "text", { content: "Looking into it. " }),
   taskMsg(1, "thinking", { content: "Inspecting the repository." }),
-  taskMsg(2, "tool_use", { tool: "Bash", input: { command: "go test ./..." } }),
+  taskMsg(2, "tool_use", {
+    tool: "Bash",
+    input: { command: "cargo test --workspace" },
+  }),
   taskMsg(3, "tool_result", { tool: "Bash", output: "ok" }),
 ];
 

@@ -1,5 +1,5 @@
 //! Canonical execution-admission vocabulary — port of
-//! `server/internal/dispatch/reason.go` (MUL-4525).
+//! Execution-admission vocabulary (MUL-4525).
 //!
 //! A [`ReasonCode`] is decided at the branch that blocks/skips a run and
 //! carried through to the response verbatim; it is never reverse-engineered

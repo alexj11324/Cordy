@@ -1,4 +1,4 @@
-//! Registry — port of `server/internal/metrics/registry.go`.
+//! Registry.
 //!
 //! Assembles every collector into one Prometheus registry. The Go version
 //! also mounts the Go runtime and process collectors; the Rust port exposes

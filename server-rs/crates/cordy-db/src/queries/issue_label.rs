@@ -1,4 +1,4 @@
-//! Port of server/pkg/db/queries/issue_label.sql (generated issue_label.sql.go).
+//! Typed SQL queries for issue_label records.
 //! Positional extraction mirrors Go's Scan order exactly.
 
 #![allow(clippy::too_many_arguments)]

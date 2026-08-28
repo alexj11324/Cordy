@@ -1,6 +1,6 @@
 //! Dial-time pinned connector for the secure remote MCP HTTP client.
 //!
-//! Ported from the transport half of `server/pkg/remotemcp/client.go`
+//! Secure transport connection handling
 //! (`NewSecureHTTPClient`'s `DialContext`). Every connection is re-resolved
 //! and re-checked at dial time and pinned to an address that passed the
 //! public-address gate — the DNS-rebinding defense.

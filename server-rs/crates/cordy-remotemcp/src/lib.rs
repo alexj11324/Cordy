@@ -1,7 +1,7 @@
 //! Remote MCP client primitives: public-endpoint validation (the SSRF guard)
 //! and secure HTTPS client construction.
 //!
-//! Rust port of the service-layer subset of `server/pkg/remotemcp/`.
+//! Remote MCP service-layer client and protocol helpers.
 //! Consumers: the cordy-service plugin hook engine making outbound
 //! HMAC-signed POSTs to manifest-declared hosts.
 //!

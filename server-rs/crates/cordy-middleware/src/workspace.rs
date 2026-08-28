@@ -1,4 +1,4 @@
-//! Workspace guards — port of `server/internal/middleware/workspace.go`.
+//! Workspace guards.
 //!
 //! Four Go variants collapse onto one middleware configured via
 //! [`WorkspaceGuardState`]:

@@ -1,5 +1,4 @@
 //! Pending request stores — port of
-//! `server/internal/handler/runtime_update_redis_store.go`,
 //! `runtime_models_redis_store.go` and `runtime_local_skills_redis_store.go`.
 //!
 //! CLI updates, model-list probes and runtime-local-skill requests share the

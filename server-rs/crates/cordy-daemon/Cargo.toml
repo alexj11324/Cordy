@@ -1,6 +1,6 @@
 [package]
 name = "cordy-daemon"
-description = "Daemon manager (port of server/internal/daemon): agent lifecycle, health checks, artifact distribution"
+description = "Daemon manager: agent lifecycle, health checks, artifact distribution"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -13,7 +13,7 @@
  * to derive a scalar count — re-rendering the tab layout only when the
  * number actually changes (TQ compares select output with Object.is).
  *
- * Behavioral parity (apps/mobile/CLAUDE.md "Counts and visibility must agree"):
+ * Behavioral parity (apps/mobile/AGENTS.md "Counts and visibility must agree"):
  * the N rendered here MUST equal the N web shows for the same user/workspace.
  */
 import { useQuery } from "@tanstack/react-query";

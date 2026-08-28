@@ -56,7 +56,7 @@ Patchbay 不内置模型或编码智能体。它负责协调由你单独安装�
 | 数据库 | PostgreSQL 17 + pgvector |
 | 本地运行时 | Rust CLI 和守护进程，负责启动已安装的智能体 CLI |
 
-Rust server、CLI、迁移 runner 和 backfill 二进制已经是默认生产入口。旧 Go 源码暂时保留，用作迁移证据和兼容性检查；最终删除由 [Go 到 Rust 迁移审计台账](tasks/go-to-rust-migration-audit.md)跟踪。
+Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
 
 ## 从源码运行
 
@@ -66,8 +66,6 @@ Rust server、CLI、迁移 runner 和 backfill 二进制已经是默认生产入
 - pnpm 10.28.2
 - stable Rust toolchain
 - Docker 与 Docker Compose，用于 PostgreSQL
-
-在最终迁移门禁关闭前，只有临时的旧版兼容性检查仍需要 Go。
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git patchbay

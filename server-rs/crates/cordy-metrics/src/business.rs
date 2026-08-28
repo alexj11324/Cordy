@@ -1,6 +1,4 @@
-//! Task lifecycle and LLM usage metrics — port of
-//! `server/internal/metrics/business.go`.
-
+//! Task lifecycle and LLM usage metrics.
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 

@@ -1,6 +1,6 @@
 //! Markdown → Telegram HTML conversion.
 //!
-//! Port of `server/internal/integrations/telegram/markdown.go`. The
+//! The
 //! implementation mirrors the Go regex pipeline exactly: code spans and
 //! links are lifted into placeholders BEFORE html-escaping so their
 //! contents can be escaped independently, then bold/italic/strike run on

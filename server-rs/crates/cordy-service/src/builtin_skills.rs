@@ -1,11 +1,9 @@
-//! Platform built-in skills — port of
-//! `server/internal/service/builtin_skills.go`.
+//! Platform built-in skills.
 //!
-//! Skills are embedded at compile time from the Go-side directory (single
-//! source of truth shared with the Go binary, same pattern as the Mika
-//! prompt). Every agent receives these on top of its workspace-bound skills,
-//! so they teach platform-wide "how to" workflows (e.g. mentioning) that the
-//! runtime brief intentionally leaves to skills.
+//! Skills are embedded at compile time from this crate's asset directory.
+//! Every agent receives these on top of its workspace-bound skills, so they
+//! teach platform-wide "how to" workflows (e.g. mentioning) that the runtime
+//! brief intentionally leaves to skills.
 //!
 //! Layout: `builtin_skills/<name>/SKILL.md` plus optional supporting files.
 //! The `<name>` directory carries a `cordy-` prefix so its on-disk slug can
@@ -13,12 +11,11 @@
 
 use include_dir::{include_dir, Dir};
 
-/// Compile-time embed of the Go-side skill tree.
-static BUILTIN_SKILLS: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/../../../server/internal/service/builtin_skills");
+/// Compile-time embed of the built-in skill tree.
+static BUILTIN_SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/builtin_skills");
 
-/// A skill for task execution responses. JSON field names match the Go
-/// struct tags byte-for-byte.
+/// A skill for task execution responses. JSON field names are part of the
+/// task-claim API contract.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AgentSkillData {
     pub id: String,
@@ -167,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn json_field_names_match_go_tags() {
+    fn json_field_names_match_api_contract() {
         let s = load_builtin_skills().remove(0);
         let v = serde_json::to_value(&s).unwrap();
         for key in ["id", "name", "content"] {

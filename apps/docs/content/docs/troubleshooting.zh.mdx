@@ -184,7 +184,7 @@ docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
 
 ```bash
 make rust-build
-DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
+DATABASE_URL='postgres://...' ./bin/backfill_task_usage_hourly
 ```
 
 常用 flag：`--dry-run` 只预览不写入；`--sleep-between-slices` 在切片之间加间隔，降低对繁忙实例的读压。命令按月切片、幂等，中断后可以直接重跑；它持有 advisory lock，与服务端的定时汇总互斥，不会产生重复或不一致的汇总数据。完成后重启 backend，确认 `/readyz` 返回 HTTP 200 和 `{"status":"ready"}`。handler 只检查数据库是否可达；服务成功启动则另行证明 entrypoint migration 已完成。

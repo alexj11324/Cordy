@@ -1,5 +1,4 @@
-//! Port of `server/internal/daemon/repocache/cache.go` (lines 1–458 in this
-//! chunk; full file 1–1811). Manages bare git clone caches for workspace
+//! Manages bare git clone caches for workspace
 //! repositories; the daemon uses these caches as the source for creating
 //! per-task worktrees.
 //!

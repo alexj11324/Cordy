@@ -1,6 +1,5 @@
 //! The per-installation connection supervisor.
 //!
-//! Port of `server/internal/integrations/channel/engine/supervisor.go`
 //! (978 lines). It enumerates active installations across ALL channel
 //! types (no hard-coded platform), fences each behind the WS lease CAS so
 //! at most one replica connects per installation, builds the platform

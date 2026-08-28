@@ -1,6 +1,6 @@
 [package]
 name = "cordy-service"
-description = "Domain services — port of server/internal/service"
+description = "Cordy domain services"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

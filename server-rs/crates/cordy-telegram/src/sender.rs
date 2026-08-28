@@ -1,6 +1,5 @@
 //! Outbound sender: chunking, HTML fallback, reply threading.
 //!
-//! Port of `server/internal/integrations/telegram/sender.go`.
 
 use anyhow::{anyhow, Result};
 

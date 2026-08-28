@@ -1,4 +1,4 @@
-//! DingTalk adapter — port of `server/internal/integrations/dingtalk`.
+//! DingTalk adapter.
 //!
 //! Uses the bring-your-own-app (BYO) model: a workspace admin creates their
 //! own DingTalk Stream-mode robot and pastes its AppKey (client id) and

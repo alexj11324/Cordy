@@ -1,4 +1,4 @@
-//! Email delivery — port of `server/internal/service/email.go`.
+//! Email delivery.
 //!
 //! Three delivery paths, in priority order: SMTP relay (SMTP_HOST set) →
 //! Resend API (RESEND_API_KEY set) → DEV stdout. The SMTP client is a small

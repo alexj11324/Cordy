@@ -2,7 +2,7 @@
  * Deterministic color picker for inline-created labels. Ports the same
  * palette + hash from `packages/views/issues/components/pickers/label-picker.tsx`
  * so a name created on mobile gets the same color as the web equivalent
- * would have picked (behavioral parity per mobile CLAUDE.md "Data identity
+ * would have picked (behavioral parity per mobile AGENTS.md "Data identity
  * must agree").
  */
 const INLINE_COLORS = [

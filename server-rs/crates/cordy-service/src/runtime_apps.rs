@@ -1,6 +1,4 @@
-//! Runtime app metadata — port of
-//! `server/internal/runtimeapps/connected_app.go`.
-
+//! Runtime app metadata.
 use serde::Serialize;
 
 /// Non-secret task-scoped metadata that tells the daemon which external app
