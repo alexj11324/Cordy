@@ -2976,3 +2976,19 @@ service、fallback 或 API。
   PostHog smoke 和 AUDIT-001..010 总退出仍未完成。
 - owner：主 agent 负责最小依赖接线、固定向量、提交/推送和 Ready PR；独立 verifier/reviewer/fixer 异步负责 exact Rust
   验证、外部 analytics 契约 review 和回归修复。
+
+实现 commit `260848ec` 将 `cordy-analytics::posthog::build_capture_items` 的 batch timestamp 从 chrono `AutoSi` 切到
+T-54D 已验证的 `cordy-util::rfc3339_nano`，并在真实 payload builder 路径加入 `.123400Z` → `.1234Z` 固定向量；仅新增
+`cordy-analytics` 到 `cordy-util` 的 path dependency。fixer commit `f888ceca` 在 `server-rs/Cargo.lock` 的
+`cordy-analytics` 依赖列表补齐唯一 `cordy-util` edge，未扩大业务范围。
+
+主 agent 仅执行 `git diff --check`（PASS），没有运行 cargo、rustfmt、测试、DB、API 或长编译命令。Ready PR #584 当前
+branch 为 `codex/cord-249-analytics-time-wire`，base 为 `codex/cord-248-handler-time-wire`（base SHA `8aa20852`），当前
+tip 为 `f888ceca`。fixer 的 `cargo metadata --locked --offline --no-deps`、fixed-stable rustfmt 和 `git diff --check`
+均 PASS；reviewer 在 exact `f888ceca` 确认生产 send → build_capture_items → shared helper → `/batch/` 路径完整，且无
+P0/P1/P2/P3、security、config 或 fallback finding。verifier 在 exact `f888ceca` 确认 base ancestry、clean worktree、
+range diff-check、Cargo.lock edge、touched-file rustfmt 和 locked/offline `metadata --no-deps` PASS；完整 metadata、analytics
+check/clippy/build/test-no-run 及四个精确 PostHog 测试仍在 discovery 前被继承 #563 `hyper-util 0.1.20` 缺少 `runtime`
+feature 阻断（exit 101，matched/executed 均为 0；不能登记为编译或测试通过）。未执行真实 PostHog smoke、外部凭证、
+release 或 cross-platform smoke。该切片在粒度规则收紧前已登记并创建，后续相邻契约优先合并以减少 CI 次数；本项仍不能
+声称 AUDIT-008 已完成或删除 Go。
