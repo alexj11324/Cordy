@@ -5,10 +5,10 @@ use std::io::Read;
 
 use super::{
     display_id, format_metadata_value, format_table, load_issue_actor_names, new_api_client,
-    resolve_current_workspace_id, resolve_issue_ref, resolve_task_run_id, value_string, ApiClient,
-    trim_one_trailing_newline, unescape_backslash_escapes, Cli, Environment, IssueActorNames,
-    IssueCancelTaskArgs, IssueMessageMainArgs, IssueRunMessagesArgs, IssueRunsArgs, OutputFormat,
-    RunOutput,
+    resolve_current_workspace_id, resolve_issue_ref, resolve_task_run_id,
+    trim_one_trailing_newline, unescape_backslash_escapes, value_string, ApiClient, Cli,
+    Environment, IssueActorNames, IssueCancelTaskArgs, IssueMessageMainArgs, IssueRunMessagesArgs,
+    IssueRunsArgs, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_issue_runs(

@@ -269,16 +269,8 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
     insert_string(&mut value, "branch_name", t.branch_name.as_deref());
     // These two IDs are safe routing metadata for the issue conversation UI.
     // Keep the rest of the internal task context server-private.
-    insert_context_string(
-        &mut value,
-        t.context.as_ref(),
-        "side_chat_parent_task_id",
-    );
-    insert_context_string(
-        &mut value,
-        t.context.as_ref(),
-        "side_chat_root_comment_id",
-    );
+    insert_context_string(&mut value, t.context.as_ref(), "side_chat_parent_task_id");
+    insert_context_string(&mut value, t.context.as_ref(), "side_chat_root_comment_id");
 
     Value::Object(value)
 }

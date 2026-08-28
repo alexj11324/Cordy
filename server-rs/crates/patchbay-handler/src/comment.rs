@@ -146,12 +146,8 @@ async fn preview_triggers(
         if trigger.source != crate::comment_trigger::CommentTriggerSource::MentionAgent {
             continue;
         }
-        let Ok(active) = agent::get_active_issue_agent_task(
-            &state.pool,
-            issue.id,
-            trigger.agent.id,
-        )
-        .await
+        let Ok(active) =
+            agent::get_active_issue_agent_task(&state.pool, issue.id, trigger.agent.id).await
         else {
             continue;
         };

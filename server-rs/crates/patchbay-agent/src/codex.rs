@@ -3722,9 +3722,7 @@ exit 1
             goal_objective: "finish every stage".to_string(),
             ..ExecOptions::default()
         });
-        assert!(args
-            .windows(2)
-            .any(|pair| pair == ["--enable", "goals"]));
+        assert!(args.windows(2).any(|pair| pair == ["--enable", "goals"]));
 
         let ordinary = build_codex_args(&ExecOptions::default());
         assert!(!ordinary.iter().any(|arg| arg == "goals"));

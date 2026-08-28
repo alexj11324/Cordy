@@ -552,16 +552,13 @@ async fn enqueue_one(
         if let Ok(Some(active)) =
             agent::get_active_issue_agent_task(&state.pool, issue.id, trigger.agent.id).await
         {
-            let root_comment_id = comment::get_thread_root(
-                &state.pool,
-                trigger_comment_id,
-                issue.workspace_id,
-            )
-            .await
-            .ok()
-            .flatten()
-            .map(|root| root.id)
-            .unwrap_or(trigger_comment_id);
+            let root_comment_id =
+                comment::get_thread_root(&state.pool, trigger_comment_id, issue.workspace_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|root| root.id)
+                    .unwrap_or(trigger_comment_id);
             let result = state
                 .tasks
                 .enqueue_side_chat_for_mention(

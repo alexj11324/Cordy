@@ -164,7 +164,9 @@ fn build_prompt_body(task: &Task, provider: &str) -> String {
 /// structured instruction on Patchbay's provider-neutral Message Bus.
 fn build_side_chat_prompt(task: &Task, provider: &str) -> String {
     let mut b = String::new();
-    b.push_str("You are in a Patchbay Side Chat for the Agent explicitly @mentioned in an issue comment.\n\n");
+    b.push_str(
+        "You are in a Patchbay Side Chat for the Agent explicitly @mentioned in an issue comment.\n\n",
+    );
     b.push_str(&format!(
         "This Side Chat is derived from main task `{}` on issue `{}`. The main task and any inherited provider history are reference-only here. Do not modify files, run mutating commands, create commits or pull requests, or continue the main task from this branch.\n\n",
         task.side_chat_parent_task_id, task.issue_id
@@ -203,12 +205,14 @@ fn build_side_chat_prompt(task: &Task, provider: &str) -> String {
             ),
         );
     } else {
-        b.push_str(&crate::runtime_config_sections::build_comment_reply_instructions(
-            provider,
-            &task.issue_id,
-            &task.trigger_comment_id,
-            false,
-        ));
+        b.push_str(
+            &crate::runtime_config_sections::build_comment_reply_instructions(
+                provider,
+                &task.issue_id,
+                &task.trigger_comment_id,
+                false,
+            ),
+        );
     }
     b
 }
@@ -246,12 +250,14 @@ fn build_message_bus_prompt(task: &Task, provider: &str) -> String {
             ),
         );
     } else {
-        b.push_str(&crate::runtime_config_sections::build_comment_reply_instructions(
-            provider,
-            &task.issue_id,
-            &task.trigger_comment_id,
-            false,
-        ));
+        b.push_str(
+            &crate::runtime_config_sections::build_comment_reply_instructions(
+                provider,
+                &task.issue_id,
+                &task.trigger_comment_id,
+                false,
+            ),
+        );
     }
     b
 }

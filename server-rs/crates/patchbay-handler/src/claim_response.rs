@@ -979,8 +979,7 @@ pub(crate) async fn build_claimed_task_response(
             // If no resumable session supplied a checkout, retain the anchor
             // task's copied workdir so a provider failure does not discard
             // already-written workspace state.
-            if obj.contains_key("message_bus_parent_task_id")
-                && !obj.contains_key("prior_work_dir")
+            if obj.contains_key("message_bus_parent_task_id") && !obj.contains_key("prior_work_dir")
             {
                 set_if_not_empty(
                     obj,
@@ -1531,7 +1530,9 @@ fn explicit_goal_objective(content: &str) -> Option<String> {
     for line in content.lines() {
         let line = line.trim();
         let mut parts = line.splitn(2, char::is_whitespace);
-        let Some(command) = parts.next() else { continue };
+        let Some(command) = parts.next() else {
+            continue;
+        };
         if !command.eq_ignore_ascii_case("/goal") {
             continue;
         }

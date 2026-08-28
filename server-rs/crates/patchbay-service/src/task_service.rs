@@ -15,18 +15,16 @@ use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{Agent, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue};
 use patchbay_db::queries::agent::{
     append_task_message_bus_instruction, cancel_agent_task, cancel_agent_task_by_user,
-    cancel_agent_task_with_reason,
-    cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
+    cancel_agent_task_with_reason, cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
     cancel_agent_tasks_by_trigger_comment, cancel_deferred_escalations_for_issue_agent,
     cancel_deferred_escalations_for_task, cancel_queued_agent_task,
     cancel_queued_agent_tasks_for_session, cancel_superseded_deferred_retries_for_runtimes,
     claim_agent_task, claim_chat_finalize_deferred, count_running_tasks, create_agent_task,
     create_deferred_agent_task, create_deferred_channel_issue_task, create_quick_create_task,
-    create_task_message_bus_continuation,
-    extend_agent_task_prepare_lease, get_agent, get_agent_for_claim_update, get_agent_task,
-    list_queued_claim_candidates_by_runtime, list_queued_claim_candidates_by_runtimes,
-    lock_task_for_message_bus, mark_agent_task_waiting_local_directory,
-    mark_chat_finalize_deferred,
+    create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
+    get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
+    list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
+    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
     reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
@@ -2124,8 +2122,10 @@ impl TaskService {
                 "message bus target is not this Side Chat's main task".to_string(),
             ));
         }
-        if !matches!(source.status.as_str(), "dispatched" | "running" | "waiting_local_directory")
-        {
+        if !matches!(
+            source.status.as_str(),
+            "dispatched" | "running" | "waiting_local_directory"
+        ) {
             return Err(TaskServiceError::Internal(
                 "message bus source Side Chat is not active".to_string(),
             ));
@@ -2142,28 +2142,28 @@ impl TaskService {
         )
         .await
         .map_err(downcast_sqlx)?;
-        let (continuation_task_id, coalesced) =
-            if let Some(task_id) = existing_continuation_task_id {
-                (task_id, true)
-            } else {
-                let task_id = create_task_message_bus_continuation(
-                    &mut *tx,
-                    parent.id,
-                    source.id,
-                    source.trigger_comment_id.unwrap_or_else(Uuid::nil),
-                    message_id,
-                    &content,
-                    new_v7(),
+        let (continuation_task_id, coalesced) = if let Some(task_id) = existing_continuation_task_id
+        {
+            (task_id, true)
+        } else {
+            let task_id = create_task_message_bus_continuation(
+                &mut *tx,
+                parent.id,
+                source.id,
+                source.trigger_comment_id.unwrap_or_else(Uuid::nil),
+                message_id,
+                &content,
+                new_v7(),
+            )
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal(
+                    "message bus continuation could not be created".to_string(),
                 )
-                .await
-                .map_err(downcast_sqlx)?
-                .ok_or_else(|| {
-                    TaskServiceError::Internal(
-                        "message bus continuation could not be created".to_string(),
-                    )
-                })?;
-                (task_id, false)
-            };
+            })?;
+            (task_id, false)
+        };
         let continuation = get_agent_task(&mut *tx, continuation_task_id)
             .await
             .map_err(downcast_sqlx)?
