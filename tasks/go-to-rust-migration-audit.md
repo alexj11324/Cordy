@@ -3175,7 +3175,10 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   runtime/provider/发布矩阵尚未执行，不能由这些定向结果标记通过。磁盘恢复后首次新鲜 `make rust-build` 在
   `cordy-db` 的四个 `sqlx::query_as!` 编译宏连接数据库时以 `Operation not permitted`/exit 101 失败；仓库已有对应四个
   `.sqlx` query metadata，因此在现有 Cargo config 统一启用 `SQLX_OFFLINE=true`，没有在 Make/Docker/release 三处复制
-  参数。显式 offline 验证构建以 exit 0 在 14m31s 生成六个 ARM64 ELF，随后不显式传入 `SQLX_OFFLINE` 的同一
+  参数；已有 fresh-PostgreSQL CI 与 release verify job 明确覆盖为 `SQLX_OFFLINE=false`，保留 migration 后 live schema
+  的 query type/nullability 编译门。本地负向探针显式设为 `false` 后确实重新连接四个 live queries，并因 sandbox
+  `Operation not permitted` 以 exit 101 结束；这只证明覆盖生效，该远端 live-schema gate 尚未在本地执行，不计为
+  通过。显式 offline 验证构建以 exit 0 在 14m31s 生成六个 ARM64 ELF，随后不显式传入 `SQLX_OFFLINE` 的同一
   `make rust-build` 也以 exit 0 在 2m50s 完成并复制六个产物。SHA256 分别为：server
   `9f275fc71c71b60b0617704b3e8ac54dfc8d76a9af1fd349d5745edded31796c`、cordy
   `45ad118303aa2c1938d652aa1111f1bb26c13bee8f2c6492c6a233e4be103503`、migrate

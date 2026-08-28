@@ -492,6 +492,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      SQLX_OFFLINE: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
