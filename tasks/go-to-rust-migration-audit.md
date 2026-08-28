@@ -3157,7 +3157,7 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
      兼容边界、`cordy-migrate up/down`（或已支持 operator rollback）退出码、exact-image rollback 后的
      `/readyz` 与数据完整性；不得把局部 route parity 或静态编译当作回滚通过。
 - 证据/PR：T-60 是一个生产验收切片，已创建 Ready PR #589；本分支登记上述矩阵，并修复阻断该矩阵的 dependency
-  resolver 及其暴露的两个 daemon compile blockers，不新增脚本/抽象。产物 SHA、每个命令的
+  resolver 及 daemon/workspace all-targets 检查暴露的编译 blockers，不新增脚本/抽象。产物 SHA、每个命令的
   matched/executed/blocked、日志与回滚记录仍待实际执行后
   回写；长编译、测试、DB、Docker、Helm、systemd
   和真实 provider smoke 由独立 verifier 执行，reviewer 检查默认生产边界，fixer 只处理 scoped finding。任何环境
@@ -3169,7 +3169,9 @@ Ready PR，不再拆成 per-provider 或 per-command PR。
   测试各 1/1 通过（proxy 首次在受限 sandbox 因 `Operation not permitted` 失败，允许 loopback 后重跑通过）。其余完整
   workspace all-targets gate 首次又因 `ws.rs` 测试缺少 `Uuid` import 以 9 个 E0425/E0433、0 tests executed 失败；补入既有
   测试依赖并格式化后，第二次被 `channel_runtime.rs` 测试对非直接 `base64` 依赖的 E0432/E0433 阻断，继续复用既有
-  SecretBox literal wire fixture 后，`cargo check --workspace --all-targets --locked --offline` 通过（仅既有 warnings）。其余完整
+  SecretBox literal wire fixture 后，`cargo check --workspace --all-targets --locked --offline` 通过（仅既有 warnings）。完整
+  workspace `cargo test --workspace --all-targets --no-run` 尚未执行；较小的 handler/server all-targets `--no-run` 尝试因
+  `ENOSPC` 被中断（exit 130，0 个完成结果），不能由 `cargo check` 或 daemon 定向 `--no-run` 推断为通过。其余完整
   runtime/provider/发布矩阵尚未执行，不能由这些定向结果标记通过。
 
 ## 76. [ ] AUDIT-009 运维文档与新鲜产物复核（T-61）
