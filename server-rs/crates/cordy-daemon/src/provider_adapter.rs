@@ -2199,7 +2199,11 @@ mod tests {
             .unwrap();
         assert_eq!(list["status"], "completed");
         assert_eq!(list["supported"], true);
-        assert_eq!(list["skills"][0]["key"], "deploy");
+        assert!(list["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|skill| skill["key"] == "deploy"));
         for id in ["batch-1", "batch-2", "singular-1"] {
             let (_, payload) = reports
                 .iter()

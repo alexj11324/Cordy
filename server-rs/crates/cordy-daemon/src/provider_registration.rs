@@ -204,7 +204,10 @@ impl LocalProviderCatalog {
         let mut last_error = None;
         for attempt in 0..Self::VERSION_PROBE_ATTEMPTS {
             if attempt > 0 {
-                tokio::time::sleep(Self::VERSION_PROBE_RETRY_DELAY).await;
+                tokio::select! {
+                    () = ctx.cancelled() => break,
+                    () = tokio::time::sleep(Self::VERSION_PROBE_RETRY_DELAY) => {}
+                }
                 if ctx.err().is_some() {
                     break;
                 }

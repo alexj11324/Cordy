@@ -714,7 +714,12 @@ fn configured_proxy_for_target(
         return Ok(None);
     }
 
-    let proxy = proxy_matcher(matcher_scheme, proxy_url, "")
+    // Go's ProxyFromEnvironment accepts the common `host[:port]` shorthand
+    // and treats it as an HTTP proxy. Normalize only a strict authority-shaped
+    // shorthand before passing it to the installed matcher, which continues to
+    // own auth parsing and the CONNECT intercept representation.
+    let proxy_url = normalize_proxy_url(proxy_url)?;
+    let proxy = proxy_matcher(matcher_scheme, &proxy_url, "")
         .intercept(&target)
         .ok_or_else(|| anyhow::anyhow!("unsupported or malformed proxy URL"))?;
     if proxy.uri().scheme_str() != Some("http") {
@@ -730,6 +735,27 @@ fn proxy_matcher(scheme: &'static str, proxy_url: &str, no_proxy: &str) -> Match
     } else {
         builder.http(proxy_url).build()
     }
+}
+
+fn normalize_proxy_url(proxy_url: &str) -> anyhow::Result<String> {
+    let trimmed = proxy_url.trim();
+    anyhow::ensure!(!trimmed.is_empty(), "configured wakeup proxy has no host");
+    if trimmed.contains("://") {
+        return Ok(trimmed.to_string());
+    }
+
+    // A scheme-less value is an authority only: reject path/query/fragment
+    // delimiters and userinfo rather than turning a malformed string into a
+    // different URL by prepending `http://`.
+    anyhow::ensure!(
+        !trimmed.chars().any(|c| matches!(c, '/' | '?' | '#')),
+        "unsupported or malformed proxy URL"
+    );
+    anyhow::ensure!(
+        !trimmed.contains('@'),
+        "unsupported or malformed proxy URL"
+    );
+    Ok(format!("http://{trimmed}"))
 }
 
 fn proxy_match_uri(target: &http::Uri, scheme: &'static str) -> anyhow::Result<http::Uri> {
@@ -1162,6 +1188,17 @@ mod tests {
         .unwrap();
         assert_eq!(proxy.uri().authority().unwrap(), "proxy.example:8080");
         assert_eq!(proxy.basic_auth().unwrap(), "Basic dXNlcjpwQHNz");
+        let shorthand = configured_proxy_for_target(&target, "https", "proxy.example:8080", "")
+            .unwrap()
+            .unwrap();
+        assert_eq!(shorthand.uri().scheme_str(), Some("http"));
+        assert_eq!(shorthand.uri().authority().unwrap(), "proxy.example:8080");
+        let ipv6_shorthand =
+            configured_proxy_for_target(&target, "https", "[2001:db8::2]:8080", "")
+                .unwrap()
+                .unwrap();
+        assert_eq!(ipv6_shorthand.uri().host(), Some("[2001:db8::2]"));
+        assert_eq!(ipv6_shorthand.uri().port_u16(), Some(8080));
         assert!(configured_proxy_for_target(
             &target,
             "https",
@@ -1183,6 +1220,10 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(malformed.contains("malformed"));
+        assert!(configured_proxy_for_target(&target, "https", "proxy.example/path", "")
+            .unwrap_err()
+            .to_string()
+            .contains("malformed"));
         let unsupported =
             configured_proxy_for_target(&target, "https", "https://proxy.example:8443", "")
                 .unwrap_err()

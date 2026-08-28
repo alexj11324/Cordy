@@ -708,6 +708,31 @@ mod tests {
         assert!(!busy.updating.load(Ordering::Acquire));
         drop(active_tasks);
 
+        // Exercise the same machine-wide CAS used by the periodic updater,
+        // rather than relying only on the activity barrier's busy response.
+        let cas_activity = DaemonActivity::new();
+        let cas_root = Ctx::new();
+        let cas_busy = host(
+            &base_url,
+            "",
+            temp.path(),
+            Arc::clone(&services),
+            Arc::clone(&cas_activity),
+            cas_root.clone(),
+        );
+        cas_busy.updating.store(true, Ordering::Release);
+        cas_busy
+            .handle_heartbeat_actions(
+                cas_root.clone(),
+                "runtime-1".to_string(),
+                update_ack("cas-busy", "v1.2.3"),
+            )
+            .await;
+        assert!(cas_busy.updating.load(Ordering::Acquire));
+        cas_busy.updating.store(false, Ordering::Release);
+        assert!(!cas_activity.claims_paused());
+        assert!(cas_root.err().is_none());
+
         let invalid_activity = DaemonActivity::new();
         let invalid_root = Ctx::new();
         let invalid = host(
@@ -739,6 +764,14 @@ mod tests {
         };
         assert_eq!(payloads("desktop")[0]["status"], "failed");
         assert_eq!(payloads("busy")[0]["status"], "failed");
+        assert_eq!(
+            payloads("busy")[0]["error"],
+            "runtime update deferred because agent work is starting or still active; retry when the machine is idle"
+        );
+        assert_eq!(
+            payloads("cas-busy")[0]["error"],
+            "another runtime update is already in progress on this machine"
+        );
         let invalid_payloads = payloads("invalid");
         assert_eq!(invalid_payloads[0]["status"], "running");
         assert_eq!(invalid_payloads[1]["status"], "failed");
@@ -746,7 +779,7 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("invalid-version"));
-        assert_eq!(services.heartbeat_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(services.heartbeat_calls.load(Ordering::SeqCst), 4);
         drop(payloads);
         drop(reports);
 
