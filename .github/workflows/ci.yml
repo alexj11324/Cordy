@@ -76,7 +76,7 @@ jobs:
               - '.dockerignore'
               - '.github/workflows/ci.yml'
               - 'scripts/generate-reserved-slugs.mjs'
-              - 'server/internal/handler/reserved_slugs.json'
+              - 'server-rs/crates/cordy-handler/assets/reserved_slugs.json'
               - 'scripts/check-ui-wildcard-exports.mjs'
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
@@ -95,12 +95,10 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'Makefile'
-            # Rust owns the default production entrypoints; Go remains in this
-            # filter while compatibility tests and the legacy rollback path
-            # still exist.
+            # Rust owns all production backend entrypoints and migrations.
             backend:
               - 'server-rs/**'
-              - 'server/**'
+              - 'migrations/**'
               - 'Dockerfile'
               - '.dockerignore'
               - 'docker/entrypoint.sh'
@@ -240,7 +238,7 @@ jobs:
       - name: Verify reserved-slugs.ts is up to date
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         # Re-runs the generator and fails on any drift from the
-        # checked-in TypeScript output. The Go side embeds the JSON
+        # checked-in TypeScript output. The Rust handler embeds the JSON
         # source directly, so a passing diff here proves both sides
         # share one source of truth.
         run: |

@@ -28,7 +28,8 @@ _features
 /docker/
 /docs/
 /e2e/
-/server/
+/server-rs/
+/migrations/
 /apps/*
 # Vercel checks directory entries without a trailing slash before descending.
 !/apps/web
