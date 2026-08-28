@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # --- Rust production binaries ---
 FROM rust:1-alpine AS builder
 
@@ -20,11 +22,21 @@ COPY server-rs/crates/cordy-handler/assets/ /src/server-rs/crates/cordy-handler/
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-RUN CORDY_BUILD_VERSION="${VERSION}" \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/src/server-rs/target,sharing=locked \
+    CORDY_BUILD_VERSION="${VERSION}" \
     CORDY_BUILD_COMMIT="${COMMIT}" \
     CORDY_BUILD_DATE="${DATE}" \
     CORDY_GIT_COMMIT="${COMMIT}" \
-    cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
+    cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins && \
+    mkdir -p /out && \
+    cp target/release/cordy-server /out/server && \
+    cp target/release/cordy /out/cordy && \
+    cp target/release/cordy-migrate /out/migrate && \
+    cp target/release/backfill_task_usage_hourly /out/ && \
+    cp target/release/backfill_issue_last_activity /out/ && \
+    cp target/release/backfill_codex_usage_cache /out/
 
 # --- Runtime stage ---
 FROM alpine:3.21
@@ -33,12 +45,7 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-COPY --from=builder /src/server-rs/target/release/cordy-server server
-COPY --from=builder /src/server-rs/target/release/cordy cordy
-COPY --from=builder /src/server-rs/target/release/cordy-migrate migrate
-COPY --from=builder /src/server-rs/target/release/backfill_task_usage_hourly .
-COPY --from=builder /src/server-rs/target/release/backfill_issue_last_activity .
-COPY --from=builder /src/server-rs/target/release/backfill_codex_usage_cache .
+COPY --from=builder /out/ ./
 COPY migrations/ ./migrations/
 COPY LICENSE NOTICE ./
 COPY docker/entrypoint.sh .
