@@ -3101,8 +3101,9 @@ serializer、migration framework 或 fallback。
   `#[serde(rename = "type")]`，覆盖 comment、inbox、issue dependency/property、task message 的全部 DB-row
   serializers；新增固定序列化向量，断言 `type` 不泄漏为 `type_`，并保留旧行中 nullable `details`/`input` 的 JSON `null`。
   没有改变 SQL、列名、状态值、生产路由或默认配置。
-- 主 agent 仅执行 `git diff --check`；没有运行 cargo、rustfmt、测试、DB 或长编译命令。实现 commit、Ready PR、精确
-  V/R/F 结果待回写；在 verifier 完成 Rust 编译/测试和可用数据库旧行读取前，本项不能声称 AUDIT-008 已完成或删除 Go。
+- 主 agent 仅执行 `git diff --check`；没有运行 cargo、rustfmt、测试、DB 或长编译命令。实现 commit `a8ec9582`，Ready
+  PR #588（<https://github.com/alexj11324/Cordy/pull/588>）；独立 V/R/F 已异步派发，精确结果待回写。在 verifier 完成
+  Rust 编译/测试和可用数据库旧行读取前，本项不能声称 AUDIT-008 已完成或删除 Go。
 
 ## 75. [ ] AUDIT-001..006 一次性生产构建/启动/升级/回滚验收（T-60）
 
