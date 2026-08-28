@@ -21,7 +21,7 @@ curl -i https://api.example.com/health
 curl -i https://api.example.com/readyz
 ```
 
-`/health` 只说明 API 进程正在响应；`/readyz` 还会检查数据库和 migration。问题反馈包含报错、相关日志、CLI 版本和操作系统；令牌、邮箱等敏感信息在提交前移除。
+`/health` 只说明 API 进程正在响应；`/readyz` 会检查数据库是否可达。Rust 入口在提供服务前先运行 migration，因此 migration 失败时服务不会进入 ready。问题反馈包含报错、相关日志、CLI 版本和操作系统；令牌、邮箱等敏感信息在提交前移除。
 
 ## 守护进程连接失败
 
@@ -173,14 +173,21 @@ SELECT rollup_task_usage_hourly();
 
 正常升级不需要为 103 做任何事：`migrate up` 在应用它之前会自动回填历史用量数据——空库直接通过，有历史数据的实例自动按月补齐后继续。
 
-如果 backend 启动仍报 `refusing to drop legacy daily rollups`，说明自动回填没有完成（例如回填中途失败，或没有通过 `migrate up` 而是直接应用了 SQL）。此时手动运行回填命令，完成后重启 backend：
+如果 backend 启动仍报 `refusing to drop legacy daily rollups`，说明自动回填没有完成（例如回填中途失败，或没有通过 `migrate up` 而是直接应用了 SQL）。保持 PostgreSQL 运行，直接使用 backend image 已包含的二进制；普通 entrypoint 会因 migration 失败而退出，所以必须覆盖它：
 
 ```bash
-cd server
-DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/backfill_task_usage_hourly backend
 ```
 
-常用 flag：`--dry-run` 只预览不写入；`--sleep-between-slices` 在切片之间加间隔，降低对繁忙实例的读压。命令按月切片、幂等，中断后可以直接重跑；它持有 advisory lock，与服务端的定时汇总互斥，不会产生重复或不一致的汇总数据。完成后重启 backend，用 `/readyz` 确认 `migrations` 为 `ok`。
+只有已经安装 Rust toolchain 时，才可改用源码 checkout：
+
+```bash
+make rust-build
+DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
+```
+
+常用 flag：`--dry-run` 只预览不写入；`--sleep-between-slices` 在切片之间加间隔，降低对繁忙实例的读压。命令按月切片、幂等，中断后可以直接重跑；它持有 advisory lock，与服务端的定时汇总互斥，不会产生重复或不一致的汇总数据。完成后重启 backend，确认 `/readyz` 返回 HTTP 200 和 `{"status":"ready"}`。handler 只检查数据库是否可达；服务成功启动则另行证明 entrypoint migration 已完成。
 
 ## 端口占用
 

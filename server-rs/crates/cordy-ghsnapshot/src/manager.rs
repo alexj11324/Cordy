@@ -784,22 +784,10 @@ mod tests {
     use crate::client::DEFAULT_API_BASE;
     use crate::snapshot::CheckContext;
 
-    fn generated_key() -> jsonwebtoken::EncodingKey {
-        use rand::rngs::StdRng;
-        use rand::SeedableRng;
-        use rsa::pkcs8::EncodePrivateKey;
-        let mut rng = StdRng::seed_from_u64(0xC0FFEE);
-        let key = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa generation");
-        let pem = key
-            .to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
-            .expect("pem encode");
-        jsonwebtoken::EncodingKey::from_rsa_pem(pem.as_bytes()).expect("parse generated pem")
-    }
-
     fn enabled_client() -> Client {
         Client::with_encoding_key(
             "1".to_string(),
-            generated_key(),
+            crate::client::test_encoding_key(),
             DEFAULT_API_BASE.to_string(),
             Box::new(std::time::SystemTime::now),
         )
@@ -1177,7 +1165,10 @@ mod tests {
             return;
         };
         let now = at_unix(1_700_000_100);
-        let pr = seed_pr_at(&pool, 987_654, "r", 4242, "B").await;
+        // Keep this address distinct from the background-manager tests below.
+        // Those tests intentionally update every mirrored row for their PR
+        // address and run in parallel with this one on CI.
+        let pr = seed_pr_at(&pool, 987_654, "head-guard", 4242, "B").await;
 
         let mut m = Manager::new(None, Some(pool.clone()), None);
         m.now = fixed_clock(now);
@@ -1289,7 +1280,7 @@ mod tests {
             return;
         };
         let now = at_unix(1_700_000_200);
-        let pr = seed_pr_at(&pool, 987_654, "r", 4242, "H").await;
+        let pr = seed_pr_at(&pool, 987_654, "replace-runs", 4242, "H").await;
 
         let mut m = Manager::new(None, Some(pool.clone()), None);
         m.now = fixed_clock(now);

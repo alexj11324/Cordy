@@ -3,11 +3,11 @@
 //!
 //! Symbol map (Go → Rust):
 //! - `ParseSelfVersion` → [`parse_self_version`] (exported contract shared
-//!   with cmd/cordy's version template)
+//!   with cordy-cli's version template)
 //! - `fetchLatestRelease` / `isReleaseVersion` / `isNewerVersion` /
 //!   `detectSelfVersion` → [`fetch_latest_release`] / [`is_release_version`] /
-//!   [`is_newer_version`] / [`detect_self_version`] — hosted here until the
-//!   CLI crate lands (S10); they belong to cli/update.go
+//!   [`is_newer_version`] / [`detect_self_version`] — shared by the Rust CLI,
+//!   daemon poller and production update executor
 //! - `autoUpdateLoop` / `tryAutoUpdate` / `trySelfReload` →
 //!   [`auto_update_loop`] / [`try_auto_update`] / [`try_self_reload`]
 //! - `setReloadPending` / `clearReloadPending` / `reloadPending` →
@@ -19,8 +19,6 @@
 //! [`AutoUpdateProbes`] so tests stub GitHub/process forks deterministically.
 //! Deferred flag restores are written as explicit epilogues preserving the
 //! exact hold/release order around triggerRestart.
-
-#![allow(dead_code)]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -162,7 +160,7 @@ fn github_release_request(client: &reqwest::Client) -> reqwest::RequestBuilder {
         .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT)
 }
 
-async fn fetch_latest_release() -> anyhow::Result<Option<GitHubRelease>> {
+pub async fn fetch_latest_release() -> anyhow::Result<Option<GitHubRelease>> {
     let client = github_release_client()?;
     let response = github_release_request(&client)
         .header("Accept", "application/vnd.github+json")

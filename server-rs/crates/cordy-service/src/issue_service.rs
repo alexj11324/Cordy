@@ -1081,3 +1081,470 @@ fn classify_origin(issue: &Issue) -> (&'static str, String, String) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use sqlx::postgres::PgPoolOptions;
+
+    async fn required_pool() -> PgPool {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue creation transaction contracts");
+        PgPoolOptions::new()
+            .max_connections(8)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL")
+    }
+
+    async fn workspace(pool: &PgPool) -> Uuid {
+        let slug = format!("issue-create-contract-{}", Uuid::now_v7().simple());
+        sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('issue create contract', $1) RETURNING id",
+        )
+        .bind(slug)
+        .fetch_one(pool)
+        .await
+        .expect("create workspace")
+    }
+
+    fn service(pool: &PgPool) -> Arc<IssueService> {
+        let bus = Arc::new(cordy_events::Bus::new());
+        let tasks = Arc::new(TaskService::new(pool.clone(), bus.clone()));
+        Arc::new(IssueService::new(pool.clone(), bus, tasks))
+    }
+
+    fn params(workspace_id: Uuid, title: &str, status: &str) -> IssueCreateParams {
+        IssueCreateParams {
+            workspace_id,
+            title: title.into(),
+            status: status.into(),
+            priority: "none".into(),
+            creator_type: "member".into(),
+            creator_id: Uuid::now_v7(),
+            ..IssueCreateParams::default()
+        }
+    }
+
+    async fn create(
+        service: &IssueService,
+        params: IssueCreateParams,
+    ) -> Result<Issue, IssueCreateError> {
+        service
+            .create(params, IssueCreateOpts::default())
+            .await
+            .map(|result| result.issue.expect("created issue"))
+    }
+
+    async fn cleanup(pool: &PgPool, workspace_id: Uuid) {
+        sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .expect("delete issues");
+        sqlx::query("DELETE FROM issue_status WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .expect("delete issue statuses");
+        sqlx::query("DELETE FROM project WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .expect("delete projects");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .expect("delete workspace");
+    }
+
+    #[tokio::test]
+    async fn production_create_enforces_duplicate_identity_and_column_top_order() {
+        let pool = required_pool().await;
+        let workspace_id = workspace(&pool).await;
+        crate::issue_status::ensure(&pool, workspace_id)
+            .await
+            .expect("seed statuses");
+        let service = service(&pool);
+
+        let first = create(&service, params(workspace_id, "First", "todo"))
+            .await
+            .expect("first issue");
+        let second = create(&service, params(workspace_id, "Second", "todo"))
+            .await
+            .expect("second issue");
+        assert_eq!(first.position, -1.0);
+        assert_eq!(second.position, -2.0);
+
+        sqlx::query("UPDATE issue SET position = -50 WHERE id = $1")
+            .bind(first.id)
+            .execute(&pool)
+            .await
+            .expect("simulate drag reorder");
+        let next = create(&service, params(workspace_id, "After drag", "todo"))
+            .await
+            .expect("issue after drag");
+        assert_eq!(next.position, -51.0);
+
+        let original = create(
+            &service,
+            params(workspace_id, "  Duplicate\u{00a0}Title  ", "in_progress"),
+        )
+        .await
+        .expect("original issue");
+        let duplicate = create(
+            &service,
+            params(workspace_id, "duplicate\u{2003}title", "in_progress"),
+        )
+        .await
+        .expect_err("normalized active duplicate must be rejected");
+        match duplicate {
+            IssueCreateError::ActiveDuplicate {
+                duplicate: Some(found),
+            } => {
+                assert_eq!(found.id, original.id);
+                assert_eq!(found.title, original.title);
+                assert_eq!(found.status, "in_progress");
+            }
+            other => panic!("unexpected duplicate result: {other:?}"),
+        }
+
+        let mut allowed = params(workspace_id, "duplicate title", "in_progress");
+        allowed.allow_duplicate = true;
+        let allowed = create(&service, allowed)
+            .await
+            .expect("explicit duplicate override");
+        assert_ne!(allowed.id, original.id);
+
+        sqlx::query("UPDATE issue SET status = 'done' WHERE id = ANY($1)")
+            .bind(vec![original.id, allowed.id])
+            .execute(&pool)
+            .await
+            .expect("close duplicates");
+        create(
+            &service,
+            params(workspace_id, "duplicate title", "in_progress"),
+        )
+        .await
+        .expect("closed effective statuses do not block");
+
+        cordy_db::queries::issue_status::create_issue_status_entry(
+            &pool,
+            workspace_id,
+            "human_review",
+            "Human Review",
+            "",
+            "in_progress",
+            "#8b5cf6",
+        )
+        .await
+        .expect("create custom status")
+        .expect("custom status row");
+        let custom = create(
+            &service,
+            params(workspace_id, "Custom active duplicate", "human_review"),
+        )
+        .await
+        .expect("custom status issue");
+        match create(
+            &service,
+            params(workspace_id, "custom active duplicate", "human_review"),
+        )
+        .await
+        .expect_err("custom active category must block")
+        {
+            IssueCreateError::ActiveDuplicate {
+                duplicate: Some(found),
+            } => assert_eq!(found.id, custom.id),
+            other => panic!("unexpected custom duplicate result: {other:?}"),
+        }
+
+        // Duplicate identity is workspace-scoped and applies across every
+        // active status, not just equal status keys. A custom status inherits
+        // the same active category semantics as its built-in category.
+        let active_identity = create(
+            &service,
+            params(workspace_id, "Cross status identity", "todo"),
+        )
+        .await
+        .expect("cross-status issue");
+        match create(
+            &service,
+            params(workspace_id, "cross status identity", "in_progress"),
+        )
+        .await
+        .expect_err("active duplicate must span active status columns")
+        {
+            IssueCreateError::ActiveDuplicate {
+                duplicate: Some(found),
+            } => {
+                assert_eq!(found.id, active_identity.id)
+            }
+            other => panic!("unexpected cross-status duplicate result: {other:?}"),
+        }
+
+        cordy_db::queries::issue_status::create_issue_status_entry(
+            &pool,
+            workspace_id,
+            "completed_custom",
+            "Completed Custom",
+            "",
+            "done",
+            "#8b82f6",
+        )
+        .await
+        .expect("create closed custom status")
+        .expect("closed custom status row");
+        create(
+            &service,
+            params(workspace_id, "Closed custom identity", "completed_custom"),
+        )
+        .await
+        .expect("custom done issue");
+        create(
+            &service,
+            params(workspace_id, "closed custom identity", "done"),
+        )
+        .await
+        .expect("done category does not block duplicate");
+
+        let prior_done_top: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(MIN(position), 0) FROM issue \
+             WHERE workspace_id = $1 AND status = 'done'",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load current done column top");
+        let done = create(&service, params(workspace_id, "Done column", "done"))
+            .await
+            .expect("next issue in done column");
+        assert_eq!(done.position, prior_done_top - 1.0);
+
+        let project_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO project (workspace_id, title) VALUES ($1, 'Scoped') RETURNING id",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create project");
+        let mut project_issue = params(workspace_id, "Scoped identity", "todo");
+        project_issue.project_id = Some(project_id);
+        create(&service, project_issue)
+            .await
+            .expect("project-scoped issue");
+        create(&service, params(workspace_id, "Scoped identity", "todo"))
+            .await
+            .expect("root and project identities are independent");
+
+        let parent = create(&service, params(workspace_id, "Parent", "todo"))
+            .await
+            .expect("parent issue");
+        let mut child = params(workspace_id, "Child identity", "todo");
+        child.parent_issue_id = Some(parent.id);
+        create(&service, child).await.expect("parent-scoped issue");
+        create(&service, params(workspace_id, "Child identity", "todo"))
+            .await
+            .expect("root and child identities are independent");
+
+        let other_workspace = workspace(&pool).await;
+        let other = create(
+            &service,
+            params(other_workspace, "duplicate title", "in_progress"),
+        )
+        .await
+        .expect("duplicate identity is workspace scoped");
+        assert_eq!(other.position, -1.0);
+
+        cleanup(&pool, other_workspace).await;
+        cleanup(&pool, workspace_id).await;
+    }
+
+    #[tokio::test]
+    async fn production_create_advisory_lock_serializes_same_identity() {
+        let pool = required_pool().await;
+        let workspace_id = workspace(&pool).await;
+        let service = service(&pool);
+
+        // Hold the row updated by increment_issue_counter. The first create
+        // reaches it only after acquiring the duplicate advisory lock; the
+        // second create must therefore wait at the duplicate lock. If the
+        // production advisory lock is removed, both pass the lookup before
+        // this row is released and both insert, making this test fail.
+        let mut blocker = pool.begin().await.expect("workspace row blocker");
+        sqlx::query("SELECT id FROM workspace WHERE id = $1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_one(&mut *blocker)
+            .await
+            .expect("lock workspace counter row");
+
+        let first_service = service.clone();
+        let first = tokio::spawn(async move {
+            let mut first_params = params(workspace_id, "Concurrent identity", "todo");
+            // The duplicate override still has to take the transaction-scoped
+            // advisory lock; otherwise a normal create can pass its lookup
+            // while this transaction is blocked on the counter row.
+            first_params.allow_duplicate = true;
+            create(&first_service, first_params).await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let second_service = service.clone();
+        let second = tokio::spawn(async move {
+            create(
+                &second_service,
+                params(workspace_id, "  concurrent   IDENTITY ", "todo"),
+            )
+            .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        blocker.commit().await.expect("release workspace counter");
+
+        let results = [
+            first.await.expect("first task"),
+            second.await.expect("second task"),
+        ];
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, Err(IssueCreateError::ActiveDuplicate { .. })))
+                .count(),
+            1
+        );
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM issue WHERE workspace_id = $1 AND lower(btrim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) = 'concurrent identity'",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count concurrent issues");
+        assert_eq!(count, 1);
+
+        cleanup(&pool, workspace_id).await;
+    }
+
+    #[tokio::test]
+    async fn recent_autopilot_guard_preserves_scope_window_and_active_semantics() {
+        let pool = required_pool().await;
+        let workspace_id = workspace(&pool).await;
+        let agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode) VALUES ($1, 'contract agent', 'local') RETURNING id",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create agent");
+        let autopilot_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO autopilot (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) VALUES ($1, 'contract autopilot', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(agent_id)
+        .bind(Uuid::now_v7())
+        .fetch_one(&pool)
+        .await
+        .expect("create autopilot");
+        let issue_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number, position, origin_type, origin_id) VALUES ($1, '  Recurring\tWork  ', 'todo', 'none', 'agent', $2, 1, -1, 'autopilot', $3) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(agent_id)
+        .bind(autopilot_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create autopilot issue");
+        sqlx::query(
+            "INSERT INTO autopilot_run (autopilot_id, source, status, issue_id) VALUES ($1, 'manual', 'running', $2)",
+        )
+        .bind(autopilot_id)
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("create active run");
+
+        let mut tx = pool.begin().await.expect("guard transaction");
+        let (duplicate, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(
+            &mut tx,
+            workspace_id,
+            Some(autopilot_id),
+            None,
+            "recurring work",
+            chrono::Duration::hours(1),
+        )
+        .await
+        .expect("recent guard");
+        assert!(found);
+        assert_eq!(duplicate.expect("recent duplicate").id, issue_id);
+        tx.rollback().await.expect("release guard lock");
+
+        for (autopilot, title, window) in [
+            (None, "recurring work", chrono::Duration::hours(1)),
+            (Some(autopilot_id), "   ", chrono::Duration::hours(1)),
+            (
+                Some(autopilot_id),
+                "recurring work",
+                chrono::Duration::zero(),
+            ),
+        ] {
+            let mut tx = pool.begin().await.expect("no-op transaction");
+            let (_, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(
+                &mut tx,
+                workspace_id,
+                autopilot,
+                None,
+                title,
+                window,
+            )
+            .await
+            .expect("recent guard no-op");
+            assert!(!found);
+            tx.rollback().await.expect("release no-op transaction");
+        }
+
+        sqlx::query("UPDATE issue SET created_at = now() - interval '2 hours' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("age issue");
+        let mut tx = pool.begin().await.expect("expired transaction");
+        let (_, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(
+            &mut tx,
+            workspace_id,
+            Some(autopilot_id),
+            None,
+            "recurring work",
+            chrono::Duration::hours(1),
+        )
+        .await
+        .expect("expired recent guard");
+        assert!(!found);
+        tx.rollback().await.expect("release expired guard lock");
+
+        sqlx::query("DELETE FROM autopilot_run WHERE autopilot_id = $1")
+            .bind(autopilot_id)
+            .execute(&pool)
+            .await
+            .expect("delete autopilot runs");
+        sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete autopilot issues");
+        sqlx::query("DELETE FROM autopilot WHERE id = $1")
+            .bind(autopilot_id)
+            .execute(&pool)
+            .await
+            .expect("delete autopilot");
+        sqlx::query("DELETE FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete agent");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+    }
+}

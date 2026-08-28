@@ -67,7 +67,7 @@ Check container status:
 docker compose -f docker-compose.selfhost.yml ps
 ```
 
-`postgres` should show `healthy`, and `backend` and `frontend` should be running. Then check the backend, the database, and migrations:
+`postgres` should show `healthy`, and `backend` and `frontend` should be running. Then check the backend and database reachability:
 
 ```bash
 curl -fsS http://localhost:8080/readyz
@@ -76,7 +76,7 @@ curl -fsS http://localhost:8080/readyz
 The expected response is:
 
 ```json
-{"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+{"status":"ready"}
 ```
 
 The backend container runs database migrations on every startup before serving; there is no manual migration command to run.
@@ -309,14 +309,14 @@ Migrations run automatically when the backend starts; migrations that backfill h
 
 ### Verify with `/readyz`, not `/health`
 
-`/health` is a **liveness** probe — it returns `{"status":"ok"}` as long as the process is up, including when migrations failed. `/readyz` (`server/cmd/server/router.go:680`; `/healthz` is an alias) checks the database and the applied migration set, so it is the one that catches a bad upgrade:
+`/health` is a **liveness** probe — it returns `{"status":"ok"}` as long as the process is up. `/readyz` (implemented in `server-rs/crates/cordy-handler/src/health.rs`; `/healthz` is an alias) only pings the database: it returns HTTP 200 with `{"status":"ready"}`, or HTTP 503 with `{"status":"unavailable"}`. Separately, the Rust entrypoint runs migrations before starting the server, so a migration failure leaves no server ready to answer the probe:
 
 ```bash
 curl -s localhost:8080/readyz
-# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+# {"status":"ready"}
 ```
 
-Anything other than HTTP 200 with both checks `ok` means the new version did not finish migrating — check the backend logs before sending traffic at it.
+Anything other than HTTP 200 with `{"status":"ready"}` means the running backend cannot reach the database — check the backend logs before sending traffic at it. The response has no migration sub-check; successful server startup means the entrypoint's migration step already completed.
 
 ### Kubernetes
 
@@ -332,7 +332,7 @@ Helm has its own upgrade path: set `images.backend.tag` / `images.frontend.tag` 
 
 | Symptom | Check first |
 |---|---|
-| `/readyz` does not return `ok` | Run `docker compose -f docker-compose.selfhost.yml logs backend postgres`. |
+| `/readyz` does not return `{"status":"ready"}` | Run `docker compose -f docker-compose.selfhost.yml logs backend postgres`. |
 | No verification code arrives | Request a code, then search the backend logs for `Verification code`. |
 | `setup self-host` reports the server is unreachable | From the computer, request `https://api.example.com/health` to confirm DNS, TLS, and the reverse proxy are all reachable. |
 | The daemon lists no `Agents` | Confirm the AI coding tools are on `PATH` and logged in, then run `cordy daemon restart`. |

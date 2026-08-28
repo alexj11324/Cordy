@@ -1,0 +1,33 @@
+//! Shared migration backfills used by the migration runner and operator tools.
+
+use std::sync::OnceLock;
+
+pub mod backfill;
+mod files;
+
+/// Every migration version required by the current source tree, in apply
+/// order. Runtime readiness and the migration CLI share this discovery logic
+/// so neither can accidentally treat a database with an interior gap as ready.
+pub fn required_versions() -> anyhow::Result<&'static [String]> {
+    static REQUIRED_VERSIONS: OnceLock<Vec<String>> = OnceLock::new();
+    if let Some(versions) = REQUIRED_VERSIONS.get() {
+        return Ok(versions);
+    }
+    let discovered = files::all_versions()?;
+    Ok(REQUIRED_VERSIONS.get_or_init(|| discovered))
+}
+
+/// Install the same process logger for the migration runner and every
+/// backfill binary. Keeping this at the package boundary avoids four subtly
+/// different startup filters for one operator-facing command family.
+pub fn init_logging() {
+    let log_filter = tracing_subscriber::EnvFilter::try_new(cordy_util::logging::env_filter())
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"));
+    tracing_subscriber::fmt()
+        .with_env_filter(log_filter)
+        .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
+            cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
+        ))
+        .with_ansi(cordy_util::logging::stderr_is_terminal())
+        .init();
+}

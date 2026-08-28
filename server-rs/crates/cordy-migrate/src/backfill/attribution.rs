@@ -46,7 +46,7 @@ WHERE q.id = batch.id
   AND q.originator_user_id IS NOT NULL
   AND q.accountable_user_id IS DISTINCT FROM q.originator_user_id"#;
 
-pub(crate) async fn hook(pool: &PgPool) -> anyhow::Result<()> {
+pub async fn hook(pool: &PgPool) -> anyhow::Result<()> {
     let mismatch_normalized: i64 = sqlx::query_scalar(COUNT_MISMATCH_SQL)
         .fetch_one(pool)
         .await?;

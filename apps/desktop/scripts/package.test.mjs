@@ -226,8 +226,8 @@ describe("resolveBuildMatrix", () => {
     ).toEqual([{ platform: "mac", arch: "arm64" }]);
   });
 
-  it("expands all-platforms on macOS", () => {
-    expect(
+  it("fails before packaging when all-platforms would require Rust cross-linkers", () => {
+    expect(() =>
       resolveBuildMatrix(
         {
           allPlatforms: true,
@@ -239,14 +239,23 @@ describe("resolveBuildMatrix", () => {
         "darwin",
         "arm64",
       ),
-    ).toEqual([
-      { platform: "mac", arch: "arm64" },
-      { platform: "mac", arch: "x64" },
-      { platform: "win", arch: "x64" },
-      { platform: "win", arch: "arm64" },
-      { platform: "linux", arch: "x64" },
-      { platform: "linux", arch: "arm64" },
-    ]);
+    ).toThrow(/cannot build Rust CLIs across operating systems/);
+  });
+
+  it("rejects an explicit cross-platform target before invoking Cargo", () => {
+    expect(() =>
+      resolveBuildMatrix(
+        {
+          allPlatforms: false,
+          sharedArgs: [],
+          platformTargets: { mac: [], win: [], linux: [] },
+          requestedPlatforms: ["win"],
+          requestedArchs: ["x64"],
+        },
+        "darwin",
+        "arm64",
+      ),
+    ).toThrow(/cannot build Rust CLI for win on mac/);
   });
 
   it("rejects unsupported architectures", () => {

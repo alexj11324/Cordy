@@ -2,103 +2,29 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::antigravity::{AntigravityBackend, AntigravityConfig};
+use crate::claude::{ClaudeBackend, ClaudeConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
+use crate::codex::{CodexBackend, CodexConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
+use crate::copilot::{CopilotBackend, CopilotConfig};
+use crate::cursor::{CursorBackend, CursorConfig};
+use crate::deveco::{DevecoBackend, DevecoConfig};
+use crate::dsh::{DshBackend, DshConfig};
+use crate::model::{Catalog, CatalogCache};
+use crate::openclaw::{OpenclawBackend, OpenclawConfig};
+use crate::opencode::{OpencodeBackend, OpencodeConfig};
+use crate::pi::{PiBackend, PiConfig};
 use crate::qoder::{
-    DimBackend, DimConfig, GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig, QwenpawBackend,
-    QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
+    DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
+    KimiConfig, KiroBackend, KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig,
+    QwenpawBackend, QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
-
-/// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
-#[derive(Clone, Default)]
-pub struct BackendConfig {
-    pub command: RuntimeCommand,
-    pub env: BTreeMap<String, String>,
-}
-
-impl std::fmt::Debug for BackendConfig {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("BackendConfig")
-            .field("command_path", &self.command.path)
-            .field("environment_variable_count", &self.env.len())
-            .finish_non_exhaustive()
-    }
-}
-
-/// Constructs only protocol families with a real implementation in this
-/// crate. Metadata registration is deliberately insufficient: callers get a
-/// hard error instead of a backend that fails later or pretends to execute.
-pub fn build_backend(
-    runtime_id: &str,
-    config: BackendConfig,
-) -> Result<Arc<dyn Backend>, AgentError> {
-    let family = protocol_family(runtime_id)
-        .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
-    match family {
-        "antigravity" => Ok(Arc::new(AntigravityBackend::new(AntigravityConfig {
-            command: config.command,
-            env: config.env,
-            ..AntigravityConfig::default()
-        }))),
-        "codebuddy" => Ok(Arc::new(CodebuddyBackend::new(CodebuddyConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "qwenpaw" => Ok(Arc::new(QwenpawBackend::new(QwenpawConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "kiro" => Ok(Arc::new(KiroBackend::new(KiroConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "kimi" => Ok(Arc::new(KimiBackend::new(KimiConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "reasonix" => Ok(Arc::new(ReasonixBackend::new(ReasonixConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "grok" => Ok(Arc::new(GrokBackend::new(GrokConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "mcode" => Ok(Arc::new(McodeBackend::new(McodeConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "dim" => Ok(Arc::new(DimBackend::new(DimConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(QoderConfig {
-            command: config.command,
-            env: config.env,
-            default_command: if runtime_id == "qoderclicn" {
-                "qoderclicn".to_string()
-            } else {
-                "qodercli".to_string()
-            },
-            ..QoderConfig::default()
-        }))),
-        "traecli" => Ok(Arc::new(TraecliBackend::new(TraecliConfig {
-            command: config.command,
-            env: config.env,
-        }))),
-        _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
-    }
-}
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderDescriptor {
@@ -282,28 +208,6 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelDiscoveryOutput {
-    OmpModelsJson,
-}
-
-/// A built-in runtime's model-discovery command. Presence replaces protocol-
-/// family discovery entirely; absence disables discovery for that runtime
-/// rather than falling back to a potentially incompatible family command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ModelDiscoveryOverride {
-    pub arguments: &'static [&'static str],
-    pub output: ModelDiscoveryOutput,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelDiscoveryStrategy {
-    ProviderFamily(&'static str),
-    RuntimeOverride(ModelDiscoveryOverride),
-    DisabledBuiltinRuntime,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinRuntimeDescriptor {
     pub id: &'static str,
     pub protocol_family: &'static str,
@@ -313,9 +217,6 @@ pub struct BuiltinRuntimeDescriptor {
     pub skills_dir: &'static str,
     pub user_skills_dir: &'static str,
     pub launch_header: &'static str,
-    pub default_executable: &'static str,
-    pub provider_label: &'static str,
-    pub model_discovery: Option<ModelDiscoveryOverride>,
 }
 
 pub const BUILTIN_RUNTIMES: &[BuiltinRuntimeDescriptor] = &[BuiltinRuntimeDescriptor {
@@ -327,13 +228,25 @@ pub const BUILTIN_RUNTIMES: &[BuiltinRuntimeDescriptor] = &[BuiltinRuntimeDescri
     skills_dir: ".omp/skills",
     user_skills_dir: ".omp/agent/skills",
     launch_header: "omp (json mode)",
-    default_executable: "omp",
-    provider_label: "omp",
-    model_discovery: Some(ModelDiscoveryOverride {
-        arguments: &["models", "--json"],
-        output: ModelDiscoveryOutput::OmpModelsJson,
-    }),
 }];
+
+/// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
+#[derive(Clone, Default)]
+pub struct BackendConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
+}
+
+impl std::fmt::Debug for BackendConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BackendConfig")
+            .field("command_path", &self.command.path)
+            .field("environment_variable_count", &self.env.len())
+            .finish_non_exhaustive()
+    }
+}
 
 pub fn provider(id: &str) -> Option<&'static ProviderDescriptor> {
     PROVIDERS.iter().find(|provider| provider.id == id)
@@ -348,20 +261,6 @@ pub fn protocol_family(id: &str) -> Option<&'static str> {
         return Some(provider.id);
     }
     builtin_runtime(id).map(|runtime| runtime.protocol_family)
-}
-
-/// Resolves discovery without allowing a built-in runtime identity to
-/// silently inherit its protocol family's CLI command.
-pub fn model_discovery_strategy(id: &str) -> ModelDiscoveryStrategy {
-    if let Some(runtime) = builtin_runtime(id) {
-        return runtime.model_discovery.map_or(
-            ModelDiscoveryStrategy::DisabledBuiltinRuntime,
-            ModelDiscoveryStrategy::RuntimeOverride,
-        );
-    }
-    provider(id).map_or(ModelDiscoveryStrategy::Unknown, |provider| {
-        ModelDiscoveryStrategy::ProviderFamily(provider.id)
-    })
 }
 
 pub fn launch_header(id: &str) -> &'static str {
@@ -383,11 +282,302 @@ pub fn model_selection_supported(id: &str) -> bool {
         .is_none_or(|provider| provider.model_selection_supported)
 }
 
+/// Filters a custom profile's fixed argv prefix with the same provider-owned
+/// policy used by the eventual task launch. Unknown families remain unchanged;
+/// the daemon rejects them before publishing a profile.
+pub fn filter_launch_prefix_for_provider(provider_id: &str, prefix: &[String]) -> Vec<String> {
+    let family = protocol_family(provider_id).unwrap_or(provider_id);
+    let blocked = match family {
+        "antigravity" => Some(&*crate::antigravity::BLOCKED_ARGS),
+        "codebuddy" => Some(&*crate::codebuddy::BLOCKED_ARGS),
+        "claude" => Some(&*crate::claude::BLOCKED_ARGS),
+        "copilot" => Some(&*crate::copilot::BLOCKED_ARGS),
+        "codex" => Some(&*crate::codex::BLOCKED_ARGS),
+        "cursor" => Some(&*crate::cursor::BLOCKED_ARGS),
+        "deveco" => Some(&*crate::deveco::BLOCKED_ARGS),
+        "openclaw" => Some(&*crate::openclaw::BLOCKED_ARGS),
+        "opencode" => Some(&*crate::opencode::BLOCKED_ARGS),
+        "qwen" => Some(&*crate::qwen::BLOCKED_ARGS),
+        "qoder" | "qoderclicn" | "traecli" | "kiro" | "kimi" | "qwenpaw" | "grok" | "mcode"
+        | "dim" | "reasonix" => Some(crate::qoder::blocked_args(family)),
+        "pi" => {
+            return crate::command::filter_launch_prefix(prefix, &crate::pi::pi_blocked_args())
+                .args;
+        }
+        // DSH's profile selector is a provider identity token and is allowed
+        // to live in the accepted fixed prefix.
+        _ => None,
+    };
+    blocked.map_or_else(
+        || prefix.to_vec(),
+        |blocked| crate::command::filter_launch_prefix(prefix, blocked).args,
+    )
+}
+
+fn qoder_config(runtime_id: &str, config: BackendConfig) -> QoderConfig {
+    QoderConfig {
+        command: config.command,
+        env: config.env,
+        default_command: if runtime_id == "qoderclicn" {
+            "qoderclicn".to_string()
+        } else {
+            "qodercli".to_string()
+        },
+        // Qoder and Qoder CN share a transport, but discovery and runtime
+        // behavior must remain scoped to the identity that was requested.
+        provider: runtime_id.to_string(),
+        ..QoderConfig::default()
+    }
+}
+
+/// Reports whether a runtime rejects a model selector without its provider
+/// prefix. This is an execution contract: only these runtimes need a catalog
+/// read before launching a task with a pinned model.
+pub fn model_selector_must_be_provider_qualified(id: &str) -> bool {
+    matches!(protocol_family(id), Some("opencode" | "deveco"))
+}
+
+/// Discovers the model catalog for an accepted runtime command.
+///
+/// The daemon must use the command selected by registration, including a
+/// custom profile's fixed prefix, so discovery cannot be implemented by
+/// rebuilding a provider's default command at the call site. Providers that
+/// deliberately have no account-independent catalog return an empty catalog;
+/// unsupported provider families fail closed instead of pretending discovery
+/// succeeded.
+pub async fn discover_models(
+    runtime_id: &str,
+    config: BackendConfig,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Result<Catalog, AgentError> {
+    let family = protocol_family(runtime_id)
+        .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
+    let BackendConfig {
+        command,
+        env,
+        builtin_runtime,
+    } = config;
+    match family {
+        "antigravity" => Ok(AntigravityBackend::new(AntigravityConfig {
+            command,
+            env,
+            ..AntigravityConfig::default()
+        })
+        .discover_models(cancellation, timeout)
+        .await),
+        "codebuddy" => Ok(CodebuddyBackend::new(CodebuddyConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "claude" => Ok(ClaudeBackend::new(ClaudeConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "copilot" => Ok(CopilotBackend::new(CopilotConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "cursor" => Ok(CursorBackend::new(CursorConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "deveco" => Ok(DevecoBackend::new(DevecoConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "dsh" => Ok(DshBackend::new(DshConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "openclaw" => Ok(OpenclawBackend::new(OpenclawConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "opencode" => Ok(OpencodeBackend::new(OpencodeConfig { command, env })
+            .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+            .await),
+        "pi" => Ok(PiBackend::new(PiConfig {
+            command,
+            env,
+            default_executable: if runtime_id == "omp" {
+                "omp".to_string()
+            } else {
+                "pi".to_string()
+            },
+            provider_label: if runtime_id == "omp" {
+                "omp".to_string()
+            } else {
+                "pi".to_string()
+            },
+        })
+        .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+        .await),
+        "qoder" | "qoderclicn" => {
+            let backend = QoderBackend::new(QoderConfig {
+                command,
+                env,
+                default_command: if runtime_id == "qoderclicn" {
+                    "qoderclicn".to_string()
+                } else {
+                    "qodercli".to_string()
+                },
+                provider: runtime_id.to_string(),
+                ..QoderConfig::default()
+            });
+            Ok(backend.discover_models(cache, cancellation, timeout).await)
+        }
+        "traecli" => Ok(TraecliBackend::new(TraecliConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "kiro" => Ok(KiroBackend::new(KiroConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "kimi" => Ok(KimiBackend::new(KimiConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "reasonix" => Ok(ReasonixBackend::new(ReasonixConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "grok" => Ok(GrokBackend::new(GrokConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "hermes" => Ok(HermesBackend::new(HermesConfig {
+            command,
+            env,
+            builtin_runtime,
+        })
+        .discover_models_for_runtime(runtime_id, cache, cancellation, timeout)
+        .await),
+        "dim" => Ok(DimBackend::new(DimConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        "qwen" | "qwenpaw" | "mcode" => Ok(Catalog::default()),
+        "codex" => Ok(CodexBackend::new(CodexConfig { command, env })
+            .discover_models(cache, cancellation, timeout)
+            .await),
+        _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
+    }
+}
+
+/// Constructs a real backend for the provider families already implemented in
+/// this crate. Registry metadata alone is not enough: unsupported families
+/// fail before a task can pretend to execute.
+pub fn build_backend(
+    runtime_id: &str,
+    config: BackendConfig,
+) -> Result<Arc<dyn Backend>, AgentError> {
+    let family = protocol_family(runtime_id)
+        .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
+    match family {
+        "antigravity" => Ok(Arc::new(AntigravityBackend::new(AntigravityConfig {
+            command: config.command,
+            env: config.env,
+            ..AntigravityConfig::default()
+        }))),
+        "codebuddy" => Ok(Arc::new(CodebuddyBackend::new(CodebuddyConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "claude" => Ok(Arc::new(ClaudeBackend::new(ClaudeConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "copilot" => Ok(Arc::new(CopilotBackend::new(CopilotConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "codex" => Ok(Arc::new(CodexBackend::new(CodexConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "cursor" => Ok(Arc::new(CursorBackend::new(CursorConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "deveco" => Ok(Arc::new(DevecoBackend::new(DevecoConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "dsh" => Ok(Arc::new(DshBackend::new(DshConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "openclaw" => Ok(Arc::new(OpenclawBackend::new(OpenclawConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "opencode" => Ok(Arc::new(OpencodeBackend::new(OpencodeConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "pi" => {
+            let (default_executable, provider_label) = if runtime_id == "omp" {
+                ("omp", "omp")
+            } else {
+                ("pi", "pi")
+            };
+            Ok(Arc::new(PiBackend::new(PiConfig {
+                command: config.command,
+                env: config.env,
+                default_executable: default_executable.to_string(),
+                provider_label: provider_label.to_string(),
+            })))
+        }
+        "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "qwenpaw" => Ok(Arc::new(QwenpawBackend::new(QwenpawConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "kiro" => Ok(Arc::new(KiroBackend::new(KiroConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "kimi" => Ok(Arc::new(KimiBackend::new(KimiConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "reasonix" => Ok(Arc::new(ReasonixBackend::new(ReasonixConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "grok" => Ok(Arc::new(GrokBackend::new(GrokConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "hermes" => Ok(Arc::new(HermesBackend::new(HermesConfig {
+            command: config.command,
+            env: config.env,
+            builtin_runtime: config.builtin_runtime,
+        }))),
+        "mcode" => Ok(Arc::new(McodeBackend::new(McodeConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "dim" => Ok(Arc::new(DimBackend::new(DimConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(qoder_config(
+            runtime_id, config,
+        )))),
+        "traecli" => Ok(Arc::new(TraecliBackend::new(TraecliConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+
+    fn backend_config() -> BackendConfig {
+        BackendConfig {
+            command: RuntimeCommand::new("/bin/agent", Vec::new()),
+            ..BackendConfig::default()
+        }
+    }
 
     #[test]
     fn provider_whitelist_matches_latest_migration_contract() {
@@ -440,33 +630,6 @@ mod tests {
     }
 
     #[test]
-    fn omp_descriptor_owns_execution_and_model_discovery_overrides() {
-        let Some(omp) = builtin_runtime("omp") else {
-            panic!("omp descriptor must exist");
-        };
-        assert_eq!(omp.default_executable, "omp");
-        assert_eq!(omp.provider_label, "omp");
-        let discovery = ModelDiscoveryOverride {
-            arguments: &["models", "--json"],
-            output: ModelDiscoveryOutput::OmpModelsJson,
-        };
-        assert_eq!(omp.model_discovery, Some(discovery));
-        assert_eq!(
-            model_discovery_strategy("omp"),
-            ModelDiscoveryStrategy::RuntimeOverride(discovery)
-        );
-        assert_ne!(
-            model_discovery_strategy("omp"),
-            ModelDiscoveryStrategy::ProviderFamily("pi"),
-            "OMP must never fall back to Pi's incompatible --list-models command"
-        );
-        assert_eq!(
-            model_discovery_strategy("pi"),
-            ModelDiscoveryStrategy::ProviderFamily("pi")
-        );
-    }
-
-    #[test]
     fn capability_exceptions_are_exact() {
         let undetectable: BTreeSet<&str> = PROVIDERS
             .iter()
@@ -486,36 +649,127 @@ mod tests {
     }
 
     #[test]
-    fn backend_registry_constructs_only_landed_protocols() {
-        let qwen = build_backend("qwen", BackendConfig::default());
-        assert!(qwen.is_ok());
+    fn selector_qualification_follows_the_runtime_protocol_family() {
+        assert!(model_selector_must_be_provider_qualified("opencode"));
+        assert!(model_selector_must_be_provider_qualified("deveco"));
+        assert!(!model_selector_must_be_provider_qualified("pi"));
+        assert!(!model_selector_must_be_provider_qualified("omp"));
+        assert!(!model_selector_must_be_provider_qualified("unknown"));
+    }
 
-        let codebuddy = build_backend("codebuddy", BackendConfig::default());
-        assert!(codebuddy.is_ok());
+    #[test]
+    fn factory_constructs_every_implemented_runtime() {
+        for runtime in [
+            "antigravity",
+            "claude",
+            "codebuddy",
+            "codex",
+            "copilot",
+            "cursor",
+            "deveco",
+            "dsh",
+            "openclaw",
+            "opencode",
+            "pi",
+            "omp",
+            "qwen",
+            "qwenpaw",
+            "kiro",
+            "kimi",
+            "reasonix",
+            "grok",
+            "hermes",
+            "mcode",
+            "dim",
+            "qoder",
+            "qoderclicn",
+            "traecli",
+        ] {
+            assert!(
+                build_backend(runtime, backend_config()).is_ok(),
+                "factory rejected implemented runtime {runtime}"
+            );
+        }
+    }
 
-        let antigravity = build_backend("antigravity", BackendConfig::default());
-        assert!(antigravity.is_ok());
-
-        assert!(build_backend("qoder", BackendConfig::default()).is_ok());
-        assert!(build_backend("qoderclicn", BackendConfig::default()).is_ok());
-        assert!(build_backend("traecli", BackendConfig::default()).is_ok());
-        assert!(build_backend("kiro", BackendConfig::default()).is_ok());
-        assert!(build_backend("qwenpaw", BackendConfig::default()).is_ok());
-        assert!(build_backend("kimi", BackendConfig::default()).is_ok());
-        assert!(build_backend("reasonix", BackendConfig::default()).is_ok());
-        assert!(build_backend("grok", BackendConfig::default()).is_ok());
-        assert!(build_backend("mcode", BackendConfig::default()).is_ok());
-        assert!(build_backend("dim", BackendConfig::default()).is_ok());
-
-        let metadata_only = build_backend("claude", BackendConfig::default());
+    #[test]
+    fn factory_fails_closed_for_unknown_or_unimplemented_runtime() {
+        let runtime = "unknown";
         assert!(matches!(
-            metadata_only,
-            Err(AgentError::UnsupportedRuntime(runtime)) if runtime == "claude"
+            build_backend(runtime, backend_config()),
+            Err(AgentError::UnsupportedRuntime(value)) if value == runtime
         ));
-        let unknown = build_backend("unknown", BackendConfig::default());
-        assert!(matches!(
-            unknown,
-            Err(AgentError::UnsupportedRuntime(runtime)) if runtime == "unknown"
-        ));
+    }
+
+    #[test]
+    fn factory_preserves_qoder_runtime_identity() {
+        let qoder = qoder_config("qoder", backend_config());
+        assert_eq!(qoder.provider, "qoder");
+        assert_eq!(qoder.default_command, "qodercli");
+
+        let qoderclicn = qoder_config("qoderclicn", backend_config());
+        assert_eq!(qoderclicn.provider, "qoderclicn");
+        assert_eq!(qoderclicn.default_command, "qoderclicn");
+    }
+
+    #[test]
+    fn launch_prefix_filter_uses_current_provider_policies() {
+        let prefix = vec![
+            "start".to_string(),
+            "--output-format".to_string(),
+            "text".to_string(),
+            "--model".to_string(),
+            "untrusted-model".to_string(),
+            "q36".to_string(),
+        ];
+        assert_eq!(
+            filter_launch_prefix_for_provider("qwen", &prefix),
+            vec!["start", "q36"]
+        );
+        assert_eq!(
+            filter_launch_prefix_for_provider("unknown", &prefix),
+            prefix
+        );
+        assert!(filter_launch_prefix_for_provider(
+            "omp",
+            &["--mode".to_string(), "unsafe".to_string()]
+        )
+        .is_empty());
+    }
+
+    #[tokio::test]
+    async fn discovery_keeps_catalogless_runtimes_empty() {
+        let catalog = discover_models(
+            "qwen",
+            BackendConfig::default(),
+            &CatalogCache::default(),
+            tokio_util::sync::CancellationToken::new(),
+            Duration::ZERO,
+        )
+        .await
+        .unwrap_or_else(|error| panic!("catalogless runtime discovery is supported: {error}"));
+        assert_eq!(catalog, Catalog::default());
+    }
+
+    #[tokio::test]
+    async fn codex_discovery_uses_static_fallback_when_cli_is_unavailable() {
+        let catalog = discover_models(
+            "codex",
+            BackendConfig {
+                command: RuntimeCommand::new("/nonexistent/codex", Vec::new()),
+                ..BackendConfig::default()
+            },
+            &CatalogCache::default(),
+            tokio_util::sync::CancellationToken::new(),
+            Duration::ZERO,
+        )
+        .await
+        .unwrap_or_else(|error| {
+            panic!("codex discovery should degrade to its static catalog: {error}")
+        });
+        assert_eq!(
+            catalog.models.first().map(|model| model.id.as_str()),
+            Some("gpt-5.6-sol")
+        );
     }
 }

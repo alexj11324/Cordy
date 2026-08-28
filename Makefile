@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build rust-build go-build test rust-test go-test migrate-up migrate-down rust-migrate-up rust-migrate-down go-migrate-up go-migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -39,6 +39,13 @@ define REQUIRE_ENV
 		exit 1; \
 	fi
 endef
+
+# The Rust workspace is the default source/runtime entrypoint. The wrapper
+# keeps Cargo's workspace cwd while preserving Go's relative upload directory
+# semantics for local development.
+RUST_RUNNER := ./scripts/run-rust.sh
+RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" $(RUST_RUNNER) run --locked -p cordy-server
+RUST_MIGRATE_CMD = $(RUST_RUNNER) run --locked -p cordy-migrate --
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -153,7 +160,7 @@ setup: ## Prepare the current checkout from its env file: install deps, ensure D
 	pnpm install
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	@echo "==> Running migrations..."
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	@echo ""
 	@echo "✓ Setup complete! Run 'make start' to launch the app."
 
@@ -164,10 +171,10 @@ start: ## Start backend and frontend for the current checkout and run migrations
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	@echo "Running migrations..."
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	@echo "Starting backend and frontend..."
 	@trap 'kill 0' EXIT; \
-		(cd server && go run ./cmd/server) & \
+		($(RUST_SERVER_CMD)) & \
 		pnpm dev:web & \
 		wait
 
@@ -183,7 +190,7 @@ stop: ## Stop backend and frontend processes for the current checkout
 			echo "✓ App processes stopped. Remote PostgreSQL was not affected." ;; \
 	esac
 
-check: ## Run typecheck, TS tests, Go tests, and Playwright E2E for the current checkout
+check: ## Run typecheck, TS tests, Rust tests, Go compatibility tests, and Playwright E2E
 	$(REQUIRE_ENV)
 	@ENV_FILE="$(ENV_FILE)" bash scripts/check.sh
 
@@ -215,7 +222,7 @@ db-reset: ## Drop and recreate the current env's database, then re-run all migra
 		-c "DROP DATABASE IF EXISTS \"$(POSTGRES_DB)\" WITH (FORCE);" \
 		-c "CREATE DATABASE \"$(POSTGRES_DB)\";"
 	@echo "==> Running migrations..."
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
 	@echo ""
 	@echo "✓ Database '$(POSTGRES_DB)' reset. Run 'make start' to launch the app."
 
@@ -261,62 +268,103 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
 	@bash scripts/dev.sh
 
-server: ## Run only the Go server for the current checkout
+daemon: CORDY_ARGS := daemon restart --profile local
+daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
+
+server: ## Run only the Rust server for the current checkout
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_SERVER_CMD)
+
+go-server: ## Run the legacy Go server entrypoint during the migration
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/server
 
-daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) cordy CORDY_ARGS="daemon restart --profile local"
+rust-server: server ## Run the migrated Rust server entrypoint
 
-cli: ## Run the cordy CLI with ARGS or CORDY_ARGS from source
-	@$(MAKE) cordy CORDY_ARGS="$(CORDY_ARGS)"
+cli: rust-cli ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
 
-cordy: ## Run the cordy CLI entrypoint directly from the Go source tree
+cordy: rust-cli ## Run the Rust cordy CLI entrypoint
+
+go-cordy: ## Run the legacy Go CLI entrypoint during the migration
 	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/cordy $(CORDY_ARGS)
 
 rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo run -p cordy-cli -- $(CORDY_ARGS)
+	CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" $(RUST_RUNNER) run --locked -p cordy-cli -- $(CORDY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" $(RUST_RUNNER) build --release --locked -p cordy-cli
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
-GO_VERSION ?= $(shell go env GOVERSION 2>/dev/null || echo unknown)
-# Windows will not execute an extensionless binary, so a source build there has
-# to name its outputs the way the target platform expects — otherwise the CLI
-# builds fine and then fails to re-exec itself as a daemon (#7255). GOOS reaches
-# a build two ways: as an environment variable (`GOOS=windows make build`) and
-# as a Make variable (`make build GOOS=windows`). The top-level `export` sends
-# both forms to the recipe, so `go build` honors both and the suffix has to as
-# well; `$(GOOS)` covers the Make-variable form, which a parse-time
-# `go env GOOS` cannot see. Target-specific so only `build` pays for the probe:
-# a global assignment runs `go env` on every target — `export` expands even a
-# recursive one — which prints `go: Command not found` on frontend-only
-# checkouts with no Go toolchain installed.
-build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
-build: ## Build the server, CLI, and migrate binaries into server/bin
+
+# Keep the historical metadata field explicit without making the Rust default
+# depend on a Go toolchain. Release automation may pass a value when it has one.
+RUST_BUILD_GO_VERSION ?= unknown
+RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
+RUST_TARGET_DIR ?= $(CURDIR)/server-rs/target
+RUST_EXE ?= $(if $(filter Windows_NT,$(OS)),.exe,)
+
+build: rust-build ## Build Rust server, CLI, migration, and backfill binaries into server/bin
+
+rust-build: ## Build native Rust server, CLI, migration, and backfill binaries into server/bin
+	@mkdir -p server/bin
+	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(RUST_BUILD_GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" $(RUST_RUNNER) build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
+	cp "$(RUST_TARGET_DIR)/release/cordy-server$(RUST_EXE)" "server/bin/server$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/cordy$(RUST_EXE)" "server/bin/cordy$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/cordy-migrate$(RUST_EXE)" "server/bin/migrate$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/backfill_task_usage_hourly$(RUST_EXE)" "server/bin/backfill_task_usage_hourly$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/backfill_issue_last_activity$(RUST_EXE)" "server/bin/backfill_issue_last_activity$(RUST_EXE)"
+	cp "$(RUST_TARGET_DIR)/release/backfill_codex_usage_cache$(RUST_EXE)" "server/bin/backfill_codex_usage_cache$(RUST_EXE)"
+
+# Windows will not execute an extensionless binary, so the explicit legacy Go
+# fallback keeps naming its outputs for the target platform. GOOS reaches this
+# target through either an environment variable or a Make variable.
+go-build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
+go-build: ## Build the legacy Go server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server$(EXE) ./cmd/server
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/cordy$(EXE) ./cmd/cordy
 	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
 
-test: ## Run Go tests after ensuring the target DB exists and migrations are applied
+test: rust-test ## Run Rust tests after ensuring the target DB exists and migrations are applied
+
+rust-test: ## Run Rust workspace tests after ensuring the target DB exists and migrations are applied
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	cd server && go run ./cmd/migrate up
+	$(RUST_MIGRATE_CMD) up
+	$(RUST_RUNNER) test --workspace --all-targets --locked
+
+go-test: ## Run legacy Go compatibility tests after ensuring the target DB exists and migrations are applied
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_MIGRATE_CMD) up
 	bash scripts/test-go.sh --race
 
 # Database
 ##@ Database
 
-migrate-up: ## Create the target DB if needed, then apply database migrations
+migrate-up: rust-migrate-up ## Create the target DB if needed, then apply database migrations
+
+rust-migrate-up: ## Apply database migrations with the Rust runner
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_MIGRATE_CMD) up
+
+migrate-down: rust-migrate-down ## Create the target DB if needed, then roll back database migrations
+
+rust-migrate-down: ## Roll back database migrations with the Rust runner
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_MIGRATE_CMD) down
+
+go-migrate-up: ## Apply migrations with the legacy Go runner during the migration
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/migrate up
 
-migrate-down: ## Create the target DB if needed, then roll back database migrations
+go-migrate-down: ## Roll back migrations with the legacy Go runner during the migration
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/migrate down

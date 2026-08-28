@@ -143,7 +143,7 @@ If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN`
 | `METRICS_ADDR` | empty | Optional Prometheus metrics listener, for example `127.0.0.1:9090` |
 | `FRONTEND_PORT` | `3000` | Frontend port. Host port in Compose; the container always listens on `3000` internally. |
 | `CORS_ALLOWED_ORIGINS` | Value of `FRONTEND_ORIGIN` | Comma-separated list of allowed origins. Governs **both** the HTTP CORS allowlist **and** the WebSocket `Origin` check. A browser origin that isn't listed here (and isn't `localhost`) has its real-time WebSocket upgrade rejected with `403`, so live updates stop working until a manual refresh. |
-| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `LOG_LEVEL` | `debug` | Log level: `debug`, `info`, `warn`, `error`; `warning` is accepted as an alias for `warn` |
 
 > **Which source wins depends on the entry point**, and only the alias order above
 > is shared. Docker Compose lets the calling environment outrank `.env`
@@ -244,11 +244,11 @@ Set `DATABASE_URL` in your `.env` and remove the `postgres` service from the com
 The Docker Compose setup runs migrations automatically. If you need to run them manually:
 
 ```bash
-# Using the built binary
-./server/bin/migrate up
+# Using the built Rust binary
+./server-rs/target/release/cordy-migrate up
 
-# Or from source
-cd server && go run ./cmd/migrate up
+# Or from the Rust source
+cd server-rs && cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
 ```
 
 ## Usage Dashboard Rollup
@@ -284,13 +284,22 @@ External cron / systemd / Kubernetes `CronJob` setups that call `SELECT rollup_t
 `rollup_task_usage_hourly()` only processes new buckets after it starts running. If you already have `task_usage` rows from before the rollup was claimed for the first time — most commonly when upgrading from `v0.3.4` to `v0.3.5+` on a database that already has months of usage — you can run `backfill_task_usage_hourly` to seed historical buckets:
 
 ```bash
-# Docker Compose
-docker compose -f docker-compose.selfhost.yml exec backend \
-  ./backfill_task_usage_hourly --sleep-between-slices=2s
+# Docker Compose. `run` bypasses a failed backend container, and the explicit
+# entrypoint bypasses the normal migrate-before-server startup path.
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/backfill_task_usage_hourly backend \
+  --sleep-between-slices=2s
 
-# Kubernetes
-kubectl -n cordy exec deploy/cordy-backend -- \
-  ./backfill_task_usage_hourly --sleep-between-slices=2s
+# Kubernetes. Copy a backend Pod so the one-off command retains its image,
+# environment, secrets, service account, and network policy even if the
+# original container has already exited during migration.
+pod="$(kubectl -n cordy get pod \
+  -l app.kubernetes.io/component=backend \
+  -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n cordy debug "$pod" --copy-to=cordy-backfill --container=backend -- \
+  /app/backfill_task_usage_hourly --sleep-between-slices=2s
+kubectl -n cordy logs -f cordy-backfill -c backend
+kubectl -n cordy delete pod cordy-backfill
 ```
 
 The command walks `task_usage`'s full time range in monthly slices and calls the same idempotent primitive the in-process scheduler uses, so it's safe to re-run, to interrupt with Ctrl-C, and to run concurrently with the scheduler (advisory lock 4246 serialises them). Flags:
@@ -313,7 +322,7 @@ If you are upgrading from a binary that pre-dates MUL-2957 (or the auto-hook fai
 
 If you prefer to build and run services manually:
 
-**Prerequisites:** Go 1.26.6, Node.js 22, pnpm 10.28.2, PostgreSQL 17 with pgvector.
+**Prerequisites:** Rust stable, Node.js 22, pnpm 10.28.2, PostgreSQL 17 with pgvector.
 
 ```bash
 # Start your PostgreSQL (or use: docker compose up -d postgres)
@@ -548,16 +557,17 @@ GET /health
 → {"status":"ok"}
 
 GET /readyz
-→ {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+→ {"status":"ready"}
 
 GET /healthz
 → same response as /readyz
 ```
 
 Use `/health` for basic liveness / reachability checks. Use `/readyz` for
-dependency-aware readiness probes and external monitoring that should fail when
-the database is unavailable or migrations are not fully applied. `/healthz` is
-kept as an alias for operator familiarity.
+readiness probes and external monitoring that should fail when the database is
+unavailable. The Rust entrypoint runs migrations before serving, so migration
+failures prevent the service from becoming ready. `/healthz` is kept as an alias
+for operator familiarity.
 
 ## Prometheus Metrics
 
@@ -581,22 +591,55 @@ networking, allowlists, NetworkPolicy, or proxy authentication. If you bind
 trusted network, for example a host-local mapping such as
 `127.0.0.1:9090:9090`.
 
-## Go Runtime Profiling
+## Runtime Profiling
 
-The backend exposes all standard Go pprof routes on the fixed loopback-only
-management listener `127.0.0.1:6060`, including CPU, heap, allocs, goroutine,
-block, mutex, threadcreate, symbol, and trace profiles:
+The Rust backend exposes CPU pprof and, on Linux, allocation-stack heap pprof
+on the fixed loopback-only management listener `127.0.0.1:6060`:
+
+The `go tool pprof` commands below use Go's standalone profile client to inspect
+the Rust server's pprof output. A Go Cordy binary or Go backend is not required;
+the client is optional and can be replaced by any pprof-compatible viewer.
 
 ```bash
 go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
-go tool pprof http://127.0.0.1:6060/debug/pprof/heap
+curl -fsS http://127.0.0.1:6060/debug/pprof/heap -o heap.pb.gz
+go tool pprof heap.pb.gz
 ```
 
-The public API port does not serve `/debug/pprof/`. The listener address is not
-configurable and is never bound to a container or host network interface.
-Profiles can reveal process internals and some captures add CPU or memory
-pressure, so access should remain limited to operators on the same host or in
-the same container network namespace.
+The `/debug/pprof/`, `/debug/pprof/cmdline`, and `/debug/pprof/symbol`
+endpoints are available on that listener as well. The public API port does not
+serve `/debug/pprof/`. The listener address is not configurable and is never
+bound to a container or host network interface. Profiles can reveal process
+internals and captures add CPU pressure, so access should remain limited to
+operators on the same host or in the same container network namespace.
+
+The Linux production binary uses jemalloc sampling for the heap endpoint. A
+capture is a real gzipped pprof protobuf containing allocation stacks, not a
+translation of process totals. Capturing requires a writable process temporary
+directory; capture errors fail with a non-2xx response. Non-Linux builds return
+`501 Not Implemented` because the allocator profiler is Linux-only. For memory
+trends between captures, enable the private metrics listener and graph:
+
+- `process_resident_memory_bytes`
+- `process_virtual_memory_bytes`
+- `process_threads`
+- `process_open_fds`
+
+Go runtime traces are not a Rust wire contract, so the legacy
+`/debug/pprof/trace` URL returns `410 Gone`. The Rust server instead exports live
+Tokio task, resource, and operation diagnostics over the fixed loopback-only
+console endpoint `127.0.0.1:6669`. Install the official client and connect from
+the same host or container network namespace:
+
+```bash
+cargo install --locked tokio-console
+tokio-console http://127.0.0.1:6669
+```
+
+The console reports task busy/scheduled/idle time, polls, synchronization and
+timer resources. Its bind address is fixed in the binary and cannot be changed
+to a public interface through environment configuration. Structured logs keep
+their existing LOG_LEVEL, timestamp, ANSI, component, request, and user fields.
 
 A loopback listener inside a container belongs to that container's network
 namespace and is not reachable directly from the host. With the Compose stack,
@@ -604,17 +647,86 @@ capture the profile inside the backend container and copy it out:
 
 ```bash
 docker compose -f docker-compose.selfhost.yml exec backend \
-  wget -qO /tmp/heap.pprof http://127.0.0.1:6060/debug/pprof/heap
-docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pprof ./heap.pprof
-go tool pprof ./heap.pprof
+  wget -qO /tmp/cpu.pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+docker compose -f docker-compose.selfhost.yml cp backend:/tmp/cpu.pprof ./cpu.pprof
+go tool pprof ./cpu.pprof
+
+docker compose -f docker-compose.selfhost.yml exec backend \
+  wget -qO /tmp/heap.pb.gz http://127.0.0.1:6060/debug/pprof/heap
+docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pb.gz ./heap.pb.gz
+go tool pprof ./heap.pb.gz
+```
+
+For an interactive Tokio console session against Compose, run the locally
+installed client in the backend container's network namespace without
+publishing the management port:
+
+```bash
+backend_id="$(docker compose -f docker-compose.selfhost.yml ps -q backend)"
+sudo nsenter --target "$(docker inspect --format '{{.State.Pid}}' "$backend_id")" \
+  --net tokio-console http://127.0.0.1:6669
 ```
 
 ## Upgrading
 
+Re-run the installer to move the Compose assets and both Rust production images
+to the same latest release tag:
+
 ```bash
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | \
+  bash -s -- --with-server
 ```
 
-Pin `CORDY_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
+The installer records the selected release in `.env` as `CORDY_IMAGE_TAG`, so
+the checked-out Compose files, backend image, and web image cannot drift across
+versions. To install or roll back to an exact release, select it explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | \
+  CORDY_SELFHOST_REF=v0.2.4 bash -s -- --with-server
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:CORDY_SELFHOST_REF = "v0.2.4"
+$env:CORDY_MODE = "with-server"
+irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
+```
+
+Each run fetches the requested Git ref, writes the matching image tag, pulls
+both images, and recreates the services. An invalid or unavailable ref now
+fails before Compose changes the running deployment. Migrations still run
+automatically on backend startup and are not rolled back when an older image is
+selected. Before rolling back across a schema change, confirm the older backend
+supports the current schema or restore the matching database backup.
+
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
+
+### Linux systemd lifecycle
+
+On a Linux host with systemd, opt in while installing the self-host stack:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | \
+  bash -s -- --with-server --systemd
+```
+
+The installer generates `~/.config/systemd/user/cordy-selfhost.service` with
+the exact installation directory and Docker executable, validates the same
+Compose file before startup, enables user lingering, and enables the service.
+It does not introduce a second configuration or deployment path: the unit runs
+the same pinned Rust backend/web images and `.env` used by the installer.
+
+```bash
+systemctl --user status cordy-selfhost.service
+systemctl --user restart cordy-selfhost.service
+journalctl --user -u cordy-selfhost.service
+```
+
+Re-run the installer to upgrade or roll back; it updates `.env` and recreates
+the services before refreshing the same unit. `install.sh --stop` disables the
+unit and then runs Compose down, so the stack stays stopped after reboot. The
+explicit `--systemd` option fails on macOS, Windows, or Linux sessions without
+a working systemd user manager instead of claiming persistence it cannot
+provide.

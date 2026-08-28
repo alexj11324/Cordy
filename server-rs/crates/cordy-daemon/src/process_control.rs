@@ -379,7 +379,7 @@ where
     .await
 }
 
-async fn stop_daemon_with_preflight<C, K, T>(
+pub(crate) async fn stop_daemon_with_preflight<C, K, T>(
     control: &C,
     clock: &K,
     terminator: &T,

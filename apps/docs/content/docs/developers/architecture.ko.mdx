@@ -1,16 +1,16 @@
 ---
 title: 프로젝트 아키텍처
-description: Cordy의 클라이언트, Go 서비스, 실행 데몬, 공유 프런트엔드 패키지가 함께 작동하는 방식을 알아봅니다.
+description: Cordy의 클라이언트, Rust 서비스, 실행 데몬, 공유 프런트엔드 패키지가 함께 작동하는 방식을 알아봅니다.
 ---
 
-Cordy는 Go backend, 여러 클라이언트, 실행 컴퓨터에서 동작하는 데몬으로 구성됩니다. PostgreSQL이 협업 데이터를 저장하고 데몬이 태스크를 가져가 로컬 AI 코딩 도구를 호출합니다.
+Cordy는 Rust backend, 여러 클라이언트, 실행 컴퓨터에서 동작하는 데몬으로 구성됩니다. PostgreSQL이 협업 데이터를 저장하고 데몬이 태스크를 가져가 로컬 AI 코딩 도구를 호출합니다.
 
 ```text
 Web / Desktop / Mobile / CLI
              │
        HTTP + WebSocket
              │
-      Go API ───────── PostgreSQL
+     Rust API ──────── PostgreSQL
              │
       daemon WebSocket
              │
@@ -23,7 +23,8 @@ Web / Desktop / Mobile / CLI
 
 | 디렉터리 | 역할 | 주요 기술 |
 | --- | --- | --- |
-| `server/` | API, 인증, 태스크 스케줄링, 연동, CLI, 데몬 | Go, Chi, sqlc, gorilla/websocket |
+| `server-rs/` | production API, 인증, 태스크 스케줄링, 연동, CLI, migration runner, 데몬 | Rust, Axum, Tokio, SQLx |
+| `server/` | 공유 SQL migration, 패키지 binary, 전환 기간의 legacy compatibility 코드 | SQL, shell, Go compatibility |
 | `apps/web/` | 브라우저 클라이언트와 landing page | Next.js App Router |
 | `apps/desktop/` | 데스크톱 클라이언트와 로컬 프로세스 관리 | Electron, electron-vite |
 | `apps/mobile/` | 독립적인 iOS 클라이언트 | Expo, React Native |
@@ -71,28 +72,27 @@ API 응답은 `packages/core/api/` 경계에서 zod schema로 parsing합니다. 
 
 ## Backend 계층
 
-주요 entry point는 `server/cmd/`에 있습니다.
+production entry point는 `server-rs/crates/`의 Cargo package입니다.
 
 | entry point | 역할 |
 | --- | --- |
-| `server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
-| `cordy` | CLI와 로컬 데몬 |
-| `migrate` | 데이터베이스 migration 실행 |
-| `backfill_*` | 특정 버전의 데이터 backfill 도구 |
+| `server-rs/crates/cordy-server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
+| `server-rs/crates/cordy-cli`(`cordy`) | CLI와 로컬 데몬 |
+| `server-rs/crates/cordy-migrate` | `server/migrations/`의 데이터베이스 migration 실행 |
+| `cordy-migrate`의 `backfill_*` binary | 특정 버전의 데이터 backfill 도구 |
 
 요청은 일반적으로 다음 방향으로 흐릅니다.
 
 ```text
-router → middleware → handler → service → sqlc query → PostgreSQL
+cordy-server router → cordy-middleware → cordy-handler → cordy-service → cordy-db query module → PostgreSQL
 ```
 
-- `internal/middleware/`는 인증, 워크스페이스, 요청 경계를 처리합니다.
-- `internal/handler/`는 HTTP 입력을 해석하고 응답을 생성합니다.
-- `internal/service/`는 여러 query에 걸친 비즈니스 흐름과 transaction을 담당합니다.
-- `pkg/db/queries/`에는 직접 작성한 SQL이 있습니다.
-- `pkg/db/generated/`는 sqlc가 생성하므로 직접 수정하면 안 됩니다.
-- `internal/integrations/`는 GitHub, Slack, Feishu 같은 외부 이벤트를 처리합니다.
-- `internal/storage/`는 로컬 또는 S3 첨부 파일을 처리합니다.
+- `cordy-middleware`는 인증, 워크스페이스, 요청 경계를 처리합니다.
+- `cordy-handler`는 HTTP/WebSocket 입력을 해석하고 응답 및 첨부 storage wiring을 담당합니다.
+- `cordy-service`는 여러 query에 걸친 비즈니스 흐름과 transaction을 담당합니다.
+- `cordy-db/src/queries/`에는 직접 작성한 SQLx query module이 있으며 Rust 경로에는 생성된 sqlc 계층이 없습니다.
+- `cordy-lark`, `cordy-wecom`, `cordy-dingtalk`, `cordy-slack`, `cordy-telegram`, `cordy-composio`, `cordy-vcs`, `cordy-ghsnapshot` 같은 integration crate가 외부 경계를 담당합니다.
+- `cordy-realtime`, `cordy-redis`, `cordy-daemon`은 realtime fanout, 선택적 Redis 조율, 로컬 실행 lifecycle을 담당합니다.
 
 PostgreSQL은 비즈니스 데이터의 신뢰할 수 있는 원본입니다. Redis는 선택 컴포넌트이며 여러 인스턴스 간 실시간 이벤트, cache, 임시 조율에 사용합니다. 설정하지 않으면 단일 인스턴스 개발 환경이 프로세스 내부 구현을 사용합니다.
 
@@ -100,8 +100,8 @@ PostgreSQL은 비즈니스 데이터의 신뢰할 수 있는 원본입니다. Re
 
 Cordy에는 서로 다른 두 WebSocket 경로가 있습니다.
 
-- `internal/realtime/`은 이슈, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
-- `internal/daemonws/`는 데몬을 연결해 런타임을 깨우고 daemon RPC를 실행합니다.
+- `cordy-realtime`과 `cordy-server/src/realtime_runtime.rs`는 이슈, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
+- `cordy-handler`의 daemon WebSocket route와 `cordy-daemon`은 실행 컴퓨터를 연결해 런타임을 깨우고 daemon RPC를 실행합니다.
 
 WebSocket은 지연을 줄이지만 최종 상태는 데이터베이스에 있습니다. 클라이언트는 재연결 후 query로 다시 동기화해야 합니다. 데몬도 polling 경로를 유지해 한 번의 연결 끊김으로 queued 태스크가 영구히 멈추지 않게 합니다.
 
@@ -111,7 +111,7 @@ WebSocket은 지연을 줄이지만 최종 상태는 데이터베이스에 있�
 2. `TaskService`가 queued 태스크를 만들고 해당 런타임에 알립니다.
 3. 데몬이 daemon API를 통해 태스크를 가져갑니다.
 4. 서버가 태스크와 에이전트에 연결된 임시 자격 증명을 발급합니다.
-5. 데몬이 로컬 디렉터리를 준비하고 `pkg/agent`에서 해당 provider backend를 호출합니다.
+5. 데몬이 로컬 디렉터리를 준비하고 `cordy-agent`와 production provider adapter를 통해 해당 provider backend를 호출합니다.
 6. 도구가 로컬에서 실행되고 데몬이 진행 상황, 메시지, 최종 상태를 업로드합니다.
 7. 서버가 태스크와 이슈를 업데이트하고 실시간 이벤트로 클라이언트를 새로 고칩니다.
 

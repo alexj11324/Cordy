@@ -19,9 +19,6 @@
 //! daemon crate does not depend on those server packages (same stand-in
 //! pattern as types.rs). Wire values are byte-identical.
 
-// S9-integration: consumed by daemon.go core (lane B) terminal paths; silence dead-code until wired.
-#![allow(dead_code)]
-
 use regex::Regex;
 
 /// `FailureReasonIterationLimit` = string(taskfailure.ReasonIterationLimit).

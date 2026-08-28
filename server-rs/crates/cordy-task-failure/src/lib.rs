@@ -300,6 +300,7 @@ pub fn classify(raw_error: &str) -> Reason {
             "stream disconnected",
             OPENCODE_STREAM_ENDED_PREFIX,
             "connection closed",
+            "connection reset",
             "mid-response",
             "error sending request",
             "unable to connect",
@@ -638,6 +639,10 @@ mod tests {
         );
         assert_eq!(
             classify("context deadline exceeded"),
+            Reason::AGENT_PROVIDER_NETWORK
+        );
+        assert_eq!(
+            classify("connection reset by peer"),
             Reason::AGENT_PROVIDER_NETWORK
         );
         assert_eq!(

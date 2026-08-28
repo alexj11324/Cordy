@@ -326,10 +326,10 @@ impl SlackChannel {
                 }
                 Ok(())
             }
-            EnvelopeKind::Disconnect => {
-                let reason = envelope.disconnect_reason.as_deref().unwrap_or("unknown");
-                anyhow::bail!("slack: socket mode disconnect requested: {reason}")
-            }
+            // SocketModeStream::run handles disconnect control frames before
+            // invoking the channel callback. Keep this arm explicit for
+            // exhaustiveness if a decoded envelope is routed here directly.
+            EnvelopeKind::Disconnect => Ok(()),
             // hello/connecting/incoming-errors are lifecycle noise.
             EnvelopeKind::Other => Ok(()),
         }

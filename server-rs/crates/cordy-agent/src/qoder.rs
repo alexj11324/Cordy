@@ -27,7 +27,9 @@ use crate::contract::{
 };
 use crate::env::configure_child_env;
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
+use crate::model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -35,18 +37,19 @@ use crate::version::check_minimum;
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const KILL_GRACE: Duration = Duration::from_secs(10);
+const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
-const DISCOVERY_OUTPUT_MAX: u64 = 4 * 1024 * 1024;
-const KIMI_THINKING_MIN_VERSION: &str = "0.29.0";
 
-static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
-    BTreeMap::from([
-        ("--acp", BlockedArgMode::Standalone),
-        ("acp", BlockedArgMode::Standalone),
-        ("--yolo", BlockedArgMode::Standalone),
-    ])
-});
+pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("--acp", BlockedArgMode::Standalone),
+            ("acp", BlockedArgMode::Standalone),
+            ("--yolo", BlockedArgMode::Standalone),
+        ])
+    });
 static TRAECLI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| {
         BTreeMap::from([
@@ -68,25 +71,13 @@ static KIRO_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = Laz
         ("--trust-tools", BlockedArgMode::WithValue),
     ])
 });
+static KIMI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| BTreeMap::from([("acp", BlockedArgMode::Standalone)]));
 static QWENPAW_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| {
         BTreeMap::from([
             ("acp", BlockedArgMode::Standalone),
             ("--workspace", BlockedArgMode::WithValue),
-        ])
-    });
-static KIMI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
-    LazyLock::new(|| BTreeMap::from([("acp", BlockedArgMode::Standalone)]));
-static REASONIX_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
-    LazyLock::new(|| {
-        BTreeMap::from([
-            ("acp", BlockedArgMode::Standalone),
-            ("--model", BlockedArgMode::WithValue),
-            ("--profile", BlockedArgMode::WithValue),
-            ("--planner", BlockedArgMode::WithValue),
-            ("--sandbox-network", BlockedArgMode::WithValue),
-            ("--sandbox-bash", BlockedArgMode::WithValue),
-            ("--workspace-only", BlockedArgMode::Standalone),
         ])
     });
 static GROK_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
@@ -141,6 +132,18 @@ static DIM_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = Lazy
         ("-h", BlockedArgMode::Standalone),
     ])
 });
+static REASONIX_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("acp", BlockedArgMode::Standalone),
+            ("--model", BlockedArgMode::WithValue),
+            ("--profile", BlockedArgMode::WithValue),
+            ("--planner", BlockedArgMode::WithValue),
+            ("--sandbox-network", BlockedArgMode::WithValue),
+            ("--sandbox-bash", BlockedArgMode::WithValue),
+            ("--workspace-only", BlockedArgMode::Standalone),
+        ])
+    });
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -149,73 +152,16 @@ static OUTPUT_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)API call failed after \d+ retr(?:y|ies)")
         .unwrap_or_else(|error| panic!("invalid Qoder output-error regex: {error}"))
 });
-
-#[derive(Debug, Default)]
-struct ProviderErrorState {
-    suffix: Vec<u8>,
-    marker: bool,
-    error_kind: bool,
-    found: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-struct ProviderErrorTracker {
-    state: Arc<Mutex<ProviderErrorState>>,
-}
-
-impl ProviderErrorTracker {
-    fn push(&self, buffer: &[u8]) {
-        let Ok(mut state) = self.state.lock() else {
-            return;
-        };
-        for segment in buffer.split_inclusive(|byte| *byte == b'\n') {
-            let ends_line = segment.ends_with(b"\n");
-            let mut window = Vec::with_capacity(state.suffix.len().saturating_add(segment.len()));
-            window.extend_from_slice(&state.suffix);
-            window.extend_from_slice(segment);
-            let rendered = String::from_utf8_lossy(&window);
-            let lower = rendered.to_ascii_lowercase();
-            state.marker |=
-                lower.contains("[error]") || rendered.contains('⚠') || rendered.contains('❌');
-            state.error_kind |= [
-                "badrequesterror",
-                "authenticationerror",
-                "ratelimiterror",
-                "non-retryable",
-                "api call failed",
-            ]
-            .iter()
-            .any(|needle| lower.contains(needle))
-                || (lower.contains("http ")
-                    && lower.split("http ").skip(1).any(|tail| {
-                        tail.as_bytes().get(..3).is_some_and(|code| {
-                            code[0] == b'4' && code.iter().all(u8::is_ascii_digit)
-                        })
-                    }));
-            state.found |=
-                TERMINAL_PROVIDER_ERROR.is_match(&rendered) || (state.marker && state.error_kind);
-            if ends_line {
-                state.suffix.clear();
-                state.marker = false;
-                state.error_kind = false;
-            } else {
-                const SUFFIX_BYTES: usize = 256;
-                state.suffix.clear();
-                let start = window.len().saturating_sub(SUFFIX_BYTES);
-                state.suffix.extend_from_slice(&window[start..]);
-            }
-        }
-    }
-
-    fn found(&self) -> bool {
-        self.state.lock().is_ok_and(|state| state.found)
-    }
-}
+static HERMES_SESSION_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?im)^\s*(?:RuntimeError:\s*)?No LLM provider configured[^\r\n]*")
+        .unwrap_or_else(|error| panic!("invalid Hermes provider-error regex: {error}"))
+});
 
 #[derive(Debug, Clone)]
 pub struct QoderConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
     pub default_command: String,
     pub provider: String,
     pub launch_args: Vec<String>,
@@ -227,11 +173,10 @@ pub struct QoderConfig {
     pub coding_project_meta: Option<String>,
     pub full_text_output: bool,
     pub usage_model_unknown: bool,
-    pub use_system_prompt: bool,
-    pub strict_stop_reason: bool,
     pub launch_tail: Vec<String>,
     pub effort_process_arg: bool,
     pub explicit_authentication: bool,
+    pub use_system_prompt: bool,
     pub require_load_capability: bool,
     pub minimum_agent_version: Option<&'static str>,
     pub session_config: Vec<(String, String)>,
@@ -246,6 +191,7 @@ impl Default for QoderConfig {
         Self {
             command: RuntimeCommand::default(),
             env: BTreeMap::new(),
+            builtin_runtime: false,
             default_command: "qodercli".to_string(),
             provider: "qoder".to_string(),
             launch_args: vec!["--yolo".to_string(), "--acp".to_string()],
@@ -257,11 +203,10 @@ impl Default for QoderConfig {
             coding_project_meta: None,
             full_text_output: false,
             usage_model_unknown: false,
-            use_system_prompt: true,
-            strict_stop_reason: false,
             launch_tail: Vec::new(),
             effort_process_arg: false,
             explicit_authentication: false,
+            use_system_prompt: true,
             require_load_capability: false,
             minimum_agent_version: None,
             session_config: Vec::new(),
@@ -289,7 +234,81 @@ impl QoderBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_models(&self.config, cache, cancellation, timeout).await
+        self.discover_models_for_runtime(&self.config.provider, cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so custom profiles that
+    /// share a Qoder-compatible executable do not share a catalog cache entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(&self.config, runtime_scope, cache, cancellation, timeout).await
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HermesConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HermesBackend {
+    inner: QoderBackend,
+}
+
+impl HermesBackend {
+    pub fn new(config: HermesConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                builtin_runtime: config.builtin_runtime,
+                default_command: "hermes".to_string(),
+                provider: "hermes".to_string(),
+                launch_args: vec!["acp".to_string()],
+                discovery_args: vec!["acp".to_string()],
+                resume_method: "session/resume".to_string(),
+                use_system_prompt: false,
+                ..QoderConfig::default()
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models_for_runtime(runtime_scope, cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for HermesBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
     }
 }
 
@@ -310,6 +329,7 @@ impl TraecliBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "traecli".to_string(),
                 provider: "traecli".to_string(),
                 launch_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
@@ -321,11 +341,10 @@ impl TraecliBackend {
                 coding_project_meta: None,
                 full_text_output: false,
                 usage_model_unknown: false,
-                use_system_prompt: true,
-                strict_stop_reason: false,
                 launch_tail: Vec::new(),
                 effort_process_arg: false,
                 explicit_authentication: false,
+                use_system_prompt: true,
                 require_load_capability: false,
                 minimum_agent_version: None,
                 session_config: Vec::new(),
@@ -373,6 +392,7 @@ impl KiroBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "kiro-cli".to_string(),
                 provider: "kiro".to_string(),
                 launch_args: ["acp", "--trust-all-tools"].map(str::to_string).to_vec(),
@@ -384,11 +404,10 @@ impl KiroBackend {
                 coding_project_meta: None,
                 full_text_output: false,
                 usage_model_unknown: false,
-                use_system_prompt: true,
-                strict_stop_reason: false,
                 launch_tail: Vec::new(),
                 effort_process_arg: false,
                 explicit_authentication: false,
+                use_system_prompt: true,
                 require_load_capability: false,
                 minimum_agent_version: None,
                 session_config: Vec::new(),
@@ -436,6 +455,7 @@ impl QwenpawBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "qwenpaw".to_string(),
                 provider: "qwenpaw".to_string(),
                 launch_args: vec!["acp".to_string()],
@@ -447,11 +467,10 @@ impl QwenpawBackend {
                 coding_project_meta: Some("qwenpaw.coding_project_dir".to_string()),
                 full_text_output: true,
                 usage_model_unknown: true,
-                use_system_prompt: true,
-                strict_stop_reason: false,
                 launch_tail: Vec::new(),
                 effort_process_arg: false,
                 explicit_authentication: false,
+                use_system_prompt: true,
                 require_load_capability: false,
                 minimum_agent_version: None,
                 session_config: Vec::new(),
@@ -503,7 +522,9 @@ impl KimiBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_kimi_models(&self.inner.config, cache, cancellation, timeout).await
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
     }
 }
 
@@ -551,7 +572,6 @@ impl ReasonixBackend {
                 launch_args,
                 reject_failed_load: true,
                 use_system_prompt: false,
-                strict_stop_reason: true,
                 ..QoderConfig::default()
             }),
         }
@@ -758,6 +778,19 @@ pub fn build_kiro_args(options: &ExecOptions) -> Vec<String> {
     )
 }
 
+pub fn build_kimi_args(options: &ExecOptions) -> Vec<String> {
+    build_session_args(
+        &QoderConfig {
+            provider: "kimi".to_string(),
+            launch_args: vec!["acp".to_string()],
+            discovery_args: vec!["acp".to_string()],
+            default_command: "kimi".to_string(),
+            ..QoderConfig::default()
+        },
+        options,
+    )
+}
+
 pub fn build_qwenpaw_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(
         &QoderConfig {
@@ -775,24 +808,6 @@ pub fn build_qwenpaw_args(options: &ExecOptions) -> Vec<String> {
     )
 }
 
-pub fn build_kimi_args(options: &ExecOptions) -> Vec<String> {
-    build_session_args(
-        &QoderConfig {
-            provider: "kimi".to_string(),
-            launch_args: vec!["acp".to_string()],
-            discovery_args: vec!["acp".to_string()],
-            default_command: "kimi".to_string(),
-            ..QoderConfig::default()
-        },
-        options,
-    )
-}
-
-pub fn build_reasonix_args(options: &ExecOptions) -> Vec<String> {
-    let backend = ReasonixBackend::new(ReasonixConfig::default());
-    build_session_args(&backend.inner.config, options)
-}
-
 pub fn build_grok_args(options: &ExecOptions) -> Vec<String> {
     let backend = GrokBackend::new(GrokConfig::default());
     build_session_args(&backend.inner.config, options)
@@ -805,6 +820,11 @@ pub fn build_mcode_args(options: &ExecOptions) -> Vec<String> {
 
 pub fn build_dim_args(options: &ExecOptions) -> Vec<String> {
     let backend = DimBackend::new(DimConfig::default());
+    build_session_args(&backend.inner.config, options)
+}
+
+pub fn build_reasonix_args(options: &ExecOptions) -> Vec<String> {
+    let backend = ReasonixBackend::new(ReasonixConfig::default());
     build_session_args(&backend.inner.config, options)
 }
 
@@ -823,61 +843,38 @@ fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String
     args
 }
 
-fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMode> {
+pub(crate) fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMode> {
     match provider {
         "traecli" => &TRAECLI_BLOCKED_ARGS,
         "kiro" => &KIRO_BLOCKED_ARGS,
-        "qwenpaw" => &QWENPAW_BLOCKED_ARGS,
         "kimi" => &KIMI_BLOCKED_ARGS,
-        "reasonix" => &REASONIX_BLOCKED_ARGS,
+        "qwenpaw" => &QWENPAW_BLOCKED_ARGS,
         "grok" => &GROK_BLOCKED_ARGS,
         "mcode" => &MCODE_BLOCKED_ARGS,
         "dim" => &DIM_BLOCKED_ARGS,
+        "reasonix" => &REASONIX_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
 
-async fn discover_models(
+async fn discover_models_with_scope(
     config: &QoderConfig,
+    runtime_scope: &str,
     cache: &CatalogCache,
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new(&config.provider, &config.command) else {
+    let scope = if runtime_scope.trim().is_empty() {
+        config.provider.as_str()
+    } else {
+        runtime_scope
+    };
+    let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
         return Catalog::default();
     };
     if let Some(catalog) = cache.get(&key) {
         return catalog;
     }
-    let catalog = discover_acp_session(config, cancellation, timeout)
-        .await
-        .map_or_else(Catalog::default, |(initialize, session)| {
-            if let Some(minimum) = config.minimum_agent_version {
-                if check_minimum(extract_agent_version(&initialize), minimum, false).is_err() {
-                    return Catalog::default();
-                }
-            }
-            let mut models = parse_acp_session_models(&session, &config.provider);
-            if matches!(config.provider.as_str(), "reasonix" | "dim") {
-                annotate_acp_effort(&mut models, &session);
-            }
-            if config.provider == "grok" {
-                annotate_grok_thinking(&mut models);
-            }
-            Catalog {
-                models,
-                fallback: false,
-            }
-        });
-    let _ = cache.insert(key, catalog.clone());
-    catalog
-}
-
-async fn discover_acp_session(
-    config: &QoderConfig,
-    cancellation: CancellationToken,
-    timeout: Duration,
-) -> Option<(Value, Value)> {
     let command_path = if config.command.path.is_empty() {
         config.default_command.as_str()
     } else {
@@ -894,8 +891,12 @@ async fn discover_acp_session(
         {
             Ok(directory) => Some(directory),
             Err(error) => {
-                tracing::debug!(provider = "reasonix", error = %error, "ACP model discovery state isolation failed");
-                return None;
+                tracing::debug!(
+                    provider = "reasonix",
+                    error = %error,
+                    "ACP model discovery state isolation failed"
+                );
+                return Catalog::default();
             }
         }
     } else {
@@ -909,6 +910,9 @@ async fn discover_acp_session(
         .stderr(Stdio::null())
         .kill_on_drop(false);
     configure_child_env(&mut command, &config.env);
+    if config.provider == "hermes" {
+        command.env("HERMES_YOLO_MODE", "1");
+    }
     if let Some(directory) = isolated_state.as_ref() {
         command.env("REASONIX_STATE_HOME", directory.path());
     }
@@ -916,16 +920,16 @@ async fn discover_acp_session(
         Ok(tree) => tree,
         Err(error) => {
             tracing::debug!(provider = %config.provider, error = %error, "ACP model discovery process failed to start");
-            return None;
+            return Catalog::default();
         }
     };
     let Some(stdin) = tree.child_mut().stdin.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return None;
+        return Catalog::default();
     };
     let Some(stdout) = tree.child_mut().stdout.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return None;
+        return Catalog::default();
     };
     let provider = config.provider.clone();
     let explicit_authentication = config.explicit_authentication;
@@ -983,189 +987,81 @@ async fn discover_acp_session(
     if !handshake.is_finished() {
         handshake.abort();
     }
-    result
-}
-
-async fn discover_kimi_models(
-    config: &QoderConfig,
-    cache: &CatalogCache,
-    cancellation: CancellationToken,
-    timeout: Duration,
-) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new("kimi", &config.command) else {
-        return Catalog::default();
-    };
-    if let Some(catalog) = cache.get(&key) {
-        return catalog;
-    }
-    let Some((initialize, session)) =
-        discover_acp_session(config, cancellation.clone(), timeout).await
-    else {
-        return Catalog::default();
-    };
-    let mut catalog = Catalog {
-        models: parse_acp_session_models(&session, "kimi"),
-        fallback: false,
-    };
-    let version = initialize
-        .get("agentInfo")
-        .or_else(|| initialize.get("agent_info"))
-        .and_then(|info| info.get("version"))
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if check_minimum(version, KIMI_THINKING_MIN_VERSION, false).is_ok() {
-        if let Some(thinking) = discover_kimi_thinking(config, cancellation, timeout).await {
-            for model in &mut catalog.models {
-                if let Some(model_thinking) = thinking.get(&model.id) {
-                    model.thinking = Some(model_thinking.clone());
-                }
+    let catalog = result.map_or_else(Catalog::default, |(initialize, session)| {
+        if let Some(minimum) = config.minimum_agent_version {
+            if check_minimum(extract_agent_version(&initialize), minimum, false).is_err() {
+                return Catalog::default();
             }
-        } else {
-            tracing::debug!(
-                provider = "kimi",
-                reason = "provider_list_unavailable",
-                "per-model thinking discovery unavailable"
-            );
         }
-    }
+        let mut models = if config.provider == "hermes" {
+            parse_hermes_session_models(&session)
+        } else {
+            parse_acp_session_models(&session, &config.provider)
+        };
+        if matches!(config.provider.as_str(), "dim" | "reasonix") {
+            annotate_acp_effort(&mut models, &session);
+        }
+        if config.provider == "grok" {
+            annotate_grok_thinking(&mut models);
+        }
+        Catalog {
+            models,
+            fallback: false,
+        }
+    });
     let _ = cache.insert(key, catalog.clone());
     catalog
 }
 
-async fn discover_kimi_thinking(
-    config: &QoderConfig,
-    cancellation: CancellationToken,
-    timeout: Duration,
-) -> Option<BTreeMap<String, crate::model::ModelThinking>> {
-    let command_path = if config.command.path.is_empty() {
-        config.default_command.as_str()
-    } else {
-        config.command.path.as_str()
+fn parse_hermes_session_models(result: &Value) -> Vec<Model> {
+    let Some(models) = result.get("models") else {
+        return Vec::new();
     };
-    let prefix = filter_launch_prefix(&config.command.prefix, &KIMI_BLOCKED_ARGS);
-    let mut argv = prefix.args;
-    argv.extend(["provider", "list", "--json"].map(str::to_string));
-    let mut command = Command::new(command_path);
-    command
-        .args(argv)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(false);
-    configure_child_env(&mut command, &config.env);
-    let mut tree = OwnedProcessTree::spawn(&mut command).await.ok()?;
-    let stdout = tree.child_mut().stdout.take()?;
-    let mut reader = tokio::spawn(async move {
-        let mut output = Vec::new();
-        stdout
-            .take(DISCOVERY_OUTPUT_MAX.saturating_add(1))
-            .read_to_end(&mut output)
-            .await
-            .map(|_| output)
-    });
-    let timeout = if timeout.is_zero() {
-        DISCOVERY_TIMEOUT
-    } else {
-        timeout
+    let current = models
+        .get("currentModelId")
+        .or_else(|| models.get("current_model_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let Some(available) = models
+        .get("availableModels")
+        .or_else(|| models.get("available_models"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
     };
-    let succeeded = tokio::select! {
-        status = tree.wait() => status.is_ok_and(|status| status.success()),
-        () = cancellation.cancelled() => false,
-        () = tokio::time::sleep(timeout) => false,
-    };
-    let output = if succeeded {
-        tokio::time::timeout(TERMINATION_GRACE, &mut reader)
-            .await
-            .ok()
-            .and_then(Result::ok)
-            .and_then(Result::ok)
-            .filter(|output| {
-                u64::try_from(output.len()).is_ok_and(|len| len <= DISCOVERY_OUTPUT_MAX)
+    let mut seen = std::collections::BTreeSet::new();
+    available
+        .iter()
+        .filter_map(|entry| {
+            let id = entry
+                .get("modelId")
+                .or_else(|| entry.get("model_id"))
+                .and_then(Value::as_str)?
+                .trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                return None;
+            }
+            let label = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty() && !label.eq_ignore_ascii_case("unknown"))
+                .unwrap_or(id);
+            let provider = id
+                .split_once(':')
+                .map(|(provider, _)| provider)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or("hermes");
+            Some(Model {
+                id: id.to_string(),
+                label: label.to_string(),
+                provider: provider.to_string(),
+                default: id == current,
+                ..Model::default()
             })
-    } else {
-        None
-    };
-    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-    if !reader.is_finished() {
-        reader.abort();
-    }
-    output.and_then(|output| parse_kimi_thinking(&output))
-}
-
-fn parse_kimi_thinking(output: &[u8]) -> Option<BTreeMap<String, crate::model::ModelThinking>> {
-    let response: Value = serde_json::from_slice(output).ok()?;
-    let models = response.get("models")?.as_object()?;
-    if models.is_empty() {
-        return None;
-    }
-    let mut parsed = BTreeMap::new();
-    for (model_id, model) in models {
-        let model_id = model_id.trim();
-        if model_id.is_empty() {
-            continue;
-        }
-        let efforts = model
-            .get("supportEfforts")
-            .or_else(|| model.get("support_efforts"))
-            .and_then(Value::as_array)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let mut seen = std::collections::BTreeSet::new();
-        let supported_levels: Vec<_> = efforts
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|effort| valid_dynamic_value(effort) && seen.insert((*effort).to_string()))
-            .map(|effort| crate::model::ThinkingLevel {
-                value: effort.to_string(),
-                label: thinking_label(effort),
-                description: String::new(),
-            })
-            .collect();
-        if supported_levels.is_empty() {
-            continue;
-        }
-        let default_level = model
-            .get("defaultEffort")
-            .or_else(|| model.get("default_effort"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|default| seen.contains(*default))
-            .unwrap_or_default()
-            .to_string();
-        parsed.insert(
-            model_id.to_string(),
-            crate::model::ModelThinking {
-                supported_levels,
-                default_level,
-            },
-        );
-    }
-    Some(parsed)
-}
-
-fn valid_dynamic_value(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value.chars().enumerate().all(|(index, character)| {
-            character.is_ascii_alphanumeric()
-                || ((character == '-' || character == '_' || character == '.') && index > 0)
         })
-}
-
-fn thinking_label(value: &str) -> String {
-    match value {
-        "low" => "Low".to_string(),
-        "medium" => "Medium".to_string(),
-        "high" => "High".to_string(),
-        "max" => "Max".to_string(),
-        _ => {
-            let mut characters = value.chars();
-            characters.next().map_or_else(String::new, |first| {
-                first.to_uppercase().collect::<String>() + characters.as_str()
-            })
-        }
-    }
+        .collect()
 }
 
 #[async_trait]
@@ -1195,6 +1091,9 @@ impl Backend for QoderBackend {
             .stderr(Stdio::piped())
             .kill_on_drop(false);
         configure_child_env(&mut command, &self.config.env);
+        if self.config.provider == "hermes" {
+            command.env("HERMES_YOLO_MODE", "1");
+        }
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -1224,7 +1123,6 @@ impl Backend for QoderBackend {
         let started = Instant::now();
         let started_at = SystemTime::now();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
-        let terminal_stderr = ProviderErrorTracker::default();
         let prompt = prompt.to_string();
         let provider = self.config.provider.clone();
         let resume_method = self.config.resume_method.clone();
@@ -1235,7 +1133,6 @@ impl Backend for QoderBackend {
         let full_text_output = self.config.full_text_output;
         let usage_model_unknown = self.config.usage_model_unknown;
         let use_system_prompt = self.config.use_system_prompt;
-        let strict_stop_reason = self.config.strict_stop_reason;
         let explicit_authentication = self.config.explicit_authentication;
         let require_load_capability = self.config.require_load_capability;
         let minimum_agent_version = self.config.minimum_agent_version;
@@ -1244,6 +1141,7 @@ impl Backend for QoderBackend {
         let retry_held_session = self.config.retry_held_session;
         let held_retry_attempts = self.config.held_retry_attempts;
         let held_retry_delay = self.config.held_retry_delay;
+        let builtin_runtime = self.config.builtin_runtime;
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
@@ -1256,7 +1154,6 @@ impl Backend for QoderBackend {
 
         tokio::spawn(async move {
             let stderr_reader = stderr_tail.clone();
-            let stderr_errors = terminal_stderr.clone();
             let mut stderr_task = tokio::spawn(async move {
                 let mut stderr = stderr;
                 let mut buffer = [0_u8; 8192];
@@ -1265,7 +1162,6 @@ impl Backend for QoderBackend {
                         break;
                     }
                     stderr_reader.push(&buffer[..bytes]);
-                    stderr_errors.push(&buffer[..bytes]);
                 }
             });
             let mut protocol_task = tokio::spawn(run_protocol(
@@ -1284,7 +1180,6 @@ impl Backend for QoderBackend {
                 full_text_output,
                 usage_model_unknown,
                 use_system_prompt,
-                strict_stop_reason,
                 explicit_authentication,
                 have_api_key,
                 require_load_capability,
@@ -1294,6 +1189,7 @@ impl Backend for QoderBackend {
                 retry_held_session,
                 held_retry_attempts,
                 held_retry_delay,
+                builtin_runtime,
                 published_session.clone(),
             ));
             let end = if timeout.is_zero() {
@@ -1338,12 +1234,9 @@ impl Backend for QoderBackend {
             }
             let stderr = stderr_tail.tail();
             if outcome.status == "completed" {
-                if let Some(provider_error) = provider_error(
-                    &provider,
-                    terminal_stderr.found(),
-                    &stderr,
-                    &outcome.full_output,
-                ) {
+                if let Some(provider_error) =
+                    provider_error(&provider, &stderr, &outcome.full_output)
+                {
                     outcome.status = "failed".to_string();
                     outcome.error = provider_error;
                 }
@@ -1439,7 +1332,6 @@ async fn run_protocol(
     full_text_output: bool,
     usage_model_unknown: bool,
     use_system_prompt: bool,
-    strict_stop_reason: bool,
     explicit_authentication: bool,
     have_api_key: bool,
     require_load_capability: bool,
@@ -1449,6 +1341,7 @@ async fn run_protocol(
     retry_held_session: bool,
     held_retry_attempts: u8,
     held_retry_delay: Duration,
+    builtin_runtime: bool,
     published_session: Arc<Mutex<String>>,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
@@ -1504,8 +1397,11 @@ async fn run_protocol(
             ));
         }
     }
-    let mcp_servers =
-        filter_acp_mcp_servers(mcp_servers, parse_acp_mcp_capabilities(&initialize), false);
+    let mcp_servers = filter_acp_mcp_servers(
+        mcp_servers,
+        parse_acp_mcp_capabilities(&initialize),
+        provider == "hermes" && builtin_runtime,
+    );
     let cwd = if options.cwd.is_empty() {
         "."
     } else {
@@ -1528,11 +1424,19 @@ async fn run_protocol(
             ..ProtocolOutcome::default()
         };
     }
+    let mut resume_landed = true;
     let (session_result, mut session_id) = if options.resume_session_id.is_empty() {
         match client
             .request(
                 "session/new",
-                session_params(cwd, None, mcp_servers, coding_project_meta.as_deref()),
+                session_params(
+                    cwd,
+                    None,
+                    mcp_servers,
+                    coding_project_meta.as_deref(),
+                    (provider == "hermes" && !options.model.is_empty())
+                        .then_some(options.model.as_str()),
+                ),
                 |_| {},
             )
             .await
@@ -1565,6 +1469,7 @@ async fn run_protocol(
                         Some(&options.resume_session_id),
                         mcp_servers.clone(),
                         coding_project_meta.as_deref(),
+                        None,
                     ),
                     |_| {},
                 )
@@ -1575,7 +1480,11 @@ async fn run_protocol(
                 && attempts < held_retry_attempts
             {
                 attempts += 1;
-                tracing::warn!(provider = %provider, attempt = attempts, "session lock not yet released; retrying session load");
+                tracing::warn!(
+                    provider = %provider,
+                    attempt = attempts,
+                    "session lock not yet released; retrying session load"
+                );
                 tokio::time::sleep(held_retry_delay).await;
                 continue;
             }
@@ -1583,12 +1492,20 @@ async fn run_protocol(
         };
         match loaded {
             Ok(result) => {
-                let returned = extract_session_id(&result);
-                let session_id = if returned.is_empty() {
-                    options.resume_session_id.clone()
+                let (session_id, landed) = if provider == "hermes" {
+                    extract_hermes_resume_session(&result, &options.resume_session_id)
                 } else {
-                    returned
+                    let returned = extract_session_id(&result);
+                    (
+                        if returned.is_empty() {
+                            options.resume_session_id.clone()
+                        } else {
+                            returned
+                        },
+                        true,
+                    )
                 };
+                resume_landed = landed;
                 (result, session_id)
             }
             Err(error) => {
@@ -1603,6 +1520,12 @@ async fn run_protocol(
         }
     };
     remember_session_id(&published_session, &session_id);
+    if matches!(provider.as_str(), "hermes" | "dim") {
+        let mut running = message(MessageType::Status, "");
+        running.status = "running".to_string();
+        running.session_id = session_id.clone();
+        send(&messages, running);
+    }
     let mut effective_model = if usage_model_unknown || !model_selection {
         "unknown".to_string()
     } else if matches!(provider.as_str(), "kimi" | "reasonix") {
@@ -1626,13 +1549,7 @@ async fn run_protocol(
             .await
         {
             if close_session {
-                let _ = client
-                    .request(
-                        "session/close",
-                        serde_json::json!({"sessionId":session_id}),
-                        |_| {},
-                    )
-                    .await;
+                close_acp_session(&mut client, &provider, &session_id).await;
             }
             return ProtocolOutcome {
                 status: "failed".to_string(),
@@ -1644,7 +1561,10 @@ async fn run_protocol(
             };
         }
     }
-    if model_selection && !options.model.is_empty() {
+    let model_already_current = provider == "hermes"
+        && !options.model.is_empty()
+        && extract_current_model(&session_result) == options.model;
+    if model_selection && !options.model.is_empty() && !model_already_current {
         if let Err(error) = client
             .request(
                 "session/set_model",
@@ -1659,13 +1579,7 @@ async fn run_protocol(
                 remember_session_id(&published_session, "");
             }
             if close_session && !session_id.is_empty() {
-                let _ = client
-                    .request(
-                        "session/close",
-                        serde_json::json!({"sessionId":session_id}),
-                        |_| {},
-                    )
-                    .await;
+                close_acp_session(&mut client, &provider, &session_id).await;
             }
             let stage = format!("could not switch to model {:?}", options.model);
             return protocol_failure(&provider, &stage, error, session_id, rejected);
@@ -1707,10 +1621,10 @@ async fn run_protocol(
             ),
         }
     }
-    if provider == "reasonix" && !options.thinking_level.is_empty() {
+    if matches!(provider.as_str(), "dim" | "reasonix") && !options.thinking_level.is_empty() {
         apply_acp_effort(
             &mut client,
-            "reasonix",
+            &provider,
             &session_result,
             &session_id,
             &options.thinking_level,
@@ -1718,25 +1632,25 @@ async fn run_protocol(
         )
         .await;
     }
-    if provider == "dim" && !options.thinking_level.is_empty() {
-        apply_acp_effort(
-            &mut client,
-            "dim",
-            &session_result,
-            &session_id,
-            &options.thinking_level,
-            options.model.is_empty(),
-        )
-        .await;
-    }
-    let user_text = if !use_system_prompt || options.system_prompt.is_empty() {
+    let user_text = if provider == "hermes"
+        && options.resume_expected
+        && !resume_landed
+        && !options.resume_continuity_notice.is_empty()
+    {
+        format!("{}{}", options.resume_continuity_notice, prompt)
+    } else if !use_system_prompt || options.system_prompt.is_empty() {
         prompt
     } else {
         format!("{}\n\n---\n\n{}", options.system_prompt, prompt)
     };
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
-        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "reasonix" | "dim"),
+        hermes_dialect: provider == "hermes",
+        hermes_builtin_runtime: provider == "hermes" && builtin_runtime,
+        extended_tool_names: matches!(
+            provider.as_str(),
+            "hermes" | "kiro" | "kimi" | "dim" | "reasonix"
+        ),
         reasonix_dialect: provider == "reasonix",
         ..NotificationState::default()
     };
@@ -1752,6 +1666,9 @@ async fn run_protocol(
     };
     let mut blocked_question = String::new();
     let mut missing_permission_metadata = false;
+    if provider == "reasonix" {
+        state.streaming_current_turn = true;
+    }
     let prompt_result = if provider == "reasonix" {
         client
             .request_with_permission(
@@ -1778,79 +1695,80 @@ async fn run_protocol(
     let prompt_result = match prompt_result {
         Ok(result) => result,
         Err(error) => {
-            if close_session && !session_id.is_empty() {
-                let _ = client
-                    .request(
-                        "session/close",
-                        serde_json::json!({"sessionId":session_id}),
-                        |notification| handle_notification(notification, &messages, &mut state),
-                    )
-                    .await;
-            }
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
                 remember_session_id(&published_session, "");
             }
+            if close_session && !session_id.is_empty() {
+                close_acp_session(&mut client, &provider, &session_id).await;
+            }
             if provider == "kiro"
                 && is_kiro_close_error(&error)
                 && state.last_finishing_status == "completed"
             {
-                let (mut output, full_output) = state.deliverable.finish();
-                if full_text_output {
-                    output.clone_from(&full_output);
-                }
+                let (output, full_output, usage) =
+                    finish_partial_state(state, &provider, &effective_model, full_text_output);
                 return ProtocolOutcome {
                     status: "completed".to_string(),
                     output,
                     full_output,
                     session_id,
+                    usage,
                     ..ProtocolOutcome::default()
                 };
             }
             if provider == "reasonix" && !blocked_question.is_empty() {
+                let (output, full_output, usage) =
+                    finish_partial_state(state, &provider, &effective_model, full_text_output);
                 return ProtocolOutcome {
                     status: "failed".to_string(),
                     error: blocked_question,
+                    output,
+                    full_output,
                     session_id,
+                    usage,
                     resume_rejected: rejected,
-                    ..ProtocolOutcome::default()
                 };
             }
             let rejected = rejected
                 || (provider == "kiro"
                     && !options.resume_session_id.is_empty()
                     && is_kiro_oversized_history_image(&error));
+            if provider == "qwenpaw" {
+                let (output, full_output, usage) =
+                    finish_partial_state(state, &provider, &effective_model, full_text_output);
+                return ProtocolOutcome {
+                    status: "failed".to_string(),
+                    error: format!("{provider} session/prompt failed: {error}"),
+                    output,
+                    full_output,
+                    session_id,
+                    usage,
+                    resume_rejected: rejected,
+                };
+            }
             return protocol_failure(&provider, "session/prompt", error, session_id, rejected);
         }
     };
-    if close_session && !session_id.is_empty() {
-        match tokio::time::timeout(
-            NOTIFICATION_DRAIN_MAX,
-            client.request(
-                "session/close",
-                serde_json::json!({"sessionId":session_id}),
-                |notification| handle_notification(notification, &messages, &mut state),
-            ),
-        )
-        .await
-        {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => {
-                tracing::debug!(provider = %provider, error = %error, "best-effort ACP session close failed")
-            }
-            Err(_) => {
-                tracing::debug!(provider = %provider, "best-effort ACP session close timed out")
-            }
+    if provider == "hermes" {
+        if let Err(error) = client.close_request_side().await {
+            tracing::debug!(
+                provider = "hermes",
+                error = %error,
+                "failed to close ACP request side before output drain"
+            );
         }
     }
-    if let Err(error) = client.close_request_side().await {
-        tracing::debug!(provider = %provider, error = %error, "ACP request-side shutdown failed");
-    }
+    let drain_quiet = if provider == "hermes" {
+        Duration::ZERO
+    } else {
+        NOTIFICATION_QUIET
+    };
     let drain = if provider == "reasonix" {
         client
             .drain_notifications_with_permission(
-                NOTIFICATION_DRAIN_MAX,
+                NOTIFICATION_QUIET,
                 NOTIFICATION_DRAIN_MAX,
                 |notification| handle_notification(notification, &messages, &mut state),
                 |params| {
@@ -1865,11 +1783,9 @@ async fn run_protocol(
             .await
     } else {
         client
-            .drain_notifications(
-                NOTIFICATION_DRAIN_MAX,
-                NOTIFICATION_DRAIN_MAX,
-                |notification| handle_notification(notification, &messages, &mut state),
-            )
+            .drain_notifications(drain_quiet, NOTIFICATION_DRAIN_MAX, |notification| {
+                handle_notification(notification, &messages, &mut state)
+            })
             .await
     };
     if let Err(error) = drain {
@@ -1880,6 +1796,9 @@ async fn run_protocol(
             provider = "reasonix",
             "permission request omitted trusted metadata; protected-decision detection may be degraded"
         );
+    }
+    if close_session && !session_id.is_empty() {
+        close_acp_session(&mut client, &provider, &session_id).await;
     }
     let stop_reason = prompt_result
         .get("stopReason")
@@ -1915,23 +1834,33 @@ async fn run_protocol(
     if full_text_output {
         output.clone_from(&full_output);
     }
+    let strict_stop_reason = provider == "reasonix";
     let (mut status, mut error) = match stop_reason {
         "cancelled" => ("aborted", format!("{provider} cancelled the prompt")),
-        "end_turn" | "" if !strict_stop_reason => ("completed", String::new()),
-        "end_turn" => ("completed", String::new()),
-        "error" => (
-            "failed",
-            format!("{provider} ended the prompt with stopReason=error"),
-        ),
         "max_turn_requests" if provider == "mcode" => (
             "failed",
             "mcode reached its maximum turn requests".to_string(),
         ),
-        unsupported => (
+        "refusal" if provider == "hermes" => ("completed", String::new()),
+        "end_turn" | "" if !strict_stop_reason => ("completed", String::new()),
+        "end_turn" => ("completed", String::new()),
+        "error" if strict_stop_reason => (
+            "failed",
+            format!("{provider} ended the prompt with stopReason=error"),
+        ),
+        unsupported if strict_stop_reason => (
             "failed",
             format!("{provider} returned unsupported stopReason {unsupported:?}"),
         ),
+        _ => ("completed", String::new()),
     };
+    let resume_lost = provider == "hermes"
+        && hermes_resume_session_lost(&options.resume_session_id, stop_reason, state.activity);
+    if resume_lost {
+        status = "failed";
+        error = HERMES_RESUME_LOST_ERROR.to_string();
+        session_id.clear();
+    }
     if provider == "reasonix"
         && !blocked_question.is_empty()
         && matches!(status, "completed" | "failed")
@@ -1946,7 +1875,7 @@ async fn run_protocol(
         full_output,
         session_id,
         usage,
-        resume_rejected: false,
+        resume_rejected: resume_lost,
     }
 }
 
@@ -1955,10 +1884,14 @@ fn session_params(
     session_id: Option<&str>,
     mcp_servers: Vec<AcpMcpServer>,
     coding_project_meta: Option<&str>,
+    model: Option<&str>,
 ) -> Value {
     let mut params = serde_json::json!({"cwd":cwd,"mcpServers":mcp_servers});
     if let Some(session_id) = session_id {
         params["sessionId"] = Value::String(session_id.to_string());
+    }
+    if let Some(model) = model.filter(|model| !model.is_empty()) {
+        params["model"] = Value::String(model.to_string());
     }
     if cwd != "." {
         if let Some(key) = coding_project_meta {
@@ -1986,6 +1919,31 @@ fn protocol_failure(
     }
 }
 
+async fn close_acp_session<R, W>(client: &mut AcpClient<R, W>, provider: &str, session_id: &str)
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let close = client.request(
+        "session/close",
+        serde_json::json!({"sessionId":session_id}),
+        |_| {},
+    );
+    match tokio::time::timeout(SESSION_CLOSE_TIMEOUT, close).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => tracing::debug!(
+            provider,
+            error = %error,
+            "best-effort ACP session close failed"
+        ),
+        Err(_) => tracing::debug!(
+            provider,
+            timeout_seconds = SESSION_CLOSE_TIMEOUT.as_secs_f64(),
+            "best-effort ACP session close timed out"
+        ),
+    }
+}
+
 fn remember_session_id(slot: &Arc<Mutex<String>>, session_id: &str) {
     if let Ok(mut guard) = slot.lock() {
         guard.clear();
@@ -2002,10 +1960,14 @@ struct NotificationState {
     deliverable: Deliverable,
     tools: HashMap<String, PendingTool>,
     usage: UsageAccumulator,
+    activity: u64,
     last_finishing_status: String,
     kiro_dialect: bool,
+    hermes_dialect: bool,
+    hermes_builtin_runtime: bool,
     extended_tool_names: bool,
     reasonix_dialect: bool,
+    streaming_current_turn: bool,
     reasonix_sequence: u64,
     reasonix_usage: TokenUsage,
     reasonix_model: String,
@@ -2048,13 +2010,44 @@ impl Deliverable {
     }
 }
 
+fn finish_partial_state(
+    state: NotificationState,
+    provider: &str,
+    effective_model: &str,
+    full_text_output: bool,
+) -> (String, String, BTreeMap<String, TokenUsage>) {
+    let mut turn_usage = state.usage.usage;
+    if provider == "reasonix" && turn_usage == TokenUsage::default() {
+        turn_usage = state.reasonix_usage;
+    }
+    let model = if provider == "reasonix" && !state.reasonix_model.is_empty() {
+        state.reasonix_model
+    } else {
+        effective_model.to_string()
+    };
+    let usage = if turn_usage == TokenUsage::default() {
+        BTreeMap::new()
+    } else {
+        BTreeMap::from([(model, turn_usage)])
+    };
+    let (mut output, full_output) = state.deliverable.finish();
+    if full_text_output {
+        output.clone_from(&full_output);
+    }
+    (output, full_output, usage)
+}
+
 fn handle_notification(
     notification: AcpNotification,
     messages: &mpsc::Sender<Message>,
     state: &mut NotificationState,
 ) {
     if state.reasonix_dialect {
-        observe_reasonix_status(&notification, state);
+        if state.streaming_current_turn {
+            observe_reasonix_status(&notification, state);
+        } else {
+            return;
+        }
     }
     if !matches!(
         notification.method.as_str(),
@@ -2065,21 +2058,46 @@ fn handle_notification(
     let Some(update) = notification.params.get("update") else {
         return;
     };
+    let hermes_activity = state.hermes_dialect;
+    if hermes_activity {
+        state.activity = state.activity.saturating_add(1);
+    }
     let (kind, data) = normalize_update(update);
     match kind.as_str() {
         "agentmessagechunk" => {
             if let Some(text) = content_text(data) {
+                if !hermes_activity {
+                    state.activity = state.activity.saturating_add(1);
+                }
                 state.deliverable.text(text);
                 send(messages, message(MessageType::Text, text));
             }
         }
         "agentthoughtchunk" => {
             if let Some(text) = content_text(data) {
+                if !hermes_activity {
+                    state.activity = state.activity.saturating_add(1);
+                }
                 send(messages, message(MessageType::Thinking, text));
             }
         }
-        "toolcall" => handle_tool_start(data, messages, state),
-        "toolcallupdate" => handle_tool_update(data, messages, state),
+        "toolcall" => {
+            if !hermes_activity {
+                state.activity = state.activity.saturating_add(1);
+            }
+            handle_tool_start(data, messages, state);
+        }
+        "toolcallupdate" => {
+            if !hermes_activity
+                && matches!(
+                    data.get("status").and_then(Value::as_str),
+                    Some("completed" | "failed")
+                )
+            {
+                state.activity = state.activity.saturating_add(1);
+            }
+            handle_tool_update(data, messages, state);
+        }
         "usageupdate" | "turnend" => {
             state
                 .usage
@@ -2199,6 +2217,38 @@ fn handle_tool_start(
     if id.is_empty() {
         return;
     }
+    if state.hermes_dialect {
+        let name = hermes_tool_name(data);
+        let input = tool_input(data);
+        let deferred_text = if !state.hermes_builtin_runtime && input.is_empty() {
+            hermes_tool_call_text(data)
+        } else {
+            String::new()
+        };
+        let mut invocation = input.clone();
+        if state.hermes_builtin_runtime && input.is_empty() {
+            let rendered = hermes_tool_call_text(data);
+            if name == "terminal" && rendered.trim_start().starts_with("$ ") {
+                invocation = parse_hermes_tool_input(&rendered);
+            }
+        }
+        state.deliverable.tool_boundary();
+        let emitted = state.hermes_builtin_runtime || !invocation.is_empty();
+        if emitted {
+            send(messages, tool_use(&id, &name, invocation.clone()));
+        }
+        state.tools.insert(
+            id,
+            PendingTool {
+                name,
+                input: invocation,
+                args_text: deferred_text,
+                emitted,
+                finishing: false,
+            },
+        );
+        return;
+    }
     let name = tool_name(data, state.extended_tool_names);
     let input = tool_input(data);
     let args_text = if input.is_empty() {
@@ -2257,7 +2307,11 @@ fn handle_tool_update(
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
-                name: tool_name(data, state.extended_tool_names),
+                name: if state.hermes_dialect {
+                    hermes_tool_name(data)
+                } else {
+                    tool_name(data, state.extended_tool_names)
+                },
                 input: tool_input(data),
                 args_text: tool_content_text(data).unwrap_or_default(),
                 emitted: false,
@@ -2266,6 +2320,13 @@ fn handle_tool_update(
         }
     };
     apply_completed_tool_input(&mut pending, data);
+    if state.hermes_dialect
+        && !pending.emitted
+        && pending.input.is_empty()
+        && !pending.args_text.is_empty()
+    {
+        pending.input = parse_hermes_tool_input(&pending.args_text);
+    }
     let finishing = state.kiro_dialect
         && (pending.finishing || is_finishing_tool(&pending.name, &pending.input));
     if !pending.emitted {
@@ -2277,6 +2338,12 @@ fn handle_tool_update(
         .map(render_value)
         .or_else(|| tool_content_text(data))
         .or_else(|| content_text(data).map(str::to_string))
+        .or_else(|| {
+            state
+                .hermes_dialect
+                .then(|| hermes_tool_call_text(data))
+                .filter(|text| !text.is_empty())
+        })
         .unwrap_or_default();
     let mut result = message(MessageType::ToolResult, "");
     result.call_id = id.to_string();
@@ -2323,6 +2390,102 @@ fn tool_name(data: &Value, extended_names: bool) -> String {
         "todo" | "todo write" | "todo list" | "todo_list" => "todo_write".to_string(),
         _ => name.to_ascii_lowercase().replace(' ', "_"),
     }
+}
+
+fn hermes_tool_name(data: &Value) -> String {
+    let title = data
+        .get("title")
+        .or_else(|| data.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if title.eq_ignore_ascii_case("execute code") {
+        return "execute_code".to_string();
+    }
+    if let Some((prefix, _)) = title.split_once(':') {
+        return match prefix.trim().to_ascii_lowercase().as_str() {
+            "terminal" => "terminal".to_string(),
+            "read" => "read_file".to_string(),
+            "write" => "write_file".to_string(),
+            value if value.starts_with("patch") => "patch".to_string(),
+            "search" => "search_files".to_string(),
+            "web search" => "web_search".to_string(),
+            "extract" => "web_extract".to_string(),
+            "delegate" => "delegate_task".to_string(),
+            "analyze image" => "vision_analyze".to_string(),
+            value => value.to_string(),
+        };
+    }
+    match data
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "read" => "read_file".to_string(),
+        "edit" => "write_file".to_string(),
+        "execute" => "terminal".to_string(),
+        "search" => "search_files".to_string(),
+        "fetch" => "web_search".to_string(),
+        "think" => "thinking".to_string(),
+        _ if !title.is_empty() => title.to_string(),
+        kind => kind.to_string(),
+    }
+}
+
+fn hermes_tool_call_text(data: &Value) -> String {
+    let Some(blocks) = data.get("content").and_then(Value::as_array) else {
+        return String::new();
+    };
+    let mut pieces = Vec::new();
+    for block in blocks {
+        match block
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            "content" => {
+                if let Some(text) = block
+                    .get("content")
+                    .and_then(|content| content.get("text"))
+                    .and_then(Value::as_str)
+                {
+                    if !text.is_empty() {
+                        pieces.push(text.to_string());
+                    }
+                }
+            }
+            "diff" => {
+                let path = block
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    let old_len = block
+                        .get("oldText")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len);
+                    let new_len = block
+                        .get("newText")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len);
+                    pieces.push(if old_len == 0 {
+                        format!("--- {path}\n+++ {path}\n(new file, {new_len} bytes)")
+                    } else {
+                        format!("--- {path}\n+++ {path}\n(edited: {old_len} → {new_len} bytes)")
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    pieces.join("\n")
+}
+
+fn parse_hermes_tool_input(text: &str) -> BTreeMap<String, Value> {
+    serde_json::from_str(text)
+        .unwrap_or_else(|_| BTreeMap::from([("text".to_string(), Value::String(text.to_string()))]))
 }
 
 fn is_finishing_tool(name: &str, input: &BTreeMap<String, Value>) -> bool {
@@ -2716,6 +2879,35 @@ fn extract_session_id(value: &Value) -> String {
         .to_string()
 }
 
+fn extract_hermes_resume_session(value: &Value, requested: &str) -> (String, bool) {
+    let returned = extract_session_id(value);
+    let provenance = value
+        .get("_meta")
+        .and_then(|meta| meta.get("hermes"))
+        .and_then(|hermes| hermes.get("sessionProvenance"))
+        .and_then(|provenance| provenance.get("acpSessionId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let actual = if !returned.is_empty() {
+        returned
+    } else if !provenance.is_empty() {
+        provenance.to_string()
+    } else {
+        requested.to_string()
+    };
+    let landed = actual == requested;
+    (actual, landed)
+}
+
+const HERMES_RESUME_LOST_ERROR: &str =
+    "hermes could not restore the resumed session; it refused the turn without running the agent";
+
+fn hermes_resume_session_lost(resume_session_id: &str, stop_reason: &str, activity: u64) -> bool {
+    !resume_session_id.is_empty() && stop_reason == "refusal" && activity == 0
+}
+
 fn extract_current_model(value: &Value) -> String {
     value
         .get("models")
@@ -2725,6 +2917,7 @@ fn extract_current_model(value: &Value) -> String {
                 .or_else(|| models.get("current_model_id"))
         })
         .or_else(|| value.get("currentModelId"))
+        .or_else(|| value.get("current_model_id"))
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim()
@@ -2794,13 +2987,13 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
             .unwrap_or_default()
             .trim();
         if config_id.is_empty()
-            || !matches!(
+            || (!matches!(
                 config_id.to_ascii_lowercase().as_str(),
                 "effort" | "thought_level"
             ) && !matches!(
                 category.to_ascii_lowercase().as_str(),
                 "effort" | "thought_level"
-            )
+            ))
         {
             continue;
         }
@@ -2820,15 +3013,12 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
                 let label = choice
                     .get("name")
                     .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .trim();
+                    .map(str::trim)
+                    .filter(|label| !label.is_empty())
+                    .map_or_else(|| thinking_label(value), str::to_string);
                 choices.push(crate::model::ThinkingLevel {
                     value: value.to_string(),
-                    label: if label.is_empty() {
-                        thinking_label(value)
-                    } else {
-                        label.to_string()
-                    },
+                    label,
                     description: String::new(),
                 });
             }
@@ -2929,7 +3119,11 @@ async fn apply_acp_effort<R, W>(
             provider,
             config_id = option.config_id,
             requested_level = requested,
-            effective_level = if option.current.is_empty() { "unknown" } else { &option.current },
+            effective_level = if option.current.is_empty() {
+                "unknown"
+            } else {
+                &option.current
+            },
             error = %error,
             "runtime rejected the reasoning effort request; sending the prompt anyway"
         ),
@@ -2951,19 +3145,6 @@ fn annotate_grok_thinking(models: &mut [crate::model::Model]) {
                 })
                 .collect(),
             default_level: String::new(),
-        });
-    }
-}
-
-fn annotate_acp_effort(models: &mut [crate::model::Model], session: &Value) {
-    let Some(option) = parse_acp_effort_option(session).filter(|option| !option.choices.is_empty())
-    else {
-        return;
-    };
-    if let Some(model) = models.iter_mut().find(|model| model.default) {
-        model.thinking = Some(crate::model::ModelThinking {
-            supported_levels: option.choices,
-            default_level: option.current,
         });
     }
 }
@@ -3094,13 +3275,6 @@ fn is_reasonix_lease_conflict(error: &AcpError) -> bool {
     })
 }
 
-fn is_acp_held_by_process(error: &AcpError) -> bool {
-    error.rpc_details().is_some_and(|(_, _, message, data)| {
-        let text = format!("{message} {data}").to_ascii_lowercase();
-        text.contains("held by another process") || text.contains("session is held")
-    })
-}
-
 fn reasonix_session_new_error(error: &AcpError) -> String {
     let text = error.to_string().to_ascii_lowercase();
     let suffix = if text.contains("not configured") || text.contains("no default_model configured")
@@ -3112,11 +3286,46 @@ fn reasonix_session_new_error(error: &AcpError) -> String {
     format!("reasonix session/new failed: {error}{suffix}")
 }
 
+fn annotate_acp_effort(models: &mut [crate::model::Model], session: &Value) {
+    let Some(option) = parse_acp_effort_option(session).filter(|option| !option.choices.is_empty())
+    else {
+        return;
+    };
+    if let Some(model) = models.iter_mut().find(|model| model.default) {
+        model.thinking = Some(crate::model::ModelThinking {
+            supported_levels: option.choices,
+            default_level: option.current,
+        });
+    }
+}
+
+fn thinking_label(value: &str) -> String {
+    match value {
+        "low" => "Low".to_string(),
+        "medium" => "Medium".to_string(),
+        "high" => "High".to_string(),
+        "max" => "Max".to_string(),
+        _ => {
+            let mut characters = value.chars();
+            characters.next().map_or_else(String::new, |first| {
+                first.to_uppercase().collect::<String>() + characters.as_str()
+            })
+        }
+    }
+}
+
 fn effective_env_nonempty(overrides: &BTreeMap<String, String>, key: &str) -> bool {
     overrides.get(key).map_or_else(
         || std::env::var_os(key).is_some_and(|value| !value.to_string_lossy().trim().is_empty()),
         |value| !value.trim().is_empty(),
     )
+}
+
+fn is_acp_held_by_process(error: &AcpError) -> bool {
+    error.rpc_details().is_some_and(|(_, _, message, data)| {
+        let text = format!("{message} {data}").to_ascii_lowercase();
+        text.contains("held by another process") || text.contains("session is held")
+    })
 }
 
 fn select_grok_auth_method(initialize: &Value, have_api_key: bool) -> Result<&'static str, String> {
@@ -3152,23 +3361,31 @@ fn select_grok_auth_method(initialize: &Value, have_api_key: bool) -> Result<&'s
     ))
 }
 
-fn provider_error(
-    provider: &str,
-    terminal_stderr: bool,
-    stderr: &str,
-    output: &str,
-) -> Option<String> {
-    if terminal_stderr {
-        return Some(format!(
-            "{provider} provider reported a terminal upstream error on stderr"
-        ));
+fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> {
+    if provider == "hermes" {
+        if let Some(found) = HERMES_SESSION_PROVIDER_ERROR.find(stderr) {
+            return Some(format!("{provider} provider error: {}", found.as_str()));
+        }
     }
-    if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
-        return Some(format!("{provider} provider error: {}", found.as_str()));
+    for line in stderr.lines() {
+        if matches!(provider, "hermes" | "qwenpaw") && is_retry_attempt_warning(line) {
+            continue;
+        }
+        if let Some(found) = TERMINAL_PROVIDER_ERROR.find(line) {
+            return Some(format!("{provider} provider error: {}", found.as_str()));
+        }
     }
     OUTPUT_PROVIDER_ERROR
         .find(output)
         .map(|found| format!("{provider} provider error: {}", found.as_str()))
+}
+
+fn is_retry_attempt_warning(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    lower.starts_with('⚠')
+        && lower.contains("api call failed")
+        && lower.contains("attempt ")
+        && lower.contains('/')
 }
 
 fn message(message_type: MessageType, content: &str) -> Message {
@@ -3227,6 +3444,18 @@ mod tests {
 
     use super::*;
 
+    fn requests_contain_config(requests: &str, config_id: &str, value: &str) -> bool {
+        requests.lines().any(|line| {
+            let Ok(request) = serde_json::from_str::<Value>(line) else {
+                return false;
+            };
+            let params = &request["params"];
+            request["method"].as_str() == Some("session/set_config_option")
+                && params["configId"].as_str() == Some(config_id)
+                && params["value"].as_str() == Some(value)
+        })
+    }
+
     #[test]
     fn arguments_keep_protocol_and_permission_mode_owned() {
         let args = build_qoder_args(&ExecOptions {
@@ -3242,6 +3471,51 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--safe"));
         assert!(args.iter().any(|arg| arg == "--debug"));
         assert!(!args.iter().any(|arg| arg == "acp"));
+    }
+
+    #[test]
+    fn hermes_arguments_keep_acp_owned() {
+        let backend = HermesBackend::new(HermesConfig::default());
+        let args = build_session_args(
+            &backend.inner.config,
+            &ExecOptions {
+                extra_args: ["--acp", "--verbose"].map(str::to_string).to_vec(),
+                custom_args: ["--acp", "--debug"].map(str::to_string).to_vec(),
+                ..ExecOptions::default()
+            },
+        );
+        assert_eq!(args[0], "acp");
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert!(args.iter().any(|arg| arg == "--verbose"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
+    }
+
+    #[test]
+    fn hermes_session_models_preserve_provider_qualified_ids() {
+        let models = parse_hermes_session_models(&serde_json::json!({
+            "models": {
+                "currentModelId": "nous:anthropic/claude-opus-4.7",
+                "availableModels": [
+                    {
+                        "modelId": "nous:moonshotai/kimi-k2.5",
+                        "name": "moonshotai/kimi-k2.5"
+                    },
+                    {
+                        "modelId": "nous:anthropic/claude-opus-4.7",
+                        "name": "Unknown"
+                    },
+                    {
+                        "modelId": "nous:anthropic/claude-opus-4.7",
+                        "name": "duplicate"
+                    }
+                ]
+            }
+        }));
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "nous:moonshotai/kimi-k2.5");
+        assert_eq!(models[0].provider, "nous");
+        assert_eq!(models[1].label, "nous:anthropic/claude-opus-4.7");
+        assert!(models[1].default);
     }
 
     #[test]
@@ -3268,31 +3542,16 @@ mod tests {
     }
 
     #[test]
-    fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
-        let args = build_kiro_args(&ExecOptions {
-            custom_args: [
-                "acp",
-                "-a",
-                "--trust-all-tools",
-                "--trust-tools",
-                "terminal",
-                "--agent",
-                "cordy",
-            ]
-            .map(str::to_string)
-            .to_vec(),
+    fn kimi_arguments_keep_acp_subcommand_owned() {
+        let args = build_kimi_args(&ExecOptions {
+            extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
+            custom_args: ["acp", "--debug"].map(str::to_string).to_vec(),
             ..ExecOptions::default()
         });
-        assert_eq!(&args[..2], ["acp", "--trust-all-tools"]);
         assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
-        assert_eq!(
-            args.iter()
-                .filter(|arg| arg.as_str() == "--trust-all-tools")
-                .count(),
-            1
-        );
-        assert!(!args.iter().any(|arg| arg == "terminal"));
-        assert!(args.windows(2).any(|pair| pair == ["--agent", "cordy"]));
+        assert_eq!(args[0], "acp");
+        assert!(args.iter().any(|arg| arg == "--verbose"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
     }
 
     #[test]
@@ -3310,55 +3569,6 @@ mod tests {
         assert!(!args.iter().any(|arg| arg == "/wrong"));
         assert_eq!(&args[args.len() - 2..], ["--workspace", "/owned"]);
         assert!(args.iter().any(|arg| arg == "--verbose"));
-        assert!(args.iter().any(|arg| arg == "--debug"));
-    }
-
-    #[test]
-    fn kimi_arguments_keep_acp_subcommand_owned() {
-        let args = build_kimi_args(&ExecOptions {
-            extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
-            custom_args: ["acp", "--debug"].map(str::to_string).to_vec(),
-            ..ExecOptions::default()
-        });
-        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
-        assert_eq!(args[0], "acp");
-        assert!(args.iter().any(|arg| arg == "--verbose"));
-        assert!(args.iter().any(|arg| arg == "--debug"));
-    }
-
-    #[test]
-    fn reasonix_arguments_keep_sandbox_and_profile_owned() {
-        let args = build_reasonix_args(&ExecOptions {
-            custom_args: [
-                "acp",
-                "--profile",
-                "unsafe",
-                "--sandbox-network",
-                "off",
-                "--workspace-only",
-                "--debug",
-            ]
-            .map(str::to_string)
-            .to_vec(),
-            ..ExecOptions::default()
-        });
-        assert_eq!(
-            &args[..10],
-            [
-                "acp",
-                "--profile",
-                "balanced",
-                "--planner",
-                "auto",
-                "--sandbox-network",
-                "auto",
-                "--sandbox-bash",
-                "auto",
-                "--workspace-only",
-            ]
-        );
-        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
-        assert!(!args.iter().any(|arg| arg == "unsafe" || arg == "off"));
         assert!(args.iter().any(|arg| arg == "--debug"));
     }
 
@@ -3436,6 +3646,66 @@ mod tests {
             ..ExecOptions::default()
         });
         assert_eq!(args, ["acp", "--debug"]);
+    }
+
+    #[test]
+    fn dim_version_gate_and_effort_catalog_are_fail_closed() {
+        assert!(check_minimum("0.3.10", "0.3.10", false).is_ok());
+        assert!(check_minimum("0.3.9", "0.3.10", false).is_err());
+        assert!(check_minimum("", "0.3.10", false).is_err());
+
+        let option = parse_acp_effort_option(&serde_json::json!({
+            "configOptions": [{
+                "id": "thought_level",
+                "currentValue": "auto",
+                "options": [
+                    {"value": "auto"},
+                    {"value": "high", "name": "High"},
+                    {"value": "high", "name": "duplicate"}
+                ]
+            }]
+        }))
+        .unwrap_or_else(|| panic!("Dim effort option missing"));
+        assert_eq!(option.config_id, "thought_level");
+        assert_eq!(option.current, "auto");
+        assert_eq!(option.choices.len(), 2);
+        assert_eq!(option.choices[0].label, "Auto");
+    }
+
+    #[test]
+    fn reasonix_arguments_keep_sandbox_and_profile_owned() {
+        let args = build_reasonix_args(&ExecOptions {
+            custom_args: [
+                "acp",
+                "--profile",
+                "unsafe",
+                "--sandbox-network",
+                "off",
+                "--workspace-only",
+                "--debug",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(
+            &args[..10],
+            [
+                "acp",
+                "--profile",
+                "balanced",
+                "--planner",
+                "auto",
+                "--sandbox-network",
+                "auto",
+                "--sandbox-bash",
+                "auto",
+                "--workspace-only",
+            ]
+        );
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert!(!args.iter().any(|arg| arg == "unsafe" || arg == "off"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
     }
 
     #[test]
@@ -3636,6 +3906,7 @@ mod tests {
         let (messages, _receiver) = mpsc::channel(1);
         let mut state = NotificationState {
             reasonix_dialect: true,
+            streaming_current_turn: true,
             ..NotificationState::default()
         };
         handle_notification(
@@ -3677,107 +3948,31 @@ mod tests {
     }
 
     #[test]
-    fn reasonix_capability_versions_require_both_schema_one_extensions() {
+    fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
+        let args = build_kiro_args(&ExecOptions {
+            custom_args: [
+                "acp",
+                "-a",
+                "--trust-all-tools",
+                "--trust-tools",
+                "terminal",
+                "--agent",
+                "cordy",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(&args[..2], ["acp", "--trust-all-tools"]);
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
         assert_eq!(
-            reasonix_capability_versions(&serde_json::json!({
-                "agentCapabilities":{"_meta":{
-                    "_reasonix.io/session/status":{"schemaVersion":1},
-                    "_reasonix.io/session/status_update":{"schemaVersion":1}
-                }}
-            })),
-            (1, 1)
+            args.iter()
+                .filter(|arg| arg.as_str() == "--trust-all-tools")
+                .count(),
+            1
         );
-        assert_eq!(reasonix_capability_versions(&Value::Null), (0, 0));
-    }
-
-    #[test]
-    fn acp_usage_normalizes_proven_inclusive_cached_input() {
-        let snapshot = parse_usage_snapshot(Some(&serde_json::json!({
-            "inputTokens":120,
-            "outputTokens":30,
-            "totalTokens":150,
-            "cacheReadTokens":20,
-            "cacheWriteTokens":5,
-            "costUsdTicks":"900"
-        })));
-        assert_eq!(snapshot.usage.input_tokens, 100);
-        assert_eq!(snapshot.usage.output_tokens, 30);
-        assert_eq!(snapshot.usage.cache_read_tokens, 20);
-        assert_eq!(snapshot.usage.cache_write_tokens, 5);
-        assert_eq!(snapshot.usage.cost_usd_ticks, 900);
-        assert!(snapshot.input_normalized);
-
-        let ambiguous = parse_usage_snapshot(Some(&serde_json::json!({
-            "inputTokens":120,
-            "outputTokens":30,
-            "cacheReadTokens":20
-        })));
-        assert_eq!(ambiguous.usage.input_tokens, 120);
-        assert!(!ambiguous.input_normalized);
-    }
-
-    #[test]
-    fn acp_usage_accumulator_is_order_independent_for_normalized_and_stream_data() {
-        let normalized = parse_usage_snapshot(Some(&serde_json::json!({
-            "inputTokens":120,
-            "outputTokens":30,
-            "totalTokens":150,
-            "cacheReadTokens":20,
-            "cacheWriteTokens":7,
-            "costUsdTicks":400
-        })));
-        let cumulative = parse_usage_snapshot(Some(&serde_json::json!({
-            "inputTokens":300,
-            "outputTokens":120,
-            "cacheReadTokens":80,
-            "costUsdTicks":900
-        })));
-        for snapshots in [[normalized, cumulative], [cumulative, normalized]] {
-            let mut accumulator = UsageAccumulator::default();
-            for snapshot in snapshots {
-                accumulator.merge(snapshot);
-            }
-            assert_eq!(accumulator.usage.input_tokens, 300);
-            assert_eq!(accumulator.usage.output_tokens, 120);
-            assert_eq!(accumulator.usage.cache_read_tokens, 80);
-            assert_eq!(accumulator.usage.cache_write_tokens, 7);
-            assert_eq!(accumulator.usage.cost_usd_ticks, 900);
-        }
-    }
-
-    #[test]
-    fn terminal_provider_error_survives_chunk_boundaries_and_tail_eviction() {
-        let tracker = ProviderErrorTracker::default();
-        tracker.push(b"[ER");
-        tracker.push(b"ROR] upstream Authentication");
-        tracker.push(b"Error: invalid credentials\n");
-        tracker.push(&vec![b'x'; DEFAULT_TAIL_BYTES * 4]);
-        assert!(tracker.found());
-        assert_eq!(
-            provider_error("qoder", tracker.found(), "xxxxx", ""),
-            Some("qoder provider reported a terminal upstream error on stderr".to_string())
-        );
-    }
-
-    #[test]
-    fn provider_error_tracker_does_not_join_unrelated_lines() {
-        let tracker = ProviderErrorTracker::default();
-        tracker.push(b"[ERROR] ordinary validation warning\n");
-        tracker.push(b"AuthenticationError appears in documentation\n");
-        assert!(!tracker.found());
-    }
-
-    #[test]
-    fn kimi_thinking_catalog_rejects_unsafe_and_duplicate_values() {
-        let parsed = parse_kimi_thinking(
-            br#"{"models":{"kimi-code/k3":{"supportEfforts":["low","low","max","../bad",""],"defaultEffort":"../bad"}}}"#,
-        )
-        .unwrap_or_else(|| panic!("parse Kimi thinking catalog"));
-        let thinking = &parsed["kimi-code/k3"];
-        assert_eq!(thinking.supported_levels.len(), 2);
-        assert_eq!(thinking.supported_levels[0].value, "low");
-        assert_eq!(thinking.supported_levels[1].value, "max");
-        assert!(thinking.default_level.is_empty());
+        assert!(!args.iter().any(|arg| arg == "terminal"));
+        assert!(args.windows(2).any(|pair| pair == ["--agent", "cordy"]));
     }
 
     #[test]
@@ -3813,6 +4008,15 @@ mod tests {
         };
         assert!(is_kiro_oversized_history_image(&oversized));
         assert!(!is_kiro_close_error(&oversized));
+    }
+
+    #[test]
+    fn qwenpaw_retry_warning_is_not_a_terminal_provider_error() {
+        let stderr = "⚠️ API call failed (attempt 1/3): RateLimitError [HTTP 429]";
+        assert_eq!(provider_error("qwenpaw", stderr, "done"), None);
+        assert_eq!(provider_error("hermes", stderr, "done"), None);
+        assert!(provider_error("qoder", stderr, "done").is_some());
+        assert!(provider_error("qwenpaw", "API call failed after 3 retries", "done").is_some());
     }
 
     #[test]
@@ -3853,6 +4057,111 @@ mod tests {
         assert_eq!(full, "I will inspect.Final answer.");
     }
 
+    #[test]
+    fn custom_hermes_defers_terminal_content_until_completion() {
+        let (messages, mut received) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "title": "terminal: $ echo wrong",
+                "content": [{"type":"content","content":{"type":"text","text":"$ echo wrong"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        assert!(received.try_recv().is_err());
+        assert!(state
+            .tools
+            .get("tool-1")
+            .is_some_and(|tool| tool.input.is_empty() && !tool.args_text.is_empty()));
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "status": "completed",
+                "rawInput": {"command":"echo right"}
+            }),
+            &messages,
+            &mut state,
+        );
+        let tool = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("custom Hermes tool use: {error}"));
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert_eq!(tool.tool, "terminal");
+        assert_eq!(
+            tool.input.get("command").and_then(Value::as_str),
+            Some("echo right")
+        );
+    }
+
+    #[test]
+    fn hermes_session_helpers_preserve_resume_and_model_contracts() {
+        let (session_id, landed) = extract_hermes_resume_session(
+            &serde_json::json!({
+                "_meta": {"hermes": {"sessionProvenance": {"acpSessionId": "actual"}}}
+            }),
+            "requested",
+        );
+        assert_eq!(session_id, "actual");
+        assert!(!landed);
+        assert!(hermes_resume_session_lost("requested", "refusal", 0));
+        assert!(!hermes_resume_session_lost("requested", "refusal", 1));
+        assert_eq!(
+            extract_current_model(&serde_json::json!({"current_model_id":"nous:model"})),
+            "nous:model"
+        );
+        let params = session_params(".", None, Vec::new(), None, Some("nous:model"));
+        assert_eq!(params["model"], "nous:model");
+    }
+
+    #[test]
+    fn hermes_counts_every_accepted_turn_notification_as_activity() {
+        let (messages, _receiver) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            ..NotificationState::default()
+        };
+        for update in [
+            serde_json::json!({"type":"AgentMessageChunk","content":{"text":""}}),
+            serde_json::json!({"type":"ToolCallUpdate","toolCallId":"tool-1","status":"in_progress"}),
+            serde_json::json!({"type":"UsageUpdate","usage":{"inputTokens":1}}),
+            serde_json::json!({"type":"TurnEnd"}),
+        ] {
+            handle_notification(
+                AcpNotification {
+                    method: "session/update".to_string(),
+                    params: serde_json::json!({"update":update}),
+                },
+                &messages,
+                &mut state,
+            );
+        }
+        assert_eq!(state.activity, 4);
+    }
+
+    #[test]
+    fn hermes_tool_parser_covers_named_tools_and_text_fallback() {
+        assert_eq!(
+            hermes_tool_name(&serde_json::json!({"title":"Read: src/main.rs"})),
+            "read_file"
+        );
+        assert_eq!(
+            hermes_tool_name(&serde_json::json!({"kind":"execute"})),
+            "terminal"
+        );
+        let parsed = parse_hermes_tool_input("not-json");
+        assert_eq!(parsed.get("text").and_then(Value::as_str), Some("not-json"));
+        assert!(hermes_tool_call_text(&serde_json::json!({
+            "content": [{"type":"diff","path":"src/main.rs","oldText":"old","newText":"new"}]
+        }))
+        .contains("edited: 3 → 3 bytes"));
+    }
+
     #[cfg(unix)]
     fn fake_backend(script: &str) -> (tempfile::TempDir, QoderBackend) {
         let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
@@ -3888,24 +4197,19 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn fake_qwenpaw_backend(
-        script: &str,
-    ) -> (tempfile::TempDir, std::path::PathBuf, QwenpawBackend) {
+    fn fake_hermes_backend(script: &str) -> (tempfile::TempDir, HermesBackend) {
         let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
-        let executable = directory.path().join("qwenpaw");
-        let requests = directory.path().join("requests.jsonl");
+        let executable = directory.path().join("hermes");
         std::fs::write(&executable, script)
-            .unwrap_or_else(|error| panic!("write fake QwenPaw: {error}"));
+            .unwrap_or_else(|error| panic!("write fake Hermes: {error}"));
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
-            .unwrap_or_else(|error| panic!("chmod fake QwenPaw: {error}"));
-        let backend = QwenpawBackend::new(QwenpawConfig {
+            .unwrap_or_else(|error| panic!("chmod fake Hermes: {error}"));
+        let backend = HermesBackend::new(HermesConfig {
             command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
-            env: BTreeMap::from([(
-                "QWENPAW_REQUESTS".to_string(),
-                requests.to_string_lossy().into_owned(),
-            )]),
+            env: BTreeMap::new(),
+            builtin_runtime: false,
         });
-        (directory, requests, backend)
+        (directory, backend)
     }
 
     #[cfg(unix)]
@@ -3935,18 +4239,24 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn fake_reasonix_backend(script: &str) -> (tempfile::TempDir, ReasonixBackend) {
+    fn fake_qwenpaw_backend(
+        script: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf, QwenpawBackend) {
         let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
-        let executable = directory.path().join("reasonix");
+        let executable = directory.path().join("qwenpaw");
+        let requests = directory.path().join("requests.jsonl");
         std::fs::write(&executable, script)
-            .unwrap_or_else(|error| panic!("write fake Reasonix: {error}"));
+            .unwrap_or_else(|error| panic!("write fake QwenPaw: {error}"));
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
-            .unwrap_or_else(|error| panic!("chmod fake Reasonix: {error}"));
-        let backend = ReasonixBackend::new(ReasonixConfig {
+            .unwrap_or_else(|error| panic!("chmod fake QwenPaw: {error}"));
+        let backend = QwenpawBackend::new(QwenpawConfig {
             command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
-            env: BTreeMap::new(),
+            env: BTreeMap::from([(
+                "QWENPAW_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
         });
-        (directory, backend)
+        (directory, requests, backend)
     }
 
     #[cfg(unix)]
@@ -4000,6 +4310,103 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn fake_reasonix_backend(
+        script: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf, ReasonixBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("reasonix");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Reasonix: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Reasonix: {error}"));
+        let backend = ReasonixBackend::new(ReasonixConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "REASONIX_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
+        });
+        (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_drains_output_emitted_after_stdin_eof() {
+        let (_directory, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+prompt_id=
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-late"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) prompt_id=$id; printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+  esac
+done
+if [ -n "$prompt_id" ]; then
+  sleep 0.3
+  printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"late final"}}}}'
+fi
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Hermes: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "late final");
+        assert_eq!(result.session_id, "hermes-late");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_publishes_session_before_model_configuration() {
+        let (_directory, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-pinned","models":{"currentModelId":"old-model"}}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) sleep 60 ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    model: "new-model".to_string(),
+                    timeout: Duration::from_millis(250),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Hermes: {error}"));
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let running = tokio::time::timeout(Duration::from_secs(1), messages.recv())
+            .await
+            .unwrap_or_else(|_| panic!("Hermes session status timed out"))
+            .unwrap_or_else(|| panic!("Hermes session status missing"));
+        assert_eq!(running.status, "running");
+        assert_eq!(running.session_id, "hermes-pinned");
+        let terminal = result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes result: {error}"));
+        assert_eq!(terminal.status, "timeout");
+        assert_eq!(terminal.session_id, "hermes-pinned");
+    }
+
+    #[cfg(unix)]
     #[tokio::test]
     async fn kiro_preserves_only_proven_finishing_completion_and_sends_both_payloads() {
         let (_directory, requests, backend) = fake_kiro_backend(
@@ -4014,6 +4421,7 @@ while IFS= read -r line; do
     *'"method":"session/prompt"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"finish-1","title":"Running delivery","rawInput":{"command":"cordy issue comment add CORD-1 --body done"}}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"finish-1","status":"completed","rawOutput":"ok"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"usage_update","usage":{"inputTokens":7,"outputTokens":2}}}}'
       printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":"Kiro failed to generate a response"}}\n' "$id" ;;
   esac
 done
@@ -4030,6 +4438,8 @@ done
         assert_eq!(result.status, "completed");
         assert!(result.error.is_empty());
         assert_eq!(result.session_id, "kiro-1");
+        assert_eq!(result.usage["unknown"].input_tokens, 7);
+        assert_eq!(result.usage["unknown"].output_tokens, 2);
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Kiro requests: {error}"));
         let prompt: Value = serde_json::from_str(
@@ -4111,109 +4521,6 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn qwenpaw_executes_with_project_meta_without_mutating_model() {
-        let (directory, requests, backend) = fake_qwenpaw_backend(
-            r#"#!/bin/sh
-printf '%s\n' "$@" > "$QWENPAW_REQUESTS.args"
-while IFS= read -r line; do
-  printf '%s\n' "$line" >> "$QWENPAW_REQUESTS"
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-1","models":{"currentModelId":"shared-model"}}}\n' "$id" ;;
-    *'"method":"session/prompt"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"before tool"}}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCall","toolCallId":"t1","name":"read","rawInput":{"path":"README.md"}}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"t1","status":"completed","output":"ok"}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" after tool"}}}}'
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":9,"outputTokens":3}}}\n' "$id" ;;
-  esac
-done
-"#,
-        );
-        let cwd = directory.path().to_string_lossy().into_owned();
-        let session = backend
-            .execute(
-                "prompt",
-                ExecOptions {
-                    cwd: cwd.clone(),
-                    model: "must-not-be-written".to_string(),
-                    qwenpaw_workspace: "/managed/workspace".to_string(),
-                    ..ExecOptions::default()
-                },
-            )
-            .await
-            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
-        let result = session
-            .result
-            .await
-            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
-        assert_eq!(result.status, "completed");
-        assert_eq!(result.output, "before tool after tool");
-        assert_eq!(result.usage["unknown"].input_tokens, 9);
-        let requests = std::fs::read_to_string(&requests)
-            .unwrap_or_else(|error| panic!("read QwenPaw requests: {error}"));
-        assert!(!requests.contains("session/set_model"));
-        let session_new: Value = serde_json::from_str(
-            requests
-                .lines()
-                .find(|line| line.contains("\"method\":\"session/new\""))
-                .unwrap_or_else(|| panic!("QwenPaw session/new missing")),
-        )
-        .unwrap_or_else(|error| panic!("parse QwenPaw session/new: {error}"));
-        assert_eq!(
-            session_new["params"]["_meta"]["qwenpaw.coding_project_dir"],
-            cwd
-        );
-        let args = std::fs::read_to_string(format!("{}.args", requests_path(&directory)))
-            .unwrap_or_else(|error| panic!("read QwenPaw args: {error}"));
-        assert_eq!(args, "acp\n--workspace\n/managed/workspace\n");
-    }
-
-    #[cfg(unix)]
-    fn requests_path(directory: &tempfile::TempDir) -> String {
-        directory
-            .path()
-            .join("requests.jsonl")
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn qwenpaw_missing_loaded_session_requests_fresh_retry() {
-        let (_directory, _requests, backend) = fake_qwenpaw_backend(
-            r#"#!/bin/sh
-while IFS= read -r line; do
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
-    *'"method":"session/load"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"No session found with id stale"}}\n' "$id" ;;
-  esac
-done
-"#,
-        );
-        let session = backend
-            .execute(
-                "continue",
-                ExecOptions {
-                    resume_session_id: "stale".to_string(),
-                    ..ExecOptions::default()
-                },
-            )
-            .await
-            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
-        let result = session
-            .result
-            .await
-            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
-        assert_eq!(result.status, "failed");
-        assert!(result.resume_rejected);
-        assert!(result.session_id.is_empty());
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
     async fn kimi_applies_model_and_thinking_then_falls_back_to_wire_usage() {
         let (_directory, requests, backend) = fake_kimi_backend(
             r#"#!/bin/sh
@@ -4271,206 +4578,26 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn kimi_discovery_merges_version_gated_per_model_effort() {
-        let (_directory, _requests, backend) = fake_kimi_backend(
-            r#"#!/bin/sh
-if test "$1" = provider && test "$2" = list && test "$3" = --json; then
-  printf '%s\n' '{"models":{"kimi-code/k3":{"supportEfforts":["low","high","max"],"defaultEffort":"high"},"kimi-code/plain":{"supportEfforts":[]}}}'
-  exit 0
-fi
-test "$1" = acp || exit 20
-while IFS= read -r line; do
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"name":"Kimi Code CLI","version":"0.33.0"}}}\n' "$id" ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","configOptions":[{"id":"model","category":"model","currentValue":"kimi-code/k3","options":[{"value":"kimi-code/k3","name":"K3"},{"value":"kimi-code/plain","name":"Plain"}]}]}}\n' "$id" ;;
-  esac
-done
-"#,
-        );
-        let catalog = backend
-            .discover_models(
-                &CatalogCache::default(),
-                CancellationToken::new(),
-                Duration::from_secs(5),
-            )
-            .await;
-        assert_eq!(catalog.models.len(), 2);
-        assert!(catalog.models[0].default);
-        let thinking = catalog.models[0]
-            .thinking
-            .as_ref()
-            .unwrap_or_else(|| panic!("Kimi K3 thinking catalog missing"));
-        assert_eq!(thinking.default_level, "high");
-        assert_eq!(
-            thinking
-                .supported_levels
-                .iter()
-                .map(|level| level.value.as_str())
-                .collect::<Vec<_>>(),
-            ["low", "high", "max"]
-        );
-        assert!(catalog.models[1].thinking.is_none());
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn real_acp_process_streams_tools_usage_and_permission() {
-        let (_directory, backend) = fake_backend(
-            r#"#!/bin/sh
-while IFS= read -r line; do
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"mcpCapabilities":{"http":true}}}}\n' "$id" ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-real","models":{"currentModelId":"qoder-auto","availableModels":[{"modelId":"qoder-auto","name":"Qoder Auto"}]}}}\n' "$id" ;;
-    *'"method":"session/prompt"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"options":[{"optionId":"forever","kind":"allow_always"},{"optionId":"once","kind":"allow_once"}]}}'
-      IFS= read -r permission
-      case "$permission" in *'"optionId":"once"'*) ;; *) exit 12 ;; esac
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"narration"}}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCall","toolCallId":"tool-1","name":"read_file","rawInput":{"path":"README.md"}}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"tool-1","name":"read_file","status":"completed","output":"contents"}}}'
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"final answer"}}}}'
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":11,"outputTokens":4}}}\n' "$id"
-      sleep 0.4
-      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" tail"}}}}'
-      ;;
-  esac
-done
-"#,
-        );
-        let catalog = backend
-            .discover_models(
-                &CatalogCache::default(),
-                CancellationToken::new(),
-                Duration::from_secs(5),
-            )
-            .await;
-        assert_eq!(catalog.models.len(), 1);
-        assert_eq!(catalog.models[0].id, "qoder-auto");
-        assert!(catalog.models[0].default);
-        let session = backend
-            .execute("prompt", ExecOptions::default())
-            .await
-            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
-        let Session {
-            mut messages,
-            result,
-        } = session;
-        let mut types = Vec::new();
-        while let Some(message) = messages.recv().await {
-            types.push(message.message_type);
-        }
-        let result = result
-            .await
-            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
-        assert_eq!(result.status, "completed");
-        assert_eq!(result.output, "final answer tail");
-        assert_eq!(result.session_id, "qoder-real");
-        assert_eq!(result.usage["qoder-auto"].input_tokens, 11);
-        assert!(types.contains(&MessageType::ToolUse));
-        assert!(types.contains(&MessageType::ToolResult));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn reasonix_executes_effort_and_blocks_interactive_questions() {
-        let (_directory, backend) = fake_reasonix_backend(
-            r#"#!/bin/sh
-test "$1 $2 $3 $4 $5 $6 $7 $8 $9 ${10}" = "acp --profile balanced --planner auto --sandbox-network auto --sandbox-bash auto --workspace-only" || exit 20
-while IFS= read -r line; do
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"_meta":{"_reasonix.io/session/status":{"schemaVersion":1},"_reasonix.io/session/status_update":{"schemaVersion":1}}}}}\n' "$id" ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"reasonix-1","models":{"currentModelId":"deepseek-v4"},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"auto","options":[{"value":"auto"},{"value":"high"}]}]}}\n' "$id" ;;
-    *'"method":"session/set_config_option"'*)
-      case "$line" in *'"configId":"effort"'*'"value":"high"'*) ;; *) exit 21 ;; esac
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"effort","currentValue":"high"}]}}\n' "$id"
-      ;;
-    *'"method":"session/prompt"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-1","title":"Choose deployment"},"options":[{"optionId":"ask-1:cancel","kind":"reject_once"}]}}'
-      IFS= read -r permission
-      case "$permission" in *'"optionId":"ask-1:cancel"'*) ;; *) exit 22 ;; esac
-      printf '%s\n' '{"jsonrpc":"2.0","method":"_reasonix.io/session/status_update","params":{"schemaVersion":1,"sequence":1,"status":{"model":"deepseek-v4","usage":{"turn":{"promptTokens":50,"completionTokens":4,"cacheHitTokens":40,"cacheMissTokens":10,"estimatedCost":0.01,"currency":"USD"}}}}}'
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"error"}}\n' "$id"
-      ;;
-  esac
-done
-"#,
-        );
-        let session = backend
-            .execute(
-                "prompt",
-                ExecOptions {
-                    thinking_level: "high".to_string(),
-                    ..ExecOptions::default()
-                },
-            )
-            .await
-            .unwrap_or_else(|error| panic!("execute Reasonix: {error}"));
-        let result = session
-            .result
-            .await
-            .unwrap_or_else(|error| panic!("Reasonix result: {error}"));
-        assert_eq!(result.status, "failed");
-        assert!(result.error.contains("Choose deployment"));
-        assert_eq!(result.session_id, "reasonix-1");
-        assert_eq!(result.usage["deepseek-v4"].input_tokens, 10);
-        assert_eq!(result.usage["deepseek-v4"].cost_usd_ticks, 100_000_000);
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn reasonix_discovers_current_model_effort_in_isolated_state() {
-        let (_directory, backend) = fake_reasonix_backend(
-            r#"#!/bin/sh
-test -n "$REASONIX_STATE_HOME" && test -d "$REASONIX_STATE_HOME" || exit 30
-test "$1 $2 $3 $4 $5 $6 $7 $8 $9 ${10}" = "acp --profile balanced --planner auto --sandbox-network auto --sandbox-bash auto --workspace-only" || exit 31
-while IFS= read -r line; do
-  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"flash","availableModels":[{"modelId":"flash","name":"Flash"},{"modelId":"pro","name":"Pro"}]},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"high","options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]}]}}\n' "$id" ;;
-  esac
-done
-"#,
-        );
-        let catalog = backend
-            .discover_models(
-                &CatalogCache::default(),
-                CancellationToken::new(),
-                Duration::from_secs(5),
-            )
-            .await;
-        assert_eq!(catalog.models.len(), 2);
-        let thinking = catalog.models[0]
-            .thinking
-            .as_ref()
-            .unwrap_or_else(|| panic!("Reasonix current model effort"));
-        assert_eq!(thinking.default_level, "high");
-        assert_eq!(thinking.supported_levels.len(), 2);
-        assert!(catalog.models[1].thinking.is_none());
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
     async fn grok_authenticates_executes_and_preserves_authoritative_cost() {
         let (_directory, backend) = fake_grok_backend(
             r#"#!/bin/sh
 test "$1 $2 $3 $4 $5 $6" = "--no-auto-update agent --always-approve --effort high stdio" || exit 40
+authenticated=false
 while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"cached_token"},{"id":"xai.api_key"}]}}\n' "$id" ;;
     *'"method":"authenticate"'*)
-      case "$line" in *'"methodId":"xai.api_key"'*'"headless":true'*) ;; *) exit 41 ;; esac
-      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
-      ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"grok-1"}}\n' "$id" ;;
+      case "$line" in *'"methodId":"xai.api_key"'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"headless":true'*) ;; *) exit 41 ;; esac
+      authenticated=true
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*)
+      test "$authenticated" = true || exit 42
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"grok-1"}}\n' "$id" ;;
     *'"method":"session/prompt"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"done"}}}}'
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","_meta":{"modelId":"grok-4.5","inputTokens":120,"outputTokens":30,"cachedReadTokens":20,"cachedWriteTokens":5,"usage":{"costUsdTicks":98765}}}}\n' "$id"
-      ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","_meta":{"modelId":"grok-4.5","inputTokens":120,"outputTokens":30,"cachedReadTokens":20,"cachedWriteTokens":5,"usage":{"costUsdTicks":98765}}}}\n' "$id" ;;
   esac
 done
 "#,
@@ -4510,8 +4637,7 @@ while IFS= read -r line; do
     *'"method":"authenticate"'*) authenticated=true; printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
     *'"method":"session/new"'*)
       test "$authenticated" = true || exit 51
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"grok-4.5","availableModels":[{"modelId":"grok-4.5","name":"Grok 4.5"}]}}}\n' "$id"
-      ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"grok-4.5","availableModels":[{"modelId":"grok-4.5","name":"Grok 4.5"}]}}}\n' "$id" ;;
   esac
 done
 "#,
@@ -4530,6 +4656,157 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn qwenpaw_executes_with_project_meta_without_mutating_model() {
+        let (directory, requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$QWENPAW_REQUESTS.args"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$QWENPAW_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-1","models":{"currentModelId":"shared-model"}}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"before tool"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCall","toolCallId":"t1","name":"read","rawInput":{"path":"README.md"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"t1","status":"completed","output":"ok"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" after tool"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":9,"outputTokens":3}}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let cwd = directory.path().to_string_lossy().into_owned();
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    cwd: cwd.clone(),
+                    model: "must-not-be-written".to_string(),
+                    qwenpaw_workspace: "/managed/workspace".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "before tool after tool");
+        assert_eq!(result.usage["unknown"].input_tokens, 9);
+        let requests_content = std::fs::read_to_string(&requests)
+            .unwrap_or_else(|error| panic!("read QwenPaw requests: {error}"));
+        assert!(!requests_content.contains("session/set_model"));
+        let session_new: Value = serde_json::from_str(
+            requests_content
+                .lines()
+                .find(|line| line.contains("\"method\":\"session/new\""))
+                .unwrap_or_else(|| panic!("QwenPaw session/new missing")),
+        )
+        .unwrap_or_else(|error| panic!("parse QwenPaw session/new: {error}"));
+        assert_eq!(
+            session_new["params"]["_meta"]["qwenpaw.coding_project_dir"],
+            cwd
+        );
+        let args = std::fs::read_to_string(format!("{}.args", requests.display()))
+            .unwrap_or_else(|error| panic!("read QwenPaw args: {error}"));
+        assert_eq!(args, "acp\n--workspace\n/managed/workspace\n");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qwenpaw_preserves_partial_transcript_on_prompt_error() {
+        let (_directory, _requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-partial"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"partial answer"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"provider failed"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.output, "partial answer");
+        assert!(result.error.contains("provider failed"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qwenpaw_keeps_provider_specific_stop_reasons_completed() {
+        let (_directory, _requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-stop"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"provider_truncated"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert!(result.error.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qwenpaw_missing_loaded_session_is_marked_rejected() {
+        let (_directory, _requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/load"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"No session found with id stale"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "continue",
+                ExecOptions {
+                    resume_session_id: "stale".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert!(result.session_id.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn mcode_executes_without_fake_model_or_system_prompt_support() {
         let (_directory, backend) = fake_mcode_backend(
             r#"#!/bin/sh
@@ -4542,8 +4819,7 @@ while IFS= read -r line; do
     *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"mcode-1"}}\n' "$id" ;;
     *'"method":"session/prompt"'*)
       case "$line" in *'system must not be sent'*) exit 62 ;; esac
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"max_turn_requests","usage":{"inputTokens":8,"outputTokens":3}}}\n' "$id"
-      ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"max_turn_requests","usage":{"inputTokens":8,"outputTokens":3}}}\n' "$id" ;;
   esac
 done
 "#,
@@ -4571,7 +4847,7 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn mcode_rejects_resume_before_any_session_operation_when_unsupported() {
+    async fn mcode_rejects_resume_before_session_operation_when_unsupported() {
         let (_directory, backend) = fake_mcode_backend(
             r#"#!/bin/sh
 while IFS= read -r line; do
@@ -4614,6 +4890,7 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"version":"0.3.10"},"agentCapabilities":{"loadSession":true}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"dim-discovery","models":{"currentModelId":"dim/model","availableModels":[{"modelId":"dim/model","name":"Dim Model"}]},"configOptions":[{"id":"thought_level","currentValue":"auto","options":[{"value":"auto"},{"value":"high"}]}]}}\n' "$id" ;;
     *'"method":"session/load"'*)
       if [ "$held" = true ]; then
         held=false
@@ -4634,6 +4911,29 @@ while IFS= read -r line; do
 done
 "#,
         );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "dim/model");
+        assert_eq!(
+            catalog.models[0]
+                .thinking
+                .as_ref()
+                .map(|thinking| thinking.default_level.as_str()),
+            Some("auto")
+        );
+        assert_eq!(
+            catalog.models[0]
+                .thinking
+                .as_ref()
+                .map(|thinking| thinking.supported_levels.len()),
+            Some(2)
+        );
         let session = backend
             .execute(
                 "prompt",
@@ -4645,8 +4945,18 @@ done
             )
             .await
             .unwrap_or_else(|error| panic!("execute Dim: {error}"));
-        let result = session
-            .result
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let running = messages
+            .recv()
+            .await
+            .unwrap_or_else(|| panic!("Dim running status"));
+        assert_eq!(running.message_type, MessageType::Status);
+        assert_eq!(running.status, "running");
+        assert_eq!(running.session_id, "dim-prior");
+        let result = result
             .await
             .unwrap_or_else(|error| panic!("Dim result: {error}"));
         assert_eq!(result.status, "completed");
@@ -4655,15 +4965,48 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Dim requests: {error}"));
         assert_eq!(requests.matches("session/load").count(), 2);
-        assert!(requests.contains(r#""configId":"permission","value":"full-access""#));
-        assert!(requests.contains(r#""configId":"mode","value":"agent""#));
-        assert!(requests.contains(r#""configId":"thought_level","value":"high""#));
+        assert!(requests_contain_config(
+            &requests,
+            "permission",
+            "full-access"
+        ));
+        assert!(requests_contain_config(&requests, "mode", "agent"));
+        assert!(requests_contain_config(&requests, "thought_level", "high"));
         assert!(requests.contains("session/close"));
     }
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn dim_fails_closed_on_unproven_cross_process_resume_version() {
+    async fn dim_best_effort_close_is_bounded() {
+        let (_directory, _requests, backend) = fake_dim_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"version":"0.3.10"}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"dim-close","models":{"currentModelId":"dim/model"}}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+    *'"method":"session/close"'*) ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Dim: {error}"));
+        let result = tokio::time::timeout(Duration::from_secs(4), session.result)
+            .await
+            .unwrap_or_else(|_| panic!("Dim close exceeded its independent bound"))
+            .unwrap_or_else(|error| panic!("Dim result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "dim-close");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dim_rejects_unproven_version_before_session_creation() {
         let (_directory, requests, backend) = fake_dim_backend(
             r#"#!/bin/sh
 while IFS= read -r line; do
@@ -4671,7 +5014,7 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"version":"0.3.9"}}}\n' "$id" ;;
-    *'"method":"session/'*) exit 71 ;;
+    *'"method":"session/"'*) exit 71 ;;
   esac
 done
 "#,
@@ -4689,6 +5032,156 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read old Dim requests: {error}"));
         assert!(!requests.contains("session/new"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reasonix_applies_effort_blocks_questions_and_reports_status_usage() {
+        let (_directory, requests, backend) = fake_reasonix_backend(
+            r#"#!/bin/sh
+test "$1 $2 $3 $4 $5 $6 $7 $8 $9 ${10}" = "acp --profile balanced --planner auto --sandbox-network auto --sandbox-bash auto --workspace-only" || exit 80
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$REASONIX_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"_meta":{"_reasonix.io/session/status":{"schemaVersion":1},"_reasonix.io/session/status_update":{"schemaVersion":1}}}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"reasonix-1","models":{"currentModelId":"deepseek-v4"},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"auto","options":[{"value":"auto"},{"value":"high"}]}]}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*)
+      case "$line" in *'"configId":"effort"'*'"value":"high"'*) ;; *) exit 81 ;; esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"effort","currentValue":"high"}]}}\n' "$id"
+      ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in *'system must not be sent'*) exit 82 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-1","title":"Choose deployment"},"options":[{"optionId":"ask-1:cancel","kind":"reject_once"}]}}'
+      IFS= read -r permission
+      case "$permission" in *'"optionId":"ask-1:cancel"'*) ;; *) exit 83 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"_reasonix.io/session/status_update","params":{"schemaVersion":1,"sequence":1,"status":{"model":"deepseek-v4","usage":{"turn":{"promptTokens":50,"completionTokens":4,"cacheHitTokens":40,"cacheMissTokens":10,"estimatedCost":0.01,"currency":"USD"}}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"partial"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"error"}}\n' "$id"
+      ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    thinking_level: "high".to_string(),
+                    system_prompt: "system must not be sent".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Reasonix: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Reasonix result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("Choose deployment"));
+        assert_eq!(result.output, "partial");
+        assert_eq!(result.session_id, "reasonix-1");
+        assert_eq!(result.usage["deepseek-v4"].input_tokens, 10);
+        assert_eq!(result.usage["deepseek-v4"].cost_usd_ticks, 100_000_000);
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Reasonix requests: {error}"));
+        assert!(requests_contain_config(&requests, "effort", "high"));
+        assert!(!requests.contains("system must not be sent"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reasonix_question_rpc_error_preserves_partial_output_and_usage() {
+        let (_directory, _requests, backend) = fake_reasonix_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"_meta":{"_reasonix.io/session/status":{"schemaVersion":1},"_reasonix.io/session/status_update":{"schemaVersion":1}}}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"reasonix-partial","models":{"currentModelId":"deepseek-v4"}}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"_reasonix.io/session/status_update","params":{"schemaVersion":1,"sequence":1,"status":{"model":"deepseek-v4","usage":{"turn":{"promptTokens":12,"completionTokens":3,"cacheHitTokens":2,"cacheMissTokens":10}}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"partial before question"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-2","title":"Choose target"},"options":[{"optionId":"allow","kind":"allow_once"}]}}'
+      IFS= read -r permission
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"question rejected"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Reasonix: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Reasonix result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("Choose target"));
+        assert_eq!(result.output, "partial before question");
+        assert_eq!(result.usage["deepseek-v4"].input_tokens, 10);
+        assert_eq!(result.usage["deepseek-v4"].output_tokens, 3);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn real_acp_process_streams_tools_usage_and_permission() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"mcpCapabilities":{"http":true}}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-real","models":{"currentModelId":"qoder-auto","availableModels":[{"modelId":"qoder-auto","name":"Qoder Auto"}]}}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"options":[{"optionId":"forever","kind":"allow_always"},{"optionId":"once","kind":"allow_once"}]}}'
+      IFS= read -r permission
+      case "$permission" in *'"optionId":"once"'*) ;; *) exit 12 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"narration"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCall","toolCallId":"tool-1","name":"read_file","rawInput":{"path":"README.md"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"tool-1","name":"read_file","status":"completed","output":"contents"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"final answer"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":11,"outputTokens":4}}}\n' "$id"
+      sleep 0.05
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" tail"}}}}'
+      ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "qoder-auto");
+        assert!(catalog.models[0].default);
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let mut types = Vec::new();
+        while let Some(message) = messages.recv().await {
+            types.push(message.message_type);
+        }
+        let result = result
+            .await
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "final answer tail");
+        assert_eq!(result.session_id, "qoder-real");
+        assert_eq!(result.usage["qoder-auto"].input_tokens, 11);
+        assert!(types.contains(&MessageType::ToolUse));
+        assert!(types.contains(&MessageType::ToolResult));
     }
 
     #[cfg(unix)]

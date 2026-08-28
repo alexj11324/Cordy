@@ -3503,6 +3503,7 @@ impl TaskService {
                     .map_err(|e| {
                         TaskServiceError::Internal(format!("mark chat finalize deferred: {e}"))
                     })?;
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             if restorable {
@@ -3528,8 +3529,9 @@ impl TaskService {
                         TaskServiceError::Internal(format!(
                             "delete empty cancelled chat user message: {e}"
                         ))
-                    });
-                let Some(deleted) = deleted.ok().flatten() else {
+                    })?;
+                let Some(deleted) = deleted else {
+                    tx.commit().await.map_err(TaskServiceError::Sql)?;
                     return Ok(());
                 };
                 // Always restorable now: the delete cannot return a kickoff row,
@@ -3541,6 +3543,7 @@ impl TaskService {
                     restore_to_input: true,
                     attachments: detached,
                 });
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             create_assistant_chat_message_typed(
@@ -3553,6 +3556,7 @@ impl TaskService {
                 None,
             )
             .await?;
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
             Ok(())
         }
         .await;
@@ -3591,7 +3595,7 @@ impl TaskService {
     /// cancelled chat task (#5219). Called from the daemon's cancel-ack and the
     /// sweeper fallback; the marker claim is atomic so concurrent callers
     /// cannot finalize twice. Outcome broadcasts as chat:cancel_finalized.
-    pub async fn finalize_deferred_cancelled_chat(&self, task_id: Uuid) {
+    pub async fn finalize_deferred_cancelled_chat(&self, task_id: Uuid) -> bool {
         let mut payload = cordy_protocol::ChatCancelFinalizedPayload {
             outcome: String::new(),
             chat_session_id: String::new(),
@@ -3632,9 +3636,11 @@ impl TaskService {
                     TaskServiceError::Internal(format!("claim deferred chat finalize: {e}"))
                 })?;
             let Some(claimed) = claimed else {
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             };
             if session_gone || claimed.chat_session_id.is_none() {
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             let chat_session_id = claimed.chat_session_id.expect("checked above");
@@ -3688,9 +3694,10 @@ impl TaskService {
                         TaskServiceError::Internal(format!(
                             "delete empty cancelled chat user message: {e}"
                         ))
-                    });
-                let Some(deleted) = deleted.ok().flatten() else {
+                    })?;
+                let Some(deleted) = deleted else {
                     payload.outcome = String::new();
+                    tx.commit().await.map_err(TaskServiceError::Sql)?;
                     return Ok(());
                 };
                 let attachment_ids: Vec<Uuid> = detached.iter().map(|a| a.id).collect();
@@ -3708,6 +3715,7 @@ impl TaskService {
                 })?;
                 payload.outcome = cordy_protocol::CHAT_CANCEL_OUTCOME_RESTORED.to_string();
                 payload.message_id = deleted.id.to_string();
+                tx.commit().await.map_err(TaskServiceError::Sql)?;
                 return Ok(());
             }
             let row = create_assistant_chat_message_typed(
@@ -3724,24 +3732,25 @@ impl TaskService {
             payload.message_id = row.id.to_string();
             payload.content = row.content.clone();
             payload.message_kind = row.message_kind.clone();
-            payload.created_at = row
-                .created_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+            payload.created_at = cordy_util::rfc3339_nano(row.created_at);
             payload.elapsed_ms = compute_chat_elapsed_ms(claimed.completed_at, claimed.created_at)
                 .unwrap_or_default();
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
             Ok(())
         }
         .await;
         if let Err(err) = result {
             tracing::error!(task_id = %task_id, error = %err, "failed to finalize deferred cancelled chat");
-            return;
+            return false;
         }
         if !settled || payload.outcome.is_empty() {
-            return;
+            return false;
         }
         if let Some(task) = settled_task {
             self.broadcast_chat_cancel_finalized(&task, payload).await;
+            return true;
         }
+        false
     }
 
     async fn broadcast_chat_cancel_finalized(

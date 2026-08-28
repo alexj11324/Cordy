@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 // Wrapper around `electron-builder` that keeps the Desktop version in
 // lockstep with the CLI. Both are derived from `git describe --tags
-// --match 'v[0-9]*' --always --dirty` — the same source GoReleaser reads
-// for the CLI
-// binary via the `main.version` ldflag — so a single `vX.Y.Z` tag push
-// produces matching CLI and Desktop versions.
+// --match 'v[0-9]*' --always --dirty` — the same source the Rust CLI release
+// workflow uses for its asset version — so a single `vX.Y.Z` tag push produces
+// matching CLI and Desktop versions.
 //
 // Builds the Electron bundles once, then for each requested target
-// (platform + arch) compiles the matching Go CLI into resources/bin/ and
+// (platform + arch) compiles the matching Rust CLI into resources/bin/ and
 // invokes electron-builder with `-c.extraMetadata.version=<derived>` so
 // the override applies at build time without mutating the tracked
 // package.json.
@@ -65,15 +64,6 @@ const ARCH_FLAGS = new Map([
 ]);
 
 const SUPPORTED_CLI_ARCHS = new Set(["x64", "arm64"]);
-const MAC_ALL_PLATFORM_TARGETS = [
-  { platform: "mac", arch: "arm64" },
-  { platform: "mac", arch: "x64" },
-  { platform: "win", arch: "x64" },
-  { platform: "win", arch: "arm64" },
-  { platform: "linux", arch: "x64" },
-  { platform: "linux", arch: "arm64" },
-];
-
 // Run a git subcommand with its arguments handed straight to the binary,
 // never through a shell. A match pattern like `v[0-9]*` must reach git as a
 // single literal argument on every platform. Passing the whole command as a
@@ -269,28 +259,33 @@ export function resolveBuildMatrix(parsed, platform = process.platform, arch = p
         "[package] --all-platforms cannot be combined with explicit platform or arch flags",
       );
     }
-    if (platform !== "darwin") {
-      throw new Error(
-        `[package] --all-platforms is only supported on macOS hosts (current: ${platform})`,
-      );
-    }
-    return MAC_ALL_PLATFORM_TARGETS.map((target) => ({ ...target }));
+    throw new Error(
+      "[package] --all-platforms cannot build Rust CLIs across operating systems. " +
+        "Package each target on its native CI runner (Linux, Windows, or macOS).",
+    );
   }
 
+  const hostPlatform = hostPlatformKey(platform);
   const platforms =
     parsed.requestedPlatforms.length > 0
       ? parsed.requestedPlatforms
-      : [hostPlatformKey(platform)];
+      : [hostPlatform];
   const archs =
     parsed.requestedArchs.length > 0
       ? parsed.requestedArchs
       : [hostArchKey(arch)];
-
   const unsupported = archs.filter((value) => !SUPPORTED_CLI_ARCHS.has(value));
   if (unsupported.length > 0) {
     throw new Error(
       `[package] unsupported Desktop CLI architecture(s): ${unsupported.join(", ")}. ` +
         "Use --x64 or --arm64.",
+    );
+  }
+  const crossPlatforms = platforms.filter((target) => target !== hostPlatform);
+  if (crossPlatforms.length > 0) {
+    throw new Error(
+      `[package] cannot build Rust CLI for ${crossPlatforms.join(", ")} on ${hostPlatform}. ` +
+        "Package each operating system on its native CI runner.",
     );
   }
 

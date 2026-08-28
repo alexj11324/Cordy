@@ -6,6 +6,9 @@ mod jobs;
 mod manager;
 mod spec;
 
+#[cfg(test)]
+mod contract_tests;
+
 pub use jobs::{
     autopilot_schedule_dispatch_job, task_usage_hourly_job, AutopilotScheduleDispatcher,
     AUTOPILOT_SCHEDULE_DISPATCH_JOB, AUTOPILOT_TRIGGER_SCOPE, DEFAULT_AUTOPILOT_SCHEDULE_TIMEZONE,

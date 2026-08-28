@@ -46,9 +46,20 @@ hyper-util = { version = "0.1.20", default-features = false, features = [
 redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["tracing"] }
 tokio-util = { workspace = true }
 tower = { version = "0.5", features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+console-subscriber = "0.5"
 uuid = { workspace = true }
+serde = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+backtrace = { version = "0.3" }
+flate2 = { workspace = true }
+pprof = { version = "0.15", default-features = false, features = ["protobuf-codec"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+jemalloc_pprof = "0.9"
+tikv-jemallocator = { version = "0.7", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }

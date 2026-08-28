@@ -21,7 +21,7 @@ curl -i https://api.example.com/health
 curl -i https://api.example.com/readyz
 ```
 
-`/health` only says the API process is responding; `/readyz` also checks the database and migrations. Include the error, relevant logs, CLI version, and operating system when reporting a problem; remove tokens, email addresses, and other sensitive details before submitting.
+`/health` only says the API process is responding; `/readyz` checks whether the database is reachable. The Rust entrypoint runs migrations before serving, so a migration failure prevents readiness. Include the error, relevant logs, CLI version, and operating system when reporting a problem; remove tokens, email addresses, and other sensitive details before submitting.
 
 ## Daemon fails to connect
 
@@ -173,14 +173,21 @@ If the numbers look right after a manual run, the rollup function works and the 
 
 A normal upgrade needs no action for 103: `migrate up` automatically backfills historical usage data before applying it — an empty database passes straight through, and instances with history are backfilled month by month before continuing.
 
-If the backend still fails to start with `refusing to drop legacy daily rollups`, the automatic backfill did not complete (for example, it failed partway, or the SQL was applied directly instead of through `migrate up`). Run the backfill command manually, then restart the backend:
+If the backend still fails to start with `refusing to drop legacy daily rollups`, the automatic backfill did not complete (for example, it failed partway, or the SQL was applied directly instead of through `migrate up`). With PostgreSQL running, use the binary already shipped in the backend image. Override the normal entrypoint because that entrypoint exits on the failed migration:
 
 ```bash
-cd server
-DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/backfill_task_usage_hourly backend
 ```
 
-Useful flags: `--dry-run` previews without writing; `--sleep-between-slices` adds a pause between slices to reduce read pressure on a busy instance. The command works in monthly slices and is idempotent — rerun it directly after an interruption. It holds an advisory lock and is mutually exclusive with the server's scheduled rollup, so it cannot produce duplicate or inconsistent rollup data. When it finishes, restart the backend and confirm `migrations` is `ok` on `/readyz`.
+A source checkout is an alternative only when a Rust toolchain is installed:
+
+```bash
+make rust-build
+DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
+```
+
+Useful flags: `--dry-run` previews without writing; `--sleep-between-slices` adds a pause between slices to reduce read pressure on a busy instance. The command works in monthly slices and is idempotent — rerun it directly after an interruption. It holds an advisory lock and is mutually exclusive with the server's scheduled rollup, so it cannot produce duplicate or inconsistent rollup data. When it finishes, restart the backend and confirm `/readyz` returns HTTP 200 with `{"status":"ready"}`. The handler only checks database reachability; successful server startup separately confirms that the entrypoint migration completed.
 
 ## Port already in use
 

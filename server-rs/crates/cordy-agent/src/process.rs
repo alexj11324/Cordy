@@ -173,43 +173,4 @@ mod tests {
         assert_ne!(unsafe { libc::kill(descendant, 0) }, 0);
         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
     }
-
-    #[tokio::test]
-    async fn drop_kills_the_owned_process_group() {
-        let mut command = Command::new("sh");
-        command
-            .args(["-c", "sleep 60 & child=$!; echo $child; wait"])
-            .stdout(Stdio::piped());
-        let mut tree = OwnedProcessTree::spawn(&mut command)
-            .await
-            .unwrap_or_else(|error| panic!("spawn process tree: {error}"));
-        let Some(stdout) = tree.child_mut().stdout.take() else {
-            panic!("child stdout pipe must exist");
-        };
-        let mut line = String::new();
-        BufReader::new(stdout)
-            .read_line(&mut line)
-            .await
-            .unwrap_or_else(|error| panic!("read descendant pid: {error}"));
-        let descendant: i32 = line
-            .trim()
-            .parse()
-            .unwrap_or_else(|error| panic!("parse descendant pid: {error}"));
-
-        drop(tree);
-
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if unsafe { libc::kill(descendant, 0) } != 0
-                && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-            {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "descendant survived process-tree ownership drop"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
 }

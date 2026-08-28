@@ -6,13 +6,8 @@
 //! dial time, pinned to the endpoint host, re-checked against the
 //! public-address rule unless the endpoint is an operator-named dev origin.
 //!
-//! TODO(go-port): see server/pkg/remotemcp/oauth.go — OAuth discovery/token
-//! flows (383 LOC) are deferred; verified against source that they consume
-//! only `ValidatePublicHTTPSEndpoint` and `NewSecureHTTPClient`, nothing
-//! else. The MCP discovery layer (`Discover`, `call`, `notify`,
-//! `readResponse`, `canonicalJSON`, `ToolSetDigest`,
-//! `SupportedProtocolVersions`) is likewise deferred to the plugin-series
-//! migration slice.
+//! The OAuth discovery/token flows and MCP discovery layer live in sibling
+//! modules in this crate; both use this same pinned transport boundary.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;

@@ -8,12 +8,12 @@ cd "$REPO_ROOT"
 missing=()
 command -v node >/dev/null 2>&1 || missing+=("node")
 command -v pnpm >/dev/null 2>&1 || missing+=("pnpm")
-command -v go >/dev/null 2>&1 || missing+=("go")
+./scripts/run-rust.sh --version >/dev/null 2>&1 || missing+=("cargo")
 command -v docker >/dev/null 2>&1 || missing+=("docker")
 
 if [ ${#missing[@]} -gt 0 ]; then
   echo "✗ Missing prerequisites: ${missing[*]}"
-  echo "  Please install: Node.js 22, pnpm 10.28.2, Go 1.26.6, Docker"
+  echo "  Please install: Node.js 22, pnpm 10.28.2, Rust/Cargo, Docker"
   exit 1
 fi
 
@@ -53,7 +53,7 @@ fi
 bash scripts/ensure-postgres.sh "$ENV_FILE"
 
 echo "==> Running migrations..."
-(cd server && go run ./cmd/migrate up)
+./scripts/run-rust.sh run --locked -p cordy-migrate -- up
 
 # ---------- Start services ----------
 echo ""
@@ -63,6 +63,10 @@ echo "  Frontend: http://localhost:${FRONTEND_PORT:-3000}"
 echo ""
 
 trap 'kill 0' EXIT
-(cd server && go run ./cmd/server) &
+CORDY_BUILD_VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)" \
+CORDY_BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+CORDY_BUILD_DATE="$(git show -s --format=%cI HEAD 2>/dev/null || echo unknown)" \
+CORDY_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+./scripts/run-rust.sh run --locked -p cordy-server &
 pnpm dev:web &
 wait

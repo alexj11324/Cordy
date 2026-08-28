@@ -84,7 +84,7 @@ impl SwitchableRelayBroadcaster {
             return;
         };
 
-        let event_id = ulid::Ulid::new().to_string();
+        let event_id = cordy_util::new_ulid();
         let frame = inject_event_id(message, &event_id);
         if scope_type == "global" {
             self.hub.fanout_all_dedup(&frame, exclude, &event_id).await;
@@ -226,7 +226,7 @@ impl RelayPublisher for MirroredRelay {
 #[async_trait]
 impl Broadcaster for MirroredRelay {
     async fn broadcast_to_scope(&self, scope_type: &str, scope_id: &str, message: &[u8]) {
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id(scope_type, scope_id, "", message, &id)
             .await;
@@ -234,14 +234,14 @@ impl Broadcaster for MirroredRelay {
 
     async fn send_to_user(&self, user_id: &str, message: &[u8], exclude_workspace: Option<&str>) {
         let exclude = exclude_workspace.unwrap_or("");
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id(SCOPE_USER, user_id, exclude, message, &id)
             .await;
     }
 
     async fn broadcast(&self, message: &[u8]) {
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id("global", "all", "", message, &id)
             .await;

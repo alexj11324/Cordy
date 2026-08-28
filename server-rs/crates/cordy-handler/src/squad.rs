@@ -76,15 +76,17 @@ struct SquadResponse {
     member_preview: Vec<SquadMemberPreviewResponse>,
 }
 
-impl From<Squad> for SquadResponse {
-    fn from(value: Squad) -> Self {
+impl SquadResponse {
+    fn from_state(state: &HandlerState, value: Squad) -> Self {
         Self {
             id: value.id.to_string(),
             workspace_id: value.workspace_id.to_string(),
             name: value.name,
             description: value.description,
             instructions: value.instructions,
-            avatar_url: value.avatar_url,
+            avatar_url: value
+                .avatar_url
+                .map(|raw| crate::avatar::resolve_url(state, &raw)),
             leader_id: value.leader_id.to_string(),
             creator_id: value.creator_id.to_string(),
             created_at: crate::timefmt::rfc3339(value.created_at),
@@ -129,16 +131,9 @@ async fn response_with_preview(
     for row in rows {
         add_preview(&mut summary, row.member_type, row.member_id, row.role);
     }
-    let mut response = SquadResponse::from(value);
+    let mut response = SquadResponse::from_state(state, value);
     apply_summary(&mut response, Some(summary));
-    Ok(with_resolved_avatar(state, response))
-}
-
-fn with_resolved_avatar(state: &HandlerState, mut response: SquadResponse) -> SquadResponse {
-    if let Some(url) = response.avatar_url.as_deref() {
-        response.avatar_url = Some(crate::avatar::resolve_url(state, url));
-    }
-    response
+    Ok(response)
 }
 
 #[derive(Debug, Serialize)]
@@ -306,7 +301,6 @@ async fn accepted_avatar_url(
             .map_err(|message| error_response(StatusCode::FORBIDDEN, message)),
     }
 }
-
 async fn create(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -440,9 +434,9 @@ async fn list(
         .into_iter()
         .map(|value| {
             let id = value.id;
-            let mut response = SquadResponse::from(value);
+            let mut response = SquadResponse::from_state(&state, value);
             apply_summary(&mut response, summaries.remove(&id));
-            with_resolved_avatar(&state, response)
+            response
         })
         .collect::<Vec<_>>();
     Json(response).into_response()

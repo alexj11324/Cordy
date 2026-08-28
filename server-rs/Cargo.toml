@@ -45,14 +45,16 @@ license = "UNLICENSED"
 # async runtime & web
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "multipart", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
 percent-encoding = "2.3"
 # data
-sqlx = { version = "0.8", features = [
+sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
     "postgres",
+    "macros",
     "uuid",
     "chrono",
     "json",
@@ -66,7 +68,7 @@ serde_json = "1"
 toml = "0.8"
 # observability
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 prometheus = "0.14"
 # errors
 thiserror = "2"
@@ -78,16 +80,15 @@ chrono = { version = "0.4", features = ["serde"] }
 # crypto & tokens
 rand = "0.8"
 sha2 = "0.10"
-sha1 = { version = "0.10", features = ["oid"] }
 hex = "0.4"
 hmac = "0.12"
 crc32fast = "1"
-rsa = { version = "0.9", features = ["pem"] }
+ring = "0.17"
 jsonwebtoken = "9"
 # async traits & lifecycle
 async-trait = "0.1"
 tokio-util = "0.7"
-aws-config = { version = "1", default-features = false, features = ["legacy-client", "rt-tokio"] }
+aws-config = { version = "1", default-features = false, features = ["rustls", "rt-tokio"] }
 aws-credential-types = "1"
 ulid = "1"
 chrono-tz = "0.9"
@@ -100,9 +101,9 @@ flate2 = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 httpdate = "1"
 structured-email-address = { version = "0.0.16", default-features = false }
-# ring is the single crypto provider across the graph (sqlx/reqwest/jsonwebtoken
-# all enable rustls/ring); default features would also pull aws-lc-rs, and two
-# compiled-in providers make ClientConfig::builder() ambiguous (panic).
+# Cordy's direct TLS clients use Ring. aws-config's rustls client also enables
+# AWS-LC, so every production binary explicitly installs Ring before any
+# ClientConfig::builder() call rather than relying on ambiguous auto-selection.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 rustls-native-certs = "0.8"
@@ -113,7 +114,7 @@ hostname = "0.4"
 # remotemcp secure HTTP stack (hyper legacy client with a custom pinned connector)
 http = "1"
 hyper = { version = "1", features = ["client", "http1"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "runtime", "service", "tokio"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "service", "tokio"] }
 http-body-util = "0.1"
 url = "2"
 dirs = "6"

@@ -4,7 +4,7 @@
 //! spawn. It converts the claim payload into the exact execenv context, then
 //! binds the resulting [`Environment`] into provider options and a child-only
 //! environment. Transcript draining, usage, terminal callbacks, and process
-//! ownership remain the responsibility of the future `ProviderRuntimeAdapter`.
+//! ownership remain the responsibility of `ProviderRuntimeAdapter`.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -41,6 +41,10 @@ pub struct ProviderExecutionInputs {
     pub default_model: String,
     pub codex_version: String,
     pub openclaw_bin: String,
+    /// Fixed arguments from the accepted launch prefix. They are not task
+    /// input, but Codex's sandbox decision must see them because they are
+    /// present on the actual child argv.
+    pub launch_prefix_args: Vec<String>,
     pub effective_mcp_config: Option<Value>,
     pub cursor_mcp_auth_source: String,
     pub local_work_dir: String,
@@ -58,7 +62,6 @@ pub struct ProviderExecutionInputs {
     /// prepended to the inherited PATH).
     pub path: String,
 }
-
 /// Values available only after execenv preparation has completed.
 ///
 /// `system_prompt` is the already-rendered runtime brief for providers that
@@ -76,6 +79,7 @@ pub struct PreparedEnvironmentInputs {
 #[derive(Clone)]
 pub struct ProviderExecutionPlan {
     prepare: PrepareParams,
+    target: RuntimeExecutionTarget,
     prior_work_dir: String,
     options: ExecOptionsSeed,
     child_env: ChildEnvironmentSeed,
@@ -88,6 +92,7 @@ impl fmt::Debug for ProviderExecutionPlan {
             .field("task_id", &self.prepare.task_id)
             .field("workspace_id", &self.prepare.workspace_id)
             .field("provider", &self.prepare.provider)
+            .field("profile_id", &self.target.profile_id)
             .field("has_prior_work_dir", &!self.prior_work_dir.is_empty())
             .field("child_env", &self.child_env)
             .finish_non_exhaustive()
@@ -104,7 +109,19 @@ impl fmt::Debug for BoundProviderExecution {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("BoundProviderExecution")
-            .field("options", &self.options)
+            // ExecOptions contains provider arguments and MCP configuration;
+            // keep this diagnostic summary structural so a task log cannot
+            // expose either of them.
+            .field("has_cwd", &!self.options.cwd.is_empty())
+            .field("has_model", &!self.options.model.is_empty())
+            .field("has_system_prompt", &!self.options.system_prompt.is_empty())
+            .field(
+                "has_resume_session",
+                &!self.options.resume_session_id.is_empty(),
+            )
+            .field("extra_arg_count", &self.options.extra_args.len())
+            .field("custom_arg_count", &self.options.custom_args.len())
+            .field("has_mcp_config", &self.options.mcp_config.is_some())
             .field("child_env", &self.child_env)
             .finish()
     }
@@ -219,6 +236,29 @@ impl ProviderExecutionPlan {
         } else {
             inputs.codex_custom_args.clone()
         };
+        let codex_custom_args = if provider == "codex" && !inputs.launch_prefix_args.is_empty() {
+            let mut effective = inputs.launch_prefix_args.clone();
+            effective.extend(codex_custom_args);
+            effective
+        } else {
+            codex_custom_args
+        };
+        let codex_custom_args = if provider == "codex" {
+            // The fallback is assembled from the accepted profile prefix and
+            // agent defaults. Apply the same provider-owned policy used by
+            // the backend so blocked launch flags cannot reach the child even
+            // when no explicit normalized args were supplied by the caller.
+            cordy_agent::filter_launch_prefix_for_provider("codex", &codex_custom_args)
+        } else {
+            codex_custom_args
+        };
+        let mut hermes_env = custom_env.clone();
+        if provider == "hermes" && !inputs.hermes_source_home.is_empty() {
+            // The selected source overlay is authoritative. This must be in
+            // the preparation parameters (not only in the final child env),
+            // because Hermes reads HERMES_HOME while creating its stores.
+            hermes_env.insert("HERMES_HOME".to_string(), inputs.hermes_source_home.clone());
+        }
         // ExecOptions owns its own vectors. Keeping this explicit avoids a
         // later adapter accidentally splicing profile fixed args into the
         // backend-only ExtraArgs region.
@@ -242,7 +282,7 @@ impl ProviderExecutionPlan {
             hermes_source_must_exist: inputs.hermes_source_must_exist,
             hermes_memory_store: inputs.hermes_memory_store,
             hermes_session_store: inputs.hermes_session_store,
-            hermes_env: custom_env.clone().into_iter().collect(),
+            hermes_env: hermes_env.into_iter().collect(),
             reasonix_env: custom_env.clone().into_iter().collect(),
             codex_custom_args,
             task: task_context,
@@ -298,6 +338,7 @@ impl ProviderExecutionPlan {
         };
         Ok(Self {
             prepare,
+            target: target.clone(),
             prior_work_dir: task.prior_work_dir.clone(),
             options: ExecOptionsSeed {
                 model,
@@ -330,6 +371,13 @@ impl ProviderExecutionPlan {
 
     pub fn task_context(&self) -> &TaskContextForEnv {
         &self.prepare.task
+    }
+
+    /// The exact registered target selected before preparation. In particular,
+    /// custom profile identity must survive until the backend is constructed;
+    /// provider name alone is insufficient to select the right executable.
+    pub fn target(&self) -> &RuntimeExecutionTarget {
+        &self.target
     }
 
     pub fn prior_work_dir(&self) -> &str {
@@ -382,6 +430,22 @@ impl ProviderExecutionPlan {
         self.prepare.task.prior_session_resume_unavailable = true;
     }
 
+    /// Rebinds the three provider temp variables after the task environment
+    /// exists and the daemon has allocated its private per-run directory.
+    pub fn set_task_temp_dir(&mut self, temp_dir: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !temp_dir.trim().is_empty(),
+            "invalid execution configuration: missing task temp directory"
+        );
+        validate_env_value("temp_dir", temp_dir)?;
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            self.child_env
+                .values
+                .insert(key.to_string(), temp_dir.to_string());
+        }
+        Ok(())
+    }
+
     pub fn bind_environment(
         &self,
         environment: &Environment,
@@ -424,6 +488,12 @@ impl ProviderExecutionPlan {
         );
         // The prepared overlay is authoritative over custom_env.
         insert_nonempty(&mut values, "HERMES_HOME", &environment.hermes_home);
+        let custom_args =
+            if self.prepare.provider == "hermes" && !environment.hermes_home.trim().is_empty() {
+                strip_hermes_profile_selectors(&self.options.custom_args)
+            } else {
+                self.options.custom_args.clone()
+            };
 
         Ok(BoundProviderExecution {
             options: ExecOptions {
@@ -440,7 +510,7 @@ impl ProviderExecutionPlan {
                 resume_expected: !self.options.resume_session_id.is_empty(),
                 resume_continuity_notice: self.options.resume_continuity_notice.clone(),
                 extra_args: self.options.extra_args.clone(),
-                custom_args: self.options.custom_args.clone(),
+                custom_args,
                 qwenpaw_workspace: environment.qwenpaw_workspace.clone(),
                 mcp_config: self.options.mcp_config.clone(),
                 thinking_level: self.options.thinking_level.clone(),
@@ -455,7 +525,7 @@ impl ProviderExecutionPlan {
     }
 }
 
-fn validate_identity<'a>(
+pub(crate) fn validate_identity<'a>(
     task: &'a Task,
     target: &RuntimeExecutionTarget,
 ) -> anyhow::Result<&'a AgentData> {
@@ -630,7 +700,7 @@ fn sanitize_custom_env(
     Ok(result)
 }
 
-fn blocked_custom_env_key(key: &str) -> bool {
+pub(crate) fn blocked_custom_env_key(key: &str) -> bool {
     let upper = key.to_ascii_uppercase();
     upper.starts_with("CORDY_")
         || matches!(
@@ -645,6 +715,8 @@ fn blocked_custom_env_key(key: &str) -> bool {
                 | "TEMP"
                 | "CODEX_HOME"
                 | "REASONIX_STATE_HOME"
+                | "CORDY_DSH_SESSION_ROOT"
+                | "DSH_TELEMETRY_DISABLED"
                 | "CURSOR_DATA_DIR"
                 | "CURSOR_MCP_AUTH_SOURCE"
                 | "OPENCLAW_CONFIG_PATH"
@@ -669,6 +741,45 @@ fn insert_nonempty(values: &mut BTreeMap<String, String>, key: &str, value: &str
     if !value.is_empty() {
         values.insert(key.to_string(), value.to_string());
     }
+}
+
+/// Hermes accepts a profile selector on its command line, but the daemon has
+/// already selected and mounted the profile-specific overlay. Forwarding a
+/// second selector lets profile configuration override the authoritative
+/// task environment. Remove both split and `--flag=value` spellings after
+/// unquoting only for matching; untouched arguments retain their original
+/// bytes and ordering.
+pub(crate) fn strip_hermes_profile_selectors(args: &[String]) -> Vec<String> {
+    let mut filtered = Vec::with_capacity(args.len());
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        let normalized = unquote_shell_arg(arg);
+        if normalized == "--profile" || normalized == "-p" {
+            skip_next = true;
+            continue;
+        }
+        if normalized.starts_with("--profile=") || normalized.starts_with("-p=") {
+            continue;
+        }
+        filtered.push(arg.clone());
+    }
+    filtered
+}
+
+fn unquote_shell_arg(arg: &str) -> String {
+    let trimmed = arg.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        let quote = bytes[0];
+        if (quote == b'\'' || quote == b'"') && bytes[trimmed.len() - 1] == quote {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 #[cfg(test)]
@@ -810,6 +921,20 @@ mod tests {
     }
 
     #[test]
+    fn connected_apps_keep_go_wire_field_names() {
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        let prepare_json = serde_json::to_value(plan.prepare_params()).unwrap();
+        let connected_app = &prepare_json["Task"]["ConnectedApps"][0];
+
+        assert_eq!(connected_app["provider"], "composio");
+        assert_eq!(connected_app["server_name"], "composio");
+        assert_eq!(connected_app["toolkit_slug"], "notion");
+        assert_eq!(connected_app["toolkit_name"], "Notion");
+        assert!(connected_app.get("serverName").is_none());
+        assert!(connected_app.get("toolkitSlug").is_none());
+    }
+
+    #[test]
     fn binds_task_token_only_to_child_env_and_preserves_exec_options() {
         let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
         let bound = plan
@@ -891,9 +1016,10 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::type_complexity)]
     fn invalid_identity_or_auth_fails_closed_without_daemon_token_fallback() {
-        let cases: [(&str, fn(&mut Task)); 5] = [
+        type TaskMutation = fn(&mut Task);
+
+        let cases: [(&str, TaskMutation); 5] = [
             ("missing token", |task: &mut Task| task.auth_token.clear()),
             ("daemon token", |task: &mut Task| {
                 task.auth_token = "owner-token".to_string()
@@ -949,5 +1075,109 @@ mod tests {
             bound.child_env.get("CORDY_QUICK_CREATE_ATTACHMENT_IDS"),
             Some("[\"attachment-1\"]")
         );
+    }
+
+    #[test]
+    fn private_task_temp_rebind_is_authoritative_over_custom_env() {
+        let mut claim = task();
+        let custom = claim
+            .agent
+            .as_mut()
+            .unwrap()
+            .custom_env
+            .get_or_insert_with(Default::default);
+        custom.insert("TMPDIR".to_string(), "/attacker/tmpdir".to_string());
+        custom.insert("TMP".to_string(), "/attacker/tmp".to_string());
+        custom.insert("TEMP".to_string(), "/attacker/temp".to_string());
+
+        let mut plan =
+            ProviderExecutionPlan::build(&config(), &claim, &target(), inputs()).unwrap();
+        plan.set_task_temp_dir("/tmp/cordy-task-private").unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".to_string(),
+                    cordy_config_root: "/config".to_string(),
+                    codex_home: "/codex".to_string(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            assert_eq!(bound.child_env.get(key), Some("/tmp/cordy-task-private"));
+        }
+    }
+
+    #[test]
+    fn preserves_registered_profile_identity_and_hermes_source_overlay() {
+        let mut target = target();
+        target.provider = "hermes".to_string();
+        target.profile_id = "profile-42".to_string();
+        let mut inputs = inputs();
+        inputs.hermes_source_home = "/profiles/hermes".to_string();
+
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target, inputs).unwrap();
+        assert_eq!(plan.target().profile_id, "profile-42");
+        assert_eq!(
+            plan.prepare_params().hermes_env.get("HERMES_HOME"),
+            Some(&"/profiles/hermes".to_string())
+        );
+    }
+
+    #[test]
+    fn hermes_profile_selectors_are_removed_only_after_overlay_binding() {
+        let mut claim = task();
+        claim.agent.as_mut().unwrap().custom_args = vec![
+            "--profile".to_string(),
+            "'default'".to_string(),
+            "--profile=other".to_string(),
+            "-p".to_string(),
+            "quoted".to_string(),
+            "--keep".to_string(),
+        ];
+        let mut target = target();
+        target.provider = "hermes".to_string();
+        let plan = ProviderExecutionPlan::build(&config(), &claim, &target, inputs()).unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".to_string(),
+                    cordy_config_root: "/config".to_string(),
+                    hermes_home: "/task/hermes".to_string(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+        assert_eq!(bound.options.custom_args, vec!["--keep"]);
+    }
+
+    #[test]
+    fn dsh_telemetry_cannot_be_overridden_by_custom_environment() {
+        let mut claim = task();
+        claim.agent.as_mut().unwrap().custom_env = Some(std::collections::HashMap::from([(
+            "DSH_TELEMETRY_DISABLED".to_string(),
+            "0".to_string(),
+        )]));
+        let mut target = target();
+        target.provider = "dsh".to_string();
+        let mut inputs = inputs();
+        inputs
+            .runtime_env
+            .insert("DSH_TELEMETRY_DISABLED".to_string(), "1".to_string());
+        let plan = ProviderExecutionPlan::build(&config(), &claim, &target, inputs).unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".to_string(),
+                    cordy_config_root: "/config".to_string(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+        assert_eq!(bound.child_env.get("DSH_TELEMETRY_DISABLED"), Some("1"));
     }
 }

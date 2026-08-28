@@ -269,16 +269,41 @@ mod tests {
     /// Serializes tests that mutate HOME — env is process-global.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn with_home<F: FnOnce(&Path)>(f: F) {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        let prev = std::env::var("HOME").ok();
-        std::env::set_var("HOME", home.path());
-        f(home.path());
-        match prev {
-            Some(p) => std::env::set_var("HOME", p),
-            None => std::env::remove_var("HOME"),
+    struct EnvRestore {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
         }
+    }
+
+    fn with_home<F: FnOnce(&Path)>(f: F) {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let home = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        const HOME_ENV: &str = "HOME";
+        #[cfg(windows)]
+        const HOME_ENV: &str = "USERPROFILE";
+
+        let _task_root_restore = EnvRestore {
+            key: TASK_CONFIG_ROOT_ENV,
+            previous: std::env::var_os(TASK_CONFIG_ROOT_ENV),
+        };
+        std::env::remove_var(TASK_CONFIG_ROOT_ENV);
+        let _home_restore = EnvRestore {
+            key: HOME_ENV,
+            previous: std::env::var_os(HOME_ENV),
+        };
+        std::env::set_var(HOME_ENV, home.path());
+        f(home.path());
     }
 
     /// TestEnsureDaemonID_Persists (identity_test.go:14–42).

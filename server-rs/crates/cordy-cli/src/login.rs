@@ -312,7 +312,11 @@ pub(super) struct AuthUser {
 /// Authenticate either with a PAT or with the browser callback flow. The
 /// credential and workspace reset are committed together after the new token
 /// has been verified, so a failed login cannot damage an existing profile.
-pub(super) async fn run_login(cli: &Cli, environment: &Environment, args: &LoginArgs) -> Result<RunOutput> {
+pub(super) async fn run_login(
+    cli: &Cli,
+    environment: &Environment,
+    args: &LoginArgs,
+) -> Result<RunOutput> {
     run_login_with_urls(cli, environment, args, None, None).await
 }
 

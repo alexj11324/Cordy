@@ -116,7 +116,7 @@ pub(crate) fn prepare_cursor_mcp_config(
 }
 
 fn join(base: &str, seg: &str) -> String {
-    super::execenv::join_path(&[base, seg])
+    Path::new(base).join(seg).to_string_lossy().into_owned()
 }
 
 fn seed_cursor_mcp_auth_file(project_data_dir: &str, source: &str) -> anyhow::Result<()> {

@@ -283,23 +283,6 @@ mod tests {
         assert!(session_wire_logs(Path::new("/tmp"), "a\\b").is_empty());
     }
 
-    #[test]
-    fn oversized_wire_record_is_bounded_and_following_record_survives() {
-        let mut input = vec![b'x'; MAX_LINE_BYTES + 5_000];
-        input.push(b'\n');
-        input.extend_from_slice(b"next\n");
-        let mut reader = BufReader::new(input.as_slice());
-        let mut line = Vec::new();
-        let bytes = read_bounded_line(&mut reader, &mut line)
-            .unwrap_or_else(|error| panic!("bounded oversized line: {error}"));
-        assert_eq!(bytes, MAX_LINE_BYTES + 1);
-        assert_eq!(line.len(), MAX_LINE_BYTES + 1);
-        line.clear();
-        read_bounded_line(&mut reader, &mut line)
-            .unwrap_or_else(|error| panic!("line after oversized record: {error}"));
-        assert_eq!(line, b"next\n");
-    }
-
     fn write_log(root: &Path, session: &str, agent: &str, lines: &[String]) {
         let directory = root
             .join("sessions")

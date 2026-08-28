@@ -9,12 +9,31 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::prelude::*;
+
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(target_os = "linux")]
+#[allow(non_upper_case_globals)]
+#[export_name = "malloc_conf"]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
 mod channel_runtime;
 mod http_serve;
+mod profiling;
 mod realtime_runtime;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn build_version() -> &'static str {
+    env!("CORDY_EFFECTIVE_BUILD_VERSION")
+}
+
+fn build_commit() -> &'static str {
+    env!("CORDY_EFFECTIVE_BUILD_COMMIT")
+}
 
 struct ProductionApp {
     router: Router,
@@ -66,12 +85,59 @@ impl MetricsRuntime {
     }
 }
 
+struct ProfilingRuntime {
+    shutdown: tokio_util::sync::CancellationToken,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl ProfilingRuntime {
+    async fn shutdown(self) {
+        if !self.shutdown_with_timeout(Duration::from_secs(3)).await {
+            tracing::warn!("pprof server did not exit within shutdown timeout");
+        }
+    }
+
+    async fn shutdown_with_timeout(self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let mut task = self.task;
+        if tokio::time::timeout(timeout, &mut task).await.is_ok() {
+            return true;
+        }
+        task.abort();
+        let _ = task.await;
+        false
+    }
+}
+
 impl VcsWebhookConfig {
+    fn from_config(cfg: &cordy_config::Config) -> Self {
+        let enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
+        let secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
+            .ok()
+            .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
+        Self {
+            enabled,
+            secret_box,
+        }
+    }
+
     #[cfg(test)]
     fn disabled() -> Self {
         Self {
             enabled: false,
             secret_box: None,
+        }
+    }
+}
+
+fn github_snapshot_client(
+    result: anyhow::Result<Option<cordy_ghsnapshot::Client>>,
+) -> Option<cordy_ghsnapshot::Client> {
+    match result {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "GitHub PR snapshot pipeline disabled by invalid configuration");
+            None
         }
     }
 }
@@ -263,6 +329,7 @@ async fn build_production_router(
         business_metrics.clone(),
     )
     .with_observability(business_metrics, http_metrics)
+    .with_invitation_admission(cordy_handler::invitation::InvitationAdmission::from_env())
     .with_autopilot_entitlements(entitlements)
     .with_github_snapshots(github_client)
     .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
@@ -292,7 +359,7 @@ async fn build_production_router(
         cfg,
         cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed,
-        env!("CARGO_PKG_VERSION").to_string(),
+        build_version().to_string(),
     ))
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
@@ -490,11 +557,23 @@ fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cordy=info,tower=info".into()),
-        )
+    cordy_util::install_rustls_crypto_provider()?;
+    let log_filter = tracing_subscriber::EnvFilter::try_new(cordy_util::logging::env_filter())
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"));
+    let console_addr: SocketAddr = profiling::TOKIO_CONSOLE_ADDR.parse()?;
+    let console_layer = console_subscriber::ConsoleLayer::builder()
+        .server_addr(console_addr)
+        .spawn();
+    let log_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new(
+            cordy_util::logging::LOCAL_TIME_FORMAT.to_string(),
+        ))
+        .with_ansi(cordy_util::logging::stderr_is_terminal())
+        .with_filter(log_filter);
+    tracing_subscriber::registry()
+        .with(console_layer)
+        .with(log_layer)
         .init();
 
     let cfg = cordy_config::Config::load(Some(std::path::Path::new("cordy.toml")))?;
@@ -520,10 +599,8 @@ async fn main() -> anyhow::Result<()> {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
             daemonws: Some(&cordy_daemon::hub::M),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            commit: option_env!("CORDY_GIT_COMMIT")
-                .unwrap_or("unknown")
-                .to_string(),
+            version: build_version().to_string(),
+            commit: build_commit().to_string(),
             sampler: dedicated_sampler_pool(&cfg.database),
         });
         let business = registry.business.clone();
@@ -559,13 +636,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None, None, None, None, None, None)
     };
-    let github_client = match cordy_ghsnapshot::Client::new_from_env() {
-        Ok(client) => client,
-        Err(error) => {
-            tracing::error!(%error, "GitHub snapshot integration disabled by invalid configuration");
-            None
-        }
-    };
+    let github_client = github_snapshot_client(cordy_ghsnapshot::Client::new_from_env());
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
         cfg.storage.local_upload_base_url.as_deref(),
@@ -582,10 +653,7 @@ async fn main() -> anyhow::Result<()> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .collect();
-    let vcs_enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
-    let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
-        .ok()
-        .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
+    let vcs = VcsWebhookConfig::from_config(&cfg);
     let app = build_production_router(
         db,
         hub,
@@ -599,16 +667,24 @@ async fn main() -> anyhow::Result<()> {
         &cfg,
         attachment_storage,
         attachment_frame_ancestors,
-        VcsWebhookConfig {
-            enabled: vcs_enabled,
-            secret_box: vcs_secret_box,
-        },
+        vcs,
     )
     .await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
+    let profiling_shutdown = tokio_util::sync::CancellationToken::new();
+    let profiling_serve_shutdown = profiling_shutdown.clone();
+    let profiling_task = tokio::spawn(async move {
+        if let Err(error) = profiling::serve(profiling_serve_shutdown).await {
+            tracing::error!(%error, "pprof server stopped");
+        }
+    });
+    let profiling_runtime = ProfilingRuntime {
+        shutdown: profiling_shutdown,
+        task: profiling_task,
+    };
     let ProductionApp {
         router,
         root_cancel,
@@ -628,6 +704,7 @@ async fn main() -> anyhow::Result<()> {
         analytics,
     } = app;
     let http_shutdown = CancellationToken::new();
+    let shutdown_hold = duration_env("CORDY_SHUTDOWN_HOLD_DURATION", Duration::ZERO, true);
     let mut server = std::pin::pin!(http_serve::serve_with_bounded_drain(
         listener,
         router,
@@ -639,7 +716,7 @@ async fn main() -> anyhow::Result<()> {
         result = server.as_mut() => result.map(|timed_out| {
             http_drain_timed_out = timed_out;
         }),
-        () = shutdown_signal() => {
+        () = shutdown_signal(shutdown_hold) => {
             http_shutdown.cancel();
             server.as_mut().await.map(|timed_out| {
                 http_drain_timed_out = timed_out;
@@ -807,11 +884,12 @@ async fn main() -> anyhow::Result<()> {
     if let Some(metrics_runtime) = metrics_runtime {
         metrics_runtime.shutdown().await;
     }
+    profiling_runtime.shutdown().await;
     serve_result?;
     Ok(())
 }
 
-async fn shutdown_signal() {
+async fn wait_for_shutdown_signal() {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
@@ -834,7 +912,27 @@ async fn shutdown_signal() {
         () = ctrl_c => {},
         () = terminate => {},
     }
-    tracing::info!("shutdown signal received; draining HTTP server");
+}
+
+async fn shutdown_signal(hold: Duration) {
+    wait_for_shutdown_signal().await;
+    if hold.is_zero() {
+        tracing::info!("shutdown signal received; draining HTTP server");
+        return;
+    }
+
+    tracing::info!(
+        hold_seconds = hold.as_secs_f64(),
+        "shutdown signal received; holding admission before drain"
+    );
+    tokio::select! {
+        () = tokio::time::sleep(hold) => {
+            tracing::info!("shutdown hold complete; draining HTTP server");
+        }
+        () = wait_for_shutdown_signal() => {
+            tracing::warn!("second shutdown signal received; skipping shutdown hold");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -862,6 +960,50 @@ mod tests {
             )
             .expect("test local storage"),
         )
+    }
+
+    #[test]
+    fn vcs_production_configuration_matches_go_exact_true_and_fails_closed() {
+        const KEY_ENV: &str = "CORDY_VCS_SECRET_KEY";
+        let original = std::env::var_os(KEY_ENV);
+        let mut cfg = cordy_config::Config::default();
+
+        std::env::remove_var(KEY_ENV);
+        cfg.integrations.vcs_integration_enabled = Some("1".into());
+        let noncanonical_flag = VcsWebhookConfig::from_config(&cfg);
+        assert!(!noncanonical_flag.enabled);
+        assert!(noncanonical_flag.secret_box.is_none());
+
+        cfg.integrations.vcs_integration_enabled = Some("true".into());
+        let missing_key = VcsWebhookConfig::from_config(&cfg);
+        assert!(missing_key.enabled);
+        assert!(missing_key.secret_box.is_none());
+
+        std::env::set_var(KEY_ENV, "not-base64");
+        let invalid_key = VcsWebhookConfig::from_config(&cfg);
+        assert!(invalid_key.enabled);
+        assert!(invalid_key.secret_box.is_none());
+
+        std::env::set_var(KEY_ENV, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        let configured = VcsWebhookConfig::from_config(&cfg);
+        assert!(configured.enabled);
+        assert!(configured.secret_box.is_some());
+
+        cfg.integrations.vcs_integration_enabled = Some("false".into());
+        let disabled = VcsWebhookConfig::from_config(&cfg);
+        assert!(!disabled.enabled);
+        assert!(disabled.secret_box.is_some());
+
+        match original {
+            Some(value) => std::env::set_var(KEY_ENV, value),
+            None => std::env::remove_var(KEY_ENV),
+        }
+    }
+
+    #[test]
+    fn invalid_github_snapshot_credentials_disable_only_the_pipeline() {
+        let client = github_snapshot_client(Err(anyhow::anyhow!("invalid private key")));
+        assert!(client.is_none());
     }
 
     #[tokio::test]

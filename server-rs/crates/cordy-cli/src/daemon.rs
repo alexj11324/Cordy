@@ -30,7 +30,6 @@ pub struct DaemonStartAssembly {
     pub launch: DaemonLaunchOverrides,
     pub profile_input: DaemonProfileInput,
 }
-
 impl DaemonStartAssembly {
     /// Loads one profile snapshot and resolves every launch-precedence layer.
     /// Authentication is deliberately deferred: the background lifecycle first
@@ -285,7 +284,10 @@ mod tests {
             Ok(_) => panic!("foreground assembly must require profile credentials"),
         };
         let message = format!("{error:#}");
-        assert!(message.contains("cordy login"), "unexpected error: {message}");
+        assert!(
+            message.contains("cordy login"),
+            "unexpected error: {message}"
+        );
         assert!(!root.exists());
     }
 }

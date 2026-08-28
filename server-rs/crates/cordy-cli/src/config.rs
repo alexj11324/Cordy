@@ -23,6 +23,7 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_WORKSPACE_ID",
     "CORDY_SERVER_URL",
     "CORDY_APP_URL",
+    "FRONTEND_ORIGIN",
     "CORDY_HTTP_TIMEOUT",
     "CORDY_DEBUG",
     "CORDY_REPO_CHECKOUT_MODE",
@@ -40,11 +41,22 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_DAEMON_AUTO_UPDATE",
     "CORDY_DAEMON_AUTO_UPDATE_INTERVAL",
     "CORDY_DAEMON_AUTO_RELOAD",
+    "SSH_CONNECTION",
+    "SSH_CLIENT",
+    "SSH_TTY",
     "CORDY_QUICK_CREATE_TASK_ID",
     "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
     TASK_CONFIG_ROOT_ENV,
 ];
 
+fn capture_environment_values(
+    mut read: impl FnMut(&str) -> Option<String>,
+) -> HashMap<String, String> {
+    CAPTURED_ENV_KEYS
+        .iter()
+        .filter_map(|key| read(key).map(|value| ((*key).into(), value)))
+        .collect()
+}
 #[derive(Clone, Debug)]
 pub struct Environment {
     values: HashMap<String, String>,
@@ -54,10 +66,7 @@ pub struct Environment {
 
 impl Environment {
     pub fn from_process() -> Result<Self> {
-        let values = CAPTURED_ENV_KEYS
-            .iter()
-            .filter_map(|key| std::env::var(key).ok().map(|value| ((*key).into(), value)))
-            .collect();
+        let values = capture_environment_values(|key| std::env::var(key).ok());
         Ok(Self {
             values,
             current_dir: std::env::current_dir().context("resolve current directory")?,
@@ -241,6 +250,52 @@ impl Environment {
                 object.remove(key);
             }
         }
+        write_json_atomically(&path, &document)
+    }
+
+    /// Atomically persist the credentials established by `login --token`.
+    /// Keeping the server URL and token update under one profile lock avoids
+    /// leaving a profile half-updated if the second field cannot be written.
+    pub fn save_profile_credentials(
+        &self,
+        profile: &str,
+        server_url: &str,
+        token: &str,
+    ) -> Result<()> {
+        self.save_profile_credentials_with_app_url(profile, server_url, None, token)
+    }
+
+    pub fn save_profile_credentials_with_app_url(
+        &self,
+        profile: &str,
+        server_url: &str,
+        app_url: Option<&str>,
+        token: &str,
+    ) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        object.insert("server_url".into(), Value::String(server_url.into()));
+        if let Some(app_url) = app_url {
+            object.insert("app_url".into(), Value::String(app_url.into()));
+        }
+        object.insert("workspace_id".into(), Value::String(String::new()));
+        object.insert("token".into(), Value::String(token.into()));
         write_json_atomically(&path, &document)
     }
 
@@ -483,11 +538,19 @@ fn read_config_document(path: &Path) -> Result<Value> {
 }
 
 fn ensure_config_directory(directory: &Path, task_root: Option<&str>) -> Result<()> {
-    fs::create_dir_all(directory).context("create CLI config directory")?;
     let Some(task_root) = task_root else {
+        fs::create_dir_all(directory).context("create CLI config directory")?;
         return Ok(());
     };
     let task_root = normalize_path(Path::new(task_root));
+    if !directory.starts_with(&task_root) {
+        bail!(
+            "task-local CLI config directory {:?} escapes root {:?}",
+            directory,
+            task_root
+        );
+    }
+    fs::create_dir_all(directory).context("create CLI config directory")?;
     let mut current = directory;
     loop {
         restrict_directory_permissions(current)?;

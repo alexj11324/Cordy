@@ -91,6 +91,11 @@ impl SkillBundleCache {
                 .create_new(true)
                 .open(join(&[&tmp_str, "bundle.json"]))?;
             f.write_all(&data)?;
+            f.sync_all()?;
+            // Windows refuses to rename a directory while a child file still
+            // has an open handle. Close the bundle before publishing the
+            // temporary directory atomically.
+            drop(f);
 
             let remove_all = |p: &str| -> std::io::Result<()> {
                 if PathBuf::from(p).is_file() {

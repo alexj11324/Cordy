@@ -754,6 +754,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlink_into_banned_root_is_rejected() {
         if nix_uid() == 0 {

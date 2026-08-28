@@ -21,7 +21,7 @@ curl -i https://api.example.com/health
 curl -i https://api.example.com/readyz
 ```
 
-`/health` は API プロセスが応答していることだけを示します。`/readyz` はデータベースと migration も確認します。問題を報告するときは、エラー、関連ログ、CLI バージョン、OS を含め、トークンやメールアドレスなどの機微情報は提出前に取り除いてください。
+`/health` は API プロセスが応答していることだけを示します。`/readyz` はデータベースへの接続を確認します。Rust エントリーポイントはサービス提供前に migration を実行するため、migration が失敗すると ready になりません。問題を報告するときは、エラー、関連ログ、CLI バージョン、OS を含め、トークンやメールアドレスなどの機微情報は提出前に取り除いてください。
 
 ## デーモンが接続できない
 
@@ -173,14 +173,21 @@ SELECT rollup_task_usage_hourly();
 
 通常のアップグレードでは、103 のために何かをする必要はありません。`migrate up` は適用前に過去の使用量データを自動でバックフィルします。空のデータベースはそのまま通過し、履歴のあるインスタンスは月ごとに補完されてから続行します。
 
-それでも backend の起動が `refusing to drop legacy daily rollups` で失敗する場合は、自動バックフィルが完了していません（途中で失敗した、または `migrate up` を通さず SQL を直接適用した、など）。その場合はバックフィルコマンドを手動で実行し、完了後に backend を再起動します:
+それでも backend の起動が `refusing to drop legacy daily rollups` で失敗する場合は、自動バックフィルが完了していません（途中で失敗した、または `migrate up` を通さず SQL を直接適用した、など）。PostgreSQL を実行したまま、backend image に同梱されたバイナリを使用します。通常の entrypoint は失敗した migration で終了するため、entrypoint を上書きしてください:
 
 ```bash
-cd server
-DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/backfill_task_usage_hourly backend
 ```
 
-よく使うフラグ: `--dry-run` は書き込まずプレビューのみ、`--sleep-between-slices` はスライスの間に間隔を挟み、負荷の高いインスタンスへの読み取り圧力を下げます。コマンドは月単位のスライスで動作し、冪等なので、中断してもそのまま再実行できます。advisory lock を保持してサーバー側の定期ロールアップと相互排他になるため、重複や不整合なロールアップデータは生じません。完了後は backend を再起動し、`/readyz` で `migrations` が `ok` になっていることを確認してください。
+Rust toolchain がインストールされている場合に限り、ソース checkout も代替手段として使用できます:
+
+```bash
+make rust-build
+DATABASE_URL='postgres://...' ./server/bin/backfill_task_usage_hourly
+```
+
+よく使うフラグ: `--dry-run` は書き込まずプレビューのみ、`--sleep-between-slices` はスライスの間に間隔を挟み、負荷の高いインスタンスへの読み取り圧力を下げます。コマンドは月単位のスライスで動作し、冪等なので、中断してもそのまま再実行できます。advisory lock を保持してサーバー側の定期ロールアップと相互排他になるため、重複や不整合なロールアップデータは生じません。完了後は backend を再起動し、`/readyz` が HTTP 200 と `{"status":"ready"}` を返すことを確認してください。handler が確認するのはデータベースへの到達性だけであり、サーバーが正常に起動したことが entrypoint migration の完了を別途示します。
 
 ## ポートが使用中
 

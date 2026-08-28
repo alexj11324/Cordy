@@ -12,7 +12,7 @@ cordy-realtime = { path = "../cordy-realtime" }
 cordy-task-failure = { path = "../cordy-task-failure" }
 anyhow = { workspace = true }
 axum = { workspace = true }
-prometheus = { workspace = true }
+prometheus = { workspace = true, features = ["process"] }
 regex = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

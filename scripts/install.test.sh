@@ -28,11 +28,16 @@ if [[ "$*" == *"-sI"* ]]; then
 fi
 
 out=""
+url=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o)
       out="$2"
       shift 2
+      ;;
+    http*)
+      url="$1"
+      shift
       ;;
     *)
       shift
@@ -44,7 +49,18 @@ if [[ -z "$out" ]]; then
   echo "stub curl expected -o" >&2
   exit 2
 fi
-cp "$CORDY_TEST_ARCHIVE" "$out"
+if [[ "$url" == */checksums.txt ]]; then
+  asset="$(cat "$CORDY_TEST_ASSET_FILE")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    checksum="$(sha256sum "$CORDY_TEST_ARCHIVE" | awk '{print $1}')"
+  else
+    checksum="$(shasum -a 256 "$CORDY_TEST_ARCHIVE" | awk '{print $1}')"
+  fi
+  printf '%s  %s\n' "$checksum" "$asset" >"$out"
+else
+  printf '%s' "${url##*/}" >"$CORDY_TEST_ASSET_FILE"
+  cp "$CORDY_TEST_ARCHIVE" "$out"
+fi
 STUB
   chmod +x "$stub_bin/curl"
 }
@@ -56,6 +72,7 @@ _run_installer() {
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
     CORDY_BIN_DIR="$tmp/install-bin" \
     CORDY_TEST_ARCHIVE="$tmp/cordy.tar.gz" \
+    CORDY_TEST_ASSET_FILE="$tmp/release-asset" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -323,7 +340,7 @@ case "${1:-}" in
     subcommand=""
     for arg in "$@"; do
       case "$arg" in
-        pull | up | port | version | ps | logs | down) subcommand="$arg"; break ;;
+        pull | up | port | version | ps | logs | down | config) subcommand="$arg"; break ;;
       esac
     done
     case "$subcommand" in
@@ -340,6 +357,24 @@ case "${1:-}" in
           *) exit 1 ;;
         esac
         ;;
+      config)
+        printed_environment=false
+        for arg in "$@"; do
+          if [ "$arg" = "--environment" ]; then
+            printed_environment=true
+            for key in PORT BACKEND_PORT API_PORT SERVER_PORT FRONTEND_PORT CORDY_IMAGE_TAG; do
+              if value="$(_resolve "$key")"; then
+                printf '%s=%s\n' "$key" "$value"
+              fi
+            done
+            break
+          fi
+        done
+        if [ "$printed_environment" = false ]; then
+          printf 'services:\n  backend:\n    ports: ["127.0.0.1:%s:8080"]\n  frontend:\n    ports: ["127.0.0.1:%s:3000"]\n' \
+            "$(_published_backend_port)" "$(_published_frontend_port)"
+        fi
+        ;;
       version) echo "2.30.0" ;;
     esac
     exit 0
@@ -349,9 +384,13 @@ exit 0
 STUB
   chmod +x "$stub_bin/docker"
 
-  # git: the installer takes the "existing installation" path, so only the
-  # fetch/checkout calls run and they are all tolerant of failure.
-  printf '#!/usr/bin/env bash\nexit 0\n' >"$stub_bin/git"
+  # git: the installer takes the existing-installation path and now requires
+  # both fetch and detached checkout to succeed before changing image tags.
+  cat >"$stub_bin/git" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${CORDY_TEST_GIT_LOG:-/dev/null}"
+exit 0
+STUB
   chmod +x "$stub_bin/git"
 
   # brew: pretend the CLI installs cleanly so the run reaches the summary.
@@ -365,11 +404,16 @@ STUB
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
+latest_request=false
 for arg in "$@"; do
   case "$arg" in
+    */releases/latest) latest_request=true ;;
     http*) printf '%s\n' "$arg" >>"$CORDY_TEST_CURL_LOG" ;;
   esac
 done
+if [ "$latest_request" = true ] && [ -n "${CORDY_TEST_LATEST_TAG:-}" ]; then
+  printf 'HTTP/2 302\nlocation: https://github.com/cordy-ai/cordy/releases/tag/%s\n' "$CORDY_TEST_LATEST_TAG"
+fi
 exit 0
 STUB
   chmod +x "$stub_bin/curl"
@@ -386,12 +430,14 @@ _run_with_server() {
   shift
 
   : >"$tmp/curl.log"
+  : >"$tmp/git.log"
   if ! env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
     CORDY_INSTALL_DIR="$tmp/server" \
     CORDY_SELFHOST_REF="main" \
     CORDY_TEST_CURL_LOG="$tmp/curl.log" \
+    CORDY_TEST_GIT_LOG="$tmp/git.log" \
     "$@" \
     bash "$ROOT_DIR/scripts/install.sh" --with-server \
     >"$tmp/install.out" 2>"$tmp/install.err"; then
@@ -509,10 +555,246 @@ STUB
   fi
 }
 
+test_with_server_pins_selected_release_images() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF=v0.3.2 CORDY_IMAGE_TAG=ambient || return 1
+
+  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.3.2" ]; then
+    echo "installer did not pin Compose images to the selected release ref" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -q "Pinned backend and web images to v0.3.2" "$tmp/install.out"; then
+    echo "installer did not report the selected production image tag" >&2
+    cat "$tmp/install.out" >&2 || true
+    return 1
+  fi
+}
+
+test_with_server_preserves_existing_image_pin_without_explicit_ref() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_IMAGE_TAG=v0.2.9\n' >>"$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF= || return 1
+
+  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.2.9" ]; then
+    echo "installer replaced an existing image pin without an explicit self-host ref" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -q "Preserved existing backend and web image pin v0.2.9" "$tmp/install.out"; then
+    echo "installer did not report the preserved image pin" >&2
+    cat "$tmp/install.out" >&2 || true
+    return 1
+  fi
+  if ! grep -Fq "fetch origin v0.2.9 --depth 1" "$tmp/git.log"; then
+    echo "installer preserved the image pin but did not check out its matching assets" >&2
+    cat "$tmp/git.log" >&2 || true
+    return 1
+  fi
+}
+
+test_with_server_resolves_latest_pin_to_matching_release_assets() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_IMAGE_TAG=latest\n' >>"$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF= CORDY_TEST_LATEST_TAG=v0.3.2 || return 1
+
+  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.3.2" ]; then
+    echo "installer did not replace the moving latest pin with the resolved release" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -Fq "fetch origin v0.3.2 --depth 1" "$tmp/git.log"; then
+    echo "installer did not check out the release assets matching the resolved latest image" >&2
+    cat "$tmp/git.log" >&2 || true
+    return 1
+  fi
+}
+
+test_systemd_preflight_fails_before_server_mutation() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "skipping Linux-only systemd preflight test on $(uname -s)"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  cat >"$tmp/stub-bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$tmp/stub-bin/loginctl"
+  chmod +x "$tmp/stub-bin/systemctl" "$tmp/stub-bin/loginctl"
+
+  if env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    CORDY_INSTALL_DIR="$tmp/server" \
+    CORDY_SELFHOST_REF="v0.3.2" \
+    bash "$ROOT_DIR/scripts/install.sh" --with-server --systemd \
+    >"$tmp/preflight.out" 2>"$tmp/preflight.err"; then
+    echo "systemd installation unexpectedly passed a failed preflight" >&2
+    return 1
+  fi
+  if grep -q '^CORDY_IMAGE_TAG=' "$tmp/server/.env"; then
+    echo "systemd preflight ran after mutating the server environment" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  grep -q "No systemd user manager is available" "$tmp/preflight.err" || return 1
+}
+
+test_with_server_systemd_owns_compose_lifecycle() {
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    echo "skipping Linux-only systemd lifecycle test on $(uname -s)"
+    return 0
+  fi
+
+  local tmp unit
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  : >"$tmp/systemctl.log"
+  : >"$tmp/loginctl.log"
+
+  cat >"$tmp/stub-bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CORDY_TEST_SYSTEMCTL_LOG"
+if [ "${CORDY_TEST_SYSTEMCTL_FAIL_DISABLE:-}" = "1" ] && [[ "$*" == *"disable --now"* ]]; then
+  exit 1
+fi
+exit 0
+STUB
+  cat >"$tmp/stub-bin/loginctl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CORDY_TEST_LOGINCTL_LOG"
+exit 0
+STUB
+  chmod +x "$tmp/stub-bin/systemctl" "$tmp/stub-bin/loginctl"
+
+  if ! (
+    cd "$tmp"
+    env -i \
+      PATH="$tmp/stub-bin:/usr/bin:/bin" \
+      HOME="$tmp" \
+      USER="cordy-test" \
+      CORDY_INSTALL_DIR="server" \
+      CORDY_SELFHOST_REF="v0.3.2" \
+      BACKEND_PORT="9000" \
+      FRONTEND_PORT="4000" \
+      CORDY_TEST_CURL_LOG="$tmp/curl.log" \
+      CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+      CORDY_TEST_LOGINCTL_LOG="$tmp/loginctl.log" \
+      bash "$ROOT_DIR/scripts/install.sh" --with-server --systemd \
+      >"$tmp/systemd-install.out" 2>"$tmp/systemd-install.err"
+  ); then
+    cat "$tmp/systemd-install.out" >&2 || true
+    cat "$tmp/systemd-install.err" >&2 || true
+    return 1
+  fi
+
+  unit="$tmp/.config/systemd/user/cordy-selfhost.service"
+  [ -f "$unit" ] || { echo "expected generated systemd user unit" >&2; return 1; }
+  grep -Fq "WorkingDirectory=\"$tmp/server\"" "$unit" || return 1
+  grep -Fq "ExecStart=\"$tmp/stub-bin/docker\" compose -f \"$tmp/server/.cordy-systemd.compose.yml\" up -d --remove-orphans" "$unit" || return 1
+  grep -Fq '127.0.0.1:9000:8080' "$tmp/server/.cordy-systemd.compose.yml" || return 1
+  grep -Fq '127.0.0.1:4000:3000' "$tmp/server/.cordy-systemd.compose.yml" || return 1
+  grep -Fq -- '--user enable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1
+  grep -Fq 'enable-linger cordy-test' "$tmp/loginctl.log" || return 1
+
+  if ! env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    CORDY_INSTALL_DIR="$tmp/server" \
+    CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    bash "$ROOT_DIR/scripts/install.sh" --stop \
+    >"$tmp/systemd-stop.out" 2>"$tmp/systemd-stop.err"; then
+    cat "$tmp/systemd-stop.out" >&2 || true
+    cat "$tmp/systemd-stop.err" >&2 || true
+    return 1
+  fi
+  grep -Fq -- '--user disable --now cordy-selfhost.service' "$tmp/systemctl.log" || return 1
+
+  if env -i \
+    PATH="$tmp/stub-bin:/usr/bin:/bin" \
+    HOME="$tmp" \
+    CORDY_INSTALL_DIR="$tmp/server" \
+    CORDY_TEST_SYSTEMCTL_LOG="$tmp/systemctl.log" \
+    CORDY_TEST_SYSTEMCTL_FAIL_DISABLE=1 \
+    bash "$ROOT_DIR/scripts/install.sh" --stop \
+    >"$tmp/systemd-stop-failure.out" 2>"$tmp/systemd-stop-failure.err"; then
+    echo "stop unexpectedly succeeded when systemd could not disable the unit" >&2
+    return 1
+  fi
+  grep -q "Could not stop and disable cordy-selfhost.service" "$tmp/systemd-stop-failure.err" || return 1
+}
+
+test_container_entrypoint_forwards_migration_signal() {
+  local tmp entrypoint_pid status=0
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  cp "$ROOT_DIR/docker/entrypoint.sh" "$tmp/entrypoint.sh"
+  cat >"$tmp/migrate" <<'STUB'
+#!/bin/sh
+trap 'touch migration-terminated; exit 143' TERM
+touch migration-ready
+while :; do sleep 1; done
+STUB
+  cat >"$tmp/server" <<'STUB'
+#!/bin/sh
+touch server-started
+STUB
+  chmod +x "$tmp/entrypoint.sh" "$tmp/migrate" "$tmp/server"
+
+  (cd "$tmp" && exec ./entrypoint.sh >entrypoint.out 2>entrypoint.err) &
+  entrypoint_pid=$!
+  for _ in $(seq 1 50); do
+    [ -f "$tmp/migration-ready" ] && break
+    sleep 0.1
+  done
+  [ -f "$tmp/migration-ready" ] || { echo "migration child did not start" >&2; return 1; }
+
+  kill -TERM "$entrypoint_pid"
+  wait "$entrypoint_pid" || status=$?
+  [ "$status" -ne 0 ] || { echo "signalled entrypoint unexpectedly succeeded" >&2; return 1; }
+  [ -f "$tmp/migration-terminated" ] || { echo "entrypoint did not forward TERM to migration" >&2; return 1; }
+  [ ! -f "$tmp/server-started" ] || { echo "entrypoint started server after interrupted migration" >&2; return 1; }
+}
+
 test_brew_install_failure_falls_back_to_release_binary
 test_brew_tap_failure_falls_back_to_release_binary
 test_remote_ssh_install_prints_token_login_hint
 test_local_install_does_not_print_token_login_hint
 test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
+test_with_server_pins_selected_release_images
+test_with_server_preserves_existing_image_pin_without_explicit_ref
+test_with_server_resolves_latest_pin_to_matching_release_assets
+test_systemd_preflight_fails_before_server_mutation
+test_with_server_systemd_owns_compose_lifecycle
+test_container_entrypoint_forwards_migration_signal
 echo "install.sh tests passed"

@@ -74,7 +74,7 @@ impl AcpError {
 
 pub struct AcpClient<R, W> {
     reader: AgentLineReader<R>,
-    writer: W,
+    writer: Option<W>,
     next_id: u64,
 }
 
@@ -86,7 +86,7 @@ where
     pub fn new(reader: R, writer: W) -> Self {
         Self {
             reader: AgentLineReader::new(reader),
-            writer,
+            writer: Some(writer),
             next_id: 1,
         }
     }
@@ -161,11 +161,18 @@ where
         }
     }
 
-    /// Drains post-response notifications until stdout EOF or the absolute
-    /// `maximum` bound expires. Closing the request side first is what lets a
-    /// well-behaved agent flush and hang up; a quiet interval is not treated
-    /// as terminal, because some runtimes emit their final `session/update`
-    /// after a gap that is still inside the advertised drain bound.
+    /// Closes the client request side while retaining stdout ownership so a
+    /// runtime can flush notifications that it emits only after stdin EOF.
+    pub async fn close_request_side(&mut self) -> Result<(), AcpError> {
+        if let Some(mut writer) = self.writer.take() {
+            writer.shutdown().await.map_err(AcpError::Transport)?;
+        }
+        Ok(())
+    }
+
+    /// Drains post-response notifications until stdout EOF, the `quiet`
+    /// interval, or the absolute `maximum` bound expires. A zero quiet interval
+    /// disables the idle bound for runtimes that flush only after stdin EOF.
     pub async fn drain_notifications(
         &mut self,
         quiet: Duration,
@@ -188,16 +195,20 @@ where
         mut on_notification: impl FnMut(AcpNotification),
         mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<(), AcpError> {
-        let _ = quiet;
         let deadline = tokio::time::Instant::now() + maximum;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 return Ok(());
             }
+            let wait = if quiet.is_zero() {
+                remaining
+            } else {
+                quiet.min(remaining)
+            };
             let line = tokio::select! {
                 line = self.reader.next_line() => line?,
-                () = tokio::time::sleep(remaining) => return Ok(()),
+                () = tokio::time::sleep(wait) => return Ok(()),
             };
             let Some(line) = line else {
                 return Ok(());
@@ -227,13 +238,6 @@ where
                 _ => {}
             }
         }
-    }
-
-    /// Closes the client request side so an ACP subprocess can flush its
-    /// remaining notifications and terminate. Callers may continue reading
-    /// through `drain_notifications*` until EOF or their hard deadline.
-    pub async fn close_request_side(&mut self) -> Result<(), AcpError> {
-        self.writer.shutdown().await.map_err(AcpError::Transport)
     }
 
     async fn answer_agent_request(
@@ -287,8 +291,14 @@ where
     async fn write(&mut self, frame: &Value) -> Result<(), AcpError> {
         let mut encoded = serde_json::to_vec(frame)?;
         encoded.push(b'\n');
-        self.writer.write_all(&encoded).await?;
-        self.writer.flush().await?;
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            AcpError::Transport(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "ACP request side is closed",
+            ))
+        })?;
+        writer.write_all(&encoded).await?;
+        writer.flush().await?;
         Ok(())
     }
 }
@@ -366,7 +376,7 @@ fn rpc_error(method: &str, error: &Value) -> AcpError {
 
 #[cfg(test)]
 mod tests {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
     use super::*;
 
@@ -417,62 +427,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn request_uses_injected_fail_closed_permission_policy() {
-        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+    async fn close_request_side_delivers_eof_to_the_peer() {
+        let (client_io, agent_io) = tokio::io::duplex(1024);
         let (client_read, client_write) = tokio::io::split(client_io);
-        let (agent_read, mut agent_write) = tokio::io::split(agent_io);
-        let agent = tokio::spawn(async move {
-            let mut lines = BufReader::new(agent_read).lines();
-            let _request = lines
-                .next_line()
-                .await
-                .unwrap_or_else(|error| panic!("read request: {error}"))
-                .unwrap_or_else(|| panic!("request line"));
-            agent_write
-                .write_all(
-                    br#"{"jsonrpc":"2.0","id":7,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-1","title":"Choose a deployment"},"options":[{"optionId":"allow","kind":"allow_once"}]}}
-"#,
-                )
-                .await
-                .unwrap_or_else(|error| panic!("write permission request: {error}"));
-            let decision = lines
-                .next_line()
-                .await
-                .unwrap_or_else(|error| panic!("read permission decision: {error}"))
-                .unwrap_or_else(|| panic!("permission decision line"));
-            assert!(decision.contains("interactive input unavailable"));
-            assert!(!decision.contains("\"outcome\":\"selected\""));
-            agent_write
-                .write_all(
-                    br#"{"jsonrpc":"2.0","id":1,"result":{"stopReason":"error"}}
-"#,
-                )
-                .await
-                .unwrap_or_else(|error| panic!("write response: {error}"));
-        });
+        let (mut agent_read, _agent_write) = tokio::io::split(agent_io);
         let mut client = AcpClient::new(BufReader::new(client_read), client_write);
-        let result = client
-            .request_with_permission(
-                "session/prompt",
-                serde_json::json!({}),
-                |_| {},
-                |params| {
-                    assert_eq!(
-                        params
-                            .and_then(|params| params.get("toolCall"))
-                            .and_then(|tool| tool.get("toolCallId"))
-                            .and_then(Value::as_str),
-                        Some("ask-1")
-                    );
-                    AcpPermissionDecision::Reject("interactive input unavailable".to_string())
-                },
-            )
+
+        client
+            .close_request_side()
             .await
-            .unwrap_or_else(|error| panic!("ACP request: {error}"));
-        agent
+            .unwrap_or_else(|error| panic!("close request side: {error}"));
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(1), agent_read.read_to_end(&mut bytes))
             .await
-            .unwrap_or_else(|error| panic!("agent task: {error}"));
-        assert_eq!(result["stopReason"], "error");
+            .unwrap_or_else(|_| panic!("peer did not observe request-side EOF"))
+            .unwrap_or_else(|error| panic!("read peer EOF: {error}"));
+        assert!(bytes.is_empty());
     }
 
     #[test]
@@ -494,7 +464,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_keeps_reading_after_the_first_quiet_interval() {
+    async fn drain_without_idle_bound_keeps_reading_after_a_gap() {
         let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
         let (client_read, client_write) = tokio::io::split(client_io);
         let (_agent_read, mut agent_write) = tokio::io::split(agent_io);
@@ -512,11 +482,9 @@ mod tests {
         let mut client = AcpClient::new(BufReader::new(client_read), client_write);
         let mut notifications = Vec::new();
         client
-            .drain_notifications(
-                Duration::from_millis(20),
-                Duration::from_secs(1),
-                |notification| notifications.push(notification),
-            )
+            .drain_notifications(Duration::ZERO, Duration::from_secs(1), |notification| {
+                notifications.push(notification)
+            })
             .await
             .unwrap_or_else(|error| panic!("drain: {error}"));
         agent

@@ -1,8 +1,11 @@
 name: CI
 
 on:
-  # Full validation is intentionally manual to keep GitHub-hosted runner
-  # usage predictable. Select the branch to validate from the Actions page.
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   workflow_dispatch:
     inputs:
       base_ref:
@@ -16,7 +19,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,11 +45,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
+
       - name: Filter paths
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          base: ${{ inputs.base_ref }}
+          base: ${{ inputs.base_ref || github.base_ref || 'main' }}
           # apps/docs is excluded from the frontend turbo run, but knip does
           # analyze it, so a docs-only change still needs this job.
           # apps/mobile has its own mobile-verify workflow. Everything else
@@ -64,6 +72,8 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
               - 'knip.jsonc'
+              - 'Dockerfile.web'
+              - '.dockerignore'
               - '.github/workflows/ci.yml'
               - 'scripts/generate-reserved-slugs.mjs'
               - 'server/internal/handler/reserved_slugs.json'
@@ -85,12 +95,15 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'Makefile'
-            # Both backends remain production-relevant during the migration.
-            # A backend change exercises the Go deployment gate and the Rust
-            # migration gate until the deployed server switches fully.
+            # Rust owns the default production entrypoints; Go remains in this
+            # filter while compatibility tests and the legacy rollback path
+            # still exist.
             backend:
               - 'server-rs/**'
               - 'server/**'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker/entrypoint.sh'
               - 'deploy/helm/**'
               - 'scripts/**'
               - 'packages/core/runtimes/cli-version.ts'
@@ -101,6 +114,9 @@ jobs:
               - 'scripts/install.ps1'
               - 'scripts/install.test.sh'
               - 'scripts/install.ps1.test.ps1'
+              - 'docker/entrypoint.sh'
+              - 'docker-compose.selfhost.yml'
+              - '.env.example'
               - '.github/workflows/ci.yml'
             # Gates the image-budget job so the full-history checkout it
             # needs is only paid for on PRs that actually touch a bitmap.
@@ -179,6 +195,14 @@ jobs:
       - name: Install dependencies
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: pnpm install
+
+      - name: Prepare Rust CLI bundle target
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
 
       # `node-version: 22` above floats across patch releases, and turbo's
       # global hash does not include the interpreter at all (`engines` is null
@@ -312,6 +336,23 @@ jobs:
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
         run: pnpm exec turbo test --filter='!@cordy/docs' --filter='!@cordy/mobile' --filter='!@cordy/views'
 
+  frontend-production-image:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        uses: actions/checkout@v6
+
+      - name: Build production web image
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: |
+          docker build \
+            --file Dockerfile.web \
+            --tag cordy-web:ci \
+            --build-arg NEXT_PUBLIC_APP_VERSION=ci \
+            .
+
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
   frontend-views-test:
@@ -377,7 +418,7 @@ jobs:
   # staying pending) on PRs the path filter excluded — all workers succeed
   # trivially in that case because every step is gated off.
   frontend:
-    needs: [frontend-build, frontend-test, frontend-views-test]
+    needs: [frontend-build, frontend-test, frontend-views-test, frontend-production-image]
     # `!cancelled()` rather than `always()`: a run superseded by a newer push
     # is cancelled by the concurrency group above, and there is no reason to
     # spend a runner reporting a verdict nobody will read.
@@ -389,83 +430,35 @@ jobs:
           BUILD_RESULT: ${{ needs.frontend-build.result }}
           TEST_RESULT: ${{ needs.frontend-test.result }}
           VIEWS_TEST_RESULT: ${{ needs.frontend-views-test.result }}
+          PRODUCTION_IMAGE_RESULT: ${{ needs.frontend-production-image.result }}
         run: |
           echo "frontend-build: $BUILD_RESULT"
           echo "frontend-test:  $TEST_RESULT"
           echo "frontend-views-test: $VIEWS_TEST_RESULT"
-          if [ "$BUILD_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$VIEWS_TEST_RESULT" != "success" ]; then
+          echo "frontend-production-image: $PRODUCTION_IMAGE_RESULT"
+          if [ "$BUILD_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$VIEWS_TEST_RESULT" != "success" ] || [ "$PRODUCTION_IMAGE_RESULT" != "success" ]; then
             echo "::error::frontend validation failed"
             exit 1
           fi
 
-  go-backend-tests:
+  rust-deployment-contracts:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_DB: cordy
-          POSTGRES_USER: cordy
-          POSTGRES_PASSWORD: cordy
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U cordy -d cordy"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
-      REDIS_TEST_URL: redis://localhost:6379/1
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
-      - name: Verify generated SQL is current
-        run: |
-          make sqlc
-          git diff --exit-code -- server/pkg/db/generated
-          test -z "$(git ls-files --others --exclude-standard -- server/pkg/db/generated)"
-
-      - name: Test build and deployment contracts
+      - name: Test Rust build and deployment contracts
         run: |
           bash scripts/helm-config.test.sh
           bash scripts/makefile-build.test.sh
-          bash scripts/test-go.test.sh
 
-      - name: Build deployed Go server
-        working-directory: server
-        run: go build ./...
-
-      - name: Apply database migrations
-        working-directory: server
-        run: go run ./cmd/migrate up
-
-      - name: Run Go tests
-        run: bash scripts/test-go.sh --race
-
-  go-vulnerability-scan:
+  rust-production-image:
+    name: rust-production-image
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
@@ -473,16 +466,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
-
-      - name: Scan Go dependencies
-        working-directory: server
-        run: go tool govulncheck ./...
+      - name: Build production backend image
+        env:
+          VERSION: ci
+          COMMIT: ${{ github.sha }}
+        run: |
+          DATE="$(git show -s --format=%cI "$COMMIT")"
+          docker build \
+            --file Dockerfile \
+            --tag cordy-backend:ci \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$COMMIT" \
+            --build-arg DATE="$DATE" \
+            .
 
   rust-quality:
     needs: changes
@@ -539,6 +535,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      SQLX_OFFLINE: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -556,7 +553,7 @@ jobs:
 
       - name: Apply database migrations with the Rust runner
         working-directory: server-rs
-        run: cargo run --locked -p cordy-migrate -- up
+        run: cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
 
       - name: Run workspace tests
         working-directory: server-rs
@@ -578,11 +575,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
+          # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
+          # the compiled Cordy graph enables Postgres only. CloudFront signing
+          # no longer uses rsa and is implemented with ring/SHA-256.
+          ignore: RUSTSEC-2023-0071
 
-  # Preserve the required check name while both production Go and migration
-  # Rust implementations are validated.
+  # Preserve the required check name while the Rust checks stay split by
+  # concern so a failure points at the actual production boundary.
   backend:
-    needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit]
+    needs: [changes, rust-deployment-contracts, rust-production-image, rust-quality, rust-tests, rust-platform, rust-audit]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -590,21 +591,21 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
-          GO_TEST_RESULT: ${{ needs.go-backend-tests.result }}
-          GO_AUDIT_RESULT: ${{ needs.go-vulnerability-scan.result }}
+          DEPLOYMENT_RESULT: ${{ needs.rust-deployment-contracts.result }}
           QUALITY_RESULT: ${{ needs.rust-quality.result }}
           TEST_RESULT: ${{ needs.rust-tests.result }}
           PLATFORM_RESULT: ${{ needs.rust-platform.result }}
           AUDIT_RESULT: ${{ needs.rust-audit.result }}
+          PRODUCTION_IMAGE_RESULT: ${{ needs.rust-production-image.result }}
         run: |
           echo "changes:       $CHANGES_RESULT"
           echo "backend path:  $BACKEND_CHANGED"
-          echo "go-tests:     $GO_TEST_RESULT"
-          echo "go-audit:     $GO_AUDIT_RESULT"
+          echo "rust-deploy:   $DEPLOYMENT_RESULT"
           echo "rust-quality:  $QUALITY_RESULT"
           echo "rust-tests:    $TEST_RESULT"
           echo "rust-platform: $PLATFORM_RESULT"
           echo "rust-audit:    $AUDIT_RESULT"
+          echo "production-image: $PRODUCTION_IMAGE_RESULT"
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::change classification failed"
             exit 1
@@ -613,7 +614,7 @@ jobs:
             echo "No backend paths changed."
             exit 0
           fi
-          if [ "$GO_TEST_RESULT" != "success" ] || [ "$GO_AUDIT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
+          if [ "$DEPLOYMENT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ] || [ "$PRODUCTION_IMAGE_RESULT" != "success" ]; then
             echo "::error::backend validation failed"
             exit 1
           fi

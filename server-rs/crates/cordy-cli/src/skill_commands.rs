@@ -325,7 +325,7 @@ pub(super) fn read_skill_archive(
     if metadata.len() > MAX_SKILL_ARCHIVE_UPLOAD_SIZE {
         bail!("skill archive exceeds the 16 MiB upload limit");
     }
-    let mut file = fs::File::open(&read_path).context("read skill archive")?;
+    let file = fs::File::open(&read_path).context("read skill archive")?;
     let mut archive =
         Vec::with_capacity(metadata.len().min(MAX_SKILL_ARCHIVE_UPLOAD_SIZE) as usize);
     file.take(MAX_SKILL_ARCHIVE_UPLOAD_SIZE + 1)

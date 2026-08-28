@@ -7,15 +7,18 @@ version tag such as `v0.18.4`. The Release workflow intentionally has no manual
 trigger: a tag push is the only event that can publish binaries, Homebrew
 formulae, and container images.
 
-The verification job runs the Go tests and `govulncheck` before any publishing
-job starts. The vulnerability scan is fail-closed by default.
+The verification job applies migrations with `cordy-migrate`, runs every Rust
+workspace target, builds the server, CLI, migration runner, and all three
+backfill binaries, and runs RustSec before any publishing job starts. The Rust
+CLI build matrix then packages release assets for every supported
+OS/architecture pair. The vulnerability scan is fail-closed by default.
 
 ## Emergency vulnerability-scan bypass
 
-Use the bypass only when `govulncheck` itself or its live vulnerability database
-is unavailable, or when maintainers have documented a confirmed false positive
-that blocks an urgent release. Never use it to publish a release with an
-unresolved reachable vulnerability.
+Use the bypass only when RustSec or its live advisory database is unavailable,
+or when maintainers have documented a confirmed false positive that blocks an
+urgent release. Never use it to publish a release with an unresolved
+vulnerability.
 
 1. Record the reason and maintainer approval in the release issue or pull
    request, and confirm no other release is in progress.
@@ -30,5 +33,7 @@ unresolved reachable vulnerability.
    completes. The tag-scoped value prevents a concurrent release with another
    tag from inheriting the bypass.
 
-Every Go binary retains its compiler version in the standard Go build metadata;
-use `go version -m <binary>` when auditing a downloaded release artifact.
+The release and container assets are Rust binaries and the release workflow no
+longer installs or executes Go. Audit a downloaded CLI artifact with `cordy
+version --output json`; it reports the release version, commit, build time,
+target OS, and target architecture.

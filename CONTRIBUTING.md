@@ -467,9 +467,9 @@ EOF
 make cli ARGS="daemon start --profile $PROFILE"
 ```
 
-The daemon runs from the current worktree's Go source, connecting to the
-local backend. Agent-executed `cordy` commands automatically use the same
-binary (the daemon prepends its own directory to `PATH`).
+The daemon runs from the current worktree's Rust `cordy-cli` package, connecting
+to the local backend. Agent-executed `cordy` commands automatically use the
+same binary (the daemon prepends its own directory to `PATH`).
 
 ### Stop the Isolated Environment
 
@@ -505,7 +505,8 @@ pnpm dev:desktop
 
 This automatically:
 
-1. Compiles the `cordy` CLI from `server/cmd/cordy` into
+1. Compiles the `cordy` CLI from the Rust `cordy-cli` package in the
+   `server-rs` Cargo workspace into
    `apps/desktop/resources/bin/cordy`
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance

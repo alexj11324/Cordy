@@ -2889,7 +2889,7 @@ pub(crate) fn task_message_payload(
     }
     payload.insert(
         "created_at".into(),
-        Value::String(crate::timefmt::rfc3339_nano(m.created_at)),
+        Value::String(cordy_util::rfc3339_nano(m.created_at)),
     );
     Value::Object(payload)
 }
@@ -3034,6 +3034,8 @@ struct CancelAckBody {
     error_message: String,
     #[serde(default, rename = "failure_reason")]
     failure_reason: String,
+    #[serde(default, rename = "session_rollout_missing")]
+    session_rollout_missing: bool,
 }
 
 /// POST /api/daemon/tasks/{taskId}/cancel-ack. Both writes carry a
@@ -3058,6 +3060,22 @@ async fn ack_task_cancelled(
     let failure_reason = sanitize(req.failure_reason.trim());
 
     let mut delivered = false;
+    if req.session_rollout_missing {
+        match state
+            .tasks
+            .acknowledge_cancelled_session_rollout_missing(task.id)
+            .await
+        {
+            Ok(recorded) => delivered |= recorded,
+            Err(e) => {
+                tracing::error!(error = %e, task_id = %task_id, "cancel ack: record missing session rollout failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to record missing session rollout",
+                );
+            }
+        }
+    }
     if !durable.is_empty() {
         if let Err(e) =
             agent::set_agent_task_durable_work_dir(&state.pool, Some(durable.as_str()), task.id)
@@ -3104,7 +3122,7 @@ async fn ack_task_cancelled(
     if delivered {
         state.tasks.rebroadcast_cancelled_task(task.id).await;
     }
-    state.tasks.finalize_deferred_cancelled_chat(task.id).await;
+    let _ = state.tasks.finalize_deferred_cancelled_chat(task.id).await;
     Json(json!({ "status": "ok" })).into_response()
 }
 
@@ -4581,7 +4599,7 @@ mod tests {
         let issue_id = Uuid::parse_str("018f946a-5678-7890-abcd-1234567890ab").unwrap();
         let message = cordy_db::models::TaskMessage {
             content: None,
-            created_at: "2026-08-23T12:34:56.123Z".parse().unwrap(),
+            created_at: "2026-08-23T12:34:56.123400Z".parse().unwrap(),
             id: Uuid::parse_str("018f946a-9abc-7890-abcd-1234567890ab").unwrap(),
             input: Some(json!({"path": "README.md"})),
             output: Some(String::new()),
@@ -4598,7 +4616,7 @@ mod tests {
         assert_eq!(payload["seq"], json!(7));
         assert_eq!(payload["type"], json!("tool_call"));
         assert_eq!(payload["input"], json!({"path": "README.md"}));
-        assert_eq!(payload["created_at"], json!("2026-08-23T12:34:56.123Z"));
+        assert_eq!(payload["created_at"], json!("2026-08-23T12:34:56.1234Z"));
         assert!(payload.get("tool").is_none());
         assert!(payload.get("content").is_none());
         assert!(payload.get("output").is_none());

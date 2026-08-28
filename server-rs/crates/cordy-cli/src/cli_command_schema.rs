@@ -74,6 +74,14 @@ pub(super) enum Command {
     Autopilot(AutopilotArgs),
     #[command(about = "Update cordy to the latest version")]
     Update(UpdateArgs),
+    // Cobra exposes this contract while hiding it from normal help output.
+    // Keep it callable for users who regenerate their shell setup after the
+    // Rust cutover without adding noise to the primary command list.
+    #[command(hide = true)]
+    Completion {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]

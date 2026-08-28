@@ -161,7 +161,22 @@ fn check_origin(headers: &HeaderMap, remote_ip: Option<std::net::IpAddr>) -> boo
         .unwrap_or_default();
     let proxy_trusted =
         remote_ip.is_some_and(|ip| trusted.iter().any(|network| network.contains(ip)));
-    check_origin_with_policy(headers, proxy_trusted, &crate::allowed_origins())
+    check_origin_with_policy(headers, proxy_trusted, &websocket_allowed_origins())
+}
+
+fn websocket_allowed_origins() -> Vec<String> {
+    std::env::var("ALLOWED_ORIGINS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| !origin.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|origins| !origins.is_empty())
+        .unwrap_or_else(crate::allowed_origins)
 }
 
 fn check_origin_with_policy(
@@ -733,6 +748,12 @@ async fn write_auth_error_and_close(socket: &mut WebSocket, payload: &'static st
 mod tests {
     use super::*;
     use axum::http::HeaderValue;
+    use cordy_auth::pat_cache::PatCache;
+    use cordy_realtime::broadcaster::{SCOPE_TASK, SCOPE_WORKSPACE};
+    use sqlx::postgres::PgPoolOptions;
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+    use tokio_tungstenite::tungstenite::Message as ClientMessage;
+    use uuid::Uuid;
 
     fn headers(host: &str, origin: &str, forwarded_host: Option<&str>) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -787,5 +808,611 @@ mod tests {
 
         assert!(!check_origin_with_policy(&headers, false, &allowed));
         assert!(check_origin_with_policy(&headers, true, &allowed));
+    }
+
+    async fn client_json<S>(socket: &mut tokio_tungstenite::WebSocketStream<S>) -> Value
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        loop {
+            match tokio::time::timeout(Duration::from_secs(2), socket.next())
+                .await
+                .expect("websocket response timeout")
+                .expect("websocket closed")
+                .expect("websocket frame")
+            {
+                ClientMessage::Text(text) => {
+                    return serde_json::from_str(&text).expect("JSON websocket frame");
+                }
+                ClientMessage::Ping(payload) => socket
+                    .send(ClientMessage::Pong(payload))
+                    .await
+                    .expect("answer protocol ping"),
+                ClientMessage::Close(frame) => panic!("unexpected close: {frame:?}"),
+                _ => {}
+            }
+        }
+    }
+
+    async fn wait_for_disconnect(hub: &Hub) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if hub.snapshot()["connections"] == 0 {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("hub disconnect cleanup");
+    }
+
+    async fn wait_for_client_close<S>(socket: &mut tokio_tungstenite::WebSocketStream<S>)
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match socket.next().await {
+                    Some(Ok(ClientMessage::Close(_))) | Some(Err(_)) | None => return,
+                    Some(Ok(_)) => {}
+                }
+            }
+        })
+        .await
+        .expect("websocket close deadline");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn production_websocket_session_auth_scope_wire_and_cleanup() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for production websocket contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(8)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let suffix = Uuid::now_v7().simple().to_string();
+        let user_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO \"user\" (name, email) VALUES ('ws member', $1) RETURNING id",
+        )
+        .bind(format!("ws-member-{suffix}@example.test"))
+        .fetch_one(&pool)
+        .await
+        .expect("create member user");
+        let outsider_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO \"user\" (name, email) VALUES ('ws outsider', $1) RETURNING id",
+        )
+        .bind(format!("ws-outsider-{suffix}@example.test"))
+        .fetch_one(&pool)
+        .await
+        .expect("create outsider user");
+        let workspace_slug = format!("ws-contract-{suffix}");
+        let workspace_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('ws contract', $1) RETURNING id",
+        )
+        .bind(&workspace_slug)
+        .fetch_one(&pool)
+        .await
+        .expect("create workspace");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create membership");
+
+        let member_token = format!("mul_ws_member_{suffix}");
+        let outsider_token = format!("mul_ws_outsider_{suffix}");
+        let member_jwt = cordy_auth::jwt::issue_user_jwt(
+            &user_id.to_string(),
+            &format!("ws-member-{suffix}@example.test"),
+            "ws member",
+        )
+        .expect("issue member JWT");
+        for (token, owner) in [(&member_token, user_id), (&outsider_token, outsider_id)] {
+            sqlx::query(
+                "INSERT INTO personal_access_token (user_id, name, token_hash, token_prefix) VALUES ($1, 'ws contract', $2, $3)",
+            )
+            .bind(owner)
+            .bind(hash_token(token))
+            .bind(&token[..token.len().min(12)])
+            .execute(&pool)
+            .await
+            .expect("create PAT");
+        }
+
+        let runtime_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status) VALUES ($1, 'ws runtime', 'local', 'test', 'online') RETURNING id",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create runtime");
+        let agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode, runtime_id) VALUES ($1, 'ws agent', 'local', $2) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(runtime_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create agent");
+        let chat_session_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO chat_session (workspace_id, agent_id, creator_id, title) VALUES ($1, $2, $3, 'ws chat') RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(agent_id)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create chat session");
+        let issue_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number, position) VALUES ($1, 'ws issue', 'todo', 'none', 'member', $2, 1, -1) RETURNING id",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create issue");
+        let task_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, priority) VALUES ($1, $2, $3, 'queued', 0) RETURNING id",
+        )
+        .bind(agent_id)
+        .bind(issue_id)
+        .bind(runtime_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create task");
+
+        let hub = Arc::new(Hub::new());
+        let state = HandlerState::new(pool.clone(), PatCache::disabled(), Some(hub.clone()));
+        let app = crate::build_router_from_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback websocket server");
+        let address = listener.local_addr().expect("loopback address");
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+                .expect("serve websocket contract");
+        });
+        let ws_url = format!("ws://{address}/ws?workspace_id={workspace_id}");
+
+        let mut bad_origin = ws_url
+            .clone()
+            .into_client_request()
+            .expect("origin request");
+        bad_origin.headers_mut().insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://foreign.example"),
+        );
+        let error = tokio_tungstenite::connect_async(bad_origin)
+            .await
+            .expect_err("cross-origin websocket must fail before upgrade");
+        match error {
+            tokio_tungstenite::tungstenite::Error::Http(response) => {
+                assert_eq!(response.status(), StatusCode::FORBIDDEN)
+            }
+            other => panic!("unexpected cross-origin failure: {other}"),
+        }
+
+        let (mut malformed, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("malformed-auth websocket upgrade");
+        malformed
+            .send(ClientMessage::Text(
+                json!({"type":"ping"}).to_string().into(),
+            ))
+            .await
+            .expect("send non-auth first frame");
+        assert_eq!(
+            client_json(&mut malformed).await,
+            json!({"error":"expected auth message as first frame"})
+        );
+        wait_for_client_close(&mut malformed).await;
+        wait_for_disconnect(&hub).await;
+
+        let mut outsider_cookie = ws_url
+            .clone()
+            .into_client_request()
+            .expect("outsider cookie request");
+        outsider_cookie.headers_mut().insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!("{AUTH_COOKIE_NAME}={outsider_token}"))
+                .expect("outsider cookie header"),
+        );
+        match tokio_tungstenite::connect_async(outsider_cookie)
+            .await
+            .expect_err("cookie outsider must be rejected before upgrade")
+        {
+            tokio_tungstenite::tungstenite::Error::Http(response) => {
+                assert_eq!(response.status(), StatusCode::FORBIDDEN)
+            }
+            other => panic!("unexpected cookie outsider failure: {other}"),
+        }
+
+        let (mut outsider, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("outsider websocket upgrade");
+        outsider
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":outsider_token}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("send outsider auth");
+        assert_eq!(
+            client_json(&mut outsider).await,
+            json!({"error":"not a member of this workspace"})
+        );
+        wait_for_disconnect(&hub).await;
+
+        let (mut jwt_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("JWT websocket upgrade");
+        jwt_socket
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":member_jwt}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("send JWT auth");
+        assert_eq!(
+            client_json(&mut jwt_socket).await,
+            json!({"type":"auth_ack"})
+        );
+        jwt_socket.close(None).await.expect("close JWT websocket");
+        wait_for_disconnect(&hub).await;
+
+        let (mut socket, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("member websocket upgrade");
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":member_token}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("send member auth");
+        assert_eq!(client_json(&mut socket).await, json!({"type":"auth_ack"}));
+        assert_eq!(hub.snapshot()["connections"], 1);
+        assert!(hub.has_local_subscribers(SCOPE_WORKSPACE, &workspace_id.to_string()));
+        assert!(hub.has_local_subscribers(SCOPE_USER, &user_id.to_string()));
+
+        // A connection in another workspace must not receive broadcasts from
+        // this workspace, even when it authenticates as the same user.
+        let workspace_two_slug = format!("ws-contract-two-{suffix}");
+        let workspace_two: Uuid = sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('ws contract two', $1) RETURNING id",
+        )
+        .bind(&workspace_two_slug)
+        .fetch_one(&pool)
+        .await
+        .expect("create second workspace");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
+            .bind(workspace_two)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create second workspace membership");
+        let foreign_runtime_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status) VALUES ($1, 'foreign ws runtime', 'local', 'test', 'online') RETURNING id",
+        )
+        .bind(workspace_two)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace runtime");
+        let foreign_agent_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent (workspace_id, name, runtime_mode, runtime_id) VALUES ($1, 'foreign ws agent', 'local', $2) RETURNING id",
+        )
+        .bind(workspace_two)
+        .bind(foreign_runtime_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace agent");
+        let foreign_issue_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number, position) VALUES ($1, 'foreign ws issue', 'todo', 'none', 'member', $2, 1, -1) RETURNING id",
+        )
+        .bind(workspace_two)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace issue");
+        let foreign_task_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, priority) VALUES ($1, $2, $3, 'queued', 0) RETURNING id",
+        )
+        .bind(foreign_agent_id)
+        .bind(foreign_issue_id)
+        .bind(foreign_runtime_id)
+        .fetch_one(&pool)
+        .await
+        .expect("create foreign workspace task");
+        let ws_two_url = format!("ws://{address}/ws?workspace_id={workspace_two}");
+        let (mut socket_two, _) = tokio_tungstenite::connect_async(&ws_two_url)
+            .await
+            .expect("second workspace websocket upgrade");
+        socket_two
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":member_token}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("authenticate second workspace socket");
+        assert_eq!(client_json(&mut socket_two).await["type"], "auth_ack");
+        socket_two
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"workspace","id":workspace_two}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe second workspace");
+        assert_eq!(client_json(&mut socket_two).await["type"], "subscribe_ack");
+        hub.broadcast_to_scope_dedup(
+            SCOPE_WORKSPACE,
+            &workspace_id.to_string(),
+            br#"{"type":"foreign-workspace:event"}"#,
+            "",
+        );
+        assert_eq!(
+            client_json(&mut socket).await,
+            json!({"type":"foreign-workspace:event"})
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), socket_two.next())
+                .await
+                .is_err()
+        );
+        socket_two
+            .close(None)
+            .await
+            .expect("close second workspace socket");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if hub.snapshot()["connections"] == 1 {
+                    return;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second workspace disconnect cleanup");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"workspace","id":workspace_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe own workspace");
+        assert_eq!(client_json(&mut socket).await["type"], "subscribe_ack");
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"workspace","id":Uuid::now_v7()}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe foreign workspace");
+        let workspace_error = client_json(&mut socket).await;
+        assert_eq!(workspace_error["type"], "subscribe_error");
+        assert_eq!(workspace_error["payload"]["error"], "forbidden");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"task","id":task_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe owned task");
+        assert_eq!(client_json(&mut socket).await["type"], "subscribe_ack");
+        assert!(hub.has_local_subscribers(SCOPE_TASK, &task_id.to_string()));
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"unsubscribe","payload":{"scope":"task","id":task_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("unsubscribe owned task");
+        assert_eq!(client_json(&mut socket).await["type"], "unsubscribe_ack");
+        assert!(!hub.has_local_subscribers(SCOPE_TASK, &task_id.to_string()));
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"task","id":foreign_task_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe foreign task");
+        let task_error = client_json(&mut socket).await;
+        assert_eq!(task_error["type"], "subscribe_error");
+        assert_eq!(task_error["payload"]["error"], "forbidden");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"chat","id":chat_session_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe owned chat");
+        assert_eq!(client_json(&mut socket).await["type"], "subscribe_ack");
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"chat","id":Uuid::now_v7()}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe foreign chat");
+        let chat_error = client_json(&mut socket).await;
+        assert_eq!(chat_error["type"], "subscribe_error");
+        assert_eq!(chat_error["payload"]["error"], "forbidden");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"user","id":outsider_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe foreign user");
+        let user_error = client_json(&mut socket).await;
+        assert_eq!(user_error["type"], "subscribe_error");
+        assert_eq!(user_error["payload"]["error"], "forbidden");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"ping"}).to_string().into(),
+            ))
+            .await
+            .expect("application ping");
+        assert_eq!(client_json(&mut socket).await, json!({"type":"pong"}));
+        hub.broadcast_to_scope_dedup(
+            SCOPE_WORKSPACE,
+            &workspace_id.to_string(),
+            br#"{"type":"contract:event","payload":{"ok":true}}"#,
+            "",
+        );
+        assert_eq!(client_json(&mut socket).await["type"], "contract:event");
+
+        socket
+            .send(ClientMessage::Text(
+                json!({"type":"subscribe","payload":{"scope":"task","id":task_id}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("subscribe task before disconnect cleanup");
+        assert_eq!(client_json(&mut socket).await["type"], "subscribe_ack");
+        socket.close(None).await.expect("close member websocket");
+        wait_for_disconnect(&hub).await;
+        assert!(!hub.has_local_subscribers(SCOPE_TASK, &task_id.to_string()));
+
+        let (mut oversized, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("oversized-frame websocket upgrade");
+        oversized
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":member_token}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("oversized-frame auth");
+        assert_eq!(
+            client_json(&mut oversized).await,
+            json!({"type":"auth_ack"})
+        );
+        let oversized_payload = "x".repeat(INBOUND_READ_LIMIT + 1);
+        let _ = oversized
+            .send(ClientMessage::Text(oversized_payload.into()))
+            .await;
+        wait_for_client_close(&mut oversized).await;
+        wait_for_disconnect(&hub).await;
+
+        let cookie_url = format!("ws://{address}/ws?workspace_slug={workspace_slug}");
+        let mut cookie_request = cookie_url.into_client_request().expect("cookie request");
+        cookie_request.headers_mut().insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!("{AUTH_COOKIE_NAME}={member_token}"))
+                .expect("cookie header"),
+        );
+        let (mut cookie_socket, _) = tokio_tungstenite::connect_async(cookie_request)
+            .await
+            .expect("cookie-auth websocket");
+        cookie_socket
+            .send(ClientMessage::Text(
+                json!({"type":"ping"}).to_string().into(),
+            ))
+            .await
+            .expect("cookie session ping");
+        assert_eq!(
+            client_json(&mut cookie_socket).await,
+            json!({"type":"pong"})
+        );
+        cookie_socket
+            .close(None)
+            .await
+            .expect("close cookie socket");
+        wait_for_disconnect(&hub).await;
+
+        let jwt_token = cordy_auth::jwt::issue_user_jwt(
+            &user_id.to_string(),
+            &format!("ws-member-{suffix}@example.test"),
+            "ws member",
+        )
+        .expect("issue websocket JWT");
+        let (mut jwt_socket, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .expect("JWT websocket upgrade");
+        jwt_socket
+            .send(ClientMessage::Text(
+                json!({"type":"auth","payload":{"token":jwt_token}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("send JWT auth");
+        assert_eq!(
+            client_json(&mut jwt_socket).await,
+            json!({"type":"auth_ack"})
+        );
+        jwt_socket.close(None).await.expect("close JWT socket");
+        wait_for_disconnect(&hub).await;
+
+        let _ = shutdown_tx.send(());
+        server.await.expect("websocket server task");
+        sqlx::query("DELETE FROM agent_task_queue WHERE id = ANY($1)")
+            .bind(vec![task_id, foreign_task_id])
+            .execute(&pool)
+            .await
+            .expect("delete tasks");
+        sqlx::query("DELETE FROM issue WHERE id = ANY($1)")
+            .bind(vec![issue_id, foreign_issue_id])
+            .execute(&pool)
+            .await
+            .expect("delete issues");
+        sqlx::query("DELETE FROM agent WHERE id = ANY($1)")
+            .bind(vec![agent_id, foreign_agent_id])
+            .execute(&pool)
+            .await
+            .expect("delete agents");
+        sqlx::query("DELETE FROM personal_access_token WHERE user_id = ANY($1)")
+            .bind(vec![user_id, outsider_id])
+            .execute(&pool)
+            .await
+            .expect("delete PATs");
+        sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete membership");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_two)
+            .execute(&pool)
+            .await
+            .expect("delete second workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = ANY($1)")
+            .bind(vec![user_id, outsider_id])
+            .execute(&pool)
+            .await
+            .expect("delete users");
     }
 }

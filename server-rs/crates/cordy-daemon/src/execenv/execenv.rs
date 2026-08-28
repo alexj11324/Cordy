@@ -10,6 +10,8 @@
 //! - SkillFileContextForEnv       → SkillFileContextForEnv
 //! - Environment                  → Environment
 //! - PredictRootDir               → predict_root_dir
+//! - ensureTaskTempDir / taskTempBaseDir
+//!   → ensure_task_temp_dir / task_temp_base_dir
 //! - Prepare                      → prepare
 //! - ReuseParams / Reuse          → ReuseParams / reuse
 //! - hydrateCodexSkills           → hydrate_codex_skills
@@ -36,19 +38,14 @@
 //! - slog logger parameter dropped; tracing macros used directly.
 //! - Prepare is async: the worktree branch shells out to git through
 //!   tokio::process with timeouts (local_worktree.rs).
-//! - Provider families owned by lane E2 (hermes/qwenpaw/reasonix/openclaw)
-//!   are represented by fail-closed stand-ins at the bottom of this file,
-//!   each marked `// S9-integration:`. Their call sites in prepare are
-//!   already wired exactly as in Go, so E2 replaces the stub bodies only.
-//! - OpenclawGatewayPin is a structural stand-in for openclaw_config.go's
-//!   type. Go's public type masks Token via MarshalJSON/Stringer; the
-//!   stand-in serializes plainly (the isolation helper protocol needs the
-//!   real token anyway) and masks only in Display. When E2 lands the real
-//!   port it replaces this definition wholesale.
+//! - Hermes, OpenClaw, and Reasonix are implemented in capability modules and
+//!   their prepare/reuse call sites are production-wired here.
+//! - OpenclawGatewayPin remains the wire type used by the isolation protocol;
+//!   config discovery and wrapper synthesis live in openclaw.rs.
 
 use std::collections::HashMap;
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
@@ -56,13 +53,14 @@ use serde_json::Value;
 
 use super::codex_home::{codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions};
 use super::context::{
-    ensure_workspaces_root_marker, prepare_claude_skill_settings, roll_back_prepared_sidecars,
-    write_context_files, SidecarManifest,
+    ensure_workspaces_root_marker, prepare_claude_skill_settings, resolve_skill_slugs,
+    roll_back_prepared_sidecars, write_context_files, write_skill_files, SidecarManifest,
 };
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
 use super::local_worktree::{prepare_local_worktree, LocalWorktree, LocalWorktreeParams};
 use super::reclaimable::CODEX_HOME_DIR_NAME;
+use super::{hermes, openclaw, reasonix};
 
 // ---------------------------------------------------------------------------
 // Path helpers (Go filepath.Join / filepath.Clean semantics)
@@ -473,7 +471,7 @@ pub struct SkillFileContextForEnv {
 // shape now. Field names mirror the Go json tags byte-for-byte.
 /// Per-run external app capability (internal/runtimeapps/connected_app.go).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "snake_case", default)]
 pub struct ConnectedApp {
     pub provider: String,
     pub server_name: String,
@@ -536,6 +534,81 @@ pub fn predict_root_dir(workspaces_root: &str, workspace_id: &str, task_id: &str
         return String::new();
     }
     join_path(&[workspaces_root, workspace_id, &task_key(task_id)])
+}
+
+/// Creates the private, socket-safe temporary directory exported to one
+/// provider run. The returned guard removes it on every exit path.
+pub(crate) fn ensure_task_temp_dir(
+    env_root: &str,
+    workspace_id: &str,
+    task_id: &str,
+) -> anyhow::Result<tempfile::TempDir> {
+    anyhow::ensure!(!env_root.trim().is_empty(), "env root is empty");
+    anyhow::ensure!(!workspace_id.trim().is_empty(), "workspace id is empty");
+    anyhow::ensure!(!task_id.trim().is_empty(), "task id is empty");
+
+    let (base, override_configured) = task_temp_base_dir()?;
+    // Provider launch environments are serialized as UTF-8 strings. Unix can
+    // accept an absolute non-Unicode operator override, but exporting that
+    // pathname would make an otherwise valid task fail after preparation. Use
+    // the same private socket-safe fallback for that representational edge.
+    let base = if base.to_str().is_some() {
+        base
+    } else {
+        tracing::warn!(path = %base.display(), "task temp base is not UTF-8; using socket-safe fallback");
+        socket_safe_temp_base_dir()
+    };
+    let directory = tempfile::Builder::new()
+        .prefix("cordy-task-")
+        .tempdir_in(&base)
+        .map_err(|error| {
+            if override_configured {
+                anyhow::anyhow!("CORDY_AGENT_TEMP_BASE: create task temp dir: {error}")
+            } else {
+                anyhow::anyhow!("create task temp dir: {error}")
+            }
+        })?;
+    restrict_permissions(directory.path()).context("restrict task temp directory")?;
+    Ok(directory)
+}
+
+/// Resolves the task-temp parent. Unix operators may select an absolute base;
+/// an unusable configured base fails at the real allocation above. Windows
+/// intentionally ignores the override, matching the Go daemon.
+fn task_temp_base_dir() -> anyhow::Result<(PathBuf, bool)> {
+    #[cfg(windows)]
+    {
+        return Ok((socket_safe_temp_base_dir(), false));
+    }
+
+    #[cfg(not(windows))]
+    {
+        let Some(configured) = std::env::var_os("CORDY_AGENT_TEMP_BASE") else {
+            return Ok((socket_safe_temp_base_dir(), false));
+        };
+        let path = PathBuf::from(configured);
+        if path.as_os_str().is_empty() {
+            return Ok((socket_safe_temp_base_dir(), false));
+        }
+        anyhow::ensure!(
+            path.is_absolute(),
+            "CORDY_AGENT_TEMP_BASE must be an absolute path, got {path:?}"
+        );
+        Ok((path, true))
+    }
+}
+
+/// Prefer the shortest standard Unix base to leave room for provider-created
+/// AF_UNIX sockets. Other platforms keep their normal temporary directory.
+fn socket_safe_temp_base_dir() -> PathBuf {
+    #[cfg(unix)]
+    {
+        let unix_tmp = Path::new("/tmp");
+        if unix_tmp.is_dir() {
+            return unix_tmp.to_path_buf();
+        }
+    }
+    std::env::temp_dir()
 }
 
 // ---------------------------------------------------------------------------
@@ -840,6 +913,8 @@ async fn prepare_body(
                 openclaw_bin: params.openclaw_bin.clone(),
                 mcp_config: params.mcp_config.clone(),
                 gateway: params.openclaw_gateway.clone(),
+                profile: params.profile.clone(),
+                timeout: std::time::Duration::ZERO,
             },
         )
         .map_err(|e| anyhow!("execenv: prepare openclaw config: {e:#}"))?;
@@ -1132,6 +1207,8 @@ pub fn reuse(params: ReuseParams) -> Option<Environment> {
                 openclaw_bin: params.openclaw_bin.clone(),
                 mcp_config: params.mcp_config.clone(),
                 gateway: params.openclaw_gateway.clone(),
+                profile: params.profile.clone(),
+                timeout: std::time::Duration::ZERO,
             },
         ) {
             Ok(result) => {
@@ -1190,16 +1267,43 @@ pub(crate) fn hydrate_codex_skills(
 /// to. The GC loop dispatches its decision tree on this value so chat /
 /// autopilot / quick-create tasks are no longer forced through the
 /// issue-centric path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GCMetaKind {
-    #[serde(rename = "issue")]
     Issue,
-    #[serde(rename = "chat")]
     Chat,
-    #[serde(rename = "autopilot_run")]
     AutopilotRun,
-    #[serde(rename = "quick_create")]
     QuickCreate,
+    Other(String),
+}
+
+impl GCMetaKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Issue => "issue",
+            Self::Chat => "chat",
+            Self::AutopilotRun => "autopilot_run",
+            Self::QuickCreate => "quick_create",
+            Self::Other(kind) => kind,
+        }
+    }
+}
+
+impl Serialize for GCMetaKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for GCMetaKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match String::deserialize(deserializer)?.as_str() {
+            "issue" => Self::Issue,
+            "chat" => Self::Chat,
+            "autopilot_run" => Self::AutopilotRun,
+            "quick_create" => Self::QuickCreate,
+            other => Self::Other(other.to_string()),
+        })
+    }
 }
 
 /// GCMeta is persisted to .gc_meta.json inside the env root so the GC loop
@@ -1241,7 +1345,13 @@ pub fn write_gc_meta(env_root: &str, mut meta: GcMeta) -> anyhow::Result<()> {
     if env_root.is_empty() {
         return Ok(());
     }
-    if meta.kind.is_none() {
+    if meta
+        .kind
+        .as_ref()
+        .map(GCMetaKind::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
         // Defensive: a task that doesn't fit any known kind would write a
         // meta file the GC loop can't dispatch on. Skip silently — the
         // directory falls back to the orphan-by-mtime path.
@@ -1257,10 +1367,16 @@ pub fn write_gc_meta(env_root: &str, mut meta: GcMeta) -> anyhow::Result<()> {
 /// ReadGCMeta reads GC metadata from a task directory root. Pre-v2 meta files
 /// (no kind field) are normalized to Issue so the legacy issue path keeps
 /// working without a migration.
-pub fn read_gc_meta(env_root: &str) -> anyhow::Result<GcMeta> {
-    let data = std::fs::read(Path::new(env_root).join(GC_META_FILE))?;
+pub fn read_gc_meta(env_root: impl AsRef<Path>) -> anyhow::Result<GcMeta> {
+    let data = std::fs::read(env_root.as_ref().join(GC_META_FILE))?;
     let mut meta: GcMeta = serde_json::from_slice(&data)?;
-    if meta.kind.is_none() {
+    if meta
+        .kind
+        .as_ref()
+        .map(GCMetaKind::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
         meta.kind = Some(GCMetaKind::Issue);
     }
     Ok(meta)
@@ -1389,7 +1505,8 @@ pub(crate) fn remove_tree(path: &str) -> anyhow::Result<()> {
 
 /// restrict_permissions applies chmod 0o700 on unix; on windows Go's
 /// os.Chmod only toggles the read-only bit, which we deliberately skip.
-fn restrict_permissions(path: &str) -> std::io::Result<()> {
+fn restrict_permissions(path: impl AsRef<Path>) -> std::io::Result<()> {
+    let path = path.as_ref();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1532,13 +1649,10 @@ fn dir_is_empty(dir: &str) -> anyhow::Result<bool> {
 }
 
 // ---------------------------------------------------------------------------
-// S9-integration: lane E2 provider seams
-//
-// These stand-ins keep prepare structurally identical to execenv.go while the
-// hermes/openclaw/qwenpaw/reasonix provider families are ported in lane E2.
-// Each fails closed so a mis-routed task surfaces loudly instead of running
-// with missing configuration. E2 replaces these bodies (and deletes this
-// section) without touching the call sites above.
+// Provider seams shared by the capability modules.  The wire-facing Gateway
+// pin remains here because isolation.rs serializes it; Hermes, OpenClaw,
+// QwenPaw, and Reasonix behavior lives in their capability modules and is
+// invoked from the prepare/reuse call sites above.
 // ---------------------------------------------------------------------------
 
 /// OpenclawGatewayPin describes the Gateway endpoint a per-task openclaw
@@ -1599,19 +1713,17 @@ impl std::fmt::Display for OpenclawGatewayPin {
     }
 }
 
-/// Result of preparing a Hermes overlay (hermes_home.go prepareHermesHome).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HermesSessions {
-    pub mounted: bool,
-    pub history_present: bool,
-}
-
 /// Config-prep inputs for openclaw (openclaw_config.go OpenclawConfigPrep).
 #[derive(Debug, Clone, Default)]
 pub struct OpenclawConfigPrep {
     pub openclaw_bin: String,
     pub mcp_config: Option<Value>,
     pub gateway: OpenclawGatewayPin,
+    /// Daemon profile used to scope the shared discovery cache.
+    pub profile: String,
+    /// Per-invocation CLI deadline; zero uses CORDY_OPENCLAW_CLI_TIMEOUT or
+    /// the bounded 30s default.
+    pub timeout: std::time::Duration,
 }
 
 /// Result of preparing the per-task OpenClaw config.
@@ -1621,50 +1733,160 @@ pub struct OpenclawConfigResult {
     pub include_root: String,
 }
 
-// S9-integration: hermes_home.go lands in lane E2.
-#[allow(clippy::too_many_arguments)]
 fn prepare_hermes_home(
-    _hermes_home: &str,
-    _source_home: &str,
-    _source_must_exist: bool,
-    _skills: &[SkillContextForEnv],
-    _env: &HashMap<String, String>,
-    _memory_store: &str,
-    _session_store: &str,
-) -> anyhow::Result<HermesSessions> {
-    bail!("execenv: hermes provider family not yet ported (lane E2)")
+    hermes_home: &str,
+    source_home: &str,
+    source_must_exist: bool,
+    skills: &[SkillContextForEnv],
+    env: &HashMap<String, String>,
+    memory_store: &str,
+    session_store: &str,
+) -> anyhow::Result<hermes::HermesSessions> {
+    hermes::prepare_hermes_home(
+        hermes_home,
+        source_home,
+        source_must_exist,
+        skills,
+        env,
+        memory_store,
+        session_store,
+    )
 }
 
-// S9-integration: qwenpaw_workspace.go lands in lane E2.
-fn prepare_qwenpaw_workspace(
-    _workspace: &str,
-    _skills: &[SkillContextForEnv],
-) -> anyhow::Result<()> {
-    bail!("execenv: qwenpaw provider family not yet ported (lane E2)")
+/// Ensures the managed QwenPaw workspace root is a real directory.
+///
+/// `create_dir_all` follows a symlink when the final path already points to a
+/// directory. That is unsafe for this managed path because all of the cleanup
+/// and manifest writes below operate on descendants of it. Refuse symlinks and
+/// other non-directory entries before touching any descendant.
+fn ensure_qwenpaw_workspace_root(workspace: &str) -> anyhow::Result<()> {
+    let path = Path::new(workspace);
+    match path.symlink_metadata() {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("execenv: qwenpaw workspace root must not be a symlink: {workspace}");
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            bail!("execenv: qwenpaw workspace root must be a directory: {workspace}");
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(path)
+                .with_context(|| format!("create qwenpaw workspace directory {workspace}"))?;
+        }
+        Err(error) => {
+            return Err(anyhow::Error::new(error)
+                .context(format!("inspect qwenpaw workspace root {workspace}")));
+        }
+    }
+
+    // Re-check after creation so a path created between the initial probe and
+    // create_dir_all cannot become an accepted symlink or non-directory.
+    let metadata = path
+        .symlink_metadata()
+        .with_context(|| format!("inspect qwenpaw workspace root {workspace}"))?;
+    if metadata.file_type().is_symlink() {
+        bail!("execenv: qwenpaw workspace root must not be a symlink: {workspace}");
+    }
+    if !metadata.is_dir() {
+        bail!("execenv: qwenpaw workspace root must be a directory: {workspace}");
+    }
+    Ok(())
 }
 
-// S9-integration: reasonix_user_config.go lands in lane E2.
+/// Prepares QwenPaw's per-task workspace and native skill manifest.
+///
+/// QwenPaw does not read Cordy's generic `.agent_context/skills` tree: its ACP
+/// process discovers `<workspace>/skills` and enables entries listed by the
+/// workspace `skill.json` manifest. Rebuilding both paths on every prepare (and
+/// reuse) is therefore part of the provider contract, not an optional cache
+/// refresh. Removing the old tree first also revokes a skill when an agent's
+/// bindings change or become empty.
+fn prepare_qwenpaw_workspace(workspace: &str, skills: &[SkillContextForEnv]) -> anyhow::Result<()> {
+    if workspace.is_empty() {
+        bail!("execenv: qwenpaw workspace is required");
+    }
+
+    ensure_qwenpaw_workspace_root(workspace)?;
+    restrict_permissions(workspace)
+        .with_context(|| format!("restrict qwenpaw workspace directory {workspace}"))?;
+
+    let skills_dir = join_path(&[workspace, "skills"]);
+    let manifest_path = join_path(&[workspace, "skill.json"]);
+    remove_tree(&skills_dir)
+        .with_context(|| format!("remove qwenpaw skills directory {skills_dir}"))?;
+    remove_tree(&manifest_path)
+        .with_context(|| format!("remove qwenpaw manifest {manifest_path}"))?;
+
+    if skills.is_empty() {
+        return Ok(());
+    }
+
+    // write_skill_files owns frontmatter normalization, collision-free slugs,
+    // and supporting-file materialization shared by the other providers. The
+    // QwenPaw tree was removed above, so its natural slug candidates are the
+    // same ones represented in the manifest below.
+    write_skill_files(&skills_dir, skills, None).context("write qwenpaw workspace skills")?;
+
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut entries = serde_json::Map::new();
+    for slug in resolve_skill_slugs(skills) {
+        entries.insert(
+            slug.clone(),
+            serde_json::json!({
+                "enabled": true,
+                "channels": ["all"],
+                "source": "customized",
+                "metadata": {
+                    "name": slug,
+                    "description": "",
+                    "source": "customized",
+                    "protected": false,
+                    "updated_at": now.clone(),
+                },
+                "updated_at": now.clone(),
+            }),
+        );
+    }
+    let manifest = serde_json::json!({
+        "schema_version": "workspace-skill-manifest.v1",
+        "version": 0,
+        "skills": entries,
+    });
+    let data = serde_json::to_vec_pretty(&manifest).context("encode qwenpaw skill manifest")?;
+    std::fs::write(&manifest_path, data)
+        .with_context(|| format!("write qwenpaw skill manifest {manifest_path}"))?;
+    tracing::info!(
+        workspace,
+        skills = skills.len(),
+        "qwenpaw workspace prepared"
+    );
+    Ok(())
+}
+
+// Reasonix's full implementation lives in the capability module so the
+// prepare/reuse call sites stay aligned with the other provider families.
 fn write_reasonix_project_config(
-    _work_dir: &str,
-    _env: &HashMap<String, String>,
-    _manifest: Option<&mut SidecarManifest>,
+    work_dir: &str,
+    env: &HashMap<String, String>,
+    manifest: Option<&mut SidecarManifest>,
 ) -> anyhow::Result<()> {
-    bail!("execenv: reasonix provider family not yet ported (lane E2)")
+    reasonix::write_reasonix_project_config(work_dir, env, manifest)
 }
 
-// S9-integration: openclaw_config.go + openclaw_config_cache.go land in lane
-// E2 (including openclawProfileCacheDir(profile)).
 fn prepare_openclaw_config(
-    _env_root: &str,
-    _work_dir: &str,
-    _prep: &OpenclawConfigPrep,
+    env_root: &str,
+    work_dir: &str,
+    prep: &OpenclawConfigPrep,
 ) -> anyhow::Result<OpenclawConfigResult> {
-    bail!("execenv: openclaw provider family not yet ported (lane E2)")
+    openclaw::prepare_openclaw_config(env_root, work_dir, prep)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(windows))]
+    static TASK_TEMP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // Port of TestPredictRootDir (execenv_test.go).
     #[test]
@@ -1676,6 +1898,114 @@ mod tests {
         assert_eq!(predict_root_dir("", "ws1", "task"), "");
         assert_eq!(predict_root_dir("/tmp/ws", "", "task"), "");
         assert_eq!(predict_root_dir("/tmp/ws", "ws1", ""), "");
+    }
+
+    #[test]
+    fn test_task_temp_dir_requires_task_identity() {
+        assert!(ensure_task_temp_dir("", "ws", "task").is_err());
+        assert!(ensure_task_temp_dir("/tmp/root", "", "task").is_err());
+        assert!(ensure_task_temp_dir("/tmp/root", "ws", "").is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_task_temp_dir_is_private_distinct_and_removed_with_guard() {
+        let _env_lock = TASK_TEMP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct EnvRestore(Option<std::ffi::OsString>);
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CORDY_AGENT_TEMP_BASE", value),
+                    None => std::env::remove_var("CORDY_AGENT_TEMP_BASE"),
+                }
+            }
+        }
+
+        let _restore = EnvRestore(std::env::var_os("CORDY_AGENT_TEMP_BASE"));
+        let base = tempfile::tempdir().unwrap();
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", base.path());
+        let long_root = format!("/workspaces/{}/task", "long-segment-".repeat(16));
+
+        let first = ensure_task_temp_dir(&long_root, "ws", "same-task").unwrap();
+        let second = ensure_task_temp_dir(&long_root, "ws", "same-task").unwrap();
+        let first_path = first.path().to_path_buf();
+        let second_path = second.path().to_path_buf();
+        assert_eq!(first_path.parent(), Some(base.path()));
+        assert_eq!(second_path.parent(), Some(base.path()));
+        assert_ne!(first_path, second_path);
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&first_path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        drop(first);
+        assert!(!first_path.exists());
+        assert!(second_path.exists());
+        second.close().unwrap();
+        assert!(!second_path.exists());
+
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", "relative/base");
+        let error = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap_err();
+        assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_task_temp_dir_reports_unusable_configured_base() {
+        let _env_lock = TASK_TEMP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct EnvRestore(Option<std::ffi::OsString>);
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CORDY_AGENT_TEMP_BASE", value),
+                    None => std::env::remove_var("CORDY_AGENT_TEMP_BASE"),
+                }
+            }
+        }
+
+        let _restore = EnvRestore(std::env::var_os("CORDY_AGENT_TEMP_BASE"));
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing");
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", &missing);
+        let error = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap_err();
+        assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
+    }
+
+    // macOS rejects this deliberately malformed pathname before the
+    // filesystem assertion can exercise the Linux non-UTF-8 path contract.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_task_temp_dir_accepts_non_unicode_absolute_override() {
+        let _env_lock = TASK_TEMP_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        use std::os::unix::ffi::OsStringExt;
+
+        struct EnvRestore(Option<std::ffi::OsString>);
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CORDY_AGENT_TEMP_BASE", value),
+                    None => std::env::remove_var("CORDY_AGENT_TEMP_BASE"),
+                }
+            }
+        }
+
+        let _restore = EnvRestore(std::env::var_os("CORDY_AGENT_TEMP_BASE"));
+        let root = tempfile::tempdir().unwrap();
+        let base = root
+            .path()
+            .join(std::ffi::OsString::from_vec(b"base-\xff".to_vec()));
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", &base);
+
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        assert!(directory.path().to_str().is_some());
+        assert_ne!(directory.path().parent(), Some(base.as_path()));
     }
 
     // join_path / clean_path must reproduce Go's filepath.Join/Clean cleaning
@@ -1719,9 +2049,20 @@ mod tests {
         // Pre-v2 file: no kind field at all.
         let legacy =
             br#"{"issue_id":"iss_1","workspace_id":"ws","completed_at":"2026-01-02T03:04:05Z"}"#;
-        let back: GcMeta = serde_json::from_slice(legacy).unwrap();
-        assert_eq!(back.kind, None);
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(GC_META_FILE), legacy).unwrap();
+        let back = read_gc_meta(tmp.path()).unwrap();
+        assert_eq!(back.kind, Some(GCMetaKind::Issue));
         assert_eq!(back.issue_id, "iss_1");
+
+        let future = br#"{"kind":"future_parent","workspace_id":"ws","local_directory":true}"#;
+        std::fs::write(tmp.path().join(GC_META_FILE), future).unwrap();
+        let back = read_gc_meta(tmp.path()).unwrap();
+        assert_eq!(
+            back.kind,
+            Some(GCMetaKind::Other("future_parent".to_string()))
+        );
+        assert!(back.local_directory);
 
         // Wire shape uses snake_case keys with omitempty.
         let v: Value = serde_json::from_slice(&data).unwrap();
@@ -1861,6 +2202,144 @@ mod tests {
         let v: Value = serde_json::to_value(&no_ref).unwrap();
         assert_eq!(v["resource_ref"], serde_json::json!({}));
         assert_eq!(v["label"], "mine");
+    }
+
+    #[test]
+    fn qwenpaw_workspace_writes_native_skills_and_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skills = vec![
+            SkillContextForEnv {
+                name: "Review Helper".into(),
+                description: "Reviews changes".into(),
+                content: "# Review Helper\n\nReview body".into(),
+                files: vec![SkillFileContextForEnv {
+                    path: "scripts/check.py".into(),
+                    content: "print('ok')".into(),
+                }],
+            },
+            SkillContextForEnv {
+                name: "Bug Finder".into(),
+                content: "# Bug Finder\n\nFind bugs".into(),
+                ..Default::default()
+            },
+        ];
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &skills).unwrap();
+
+        assert!(workspace.join("skills/review-helper/SKILL.md").is_file());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("skills/review-helper/scripts/check.py"))
+                .unwrap(),
+            "print('ok')"
+        );
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(workspace.join("skill.json")).unwrap()).unwrap();
+        assert_eq!(manifest["schema_version"], "workspace-skill-manifest.v1");
+        assert_eq!(manifest["version"], 0);
+        assert_eq!(manifest["skills"]["review-helper"]["enabled"], true);
+        assert_eq!(manifest["skills"]["review-helper"]["channels"][0], "all");
+        assert_eq!(
+            manifest["skills"]["review-helper"]["metadata"]["name"],
+            "review-helper"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&workspace).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+    }
+
+    #[test]
+    fn qwenpaw_workspace_rebuild_revokes_removed_skills() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skill = SkillContextForEnv {
+            name: "Deploy Helper".into(),
+            content: "# Deploy Helper".into(),
+            ..Default::default()
+        };
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[skill]).unwrap();
+        assert!(workspace.join("skills/deploy-helper").exists());
+        assert!(workspace.join("skill.json").exists());
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap();
+        assert!(!workspace.join("skills").exists());
+        assert!(!workspace.join("skill.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn qwenpaw_workspace_rejects_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(target.join("skills")).unwrap();
+        std::fs::write(target.join("skills/keep.txt"), b"keep").unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        symlink(&target, &workspace).unwrap();
+
+        let err = prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("must not be a symlink"),
+            "unexpected error: {message}"
+        );
+        assert!(target.join("skills/keep.txt").is_file());
+        assert!(workspace
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn qwenpaw_workspace_rejects_non_directory_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        std::fs::write(&workspace, b"not a directory").unwrap();
+
+        let err = prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("must be a directory"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn qwenpaw_workspace_deduplicates_skill_slugs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skills = vec![
+            SkillContextForEnv {
+                name: "A B".into(),
+                content: "# First".into(),
+                ..Default::default()
+            },
+            SkillContextForEnv {
+                name: "A-B".into(),
+                content: "# Second".into(),
+                ..Default::default()
+            },
+        ];
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &skills).unwrap();
+        assert!(workspace.join("skills/a-b/SKILL.md").is_file());
+        assert!(workspace.join("skills/a-b-cordy/SKILL.md").is_file());
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(workspace.join("skill.json")).unwrap()).unwrap();
+        assert_eq!(manifest["skills"].as_object().unwrap().len(), 2);
+        assert_eq!(
+            manifest["skills"]["a-b-cordy"]["metadata"]["name"],
+            "a-b-cordy"
+        );
     }
 
     // Port of TestOpenclawGatewayPinZeroAndMasking.

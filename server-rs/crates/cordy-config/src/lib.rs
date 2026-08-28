@@ -13,6 +13,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+pub mod agent_concurrency;
+
 /// Top-level configuration.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
@@ -56,6 +58,7 @@ impl Default for ServerConfig {
 pub struct DatabaseConfig {
     /// `DATABASE_URL` (pgx conn string). Required.
     pub url: Option<String>,
+    pub min_connections: u32,
     pub max_connections: u32,
 }
 
@@ -63,7 +66,8 @@ impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
             url: None,
-            max_connections: 20,
+            min_connections: 5,
+            max_connections: 25,
         }
     }
 }
@@ -246,6 +250,15 @@ impl Config {
 
         // database / redis
         env_str(&mut self.database.url, "DATABASE_URL");
+        let mut min_connections = Some(self.database.min_connections);
+        let mut max_connections = Some(self.database.max_connections);
+        env_u32(&mut min_connections, "DATABASE_MIN_CONNS")?;
+        env_u32(&mut max_connections, "DATABASE_MAX_CONNS")?;
+        self.database.min_connections = min_connections.unwrap_or_default();
+        self.database.max_connections = max_connections.unwrap_or_default();
+        if self.database.min_connections > self.database.max_connections {
+            self.database.min_connections = self.database.max_connections;
+        }
         env_str(&mut self.redis.url, "REDIS_URL");
         env_str(
             &mut self.redis.channel_ws_lease_url,
@@ -421,6 +434,8 @@ mod tests {
         for var in [
             "PORT",
             "DATABASE_URL",
+            "DATABASE_MIN_CONNS",
+            "DATABASE_MAX_CONNS",
             "REDIS_URL",
             "APP_ENV",
             "JWT_SECRET",
@@ -436,7 +451,8 @@ mod tests {
         clear_ambient_env();
         let cfg = Config::load(None).unwrap();
         assert_eq!(cfg.server.port, 8080);
-        assert_eq!(cfg.database.max_connections, 20);
+        assert_eq!(cfg.database.min_connections, 5);
+        assert_eq!(cfg.database.max_connections, 25);
         assert!(cfg.database.url.is_none());
         assert!(!cfg.is_production());
     }
@@ -452,12 +468,13 @@ mod tests {
         let path = dir.join("cordy.toml");
         std::fs::write(
             &path,
-            "[server]\nport = 9090\n\n[database]\nmax_connections = 5\n\n[urls]\npublic_url = \"https://x.example\"\n",
+            "[server]\nport = 9090\n\n[database]\nmin_connections = 2\nmax_connections = 5\n\n[urls]\npublic_url = \"https://x.example\"\n",
         )
         .unwrap();
 
         let cfg = Config::load(Some(&path)).unwrap();
         assert_eq!(cfg.server.port, 9090);
+        assert_eq!(cfg.database.min_connections, 2);
         assert_eq!(cfg.database.max_connections, 5);
         assert_eq!(cfg.urls.public_url.as_deref(), Some("https://x.example"));
         std::fs::remove_dir_all(&dir).ok();
@@ -471,6 +488,18 @@ mod tests {
         let cfg = Config::load(None).unwrap();
         assert_eq!(cfg.server.port, 7777);
         std::env::remove_var("PORT");
+    }
+
+    #[test]
+    fn database_pool_env_overrides_match_production_defaults_and_clamp_minimum() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_ambient_env();
+        std::env::set_var("DATABASE_MIN_CONNS", "12");
+        std::env::set_var("DATABASE_MAX_CONNS", "8");
+        let cfg = Config::load(None).unwrap();
+        assert_eq!(cfg.database.min_connections, 8);
+        assert_eq!(cfg.database.max_connections, 8);
+        clear_ambient_env();
     }
 
     #[test]

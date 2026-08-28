@@ -1279,8 +1279,9 @@ mod tests {
         assert!(root.ends_with("cordy_workspaces_staging"), "{root}");
         let root = resolve_workspaces_root("", "").unwrap();
         assert!(root.ends_with("cordy_workspaces"));
-        let root = resolve_workspaces_root("", "/tmp/custom-root").unwrap();
-        assert_eq!(root, "/tmp/custom-root");
+        let custom_root = std::env::temp_dir().join("cordy-custom-root");
+        let root = resolve_workspaces_root("", custom_root.to_str().unwrap()).unwrap();
+        assert_eq!(Path::new(&root), custom_root.as_path());
     }
 
     #[test]

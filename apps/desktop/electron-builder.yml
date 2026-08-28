@@ -67,7 +67,7 @@ linux:
   # Yaru).
   #
   # `cordy-desktop` (not `cordy`) so the deb/rpm/AppImage package never
-  # installs this Electron binary as `/usr/bin/cordy`. The Go CLI is a
+  # installs this Electron binary as `/usr/bin/cordy`. The Rust CLI is a
   # separate artifact (see CLI_INSTALL.md) that agents and scripts expect
   # to find at `cordy` on PATH; when both packages are installed on the
   # same box, a plain electron-builder default collides the two under one
@@ -125,10 +125,10 @@ publish:
   provider: github
   owner: cordy-ai
   repo: cordy
-  # Align with our CLI release flow which pre-creates a *published* GitHub
-  # Release via `gh release create`. The electron-builder default of
-  # `releaseType: draft` conflicts with `existingType=release` and causes
-  # uploads of the DMG/ZIP/blockmaps/latest-mac.yml to be silently skipped,
-  # which breaks electron-updater auto-update on installed clients.
-  releaseType: release
+  # The release workflow pre-creates a draft and publishes it only after the
+  # CLI archives, every Desktop matrix asset, images, and chart have passed
+  # their gates. This must match the existing GitHub Release type exactly:
+  # electron-builder silently skips uploads when existingType and releaseType
+  # disagree.
+  releaseType: draft
 npmRebuild: false

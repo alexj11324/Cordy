@@ -1,6 +1,5 @@
 use super::*;
 use clap::Parser;
-use serde_json::Value;
 
 #[test]
 fn daemon_disk_usage_parses_all_typed_flags() {
@@ -51,12 +50,10 @@ fn daemon_disk_usage_validation_rejects_unsafe_or_incomplete_modes() {
         workspaces_root: None,
         all_profiles: false,
     };
-    assert!(
-        validate_disk_usage_args(&cli, &environment, &both, false)
-            .expect_err("conflicting views")
-            .to_string()
-            .contains("mutually exclusive")
-    );
+    assert!(validate_disk_usage_args(&cli, &environment, &both, false)
+        .expect_err("conflicting views")
+        .to_string()
+        .contains("mutually exclusive"));
 
     let negative = DaemonDiskUsageArgs {
         by_workspace: false,
@@ -89,24 +86,22 @@ fn daemon_disk_usage_validation_rejects_unsafe_or_incomplete_modes() {
     );
 
     environment.set("CORDY_TASK_WORKSPACES_ROOT", "/srv/cordy/workspaces");
-    assert!(
-        validate_disk_usage_args(
-            &cli,
-            &environment,
-            &DaemonDiskUsageArgs {
-                by_workspace: false,
-                by_task: false,
-                top: 0,
-                output: OutputFormat::Json,
-                workspaces_root: None,
-                all_profiles: true,
-            },
-            true
-        )
-        .expect_err("task cannot enumerate owner profiles")
-        .to_string()
-        .contains("--all-profiles")
-    );
+    assert!(validate_disk_usage_args(
+        &cli,
+        &environment,
+        &DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: false,
+            top: 0,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: true,
+        },
+        true
+    )
+    .expect_err("task cannot enumerate owner profiles")
+    .to_string()
+    .contains("--all-profiles"));
 }
 
 #[test]
@@ -289,4 +284,23 @@ fn daemon_disk_usage_enumerates_default_and_existing_profile_roots() {
     assert_eq!(roots[0].root, default_root.to_string_lossy().to_string());
     assert_eq!(roots[1].profile, "staging");
     assert_eq!(roots[1].root, profile_root.to_string_lossy().to_string());
+}
+
+#[tokio::test]
+async fn daemon_disk_usage_status_enrichment_has_one_command_deadline() {
+    let home = tempfile::tempdir().expect("home");
+    let cwd = tempfile::tempdir().expect("cwd");
+    let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+    environment.set("CORDY_HTTP_TIMEOUT", "1ms");
+    let cancellation = tokio_util::sync::CancellationToken::new();
+
+    let failed = with_disk_usage_status_deadline(
+        &environment,
+        &cancellation,
+        std::future::pending::<bool>(),
+    )
+    .await;
+
+    assert!(failed);
+    assert!(cancellation.is_cancelled());
 }

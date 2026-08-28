@@ -23,6 +23,8 @@ BREW_PACKAGE="cordy-ai/tap/cordy"
 # the summary so the health check and the printed URLs cannot diverge.
 SELFHOST_BACKEND_PORT=""
 SELFHOST_FRONTEND_PORT=""
+INSTALL_SYSTEMD=false
+SELFHOST_ENV_EXISTED=false
 
 # Colors (disabled when not a terminal)
 if [ -t 1 ] || [ -t 2 ]; then
@@ -45,6 +47,24 @@ warn()  { printf "${BOLD}${YELLOW}⚠ %s${RESET}\n" "$*" >&2; }
 fail()  { printf "${BOLD}${RED}✗ %s${RESET}\n" "$*" >&2; exit 1; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+normalize_install_dir() {
+  case "$INSTALL_DIR" in
+    /*) ;;
+    *) INSTALL_DIR="$PWD/$INSTALL_DIR" ;;
+  esac
+}
+
+sha256_file() {
+  local path="$1"
+  if command_exists sha256sum; then
+    sha256sum "$path" | awk '{print tolower($1)}'
+  elif command_exists shasum; then
+    shasum -a 256 "$path" | awk '{print tolower($1)}'
+  else
+    fail "Neither sha256sum nor shasum is available; refusing to install an unverified CLI."
+  fi
+}
 
 running_in_ssh_session() {
   [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_CLIENT:-}" ] || [ -n "${SSH_TTY:-}" ]
@@ -165,6 +185,33 @@ install_cli_binary() {
     fail "Failed to download CLI binary."
   fi
 
+  local checksum_file="$tmp_dir/checksums.txt"
+  local asset_name="cordy-cli-${version}-${OS}-${ARCH}.tar.gz"
+  if ! curl -fsSL "https://github.com/cordy-ai/cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
+    rm -rf "$tmp_dir"
+    fail "Failed to download the CLI checksum manifest; refusing to install an unverified binary."
+  fi
+  local expected_checksum
+  if ! expected_checksum=$(awk -v asset="$asset_name" '
+    $2 == asset || $2 == "*" asset {
+      count++
+      checksum=tolower($1)
+    }
+    END {
+      if (count != 1 || length(checksum) != 64 || checksum !~ /^[[:xdigit:]]+$/) exit 1
+      print checksum
+    }
+  ' "$checksum_file"); then
+    rm -rf "$tmp_dir"
+    fail "CLI checksum manifest has no unique valid entry for ${asset_name}."
+  fi
+  local actual_checksum
+  actual_checksum=$(sha256_file "$tmp_dir/cordy.tar.gz")
+  if [ "$actual_checksum" != "$expected_checksum" ]; then
+    rm -rf "$tmp_dir"
+    fail "CLI checksum verification failed for ${asset_name}."
+  fi
+
   tar -xzf "$tmp_dir/cordy.tar.gz" -C "$tmp_dir" cordy
 
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
@@ -205,13 +252,63 @@ get_latest_version() {
   curl -sI "$REPO_WEB_URL/releases/latest" 2>/dev/null | grep -i '^location:' | sed 's/.*tag\///' | tr -d '\r\n' || true
 }
 
+existing_selfhost_image_pin() {
+  [ "$SELFHOST_ENV_EXISTED" = true ] || return 1
+  [ -f "$INSTALL_DIR/.env" ] || return 1
+
+  local image_tag
+  image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' "$INSTALL_DIR/.env" | tail -n 1)"
+  [ -n "$image_tag" ] || return 1
+  printf '%s' "$image_tag"
+}
+
+validate_selfhost_image_tag() {
+  local image_tag="$1"
+  case "$image_tag" in
+    "" | [.-]* | *[!A-Za-z0-9_.-]*)
+      fail "Self-host image tag '$image_tag' is invalid. Use a release tag such as v0.4.10 or main."
+      ;;
+  esac
+  if [ "${#image_tag}" -gt 128 ]; then
+    fail "Self-host image tag '$image_tag' is too long."
+  fi
+}
+
 get_selfhost_ref() {
   if [ -n "${CORDY_SELFHOST_REF:-}" ]; then
     printf '%s' "$CORDY_SELFHOST_REF"
     return
   fi
 
-  local latest
+  # Keep deployment assets and images on one version boundary. A rerun of an
+  # existing install must check out the ref represented by its durable image
+  # pin instead of combining that old image with the newest Compose/config.
+  local existing_pin latest
+  if existing_pin="$(existing_selfhost_image_pin)"; then
+    validate_selfhost_image_tag "$existing_pin"
+    case "$existing_pin" in
+      latest)
+        latest="$(get_latest_version)"
+        if [ -z "$latest" ]; then
+          fail "Existing self-host image pin 'latest' cannot be mapped to a published release. Set CORDY_SELFHOST_REF explicitly."
+        fi
+        validate_selfhost_image_tag "$latest"
+        printf '%s' "$latest"
+        ;;
+      sha-*)
+        local commit_ref="${existing_pin#sha-}"
+        if ! printf '%s' "$commit_ref" | grep -Eq '^[0-9A-Fa-f]{40}$'; then
+          fail "Existing self-host image pin '$existing_pin' cannot be mapped reliably to a full Git commit. Set CORDY_SELFHOST_REF explicitly."
+        fi
+        printf '%s' "$commit_ref"
+        ;;
+      *)
+        printf '%s' "$existing_pin"
+        ;;
+    esac
+    return
+  fi
+
   latest=$(get_latest_version)
   if [ -n "$latest" ]; then
     printf '%s' "$latest"
@@ -223,22 +320,126 @@ get_selfhost_ref() {
 
 checkout_server_ref() {
   local ref="$1"
+  git fetch origin "$ref" --depth 1 || fail "Could not fetch self-host ref '$ref'."
+  git checkout --force --detach FETCH_HEAD || fail "Could not check out self-host ref '$ref'."
+}
 
-  if [ "$ref" = "main" ]; then
-    git fetch origin main --depth 1 2>/dev/null || true
-    git checkout --force main 2>/dev/null || true
-    git reset --hard origin/main 2>/dev/null || true
-    return
+pin_selfhost_image_tag() {
+  local ref="$1" image_tag preserve_existing=false
+
+  # A durable pin in an existing installation is an operator choice. Only an
+  # explicit CORDY_SELFHOST_REF is allowed to replace it; otherwise rerunning
+  # the installer could unexpectedly start a newer image and its migrations.
+  if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
+    image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' .env | tail -n 1)"
+    if [ "$image_tag" = "latest" ]; then
+      # `latest` is a moving channel rather than a durable version boundary.
+      # Resolve it to the same stable release ref selected for the deployment
+      # assets, then persist that exact version below.
+      image_tag="$ref"
+    else
+      preserve_existing=true
+    fi
+  elif [ "$ref" = "main" ]; then
+    image_tag="latest"
+  else
+    image_tag="$ref"
   fi
 
-  git fetch origin --tags --force 2>/dev/null || true
-  if git rev-parse --verify --quiet "refs/tags/$ref" >/dev/null; then
-    git checkout --force "$ref" 2>/dev/null || git checkout --force "tags/$ref" 2>/dev/null || true
+  validate_selfhost_image_tag "$image_tag"
+
+  if [ "$preserve_existing" = true ]; then
+    export CORDY_IMAGE_TAG="$image_tag"
+    ok "Preserved existing backend and web image pin $image_tag"
     return
+  elif grep -q '^CORDY_IMAGE_TAG=' .env; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+      sed -i '' "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
+    else
+      sed -i "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
+    fi
+  else
+    printf '\nCORDY_IMAGE_TAG=%s\n' "$image_tag" >>.env
   fi
 
-  git fetch origin "$ref" --depth 1 2>/dev/null || true
-  git checkout --force "$ref" 2>/dev/null || true
+  # Compose gives the calling environment precedence over .env. Export the
+  # selected ref so an ambient CORDY_IMAGE_TAG cannot silently defeat rollback.
+  export CORDY_IMAGE_TAG="$image_tag"
+  ok "Pinned backend and web images to $image_tag"
+}
+
+systemd_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//%/%%}"
+  printf '"%s"' "$value"
+}
+
+preflight_selfhost_systemd() {
+  [ "$OS" = "linux" ] || fail "--systemd is supported only on Linux."
+  command_exists systemctl || fail "--systemd requires systemctl."
+  command_exists loginctl || fail "--systemd requires loginctl to enable user lingering."
+  systemctl --user show-environment >/dev/null 2>&1 ||
+    fail "No systemd user manager is available. Enable systemd for this login and retry."
+}
+
+persist_systemd_compose_configuration() {
+  local configuration_path="$INSTALL_DIR/.cordy-systemd.compose.yml" temporary_path
+  temporary_path="$(mktemp "$INSTALL_DIR/.cordy-systemd.compose.yml.XXXXXX")" ||
+    fail "Could not create the resolved systemd Compose file."
+
+  if ! docker compose -f docker-compose.selfhost.yml config >"$temporary_path"; then
+    rm -f "$temporary_path"
+    fail "Could not resolve the current Docker Compose configuration for systemd."
+  fi
+  chmod 0600 "$temporary_path"
+  mv "$temporary_path" "$configuration_path"
+}
+
+install_selfhost_systemd() {
+  preflight_selfhost_systemd
+
+  local account docker_path unit_dir unit_path install_dir_q docker_q configuration_q
+  account="${USER:-$(id -un)}"
+  docker_path="$(command -v docker)"
+  unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  unit_path="$unit_dir/cordy-selfhost.service"
+  install_dir_q="$(systemd_quote "$INSTALL_DIR")"
+  docker_q="$(systemd_quote "$docker_path")"
+  configuration_q="$(systemd_quote "$INSTALL_DIR/.cordy-systemd.compose.yml")"
+
+  persist_systemd_compose_configuration
+
+  loginctl enable-linger "$account" ||
+    fail "Could not enable systemd lingering for '$account'. Run 'sudo loginctl enable-linger $account' and retry."
+
+  mkdir -p "$unit_dir"
+  {
+    printf '%s\n' '[Unit]'
+    printf '%s\n' 'Description=Cordy self-hosted Rust services'
+    printf '%s\n' 'Wants=network-online.target'
+    printf '%s\n' 'After=network-online.target'
+    printf '\n%s\n' '[Service]'
+    printf '%s\n' 'Type=oneshot'
+    printf '%s\n' 'RemainAfterExit=yes'
+    printf 'WorkingDirectory=%s\n' "$install_dir_q"
+    printf 'ExecStartPre=%s compose -f %s config --quiet\n' "$docker_q" "$configuration_q"
+    printf 'ExecStart=%s compose -f %s up -d --remove-orphans\n' "$docker_q" "$configuration_q"
+    printf 'ExecStop=%s compose -f %s down\n' "$docker_q" "$configuration_q"
+    printf '%s\n' 'Restart=on-failure'
+    printf '%s\n' 'RestartSec=10s'
+    printf '%s\n' 'TimeoutStartSec=5min'
+    printf '%s\n' 'TimeoutStopSec=2min'
+    printf '\n%s\n' '[Install]'
+    printf '%s\n' 'WantedBy=default.target'
+  } >"$unit_path"
+  chmod 0644 "$unit_path"
+
+  systemctl --user daemon-reload || fail "Could not reload the systemd user manager."
+  systemctl --user enable --now cordy-selfhost.service ||
+    fail "Could not enable and start cordy-selfhost.service."
+  ok "Enabled cordy-selfhost.service for boot and login-independent operation"
 }
 
 pull_official_selfhost_images() {
@@ -336,6 +537,9 @@ After installing Docker, re-run this script with --with-server."
 setup_server() {
   info "Setting up Cordy server..."
   local server_ref
+  if [ -d "$INSTALL_DIR/.git" ] && [ -f "$INSTALL_DIR/.env" ]; then
+    SELFHOST_ENV_EXISTED=true
+  fi
   server_ref=$(get_selfhost_ref)
   info "Using self-host assets from ${server_ref}..."
 
@@ -379,8 +583,11 @@ setup_server() {
     fi
     ok "Generated .env with random JWT_SECRET and POSTGRES_PASSWORD"
   else
+    SELFHOST_ENV_EXISTED=true
     ok "Using existing .env"
   fi
+
+  pin_selfhost_image_tag "$server_ref"
 
   # Start Docker Compose
   info "Pulling official Cordy images..."
@@ -458,8 +665,14 @@ run_with_server() {
 
   detect_os
   check_docker
+  if [ "$INSTALL_SYSTEMD" = true ]; then
+    preflight_selfhost_systemd
+  fi
   setup_server
   install_cli
+  if [ "$INSTALL_SYSTEMD" = true ]; then
+    install_selfhost_systemd
+  fi
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
@@ -488,6 +701,15 @@ run_with_server() {
 run_stop() {
   printf "\n"
   info "Stopping Cordy services..."
+
+  local unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cordy-selfhost.service"
+  if [ -f "$unit_path" ]; then
+    command_exists systemctl ||
+      fail "cordy-selfhost.service exists, but systemctl is unavailable; refusing to report the service stopped."
+    systemctl --user disable --now cordy-selfhost.service ||
+      fail "Could not stop and disable cordy-selfhost.service; it may restart the stack on the next login or boot."
+    ok "Systemd service stopped and disabled"
+  fi
 
   if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
@@ -518,12 +740,14 @@ main() {
     case "$1" in
       --with-server) mode="with-server" ;;
       --local)       mode="with-server" ;;  # backwards compat alias
+      --systemd)     INSTALL_SYSTEMD=true ;;
       --stop)        mode="stop" ;;
       --help|-h)
-        echo "Usage: install.sh [--with-server | --stop]"
+        echo "Usage: install.sh [--with-server [--systemd] | --stop]"
         echo ""
         echo "  (default)       Install / upgrade the Cordy CLI"
         echo "  --with-server   Install CLI + provision a self-host server (Docker)"
+        echo "  --systemd       With --with-server, enable the Linux user service"
         echo "  --stop          Stop a self-hosted installation"
         echo ""
         echo "Environment variables:"
@@ -542,6 +766,12 @@ main() {
     esac
     shift
   done
+
+  if [ "$INSTALL_SYSTEMD" = true ] && [ "$mode" != "with-server" ]; then
+    fail "--systemd requires --with-server."
+  fi
+
+  normalize_install_dir
 
   case "$mode" in
     default)     run_default ;;

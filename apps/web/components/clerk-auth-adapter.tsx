@@ -59,7 +59,8 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
 
   // Keep the API client's token getter current with Clerk sessions.
   // When the API client needs a token for a request, it calls getToken()
-  // which returns the Clerk session JWT — the Go backend verifies this.
+  // which returns the Clerk session JWT. The managed web identity boundary
+  // authenticates that session before the request reaches the Rust API.
   useEffect(() => {
     if (!clerkLoaded || !isSignedIn) return;
 

@@ -59,27 +59,24 @@ pub struct Catalog {
 /// provider-qualified id; authoritative model ids and advertised order remain
 /// unchanged.
 pub fn parse_acp_session_models(result: &Value, fallback_provider: &str) -> Vec<Model> {
-    let models = result.get("models");
+    let Some(models) = result.get("models") else {
+        return Vec::new();
+    };
     let current = models
-        .and_then(|models| {
-            models
-                .get("currentModelId")
-                .or_else(|| models.get("current_model_id"))
-        })
+        .get("currentModelId")
+        .or_else(|| models.get("current_model_id"))
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim();
-    let available = models
-        .and_then(|models| {
-            models
-                .get("availableModels")
-                .or_else(|| models.get("available_models"))
-        })
+    let Some(available) = models
+        .get("availableModels")
+        .or_else(|| models.get("available_models"))
         .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
+    else {
+        return Vec::new();
+    };
     let mut seen = std::collections::BTreeSet::new();
-    let parsed: Vec<_> = available
+    available
         .iter()
         .filter_map(|entry| {
             let id = entry
@@ -101,69 +98,6 @@ pub fn parse_acp_session_models(result: &Value, fallback_provider: &str) -> Vec<
                 .map(|(provider, _)| provider)
                 .filter(|provider| !provider.is_empty())
                 .unwrap_or(fallback_provider);
-            Some(Model {
-                id: id.to_string(),
-                label: label.to_string(),
-                provider: provider.to_string(),
-                default: id == current,
-                ..Model::default()
-            })
-        })
-        .collect();
-    if parsed.is_empty() {
-        parse_acp_config_models(result)
-    } else {
-        parsed
-    }
-}
-
-fn parse_acp_config_models(result: &Value) -> Vec<Model> {
-    let options = result
-        .get("configOptions")
-        .or_else(|| result.get("config_options"))
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let Some(model_option) = options.iter().find(|option| {
-        ["id", "category"].iter().any(|key| {
-            option
-                .get(*key)
-                .and_then(Value::as_str)
-                .is_some_and(|value| value.trim().eq_ignore_ascii_case("model"))
-        })
-    }) else {
-        return Vec::new();
-    };
-    let current = model_option
-        .get("currentValue")
-        .or_else(|| model_option.get("current_value"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
-    let choices = model_option
-        .get("options")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    let mut seen = std::collections::BTreeSet::new();
-    choices
-        .iter()
-        .filter_map(|choice| {
-            let id = choice.get("value").and_then(Value::as_str)?.trim();
-            if id.is_empty() || !seen.insert(id.to_string()) {
-                return None;
-            }
-            let label = choice
-                .get("name")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|label| !label.is_empty() && !label.eq_ignore_ascii_case("unknown"))
-                .unwrap_or(id);
-            let provider = id
-                .split_once(':')
-                .map(|(provider, _)| provider)
-                .filter(|provider| !provider.is_empty())
-                .unwrap_or_default();
             Some(Model {
                 id: id.to_string(),
                 label: label.to_string(),
@@ -200,6 +134,96 @@ pub fn qualify_model_id(catalog: &Catalog, model: &str) -> (String, bool) {
     )
 }
 
+/// Reports whether a task's thinking-level override is advertised for the
+/// selected model. An empty model means the runtime's default model, except
+/// for Codex: its effective model comes from config.toml and cannot be known
+/// from this catalog, so the safe answer is false.
+pub fn validate_thinking_level(
+    catalog: &Catalog,
+    provider: &str,
+    model: &str,
+    value: &str,
+) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if model.is_empty() && provider == "codex" {
+        return false;
+    }
+
+    let mut target = model_id_for_capability_lookup(provider, model).to_string();
+    if target.is_empty() {
+        target = catalog
+            .models
+            .iter()
+            .find(|entry| entry.default)
+            .map(|entry| entry.id.clone())
+            .unwrap_or_default();
+        if target.is_empty() {
+            return provider == "opencode"
+                && catalog.models.iter().any(|entry| {
+                    entry.thinking.as_ref().is_some_and(|thinking| {
+                        thinking
+                            .supported_levels
+                            .iter()
+                            .any(|level| level.value == value)
+                    })
+                });
+        }
+    }
+
+    catalog
+        .models
+        .iter()
+        .find(|entry| entry.id == target)
+        .is_some_and(|entry| {
+            entry.thinking.as_ref().is_some_and(|thinking| {
+                thinking
+                    .supported_levels
+                    .iter()
+                    .any(|level| level.value == value)
+            })
+        })
+}
+
+/// Reports whether a task's service-tier override is advertised for the
+/// selected Codex model. Other providers do not own this capability.
+pub fn validate_service_tier(catalog: &Catalog, provider: &str, model: &str, value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if provider != "codex" || model.is_empty() {
+        return false;
+    }
+    catalog
+        .models
+        .iter()
+        .find(|entry| entry.id == model)
+        .is_some_and(|entry| entry.service_tiers.iter().any(|tier| tier.id == value))
+}
+
+fn model_id_for_capability_lookup<'a>(provider: &str, model: &'a str) -> &'a str {
+    if provider != "claude" {
+        return model;
+    }
+    let Some(without_bracket) = model.strip_suffix(']') else {
+        return model;
+    };
+    let Some(bracket) = without_bracket.rfind('[') else {
+        return model;
+    };
+    let tag = &without_bracket[bracket + 1..];
+    let bytes = tag.as_bytes();
+    if bytes.len() < 2
+        || !matches!(bytes.last(), Some(b'k' | b'm'))
+        || bytes[0] == b'0'
+        || !bytes[..bytes.len() - 1].iter().all(u8::is_ascii_digit)
+    {
+        return model;
+    }
+    &without_bracket[..bracket]
+}
+
 #[derive(Debug, Clone)]
 struct CacheEntry {
     catalog: Catalog,
@@ -207,12 +231,6 @@ struct CacheEntry {
 }
 
 /// Provider/runtime-scoped identity for one model-discovery memo entry.
-///
-/// The scope is mandatory even when two adapters launch the same executable
-/// and fixed prefix: compatible runtimes can share a wrapper while exposing
-/// different catalogs or discovery protocols. The inner representation is
-/// private so cache users cannot substitute `RuntimeCommand::cache_key()` and
-/// accidentally collapse those runtime identities.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ModelDiscoveryCacheKey(String);
 
@@ -283,6 +301,13 @@ impl CatalogCache {
 mod tests {
     use super::*;
 
+    fn cache_key(scope: &str) -> ModelDiscoveryCacheKey {
+        let Some(key) = ModelDiscoveryCacheKey::new(scope, &RuntimeCommand::default()) else {
+            panic!("test cache scope must be non-empty");
+        };
+        key
+    }
+
     fn model(id: &str, provider: &str) -> Model {
         Model {
             id: id.to_string(),
@@ -290,13 +315,6 @@ mod tests {
             provider: provider.to_string(),
             ..Model::default()
         }
-    }
-
-    fn cache_key(scope: &str) -> ModelDiscoveryCacheKey {
-        let Some(key) = ModelDiscoveryCacheKey::new(scope, &RuntimeCommand::default()) else {
-            panic!("test cache scope must be non-empty");
-        };
-        key
     }
 
     #[test]
@@ -321,57 +339,37 @@ mod tests {
     }
 
     #[test]
-    fn acp_config_model_catalog_is_used_without_mixing_thinking_options() {
-        let models = parse_acp_session_models(
-            &serde_json::json!({
-                "configOptions":[
-                    {
-                        "id":"thinking",
-                        "category":"thought_level",
-                        "currentValue":"high",
-                        "options":[{"value":"high","name":"High"}]
-                    },
-                    {
-                        "id":"model",
-                        "category":"model",
-                        "currentValue":"kimi-code/k3",
-                        "options":[
-                            {"value":"kimi-code/k3","name":"K3"},
-                            {"value":"openai:gpt-5","name":"unknown"},
-                            {"value":"kimi-code/k3","name":"duplicate"},
-                            {"value":"","name":"empty"}
-                        ]
-                    }
-                ]
-            }),
-            "kimi",
-        );
-        assert_eq!(models.len(), 2);
-        assert_eq!(models[0].id, "kimi-code/k3");
-        assert_eq!(models[0].label, "K3");
-        assert!(models[0].default);
-        assert!(models[0].provider.is_empty());
-        assert_eq!(models[1].label, "openai:gpt-5");
-        assert_eq!(models[1].provider, "openai");
+    fn discovery_cache_key_scopes_runtime_identity() {
+        let builtin = cache_key("hermes");
+        let executable = ModelDiscoveryCacheKey::new(
+            "hermes",
+            &RuntimeCommand::new("/usr/local/bin/hermes", Vec::new()),
+        )
+        .unwrap_or_else(|| panic!("cache key"));
+        let prefixed = ModelDiscoveryCacheKey::new(
+            "hermes",
+            &RuntimeCommand::new(
+                "/usr/local/bin/ccms",
+                vec!["start".to_string(), "opus".to_string()],
+            ),
+        )
+        .unwrap_or_else(|| panic!("cache key"));
+        let other_prefix = ModelDiscoveryCacheKey::new(
+            "hermes",
+            &RuntimeCommand::new(
+                "/usr/local/bin/ccms",
+                vec!["start".to_string(), "q36".to_string()],
+            ),
+        )
+        .unwrap_or_else(|| panic!("cache key"));
+
+        assert_ne!(builtin, executable);
+        assert_ne!(prefixed, other_prefix);
     }
 
     #[test]
-    fn structured_models_catalog_wins_over_config_option_fallback() {
-        let models = parse_acp_session_models(
-            &serde_json::json!({
-                "models": {
-                    "currentModelId":"direct",
-                    "availableModels":[{"modelId":"direct","name":"Direct"}]
-                },
-                "configOptions":[{
-                    "id":"model",
-                    "options":[{"value":"fallback","name":"Fallback"}]
-                }]
-            }),
-            "provider",
-        );
-        assert_eq!(models.len(), 1);
-        assert_eq!(models[0].id, "direct");
+    fn discovery_cache_key_rejects_empty_scope() {
+        assert!(ModelDiscoveryCacheKey::new("  ", &RuntimeCommand::default()).is_none());
     }
 
     #[test]
@@ -417,32 +415,110 @@ mod tests {
     }
 
     #[test]
-    fn cache_key_isolates_runtime_identity_for_a_shared_wrapper() {
-        let command = RuntimeCommand::new(
-            "/usr/local/bin/agent-wrapper",
-            vec!["start".to_string(), "shared".to_string()],
-        );
-        let Some(pi_key) = ModelDiscoveryCacheKey::new("pi", &command) else {
-            panic!("pi scope must be valid");
+    fn capability_validation_uses_the_canonical_model_and_runtime_guards() {
+        let catalog = Catalog {
+            models: vec![
+                Model {
+                    id: "claude-opus-5".to_string(),
+                    default: true,
+                    thinking: Some(ModelThinking {
+                        supported_levels: vec![ThinkingLevel {
+                            value: "high".to_string(),
+                            ..ThinkingLevel::default()
+                        }],
+                        ..ModelThinking::default()
+                    }),
+                    ..Model::default()
+                },
+                Model {
+                    id: "gpt-5.6-sol".to_string(),
+                    service_tiers: vec![ModelServiceTier {
+                        id: "priority".to_string(),
+                        ..ModelServiceTier::default()
+                    }],
+                    ..Model::default()
+                },
+            ],
+            ..Catalog::default()
         };
-        let Some(omp_key) = ModelDiscoveryCacheKey::new("omp", &command) else {
-            panic!("omp scope must be valid");
-        };
-        assert_ne!(pi_key, omp_key);
-        assert!(ModelDiscoveryCacheKey::new("", &command).is_none());
 
-        let cache = CatalogCache::default();
-        assert!(cache.insert(
-            pi_key.clone(),
-            Catalog {
-                models: vec![model("pi/model", "pi")],
-                fallback: false,
-            }
+        assert!(validate_thinking_level(
+            &catalog,
+            "claude",
+            "claude-opus-5[1m]",
+            "high"
         ));
-        assert_eq!(
-            cache.get(&pi_key).map(|catalog| catalog.models.len()),
-            Some(1)
-        );
-        assert!(cache.get(&omp_key).is_none());
+        assert!(!validate_thinking_level(
+            &catalog,
+            "claude",
+            "claude-opus-5[0m]",
+            "high"
+        ));
+        assert!(validate_service_tier(
+            &catalog,
+            "codex",
+            "gpt-5.6-sol",
+            "priority"
+        ));
+        assert!(!validate_service_tier(
+            &catalog,
+            "claude",
+            "gpt-5.6-sol",
+            "priority"
+        ));
+        assert!(!validate_thinking_level(&catalog, "codex", "", "high"));
+    }
+
+    #[test]
+    fn thinking_validation_handles_default_and_opencode_any_model() {
+        let catalog = Catalog {
+            models: vec![Model {
+                id: "openai/o3".to_string(),
+                thinking: Some(ModelThinking {
+                    supported_levels: vec![ThinkingLevel {
+                        value: "high".to_string(),
+                        ..ThinkingLevel::default()
+                    }],
+                    ..ModelThinking::default()
+                }),
+                ..Model::default()
+            }],
+            ..Catalog::default()
+        };
+        assert!(!validate_thinking_level(&catalog, "pi", "", "high"));
+        assert!(validate_thinking_level(&catalog, "opencode", "", "high"));
+    }
+
+    #[test]
+    fn capability_validation_uses_the_first_matching_model_entry() {
+        let catalog = Catalog {
+            models: vec![
+                Model {
+                    id: "gpt-5".to_string(),
+                    ..Model::default()
+                },
+                Model {
+                    id: "gpt-5".to_string(),
+                    thinking: Some(ModelThinking {
+                        supported_levels: vec![ThinkingLevel {
+                            value: "high".to_string(),
+                            ..ThinkingLevel::default()
+                        }],
+                        ..ModelThinking::default()
+                    }),
+                    service_tiers: vec![ModelServiceTier {
+                        id: "priority".to_string(),
+                        ..ModelServiceTier::default()
+                    }],
+                    ..Model::default()
+                },
+            ],
+            ..Catalog::default()
+        };
+
+        assert!(!validate_thinking_level(&catalog, "codex", "gpt-5", "high"));
+        assert!(!validate_service_tier(
+            &catalog, "codex", "gpt-5", "priority"
+        ));
     }
 }

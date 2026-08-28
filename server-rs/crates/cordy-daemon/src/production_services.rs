@@ -29,7 +29,7 @@ use crate::health::{
     REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
-use crate::provider_registration::RuntimeLaunchRegistry;
+use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     enqueue_repo_warmup, BuiltinRefreshReason, RepoWarmupRequest, RuntimeRegistrationService,
@@ -39,7 +39,7 @@ use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
-use crate::types::{RuntimeExecutionTarget, Task};
+use crate::types::{RepoData, RuntimeExecutionTarget, Task};
 use crate::wakeup::jitter_duration;
 
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
@@ -54,6 +54,8 @@ pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
         registry: Arc<RuntimeRegistry>,
         runtime_id: String,
         ack: DaemonHeartbeatAckPayload,
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
     );
 
     async fn run_task(
@@ -101,14 +103,10 @@ impl ProviderRuntimeContext {
         }
     }
 
-    /// Authenticated daemon client for task transcript, usage, and lifecycle
-    /// callbacks. The returned `Arc` is the shared production owner.
     pub fn client(&self) -> Arc<Client> {
         Arc::clone(&self.client)
     }
 
-    /// Resolves a launch only from the registration state accepted for this
-    /// workspace and target.
     pub fn launch_registry(&self) -> Arc<RuntimeLaunchRegistry> {
         Arc::clone(&self.launch_registry)
     }
@@ -132,29 +130,37 @@ impl ProviderRuntimeContext {
                     target.provider
                 )
             })?;
+        self.backend_config_for_launch(&launch, env)
+    }
+
+    /// Builds a provider config from an already accepted launch snapshot.
+    /// Registration may refresh concurrently, but one task must keep the
+    /// command identity that passed its initial launch gate.
+    pub fn backend_config_for_launch(
+        &self,
+        launch: &RuntimeLaunchSpec,
+        env: BTreeMap<String, String>,
+    ) -> anyhow::Result<BackendConfig> {
         anyhow::ensure!(
             !launch.command_path.trim().is_empty(),
             "accepted launch for provider {} has no executable path",
-            target.provider
+            launch.target.provider
         );
         Ok(BackendConfig {
-            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
+            command: RuntimeCommand::new(launch.command_path.clone(), launch.fixed_args.clone()),
             env,
+            builtin_runtime: launch.target.profile_id.is_empty(),
         })
     }
 
-    /// Process-wide activity state used to coordinate execution with update
-    /// and garbage-collection barriers.
     pub fn activity(&self) -> Arc<DaemonActivity> {
         Arc::clone(&self.activity)
     }
 
-    /// Daemon-owned repository authorization and task-reference state.
     pub fn repo_state(&self) -> Arc<DaemonRepoState> {
         Arc::clone(&self.repo_state)
     }
 
-    /// Task-bound localhost checkout authorization registry.
     pub fn checkout_registry(&self) -> Arc<RepoCheckoutRegistry> {
         Arc::clone(&self.checkout_registry)
     }
@@ -221,6 +227,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) {
         let mut reconcile_snapshot = reconcile.notify();
         let mut failures = 0u32;
@@ -241,7 +248,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             };
             match self
                 .registration
-                .sync_once(ctx.child(), &registry, reconcile_profiles)
+                .sync_once(ctx.child(), &registry, reconcile_profiles, Some(&activity))
                 .await
             {
                 Ok(()) => failures = 0,
@@ -253,7 +260,12 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         }
     }
 
-    async fn provider_refresh_loop(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) {
+    async fn provider_refresh_loop(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
+    ) {
         let now = tokio::time::Instant::now();
         let mut discovery =
             tokio::time::interval_at(now + AGENT_DISCOVERY_INTERVAL, AGENT_DISCOVERY_INTERVAL);
@@ -271,7 +283,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             };
             if let Err(error) = self
                 .registration
-                .refresh_builtins_once(ctx.child(), &registry, reason)
+                .refresh_builtins_once(ctx.child(), &registry, reason, &activity)
                 .await
             {
                 tracing::debug!(?reason, %error, "built-in runtime refresh round failed");
@@ -295,10 +307,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             () = ctx.cancelled() => return Err(checkout_failure(500, "repo checkout cancelled")),
             guard = refresh_lock.lock() => guard,
         };
-        // Re-check under the workspace refresh lock. A warm authorized cache
-        // is already complete and must remain usable during transient server
-        // outages; a concurrent refresh may also have filled a prior miss
-        // while this request waited for the lock.
+        // Re-check under the workspace refresh lock. An authorized warm cache
+        // remains usable during transient server outages, and another request
+        // may have filled a prior miss while this request waited.
         if self.repo_state.is_allowed(workspace_id, repo_url)
             && self.repo_cache.lookup(workspace_id, repo_url).is_some()
         {
@@ -322,11 +333,11 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             return Ok(());
         }
 
-        // A project-only repository is authorized by the active task but is
-        // intentionally absent from the workspace repo response. Include the
-        // exact authorized miss so correctness does not depend on the
-        // best-effort warmup queue winning the race with first checkout.
-        let repos = repo_sync_candidates(response.repos, repo_url);
+        // A claimed task may authorize a repository that is absent from the
+        // workspace-level response. Warmup delivery is deliberately
+        // best-effort, so the checkout miss itself must include that exact
+        // authorized URL in the synchronous cache round.
+        let repos = checkout_sync_repos(response.repos, repo_url);
         match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
             Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
             Err(error) => self
@@ -484,19 +495,6 @@ fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckou
     }
 }
 
-fn repo_sync_candidates(repos: Vec<crate::types::RepoData>, requested: &str) -> Vec<RepoInfo> {
-    let mut urls = repos
-        .into_iter()
-        .map(|repo| repo.url.trim().to_string())
-        .filter(|url| !url.is_empty())
-        .collect::<BTreeSet<_>>();
-    let requested = requested.trim();
-    if !requested.is_empty() {
-        urls.insert(requested.to_string());
-    }
-    urls.into_iter().map(|url| RepoInfo { url }).collect()
-}
-
 #[async_trait::async_trait]
 impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
     for DaemonProductionServices<P, R>
@@ -520,11 +518,12 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         &self,
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
         payload: RuntimeProfilesChangedPayload,
     ) {
         if let Err(error) = self
             .registration
-            .refresh_workspace(ctx, &registry, &payload.workspace_id)
+            .refresh_workspace(ctx, &registry, &payload.workspace_id, &activity)
             .await
         {
             tracing::debug!(workspace_id = %payload.workspace_id, %error, "runtime profile refresh failed");
@@ -539,7 +538,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         ack: DaemonHeartbeatAckPayload,
     ) {
         self.provider
-            .handle_non_update_heartbeat_actions(ctx, registry, runtime_id, ack)
+            .handle_non_update_heartbeat_actions(
+                ctx,
+                registry,
+                runtime_id,
+                ack,
+                Arc::clone(&self.client),
+                Arc::clone(&self.launch_registry),
+            )
             .await;
     }
 
@@ -585,7 +591,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     for DaemonProductionServices<P, R>
 {
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
-        self.registration.sync_once(ctx, &registry, false).await
+        self.registration
+            .sync_once(ctx, &registry, false, None)
+            .await
     }
 
     async fn run_reconcile(
@@ -594,6 +602,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
         let repo_warmup_rx = self
             .repo_warmup_rx
@@ -607,8 +616,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
                 reconcile,
                 workspace_changes,
                 Arc::clone(&registry),
+                Arc::clone(&activity),
             ),
-            self.provider_refresh_loop(ctx.child(), registry),
+            self.provider_refresh_loop(ctx.child(), registry, activity),
             self.repo_warmup_loop(ctx, repo_warmup_rx),
         );
         Ok(())
@@ -650,6 +660,29 @@ fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
     interval
 }
 
+fn checkout_sync_repos(workspace_repos: Vec<RepoData>, requested_url: &str) -> Vec<RepoInfo> {
+    let requested_url = requested_url.trim();
+    let mut urls: BTreeSet<String> = workspace_repos
+        .into_iter()
+        .map(|repo| repo.url.trim().to_string())
+        .filter(|url| !url.is_empty())
+        .collect();
+    let mut repos = Vec::with_capacity(urls.len() + usize::from(!requested_url.is_empty()));
+    if !requested_url.is_empty() {
+        // The authenticated checkout request owns this bounded synchronous
+        // round. Always attempt its exact repository first: an unrelated
+        // workspace repository may be unreachable and consume the cache
+        // sync's entire timeout before the requested task-only URL otherwise
+        // gets a chance to clone.
+        urls.remove(requested_url);
+        repos.push(RepoInfo {
+            url: requested_url.to_string(),
+        });
+    }
+    repos.extend(urls.into_iter().map(|url| RepoInfo { url }));
+    repos
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,117 +704,81 @@ mod tests {
     }
 
     #[test]
-    fn cold_miss_sync_includes_authorized_task_repo_not_in_workspace_response() {
-        let repos = repo_sync_candidates(
+    fn checkout_sync_includes_task_only_url_after_warmup_is_dropped() {
+        let task_url = "https://example.test/task-only.git";
+        for queue_unavailable in ["full", "closed"] {
+            let (tx, rx) = mpsc::channel(1);
+            if queue_unavailable == "full" {
+                enqueue_repo_warmup(
+                    &tx,
+                    "other-workspace",
+                    vec![RepoInfo {
+                        url: "https://example.test/already-queued.git".into(),
+                    }],
+                );
+            } else {
+                drop(rx);
+            }
+            enqueue_repo_warmup(
+                &tx,
+                "workspace-1",
+                vec![RepoInfo {
+                    url: task_url.into(),
+                }],
+            );
+
+            let repos = checkout_sync_repos(Vec::new(), task_url);
+            assert_eq!(repos.len(), 1, "{queue_unavailable}");
+            assert_eq!(repos[0].url, task_url, "{queue_unavailable}");
+        }
+    }
+
+    #[test]
+    fn checkout_sync_trims_and_deduplicates_requested_url() {
+        let repos = checkout_sync_repos(
             vec![
-                crate::types::RepoData {
-                    url: " https://example.test/workspace.git ".to_string(),
-                    ..crate::types::RepoData::default()
+                RepoData {
+                    url: " https://example.test/task.git ".into(),
+                    ..RepoData::default()
                 },
-                crate::types::RepoData {
-                    url: "https://example.test/workspace.git".to_string(),
-                    ..crate::types::RepoData::default()
+                RepoData {
+                    url: "https://example.test/workspace.git".into(),
+                    ..RepoData::default()
                 },
             ],
-            "https://example.test/project.git",
+            "https://example.test/task.git",
         );
-
         assert_eq!(
             repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
             vec![
-                "https://example.test/project.git".to_string(),
-                "https://example.test/workspace.git".to_string(),
+                "https://example.test/task.git",
+                "https://example.test/workspace.git"
             ]
         );
     }
 
     #[test]
-    fn provider_runtime_context_keeps_shared_daemon_owners() {
-        let client = Arc::new(Client::new("https://example.test"));
-        let launch_registry = Arc::new(RuntimeLaunchRegistry::default());
-        let activity = DaemonActivity::new();
-        let repo_state = Arc::new(DaemonRepoState::new());
-        let checkout_registry = Arc::new(RepoCheckoutRegistry::default());
-        let context = ProviderRuntimeContext::new(
-            Arc::clone(&client),
-            Arc::clone(&launch_registry),
-            Arc::clone(&activity),
-            Arc::clone(&repo_state),
-            Arc::clone(&checkout_registry),
-        );
-
-        assert!(Arc::ptr_eq(&context.client(), &client));
-        assert!(Arc::ptr_eq(&context.launch_registry(), &launch_registry));
-        assert!(Arc::ptr_eq(&context.activity(), &activity));
-        assert!(Arc::ptr_eq(&context.repo_state(), &repo_state));
-        assert!(Arc::ptr_eq(
-            &context.checkout_registry(),
-            &checkout_registry
-        ));
-    }
-
-    #[test]
-    fn provider_runtime_context_builds_backend_config_from_accepted_launch() {
-        let client = Arc::new(Client::new("https://example.test"));
-        let launch_registry = Arc::new(RuntimeLaunchRegistry::default());
-        let target = RuntimeExecutionTarget {
-            provider: "codex".to_string(),
-            profile_id: String::new(),
-        };
-        launch_registry.replace_builtins(
-            "workspace-1",
-            vec![crate::provider_registration::RuntimeLaunchSpec {
-                target: target.clone(),
-                display_name: "Codex".to_string(),
-                command_path: "/opt/codex".to_string(),
-                fixed_args: vec!["--profile".to_string(), "cordy".to_string()],
-                version: "1.0.0".to_string(),
-            }],
-        );
-        let context = ProviderRuntimeContext::new(
-            client,
-            Arc::clone(&launch_registry),
-            DaemonActivity::new(),
-            Arc::new(DaemonRepoState::new()),
-            Arc::new(RepoCheckoutRegistry::default()),
-        );
-        let config = context
-            .backend_config(
-                "workspace-1",
-                &target,
-                BTreeMap::from([("CORDY_TASK_ID".to_string(), "task-1".to_string())]),
-            )
-            .expect("accepted launch must resolve");
-        assert_eq!(config.command.path, "/opt/codex");
-        assert_eq!(
-            config.command.prefix,
-            vec!["--profile".to_string(), "cordy".to_string()]
-        );
-        assert_eq!(
-            config.env.get("CORDY_TASK_ID").map(String::as_str),
-            Some("task-1")
-        );
-    }
-
-    #[test]
-    fn provider_runtime_context_rejects_unregistered_launch() {
-        let context = ProviderRuntimeContext::new(
-            Arc::new(Client::new("https://example.test")),
-            Arc::new(RuntimeLaunchRegistry::default()),
-            DaemonActivity::new(),
-            Arc::new(DaemonRepoState::new()),
-            Arc::new(RepoCheckoutRegistry::default()),
-        );
-        let error = context
-            .backend_config(
-                "workspace-1",
-                &RuntimeExecutionTarget {
-                    provider: "codex".to_string(),
-                    profile_id: String::new(),
+    fn checkout_sync_prioritizes_requested_url_over_unrelated_workspace_repos() {
+        let repos = checkout_sync_repos(
+            vec![
+                RepoData {
+                    url: "https://example.test/a-unreachable.git".into(),
+                    ..RepoData::default()
                 },
-                BTreeMap::new(),
-            )
-            .expect_err("unregistered launch must fail closed");
-        assert!(error.to_string().contains("no accepted launch"));
+                RepoData {
+                    url: "https://example.test/z-requested.git".into(),
+                    ..RepoData::default()
+                },
+            ],
+            " https://example.test/z-requested.git ",
+        );
+
+        assert_eq!(
+            repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
+            vec![
+                "https://example.test/z-requested.git",
+                "https://example.test/a-unreachable.git"
+            ]
+        );
     }
 }

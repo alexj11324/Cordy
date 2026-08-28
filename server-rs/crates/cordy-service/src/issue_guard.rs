@@ -9,9 +9,10 @@ use chrono::Utc;
 use uuid::Uuid;
 
 /// Lowercased, whitespace-collapsed title used for duplicate matching. Must
-/// stay byte-identical to the SQL side's
-/// `lower(btrim(regexp_replace(title, '[[:space:]]+', ' ', 'g')))` so the
-/// lock key and the lookup row agree.
+/// stay byte-identical to the SQL side, which translates Rust's non-ASCII
+/// whitespace set to ordinary spaces before applying the POSIX whitespace
+/// collapse. That explicit translation keeps NBSP and wide Unicode spaces
+/// consistent across Rust and PostgreSQL locales.
 pub fn normalize_title(title: &str) -> String {
     title
         .split_whitespace()
@@ -186,6 +187,10 @@ mod tests {
             "fix the login bug"
         );
         assert_eq!(normalize_title("ALREADY NORMAL"), "already normal");
+        assert_eq!(
+            normalize_title("Unicode\u{00a0}and\u{2003}wide\u{3000}spaces"),
+            "unicode and wide spaces"
+        );
         assert_eq!(normalize_title("   "), "");
         assert_eq!(normalize_title(""), "");
     }

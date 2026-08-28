@@ -109,23 +109,39 @@ function Get-SelfHostRef {
 function Checkout-ServerRef {
     param([string]$Ref)
 
-    if ($Ref -eq "main") {
-        git fetch origin main --depth 1 2>$null
-        git checkout --force main 2>$null
-        git reset --hard origin/main 2>$null
-        return
+    git fetch origin $Ref --depth 1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not fetch self-host ref '$Ref'."
+    }
+    git checkout --force --detach FETCH_HEAD
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Could not check out self-host ref '$Ref'."
+    }
+}
+
+function Set-SelfHostImageTag {
+    param([string]$Ref)
+
+    $imageTag = if ($Ref -eq "main") { "latest" } else { $Ref }
+    if ($imageTag -notmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') {
+        Write-Fail "Self-host ref '$Ref' is not a valid container image tag. Use a release tag such as v0.4.10 or main."
     }
 
-    git fetch origin --tags --force 2>$null
-    $tagRef = "refs/tags/$Ref"
-    git show-ref --verify --quiet $tagRef 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        git checkout --force $Ref 2>$null
-        return
+    $envPath = Join-Path $InstallDir ".env"
+    $content = @(Get-Content $envPath)
+    if ($content -match '^CORDY_IMAGE_TAG=') {
+        $content = $content | ForEach-Object {
+            if ($_ -match '^CORDY_IMAGE_TAG=') { "CORDY_IMAGE_TAG=$imageTag" } else { $_ }
+        }
+        $content | Set-Content $envPath
+    } else {
+        Add-Content -Path $envPath -Value "`nCORDY_IMAGE_TAG=$imageTag"
     }
 
-    git fetch origin $Ref --depth 1 2>$null
-    git checkout --force $Ref 2>$null
+    # Compose gives the process environment precedence over .env. Pin both so
+    # an ambient value cannot silently defeat an explicit rollback ref.
+    $env:CORDY_IMAGE_TAG = $imageTag
+    Write-Ok "Pinned backend and web images to $imageTag"
 }
 
 function Pull-OfficialSelfHostImages {
@@ -261,7 +277,9 @@ function Install-CliBinary {
         Write-Fail "Failed to download CLI binary: $_"
     }
 
-    # Verify SHA256 checksum
+    # Verify SHA256 checksum. A missing, malformed, or unavailable manifest is
+    # fatal: the release workflow publishes one for every CLI archive, and
+    # installing without it would silently remove the download integrity gate.
     $checksumUrl = "https://github.com/cordy-ai/cordy/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
@@ -273,25 +291,26 @@ function Install-CliBinary {
         $zipFile = Join-Path $tmpDir "cordy.zip"
         $actualHash = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash.ToLower()
         $releaseAsset = "cordy-cli-$version-windows-$arch.zip"
-        $legacyAsset = "cordy_windows_$arch.zip"
-        $expectedLine = ($checksumContent -split "`r?`n") |
-            Where-Object {
-                $_ -match [regex]::Escape($releaseAsset) -or
-                $_ -match [regex]::Escape($legacyAsset)
-            } |
-            Select-Object -First 1
-        if ($expectedLine) {
-            $expectedHash = ($expectedLine -split "\s+")[0].ToLower()
-            if ($actualHash -ne $expectedHash) {
-                Remove-Item $tmpDir -Recurse -Force
-                Write-Fail "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
+        $expectedHashes = @(
+            $checksumContent -split "`r?`n" | ForEach-Object {
+                if ($_ -match '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?<name>\S+)\s*$' -and $Matches.name -eq $releaseAsset) {
+                    $Matches.hash.ToLowerInvariant()
+                }
             }
-            Write-Ok "Checksum verified"
-        } else {
-            Write-Warn "Could not find checksum entry for $releaseAsset — skipping verification."
+        )
+        if ($expectedHashes.Count -ne 1) {
+            Remove-Item $tmpDir -Recurse -Force
+            Write-Fail "Checksum manifest has no unique valid entry for $releaseAsset."
         }
+        $expectedHash = $expectedHashes[0]
+        if ($actualHash -ne $expectedHash) {
+            Remove-Item $tmpDir -Recurse -Force
+            Write-Fail "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
+        }
+        Write-Ok "Checksum verified"
     } catch {
-        Write-Warn "Could not download checksums.txt — skipping verification."
+        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Fail "Could not verify the CLI checksum: $_"
     }
 
     Expand-Archive -Path (Join-Path $tmpDir "cordy.zip") -DestinationPath $tmpDir -Force
@@ -438,6 +457,8 @@ function Install-Server {
     } else {
         Write-Ok "Using existing .env"
     }
+
+    Set-SelfHostImageTag -Ref $serverRef
 
     Write-Info "Pulling official Cordy images..."
     Pull-OfficialSelfHostImages

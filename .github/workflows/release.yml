@@ -11,10 +11,28 @@ on:
 permissions:
   contents: write
   packages: write
+  checks: write
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: cordy
+          POSTGRES_USER: cordy
+          POSTGRES_PASSWORD: cordy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      SQLX_OFFLINE: "false"
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
@@ -45,70 +63,243 @@ jobs:
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          # Deliberately independent from the minimum patch in server/go.mod:
-          # releases follow the newest 1.26 patch available to setup-go.
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
+          workspaces: server-rs -> target
 
-      - name: Record Go toolchain
-        run: go version
+      - name: Apply database migrations with the Rust runner
+        working-directory: server-rs
+        run: cargo run --locked -p cordy-migrate --bin cordy-migrate -- up
 
-      - name: Verify Go test wrapper
-        run: bash scripts/test-go.test.sh
+      - name: Run Rust workspace tests
+        working-directory: server-rs
+        run: cargo test --workspace --all-targets --locked
 
-      - name: Run tests
-        run: bash scripts/test-go.sh --race
+      - name: Build production Rust binaries
+        working-directory: server-rs
+        env:
+          CORDY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
+          CORDY_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          CORDY_BUILD_DATE="$(git show -s --format=%cI "$CORDY_BUILD_COMMIT")"
+          export CORDY_BUILD_DATE
+          cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
 
-      - name: Scan Go vulnerabilities
+      - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
         # override to this exact tag. See .github/RELEASING.md.
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != github.ref_name }}
-        working-directory: server
-        run: go tool govulncheck ./...
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: server-rs
+          # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
+          # the compiled Cordy graph enables Postgres only. CloudFront signing
+          # no longer uses rsa and is implemented with ring/SHA-256.
+          ignore: RUSTSEC-2023-0071
 
       - name: Record emergency vulnerability-scan bypass
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
-        run: echo "::warning::govulncheck was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
+        run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
-  release:
+  rust-cli-build:
+    name: Build Rust CLI (${{ matrix.os }}-${{ matrix.arch }})
     needs: verify
-    # Only run on the canonical upstream repo. Forks don't have the
-    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not be publishing to
-    # `cordy-ai/homebrew-tap` anyway. Without this guard, every fork's
-    # tag push fails this job (401 against the upstream tap), which makes
-    # downstream CI go red without affecting the actual artifact pipeline.
-    if: github.repository_owner == 'cordy-ai'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            os: linux
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            os: linux
+            arch: arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            os: darwin
+            arch: amd64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            os: darwin
+            arch: arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            os: windows
+            arch: amd64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            os: windows
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          # Deliberately independent from the minimum patch in server/go.mod:
-          # releases follow the newest 1.26 patch available to setup-go.
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
 
-      - name: Record Go toolchain
-        run: go version
+      - name: Install Linux musl linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+          else
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+          fi
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          version: "~> v2"
-          args: release --clean
+          workspaces: server-rs -> target
+
+      - name: Build Rust CLI
+        working-directory: server-rs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          CORDY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
+          CORDY_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          CORDY_BUILD_DATE="$(git show -s --format=%cI "$CORDY_BUILD_COMMIT")"
+          export CORDY_BUILD_DATE
+          cargo build --locked --release --target ${{ matrix.target }} -p cordy-cli
+
+      - name: Package Unix archives
+        if: runner.os != 'Windows'
+        working-directory: server-rs
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          package_dir="$RUNNER_TEMP/cordy-cli"
+          binary_dir="target/${{ matrix.target }}/release"
+          mkdir -p "$package_dir"
+          for prefix in "cordy-cli-${version}-${{ matrix.os }}-${{ matrix.arch }}" "cordy_${{ matrix.os }}_${{ matrix.arch }}"; do
+            tar -czf "$package_dir/${prefix}.tar.gz" \
+              -C "$binary_dir" cordy \
+              -C "$GITHUB_WORKSPACE" LICENSE README.md README.zh.md NOTICE
+          done
+
+      - name: Package Windows archives
+        if: runner.os == 'Windows'
+        working-directory: server-rs
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          $packageDir = Join-Path $env:RUNNER_TEMP "cordy-cli"
+          $binary = Join-Path (Get-Location) "target/${{ matrix.target }}/release/cordy.exe"
+          $metadata = @(
+              (Join-Path $env:GITHUB_WORKSPACE "LICENSE"),
+              (Join-Path $env:GITHUB_WORKSPACE "README.md"),
+              (Join-Path $env:GITHUB_WORKSPACE "README.zh.md"),
+              (Join-Path $env:GITHUB_WORKSPACE "NOTICE")
+          )
+          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+          $files = @($binary) + $metadata
+          foreach ($prefix in @(
+              "cordy-cli-$version-${{ matrix.os }}-${{ matrix.arch }}",
+              "cordy_${{ matrix.os }}_${{ matrix.arch }}"
+          )) {
+              Compress-Archive -Path $files -DestinationPath (Join-Path $packageDir "$prefix.zip") -Force
+          }
+
+      - name: Upload Rust CLI archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-cli-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/cordy-cli/*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: [verify, rust-cli-build, docker-backend-merge, docker-web-merge]
+    # Only run on the canonical upstream repo. Forks don't have the
+    # HOMEBREW_TAP_GITHUB_TOKEN secret and should not publish there.
+    if: github.repository_owner == 'cordy-ai'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Rust CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rust-cli-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum -- ./* > checksums.txt
+
+      - name: Create or reuse draft Rust CLI release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
+        run: |
+          release_channel=(--latest=true)
+          if [ "$IS_STABLE" != "true" ]; then
+            release_channel=(--prerelease --latest=false)
+          fi
+
+          # The tag is the immutable release target. Resolve annotated tags
+          # until the underlying commit and ensure it is still the commit that
+          # triggered this workflow before reusing or creating any release.
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
+          tag_type="$(jq -r '.object.type' <<<"$tag_object")"
+          tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
+          while [ "$tag_type" = "tag" ]; do
+            tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
+            tag_type="$(jq -r '.object.type' <<<"$tag_object")"
+            tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
+          done
+          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag $TAG_NAME no longer resolves to workflow commit $GITHUB_SHA"
+            exit 1
+          fi
+
+          # A failed upload must be recoverable with GitHub's "rerun failed
+          # jobs" button. Reuse an existing draft for this exact tag, but
+          # refuse to mutate a release that is already public or whose channel
+          # no longer matches this workflow invocation.
+          if release_json="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease 2>/dev/null)"; then
+            is_draft="$(jq -r '.isDraft' <<<"$release_json")"
+            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
+            expected_prerelease=false
+            if [ "$IS_STABLE" != "true" ]; then
+              expected_prerelease=true
+            fi
+            if [ "$is_draft" != "true" ] || [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with incompatible draft/channel state"
+              exit 1
+            fi
+          else
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft \
+              "${release_channel[@]}"
+          fi
+          gh release upload "$TAG_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
@@ -208,7 +399,6 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
             type=raw,value=${{ needs.verify.outputs.tag_name }}
             type=sha,prefix=sha-
 
@@ -222,9 +412,22 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/cordy-backend@sha256:%s ' *)
+          tag_args=()
+          while IFS= read -r tag; do
+            tag_args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          shopt -s nullglob
+          digest_files=(./*)
+          if [ "${#digest_files[@]}" -eq 0 ]; then
+            echo "::error::No backend image digests were downloaded"
+            exit 1
+          fi
+          digest_args=()
+          for digest_file in "${digest_files[@]}"; do
+            digest="${digest_file#./}"
+            digest_args+=("ghcr.io/${{ github.repository_owner }}/cordy-backend@sha256:$digest")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
 
       - name: Inspect image
         run: |
@@ -325,7 +528,6 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
             type=raw,value=${{ needs.verify.outputs.tag_name }}
             type=sha,prefix=sha-
 
@@ -339,9 +541,22 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/cordy-web@sha256:%s ' *)
+          tag_args=()
+          while IFS= read -r tag; do
+            tag_args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          shopt -s nullglob
+          digest_files=(./*)
+          if [ "${#digest_files[@]}" -eq 0 ]; then
+            echo "::error::No web image digests were downloaded"
+            exit 1
+          fi
+          digest_args=()
+          for digest_file in "${digest_files[@]}"; do
+            digest="${digest_file#./}"
+            digest_args+=("ghcr.io/${{ github.repository_owner }}/cordy-web@sha256:$digest")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
 
       - name: Inspect image
         run: |
@@ -390,7 +605,8 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/cordy" --version "$CHART_VERSION"
 
   # Build the Desktop installers for Linux and Windows and upload them to
-  # the GitHub Release that the `release` job above just published. macOS
+  # the draft GitHub Release created above. The release remains private until
+  # every matrix entry succeeds. macOS
   # Desktop continues to ship via the manual `release-desktop` skill so it
   # can be signed + notarized with Apple Developer credentials that are
   # not (yet) wired into CI.
@@ -402,8 +618,18 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            arch: x64
+          - os: ubuntu-24.04-arm
+            target: linux
+            arch: arm64
           - os: windows-latest
             target: win
+            arch: x64
+            msvc_arch: amd64
+          - os: windows-latest
+            target: win
+            arch: arm64
+            msvc_arch: amd64_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -415,17 +641,37 @@ jobs:
         if: matrix.target == 'linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          # Deliberately independent from the minimum patch in server/go.mod:
-          # releases follow the newest 1.26 patch available to setup-go.
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
+      - name: Install musl toolchain (Linux)
+        if: matrix.target == 'linux'
+        run: sudo apt-get install -y musl-tools
 
-      - name: Record Go toolchain
-        run: go version
+      - name: Setup MSVC linker (Windows)
+        if: matrix.target == 'win'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          # Keep the linker and SDK library search paths aligned with the
+          # Rust target built by this job. amd64_arm64 is the x64-hosted
+          # ARM64 cross compiler required by aarch64-pc-windows-msvc.
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Setup Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          if [[ "${{ matrix.target }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+            rustup target add aarch64-unknown-linux-musl
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.target }}" == "linux" ]]; then
+            rustup target add x86_64-unknown-linux-musl
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+            echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            rustup target add aarch64-pc-windows-msvc
+          else
+            rustup target add x86_64-pc-windows-msvc
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -450,4 +696,135 @@ jobs:
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish always
+        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always
+
+  publish-release:
+    needs: [verify, release, desktop, helm-chart]
+    if: github.repository_owner == 'cordy-ai'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Rust CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rust-cli-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify draft assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          version="${TAG_NAME#v}"
+          published_assets="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name')"
+          # electron-builder maps its `${arch}` macro per Linux package type:
+          # x64 becomes x86_64 for AppImage/RPM and amd64 for deb, while arm64
+          # becomes aarch64 for RPM. These are the actual uploaded filenames.
+          for asset in \
+            checksums.txt \
+            "cordy-cli-$version-linux-amd64.tar.gz" \
+            "cordy-cli-$version-linux-arm64.tar.gz" \
+            "cordy-cli-$version-darwin-amd64.tar.gz" \
+            "cordy-cli-$version-darwin-arm64.tar.gz" \
+            "cordy-cli-$version-windows-amd64.zip" \
+            "cordy-cli-$version-windows-arm64.zip" \
+            "cordy-desktop-$version-linux-x86_64.AppImage" \
+            "cordy-desktop-$version-linux-amd64.deb" \
+            "cordy-desktop-$version-linux-x86_64.rpm" \
+            "cordy-desktop-$version-linux-arm64.AppImage" \
+            "cordy-desktop-$version-linux-arm64.deb" \
+            "cordy-desktop-$version-linux-aarch64.rpm" \
+            "latest-linux.yml" \
+            "latest-linux-arm64.yml" \
+            "cordy-desktop-$version-windows-x64.exe" \
+            "cordy-desktop-$version-windows-x64.exe.blockmap" \
+            "cordy-desktop-$version-windows-arm64.exe" \
+            "cordy-desktop-$version-windows-arm64.exe.blockmap" \
+            "latest.yml" \
+            "latest-arm64.yml"; do
+            grep -Fxq "$asset" <<<"$published_assets" || {
+              echo "::error::Draft release is missing required asset $asset"
+              exit 1
+            }
+          done
+
+      - name: Setup Docker Buildx for final promotion
+        if: needs.verify.outputs.is_stable == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote stable image tags
+        if: needs.verify.outputs.is_stable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          for image in cordy-backend cordy-web; do
+            docker buildx imagetools create \
+              --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest" \
+              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:${TAG_NAME}"
+            docker buildx imagetools inspect \
+              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
+          done
+
+      - name: Publish complete GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
+      - name: Update stable Homebrew formula
+        if: needs.verify.outputs.is_stable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          version="${TAG_NAME#v}"
+          formula="$(mktemp)"
+          cat > "$formula" <<EOF
+          class Cordy < Formula
+            desc "Cordy CLI — local agent runtime and management tool for the Cordy platform"
+            homepage "https://github.com/cordy-ai/cordy"
+            version "$version"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-arm64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-arm64.tar.gz" | cut -d' ' -f1)"
+              else
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-amd64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-amd64.tar.gz" | cut -d' ' -f1)"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-arm64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-arm64.tar.gz" | cut -d' ' -f1)"
+              else
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-amd64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-amd64.tar.gz" | cut -d' ' -f1)"
+              end
+            end
+
+            def install
+              bin.install "cordy"
+            end
+
+            test do
+              system "#{bin}/cordy", "version"
+            end
+          end
+          EOF
+          content="$(base64 -w0 "$formula")"
+          current_sha="$(gh api repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb --jq .sha)"
+          gh api --method PUT repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb \
+            -f message="Update cordy to $TAG_NAME" \
+            -f content="$content" \
+            -f sha="$current_sha" \
+            -f branch=main
+          rm -f "$formula"

@@ -692,8 +692,25 @@ fn set_mtime(path: &Path, time: std::time::SystemTime) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-fn set_mtime(_path: &Path, _time: std::time::SystemTime) -> std::io::Result<()> {
-    Ok(()) // best-effort only
+fn set_mtime(path: &Path, time: std::time::SystemTime) -> std::io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+    };
+
+    // FILE_WRITE_ATTRIBUTES is the precise access right required by
+    // File::set_times. A read-only handle can compile successfully but fails
+    // with ERROR_ACCESS_DENIED on Windows runners. BACKUP_SEMANTICS keeps the
+    // same handle path valid for both files and directories.
+    let file = std::fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    file.set_times(
+        std::fs::FileTimes::new()
+            .set_accessed(time)
+            .set_modified(time),
+    )
 }
 
 /// codex_session_store_path returns the per-conversation Codex session store
@@ -720,7 +737,7 @@ fn clean_lexical(path: &str) -> String {
         use std::path::Component::*;
         match comp {
             CurDir => {}
-            RootDir => out.push("/"),
+            component @ RootDir => out.push(component.as_os_str()),
             ParentDir => {
                 out.pop();
             }
@@ -1263,7 +1280,9 @@ fn resolve_codex_config_path(
 }
 
 fn is_absolute_config_path(path: &str) -> bool {
-    Path::new(path).is_absolute()
+    path.starts_with('/')
+        || path.starts_with('\\')
+        || Path::new(path).is_absolute()
         || path.starts_with("\\\\")
         || path
             .as_bytes()
@@ -1590,13 +1609,12 @@ mod tests {
     #[test]
     fn test_resolve_codex_config_path() {
         let shared = "/shared/.codex";
+        let absolute = resolve_codex_config_path("/abs/file.md", shared, "k").unwrap();
+        assert_eq!(Path::new(&absolute), Path::new("/abs/file.md"));
+        let relative = resolve_codex_config_path("rel/file.md", shared, "k").unwrap();
         assert_eq!(
-            resolve_codex_config_path("/abs/file.md", shared, "k").unwrap(),
-            "/abs/file.md"
-        );
-        assert_eq!(
-            resolve_codex_config_path("rel/file.md", shared, "k").unwrap(),
-            "/shared/.codex/rel/file.md"
+            Path::new(&relative),
+            Path::new("/shared/.codex/rel/file.md")
         );
         assert_eq!(
             resolve_codex_config_path(r"C:\models\catalog.json", shared, "k").unwrap(),
@@ -1658,17 +1676,14 @@ mod tests {
         // Backdate every entry: codex_store_stat takes the newest mtime in the
         // tree, so a single directory touch would be overridden by the fresh
         // rollout file inside.
-        #[cfg(unix)]
-        {
-            let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
-            for entry in walkdir::WalkDir::new(&idle) {
-                let entry = entry.unwrap();
-                if entry.depth() > 0 {
-                    set_mtime(entry.path(), old).unwrap();
-                }
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for entry in walkdir::WalkDir::new(&idle) {
+            let entry = entry.unwrap();
+            if entry.depth() > 0 {
+                set_mtime(entry.path(), old).unwrap();
             }
-            set_mtime(Path::new(&idle), old).unwrap();
         }
+        set_mtime(Path::new(&idle), old).unwrap();
 
         let now = chrono::Utc::now();
         let (removed, freed) =

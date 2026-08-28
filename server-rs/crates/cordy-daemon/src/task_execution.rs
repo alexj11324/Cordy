@@ -549,6 +549,7 @@ async fn acknowledge_cancelled_run(client: &Client, task_id: &str, outcome: &Tas
     let mut ack = TaskCancelAck {
         branch_name: outcome.result.branch_name.clone(),
         durable_work_dir: outcome.result.durable_work_dir.clone(),
+        session_rollout_missing: outcome.result.session_rollout_missing,
         ..TaskCancelAck::default()
     };
     if let Some(delivery) = outcome
@@ -741,6 +742,50 @@ mod tests {
             failure_reason_for_result(&explicit),
             "skill_bundle_unavailable"
         );
+    }
+
+    #[tokio::test]
+    async fn cancelled_terminal_forwards_missing_rollout_to_cancel_ack() {
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = axum::Router::new().fallback(axum::routing::any(
+            move |request: axum::extract::Request| {
+                let request_tx = request_tx.clone();
+                async move {
+                    let path = request.uri().path().to_string();
+                    let body = axum::body::to_bytes(request.into_body(), 1 << 20)
+                        .await
+                        .unwrap();
+                    request_tx
+                        .send((
+                            path,
+                            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+                        ))
+                        .unwrap();
+                    axum::http::StatusCode::NO_CONTENT
+                }
+            },
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let client = Client::new(format!("http://{address}"));
+        let outcome = TaskRunOutcome {
+            result: TaskResult {
+                status: "cancelled".to_string(),
+                session_rollout_missing: true,
+                ..TaskResult::default()
+            },
+            failure: None,
+        };
+
+        acknowledge_cancelled_run(&client, "task-1", &outcome).await;
+
+        let (path, body) = request_rx.recv().await.unwrap();
+        assert_eq!(path, "/api/daemon/tasks/task-1/cancel-ack");
+        assert_eq!(body["session_rollout_missing"], true);
+        server.abort();
     }
 
     #[test]

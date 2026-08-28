@@ -18,17 +18,8 @@
 //! - `handleWSHeartbeatAckForConnection`'s rpc-v1 capability scan →
 //!   [`ack_advertises_rpc_v1`] (pure half)
 //!
-//! S9-integration: `taskWakeupLoop`, `runTaskWakeupConnection`,
-//! `runWSWriter`, `readTaskWakeupMessagesForConnection`,
-//! `configureTaskWakeupReadLiveness` and the Daemon dispatch methods
-//! (`handleRuntimeGone`, `recordWSHeartbeatAck`, `handleHeartbeatActions`,
-//! `handlePendingWorkHint`, `handleRuntimeProfilesChanged`) read d.cfg /
-//! d.client / d.wsRPC / d.runtimeSet and own the tungstenite socket. They land
-//! with daemon.go core (lane B); this module carries the policy and pure logic
-//! plus transport-agnostic plumbing behind [`FrameSink`].
-
-// S9-integration: consumed by daemon.go core (lane B) WS pump; silence dead-code until wired.
-#![allow(dead_code)]
+//! The socket owner and dispatch methods live in [`crate::manager`];
+//! [`crate::control_lifecycle`] connects their events to daemon-core state.
 
 use std::time::Duration;
 

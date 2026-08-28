@@ -195,6 +195,37 @@ mod tests {
     use super::*;
     use reqwest::Method;
 
+    fn http_error(status_code: u16) -> Error {
+        Error::new(HttpError {
+            method: Method::GET,
+            path: "/api/test".into(),
+            status_code,
+            body: "{}".into(),
+        })
+    }
+
+    #[test]
+    fn http_exit_codes_match_go_contract() {
+        for (status_code, expected) in [
+            (401, 3),
+            (403, 3),
+            (404, 4),
+            (400, 5),
+            (422, 5),
+            (409, 1),
+            (429, 1),
+            (500, 1),
+            (418, 1),
+        ] {
+            assert_eq!(
+                exit_code(&http_error(status_code)),
+                expected,
+                "HTTP {status_code}"
+            );
+        }
+        assert_eq!(exit_code(&Error::msg("generic failure")), 1);
+    }
+
     #[test]
     fn validation_surfaces_actionable_server_message() {
         let error = Error::new(HttpError {

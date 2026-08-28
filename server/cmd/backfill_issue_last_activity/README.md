@@ -5,11 +5,25 @@ backend has been upgraded to maintain `issue.last_activity_at`.
 Running it while an older writer is still live can make that writer's later
 changes invisible to the activity clock.
 
-From `server/`:
+From the repository root, use the packaged Rust production binary emitted by
+the repository release build:
 
 ```bash
-go run ./cmd/backfill_issue_last_activity
+./server/bin/backfill_issue_last_activity
 ```
+
+For development or operator recovery before packaging, run the same entry from
+the Rust workspace:
+
+```bash
+cargo run --locked --manifest-path server-rs/Cargo.toml \
+  -p cordy-migrate --bin backfill_issue_last_activity --
+```
+
+Both forms read `DATABASE_URL` and accept the flags below. They execute the
+same Rust implementation; the Cargo form is for development or operator
+recovery, while `server/bin/backfill_issue_last_activity` (or the equivalent
+binary inside the released server image) is the normal deployment path.
 
 The command uses bounded transactions, an id keyset watermark, `SKIP LOCKED`,
 a delay between batches, and a session advisory lock. It is safe to interrupt

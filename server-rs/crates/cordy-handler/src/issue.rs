@@ -208,7 +208,7 @@ fn search_snippet(raw: &str, query: &str) -> String {
         for folded_character in character.to_lowercase() {
             let byte_len = folded_character.len_utf8();
             folded.push(folded_character);
-            folded_byte_to_char.extend(std::iter::repeat(char_index).take(byte_len));
+            folded_byte_to_char.extend(std::iter::repeat_n(char_index, byte_len));
         }
     }
     let char_index = folded
@@ -1403,10 +1403,7 @@ fn push_table_keyset(
     let last_expression = expression.replace("i.", "last_i.");
     let primary_comparison = if descending { "<" } else { ">" };
     builder.push(" AND (");
-    builder
-        .push("(")
-        .push(expression)
-        .push(" IS NULL AND ");
+    builder.push("(").push(expression).push(" IS NULL AND ");
     push_table_last_value(builder, &last_expression, last_id);
     builder.push(" IS NOT NULL)");
     builder.push(" OR (");
@@ -1422,12 +1419,14 @@ fn push_table_keyset(
     builder.push(")");
     builder.push(")");
     builder.push(" OR (");
-    builder
-        .push(expression)
-        .push(" IS NOT NULL AND ");
+    builder.push(expression).push(" IS NOT NULL AND ");
     push_table_last_value(builder, &last_expression, last_id);
     builder.push(" IS NOT NULL AND ");
-    builder.push(expression).push(' ').push(primary_comparison).push(' ');
+    builder
+        .push(expression)
+        .push(' ')
+        .push(primary_comparison)
+        .push(' ');
     push_table_last_value(builder, &last_expression, last_id);
     builder.push(")");
     builder.push(")");
@@ -1455,8 +1454,7 @@ async fn table_base_rows(
     let fingerprint = table_fingerprint(request);
     let (limit, last_id) = table_row_cursor(request, &fingerprint)?;
     let order = table_order(state, workspace_id, request).await?;
-    let (sort_expression, descending) =
-        table_sort_expression(state, workspace_id, request).await?;
+    let (sort_expression, descending) = table_sort_expression(state, workspace_id, request).await?;
     let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
     push_table_filters(&mut count, request, workspace_id, user_id)?;
     push_table_branch(&mut count, request)?;
@@ -1495,7 +1493,10 @@ async fn table_base_rows(
             )
         })?;
     let next = (rows.len() as i64 == limit)
-        .then(|| rows.last().map(|row| encode_table_row_cursor(request, &fingerprint, row.id)))
+        .then(|| {
+            rows.last()
+                .map(|row| encode_table_row_cursor(request, &fingerprint, row.id))
+        })
         .flatten();
     Ok((rows, total, next))
 }
@@ -7334,7 +7335,7 @@ impl IssueResponse {
             created_at: timestamp(issue.created_at),
             updated_at: timestamp(issue.updated_at),
             revision: issue.revision,
-            last_activity_at: issue.last_activity_at.map(timestamp),
+            last_activity_at: issue.last_activity_at.map(cordy_util::rfc3339_nano),
             metadata: object_or_empty(issue.metadata.clone()),
             properties: object_or_empty(issue.properties.clone()),
             reactions: Vec::new(),
@@ -7500,6 +7501,10 @@ impl From<&IssueLabel> for LabelResponse {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+    use cordy_auth::pat_cache::PatCache;
+    use http_body_util::BodyExt as _;
+    use sqlx::postgres::PgPoolOptions;
+    use tower::ServiceExt as _;
 
     #[test]
     fn table_fingerprint_is_stable_for_the_same_query() {
@@ -7516,6 +7521,9 @@ mod tests {
 
     fn fixture_issue() -> Issue {
         let timestamp = Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap();
+        let last_activity_at = chrono::DateTime::parse_from_rfc3339("2026-08-23T03:30:00.123400Z")
+            .unwrap()
+            .to_utc();
         Issue {
             acceptance_criteria: json!([]),
             assignee_id: None,
@@ -7528,7 +7536,7 @@ mod tests {
             due_date: None,
             first_executed_at: None,
             id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap(),
-            last_activity_at: Some(timestamp),
+            last_activity_at: Some(last_activity_at),
             metadata: Value::Null,
             number: 14,
             origin_id: None,
@@ -7574,8 +7582,17 @@ mod tests {
         assert_eq!(value["identifier"], "CORD-14");
         assert_eq!(value["status_category"], "in_progress");
         assert_eq!(value["created_at"], "2026-08-23T03:30:00Z");
+        assert_eq!(value["last_activity_at"], "2026-08-23T03:30:00.1234Z");
+        assert!(value.get("description").is_some_and(Value::is_null));
+        assert!(value.get("assignee_id").is_some_and(Value::is_null));
+        assert!(value.get("parent_issue_id").is_some_and(Value::is_null));
+        assert!(value.get("project_id").is_some_and(Value::is_null));
+        assert!(value.get("start_date").is_some_and(Value::is_null));
+        assert!(value.get("due_date").is_some_and(Value::is_null));
         assert_eq!(value["metadata"], json!({}));
         assert_eq!(value["properties"], json!({}));
+        assert!(value.get("reactions").is_none());
+        assert!(value.get("attachments").is_none());
         assert!(value.get("labels").is_none());
     }
 
@@ -7950,6 +7967,108 @@ mod tests {
         assert_eq!(table_cursor(&request, &fingerprint).unwrap(), (25, 25));
         request.group_key = Some("status:done".into());
         assert!(table_cursor(&request, &fingerprint).is_err());
+    }
+
+    #[tokio::test]
+    async fn production_create_route_returns_duplicate_contract_and_top_positions() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue create HTTP contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let slug = format!("issue-create-http-{}", Uuid::now_v7().simple());
+        let workspace_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO workspace (name, slug) VALUES ('issue create HTTP', $1) RETURNING id",
+        )
+        .bind(slug)
+        .fetch_one(&pool)
+        .await
+        .expect("create workspace");
+        let user_id = Uuid::now_v7();
+        let context = WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: cordy_db::models::Member {
+                created_at: Utc::now(),
+                id: Uuid::now_v7(),
+                role: "member".into(),
+                user_id,
+                workspace_id,
+            },
+        };
+        let app = router()
+            .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
+            .layer(Extension(context));
+
+        async fn post(app: &Router, body: Value) -> (StatusCode, Value) {
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(axum::http::Method::POST)
+                        .uri("/api/issues")
+                        .header(axum::http::header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(body.to_string()))
+                        .expect("create request"),
+                )
+                .await
+                .expect("create response");
+            let status = response.status();
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("response body")
+                .to_bytes();
+            (status, serde_json::from_slice(&bytes).expect("JSON body"))
+        }
+
+        let (status, first) = post(
+            &app,
+            json!({"title": "  HTTP\tDuplicate  ", "status": "todo"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(first["position"], -1.0);
+
+        let (status, duplicate) =
+            post(&app, json!({"title": "http duplicate", "status": "todo"})).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(duplicate["code"], "active_duplicate_issue");
+        assert_eq!(
+            duplicate["error"],
+            "an active duplicate issue already exists"
+        );
+        assert_eq!(duplicate["issue"]["id"], first["id"]);
+        assert_eq!(duplicate["issue"]["identifier"], first["identifier"]);
+        assert_eq!(duplicate["issue"]["title"], first["title"]);
+        assert_eq!(duplicate["issue"]["status"], first["status"]);
+
+        let (status, allowed) = post(
+            &app,
+            json!({
+                "title": "http duplicate",
+                "status": "todo",
+                "allow_duplicate": true,
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(allowed["position"], -2.0);
+        assert_eq!(first["number"], 1);
+        assert_eq!(allowed["number"], 2);
+
+        sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete issues");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
     }
 
     #[test]

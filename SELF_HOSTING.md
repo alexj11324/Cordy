@@ -6,7 +6,7 @@ Deploy Cordy on your own infrastructure in minutes.
 
 | Component | Description | Technology |
 |-----------|-------------|------------|
-| **Backend** | REST API + WebSocket server | Go (single binary) |
+| **Backend** | REST API + WebSocket server | Rust (`cordy-server` binary) |
 | **Frontend** | Web application | Next.js 16 |
 | **Database** | Primary data store | PostgreSQL 17 with pgvector |
 
@@ -175,7 +175,7 @@ If you already run a Kubernetes cluster, you can deploy Cordy there instead of D
 The chart creates the following resources in the target namespace:
 
 - `cordy-postgres` — `pgvector/pgvector:pg17` backed by a 10Gi PVC
-- `cordy-backend` — Go API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
+- `cordy-backend` — Rust API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
 - `cordy-frontend` — Next.js standalone server
 - Two `Ingress` resources: one for the web host, one for the backend host
 - `cordy-config` ConfigMap (rendered from `values.yaml`)
@@ -258,11 +258,11 @@ Watch the pods come up:
 kubectl -n cordy get pods -w
 ```
 
-On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns OK:
+On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns the Rust readiness response:
 
 ```bash
 curl -H "Host: api.cordy.dev.lan" http://<ingress-ip>/healthz
-# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
+# {"status":"ready"}
 ```
 
 Then open http://cordy.dev.lan in your browser.
@@ -357,7 +357,7 @@ To roll back if an upgrade goes sideways:
 helm -n cordy rollback cordy
 ```
 
-> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically before applying migration `103`, so a clean upgrade is a single `helm upgrade` + backend rollout. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run the standalone backfill against the same database the chart is using (`kubectl -n cordy exec deploy/cordy-backend -- ./backfill_task_usage_hourly --sleep-between-slices=2s`), then restart the backend deployment to re-apply migrations. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the full recovery flow.
+> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically before applying migration `103`, so a clean upgrade is a single `helm upgrade` + backend rollout. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run the standalone backfill in a one-off Pod copied from the backend Pod, then restart the backend deployment to re-apply migrations. Do not use `kubectl exec`: the migration failure may already have stopped that container. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the exact recovery flow.
 
 ### Tearing down
 
@@ -461,6 +461,42 @@ Pin `CORDY_IMAGE_TAG` in `.env` to an exact version like `v0.2.4` if you want to
 If the selected GHCR tag has not been published yet, fall back to `make selfhost-build` or `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 
 > **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** That's migration `103`'s fail-closed guard: it requires `task_usage_hourly` to be seeded before the legacy daily rollups are dropped. As of MUL-2957 `migrate up` runs that backfill automatically right before applying `103`, so the upgrade completes in a single invocation. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run `backfill_task_usage_hourly` manually first, then re-run the upgrade. Full instructions in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
+
+## Migration recovery
+
+The Rust migration runner serializes `up`, `down`, and `status` with the same
+PostgreSQL advisory lock. It waits at most five minutes by default, so a stuck
+or overlapping rollout fails instead of waiting forever. Override that bound
+with `CORDY_MIGRATION_LOCK_TIMEOUT_SECONDS` or `--lock-timeout-seconds`; the CLI
+flag wins. Zero is rejected.
+
+Check a Compose deployment without changing the schema. `run` works even when
+the normal backend container exited during startup migration, and the explicit
+entrypoint bypasses its migrate-before-server path:
+
+```bash
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/migrate backend \
+  status --lock-timeout-seconds 30
+```
+
+For Kubernetes, copy the failed backend Pod so the one-off command retains its
+image, environment, secrets, service account, and network policy:
+
+```bash
+pod="$(kubectl -n cordy get pod \
+  -l app.kubernetes.io/component=backend \
+  -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n cordy debug "$pod" --copy-to=cordy-migrate-status --container=backend -- \
+  /app/migrate status --lock-timeout-seconds 30
+kubectl -n cordy logs cordy-migrate-status -c backend
+kubectl -n cordy delete pod cordy-migrate-status
+```
+
+A pending migration, lock timeout, database error, SIGINT, or SIGTERM exits
+nonzero. After an interrupted runner has exited, its PostgreSQL session releases
+the advisory lock; run `status` again and then `up`. Do not use `down` as an
+automatic retry—the rollback command intentionally changes the schema.
 
 ---
 
