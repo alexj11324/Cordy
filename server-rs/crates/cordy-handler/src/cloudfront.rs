@@ -20,6 +20,7 @@ use axum::{
 use base64::Engine;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
+use rand::rngs::OsRng;
 use rsa::{
     pkcs1::DecodeRsaPrivateKey, pkcs8::DecodePrivateKey, traits::PublicKeyParts, Pkcs1v15Sign,
     RsaPrivateKey,
@@ -153,7 +154,6 @@ impl CloudFrontSigner {
 
     #[cfg(test)]
     pub(crate) fn test_signer() -> Self {
-        use rand::rngs::OsRng;
         Self {
             key_pair_id: Arc::from("KTEST"),
             private_key: Arc::new(RsaPrivateKey::new(&mut OsRng, 2048).expect("test RSA key")),
@@ -164,8 +164,11 @@ impl CloudFrontSigner {
 
     fn sign(&self, policy: &str) -> anyhow::Result<Vec<u8>> {
         let digest = Sha1::digest(policy.as_bytes());
+        let mut rng = OsRng;
+        // rsa 0.9 has no patched release for RUSTSEC-2023-0071. Random
+        // blinding masks this network-observable private-key operation.
         self.private_key
-            .sign(Pkcs1v15Sign::new::<Sha1>(), &digest)
+            .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha1>(), &digest)
             .map_err(|_| anyhow::anyhow!("CloudFront policy signing failed"))
     }
 }

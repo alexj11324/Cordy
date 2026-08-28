@@ -97,6 +97,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
+          # rsa has no patched release. CloudFront signing uses randomized
+          # blinding, and the remaining rsa uses only generate test keys.
+          ignore: RUSTSEC-2023-0071
 
       - name: Record emergency vulnerability-scan bypass
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}

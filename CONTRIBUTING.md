@@ -467,9 +467,9 @@ EOF
 make cli ARGS="daemon start --profile $PROFILE"
 ```
 
-The daemon runs from the current worktree's Go source, connecting to the
-local backend. Agent-executed `cordy` commands automatically use the same
-binary (the daemon prepends its own directory to `PATH`).
+The daemon runs from the current worktree's Rust `cordy-cli` package, connecting
+to the local backend. Agent-executed `cordy` commands automatically use the
+same binary (the daemon prepends its own directory to `PATH`).
 
 ### Stop the Isolated Environment
 

@@ -35,6 +35,7 @@ use crate::repocache::{CancelCause, Ctx};
 /// Port of `server/internal/daemon/processtree`: runs bounded helper commands
 /// whose descendants must not survive cancellation. Uses a Unix process group
 /// (`setpgid`) — unix only, matching the Go build tag.
+#[cfg(unix)]
 pub(crate) mod processtree {
     use std::os::unix::process::ExitStatusExt;
     use std::process::Stdio;
@@ -368,6 +369,101 @@ pub(crate) mod processtree {
             Ok(_) => Ok(()),
             Err((_, _, err)) => Err(err),
         }
+    }
+}
+
+#[cfg(windows)]
+pub(crate) mod processtree {
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    use tokio::io::AsyncReadExt;
+    use tokio::process::Command;
+
+    use crate::repocache::{CancelCause, Ctx};
+
+    const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(1);
+    const PROCESS_TREE_FINISH_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[derive(Debug, thiserror::Error)]
+    pub(crate) enum ProcessError {
+        #[error("exit status {0}")]
+        Exit(i32),
+        #[error("{0}")]
+        Cancelled(CancelCause),
+        #[error(transparent)]
+        Io(#[from] std::io::Error),
+    }
+
+    /// Windows counterpart to the Unix process-group runner. `OwnedProcessTree`
+    /// starts the helper suspended, assigns its complete descendant tree to a
+    /// kill-on-close Job Object, and only then lets it run.
+    pub(crate) async fn combined_output(
+        ctx: &Ctx,
+        mut cmd: Command,
+        wait_delay: Duration,
+    ) -> (Vec<u8>, anyhow::Result<()>) {
+        if let Some(cause) = ctx.err() {
+            return (
+                Vec::new(),
+                Err(anyhow::Error::new(ProcessError::Cancelled(cause))),
+            );
+        }
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        let mut tree = match cordy_agent::OwnedProcessTree::spawn(&mut cmd).await {
+            Ok(tree) => tree,
+            Err(error) => return (Vec::new(), Err(anyhow::Error::new(ProcessError::Io(error)))),
+        };
+        let stdout = tree.child_mut().stdout.take();
+        let stderr = tree.child_mut().stderr.take();
+        let drain = |pipe: Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>>| {
+            tokio::spawn(async move {
+                let mut bytes = Vec::new();
+                if let Some(mut pipe) = pipe {
+                    let _ = pipe.read_to_end(&mut bytes).await;
+                }
+                bytes
+            })
+        };
+        let stdout_task = drain(stdout.map(|pipe| Box::new(pipe) as _));
+        let stderr_task = drain(stderr.map(|pipe| Box::new(pipe) as _));
+
+        let status = tokio::select! {
+            result = tree.wait() => Some(result),
+            _ = ctx.cancelled() => None,
+        };
+        let result = match status {
+            None => {
+                let _ = tree
+                    .shutdown(GRACEFUL_STOP_TIMEOUT, PROCESS_TREE_FINISH_TIMEOUT)
+                    .await;
+                Err(anyhow::Error::new(ProcessError::Cancelled(ctx.cause())))
+            }
+            Some(Err(error)) => Err(anyhow::Error::new(ProcessError::Io(error))),
+            Some(Ok(status)) => {
+                let _ = tree.kill();
+                if !tree.wait_tree_gone(PROCESS_TREE_FINISH_TIMEOUT).await {
+                    Err(anyhow::anyhow!("process job still active after 5s"))
+                } else if status.success() {
+                    Ok(())
+                } else {
+                    Err(anyhow::Error::new(ProcessError::Exit(
+                        status.code().unwrap_or(-1),
+                    )))
+                }
+            }
+        };
+
+        let output = tokio::time::timeout(wait_delay, async {
+            let mut output = stdout_task.await.unwrap_or_default();
+            output.extend(stderr_task.await.unwrap_or_default());
+            output
+        })
+        .await
+        .unwrap_or_default();
+        (output, result)
     }
 }
 

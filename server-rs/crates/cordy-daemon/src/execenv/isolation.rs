@@ -330,7 +330,10 @@ fn stop_process_group(pid: i32) {
 
 #[cfg(windows)]
 struct WindowsProcessJob {
-    handle: windows_sys::Win32::Foundation::HANDLE,
+    // HANDLE is pointer-shaped but the job is process-owned and may safely
+    // move with its async operation. Store the value, not a raw pointer, so
+    // the enclosing future remains Send.
+    handle: isize,
 }
 
 #[cfg(windows)]
@@ -360,7 +363,9 @@ impl WindowsProcessJob {
             unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
             return Err(err);
         }
-        Ok(Self { handle })
+        Ok(Self {
+            handle: handle as isize,
+        })
     }
 
     fn attach(&self, pid: u32) -> anyhow::Result<()> {
@@ -373,7 +378,7 @@ impl WindowsProcessJob {
         if process.is_null() {
             return Err(std::io::Error::last_os_error()).context("open helper process");
         }
-        let assigned = unsafe { AssignProcessToJobObject(self.handle, process) };
+        let assigned = unsafe { AssignProcessToJobObject(self.handle(), process) };
         unsafe { windows_sys::Win32::Foundation::CloseHandle(process) };
         if assigned == 0 {
             return Err(std::io::Error::last_os_error()).context("assign helper to job object");
@@ -383,7 +388,7 @@ impl WindowsProcessJob {
 
     fn terminate(&self) -> anyhow::Result<()> {
         let terminated =
-            unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(self.handle, 1) };
+            unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(self.handle(), 1) };
         if terminated == 0 {
             let err = std::io::Error::last_os_error();
             if self.active_processes()? > 0 {
@@ -412,7 +417,7 @@ impl WindowsProcessJob {
         let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
         let queried = unsafe {
             QueryInformationJobObject(
-                self.handle,
+                self.handle(),
                 JobObjectBasicAccountingInformation,
                 std::ptr::addr_of_mut!(info).cast(),
                 std::mem::size_of_val(&info) as u32,
@@ -424,14 +429,18 @@ impl WindowsProcessJob {
         }
         Ok(info.ActiveProcesses)
     }
+
+    fn handle(&self) -> windows_sys::Win32::Foundation::HANDLE {
+        self.handle as windows_sys::Win32::Foundation::HANDLE
+    }
 }
 
 #[cfg(windows)]
 impl Drop for WindowsProcessJob {
     fn drop(&mut self) {
-        if !self.handle.is_null() {
-            unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle) };
-            self.handle = std::ptr::null_mut();
+        if self.handle != 0 {
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle()) };
+            self.handle = 0;
         }
     }
 }

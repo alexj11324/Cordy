@@ -99,8 +99,8 @@ backend:
       # ReadWriteOnce, which prevents `backend.replicas > 1` from scheduling a
       # second pod (Multi-Attach error); disabling persistence — or switching
       # accessModes to a ReadWriteMany class — removes that constraint on the
-      # storage side. Note: backend startup migrations are not yet serialized
-      # across pods, so multi-replica still requires care beyond the chart.
+      # storage side. Startup migrations are serialized by the advisory lock
+      # described above; uploads still require shared storage for replicas > 1.
       enabled: true
       size: 5Gi
       # Leave empty to use the cluster's default StorageClass.

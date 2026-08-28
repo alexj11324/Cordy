@@ -144,6 +144,7 @@ mod tests {
         let registry = Registry::new(RegistryOptions {
             pool: None,
             realtime: None,
+            daemonws: None,
             version: "test".to_string(),
             commit: "test".to_string(),
             sampler: None,

@@ -51,8 +51,8 @@ RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 EXPOSE 8080
 
-# /readyz is migration-aware; keep the image unhealthy until the Rust server's
-# schema/readiness contract is true rather than reporting only a live process.
+# The entrypoint completes migrations before starting the server. /readyz then
+# reports database connectivity, while the Helm liveness probe uses /health.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
     CMD wget -q -O /dev/null http://127.0.0.1:8080/readyz || exit 1
 

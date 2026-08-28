@@ -24,7 +24,6 @@ pub(crate) struct ProcessTree {
 }
 
 pub(crate) fn prepare(command: &mut Command) {
-    use std::os::windows::process::CommandExt as _;
     command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
 }
 

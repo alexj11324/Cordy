@@ -543,6 +543,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
+          # rsa has no patched release. CloudFront signing uses randomized
+          # blinding, and the remaining rsa uses only generate test keys.
+          ignore: RUSTSEC-2023-0071
 
   # Preserve the required check name while the Rust checks stay split by
   # concern so a failure points at the actual production boundary.

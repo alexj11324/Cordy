@@ -50,6 +50,7 @@ hyper-util = { workspace = true, features = ["client-proxy"] }
 cordy-remotemcp = { path = "../cordy-remotemcp" }
 
 [target.'cfg(windows)'.dependencies]
+junction = "1"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",

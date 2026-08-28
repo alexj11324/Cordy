@@ -7,7 +7,7 @@
 //! `ask`, which cannot be answered by an unattended daemon task.
 
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -335,9 +335,10 @@ fn render_project_config(user_path: &str) -> Result<Vec<u8>> {
     Ok(content)
 }
 
-/// Atomically claims a previously absent project-config path. `create_new`
-/// closes the stat/write race and refuses to follow a symlink installed by a
-/// concurrent actor. Every kind of pre-existing entry is left untouched.
+/// Atomically publishes a complete project config without replacing any
+/// pre-existing entry. The temporary file is written beside the destination;
+/// `persist_noclobber` closes the final create race and never exposes a torn
+/// TOML document.
 fn write_new_project_config(
     path: &Path,
     content: &[u8],
@@ -351,15 +352,21 @@ fn write_new_project_config(
         }
     }
 
-    let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
-        Err(error) => {
-            return Err(error).with_context(|| format!("create {}", path.display()));
-        }
-    };
-    file.write_all(content)
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent)
+        .with_context(|| format!("create temporary config beside {}", path.display()))?;
+    temp.write_all(content)
         .with_context(|| format!("write {}", path.display()))?;
+    temp.as_file_mut()
+        .flush()
+        .with_context(|| format!("flush {}", path.display()))?;
+    match temp.persist_noclobber(path) {
+        Ok(_) => {}
+        Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(error) => {
+            return Err(error.error).with_context(|| format!("publish {}", path.display()));
+        }
+    }
     if let Some(manifest) = manifest {
         manifest.files.push(path.to_string_lossy().into_owned());
     }

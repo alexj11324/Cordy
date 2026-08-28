@@ -470,18 +470,27 @@ or overlapping rollout fails instead of waiting forever. Override that bound
 with `CORDY_MIGRATION_LOCK_TIMEOUT_SECONDS` or `--lock-timeout-seconds`; the CLI
 flag wins. Zero is rejected.
 
-Check a Compose deployment without changing the schema:
+Check a Compose deployment without changing the schema. `run` works even when
+the normal backend container exited during startup migration, and the explicit
+entrypoint bypasses its migrate-before-server path:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml exec backend \
-  ./migrate status --lock-timeout-seconds 30
+docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
+  --entrypoint /app/migrate backend \
+  status --lock-timeout-seconds 30
 ```
 
-For Kubernetes, run the same binary in the backend pod:
+For Kubernetes, copy the failed backend Pod so the one-off command retains its
+image, environment, secrets, service account, and network policy:
 
 ```bash
-kubectl -n cordy exec deploy/cordy-backend -- \
-  ./migrate status --lock-timeout-seconds 30
+pod="$(kubectl -n cordy get pod \
+  -l app.kubernetes.io/component=backend \
+  -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n cordy debug "$pod" --copy-to=cordy-migrate-status --container=backend -- \
+  /app/migrate status --lock-timeout-seconds 30
+kubectl -n cordy logs cordy-migrate-status -c backend
+kubectl -n cordy delete pod cordy-migrate-status
 ```
 
 A pending migration, lock timeout, database error, SIGINT, or SIGTERM exits
