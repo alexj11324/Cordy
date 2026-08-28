@@ -42,8 +42,7 @@ const LEGACY_TASK_SLOT_ENV: &str = "CORDY_TASK_SLOT"; // legacy-brand-compat
 const LEGACY_AUTOPILOT_RUN_ID_ENV: &str = "CORDY_AUTOPILOT_RUN_ID"; // legacy-brand-compat
 const LEGACY_AUTOPILOT_ID_ENV: &str = "CORDY_AUTOPILOT_ID"; // legacy-brand-compat
 const LEGACY_QUICK_CREATE_TASK_ID_ENV: &str = "CORDY_QUICK_CREATE_TASK_ID"; // legacy-brand-compat
-const LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV: &str =
-    "CORDY_QUICK_CREATE_ATTACHMENT_IDS"; // legacy-brand-compat
+const LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV: &str = "CORDY_QUICK_CREATE_ATTACHMENT_IDS"; // legacy-brand-compat
 
 /// Non-claim values resolved by the daemon before building a task plan.
 ///
@@ -361,10 +360,7 @@ impl ProviderExecutionPlan {
         }
         if !task.quick_create_prompt.is_empty() {
             values.insert("PATCHBAY_QUICK_CREATE_TASK_ID".to_string(), task.id.clone());
-            values.insert(
-                LEGACY_QUICK_CREATE_TASK_ID_ENV.to_string(),
-                task.id.clone(),
-            );
+            values.insert(LEGACY_QUICK_CREATE_TASK_ID_ENV.to_string(), task.id.clone());
             if !task.quick_create_attachment_ids.is_empty() {
                 let attachment_ids = serde_json::to_string(&task.quick_create_attachment_ids)?;
                 values.insert(
@@ -1141,9 +1137,7 @@ mod tests {
             Some("[\"attachment-1\"]")
         );
         assert_eq!(
-            bound
-                .child_env
-                .get(LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV),
+            bound.child_env.get(LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV),
             Some("[\"attachment-1\"]")
         );
     }
