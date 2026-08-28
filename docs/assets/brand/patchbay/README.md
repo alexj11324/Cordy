@@ -1,8 +1,8 @@
-# Patchbay brand candidate
+# Patchbay brand
 
-This directory contains the selected Patchbay 2B identity direction. It is a
-brand candidate, not a production rename: the existing Cordy assets and product
-surfaces remain unchanged until the rename is approved separately.
+This directory contains the approved Patchbay identity. Use these maintained
+assets for public product surfaces; legacy internal identifiers are migrated at
+their own compatibility boundaries.
 
 ## Idea
 
