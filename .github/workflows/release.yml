@@ -1,12 +1,6 @@
 name: Release
 
 on:
-  push:
-    tags:
-      # GitHub Actions uses glob patterns here, not regex. Match versioned
-      # tags broadly at the trigger layer, then enforce strict semver below.
-      - "v*.*.*"
-      - "!v*-dirty*"
   workflow_dispatch:
     inputs:
       tag:
@@ -25,6 +19,13 @@ permissions:
   checks: write
 
 jobs:
+  macos-desktop-release:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
+    uses: ./.github/workflows/macos-release.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets: inherit
+
   macos-release-preflight:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization

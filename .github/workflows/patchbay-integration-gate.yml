@@ -1,9 +1,7 @@
 name: Patchbay integration exact-head gate
 
 on:
-  push:
-    branches:
-      - codex/cord-14-s8-integrations
+  workflow_dispatch:
 
 permissions:
   contents: write

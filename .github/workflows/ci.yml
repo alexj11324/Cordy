@@ -23,6 +23,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Pushes and pull requests intentionally spend hosted-runner time on one
+  # macOS lane only. The full cross-platform suite below is available through
+  # workflow_dispatch when a maintainer explicitly asks for it.
+  macos-ci:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Reject legacy product markers
+        run: bash scripts/check-legacy-brand-markers.sh
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs -> target
+
+      - name: Test native daemon behavior
+        working-directory: server-rs
+        run: cargo test -p patchbay-daemon --all-targets --locked
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Validate macOS desktop app
+        run: pnpm --filter @patchbay/desktop typecheck && pnpm --filter @patchbay/desktop test && pnpm --filter @patchbay/desktop lint
+
   # Decides whether the heavy frontend and Rust backend validation jobs have
   # anything to do.
   # The frontend jobs validate the web/desktop apps, the shared packages,
@@ -32,6 +77,7 @@ jobs:
   # server-rs/, so a frontend-only or docs-only PR gains nothing from a full
   # Cargo workspace run. The outputs are consumed by the focused jobs below.
   changes:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -406,7 +452,7 @@ jobs:
     # `!cancelled()` rather than `always()`: a run superseded by a newer push
     # is cancelled by the concurrency group above, and there is no reason to
     # spend a runner reporting a verdict nobody will read.
-    if: ${{ !cancelled() }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check frontend job results
@@ -543,7 +589,7 @@ jobs:
   # concern so a failure points at the actual production boundary.
   backend:
     needs: [changes, rust-deployment-contracts, rust-quality, rust-tests, rust-platform, rust-audit]
-    if: ${{ !cancelled() }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Check Rust backend job results

@@ -1,6 +1,12 @@
 name: macOS Desktop Release
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing version tag to package and publish (for example, v0.2.1)
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
