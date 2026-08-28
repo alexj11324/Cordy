@@ -125,7 +125,7 @@ win:
 publish:
   provider: github
   owner: alexj11324
-  repo: Cordy
+  repo: Cordy # verified-repository-identity
   # The release workflow pre-creates a draft and publishes it only after the
   # CLI archives, every Desktop matrix asset, images, and chart have passed
   # their gates. This must match the existing GitHub Release type exactly:

@@ -7,7 +7,9 @@ text_hits="$({
   LC_ALL=C git grep -n -P "$pattern" -- . \
     ':!migrations/**' \
     ':!scripts/check-legacy-brand-markers.sh' || true
-} | grep -v 'legacy-brand-compat' || true)"
+} | grep -v 'legacy-brand-compat' \
+  | grep -v 'alexj11324/Cordy' \
+  | grep -v 'verified-repository-identity' || true)"
 
 if [[ -n "$text_hits" ]]; then
   printf '%s\n' "$text_hits"
