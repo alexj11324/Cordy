@@ -32,6 +32,15 @@ Only then are the macOS assets uploaded to the draft Release. The public
 Release job still waits for both macOS matrix entries, so an unsigned or
 unnotarized package cannot become the production auto-update baseline.
 
+### Manual macOS-only release
+
+When only the macOS desktop app is needed, run **Actions → macOS Desktop
+Release → Run workflow** and enter an existing semantic version tag. This path
+builds only the Apple Silicon and Intel DMG/ZIP artifacts, applies the same
+Developer ID/notarization/Gatekeeper gates, uploads both auto-update metadata
+files, and publishes the GitHub Release. It does not build server containers,
+the Web image, Helm, or non-macOS installers.
+
 ## Manual self-hosted publication
 
 Backend/Web container images and the Helm chart are published only through a
