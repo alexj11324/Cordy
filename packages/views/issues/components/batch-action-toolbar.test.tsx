@@ -21,6 +21,15 @@ vi.mock("@cordy/core/issues/mutations", () => ({
   useBatchDeleteIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@cordy/core/issue-statuses/hooks", () => ({
+  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
+}));
+vi.mock("@cordy/core/modals", () => ({
+  useModalStore: (selector: (state: { open: () => void }) => unknown) =>
+    selector({ open: vi.fn() }),
+}));
+
 vi.mock("../../i18n", () => ({
   useT: () => ({ t: () => "label" }),
 }));

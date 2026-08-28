@@ -633,7 +633,7 @@ function SwimLaneViewImpl({
     issueId: string,
     updates: SwimLaneMoveUpdates,
     onSettled?: () => void,
-  ) => void;
+  ) => boolean | void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** Pre-fills `project_id` on the create form for the in-cell "+" button. */
@@ -1289,7 +1289,7 @@ function SwimLaneViewImpl({
       }
 
       isSettlingRef.current = true;
-      onMoveIssue(
+      const committed = onMoveIssue(
         activeId,
         {
           ...targetLane.moveUpdates,
@@ -1302,6 +1302,10 @@ function SwimLaneViewImpl({
           setSettleVersion((v) => v + 1);
         },
       );
+      if (committed === false) {
+        isSettlingRef.current = false;
+        setSettleVersion((v) => v + 1);
+      }
     },
     [cells, cellSet, laneByKey, laneGroups, onMoveIssue, swimlaneGrouping, viewStoreApi],
   );

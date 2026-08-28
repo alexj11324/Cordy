@@ -148,10 +148,12 @@ Contracts:
   turn leaves the parent `in_progress` and `in_review` waits for the re-trigger
   that confirms the overall goal is met. Squad Operating Protocol
   (`squad_briefing.go`) still states the ongoing `in_progress` → later
-  `in_review` responsibility for owning leaders. `StartTask` / `CompleteTask`
-  do not write issue status. There is no assignee gate anymore: a guest leader
-  writes nothing not because it lacks a grant but because a turn that did not
-  move the issue's state has nothing to record.
+  `in_review` responsibility for owning leaders. Review entry is now one atomic
+  status + assignee update to a reviewer different from the current squad
+  (`server-rs/crates/cordy-handler/src/issue.rs`, `issue_workflow_violation`).
+  `StartTask` / `CompleteTask` do not write issue status. A guest leader writes
+  nothing because a turn that did not move the issue's state has nothing to
+  record and its briefing explicitly withholds status authority.
 
 ## Comment / Mention
 
@@ -231,13 +233,11 @@ Contracts:
   advanced fine (MUL-4063 / GH #4928). Agent and squad child-done now share one
   ungated path; any future invocation gate must be added to BOTH together.
 - parent status is not auto-advanced by the barrier: the system comment asks the
-  leader to continue or — when the overall goal is met — run
-  `cordy issue status <parent-id> in_review`. The Squad Operating Protocol's
-  standing "Own the parent issue status" responsibility (present exactly when
-  the issue is assigned to this squad) states the same expectation; the system
-  comment marks the wrap-up moment. Since MUL-6417 the write itself needs no
-  grant — the brief's fact judgment covers it — but `done` remains
-  human / integration owned.
+  leader to continue or move the parent to review when complete. The Squad
+  Operating Protocol's standing "Own the parent issue status" responsibility
+  (present exactly when the issue is assigned to this squad) supplies the
+  atomic status + different-reviewer command; the system comment marks the
+  wrap-up moment. `done` remains human / integration owned.
 
 ## Private Leader Access
 

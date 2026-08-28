@@ -77,7 +77,25 @@ vi.mock("@cordy/core/issues/mutations", () => ({
 }));
 
 vi.mock("@cordy/core/workspace/hooks", () => ({
-  useActorName: () => ({ getActorName: () => "Walt" }),
+  useActorName: () => ({
+    getActorName: (_type: string, id: string) => id === "agent-2" ? "Jessie" : "Walt",
+  }),
+}));
+
+vi.mock("../common/actor-avatar", () => ({
+  ActorAvatar: ({ actorId }: { actorId: string }) => <span data-testid={`avatar-${actorId}`} />,
+}));
+vi.mock("../issues/components/pickers/assignee-picker", () => ({
+  AssigneePicker: ({ onUpdate }: { onUpdate: (value: Record<string, string>) => void }) => (
+    <div>
+      <button type="button" onClick={() => onUpdate({ assignee_type: "agent", assignee_id: "agent-1" })}>
+        Choose current
+      </button>
+      <button type="button" onClick={() => onUpdate({ assignee_type: "agent", assignee_id: "agent-2" })}>
+        Choose Jessie
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../i18n", () => ({
@@ -103,10 +121,17 @@ vi.mock("../i18n", () => ({
           title_promote: "Start work now?",
           promote_single: "move to {{status}}, {{name}} starts",
           confirm_promote: "Move and start",
+          title_review: "Hand off for review",
+          review_choose: "choose reviewer for {{status}}",
+          review_single: "handoff {{from}} to {{to}} for {{status}}",
+          reviewer_label: "Reviewer",
+          reviewer_must_change: "choose someone else",
+          unassigned: "Unassigned",
+          confirm_review: "Hand off for review",
         },
         // useStatusLabel resolves BUILT-IN keys through i18n and custom ones
         // through the catalog, so the promote headline needs both sources.
-        status: { todo: "Todo" },
+        status: { todo: "Todo", in_review: "In Review" },
       };
       return sel(labels).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(vars?.[k] ?? ""));
     },
@@ -180,6 +205,17 @@ const promote = {
   status: "rework",
   assigneeType: "agent" as const,
   assigneeId: "agent-1",
+};
+
+const review = {
+  issueIds: ["issue-1"],
+  mode: "review" as const,
+  status: "in_review",
+  fromAssigneeType: "agent" as const,
+  fromAssigneeId: "agent-1",
+  assigneeType: null,
+  assigneeId: null,
+  issueRevision: 7,
 };
 
 describe("RunConfirmModal", () => {
@@ -272,6 +308,29 @@ describe("RunConfirmModal", () => {
 
     rerender(<RunConfirmModal onClose={vi.fn()} data={{ ...promote, status: "todo" }} />);
     expect(container.textContent).toContain("move to Todo, Walt starts");
+  });
+
+  it("requires a different reviewer and submits status plus assignee atomically", async () => {
+    render(<RunConfirmModal onClose={vi.fn()} data={review} />);
+    const submit = screen.getByRole("button", { name: "Hand off for review" });
+    expect(submit).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose current" }));
+    expect(screen.getByText("choose someone else")).toBeInTheDocument();
+    expect(submit).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose Jessie" }));
+    expect(submit).not.toBeDisabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith({
+      id: "issue-1",
+      status: "in_review",
+      assignee_type: "agent",
+      assignee_id: "agent-2",
+      expected_revision: 7,
+    });
   });
 
   it("resolves a squad's verdict through its leader's runtime, locally", () => {

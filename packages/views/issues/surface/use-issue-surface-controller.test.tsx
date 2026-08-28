@@ -74,9 +74,11 @@ vi.mock("@cordy/core/issues/mutations", () => ({
 }));
 
 vi.mock("@cordy/core/modals", () => ({
-  useModalStore: {
-    getState: () => ({ open: openModal }),
-  },
+  useModalStore: Object.assign(
+    (selector: (state: { open: typeof openModal }) => unknown) =>
+      selector({ open: openModal }),
+    { getState: () => ({ open: openModal }) },
+  ),
 }));
 
 vi.mock("../../i18n", () => ({
@@ -534,6 +536,52 @@ describe("useIssueSurfaceController", () => {
       | undefined;
     options?.onSettled?.();
     expect(onSettled).toHaveBeenCalled();
+  });
+
+  it("routes a drag into review through an atomic reviewer handoff", async () => {
+    fixtureRows = [
+      makeIssue({
+        id: "issue-review",
+        status: "in_progress",
+        assignee_type: "agent",
+        assignee_id: "agent-1",
+        revision: 9,
+      }),
+    ];
+    listIssues.mockResolvedValue({ issues: fixtureRows, total: fixtureRows.length });
+    const { result } = renderHook(
+      () =>
+        useIssueSurfaceController({
+          scope: { type: "project", projectId: "p1" },
+          modes: ["board", "list", "swimlane", "gantt"],
+        }),
+      { wrapper: makeWrapper(qc, "project:p1") },
+    );
+    await waitFor(() => expect(result.current.issues).toHaveLength(1));
+
+    let committed = true;
+    act(() => {
+      committed = result.current.moveIssue("issue-review", {
+        status: "in_review",
+        position: 42,
+        before_id: null,
+        after_id: null,
+      });
+    });
+
+    expect(committed).toBe(false);
+    expect(openModal).toHaveBeenCalledWith(
+      "issue-run-confirm",
+      expect.objectContaining({
+        mode: "review",
+        issueRevision: 9,
+        additionalUpdates: expect.objectContaining({
+          position: 42,
+          move_intent: { before_id: null, after_id: null },
+        }),
+      }),
+    );
+    expect(updateIssueMutate).not.toHaveBeenCalled();
   });
 
   it("exposes surface actions and surface-local selection", async () => {

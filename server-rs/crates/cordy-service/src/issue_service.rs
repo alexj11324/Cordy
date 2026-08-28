@@ -135,6 +135,8 @@ pub enum IssueCreateError {
     LabelNotFound,
     #[error("issue status is no longer available")]
     StatusUnavailable,
+    #[error("issues with work underway require an assignee")]
+    ActiveAssigneeRequired,
     #[error("{0}")]
     Internal(String),
     #[error(transparent)]
@@ -185,16 +187,21 @@ impl IssueService {
         // re-checking under the lock makes the status provably active at
         // write time. Built-ins skip both — the common path is unchanged.
         // (MUL-6243)
-        if !issue_status::is_built_in(&p.status) {
+        let status_category = if !issue_status::is_built_in(&p.status) {
             lock_issue_status_catalog_shared(&mut *tx, p.workspace_id)
                 .await
                 .map_err(|e| ic_err("lock issue status catalog", e))?;
-            if issue_status::resolve(&mut *tx, p.workspace_id, &p.status)
+            issue_status::resolve(&mut *tx, p.workspace_id, &p.status)
                 .await
-                .is_err()
-            {
-                return Err(IssueCreateError::StatusUnavailable);
-            }
+                .map_err(|_| IssueCreateError::StatusUnavailable)?
+                .category
+        } else {
+            p.status.clone()
+        };
+        if issue_status::requires_assignee(&status_category)
+            && (p.assignee_type.is_none() || p.assignee_id.is_none())
+        {
+            return Err(IssueCreateError::ActiveAssigneeRequired);
         }
 
         // Resolve and validate parent/project BEFORE the duplicate guard so a
@@ -1132,13 +1139,16 @@ mod tests {
     }
 
     fn params(workspace_id: Uuid, title: &str, status: &str) -> IssueCreateParams {
+        let creator_id = Uuid::now_v7();
         IssueCreateParams {
             workspace_id,
             title: title.into(),
             status: status.into(),
             priority: "none".into(),
+            assignee_type: Some("member".into()),
+            assignee_id: Some(creator_id),
             creator_type: "member".into(),
-            creator_id: Uuid::now_v7(),
+            creator_id,
             ..IssueCreateParams::default()
         }
     }
@@ -1236,6 +1246,14 @@ mod tests {
             .expect("seed statuses");
         let service = service(&pool);
 
+        let mut unassigned_active = params(workspace_id, "Owner required", "in_progress");
+        unassigned_active.assignee_type = None;
+        unassigned_active.assignee_id = None;
+        assert!(matches!(
+            create(&service, unassigned_active).await,
+            Err(IssueCreateError::ActiveAssigneeRequired)
+        ));
+
         let first = create(&service, params(workspace_id, "First", "todo"))
             .await
             .expect("first issue");
@@ -1254,6 +1272,13 @@ mod tests {
             .await
             .expect("issue after drag");
         assert_eq!(next.position, -51.0);
+
+        let mut unassigned_todo = params(workspace_id, "Parked without owner", "todo");
+        unassigned_todo.assignee_type = None;
+        unassigned_todo.assignee_id = None;
+        create(&service, unassigned_todo)
+            .await
+            .expect("todo may remain unassigned");
 
         let original = create(
             &service,

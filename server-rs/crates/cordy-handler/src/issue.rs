@@ -5246,6 +5246,112 @@ fn update_object(body: &[u8]) -> Result<serde_json::Map<String, Value>, Response
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IssueWorkflowViolation {
+    ActiveAssigneeRequired,
+    ReviewHandoffRequired,
+}
+
+fn issue_owner(issue: &Issue) -> Option<(&str, Uuid)> {
+    issue.assignee_type.as_deref().zip(issue.assignee_id)
+}
+
+fn issue_workflow_violation(
+    previous_category: &str,
+    next_category: &str,
+    previous_owner: Option<(&str, Uuid)>,
+    next_owner: Option<(&str, Uuid)>,
+) -> Option<IssueWorkflowViolation> {
+    if cordy_service::issue_status::requires_assignee(next_category) && next_owner.is_none() {
+        return Some(IssueWorkflowViolation::ActiveAssigneeRequired);
+    }
+    if previous_category != cordy_service::issue_status::IN_REVIEW
+        && next_category == cordy_service::issue_status::IN_REVIEW
+        && previous_owner == next_owner
+    {
+        return Some(IssueWorkflowViolation::ReviewHandoffRequired);
+    }
+    None
+}
+
+fn issue_workflow_error(code: &str, message: &str) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "code": code, "error": message })),
+    )
+        .into_response()
+}
+
+fn issue_workflow_violation_response(violation: IssueWorkflowViolation) -> Response {
+    match violation {
+        IssueWorkflowViolation::ActiveAssigneeRequired => issue_workflow_error(
+            "active_issue_requires_assignee",
+            "issues in progress, in review, or blocked must have an assignee",
+        ),
+        IssueWorkflowViolation::ReviewHandoffRequired => issue_workflow_error(
+            "review_handoff_required",
+            "moving an issue into review requires assigning a different reviewer in the same update",
+        ),
+    }
+}
+
+async fn prevalidate_issue_workflow_update(
+    state: &HandlerState,
+    previous: &Issue,
+    fields: &serde_json::Map<String, Value>,
+) -> Result<(), Response> {
+    let next_status = match update_field::<String>(fields, "status")? {
+        UpdateField::Value(value) => {
+            cordy_service::issue_status::resolve(&state.pool, previous.workspace_id, &value)
+                .await
+                .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid status"))?
+                .key
+        }
+        UpdateField::Missing | UpdateField::Null => previous.status.clone(),
+    };
+    let mut next_type = previous.assignee_type.clone();
+    let mut next_id = previous.assignee_id;
+    match update_field::<String>(fields, "assignee_type")? {
+        UpdateField::Missing => {}
+        UpdateField::Null => next_type = None,
+        UpdateField::Value(value) => next_type = Some(value),
+    }
+    match update_field::<String>(fields, "assignee_id")? {
+        UpdateField::Missing => {}
+        UpdateField::Null => next_id = None,
+        UpdateField::Value(value) => {
+            next_id = Some(
+                Uuid::parse_str(&value)
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"))?,
+            );
+        }
+    }
+    if next_type.is_some() != next_id.is_some() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "assignee_type and assignee_id must be set together",
+        ));
+    }
+    let previous_category = cordy_service::issue_status::effective(
+        &state.pool,
+        previous.workspace_id,
+        &previous.status,
+    )
+    .await;
+    let next_category =
+        cordy_service::issue_status::effective(&state.pool, previous.workspace_id, &next_status)
+            .await;
+    if let Some(violation) = issue_workflow_violation(
+        &previous_category,
+        &next_category,
+        issue_owner(previous),
+        next_type.as_deref().zip(next_id),
+    ) {
+        return Err(issue_workflow_violation_response(violation));
+    }
+    Ok(())
+}
+
 async fn update_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -5562,6 +5668,19 @@ async fn apply_issue_update(
             base.as_deref(),
             &attachments,
         ));
+    }
+
+    let previous_category =
+        cordy_service::issue_status::effective(&mut *tx, locked.workspace_id, &locked.status).await;
+    let next_category =
+        cordy_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
+    if let Some(violation) = issue_workflow_violation(
+        &previous_category,
+        &next_category,
+        issue_owner(&locked),
+        issue_owner(&next),
+    ) {
+        return Err(issue_workflow_violation_response(violation));
     }
 
     let previous = locked;
@@ -5993,6 +6112,17 @@ pub(crate) async fn publish_issue_updated(
     let category =
         cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
             .await;
+    let previous_category = cordy_service::issue_status::effective(
+        &state.pool,
+        previous.workspace_id,
+        &previous.status,
+    )
+    .await;
+    let assignee_changed =
+        previous.assignee_type != issue.assignee_type || previous.assignee_id != issue.assignee_id;
+    let review_handoff = previous_category != cordy_service::issue_status::IN_REVIEW
+        && category == cordy_service::issue_status::IN_REVIEW
+        && assignee_changed;
     let mut response = IssueResponse::from_issue(issue, &prefix);
     response.status_category = Some(category);
     state.bus.publish(&cordy_events::Event {
@@ -6002,8 +6132,9 @@ pub(crate) async fn publish_issue_updated(
         actor_id: actor_id.to_string(),
         payload: json!({
             "issue": response,
-            "assignee_changed": previous.assignee_type != issue.assignee_type || previous.assignee_id != issue.assignee_id,
+            "assignee_changed": assignee_changed,
             "status_changed": previous.status != issue.status,
+            "review_handoff": review_handoff,
             "priority_changed": previous.priority != issue.priority,
             "project_changed": previous.project_id != issue.project_id,
             "start_date_changed": previous.start_date != issue.start_date,
@@ -6342,8 +6473,7 @@ async fn batch_update_issues(
         }
     }
 
-    let mut updated = 0usize;
-    let mut parent_notifications = HashMap::<Uuid, (Issue, Issue)>::new();
+    let mut pending = Vec::new();
     for raw_id in issue_ids {
         let Ok(id) = Uuid::parse_str(&raw_id) else {
             continue;
@@ -6355,6 +6485,17 @@ async fn batch_update_issues(
                 Ok(Some(issue)) => issue,
                 _ => continue,
             };
+        pending.push(previous);
+    }
+    for previous in &pending {
+        if let Err(response) = prevalidate_issue_workflow_update(&state, previous, updates).await {
+            return response;
+        }
+    }
+
+    let mut updated = 0usize;
+    let mut parent_notifications = HashMap::<Uuid, (Issue, Issue)>::new();
+    for previous in pending {
         let previous_snapshot = previous.clone();
         if let Ok(issue) =
             apply_issue_update(&state, &context, &headers, previous, updates, false).await
@@ -6743,6 +6884,10 @@ async fn create_issue(
         Err(IssueCreateError::StatusUnavailable) => error_response(
             StatusCode::CONFLICT,
             "the target status was archived while this request was in flight; reload the status list and retry",
+        ),
+        Err(IssueCreateError::ActiveAssigneeRequired) => issue_workflow_error(
+            "active_issue_requires_assignee",
+            "issues in progress, in review, or blocked must have an assignee",
         ),
         Err(error) => {
             tracing::warn!(%error, %workspace_id, "failed to create issue");
@@ -7736,6 +7881,40 @@ mod tests {
         updated.status = "in_review".into();
         assert!(issue_mutable_fields_differ(&issue, &updated));
         assert!(issue_activity_fields_differ(&issue, &updated));
+    }
+
+    #[test]
+    fn active_workflow_requires_an_owner_and_review_requires_a_new_owner() {
+        let owner_a = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f21").unwrap();
+        let owner_b = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f22").unwrap();
+
+        assert_eq!(
+            issue_workflow_violation("todo", "in_progress", None, None),
+            Some(IssueWorkflowViolation::ActiveAssigneeRequired)
+        );
+        assert_eq!(
+            issue_workflow_violation(
+                "in_progress",
+                "in_review",
+                Some(("agent", owner_a)),
+                Some(("agent", owner_a)),
+            ),
+            Some(IssueWorkflowViolation::ReviewHandoffRequired)
+        );
+        assert_eq!(
+            issue_workflow_violation(
+                "in_progress",
+                "in_review",
+                Some(("agent", owner_a)),
+                Some(("agent", owner_b)),
+            ),
+            None
+        );
+        assert_eq!(issue_workflow_violation("todo", "done", None, None), None);
+        assert_eq!(
+            issue_workflow_violation("in_progress", "cancelled", None, None),
+            None
+        );
     }
 
     #[test]

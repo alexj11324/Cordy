@@ -161,7 +161,8 @@ and is hidden from the PR list.
 | Child → `done` notifies + wakes the parent, gated by the stage barrier | `server/internal/handler/issue_child_done.go:66` (`notifyParentOfChildDone`; doc comment at `:15`; barrier gate at `:115`) | func def `:51` |
 | Status change (incl. → `cancelled`) does NOT cancel in-flight tasks; only issue deletion does (MUL-4465) | no-cancel note in `server/internal/handler/issue.go:2652-2658` (`UpdateIssue`) and `:3170-3171` (`BatchUpdateIssues`); deletion still cancels at `:2863` (`DeleteIssue`) / `:3239` (`BatchDeleteIssues`) via `CancelTasksForIssue` (`server/internal/service/task.go:1229`) | new citation |
 | `StartTask` / `CompleteTask` do not write issue status (agent CLI owns progress) | `server/internal/service/task.go` (`StartTask` / `CompleteTask` comments) | new citation |
-| Runtime brief: status written whenever the work changes it, mid-turn included — starting the issue's own ask → `in_progress` immediately (workflow step 3); delivery → `in_review`, continuing → `in_progress`, stuck → `blocked`; a turn producing none of the issue's own deliverable → no write at any point; the activity kind never decides (research/design/planning/review count as work when they are the ask); no assignee gate; squad leader dispatch is not delivery (MUL-6417) | `server/internal/daemon/execenv/runtime_config_sections.go` (`writeWorkflowIssue`) | new citation |
+| Runtime brief: status written whenever the work changes it, mid-turn included — starting the issue's own ask → `in_progress` immediately (workflow step 3); delivery → reviewer handoff in `in_review`, continuing → `in_progress`, stuck → `blocked`; a turn producing none of the issue's own deliverable → no write at any point; the activity kind never decides; squad leader dispatch is not delivery | `server/internal/daemon/execenv/runtime_config_sections.go` (`writeWorkflowIssue`) | new citation |
+| Active categories require an assignee; entering Review requires an atomic reassignment to a different reviewer | `server-rs/crates/cordy-handler/src/issue.rs` (`issue_workflow_violation`, `apply_issue_update`); create-time check in `server-rs/crates/cordy-service/src/issue_service.rs` | new citation |
 | Failed task may roll `in_progress` → `todo` when no active task remains | `server/internal/service/task.go` (`HandleFailedTasks`) | new citation |
 
 Creation with `--status todo` (or any non-backlog status) on an agent-assigned
@@ -205,9 +206,10 @@ Advancement is agent-driven: the server only detects the closed barrier and
 wakes the parent assignee. Promoting the next stage's `backlog` sub-issues to
 `todo` is the woken agent's decision, not a server side effect. When the woken
 assignee (often a squad leader) decides the parent is complete, the system
-comment explicitly asks for `cordy issue status <parent-id> in_review`. Any
-turn may move the status on its own too, judged from what the work changes
-about the issue — there is no assignee gate (MUL-6417).
+comment asks it to hand the parent to a different reviewer with one atomic
+`cordy issue update <parent-id> --status in_review --assignee-id <reviewer-id>`
+call. Any turn may move the status on its own too, judged from what the work
+changes about the issue, but active categories always require an owner.
 
 ## Metadata CLI
 

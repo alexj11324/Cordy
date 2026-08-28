@@ -382,6 +382,8 @@
     "assigned_to": "{{name}}님에게 할당했습니다",
     "removed_assignee": "담당자를 제거했습니다",
     "changed_assignee": "담당자를 변경했습니다",
+    "review_handoff": "리뷰를 {{from}}에서 {{to}}에게 인계했습니다",
+    "review_handoff_short": "리뷰 인계",
     "status_changed": "상태를 {{from}}에서 {{to}}로 변경했습니다",
     "priority_changed": "우선순위를 {{from}}에서 {{to}}로 변경했습니다",
     "start_date_set": "시작일을 {{date}}로 설정했습니다",
@@ -581,6 +583,7 @@
   },
   "batch": {
     "selected": "{{count}}개 선택됨",
+    "selected_owners": "선택한 담당자",
     "status": "상태",
     "priority": "우선순위",
     "assignee": "담당자",
