@@ -339,6 +339,12 @@ impl ProductionProviderAdapter {
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
         let _active = CounterGuard::new(&self.active_tasks);
+        // Skill resolution can contact the server. Reject malformed claimed
+        // task identities before any identifiers cross that network boundary;
+        // execution-plan construction repeats the guard after preparation.
+        if let Err(error) = crate::execution_plan::validate_identity(&task, &target) {
+            return failed(error, None);
+        }
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
             Err(error) => return failed_with_reason(error, "local_directory_error", None),
