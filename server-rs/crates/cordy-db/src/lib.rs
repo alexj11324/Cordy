@@ -58,14 +58,20 @@ pub async fn check_ready(pool: &PgPool) -> anyhow::Result<()> {
         migration_table.is_some(),
         "schema_migrations table is missing"
     );
-    for version in cordy_migrate::required_versions()? {
-        let recorded: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)",
-        )
-        .bind(&version)
-        .fetch_one(pool)
-        .await?;
-        anyhow::ensure!(recorded, "required migration {version} is not recorded");
+    let required_versions = cordy_migrate::required_versions()?;
+    let missing: Option<String> = sqlx::query_scalar(
+        r#"SELECT required.version
+FROM unnest($1::text[]) WITH ORDINALITY AS required(version, ordinal)
+LEFT JOIN schema_migrations recorded ON recorded.version = required.version
+WHERE recorded.version IS NULL
+ORDER BY required.ordinal
+LIMIT 1"#,
+    )
+    .bind(required_versions)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(version) = missing {
+        anyhow::bail!("required migration {version} is not recorded");
     }
     Ok(())
 }
