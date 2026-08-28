@@ -470,8 +470,8 @@ jobs:
         env:
           VERSION: ci
           COMMIT: ${{ github.sha }}
-          DATE: ${{ github.run_started_at }}
         run: |
+          DATE="$(git show -s --format=%cI "$COMMIT")"
           docker build \
             --file Dockerfile \
             --tag cordy-backend:ci \

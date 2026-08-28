@@ -87,8 +87,10 @@ jobs:
         env:
           CORDY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
           CORDY_BUILD_COMMIT: ${{ github.sha }}
-          CORDY_BUILD_DATE: ${{ github.run_started_at }}
-        run: cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
+        run: |
+          CORDY_BUILD_DATE="$(git show -s --format=%cI "$CORDY_BUILD_COMMIT")"
+          export CORDY_BUILD_DATE
+          cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate --bins
 
       - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
@@ -169,8 +171,10 @@ jobs:
         env:
           CORDY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
           CORDY_BUILD_COMMIT: ${{ github.sha }}
-          CORDY_BUILD_DATE: ${{ github.run_started_at }}
-        run: cargo build --locked --release --target ${{ matrix.target }} -p cordy-cli
+        run: |
+          CORDY_BUILD_DATE="$(git show -s --format=%cI "$CORDY_BUILD_COMMIT")"
+          export CORDY_BUILD_DATE
+          cargo build --locked --release --target ${{ matrix.target }} -p cordy-cli
 
       - name: Package Unix archives
         if: runner.os != 'Windows'
@@ -237,7 +241,7 @@ jobs:
 
       - name: Create checksums
         working-directory: release-assets
-        run: sha256sum * > checksums.txt
+        run: sha256sum -- ./* > checksums.txt
 
       - name: Create or reuse draft Rust CLI release
         env:
@@ -407,9 +411,22 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/cordy-backend@sha256:%s ' *)
+          tag_args=()
+          while IFS= read -r tag; do
+            tag_args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          shopt -s nullglob
+          digest_files=(./*)
+          if [ "${#digest_files[@]}" -eq 0 ]; then
+            echo "::error::No backend image digests were downloaded"
+            exit 1
+          fi
+          digest_args=()
+          for digest_file in "${digest_files[@]}"; do
+            digest="${digest_file#./}"
+            digest_args+=("ghcr.io/${{ github.repository_owner }}/cordy-backend@sha256:$digest")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
 
       - name: Inspect image
         run: |
@@ -523,9 +540,22 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/cordy-web@sha256:%s ' *)
+          tag_args=()
+          while IFS= read -r tag; do
+            tag_args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          shopt -s nullglob
+          digest_files=(./*)
+          if [ "${#digest_files[@]}" -eq 0 ]; then
+            echo "::error::No web image digests were downloaded"
+            exit 1
+          fi
+          digest_args=()
+          for digest_file in "${digest_files[@]}"; do
+            digest="${digest_file#./}"
+            digest_args+=("ghcr.io/${{ github.repository_owner }}/cordy-web@sha256:$digest")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
 
       - name: Inspect image
         run: |
