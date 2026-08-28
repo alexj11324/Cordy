@@ -798,13 +798,13 @@ fn finalize_copilot(
             state.final_error = "execution cancelled".to_string();
         }
         RunEnd::Completed => {
-            if state.final_status == "completed" && !state.scan_error.is_empty() {
-                // Go records the scanner failure in logs but leaves a clean
-                // process's status unchanged.
-            } else if state.final_status == "completed" {
+            if state.final_status == "completed" {
                 if let Some(error) = exit_error {
                     state.final_status = "failed".to_string();
                     state.final_error = format!("copilot exited with error: {error}");
+                } else if !state.scan_error.is_empty() {
+                    // Go records the scanner failure in logs but leaves a
+                    // clean process's status unchanged.
                 }
             }
         }
@@ -1173,6 +1173,21 @@ mod tests {
             &tx,
         );
         assert_eq!(state.final_output(), "previous answer");
+    }
+
+    #[test]
+    fn nonzero_exit_wins_over_stdout_scan_error() {
+        let mut state = CopilotState::new("copilot".to_string(), false);
+        state.final_status = "completed".to_string();
+        state.scan_error = "agent stream line exceeds limit".to_string();
+        let (status, error) = finalize_copilot(
+            RunEnd::Completed,
+            Duration::ZERO,
+            &mut state,
+            Some("exit status: 7"),
+        );
+        assert_eq!(status, "failed");
+        assert!(error.contains("exit status: 7"));
     }
 
     #[test]

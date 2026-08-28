@@ -39,6 +39,7 @@ const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
@@ -1519,6 +1520,12 @@ async fn run_protocol(
         }
     };
     remember_session_id(&published_session, &session_id);
+    if matches!(provider.as_str(), "hermes" | "dim") {
+        let mut running = message(MessageType::Status, "");
+        running.status = "running".to_string();
+        running.session_id = session_id.clone();
+        send(&messages, running);
+    }
     let mut effective_model = if usage_model_unknown || !model_selection {
         "unknown".to_string()
     } else if matches!(provider.as_str(), "kimi" | "reasonix") {
@@ -1542,13 +1549,7 @@ async fn run_protocol(
             .await
         {
             if close_session {
-                let _ = client
-                    .request(
-                        "session/close",
-                        serde_json::json!({"sessionId":session_id}),
-                        |_| {},
-                    )
-                    .await;
+                close_acp_session(&mut client, &provider, &session_id).await;
             }
             return ProtocolOutcome {
                 status: "failed".to_string(),
@@ -1578,13 +1579,7 @@ async fn run_protocol(
                 remember_session_id(&published_session, "");
             }
             if close_session && !session_id.is_empty() {
-                let _ = client
-                    .request(
-                        "session/close",
-                        serde_json::json!({"sessionId":session_id}),
-                        |_| {},
-                    )
-                    .await;
+                close_acp_session(&mut client, &provider, &session_id).await;
             }
             let stage = format!("could not switch to model {:?}", options.model);
             return protocol_failure(&provider, &stage, error, session_id, rejected);
@@ -1648,12 +1643,6 @@ async fn run_protocol(
     } else {
         format!("{}\n\n---\n\n{}", options.system_prompt, prompt)
     };
-    if provider == "hermes" {
-        let mut running = message(MessageType::Status, "");
-        running.status = "running".to_string();
-        running.session_id = session_id.clone();
-        send(&messages, running);
-    }
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
         hermes_dialect: provider == "hermes",
@@ -1712,35 +1701,33 @@ async fn run_protocol(
                 remember_session_id(&published_session, "");
             }
             if close_session && !session_id.is_empty() {
-                let _ = client
-                    .request(
-                        "session/close",
-                        serde_json::json!({"sessionId":session_id}),
-                        |_| {},
-                    )
-                    .await;
+                close_acp_session(&mut client, &provider, &session_id).await;
             }
             if provider == "kiro"
                 && is_kiro_close_error(&error)
                 && state.last_finishing_status == "completed"
             {
-                let (mut output, full_output) = state.deliverable.finish();
-                if full_text_output {
-                    output.clone_from(&full_output);
-                }
+                let (output, full_output, usage) =
+                    finish_partial_state(state, &provider, &effective_model, full_text_output);
                 return ProtocolOutcome {
                     status: "completed".to_string(),
                     output,
                     full_output,
                     session_id,
+                    usage,
                     ..ProtocolOutcome::default()
                 };
             }
             if provider == "reasonix" && !blocked_question.is_empty() {
+                let (output, full_output, usage) =
+                    finish_partial_state(state, &provider, &effective_model, full_text_output);
                 return ProtocolOutcome {
                     status: "failed".to_string(),
                     error: blocked_question,
+                    output,
+                    full_output,
                     session_id,
+                    usage,
                     resume_rejected: rejected,
                     ..ProtocolOutcome::default()
                 };
@@ -1749,9 +1736,31 @@ async fn run_protocol(
                 || (provider == "kiro"
                     && !options.resume_session_id.is_empty()
                     && is_kiro_oversized_history_image(&error));
+            if provider == "qwenpaw" {
+                let (output, full_output, usage) =
+                    finish_partial_state(state, &provider, &effective_model, full_text_output);
+                return ProtocolOutcome {
+                    status: "failed".to_string(),
+                    error: format!("{provider} session/prompt failed: {error}"),
+                    output,
+                    full_output,
+                    session_id,
+                    usage,
+                    resume_rejected: rejected,
+                };
+            }
             return protocol_failure(&provider, "session/prompt", error, session_id, rejected);
         }
     };
+    if provider == "hermes" {
+        if let Err(error) = client.close_request_side().await {
+            tracing::debug!(
+                provider = "hermes",
+                error = %error,
+                "failed to close ACP request side before output drain"
+            );
+        }
+    }
     let drain = if provider == "reasonix" {
         client
             .drain_notifications_with_permission(
@@ -1785,16 +1794,7 @@ async fn run_protocol(
         );
     }
     if close_session && !session_id.is_empty() {
-        if let Err(error) = client
-            .request(
-                "session/close",
-                serde_json::json!({"sessionId":session_id}),
-                |_| {},
-            )
-            .await
-        {
-            tracing::debug!(provider = %provider, error = %error, "best-effort ACP session close failed");
-        }
+        close_acp_session(&mut client, &provider, &session_id).await;
     }
     let stop_reason = prompt_result
         .get("stopReason")
@@ -1840,14 +1840,15 @@ async fn run_protocol(
         "refusal" if provider == "hermes" => ("completed", String::new()),
         "end_turn" | "" if !strict_stop_reason => ("completed", String::new()),
         "end_turn" => ("completed", String::new()),
-        "error" => (
+        "error" if strict_stop_reason => (
             "failed",
             format!("{provider} ended the prompt with stopReason=error"),
         ),
-        unsupported => (
+        unsupported if strict_stop_reason => (
             "failed",
             format!("{provider} returned unsupported stopReason {unsupported:?}"),
         ),
+        _ => ("completed", String::new()),
     };
     let resume_lost = provider == "hermes"
         && hermes_resume_session_lost(&options.resume_session_id, stop_reason, state.activity);
@@ -1911,6 +1912,31 @@ fn protocol_failure(
         session_id,
         resume_rejected: rejected,
         ..ProtocolOutcome::default()
+    }
+}
+
+async fn close_acp_session<R, W>(client: &mut AcpClient<R, W>, provider: &str, session_id: &str)
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let close = client.request(
+        "session/close",
+        serde_json::json!({"sessionId":session_id}),
+        |_| {},
+    );
+    match tokio::time::timeout(SESSION_CLOSE_TIMEOUT, close).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => tracing::debug!(
+            provider,
+            error = %error,
+            "best-effort ACP session close failed"
+        ),
+        Err(_) => tracing::debug!(
+            provider,
+            timeout_seconds = SESSION_CLOSE_TIMEOUT.as_secs_f64(),
+            "best-effort ACP session close timed out"
+        ),
     }
 }
 
@@ -1980,6 +2006,33 @@ impl Deliverable {
     }
 }
 
+fn finish_partial_state(
+    state: NotificationState,
+    provider: &str,
+    effective_model: &str,
+    full_text_output: bool,
+) -> (String, String, BTreeMap<String, TokenUsage>) {
+    let mut turn_usage = state.usage.usage;
+    if provider == "reasonix" && turn_usage == TokenUsage::default() {
+        turn_usage = state.reasonix_usage;
+    }
+    let model = if provider == "reasonix" && !state.reasonix_model.is_empty() {
+        state.reasonix_model
+    } else {
+        effective_model.to_string()
+    };
+    let usage = if turn_usage == TokenUsage::default() {
+        BTreeMap::new()
+    } else {
+        BTreeMap::from([(model, turn_usage)])
+    };
+    let (mut output, full_output) = state.deliverable.finish();
+    if full_text_output {
+        output.clone_from(&full_output);
+    }
+    (output, full_output, usage)
+}
+
 fn handle_notification(
     notification: AcpNotification,
     messages: &mpsc::Sender<Message>,
@@ -2001,30 +2054,42 @@ fn handle_notification(
     let Some(update) = notification.params.get("update") else {
         return;
     };
+    let hermes_activity = state.hermes_dialect;
+    if hermes_activity {
+        state.activity = state.activity.saturating_add(1);
+    }
     let (kind, data) = normalize_update(update);
     match kind.as_str() {
         "agentmessagechunk" => {
             if let Some(text) = content_text(data) {
-                state.activity = state.activity.saturating_add(1);
+                if !hermes_activity {
+                    state.activity = state.activity.saturating_add(1);
+                }
                 state.deliverable.text(text);
                 send(messages, message(MessageType::Text, text));
             }
         }
         "agentthoughtchunk" => {
             if let Some(text) = content_text(data) {
-                state.activity = state.activity.saturating_add(1);
+                if !hermes_activity {
+                    state.activity = state.activity.saturating_add(1);
+                }
                 send(messages, message(MessageType::Thinking, text));
             }
         }
         "toolcall" => {
-            state.activity = state.activity.saturating_add(1);
+            if !hermes_activity {
+                state.activity = state.activity.saturating_add(1);
+            }
             handle_tool_start(data, messages, state);
         }
         "toolcallupdate" => {
-            if matches!(
-                data.get("status").and_then(Value::as_str),
-                Some("completed" | "failed")
-            ) {
+            if !hermes_activity
+                && matches!(
+                    data.get("status").and_then(Value::as_str),
+                    Some("completed" | "failed")
+                )
+            {
                 state.activity = state.activity.saturating_add(1);
             }
             handle_tool_update(data, messages, state);
@@ -3298,12 +3363,25 @@ fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> 
             return Some(format!("{provider} provider error: {}", found.as_str()));
         }
     }
-    if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
-        return Some(format!("{provider} provider error: {}", found.as_str()));
+    for line in stderr.lines() {
+        if matches!(provider, "hermes" | "qwenpaw") && is_retry_attempt_warning(line) {
+            continue;
+        }
+        if let Some(found) = TERMINAL_PROVIDER_ERROR.find(line) {
+            return Some(format!("{provider} provider error: {}", found.as_str()));
+        }
     }
     OUTPUT_PROVIDER_ERROR
         .find(output)
         .map(|found| format!("{provider} provider error: {}", found.as_str()))
+}
+
+fn is_retry_attempt_warning(line: &str) -> bool {
+    let lower = line.trim().to_ascii_lowercase();
+    lower.starts_with('⚠')
+        && lower.contains("api call failed")
+        && lower.contains("attempt ")
+        && lower.contains('/')
 }
 
 fn message(message_type: MessageType, content: &str) -> Message {
@@ -3917,6 +3995,15 @@ mod tests {
     }
 
     #[test]
+    fn qwenpaw_retry_warning_is_not_a_terminal_provider_error() {
+        let stderr = "⚠️ API call failed (attempt 1/3): RateLimitError [HTTP 429]";
+        assert_eq!(provider_error("qwenpaw", stderr, "done"), None);
+        assert_eq!(provider_error("hermes", stderr, "done"), None);
+        assert!(provider_error("qoder", stderr, "done").is_some());
+        assert!(provider_error("qwenpaw", "API call failed after 3 retries", "done").is_some());
+    }
+
+    #[test]
     fn kiro_most_recent_finishing_result_controls_close_guard() {
         let (messages, _receiver) = mpsc::channel(8);
         let mut state = NotificationState {
@@ -4017,6 +4104,31 @@ mod tests {
     }
 
     #[test]
+    fn hermes_counts_every_accepted_turn_notification_as_activity() {
+        let (messages, _receiver) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            ..NotificationState::default()
+        };
+        for update in [
+            serde_json::json!({"type":"AgentMessageChunk","content":{"text":""}}),
+            serde_json::json!({"type":"ToolCallUpdate","toolCallId":"tool-1","status":"in_progress"}),
+            serde_json::json!({"type":"UsageUpdate","usage":{"inputTokens":1}}),
+            serde_json::json!({"type":"TurnEnd"}),
+        ] {
+            handle_notification(
+                AcpNotification {
+                    method: "session/update".to_string(),
+                    params: serde_json::json!({"update":update}),
+                },
+                &messages,
+                &mut state,
+            );
+        }
+        assert_eq!(state.activity, 4);
+    }
+
+    #[test]
     fn hermes_tool_parser_covers_named_tools_and_text_fallback() {
         assert_eq!(
             hermes_tool_name(&serde_json::json!({"title":"Read: src/main.rs"})),
@@ -4066,6 +4178,22 @@ mod tests {
             )]),
         });
         (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_hermes_backend(script: &str) -> (tempfile::TempDir, HermesBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("hermes");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Hermes: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Hermes: {error}"));
+        let backend = HermesBackend::new(HermesConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::new(),
+            builtin_runtime: false,
+        });
+        (directory, backend)
     }
 
     #[cfg(unix)]
@@ -4188,6 +4316,82 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn hermes_drains_output_emitted_after_stdin_eof() {
+        let (_directory, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+prompt_id=
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-late"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) prompt_id=$id; printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+  esac
+done
+if [ -n "$prompt_id" ]; then
+  sleep 0.3
+  printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"late final"}}}}'
+fi
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Hermes: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "late final");
+        assert_eq!(result.session_id, "hermes-late");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_publishes_session_before_model_configuration() {
+        let (_directory, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-pinned","models":{"currentModelId":"old-model"}}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) sleep 60 ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    model: "new-model".to_string(),
+                    timeout: Duration::from_millis(250),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Hermes: {error}"));
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let running = tokio::time::timeout(Duration::from_secs(1), messages.recv())
+            .await
+            .unwrap_or_else(|_| panic!("Hermes session status timed out"))
+            .unwrap_or_else(|| panic!("Hermes session status missing"));
+        assert_eq!(running.status, "running");
+        assert_eq!(running.session_id, "hermes-pinned");
+        let terminal = result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes result: {error}"));
+        assert_eq!(terminal.status, "timeout");
+        assert_eq!(terminal.session_id, "hermes-pinned");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn kiro_preserves_only_proven_finishing_completion_and_sends_both_payloads() {
         let (_directory, requests, backend) = fake_kiro_backend(
             r#"#!/bin/sh
@@ -4201,6 +4405,7 @@ while IFS= read -r line; do
     *'"method":"session/prompt"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"finish-1","title":"Running delivery","rawInput":{"command":"cordy issue comment add CORD-1 --body done"}}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"finish-1","status":"completed","rawOutput":"ok"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"usage_update","usage":{"inputTokens":7,"outputTokens":2}}}}'
       printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":"Kiro failed to generate a response"}}\n' "$id" ;;
   esac
 done
@@ -4217,6 +4422,8 @@ done
         assert_eq!(result.status, "completed");
         assert!(result.error.is_empty());
         assert_eq!(result.session_id, "kiro-1");
+        assert_eq!(result.usage["unknown"].input_tokens, 7);
+        assert_eq!(result.usage["unknown"].output_tokens, 2);
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Kiro requests: {error}"));
         let prompt: Value = serde_json::from_str(
@@ -4493,6 +4700,63 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn qwenpaw_preserves_partial_transcript_on_prompt_error() {
+        let (_directory, _requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-partial"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"partial answer"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"provider failed"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.output, "partial answer");
+        assert!(result.error.contains("provider failed"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qwenpaw_keeps_provider_specific_stop_reasons_completed() {
+        let (_directory, _requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-stop"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"provider_truncated"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert!(result.error.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn qwenpaw_missing_loaded_session_is_marked_rejected() {
         let (_directory, _requests, backend) = fake_qwenpaw_backend(
             r#"#!/bin/sh
@@ -4664,8 +4928,18 @@ done
             )
             .await
             .unwrap_or_else(|error| panic!("execute Dim: {error}"));
-        let result = session
-            .result
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let running = messages
+            .recv()
+            .await
+            .unwrap_or_else(|| panic!("Dim running status"));
+        assert_eq!(running.message_type, MessageType::Status);
+        assert_eq!(running.status, "running");
+        assert_eq!(running.session_id, "dim-prior");
+        let result = result
             .await
             .unwrap_or_else(|error| panic!("Dim result: {error}"));
         assert_eq!(result.status, "completed");
@@ -4678,6 +4952,35 @@ done
         assert!(requests.contains(r#""configId":"mode","value":"agent""#));
         assert!(requests.contains(r#""configId":"thought_level","value":"high""#));
         assert!(requests.contains("session/close"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dim_best_effort_close_is_bounded() {
+        let (_directory, _requests, backend) = fake_dim_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"version":"0.3.10"}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"dim-close","models":{"currentModelId":"dim/model"}}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+    *'"method":"session/close"'*) ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Dim: {error}"));
+        let result = tokio::time::timeout(Duration::from_secs(4), session.result)
+            .await
+            .unwrap_or_else(|_| panic!("Dim close exceeded its independent bound"))
+            .unwrap_or_else(|error| panic!("Dim result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "dim-close");
     }
 
     #[cfg(unix)]
@@ -4764,6 +5067,41 @@ done
             .unwrap_or_else(|error| panic!("read Reasonix requests: {error}"));
         assert!(requests.contains(r#""configId":"effort","value":"high""#));
         assert!(!requests.contains("system must not be sent"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reasonix_question_rpc_error_preserves_partial_output_and_usage() {
+        let (_directory, _requests, backend) = fake_reasonix_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"_meta":{"_reasonix.io/session/status":{"schemaVersion":1},"_reasonix.io/session/status_update":{"schemaVersion":1}}}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"reasonix-partial","models":{"currentModelId":"deepseek-v4"}}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"_reasonix.io/session/status_update","params":{"schemaVersion":1,"sequence":1,"status":{"model":"deepseek-v4","usage":{"turn":{"promptTokens":12,"completionTokens":3,"cacheHitTokens":2,"cacheMissTokens":10}}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"partial before question"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-2","title":"Choose target"},"options":[{"optionId":"allow","kind":"allow_once"}]}}'
+      IFS= read -r permission
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"question rejected"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Reasonix: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Reasonix result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("Choose target"));
+        assert_eq!(result.output, "partial before question");
+        assert_eq!(result.usage["deepseek-v4"].input_tokens, 10);
+        assert_eq!(result.usage["deepseek-v4"].output_tokens, 3);
     }
 
     #[cfg(unix)]

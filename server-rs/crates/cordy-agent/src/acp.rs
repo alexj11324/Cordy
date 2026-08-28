@@ -161,6 +161,12 @@ where
         }
     }
 
+    /// Closes the client request side while retaining stdout ownership so a
+    /// runtime can flush notifications that it emits only after stdin EOF.
+    pub async fn close_request_side(&mut self) -> Result<(), AcpError> {
+        self.writer.shutdown().await.map_err(AcpError::Transport)
+    }
+
     /// Drains post-response notifications until stdout EOF or the absolute
     /// `maximum` bound expires. Closing the request side first is what lets a
     /// well-behaved agent flush and hang up; a quiet interval is not treated
