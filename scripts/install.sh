@@ -24,6 +24,7 @@ BREW_PACKAGE="cordy-ai/tap/cordy"
 SELFHOST_BACKEND_PORT=""
 SELFHOST_FRONTEND_PORT=""
 INSTALL_SYSTEMD=false
+SELFHOST_ENV_EXISTED=false
 
 # Colors (disabled when not a terminal)
 if [ -t 1 ] || [ -t 2 ]; then
@@ -46,6 +47,13 @@ warn()  { printf "${BOLD}${YELLOW}⚠ %s${RESET}\n" "$*" >&2; }
 fail()  { printf "${BOLD}${RED}✗ %s${RESET}\n" "$*" >&2; exit 1; }
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+normalize_install_dir() {
+  case "$INSTALL_DIR" in
+    /*) ;;
+    *) INSTALL_DIR="$PWD/$INSTALL_DIR" ;;
+  esac
+}
 
 sha256_file() {
   local path="$1"
@@ -268,7 +276,13 @@ checkout_server_ref() {
 
 pin_selfhost_image_tag() {
   local ref="$1" image_tag
-  if [ "$ref" = "main" ]; then
+
+  # A durable pin in an existing installation is an operator choice. Only an
+  # explicit CORDY_SELFHOST_REF is allowed to replace it; otherwise rerunning
+  # the installer could unexpectedly start a newer image and its migrations.
+  if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
+    image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' .env | tail -n 1)"
+  elif [ "$ref" = "main" ]; then
     image_tag="latest"
   else
     image_tag="$ref"
@@ -283,7 +297,11 @@ pin_selfhost_image_tag() {
     fail "Self-host ref '$ref' is too long for a container image tag."
   fi
 
-  if grep -q '^CORDY_IMAGE_TAG=' .env; then
+  if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
+    export CORDY_IMAGE_TAG="$image_tag"
+    ok "Preserved existing backend and web image pin $image_tag"
+    return
+  elif grep -q '^CORDY_IMAGE_TAG=' .env; then
     if [ "$(uname -s)" = "Darwin" ]; then
       sed -i '' "s/^CORDY_IMAGE_TAG=.*/CORDY_IMAGE_TAG=$image_tag/" .env
     else
@@ -307,20 +325,40 @@ systemd_quote() {
   printf '"%s"' "$value"
 }
 
-install_selfhost_systemd() {
+preflight_selfhost_systemd() {
   [ "$OS" = "linux" ] || fail "--systemd is supported only on Linux."
   command_exists systemctl || fail "--systemd requires systemctl."
   command_exists loginctl || fail "--systemd requires loginctl to enable user lingering."
   systemctl --user show-environment >/dev/null 2>&1 ||
     fail "No systemd user manager is available. Enable systemd for this login and retry."
+}
 
-  local account docker_path unit_dir unit_path install_dir_q docker_q
+persist_systemd_compose_configuration() {
+  local configuration_path="$INSTALL_DIR/.cordy-systemd.compose.yml" temporary_path
+  temporary_path="$(mktemp "$INSTALL_DIR/.cordy-systemd.compose.yml.XXXXXX")" ||
+    fail "Could not create the resolved systemd Compose file."
+
+  if ! docker compose -f docker-compose.selfhost.yml config >"$temporary_path"; then
+    rm -f "$temporary_path"
+    fail "Could not resolve the current Docker Compose configuration for systemd."
+  fi
+  chmod 0600 "$temporary_path"
+  mv "$temporary_path" "$configuration_path"
+}
+
+install_selfhost_systemd() {
+  preflight_selfhost_systemd
+
+  local account docker_path unit_dir unit_path install_dir_q docker_q configuration_q
   account="${USER:-$(id -un)}"
   docker_path="$(command -v docker)"
   unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
   unit_path="$unit_dir/cordy-selfhost.service"
   install_dir_q="$(systemd_quote "$INSTALL_DIR")"
   docker_q="$(systemd_quote "$docker_path")"
+  configuration_q="$(systemd_quote "$INSTALL_DIR/.cordy-systemd.compose.yml")"
+
+  persist_systemd_compose_configuration
 
   loginctl enable-linger "$account" ||
     fail "Could not enable systemd lingering for '$account'. Run 'sudo loginctl enable-linger $account' and retry."
@@ -335,9 +373,9 @@ install_selfhost_systemd() {
     printf '%s\n' 'Type=oneshot'
     printf '%s\n' 'RemainAfterExit=yes'
     printf 'WorkingDirectory=%s\n' "$install_dir_q"
-    printf 'ExecStartPre=%s compose -f docker-compose.selfhost.yml config --quiet\n' "$docker_q"
-    printf 'ExecStart=%s compose -f docker-compose.selfhost.yml up -d --remove-orphans\n' "$docker_q"
-    printf 'ExecStop=%s compose -f docker-compose.selfhost.yml down\n' "$docker_q"
+    printf 'ExecStartPre=%s compose -f %s config --quiet\n' "$docker_q" "$configuration_q"
+    printf 'ExecStart=%s compose -f %s up -d --remove-orphans\n' "$docker_q" "$configuration_q"
+    printf 'ExecStop=%s compose -f %s down\n' "$docker_q" "$configuration_q"
     printf '%s\n' 'Restart=on-failure'
     printf '%s\n' 'RestartSec=10s'
     printf '%s\n' 'TimeoutStartSec=5min'
@@ -491,6 +529,7 @@ setup_server() {
     fi
     ok "Generated .env with random JWT_SECRET and POSTGRES_PASSWORD"
   else
+    SELFHOST_ENV_EXISTED=true
     ok "Using existing .env"
   fi
 
@@ -572,6 +611,9 @@ run_with_server() {
 
   detect_os
   check_docker
+  if [ "$INSTALL_SYSTEMD" = true ]; then
+    preflight_selfhost_systemd
+  fi
   setup_server
   install_cli
   if [ "$INSTALL_SYSTEMD" = true ]; then
@@ -607,12 +649,12 @@ run_stop() {
   info "Stopping Cordy services..."
 
   local unit_path="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cordy-selfhost.service"
-  if [ -f "$unit_path" ] && command_exists systemctl; then
-    if systemctl --user disable --now cordy-selfhost.service; then
-      ok "Systemd service stopped and disabled"
-    else
-      warn "Could not stop cordy-selfhost.service; falling back to Docker Compose"
-    fi
+  if [ -f "$unit_path" ]; then
+    command_exists systemctl ||
+      fail "cordy-selfhost.service exists, but systemctl is unavailable; refusing to report the service stopped."
+    systemctl --user disable --now cordy-selfhost.service ||
+      fail "Could not stop and disable cordy-selfhost.service; it may restart the stack on the next login or boot."
+    ok "Systemd service stopped and disabled"
   fi
 
   if [ -d "$INSTALL_DIR" ]; then
@@ -674,6 +716,8 @@ main() {
   if [ "$INSTALL_SYSTEMD" = true ] && [ "$mode" != "with-server" ]; then
     fail "--systemd requires --with-server."
   fi
+
+  normalize_install_dir
 
   case "$mode" in
     default)     run_default ;;

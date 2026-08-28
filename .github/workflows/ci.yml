@@ -94,6 +94,9 @@ jobs:
             backend:
               - 'server-rs/**'
               - 'server/**'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker/entrypoint.sh'
               - 'deploy/helm/**'
               - 'scripts/**'
               - 'packages/core/runtimes/cli-version.ts'
@@ -104,6 +107,7 @@ jobs:
               - 'scripts/install.ps1'
               - 'scripts/install.test.sh'
               - 'scripts/install.ps1.test.ps1'
+              - 'docker/entrypoint.sh'
               - '.github/workflows/ci.yml'
             # Gates the image-budget job so the full-history checkout it
             # needs is only paid for on PRs that actually touch a bitmap.
@@ -543,9 +547,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
-          # rsa has no patched release. CloudFront signing uses randomized
-          # blinding, and the remaining rsa uses only generate test keys.
-          ignore: RUSTSEC-2023-0071
 
   # Preserve the required check name while the Rust checks stay split by
   # concern so a failure points at the actual production boundary.

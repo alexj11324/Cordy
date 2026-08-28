@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   packages: write
+  checks: write
 
 jobs:
   verify:
@@ -113,11 +114,11 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
             os: linux
             arch: amd64
           - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-musl
             os: linux
             arch: arm64
           - runner: macos-15-intel
@@ -146,6 +147,17 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
           rustup target add ${{ matrix.target }}
+
+      - name: Install Linux musl linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+          else
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+          fi
 
       - name: Restore Cargo cache
         uses: Swatinem/rust-cache@v2
@@ -210,7 +222,7 @@ jobs:
           retention-days: 1
 
   release:
-    needs: [verify, rust-cli-build]
+    needs: [verify, rust-cli-build, docker-backend-merge, docker-web-merge]
     # Only run on the canonical upstream repo. Forks don't have the
     # HOMEBREW_TAP_GITHUB_TOKEN secret and should not publish there.
     if: github.repository_owner == 'cordy-ai'
@@ -227,71 +239,26 @@ jobs:
         working-directory: release-assets
         run: sha256sum * > checksums.txt
 
-      - name: Publish Rust CLI release
+      - name: Create draft Rust CLI release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
         run: |
+          release_channel=(--latest=true)
+          if [ "$IS_STABLE" != "true" ]; then
+            release_channel=(--prerelease --latest=false)
+          fi
           gh release create "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$TAG_NAME" \
-            --generate-notes
+            --generate-notes \
+            --draft \
+            "${release_channel[@]}"
           gh release upload "$TAG_NAME" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
-
-      - name: Update Homebrew formula
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          version="${TAG_NAME#v}"
-          formula="$(mktemp)"
-          cat > "$formula" <<EOF
-          class Cordy < Formula
-            desc "Cordy CLI — local agent runtime and management tool for the Cordy platform"
-            homepage "https://github.com/cordy-ai/cordy"
-            version "$version"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-arm64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-arm64.tar.gz" | cut -d' ' -f1)"
-              else
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-amd64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-amd64.tar.gz" | cut -d' ' -f1)"
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-arm64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-arm64.tar.gz" | cut -d' ' -f1)"
-              else
-                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-amd64.tar.gz"
-                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-amd64.tar.gz" | cut -d' ' -f1)"
-              end
-            end
-
-            def install
-              bin.install "cordy"
-            end
-
-            test do
-              system "#{bin}/cordy", "version"
-            end
-          end
-          EOF
-          content="$(base64 -w0 "$formula")"
-          current_sha="$(gh api repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb --jq .sha)"
-          gh api --method PUT repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb \
-            -f message="Update cordy to $TAG_NAME" \
-            -f content="$content" \
-            -f sha="$current_sha" \
-            -f branch=main
-          rm -f "$formula"
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
@@ -573,7 +540,8 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/cordy" --version "$CHART_VERSION"
 
   # Build the Desktop installers for Linux and Windows and upload them to
-  # the GitHub Release that the `release` job above just published. macOS
+  # the draft GitHub Release created above. The release remains private until
+  # every matrix entry succeeds. macOS
   # Desktop continues to ship via the manual `release-desktop` skill so it
   # can be signed + notarized with Apple Developer credentials that are
   # not (yet) wired into CI.
@@ -664,3 +632,98 @@ jobs:
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always
+
+  publish-release:
+    needs: [verify, release, desktop, helm-chart]
+    if: github.repository_owner == 'cordy-ai'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Rust CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rust-cli-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify draft assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          version="${TAG_NAME#v}"
+          published_assets="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name')"
+          for asset in \
+            checksums.txt \
+            "cordy-cli-$version-linux-amd64.tar.gz" \
+            "cordy-cli-$version-linux-arm64.tar.gz" \
+            "cordy-cli-$version-darwin-amd64.tar.gz" \
+            "cordy-cli-$version-darwin-arm64.tar.gz" \
+            "cordy-cli-$version-windows-amd64.zip" \
+            "cordy-cli-$version-windows-arm64.zip"; do
+            grep -Fxq "$asset" <<<"$published_assets" || {
+              echo "::error::Draft release is missing required asset $asset"
+              exit 1
+            }
+          done
+
+      - name: Publish complete GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
+      - name: Update stable Homebrew formula
+        if: needs.verify.outputs.is_stable == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          version="${TAG_NAME#v}"
+          formula="$(mktemp)"
+          cat > "$formula" <<EOF
+          class Cordy < Formula
+            desc "Cordy CLI — local agent runtime and management tool for the Cordy platform"
+            homepage "https://github.com/cordy-ai/cordy"
+            version "$version"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-arm64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-arm64.tar.gz" | cut -d' ' -f1)"
+              else
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-darwin-amd64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-darwin-amd64.tar.gz" | cut -d' ' -f1)"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-arm64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-arm64.tar.gz" | cut -d' ' -f1)"
+              else
+                url "https://github.com/$REPOSITORY/releases/download/$TAG_NAME/cordy-cli-$version-linux-amd64.tar.gz"
+                sha256 "$(sha256sum "release-assets/cordy-cli-$version-linux-amd64.tar.gz" | cut -d' ' -f1)"
+              end
+            end
+
+            def install
+              bin.install "cordy"
+            end
+
+            test do
+              system "#{bin}/cordy", "version"
+            end
+          end
+          EOF
+          content="$(base64 -w0 "$formula")"
+          current_sha="$(gh api repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb --jq .sha)"
+          gh api --method PUT repos/cordy-ai/homebrew-tap/contents/Formula/cordy.rb \
+            -f message="Update cordy to $TAG_NAME" \
+            -f content="$content" \
+            -f sha="$current_sha" \
+            -f branch=main
+          rm -f "$formula"

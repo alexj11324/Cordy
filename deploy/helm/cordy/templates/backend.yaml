@@ -99,6 +99,8 @@ spec:
             periodSeconds: 10
           livenessProbe:
             httpGet:
+              # Liveness must only prove that the process can answer HTTP;
+              # database outages belong to readiness and must not restart it.
               path: /health
               port: 8080
             initialDelaySeconds: 30
