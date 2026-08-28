@@ -242,6 +242,24 @@ impl WsRpcClient {
         inner.attach.send_frame.is_some() && inner.attach.rpc_v1_supported
     }
 
+    /// Issues an RPC without a negotiated-capability guard so transport tests
+    /// can exercise the raw request lifecycle directly.
+    #[cfg(test)]
+    pub(crate) async fn call<Q, R>(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        method: &str,
+        server_timeout: Duration,
+        req_body: Option<&Q>,
+    ) -> Result<(u16, Option<R>), WsRpcError>
+    where
+        Q: Serialize + Send + Sync,
+        R: DeserializeOwned + Send,
+    {
+        self.call_inner(ctx, method, server_timeout, req_body, false)
+            .await
+    }
+
     /// `CallIfRPCV1Supported` (wsrpc.go:171): issues an RPC only when the
     /// currently attached connection explicitly negotiated rpc-v1. The
     /// capability check and sender capture happen under the same mutex, so a
