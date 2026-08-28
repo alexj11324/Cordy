@@ -16903,6 +16903,7 @@ mod tests {
         let command = Cli::command();
         let mut top_level = command
             .get_subcommands()
+            .filter(|subcommand| !subcommand.is_hide_set())
             .map(|subcommand| subcommand.get_name())
             .collect::<Vec<_>>();
         top_level.sort_unstable();

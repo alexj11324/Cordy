@@ -235,7 +235,9 @@ mod tests {
             Ok(_) => panic!("foreground assembly must require profile credentials"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("cordy login"));
+        assert!(error
+            .chain()
+            .any(|cause| cause.to_string().contains("cordy login")));
         assert!(!root.exists());
     }
 }
