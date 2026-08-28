@@ -1216,7 +1216,11 @@ mod tests {
     }
 
     async fn wait_for_tagged_advisory_wait(pool: &PgPool, application_name: &str) {
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        // A fresh tagged pool can spend a few seconds waiting for a CI runner
+        // to schedule its first connection. The contract below still requires
+        // observing the real PostgreSQL advisory wait before releasing the
+        // blocker; this wider deadline only removes scheduler sensitivity.
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
                 let waiting: bool = sqlx::query_scalar(
                     "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
