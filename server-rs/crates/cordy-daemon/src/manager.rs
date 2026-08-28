@@ -1090,6 +1090,8 @@ mod tests {
     #[tokio::test]
     async fn production_wakeup_dial_uses_https_proxy_connect_auth_and_target_tls() {
         if std::env::var_os(WAKEUP_PROXY_CHILD).is_some() {
+            cordy_util::install_rustls_crypto_provider()
+                .expect("install production rustls provider for proxy child");
             let client = Arc::new(Client::new(format!("https://{WAKEUP_PROXY_TARGET}")));
             client.set_token("target-token");
             let (events, _) = mpsc::unbounded_channel();
