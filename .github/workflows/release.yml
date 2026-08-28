@@ -812,11 +812,12 @@ jobs:
             fi
           done
 
-          shopt -s nullglob
-          blockmaps=(dist/cordy-desktop-$version-mac-${{ matrix.arch }}.*.blockmap)
+          blockmap="dist/cordy-desktop-$version-mac-${{ matrix.arch }}.zip.blockmap"
+          if [ -f "$blockmap" ]; then
+            required_assets+=("$blockmap")
+          fi
           gh release upload "$TAG_NAME" \
             "${required_assets[@]}" \
-            "${blockmaps[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 
