@@ -265,6 +265,13 @@ mod tests {
     use super::*;
     use std::fs;
 
+    fn plugin_path(leaf: &str) -> String {
+        Path::new("/plugins/foo")
+            .join(leaf)
+            .to_string_lossy()
+            .into_owned()
+    }
+
     #[test]
     fn component_paths_accept_string_or_array() {
         let install = "/plugins/foo";
@@ -272,19 +279,12 @@ mod tests {
         let one = serde_json::json!("skills-extra");
         assert_eq!(
             claude_plugin_component_paths(install, &one, &defaults),
-            vec![
-                "/plugins/foo/skills".to_string(),
-                "/plugins/foo/skills-extra".to_string()
-            ]
+            vec![plugin_path("skills"), plugin_path("skills-extra")]
         );
         let many = serde_json::json!(["a", "b"]);
         assert_eq!(
             claude_plugin_component_paths(install, &many, &defaults),
-            vec![
-                "/plugins/foo/skills".to_string(),
-                "/plugins/foo/a".to_string(),
-                "/plugins/foo/b".to_string()
-            ]
+            vec![plugin_path("skills"), plugin_path("a"), plugin_path("b")]
         );
     }
 
@@ -294,7 +294,7 @@ mod tests {
         let raw = serde_json::json!(["../escape", "/plugins/foo/a", "/plugins/foo/a"]);
         assert_eq!(
             claude_plugin_component_paths(install, &raw, &[]),
-            vec!["/plugins/foo/a".to_string()]
+            vec![plugin_path("a")]
         );
     }
 
@@ -303,7 +303,7 @@ mod tests {
         let raw = serde_json::json!(["/plugins/foobar/skills", "/plugins/foo/skills"]);
         assert_eq!(
             claude_plugin_component_paths("/plugins/foo", &raw, &[]),
-            vec!["/plugins/foo/skills".to_string()]
+            vec![plugin_path("skills")]
         );
     }
 
@@ -334,7 +334,7 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn plugin_discovery_keeps_non_utf8_home_paths() {
         use std::ffi::OsString;

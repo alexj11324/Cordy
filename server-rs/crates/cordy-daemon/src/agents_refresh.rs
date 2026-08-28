@@ -134,6 +134,7 @@ impl RevivedRuntimes {
     /// `reasonsFor` (daemon.go:1613): narrow the causes to the rows actually
     /// being deregistered. Sending a cause for a row we are no longer taking
     /// offline would attach it to a healthy runtime.
+    #[cfg(test)]
     pub(crate) fn reasons_for(
         &self,
         runtime_ids: &[String],

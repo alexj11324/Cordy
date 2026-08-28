@@ -416,6 +416,7 @@ impl std::fmt::Debug for PathLockRelease {
 }
 
 impl PathLockRelease {
+    #[cfg(test)]
     pub fn release(mut self) {
         if let Some(guard) = self.guard.take() {
             self.entry.set_holder("");
@@ -448,6 +449,7 @@ impl LocalPathLocker {
 
     /// The task id currently holding the lock for realPath, or "" when free —
     /// feeds the server-side wait_reason hint (go:431–441).
+    #[cfg(test)]
     pub(crate) fn holder(&self, real_path: &str) -> String {
         let entry = {
             let locks = self.locks.lock().unwrap_or_else(|p| p.into_inner());

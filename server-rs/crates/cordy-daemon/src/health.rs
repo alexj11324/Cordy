@@ -131,9 +131,6 @@ pub struct ActiveRepoCheckoutTask {
 /// `REPO_CHECKOUT_LOCK_WAIT_TIMEOUT` etc. (health.go:179–184).
 pub(crate) const REPO_CHECKOUT_LOCK_WAIT_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(10);
-pub(crate) const REPO_CHECKOUT_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(2);
-pub(crate) const REPO_CHECKOUT_RETRY_HEADER: &str = "X-Cordy-Retryable";
-pub(crate) const REPO_CHECKOUT_RETRY_VALUE_BUSY: &str = "repo-busy";
 
 /// The registry half of Go's `d.repoCheckoutTasks` map (health.go:111–153):
 /// binds checkout identity to the active task via a per-task bearer token. The

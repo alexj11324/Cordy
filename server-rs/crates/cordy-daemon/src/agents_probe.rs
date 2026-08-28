@@ -79,16 +79,15 @@ pub(crate) struct BuiltinRuntimeDesc {
     pub id: &'static str,
     pub env_prefix: &'static str,
     pub default_command: &'static str,
-    pub display_name: &'static str,
 }
 
 pub(crate) const BUILTIN_RUNTIMES: &[BuiltinRuntimeDesc] = &[BuiltinRuntimeDesc {
     id: "omp",
     env_prefix: "CORDY_OMP",
     default_command: "omp",
-    display_name: "Oh-My-Pi",
 }];
 
+#[cfg(test)]
 pub(crate) fn builtin_runtime_by_id(id: &str) -> Option<&'static BuiltinRuntimeDesc> {
     BUILTIN_RUNTIMES.iter().find(|d| d.id == id)
 }

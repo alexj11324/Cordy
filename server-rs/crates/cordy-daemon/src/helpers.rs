@@ -221,6 +221,7 @@ pub(crate) async fn sleep_with_context(ctx: &Ctx, d: Duration) -> Result<(), Can
 /// Like
 /// [`sleep_with_context`] but also wakes early when a token arrives on the
 /// wakeup channel. A `None` channel disables the wakeup arm.
+#[cfg(test)]
 pub(crate) async fn sleep_with_context_or_wakeup(
     ctx: &Ctx,
     d: Duration,

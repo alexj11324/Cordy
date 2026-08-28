@@ -3289,7 +3289,10 @@ mod tests {
             vec![RuntimeLaunchSpec {
                 target: target.clone(),
                 display_name: "Deveco".to_string(),
-                command_path: "/bin/false".to_string(),
+                command_path: std::env::current_exe()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
                 fixed_args: Vec::new(),
                 version: "1".to_string(),
             }],
