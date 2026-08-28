@@ -344,14 +344,21 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         uses: actions/checkout@v6
 
+      - name: Setup Docker Buildx
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        uses: docker/setup-buildx-action@v3
+
       - name: Build production web image
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: |
-          docker build \
-            --file Dockerfile.web \
-            --tag cordy-web:ci \
-            --build-arg NEXT_PUBLIC_APP_VERSION=ci \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.web
+          load: true
+          tags: cordy-web:ci
+          build-args: NEXT_PUBLIC_APP_VERSION=ci
+          cache-from: type=gha,scope=ci-web
+          cache-to: type=gha,mode=max,scope=ci-web
 
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
@@ -466,19 +473,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Build production backend image
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute backend image date
+        id: backend-image
         env:
-          VERSION: ci
           COMMIT: ${{ github.sha }}
         run: |
           DATE="$(git show -s --format=%cI "$COMMIT")"
-          docker build \
-            --file Dockerfile \
-            --tag cordy-backend:ci \
-            --build-arg VERSION="$VERSION" \
-            --build-arg COMMIT="$COMMIT" \
-            --build-arg DATE="$DATE" \
-            .
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Build production backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: cordy-backend:ci
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.backend-image.outputs.date }}
+          cache-from: type=gha,scope=ci-backend
+          cache-to: type=gha,mode=max,scope=ci-backend
 
   rust-quality:
     needs: changes
