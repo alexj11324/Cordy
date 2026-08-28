@@ -89,7 +89,7 @@ const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
 const TASK_PREPARATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 #[cfg(test)]
-pub(crate) static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) static ENV_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[cfg(test)]
 fn preparation_helper_command() -> anyhow::Result<Option<Vec<String>>> {
@@ -2771,9 +2771,7 @@ mod tests {
 
     #[tokio::test]
     async fn production_heartbeat_lists_and_imports_local_skills_with_retry() {
-        let _env_guard = ENV_TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _env_guard = ENV_TEST_LOCK.lock().await;
         let temp = tempfile::tempdir().unwrap();
         let skill_dir = temp.path().join("skills/deploy");
         std::fs::create_dir_all(&skill_dir).unwrap();

@@ -532,6 +532,14 @@ impl<S: DaemonCoreServices> GcHost for DaemonCoreHost<S> {
     }
 }
 
+fn map_gc_error(err: anyhow::Error) -> anyhow::Error {
+    if request_status_code(&err) == Some(404) {
+        anyhow::Error::new(GcRequestError { status_code: 404 })
+    } else {
+        err
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -752,46 +760,39 @@ mod tests {
         assert!(!invalid.updating.load(Ordering::Acquire));
         assert!(invalid_root.err().is_none());
 
-        let reports = reports.lock().unwrap();
-        let payloads = |id: &str| {
-            reports
-                .iter()
-                .filter(|(path, _)| path.ends_with(&format!("/update/{id}/result")))
-                .map(|(_, payload)| payload.clone())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(payloads("desktop")[0]["status"], "failed");
-        assert_eq!(payloads("busy")[0]["status"], "failed");
-        assert_eq!(
-            payloads("busy")[0]["error"],
-            "runtime update deferred because agent work is starting or still active; retry when the machine is idle"
-        );
-        assert_eq!(
-            payloads("cas-busy")[0]["error"],
-            "another runtime update is already in progress on this machine"
-        );
-        let invalid_payloads = payloads("invalid");
-        assert_eq!(invalid_payloads[0]["status"], "running");
-        assert_eq!(invalid_payloads[1]["status"], "failed");
-        assert!(invalid_payloads[1]["error"]
-            .as_str()
-            .unwrap()
-            .contains("invalid-version"));
-        assert_eq!(services.heartbeat_calls.load(Ordering::SeqCst), 4);
-        drop(reports);
+        {
+            let reports = reports.lock().unwrap();
+            let payloads = |id: &str| {
+                reports
+                    .iter()
+                    .filter(|(path, _)| path.ends_with(&format!("/update/{id}/result")))
+                    .map(|(_, payload)| payload.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(payloads("desktop")[0]["status"], "failed");
+            assert_eq!(payloads("busy")[0]["status"], "failed");
+            assert_eq!(
+                payloads("busy")[0]["error"],
+                "runtime update deferred because agent work is starting or still active; retry when the machine is idle"
+            );
+            assert_eq!(
+                payloads("cas-busy")[0]["error"],
+                "another runtime update is already in progress on this machine"
+            );
+            let invalid_payloads = payloads("invalid");
+            assert_eq!(invalid_payloads[0]["status"], "running");
+            assert_eq!(invalid_payloads[1]["status"], "failed");
+            assert!(invalid_payloads[1]["error"]
+                .as_str()
+                .unwrap()
+                .contains("invalid-version"));
+            assert_eq!(services.heartbeat_calls.load(Ordering::SeqCst), 4);
+        }
 
         server_stop.cancel();
         tokio::time::timeout(Duration::from_secs(2), server)
             .await
             .expect("update report fixture ignored shutdown")
             .unwrap();
-    }
-}
-
-fn map_gc_error(err: anyhow::Error) -> anyhow::Error {
-    if request_status_code(&err) == Some(404) {
-        anyhow::Error::new(GcRequestError { status_code: 404 })
-    } else {
-        err
     }
 }

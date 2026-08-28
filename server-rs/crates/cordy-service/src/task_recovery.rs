@@ -1377,7 +1377,7 @@ mod tests {
                 .await?;
             let failed = rows.failed_task(failed_id).await?;
             let (svc, _bus, events) = rows.service();
-            anyhow::ensure!(svc.handle_failed_tasks(&[failed.clone()]).await == 0, "final delegated failure unexpectedly retried");
+            anyhow::ensure!(svc.handle_failed_tasks(std::slice::from_ref(&failed)).await == 0, "final delegated failure unexpectedly retried");
 
             let recovery = rows.recovery_comment(failed_id).await?;
             anyhow::ensure!(recovery.author_type == "system", "recovery author = {}", recovery.author_type);
@@ -1397,10 +1397,11 @@ mod tests {
             anyhow::ensure!(recovery_row.3 == Some(failed_id) && recovery_row.4 == Some(failed_id) && recovery_row.5.as_deref() == Some("delegated_failure"), "recovery lineage is incomplete: {recovery_row:?}");
             anyhow::ensure!(rows.recovery_count(failed_id).await? == 1, "recovery task count is not one");
 
-            let captured = events.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            anyhow::ensure!(captured.iter().filter(|event| event.event_type == cordy_protocol::EVENT_COMMENT_CREATED).count() == 1, "comment-created event count mismatch");
-            anyhow::ensure!(captured.iter().filter(|event| event.event_type == cordy_protocol::EVENT_TASK_QUEUED).count() == 1, "task-queued event count mismatch");
-            drop(captured);
+            {
+                let captured = events.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                anyhow::ensure!(captured.iter().filter(|event| event.event_type == cordy_protocol::EVENT_COMMENT_CREATED).count() == 1, "comment-created event count mismatch");
+                anyhow::ensure!(captured.iter().filter(|event| event.event_type == cordy_protocol::EVENT_TASK_QUEUED).count() == 1, "task-queued event count mismatch");
+            }
 
             let failed_again = rows.failed_task(failed_id).await?;
             let failed_race = failed_again.clone();
@@ -1633,28 +1634,31 @@ mod tests {
                     rows.recovery_count(failed_id).await? == 1,
                     "completion reconciliation did not create one successor"
                 );
-                let captured = events
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                anyhow::ensure!(
-                    captured.iter().any(|event| event.event_type
-                        == cordy_protocol::EVENT_TASK_RUNNING
-                        && event.task_id == coordinator.to_string()),
-                    "production start path did not publish task-running"
-                );
-                anyhow::ensure!(
-                    captured.iter().any(|event| event.event_type
-                        == cordy_protocol::EVENT_TASK_COMPLETED
-                        && event.task_id == coordinator.to_string()),
-                    "production completion path did not publish task-completed"
-                );
-                anyhow::ensure!(
-                    captured.iter().any(|event| event.event_type
-                        == cordy_protocol::EVENT_AGENT_STATUS
-                        && event.workspace_id == rows.workspace_id.to_string()),
-                    "production terminal path did not reconcile agent status"
-                );
-                drop(captured);
+                let coordinator_id = coordinator.to_string();
+                let workspace_id = rows.workspace_id.to_string();
+                {
+                    let captured = events
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    anyhow::ensure!(
+                        captured.iter().any(|event| event.event_type
+                            == cordy_protocol::EVENT_TASK_RUNNING
+                            && event.task_id == coordinator_id),
+                        "production start path did not publish task-running"
+                    );
+                    anyhow::ensure!(
+                        captured.iter().any(|event| event.event_type
+                            == cordy_protocol::EVENT_TASK_COMPLETED
+                            && event.task_id == coordinator_id),
+                        "production completion path did not publish task-completed"
+                    );
+                    anyhow::ensure!(
+                        captured.iter().any(|event| event.event_type
+                            == cordy_protocol::EVENT_AGENT_STATUS
+                            && event.workspace_id == workspace_id),
+                        "production terminal path did not reconcile agent status"
+                    );
+                }
                 let (agent_status, issue_status): (String, String) = sqlx::query_as(
                 "SELECT a.status, i.status FROM agent a JOIN issue i ON i.id = $2 WHERE a.id = $1",
             )
