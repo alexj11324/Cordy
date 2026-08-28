@@ -179,16 +179,12 @@ pub(crate) fn claude_plugin_mcp_paths(plugin: &ClaudePluginInstall) -> Vec<PathB
         .map(|manifest| manifest.mcp_servers_value().clone())
         .unwrap_or(serde_json::Value::Null);
     let install_root = clean_path(install_path);
-    component_paths(
-        install_path,
-        &raw,
-        vec![install_path.join(".mcp.json")],
-    )
-    .into_iter()
-    // A component must name a file below the plugin root. This preserves the
-    // runtime MCP loader's existing rejection of a manifest value of `.`.
-    .filter(|path| path != &install_root)
-    .collect()
+    component_paths(install_path, &raw, vec![install_path.join(".mcp.json")])
+        .into_iter()
+        // A component must name a file below the plugin root. This preserves the
+        // runtime MCP loader's existing rejection of a manifest value of `.`.
+        .filter(|path| path != &install_root)
+        .collect()
 }
 
 fn component_paths(
@@ -365,10 +361,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn component_paths_use_windows_absolute_paths_and_confinement() {
-        let raw = serde_json::json!([
-            r"C:\outside\mcp.json",
-            r"C:\plugins\foo\mcp.json"
-        ]);
+        let raw = serde_json::json!([r"C:\outside\mcp.json", r"C:\plugins\foo\mcp.json"]);
         assert_eq!(
             claude_plugin_component_paths(r"C:\plugins\foo", &raw, &[]),
             vec![r"C:\plugins\foo\mcp.json".to_string()]

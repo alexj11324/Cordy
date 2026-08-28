@@ -24,8 +24,7 @@ const MIKA_NAME_PLACEHOLDER: &str = "{{AGENT_NAME}}";
 ///
 /// Single source of truth: the file is packaged with this crate and embedded
 /// in the service binary at compile time.
-const MIKA_INSTRUCTIONS_MD: &str =
-    include_str!("../assets/builtin_agents/mika/INSTRUCTIONS.md");
+const MIKA_INSTRUCTIONS_MD: &str = include_str!("../assets/builtin_agents/mika/INSTRUCTIONS.md");
 
 /// Introduces the workspace's own additions and states how they rank against
 /// the system half.

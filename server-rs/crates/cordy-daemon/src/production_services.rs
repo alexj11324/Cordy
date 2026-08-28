@@ -645,10 +645,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     }
 }
 
-fn apply_agent_health_snapshot(
-    response: &mut HealthResponse,
-    agent_health: AgentHealthSnapshot,
-) {
+fn apply_agent_health_snapshot(response: &mut HealthResponse, agent_health: AgentHealthSnapshot) {
     response.agents = agent_health.agents;
     response.skipped_agents = agent_health.skipped_agents;
 }
@@ -720,10 +717,7 @@ mod tests {
         assert_eq!(response.agents, vec!["claude", "codex"]);
         assert_eq!(
             response.skipped_agents,
-            std::collections::HashMap::from([(
-                "kiro".to_string(),
-                "below minimum".to_string(),
-            )])
+            std::collections::HashMap::from([("kiro".to_string(), "below minimum".to_string(),)])
         );
     }
 

@@ -245,13 +245,7 @@ impl ProductionProviderAdapter {
         ctx: &Ctx,
         launch: RuntimeLaunchSpec,
     ) -> anyhow::Result<RuntimeLaunchSpec> {
-        resolve_launch_for_execution(
-            ctx,
-            &self.config,
-            &self.verified_launches,
-            launch,
-        )
-        .await
+        resolve_launch_for_execution(ctx, &self.config, &self.verified_launches, launch).await
     }
 
     /// Resolves the values a task will actually pass to the provider. The
@@ -490,10 +484,7 @@ impl ProductionProviderAdapter {
             Ok(launch) => launch,
             Err(error) => {
                 return failed(
-                    error.context(format!(
-                        "resolve {} executable for launch",
-                        target.provider
-                    )),
+                    error.context(format!("resolve {} executable for launch", target.provider)),
                     None,
                 );
             }
@@ -1515,11 +1506,7 @@ async fn probe_launch_version(
     let mut command = tokio::process::Command::new(command_path);
     command.args(fixed_args).arg("--version");
     let probe_ctx = ctx.child();
-    let output = crate::gc::processtree::output(
-        &probe_ctx,
-        command,
-        LAUNCH_VERSION_PROBE_TIMEOUT,
-    );
+    let output = crate::gc::processtree::output(&probe_ctx, command, LAUNCH_VERSION_PROBE_TIMEOUT);
     tokio::pin!(output);
     let output = tokio::select! {
         result = &mut output => result?,
@@ -1649,49 +1636,44 @@ async fn handle_model_list(
             "status": "failed",
             "error": format!("accepted launch for provider {} has no executable path", target.provider),
         }),
-        Some(launch) => match resolve_launch_for_execution(
-            &ctx,
-            &config,
-            &verified_launches,
-            launch,
-        )
-        .await
-        {
-            Err(error) => json!({
-                "status": "failed",
-                "error": error.to_string(),
-            }),
-            Ok(launch) => {
-                let config = cordy_agent::BackendConfig {
-                    command: cordy_agent::RuntimeCommand::new(
-                        launch.command_path,
-                        launch.fixed_args,
-                    ),
-                    env: BTreeMap::new(),
-                    builtin_runtime: target.profile_id.is_empty(),
-                };
-                match cordy_agent::registry::discover_models(
-                    &target.provider,
-                    config,
-                    &cache,
-                    ctx.token().clone(),
-                    Duration::ZERO,
-                )
-                .await
-                {
-                    Ok(catalog) => json!({
-                        "status": "completed",
-                        "models": catalog.models,
-                        "supported": cordy_agent::registry::model_selection_supported(&target.provider),
-                        "fallback": catalog.fallback,
-                    }),
-                    Err(error) => json!({
-                        "status": "failed",
-                        "error": error.to_string(),
-                    }),
+        Some(launch) => {
+            match resolve_launch_for_execution(&ctx, &config, &verified_launches, launch).await {
+                Err(error) => json!({
+                    "status": "failed",
+                    "error": error.to_string(),
+                }),
+                Ok(launch) => {
+                    let config = cordy_agent::BackendConfig {
+                        command: cordy_agent::RuntimeCommand::new(
+                            launch.command_path,
+                            launch.fixed_args,
+                        ),
+                        env: BTreeMap::new(),
+                        builtin_runtime: target.profile_id.is_empty(),
+                    };
+                    match cordy_agent::registry::discover_models(
+                        &target.provider,
+                        config,
+                        &cache,
+                        ctx.token().clone(),
+                        Duration::ZERO,
+                    )
+                    .await
+                    {
+                        Ok(catalog) => json!({
+                            "status": "completed",
+                            "models": catalog.models,
+                            "supported": cordy_agent::registry::model_selection_supported(&target.provider),
+                            "fallback": catalog.fallback,
+                        }),
+                        Err(error) => json!({
+                            "status": "failed",
+                            "error": error.to_string(),
+                        }),
+                    }
                 }
             }
-        },
+        }
     };
 
     if let Err(error) = client
@@ -3981,9 +3963,7 @@ mod tests {
             Some("claude"),
             |_| Ok(None),
             |path| match path {
-                "/older/healed/claude" => {
-                    Err(io::Error::new(io::ErrorKind::NotFound, "removed"))
-                }
+                "/older/healed/claude" => Err(io::Error::new(io::ErrorKind::NotFound, "removed")),
                 "/old/claude" => Err(io::Error::new(io::ErrorKind::NotFound, "removed")),
                 "/new/claude" => Ok(()),
                 other => panic!("unexpected inspected path: {other}"),
