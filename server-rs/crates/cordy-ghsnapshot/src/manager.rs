@@ -1165,7 +1165,10 @@ mod tests {
             return;
         };
         let now = at_unix(1_700_000_100);
-        let pr = seed_pr_at(&pool, 987_654, "r", 4242, "B").await;
+        // Keep this address distinct from the background-manager tests below.
+        // Those tests intentionally update every mirrored row for their PR
+        // address and run in parallel with this one on CI.
+        let pr = seed_pr_at(&pool, 987_654, "head-guard", 4242, "B").await;
 
         let mut m = Manager::new(None, Some(pool.clone()), None);
         m.now = fixed_clock(now);
@@ -1277,7 +1280,7 @@ mod tests {
             return;
         };
         let now = at_unix(1_700_000_200);
-        let pr = seed_pr_at(&pool, 987_654, "r", 4242, "H").await;
+        let pr = seed_pr_at(&pool, 987_654, "replace-runs", 4242, "H").await;
 
         let mut m = Manager::new(None, Some(pool.clone()), None);
         m.now = fixed_clock(now);
