@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -32,7 +32,7 @@ use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -6596,7 +6596,11 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() { value } else { json!({}) }
+    if value.is_object() {
+        value
+    } else {
+        json!({})
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -6652,11 +6656,9 @@ mod tests {
 
     fn fixture_issue() -> Issue {
         let timestamp = Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap();
-        let last_activity_at = chrono::DateTime::parse_from_rfc3339(
-            "2026-08-23T03:30:00.123400Z",
-        )
-        .unwrap()
-        .to_utc();
+        let last_activity_at = chrono::DateTime::parse_from_rfc3339("2026-08-23T03:30:00.123400Z")
+            .unwrap()
+            .to_utc();
         Issue {
             acceptance_criteria: json!([]),
             assignee_id: None,
@@ -7088,10 +7090,7 @@ mod tests {
             .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
             .layer(Extension(context));
 
-        async fn post(
-            app: &Router,
-            body: Value,
-        ) -> (StatusCode, Value) {
+        async fn post(app: &Router, body: Value) -> (StatusCode, Value) {
             let response = app
                 .clone()
                 .oneshot(
@@ -7122,14 +7121,14 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(first["position"], -1.0);
 
-        let (status, duplicate) = post(
-            &app,
-            json!({"title": "http duplicate", "status": "todo"}),
-        )
-        .await;
+        let (status, duplicate) =
+            post(&app, json!({"title": "http duplicate", "status": "todo"})).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(duplicate["code"], "active_duplicate_issue");
-        assert_eq!(duplicate["error"], "an active duplicate issue already exists");
+        assert_eq!(
+            duplicate["error"],
+            "an active duplicate issue already exists"
+        );
         assert_eq!(duplicate["issue"]["id"], first["id"]);
 
         let (status, allowed) = post(
