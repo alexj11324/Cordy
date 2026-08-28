@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  # Full validation is intentionally manual to keep GitHub-hosted runner
-  # usage predictable. Select the branch to validate from the Actions page.
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       base_ref:
@@ -16,7 +18,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,7 +48,7 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          base: ${{ inputs.base_ref }}
+          base: ${{ inputs.base_ref || github.base_ref || 'main' }}
           # apps/docs is excluded from the frontend turbo run, but knip does
           # analyze it, so a docs-only change still needs this job.
           # apps/mobile has its own mobile-verify workflow. Everything else
