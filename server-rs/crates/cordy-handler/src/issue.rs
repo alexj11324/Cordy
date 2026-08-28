@@ -5301,14 +5301,12 @@ async fn prevalidate_issue_workflow_update(
     fields: &serde_json::Map<String, Value>,
 ) -> Result<(), Response> {
     let next_status = match update_field::<String>(fields, "status")? {
-        UpdateField::Value(value) => cordy_service::issue_status::resolve(
-            &state.pool,
-            previous.workspace_id,
-            &value,
-        )
-        .await
-        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid status"))?
-        .key,
+        UpdateField::Value(value) => {
+            cordy_service::issue_status::resolve(&state.pool, previous.workspace_id, &value)
+                .await
+                .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid status"))?
+                .key
+        }
         UpdateField::Missing | UpdateField::Null => previous.status.clone(),
     };
     let mut next_type = previous.assignee_type.clone();
