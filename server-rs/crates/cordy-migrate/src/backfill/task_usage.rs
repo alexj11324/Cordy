@@ -131,7 +131,7 @@ async fn walk_slices(
     let mut rows_touched: i64 = 0;
     while cursor < end {
         let next = add_month(cursor)?;
-        let rows = rollup_slice(conn, cursor, next).await?;
+        let rows = rollup_slice_on_connection(conn, cursor, next).await?;
         slices_processed += 1;
         rows_touched += rows;
         tracing::info!(from = %cursor, to = %next, rows_touched = rows, "task_usage hourly rollup hook: slice complete");
@@ -369,6 +369,21 @@ async fn run_standalone_locked(
     stamp_and_report_cancellable(pool, shutdown).await?;
     tracing::info!(total_rows_touched = total_rows, "backfill complete");
     Ok(())
+}
+
+async fn rollup_slice_on_connection(
+    connection: &mut PgConnection,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> anyhow::Result<i64> {
+    sqlx::query_scalar(
+        "SELECT rollup_task_usage_hourly_window($1::timestamptz, $2::timestamptz)",
+    )
+    .bind(from)
+    .bind(to)
+    .fetch_one(connection)
+    .await
+    .context("execute task_usage hourly rollup window")
 }
 
 async fn rollup_slice(

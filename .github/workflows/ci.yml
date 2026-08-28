@@ -503,20 +503,9 @@ jobs:
         working-directory: server-rs
         run: cargo fmt --all --check
 
-      # Temporary cloud-side lockfile refresh. Download this artifact into the
-      # branch, then restore --locked so the final gates remain strict.
       - name: Check every workspace target
         working-directory: server-rs
-        run: cargo check --workspace --all-targets
-
-      - name: Upload canonical Cargo lockfile
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-lock-${{ github.sha }}
-          path: server-rs/Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
+        run: cargo check --workspace --all-targets --locked
 
       - name: Run Clippy
         working-directory: server-rs
@@ -586,6 +575,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
+          # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
+          # the compiled Cordy graph enables Postgres only. CloudFront signing
+          # no longer uses rsa and is implemented with ring/SHA-256.
+          ignore: RUSTSEC-2023-0071
 
   # Preserve the required check name while the Rust checks stay split by
   # concern so a failure points at the actual production boundary.

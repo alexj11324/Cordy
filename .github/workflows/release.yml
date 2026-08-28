@@ -100,8 +100,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
-          # rsa has no patched release. CloudFront signing uses randomized
-          # blinding, and the remaining rsa uses only generate test keys.
+          # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
+          # the compiled Cordy graph enables Postgres only. CloudFront signing
+          # no longer uses rsa and is implemented with ring/SHA-256.
           ignore: RUSTSEC-2023-0071
 
       - name: Record emergency vulnerability-scan bypass
