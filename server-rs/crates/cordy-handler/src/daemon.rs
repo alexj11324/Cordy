@@ -2041,8 +2041,8 @@ async fn repair_stale_comment_plan(
     }
 }
 
-/// Enriched finalization: mints the task token AND the Remote MCP daemon
-/// credential when the payload carries remote MCP connections (Go
+/// Enriched finalization: mints the task token AND the MCP daemon credential
+/// when the payload carries Remote MCP connections or plugin hook tools (Go
 /// remoteMCPDaemonTokenForClaim + FinalizeTaskClaim), recording the exact
 /// comment-delivery receipt for comment-backed tasks.
 /// Returns (raw task token, optional raw daemon token, persisted receipt).
@@ -2065,23 +2065,17 @@ async fn finalize_claim_enriched_full(
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or(false)?;
 
-    // Remote MCP broker credential: minted only when the claim actually carries
-    // remote MCP connections (Go remoteMCPDaemonTokenForClaim). The raw token
-    // rides only in this response; its hash commits atomically with the task
-    // token below.
-    let carries_remote_mcp = built
-        .payload
-        .get("remote_mcp_connections")
-        .and_then(|v| v.as_array())
-        .map(|a| !a.is_empty())
-        .unwrap_or(false);
+    // Both Remote MCP brokers and plugin hook tools call daemon-authenticated
+    // endpoints. The raw token rides only in this response; its hash commits
+    // atomically with the task token below.
+    let carries_daemon_mcp_capability = claim_requires_daemon_mcp_token(&built.payload);
     let mut daemon_token: Option<cordy_service::task_service::CreateDaemonToken> = None;
     let mut raw_daemon_token: Option<String> = None;
-    if carries_remote_mcp {
+    if carries_daemon_mcp_capability {
         let Some(runtime) = runtime else {
             tracing::error!(
                 task_id = %task.id,
-                "remote MCP claim requires a resolved runtime; requeueing"
+                "MCP-enabled claim requires a resolved runtime; requeueing"
             );
             return Err(true);
         };
@@ -2093,7 +2087,7 @@ async fn finalize_claim_enriched_full(
         else {
             tracing::error!(
                 task_id = %task.id,
-                "runtime daemon_id is required for Remote MCP; requeueing"
+                "runtime daemon_id is required for MCP-enabled claim; requeueing"
             );
             return Err(true);
         };
@@ -2131,6 +2125,17 @@ async fn finalize_claim_enriched_full(
             Err(true)
         }
     }
+}
+
+fn claim_requires_daemon_mcp_token(payload: &Value) -> bool {
+    ["remote_mcp_connections", "plugin_hook_tools"]
+        .iter()
+        .any(|key| {
+            payload
+                .get(*key)
+                .and_then(Value::as_array)
+                .is_some_and(|items| !items.is_empty())
+        })
 }
 
 async fn finalize_claim_enriched_with_runtime(
@@ -4628,6 +4633,20 @@ mod tests {
         set_claim_tokens(&mut payload, "task-token", Some("mcp-token"), &[]);
         assert_eq!(payload["auth_token"], json!("task-token"));
         assert_eq!(payload["remote_mcp_daemon_token"], json!("mcp-token"));
+    }
+
+    #[test]
+    fn daemon_mcp_token_covers_plugin_only_claims() {
+        assert!(claim_requires_daemon_mcp_token(&json!({
+            "plugin_hook_tools": [{"name": "plugin.run"}],
+        })));
+        assert!(claim_requires_daemon_mcp_token(&json!({
+            "remote_mcp_connections": [{"endpoint": "https://mcp.example"}],
+        })));
+        assert!(!claim_requires_daemon_mcp_token(&json!({
+            "plugin_hook_tools": [],
+            "remote_mcp_connections": [],
+        })));
     }
 
     // Contract: a missing runtime row maps to 404 (daemon drops + re-registers)
