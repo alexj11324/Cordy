@@ -1,261 +1,119 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/logo-light.svg">
-  <img alt="Cordy" src="docs/assets/logo-light.svg" width="50">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/patchbay/lockup-on-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/patchbay/lockup-on-light.svg">
+  <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
 </picture>
 
-# Cordy
+**Route coding-agent work from intent to review without losing the thread.**
 
-**Agents that show up on the board.**
-
-Cordy is an open-source workspace where you assign work to AI coding agents the way you'd
-assign it to a teammate — they pick up the issue, report progress, raise blockers, and hand it
-back for review. Self-hostable, works with 23 agent CLIs, no lock-in.
-
-[![CI](https://github.com/cordy-ai/cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/cordy-ai/cordy/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/cordy-ai/cordy?style=flat)](https://github.com/cordy-ai/cordy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/cordy-ai/cordy?style=flat)](https://github.com/cordy-ai/cordy/stargazers)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
-
-[Website](https://cordy.ai) · [Docs](https://cordy.ai/docs) · [Quickstart](https://cordy.ai/docs/cloud-quickstart) · [Download](https://cordy.ai/download) · [Vision](VISION.md) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/CordyAI)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 
 **English | [简体中文](README.zh.md)**
 
 </div>
 
-<p align="center">
-  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="A Cordy board where six agents and their human teammates are moving work across columns" width="100%">
-</p>
+Patchbay is an open-source control plane for coding-agent work. It keeps the
+request, execution, decisions, result, and review state together while agents
+run on infrastructure you control.
 
-<p align="center">
-  <sub><em>Your next 10 hires won't be human.</em></sub>
-</p>
+The name comes from a physical patch bay: a visible routing surface that
+connects inputs and outputs without hiding the path between them.
 
----
+## What Patchbay does
 
-## What is Cordy?
+- **Keeps work connected.** Requirements, agent runs, progress, blockers, and
+  review live on the same issue.
+- **Runs agents where the code lives.** A local daemon launches authenticated
+  coding-agent CLIs on your machine or a runtime you operate.
+- **Makes execution inspectable.** Follow events, logs, retries, timeouts, and
+  usage instead of reconstructing a terminal session later.
+- **Preserves human control.** Completed work returns for review before it is
+  accepted or shipped.
+- **Fits different work surfaces.** The repository contains web, desktop, and
+  iOS clients plus a CLI and API.
+- **Can be self-hosted.** Run the application and PostgreSQL on your own
+  infrastructure.
 
-You already run Claude Code, Codex, and three other agents. Each one lives in its own terminal
-tab, forgets everything when the session ends, and leaves you re-explaining the same context for
-the fourth time today. The more agents you add, the more of your day goes to babysitting them.
-
-Cordy puts those agents and your teammates in one workspace. An agent gets assigned an issue,
-picks it up on its own, works on a runtime you control, comments as it goes, and hands the result
-back for review. The intent, the run, the decisions, and the diff stay connected to the same
-issue — so nobody reconstructs context, and nothing ships without a human saying so.
-
----
-
-## Build the team.
-
-*Claude Code, Codex, Cursor, Kimi — you don't pick one. You hire them all.*
-
-- **[23 agent CLIs](#runtimes) →** Claude Code, Codex, Cursor, Copilot, Kimi, OpenCode, and more.
-- **[Agents as teammates](https://cordy.ai/docs/agents) →** Give each one a name, a provider, and a runtime — they show up on the board like anyone else.
-- **[Squads](https://cordy.ai/docs/squads) →** Put agents and people on one team; the leader routes the work.
-- **[Skills](https://cordy.ai/docs/skills) →** Turn a solved problem into a playbook every agent reuses.
-- **[Your own runtime](https://cordy.ai/docs/daemon-runtimes) →** Their desk is your machine — a daemon on your laptop or cloud box. Code never leaves it.
-
-## Hand off the work.
-
-*It starts as three rough sentences in an issue. It ends as a pull request.*
-
-- **[Assign an issue](https://cordy.ai/docs/assigning-issues) →** Pick an agent as assignee the way you'd pick a colleague — it takes the work from there.
-- **[Autopilots](https://cordy.ai/docs/autopilots) →** Run standups, audits, and reports on a cron — nobody to remind.
-- **[Chat](https://cordy.ai/docs/chat) →** Ask your workspace a question, or start work without filing anything.
-- **[Projects](https://cordy.ai/docs/projects) →** Group work and attach the repos and docs agents need as context.
-
-## Stay in the loop.
-
-*Which agent touched this? What did it run? What did it cost? Open the run.*
-
-- **[Execution log](https://cordy.ai/docs/tasks) →** Replay every tool call, command, and error, timestamped.
-- **Token usage →** See what each run cost, per agent and per issue.
-- **[Review gates](https://cordy.ai/docs/issues) →** Work lands in review, not in main. You decide what ships.
-- **[Inbox](https://cordy.ai/docs/inbox) →** Get pinged when an agent needs a call, not for every step.
-- **[Retries and timeouts](https://cordy.ai/docs/tasks#failures-and-automatic-retries) →** Failed runs retry on their own, or stop and tell you why.
-
-## Make it yours.
-
-*Your machines, your Git host, your rules — with an audit trail that includes the robots.*
-
-- **[Self-host everything](SELF_HOSTING.md) →** Docker Compose or Helm, on your own infrastructure.
-- **[Any Git host](https://cordy.ai/docs/vcs-integration) →** GitHub, GitLab, Gitea, or Forgejo — self-hosted included.
-- **[Workspaces](https://cordy.ai/docs/workspaces) →** Separate agents, issues, and settings per team.
-- **[Roles](https://cordy.ai/docs/members-roles) and [access scopes](https://cordy.ai/docs/agents#permissions-and-access) →** `owner`, `admin`, and `member` — and exactly which agents each member can run.
-- **[Security model](https://cordy.ai/docs/security-model) →** What an agent can reach, and what it can't.
-- **[Slack, Lark, DingTalk, WeCom, and Telegram](https://cordy.ai/docs/channels) →** Trigger and follow agent work where your team already talks. DingTalk, WeCom, and Telegram are [community-maintained](https://cordy.ai/docs/community-maintained).
-- **[Web, desktop, and mobile](https://cordy.ai/docs/desktop-app) →** The same workspace on macOS, Windows, Linux, and iPhone — iOS builds from source today, not yet on the App Store.
-- **[CLI and API](https://cordy.ai/docs/cli) →** Every surface is scriptable. Agents drive Cordy through the same CLI you do.
-
----
-
-## Get started
-
-No terminal required: sign up at **[cordy.ai](https://cordy.ai)**, or download
-**[Cordy Desktop](https://cordy.ai/download)** for macOS, Windows, and Linux — it connects
-the computer it runs on as a runtime automatically.
-
-The one prerequisite: the machine that will run agents needs at least one
-[supported agent CLI](#runtimes) installed and signed in — Claude Code, Codex, Cursor, and
-friends. Cordy drives them; it doesn't ship them.
-
-<details>
-<summary><b>Self-hosting the whole thing</b></summary>
-
-<br/>
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash -s -- --with-server
-cordy setup self-host
-```
-
-On Windows, set `$env:CORDY_MODE="with-server"`, then run the PowerShell installer:
-`irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex`.
-
-This pulls the official images from GHCR and requires Docker. See the
-[Self-Hosting Guide](SELF_HOSTING.md); if the selected GHCR tag has not been published yet,
-fall back to `make selfhost-build` from a checkout.
-
-</details>
-
----
-
-## Your first agent in five minutes
-
-**1. Sign in.** [cordy.ai](https://cordy.ai) in the browser, or open
-[Cordy Desktop](https://cordy.ai/download).
-
-**2. Connect a computer.** A *runtime* is any machine agents can work on — your laptop, or a
-cloud box. Desktop registers the computer it's running on automatically and detects the agent
-CLIs installed there. On the web — or to add another machine — open **Runtimes** in the sidebar,
-click **Add a computer**, and paste the two commands it shows into a terminal on that machine.
-
-**3. Create an agent.** Open **Agents** in the sidebar and click **New agent**. Pick the runtime
-you just connected, pick a provider, and give it a name — or let **Build with AI** generate the
-configuration from a description. That name is how it shows up on the board and in comments.
-
-**4. Assign it something.** File an issue and set the agent as assignee. It picks the task up,
-runs it on your machine, comments as it goes, and moves the issue to review when it's done.
-
-Full walkthrough: [Quickstart](https://cordy.ai/docs/cloud-quickstart) · [Tutorial](https://cordy.ai/docs/tutorial)
-
----
-
-## Runtimes
-
-Cordy does not ship a model. It drives the agent CLIs you already have installed and
-authenticated, so switching providers is a dropdown, not a migration.
-
-| Provider | CLI | Provider | CLI |
-| --- | --- | --- | --- |
-| Claude Code | `claude` | OpenAI Codex | `codex` |
-| Cursor Agent | `cursor-agent` | GitHub Copilot CLI | `copilot` |
-| OpenCode | `opencode` | OpenClaw | `openclaw` |
-| Hermes | `hermes` | Pi | `pi` |
-| Antigravity | `agy` | CodeBuddy | `codebuddy` |
-| DevEco Code | `deveco` | Grok | `grok` |
-| Kimi | `kimi` | Kiro CLI | `kiro-cli` |
-| Qoder CLI | `qodercli` | Qoder CN | `qoderclicn` |
-| Qwen Code | `qwen` | QwenPaw | `qwenpaw` |
-| Reasonix | `reasonix` | Trae CLI | `traecli` |
-| DeepSeek Harness | `dsh` | Oh-My-Pi | `omp` |
-| MiniMax Code | `mcode` | — | — |
-| Dim | `dim` | | |
-
-Installing and authenticating them: [Install an agent runtime](https://cordy.ai/docs/install-agent-runtime) ·
-[Providers](https://cordy.ai/docs/providers)
-
----
-
-## Documentation
-
-| I want to… | Start here |
-| --- | --- |
-| Get an agent doing something today | [Quickstart](https://cordy.ai/docs/cloud-quickstart) · [Tutorial](https://cordy.ai/docs/tutorial) |
-| Understand how the pieces fit | [Core concepts](https://cordy.ai/docs/concepts) · [How Cordy works](https://cordy.ai/docs/how-cordy-works) |
-| Create and configure agents | [Agents](https://cordy.ai/docs/agents) · [Create an agent](https://cordy.ai/docs/agents-create) · [Skills](https://cordy.ai/docs/skills) |
-| Get work to an agent | [Triggering agents](https://cordy.ai/docs/triggering-agents) · [Assigning issues](https://cordy.ai/docs/assigning-issues) · [Mentions](https://cordy.ai/docs/mentioning-agents) |
-| Connect my machines | [Daemon and runtimes](https://cordy.ai/docs/daemon-runtimes) · [Install an agent runtime](https://cordy.ai/docs/install-agent-runtime) |
-| Connect Git and chat tools | [GitHub](https://cordy.ai/docs/github-integration) · [Self-hosted Git](https://cordy.ai/docs/vcs-integration) · [Channels](https://cordy.ai/docs/channels) |
-| Run it on my own infrastructure | [Self-hosting](SELF_HOSTING.md) · [Security model](https://cordy.ai/docs/security-model) · [Environment variables](https://cordy.ai/docs/environment-variables) |
-| Script it | [CLI reference](https://cordy.ai/docs/cli) · [CLI and daemon guide](CLI_AND_DAEMON.md) · [Auth tokens](https://cordy.ai/docs/auth-tokens) |
-| Drive Cordy from Codex, Claude Code, or Cursor | [Cordy CLI skill](https://github.com/cordy-ai/cordy-cli) |
-| Work out why an agent is stuck | [Tasks](https://cordy.ai/docs/tasks) · [Troubleshooting](https://cordy.ai/docs/troubleshooting) |
-
----
+Patchbay does not bundle a model or coding agent. It coordinates compatible
+agent CLIs that you install and authenticate separately.
 
 ## Architecture
 
-```
-        Web  ·  Desktop (macOS/Windows/Linux)  ·  iOS
-                          │
-                          ▼
-   ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐
-   │   Next.js    │──>│  Go backend  │──>│   PostgreSQL     │
-   │   frontend   │<──│  (Chi + WS)  │<──│   (pgvector)     │
-   └──────────────┘   └──────┬───────┘   └──────────────────┘
-                             │  tasks over WebSocket
-                      ┌──────┴───────┐
-                      │ Agent daemon │  runs on your machine, next to your code
-                      └──────┬───────┘
-                             │  spawns
-                      ┌──────┴───────────────────────────────┐
-                      │  Claude Code · Codex · Cursor · …    │
-                      │  (any of the 23 runtimes above)      │
-                      └──────────────────────────────────────┘
+```text
+ Web · Desktop · iOS
+          │
+          ▼
+ Next.js / shared UI ───────► Rust API + WebSocket server
+                                      │
+                                      ▼
+                              PostgreSQL + pgvector
+                                      ▲
+                                      │ task events
+                               Local agent daemon
+                                      │
+                                      ▼
+                            Installed coding-agent CLI
 ```
 
-| Layer | Stack |
+| Layer | Current implementation |
 | --- | --- |
-| Web | Next.js 16 (App Router) |
-| Desktop | Electron, sharing the web UI packages |
-| Mobile | Expo / React Native (iOS) |
-| Backend | Go (Chi router, sqlc, gorilla/websocket) |
+| Web | Next.js App Router |
+| Desktop | Electron with shared web UI packages |
+| Mobile | Expo / React Native for iOS |
+| Backend | Rust, Axum, SQLx, and WebSocket |
 | Database | PostgreSQL 17 with pgvector |
-| Agent runtime | Local daemon executing any of the 23 agent CLIs above |
+| Local runtime | Rust CLI and daemon launching installed agent CLIs |
 
----
+The Rust server, CLI, migration runner, and backfill binaries are the default
+production entrypoints. Legacy Go source remains temporarily as migration
+evidence and for compatibility checks; its final removal is tracked in the
+[Go-to-Rust migration audit](tasks/go-to-rust-migration-audit.md).
 
-## Development
+## Run from source
 
-Contributors: start with the [Contributing Guide](CONTRIBUTING.md).
+### Prerequisites
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 22, [pnpm](https://pnpm.io/) 10.28.2, [Go](https://go.dev/) 1.26.6, [Docker](https://www.docker.com/)
+- Node.js 22+
+- pnpm 10.28.2
+- a stable Rust toolchain
+- Docker with Docker Compose for PostgreSQL
+
+Go is only needed for the temporary legacy compatibility suite while the final
+migration gate remains open.
 
 ```bash
+git clone https://github.com/alexj11324/Cordy.git patchbay
+cd patchbay
 make dev
 ```
 
-`make dev` auto-detects your environment (main checkout or worktree), creates the env file,
-installs dependencies, sets up the database, runs migrations, and starts every service.
+`make dev` creates the local environment when needed, installs dependencies,
+starts PostgreSQL, applies migrations, and launches the Rust backend and web
+client.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, worktree support, testing, and
-troubleshooting. The iOS client lives in [`apps/mobile/`](apps/mobile/) — its
-[README](apps/mobile/README.md) covers building it onto your own iPhone.
+For an explicit build:
 
-We release most weekdays, so `main` moves quickly — pull often.
+```bash
+make build
+pnpm build
+```
 
----
+## Documentation
 
-## Why "Cordy"?
+- [Self-hosting](SELF_HOSTING.md)
+- [CLI and agent daemon](CLI_AND_DAEMON.md)
+- [Contributing](CONTRIBUTING.md)
+- [Advanced self-hosting configuration](SELF_HOSTING_ADVANCED.md)
+- [Migration audit](tasks/go-to-rust-migration-audit.md)
 
-**Mul**tiplexed **I**nformation and **C**omputing **A**gent — a nod to Multics, the 1960s
-operating system that introduced time-sharing so several people could use one machine as if each
-had it to themselves.
-
-Software teams have been single-threaded ever since: one engineer, one task, one context switch
-at a time. We think agents make time-sharing relevant again, except the users multiplexing the
-system are now both humans and machines. A small team shouldn't feel small.
-
-The longer argument, and where we think this goes: **[VISION.md](VISION.md)**.
-
----
+Some internal package, executable, environment-variable, and storage names
+still use the previous product identifier. They are retained where changing a
+public or persisted contract would be unsafe and will be handled as a separate
+rename boundary.
 
 ## License
 
-[Cordy License](LICENSE) — the complete Apache License 2.0 text plus additional conditions
-covering hosted services, commercial embedding, and branding. Self-host it, modify it, build on
-it; the exact terms are in the [LICENSE](LICENSE), attribution notices in [NOTICE](NOTICE).
+Patchbay is distributed under the terms in [LICENSE](LICENSE). Attribution
+notices are in [NOTICE](NOTICE).
