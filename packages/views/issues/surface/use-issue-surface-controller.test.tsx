@@ -548,6 +548,7 @@ describe("useIssueSurfaceController", () => {
         revision: 9,
       }),
     ];
+    listIssues.mockResolvedValue({ issues: fixtureRows, total: fixtureRows.length });
     const { result } = renderHook(
       () =>
         useIssueSurfaceController({
