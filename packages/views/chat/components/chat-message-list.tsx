@@ -1,6 +1,14 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Virtuoso, type Components } from "react-virtuoso";
@@ -20,13 +28,13 @@ import {
 import {
   ChevronRight,
   ChevronDown,
-  Brain,
   AlertCircle,
   AlertTriangle,
   ArrowUpRight,
   Copy,
   RotateCw,
 } from "lucide-react";
+import { ThinkingOrb } from "thinking-orbs";
 import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@cordy/core/chat/queries";
 import { RichContent } from "../../rich-content";
@@ -49,14 +57,21 @@ import { OnboardingStarterCards } from "./onboarding-starter-cards";
 import { TaskStatusPill } from "./task-status-pill";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { formatElapsedMs } from "../lib/format";
-import { splitTimeline, extractCopyText } from "../lib/copy-text";
+import { extractCopyText } from "../lib/copy-text";
 import { stripChatQuickActionsProtocol } from "../lib/quick-actions";
-import { useT } from "../../i18n";
+import { ActorAvatar } from "../../common/actor-avatar";
+import { useLocale, useT } from "../../i18n";
 
 // ─── Public component ────────────────────────────────────────────────────
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
+  /** Identity shown in the LobeHub-style assistant message header. */
+  agentId?: string | null;
+  agentName?: string | null;
+  /** Identity shown in the right-aligned member message header. */
+  userId?: string | null;
+  userName?: string | null;
   /**
    * Server-authoritative pending-task snapshot. `null` / undefined means
    * no in-flight task — list renders without StatusPill.
@@ -117,7 +132,28 @@ interface ChatListContext {
  */
 type ChatRenderItem =
   | { key: string; kind: "message"; message: ChatMessage; taskId: string | null }
-  | { key: string; kind: "live"; taskId: string };
+  | { key: string; kind: "live"; taskId: string; createdAt?: string };
+
+const messageTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatMessageTime(
+  createdAt: string | undefined,
+  locale: string,
+): string | null {
+  if (!createdAt) return null;
+  const date = new Date(createdAt);
+  if (!Number.isFinite(date.getTime())) return null;
+
+  let formatter = messageTimeFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    messageTimeFormatters.set(locale, formatter);
+  }
+  return formatter.format(date);
+}
 
 /**
  * Row key for a persisted message. Assistant turns carrying a task_id key on
@@ -171,6 +207,10 @@ const LIST_COMPONENTS: Components<ChatRenderItem, ChatListContext> = {
 
 export function ChatMessageList({
   messages,
+  agentId,
+  agentName,
+  userId,
+  userName,
   pendingTask,
   availability,
   firstItemIndex = 0,
@@ -254,12 +294,17 @@ export function ChatMessageList({
         kind: "message" as const,
         message,
         taskId: message.task_id ?? null,
-      }));
+    }));
     if (hasLive && pendingTaskId) {
-      items.push({ key: `task:${pendingTaskId}`, kind: "live", taskId: pendingTaskId });
+      items.push({
+        key: `task:${pendingTaskId}`,
+        kind: "live",
+        taskId: pendingTaskId,
+        createdAt: pendingTask?.created_at,
+      });
     }
     return items;
-  }, [messages, hasLive, pendingTaskId]);
+  }, [messages, hasLive, pendingTask?.created_at, pendingTaskId]);
 
   const firstIndex = renderItems.length > 0 ? firstItemIndex : 0;
 
@@ -343,6 +388,10 @@ export function ChatMessageList({
           <div className={cn(CHAT_COLUMN, "py-2")}>
             <MessageBubble
               item={item}
+              agentId={agentId}
+              agentName={agentName}
+              userId={userId}
+              userName={userName}
               isPending={!!pendingTaskId && item.taskId === pendingTaskId}
               transformContent={transformContent}
               onQuickAction={onQuickAction}
@@ -405,9 +454,13 @@ function ChatSkeletonBody() {
 // every VISIBLE row via itemContent. Message objects are referentially
 // stable for unchanged messages and isPending is a boolean, so a shallow
 // memo skips reconciling rows the stream didn't touch — the persisted
-// history stays inert while only the live footer updates.
+// history stays inert while only the live row updates.
 const MessageBubble = memo(function MessageBubble({
   item,
+  agentId,
+  agentName,
+  userId,
+  userName,
   isPending,
   transformContent,
   onQuickAction,
@@ -418,6 +471,10 @@ const MessageBubble = memo(function MessageBubble({
   starterCardsMessageId,
 }: {
   item: ChatRenderItem;
+  agentId?: string | null;
+  agentName?: string | null;
+  userId?: string | null;
+  userName?: string | null;
   isPending: boolean;
   transformContent?: (content: string) => string;
   onQuickAction?: (action: ChatQuickAction) => void | Promise<unknown>;
@@ -432,13 +489,20 @@ const MessageBubble = memo(function MessageBubble({
   // so React reconciles rather than remounts at task completion.
   if (item.kind === "live") {
     return (
-      <AssistantMessage
-        taskId={item.taskId}
-        isPending={isPending}
-        transformContent={transformContent}
-        onQuickAction={onQuickAction}
-        quickActionsDisabled={quickActionsDisabled}
-      />
+      <ChatMessageShell
+        role="assistant"
+        actorId={agentId}
+        actorName={agentName}
+        createdAt={item.createdAt}
+      >
+        <AssistantMessage
+          taskId={item.taskId}
+          isPending={isPending}
+          transformContent={transformContent}
+          onQuickAction={onQuickAction}
+          quickActionsDisabled={quickActionsDisabled}
+        />
+      </ChatMessageShell>
     );
   }
 
@@ -446,7 +510,12 @@ const MessageBubble = memo(function MessageBubble({
 
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <ChatMessageShell
+        role="user"
+        actorId={userId}
+        actorName={userName}
+        createdAt={message.created_at}
+      >
         <div className="rounded-2xl bg-muted px-3.5 py-2 text-body max-w-[80%] break-words">
           {/* User messages are authored as markdown in ContentEditor, so they
            * render through the SAME RichContent as assistant replies and as
@@ -465,25 +534,99 @@ const MessageBubble = memo(function MessageBubble({
             className="mt-1.5"
           />
         </div>
-      </div>
+      </ChatMessageShell>
     );
   }
 
   return (
-    <AssistantMessage
-      taskId={message.task_id ?? null}
-      message={message}
-      isPending={isPending}
-      transformContent={transformContent}
-      onQuickAction={onQuickAction}
-      quickActionsDisabled={quickActionsDisabled}
-      onRegenerateQuickActions={onRegenerateQuickActions}
-      canRegenerateQuickActions={message.id === latestAssistantMessageId}
-      quickActionsPending={quickActionsPendingMessageId === message.id}
-      showStarterCards={message.id === starterCardsMessageId}
-    />
+    <ChatMessageShell
+      role="assistant"
+      actorId={agentId}
+      actorName={agentName}
+      createdAt={message.created_at}
+    >
+      <AssistantMessage
+        taskId={message.task_id ?? null}
+        message={message}
+        isPending={isPending}
+        transformContent={transformContent}
+        onQuickAction={onQuickAction}
+        quickActionsDisabled={quickActionsDisabled}
+        onRegenerateQuickActions={onRegenerateQuickActions}
+        canRegenerateQuickActions={message.id === latestAssistantMessageId}
+        quickActionsPending={quickActionsPendingMessageId === message.id}
+        showStarterCards={message.id === starterCardsMessageId}
+      />
+    </ChatMessageShell>
   );
 });
+
+/**
+ * LobeHub-style message geometry: identity and time form a light header, the
+ * member reply stays a compact right-aligned bubble, and the assistant reply
+ * occupies the full document column below its avatar rather than a card.
+ */
+function ChatMessageShell({
+  role,
+  actorId,
+  actorName,
+  createdAt,
+  children,
+}: {
+  role: "user" | "assistant";
+  actorId?: string | null;
+  actorName?: string | null;
+  createdAt?: string;
+  children: ReactNode;
+}) {
+  const locale = useLocale();
+  const isUser = role === "user";
+  const time = formatMessageTime(createdAt, locale);
+  const showHeader = !!actorId || !!actorName || !!time;
+
+  return (
+    <article
+      className={cn(
+        "group/message flex w-full flex-col gap-2",
+        isUser ? "items-end pl-9" : "items-start",
+      )}
+    >
+      {showHeader && (
+        <header
+          className={cn(
+            "flex min-h-6 items-center gap-2",
+            isUser && "flex-row-reverse",
+          )}
+        >
+          {actorId && (
+            <ActorAvatar
+              actorType={isUser ? "member" : "agent"}
+              actorId={actorId}
+              size="md"
+              enableHoverCard
+            />
+          )}
+          {actorName && (
+            <span className="text-caption font-medium text-foreground">
+              {actorName}
+            </span>
+          )}
+          {time && (
+            <time
+              dateTime={createdAt}
+              className="text-caption text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100"
+            >
+              {time}
+            </time>
+          )}
+        </header>
+      )}
+      <div className={cn("max-w-full overflow-hidden", !isUser && "w-full")}>
+        {children}
+      </div>
+    </article>
+  );
+}
 
 /**
  * Assistant turn body — renders BOTH the in-flight (live) and the persisted
@@ -1005,19 +1148,49 @@ function FailureBubble({
   );
 }
 
-// ─── Timeline: outer process fold + final text (Conductor-style) ─────────
-//
-// splitTimeline (lib/copy-text.ts) carves the items into:
-//   preface — text before the first thinking/tool item
-//   middle  — first → last non-text item (inclusive, may sandwich text)
-//   final   — text after the last non-text item
-//
-// We render preface + final outside an outer Collapsible ("X steps") that
-// wraps middle. The inner row Collapsibles (ThinkingRow / ToolCallRow /
-// ToolResultRow) are unchanged — clicking them toggles independently of
-// the outer fold. Copy mirrors what's visible when the outer fold is
-// closed: preface + final, never middle. See extractCopyText for the
-// authoritative copy logic.
+// ─── Timeline: document text + inline reasoning ──────────────────────────
+
+type VisibleTimelineBlock = {
+  seq: number;
+  type: "text" | "thinking" | "error";
+  content: string;
+};
+
+/**
+ * Tool payloads are execution diagnostics, not chat prose. Keep them in the
+ * task-message cache for operator surfaces, but remove them from this product
+ * surface. Text stays in chronological document flow, while thinking fragments
+ * on either side of hidden tool events merge into one stable inline block.
+ */
+function getVisibleTimelineBlocks(
+  items: ChatTimelineItem[],
+): VisibleTimelineBlock[] {
+  const blocks: VisibleTimelineBlock[] = [];
+  let crossedHiddenTool = false;
+
+  for (const item of items) {
+    if (item.type === "tool_use" || item.type === "tool_result") {
+      crossedHiddenTool = true;
+      continue;
+    }
+
+    const content = item.content?.trim() ? item.content : "";
+    if (!content) continue;
+
+    const previous = blocks.at(-1);
+    if (previous && item.type !== "error" && previous.type === item.type) {
+      blocks[blocks.length - 1] = {
+        ...previous,
+        content: `${previous.content}${crossedHiddenTool ? "\n\n" : ""}${content}`,
+      };
+    } else {
+      blocks.push({ seq: item.seq, type: item.type, content });
+    }
+    crossedHiddenTool = false;
+  }
+
+  return blocks;
+}
 
 function TimelineView({
   items,
@@ -1030,248 +1203,106 @@ function TimelineView({
   attachments?: import("@cordy/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
-  const { preface, middle, final } = splitTimeline(items);
+  const blocks = getVisibleTimelineBlocks(items);
 
   return (
-    <>
-      {preface.length > 0 && (
-        <RichContent
-          content={preface.map((t) => t.content ?? "").join("")}
-          attachments={attachments}
-          density="compact"
-          phase={phase}
-          className="leading-relaxed"
-        />
-      )}
-      {middle.length > 0 && (
-        <OuterProcessFold
-          items={middle}
-          isStreaming={!!isStreaming}
-          attachments={attachments}
-          phase={phase}
-        />
-      )}
-      {final.length > 0 && (
-        <RichContent
-          content={final.map((t) => t.content ?? "").join("")}
-          attachments={attachments}
-          density="compact"
-          phase={phase}
-          className="leading-relaxed"
-        />
-      )}
-    </>
+    <div className="space-y-3">
+      {blocks.map((block) => {
+        if (block.type === "thinking") {
+          return (
+            <ThinkingBlock
+              key={`thinking:${block.seq}`}
+              content={block.content}
+              isStreaming={!!isStreaming}
+              phase={phase}
+            />
+          );
+        }
+        if (block.type === "error") {
+          return <ErrorRow key={`error:${block.seq}`} content={block.content} />;
+        }
+        return (
+          <RichContent
+            key={`text:${block.seq}`}
+            content={block.content}
+            attachments={attachments}
+            density="compact"
+            phase={phase}
+            className="leading-relaxed"
+          />
+        );
+      })}
+    </div>
   );
 }
 
-function OuterProcessFold({
-  items,
+function ThinkingBlock({
+  content,
   isStreaming,
-  attachments,
   phase = "settled",
 }: {
-  items: ChatTimelineItem[];
+  content: string;
   isStreaming?: boolean;
-  attachments?: import("@cordy/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
   const { t } = useT("chat");
-  // Open while the task streams (so the user watches progress), collapsed once
-  // it settles. This used to fall out of a remount: the live TimelineView was
-  // torn down and the persisted one mounted closed. The row is now stable
-  // across that handoff (MUL-4922) — which is the point, it keeps Mermaid and
-  // HTML blocks alive — so the collapse has to be expressed directly.
   const [open, setOpen] = useState(!!isStreaming);
   const wasStreaming = useRef(!!isStreaming);
+
+  // The live row and persisted reply share one React identity. Express the
+  // LobeHub-style live-open → settled-closed transition directly so expensive
+  // rich content stays mounted during the handoff.
   useEffect(() => {
     if (wasStreaming.current && !isStreaming) setOpen(false);
     wasStreaming.current = !!isStreaming;
   }, [isStreaming]);
-  const stepCount = items.length;
+
+  const label = isStreaming
+    ? t(($) => $.message_list.reasoning_active)
+    : t(($) => $.message_list.reasoning_complete);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground transition-colors">
-        {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-        <span>{t(($) => $.message_list.process_steps, { count: stepCount })}</span>
+      <CollapsibleTrigger className="group/reasoning flex items-center gap-2 rounded-md text-caption text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface-raised">
+          <ThinkingOrb
+            aria-label={label}
+            aria-hidden="true"
+            paused={!isStreaming}
+            size={20}
+            state="breathing"
+          />
+        </span>
+        <span className={cn(isStreaming && "animate-chat-text-shimmer")}>
+          {label}
+        </span>
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "size-3 transition-transform",
+            open && "rotate-90",
+          )}
+        />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1 rounded-lg border bg-muted/20 p-2 space-y-0.5">
-          {items.map((item) =>
-            item.type === "text" ? (
-              <MiddleTextRow
-                key={item.seq}
-                item={item}
-                attachments={attachments}
-                phase={phase}
-              />
-            ) : (
-              <ItemRow key={item.seq} item={item} />
-            ),
-          )}
+        <div className="ml-8 mt-1 max-h-[min(40vh,20rem)] overflow-y-auto pr-2 text-caption text-muted-foreground">
+          <RichContent
+            content={content}
+            density="compact"
+            phase={phase}
+            className="leading-relaxed text-muted-foreground [&_*]:text-muted-foreground"
+          />
         </div>
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
-// Intermediate text segment rendered inside the outer fold. Visually
-// down-shifted (xs / muted) so it reads as part of the agent's process,
-// not the final answer — the final answer renders below the fold at full
-// prose size.
-function MiddleTextRow({
-  item,
-  attachments,
-  phase = "settled",
-}: {
-  item: ChatTimelineItem;
-  attachments?: import("@cordy/core/types").Attachment[];
-  phase?: "streaming" | "settled";
-}) {
+function ErrorRow({ content }: { content: string }) {
   return (
-    <div className="py-0.5 text-caption text-muted-foreground">
-      <RichContent
-        content={item.content ?? ""}
-        attachments={attachments}
-        density="compact"
-        phase={phase}
-      />
-    </div>
-  );
-}
-
-// ─── Individual item rows ────────────────────────────────────────────────
-
-function ItemRow({ item }: { item: ChatTimelineItem }) {
-  switch (item.type) {
-    case "tool_use":
-      return <ToolCallRow item={item} />;
-    case "tool_result":
-      return <ToolResultRow item={item} />;
-    case "thinking":
-      return <ThinkingRow item={item} />;
-    case "error":
-      return <ErrorRow item={item} />;
-    default:
-      return null;
-  }
-}
-
-function shortenPath(p: string): string {
-  const parts = p.split("/");
-  if (parts.length <= 3) return p;
-  return ".../" + parts.slice(-2).join("/");
-}
-
-function getToolSummary(item: ChatTimelineItem): string {
-  if (!item.input) return "";
-  const inp = item.input as Record<string, string>;
-  if (inp.query) return inp.query;
-  if (inp.file_path) return shortenPath(inp.file_path);
-  if (inp.path) return shortenPath(inp.path);
-  if (inp.pattern) return inp.pattern;
-  if (inp.description) return String(inp.description);
-  if (inp.command) {
-    const cmd = String(inp.command);
-    return cmd.length > 100 ? cmd.slice(0, 100) + "..." : cmd;
-  }
-  if (inp.prompt) {
-    const p = String(inp.prompt);
-    return p.length > 100 ? p.slice(0, 100) + "..." : p;
-  }
-  if (inp.skill) return String(inp.skill);
-  for (const v of Object.values(inp)) {
-    if (typeof v === "string" && v.length > 0 && v.length < 120) return v;
-  }
-  return "";
-}
-
-function ToolCallRow({ item }: { item: ChatTimelineItem }) {
-  const [open, setOpen] = useState(false);
-  const summary = getToolSummary(item);
-  const hasInput = item.input && Object.keys(item.input).length > 0;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded px-1 -mx-1 py-0.5 text-caption hover:bg-accent/30 transition-colors">
-        <ChevronRight
-          className={cn(
-            "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-90",
-            !hasInput && "invisible",
-          )}
-        />
-        <span className="font-medium text-foreground shrink-0">{item.tool}</span>
-        {summary && <span className="truncate text-muted-foreground">{summary}</span>}
-      </CollapsibleTrigger>
-      {hasInput && (
-        <CollapsibleContent>
-          <pre className="ml-[18px] mt-0.5 max-h-32 overflow-auto rounded bg-muted/50 p-2 text-caption text-muted-foreground whitespace-pre-wrap break-all">
-            {JSON.stringify(item.input, null, 2)}
-          </pre>
-        </CollapsibleContent>
-      )}
-    </Collapsible>
-  );
-}
-
-function ToolResultRow({ item }: { item: ChatTimelineItem }) {
-  const { t } = useT("chat");
-  const [open, setOpen] = useState(false);
-  const output = item.output ?? "";
-  if (!output) return null;
-
-  const preview = output.length > 120 ? output.slice(0, 120) + "..." : output;
-  const labelPrefix = item.tool
-    ? t(($) => $.message_list.tool_result_named, { tool: item.tool })
-    : t(($) => $.message_list.tool_result_unnamed);
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex w-full items-start gap-1.5 rounded px-1 -mx-1 py-0.5 text-caption hover:bg-accent/30 transition-colors">
-        <ChevronRight
-          className={cn("h-3 w-3 shrink-0 text-muted-foreground transition-transform mt-0.5", open && "rotate-90")}
-        />
-        <span className="text-muted-foreground truncate">
-          {labelPrefix}{preview}
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <pre className="ml-[18px] mt-0.5 max-h-40 overflow-auto rounded bg-muted/50 p-2 text-caption text-muted-foreground whitespace-pre-wrap break-all">
-          {output.length > 4000 ? output.slice(0, 4000) + "\n... (truncated)" : output}
-        </pre>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-function ThinkingRow({ item }: { item: ChatTimelineItem }) {
-  const [open, setOpen] = useState(false);
-  const text = item.content ?? "";
-  if (!text) return null;
-
-  const preview = text.length > 150 ? text.slice(0, 150) + "..." : text;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex w-full items-start gap-1.5 rounded px-1 -mx-1 py-0.5 text-caption hover:bg-accent/30 transition-colors">
-        <Brain className="h-3 w-3 shrink-0 text-faint-foreground mt-0.5" />
-        <span className="text-muted-foreground italic truncate">{preview}</span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <pre className="ml-[18px] mt-0.5 max-h-40 overflow-auto rounded bg-muted/30 p-2 text-caption text-muted-foreground whitespace-pre-wrap break-words">
-          {text}
-        </pre>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-function ErrorRow({ item }: { item: ChatTimelineItem }) {
-  return (
-    <div className="flex items-start gap-1.5 px-1 -mx-1 py-0.5 text-caption">
+    <div className="flex items-start gap-1.5 py-0.5 text-caption">
       <AlertCircle className="h-3 w-3 shrink-0 text-destructive mt-0.5" />
-      <span className="text-destructive">{item.content}</span>
+      <span className="text-destructive">{content}</span>
     </div>
   );
 }
