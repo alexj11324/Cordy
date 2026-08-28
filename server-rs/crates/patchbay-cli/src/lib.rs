@@ -1115,7 +1115,8 @@ mod tests {
 
     #[test]
     fn issue_get_parser_defaults_to_json_and_accepts_only_one_reference() {
-        let cli = Cli::try_parse_from(["patchbay", "issue", "get", "CORD-18"]).expect("issue get CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "get", "CORD-18"]).expect("issue get CLI");
         match cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Get { id, output },
@@ -1128,7 +1129,8 @@ mod tests {
         assert!(Cli::try_parse_from(["patchbay", "issue", "get"]).is_err());
         assert!(Cli::try_parse_from(["patchbay", "issue", "get", "A-1", "B-2"]).is_err());
         assert!(
-            Cli::try_parse_from(["patchbay", "issue", "get", "CORD-18", "--output", "table"]).is_ok()
+            Cli::try_parse_from(["patchbay", "issue", "get", "CORD-18", "--output", "table"])
+                .is_ok()
         );
     }
 
@@ -1208,7 +1210,8 @@ mod tests {
         environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
         environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
         environment.set("PATCHBAY_TOKEN", "token-1");
-        let cli = Cli::try_parse_from(["patchbay", "issue", "get", "CORD-18"]).expect("issue get CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "get", "CORD-18"]).expect("issue get CLI");
         let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect("issue get");
@@ -1372,7 +1375,8 @@ mod tests {
     #[test]
     fn issue_pull_request_attach_parser_requires_url_and_matches_go_flags() {
         assert!(
-            Cli::try_parse_from(["patchbay", "issue", "pull-request", "attach", "CORD-18"]).is_err()
+            Cli::try_parse_from(["patchbay", "issue", "pull-request", "attach", "CORD-18"])
+                .is_err()
         );
         let cli = Cli::try_parse_from([
             "patchbay",
@@ -1617,9 +1621,10 @@ mod tests {
         environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
         environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
         environment.set("PATCHBAY_TOKEN", "token-1");
-        let cli =
-            Cli::try_parse_from(["patchbay", "issue", "children", "CORD-18", "--output", "json"])
-                .expect("children CLI");
+        let cli = Cli::try_parse_from([
+            "patchbay", "issue", "children", "CORD-18", "--output", "json",
+        ])
+        .expect("children CLI");
         let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect("children");
@@ -1642,7 +1647,10 @@ mod tests {
             "assignee_type": "agent",
             "assignee_id": "agent-1"
         })];
-        let actors = IssueActorNames(HashMap::from([("agent:agent-1".into(), "PatchbayBot".into())]));
+        let actors = IssueActorNames(HashMap::from([(
+            "agent:agent-1".into(),
+            "PatchbayBot".into(),
+        )]));
         let table = format_issue_children_table(&children, false, &actors);
         assert!(table.starts_with("STAGE"));
         assert!(table.contains("CORD-19"));
@@ -2091,8 +2099,9 @@ mod tests {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
-        let cli = Cli::try_parse_from(["patchbay", "issue", "update", "CORD-18", "--priority", "P1"])
-            .expect("update CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "update", "CORD-18", "--priority", "P1"])
+                .expect("update CLI");
         let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect_err("priority is rejected locally");
@@ -2259,8 +2268,8 @@ mod tests {
         assert_eq!(body["project_id"], Value::Null);
         assert_eq!(body["parent_issue_id"], Value::Null);
 
-        let no_changes =
-            Cli::try_parse_from(["patchbay", "issue", "update", "CORD-18"]).expect("no changes CLI");
+        let no_changes = Cli::try_parse_from(["patchbay", "issue", "update", "CORD-18"])
+            .expect("no changes CLI");
         let error = run_with_input(
             &no_changes,
             &environment,
@@ -2503,10 +2512,10 @@ mod tests {
     #[test]
     fn issue_reorder_parser_enforces_exactly_one_real_target() {
         assert!(Cli::try_parse_from(["patchbay", "issue", "reorder", "CORD-18"]).is_err());
-        assert!(
-            Cli::try_parse_from(["patchbay", "issue", "reorder", "CORD-18", "--top", "--bottom"])
-                .is_err()
-        );
+        assert!(Cli::try_parse_from([
+            "patchbay", "issue", "reorder", "CORD-18", "--top", "--bottom"
+        ])
+        .is_err());
         let cli = Cli::try_parse_from([
             "patchbay", "issue", "reorder", "CORD-18", "--before", "CORD-1", "--output", "table",
         ])
@@ -2651,8 +2660,9 @@ mod tests {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
-        let cli = Cli::try_parse_from(["patchbay", "issue", "reorder", "CORD-18", "--bottom=false"])
-            .expect("false bool reaches runtime");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "reorder", "CORD-18", "--bottom=false"])
+                .expect("false bool reaches runtime");
         let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect_err("false selector");
@@ -3230,8 +3240,9 @@ mod tests {
 
     #[test]
     fn issue_usage_parser_and_number_format_match_go() {
-        let cli = Cli::try_parse_from(["patchbay", "issue", "usage", "CORD-18", "--output", "json"])
-            .expect("usage CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "usage", "CORD-18", "--output", "json"])
+                .expect("usage CLI");
         let args = issue_usage_args(&cli);
         assert_eq!(args.issue_id, "CORD-18");
         assert_eq!(args.output, OutputFormat::Json);
@@ -3270,7 +3281,8 @@ mod tests {
         environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
         environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
         environment.set("PATCHBAY_TOKEN", "token-1");
-        let cli = Cli::try_parse_from(["patchbay", "issue", "usage", "CORD-18"]).expect("usage CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "usage", "CORD-18"]).expect("usage CLI");
         let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect("issue usage");
@@ -3310,8 +3322,9 @@ mod tests {
         environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
         environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
         environment.set("PATCHBAY_TOKEN", "token-1");
-        let cli = Cli::try_parse_from(["patchbay", "issue", "rerun", "CORD-18", "--output", "table"])
-            .expect("rerun CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "issue", "rerun", "CORD-18", "--output", "table"])
+                .expect("rerun CLI");
         assert_eq!(issue_rerun_args(&cli).issue_id, "CORD-18");
         let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
@@ -3324,7 +3337,8 @@ mod tests {
     #[test]
     fn label_parser_and_tables_match_go_registry_contract() {
         let create = Cli::try_parse_from([
-            "patchbay", "label", "create", "--name", "Bug", "--color", "#ff0000", "--output", "table",
+            "patchbay", "label", "create", "--name", "Bug", "--color", "#ff0000", "--output",
+            "table",
         ])
         .expect("label create CLI");
         let Command::Label(LabelArgs {

@@ -131,8 +131,8 @@ pub(super) async fn run_attachment_upload(
     };
     let data =
         fs::read(&read_path).with_context(|| format!("read file {}", path.to_string_lossy()))?;
-    let request_timeout =
-        http_timeout(environment.raw("PATCHBAY_HTTP_TIMEOUT")).max(std::time::Duration::from_secs(60));
+    let request_timeout = http_timeout(environment.raw("PATCHBAY_HTTP_TIMEOUT"))
+        .max(std::time::Duration::from_secs(60));
     let client = new_api_client(cli, environment)?.with_request_timeout(request_timeout);
     let attachment = client
         .upload_chat_attachment(data, &path_text, task_id)
@@ -168,8 +168,8 @@ pub(super) async fn run_attachment_download(
     attachment_id: &str,
     output_dir: &Path,
 ) -> Result<RunOutput> {
-    let request_timeout =
-        http_timeout(environment.raw("PATCHBAY_HTTP_TIMEOUT")).max(std::time::Duration::from_secs(60));
+    let request_timeout = http_timeout(environment.raw("PATCHBAY_HTTP_TIMEOUT"))
+        .max(std::time::Duration::from_secs(60));
     let client = new_api_client(cli, environment)?.with_request_timeout(request_timeout);
     let attachment: Value = client
         .get_json(&format!("/api/attachments/{attachment_id}"))
@@ -238,7 +238,10 @@ pub(super) enum AttachmentCommand {
     Upload {
         #[arg(value_name = "PATH")]
         path: PathBuf,
-        #[arg(long, help = "Chat task id to attach to (defaults to PATCHBAY_TASK_ID)")]
+        #[arg(
+            long,
+            help = "Chat task id to attach to (defaults to PATCHBAY_TASK_ID)"
+        )]
         task: Option<String>,
     },
 }

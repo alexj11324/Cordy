@@ -16,7 +16,10 @@ async fn user_profile_get_is_a_real_configured_api_command() {
         .expect("config");
     let (server_url, server) = test_server().await;
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-    environment.set("PATCHBAY_SERVER_URL", format!("{server_url}/ws?discard=yes"));
+    environment.set(
+        "PATCHBAY_SERVER_URL",
+        format!("{server_url}/ws?discard=yes"),
+    );
     environment.set("PATCHBAY_TOKEN", "token-from-env");
     environment.set("PATCHBAY_WORKSPACE_ID", "workspace-from-env");
     let cli = Cli::try_parse_from(["patchbay", "user", "profile", "get", "--output", "json"])
@@ -72,9 +75,14 @@ fn profile_update_text_sources_match_go_semantics() {
     let cwd = tempfile::tempdir().expect("temp cwd");
     let environment = Environment::for_test(home.path().into(), cwd.path().into());
 
-    let stdin_cli =
-        Cli::try_parse_from(["patchbay", "user", "profile", "update", "--description-stdin"])
-            .expect("stdin CLI");
+    let stdin_cli = Cli::try_parse_from([
+        "patchbay",
+        "user",
+        "profile",
+        "update",
+        "--description-stdin",
+    ])
+    .expect("stdin CLI");
     let mut input = Cursor::new(b"first line\nsecond \\n literal\n".to_vec());
     assert_eq!(
         resolve_profile_description(update_args(&stdin_cli), &environment, &mut input)
@@ -144,7 +152,8 @@ fn profile_update_rejects_ambiguous_or_empty_input() {
     .to_string()
     .contains("mutually exclusive"));
 
-    let missing = Cli::try_parse_from(["patchbay", "user", "profile", "update"]).expect("missing CLI");
+    let missing =
+        Cli::try_parse_from(["patchbay", "user", "profile", "update"]).expect("missing CLI");
     assert!(resolve_profile_description(
         update_args(&missing),
         &environment,

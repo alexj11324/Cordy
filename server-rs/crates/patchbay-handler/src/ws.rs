@@ -19,8 +19,11 @@ use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{ConnectInfo, Extension, Query, State, WebSocketUpgrade};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use futures_util::{SinkExt, StreamExt};
 use patchbay_auth::cookie::{AUTH_COOKIE_NAME, LEGACY_AUTH_COOKIE_NAME};
-use patchbay_auth::disabled_users::{is_temporarily_disabled_user, is_temporarily_disabled_user_id};
+use patchbay_auth::disabled_users::{
+    is_temporarily_disabled_user, is_temporarily_disabled_user_id,
+};
 use patchbay_auth::jwt::hash_token;
 use patchbay_db::queries::{member, personal_access_token, workspace};
 use patchbay_middleware::auth::decode_jwt_claims;
@@ -29,7 +32,6 @@ use patchbay_realtime::hub::PatResolver as _;
 use patchbay_realtime::hub::{ClientHandle, Hub, ScopeAuthorizer};
 use patchbay_realtime::metrics::M;
 use patchbay_service::task_service::TaskService;
-use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 
 use crate::error::error_response;
@@ -72,7 +74,8 @@ impl ScopeAuthorizer for DbScopeAuthorizer {
                 match scope_type {
                     SCOPE_TASK => {
                         let Some(task) =
-                            patchbay_db::queries::agent::get_agent_task(&tasks.pool, scope_id).await?
+                            patchbay_db::queries::agent::get_agent_task(&tasks.pool, scope_id)
+                                .await?
                         else {
                             return Ok(false);
                         };
@@ -606,7 +609,8 @@ impl patchbay_realtime::hub::PatResolver for DbPatResolver {
                     .await
                     .ok()??;
                 let user_id = pat.user_id.to_string();
-                let ttl = patchbay_auth::pat_cache::ttl_for_expiry(chrono::Utc::now(), pat.expires_at);
+                let ttl =
+                    patchbay_auth::pat_cache::ttl_for_expiry(chrono::Utc::now(), pat.expires_at);
                 cache.set(&hash, &user_id, ttl).await;
                 // Cache miss = first WS auth in this TTL window; refresh
                 // last_used_at without blocking the handshake (Go does `go …`).

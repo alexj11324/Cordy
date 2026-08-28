@@ -73,7 +73,13 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
     ),
     ProviderDescriptor {
         minimum_version: Some("0.100.0"),
-        ..provider!("codex", "codex", "PATCHBAY_CODEX", "Codex", "codex app-server")
+        ..provider!(
+            "codex",
+            "codex",
+            "PATCHBAY_CODEX",
+            "Codex",
+            "codex app-server"
+        )
     },
     ProviderDescriptor {
         minimum_version: Some("1.0.0"),
@@ -113,7 +119,13 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
         "OpenClaw",
         "openclaw agent (json)"
     ),
-    provider!("hermes", "hermes", "PATCHBAY_HERMES", "Hermes", "hermes acp"),
+    provider!(
+        "hermes",
+        "hermes",
+        "PATCHBAY_HERMES",
+        "Hermes",
+        "hermes acp"
+    ),
     provider!("pi", "pi", "PATCHBAY_PI", "Pi", "pi (json mode)"),
     ProviderDescriptor {
         resume_rejection_undetectable: true,
@@ -199,7 +211,13 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
     ProviderDescriptor {
         minimum_version: Some("0.1.2"),
         model_selection_supported: false,
-        ..provider!("mcode", "mcode", "PATCHBAY_MCODE", "MiniMax Code", "mcode acp")
+        ..provider!(
+            "mcode",
+            "mcode",
+            "PATCHBAY_MCODE",
+            "MiniMax Code",
+            "mcode acp"
+        )
     },
     ProviderDescriptor {
         minimum_version: Some("0.3.10"),

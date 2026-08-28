@@ -39,8 +39,8 @@ fn row_fingerprint(channel_type: &str, config: &serde_json::Value) -> String {
 #[async_trait]
 impl InstallationStore for PostgresChannelStore {
     async fn list_active_installations(&self) -> anyhow::Result<Vec<Installation>> {
-        let rows =
-            patchbay_db::queries::channel::list_all_active_channel_installations(&self.pool).await?;
+        let rows = patchbay_db::queries::channel::list_all_active_channel_installations(&self.pool)
+            .await?;
         Ok(rows
             .into_iter()
             .map(|row| Installation {
@@ -70,10 +70,14 @@ impl LeaseStore for PostgresChannelStore {
     }
 
     async fn release(&self, arg: ReleaseLeaseParams) -> Result<(), LeaseError> {
-        patchbay_db::queries::channel::release_channel_ws_lease(&self.pool, arg.id, Some(&arg.token))
-            .await
-            .map(|_| ())
-            .map_err(LeaseError::Backend)
+        patchbay_db::queries::channel::release_channel_ws_lease(
+            &self.pool,
+            arg.id,
+            Some(&arg.token),
+        )
+        .await
+        .map(|_| ())
+        .map_err(LeaseError::Backend)
     }
 }
 

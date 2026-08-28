@@ -23,7 +23,9 @@ use patchbay_db::queries::autopilot::{
     get_autopilot_trigger, update_autopilot_last_run_at, update_autopilot_run_skipped,
     update_autopilot_run_terminal_with_quota, UpdateAutopilotRunTerminalWithQuotaRow,
 };
-use patchbay_db::queries::autopilot::{create_autopilot_run, get_autopilot_run_by_quota_reservation};
+use patchbay_db::queries::autopilot::{
+    create_autopilot_run, get_autopilot_run_by_quota_reservation,
+};
 use patchbay_db::queries::autopilot_quota::{
     consume_autopilot_quota_reservation, create_autopilot_quota_reservation,
     ensure_autopilot_quota_period, get_autopilot_quota_period,
@@ -790,7 +792,8 @@ impl AutopilotService {
 
     pub async fn recover_partial_autopilot_run(&self, run_id: Uuid) -> anyhow::Result<bool> {
         let rows =
-            patchbay_db::queries::autopilot::recover_partial_autopilot_run(&self.pool, run_id).await?;
+            patchbay_db::queries::autopilot::recover_partial_autopilot_run(&self.pool, run_id)
+                .await?;
         Ok(rows.unwrap_or(0) > 0)
     }
 
@@ -1170,7 +1173,10 @@ impl AutopilotService {
     /// Only create_issue runs link through issue_id (their linked issue is
     /// origin_type=autopilot by construction), so one query both identifies
     /// an in-flight run and bails ordinary issue/chat task failures.
-    pub async fn sync_run_from_linked_issue_task(&self, task: &patchbay_db::models::AgentTaskQueue) {
+    pub async fn sync_run_from_linked_issue_task(
+        &self,
+        task: &patchbay_db::models::AgentTaskQueue,
+    ) {
         if task.autopilot_run_id.is_some() || task.issue_id.is_none() || task.status != "failed" {
             return;
         }

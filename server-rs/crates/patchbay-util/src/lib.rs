@@ -2,8 +2,8 @@
 //!
 //! Keep this crate dependency-light: it is linked by everything.
 
-pub mod channel_media;
 pub mod branding;
+pub mod channel_media;
 pub mod logging;
 pub mod secretbox;
 
@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 pub fn install_rustls_crypto_provider() -> anyhow::Result<()> {
     rustls::crypto::ring::default_provider()
         .install_default()
-        .map_err(|_| anyhow::anyhow!("a rustls crypto provider was installed before Patchbay startup"))
+        .map_err(|_| {
+            anyhow::anyhow!("a rustls crypto provider was installed before Patchbay startup")
+        })
 }
 
 /// Typed ULID wrapper.

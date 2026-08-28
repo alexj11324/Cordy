@@ -229,7 +229,8 @@ fn github_repo_refs(resources: &[Value]) -> Vec<Value> {
 }
 
 async fn list_project_resources(state: &DaemonClaimServices, project_id: Uuid) -> Vec<Value> {
-    match patchbay_db::queries::project_resource::list_project_resources(&state.pool, project_id).await
+    match patchbay_db::queries::project_resource::list_project_resources(&state.pool, project_id)
+        .await
     {
         Ok(rows) => rows
             .into_iter()
@@ -1122,12 +1123,13 @@ pub(crate) async fn build_claimed_task_response(
                 if !m.content.trim().is_empty() {
                     parts.push(m.content.clone());
                 }
-                if let Ok(atts) = patchbay_db::queries::attachment::list_attachments_by_chat_message(
-                    &state.pool,
-                    m.id,
-                    cs.workspace_id,
-                )
-                .await
+                if let Ok(atts) =
+                    patchbay_db::queries::attachment::list_attachments_by_chat_message(
+                        &state.pool,
+                        m.id,
+                        cs.workspace_id,
+                    )
+                    .await
                 {
                     let mut metas = Vec::with_capacity(atts.len());
                     for a in atts {
@@ -1229,7 +1231,8 @@ pub(crate) async fn build_claimed_task_response(
 
     // ---- Quick-create tasks --------------------------------------------------
     if has_quick_create {
-        if let Some(qc) = patchbay_service::task_service::TaskService::parse_quick_create_context(task)
+        if let Some(qc) =
+            patchbay_service::task_service::TaskService::parse_quick_create_context(task)
         {
             obj.insert(
                 "quick_create_prompt".into(),

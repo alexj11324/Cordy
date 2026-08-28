@@ -13,7 +13,8 @@ use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-const DEFAULT_DATABASE_URL: &str = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
+const DEFAULT_DATABASE_URL: &str =
+    "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
 
 #[derive(Debug, Parser)]
 #[command(

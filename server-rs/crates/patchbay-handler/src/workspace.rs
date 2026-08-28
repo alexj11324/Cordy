@@ -874,8 +874,12 @@ async fn revoke_and_remove_member(
     archived_by: Uuid,
 ) -> anyhow::Result<MemberRevocation> {
     let mut transaction = state.pool.begin().await?;
-    patchbay_db::queries::subscriber::lock_subscriber_writes(&mut *transaction, workspace_id, user_id)
-        .await?;
+    patchbay_db::queries::subscriber::lock_subscriber_writes(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
     let runtimes = patchbay_db::queries::runtime::list_agent_runtimes_by_owner(
         &mut *transaction,
         workspace_id,
@@ -1570,7 +1574,9 @@ async fn delete_workspace(
     );
     step!(
         "lock usage rollup",
-        patchbay_db::queries::workspace_delete::lock_task_usage_rollup_for_workspace_delete(&mut *tx)
+        patchbay_db::queries::workspace_delete::lock_task_usage_rollup_for_workspace_delete(
+            &mut *tx
+        )
     );
     step!(
         "delete tasks",
@@ -1603,7 +1609,10 @@ async fn delete_workspace(
     );
     step!(
         "delete chat messages",
-        patchbay_db::queries::workspace_delete::delete_workspace_chat_messages(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_chat_messages(
+            &mut *tx,
+            workspace_id
+        )
     );
     step!(
         "delete communication roots",
@@ -1618,7 +1627,10 @@ async fn delete_workspace(
     );
     step!(
         "delete issue roots",
-        patchbay_db::queries::workspace_delete::delete_workspace_issue_roots(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_issue_roots(
+            &mut *tx,
+            workspace_id
+        )
     );
     step!(
         "delete issue statuses",
@@ -1640,11 +1652,17 @@ async fn delete_workspace(
     );
     step!(
         "delete pull requests",
-        patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
+            &mut *tx,
+            workspace_id
+        )
     );
     step!(
         "delete integrations",
-        patchbay_db::queries::workspace_delete::delete_workspace_connections(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_connections(
+            &mut *tx,
+            workspace_id
+        )
     );
     step!(
         "delete squads and skills",
@@ -1655,7 +1673,10 @@ async fn delete_workspace(
     );
     step!(
         "delete plugin data",
-        patchbay_db::queries::workspace_delete::delete_workspace_plugin_data(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_plugin_data(
+            &mut *tx,
+            workspace_id
+        )
     );
     step!(
         "delete agents",

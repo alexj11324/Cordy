@@ -5,8 +5,8 @@ use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
-use patchbay_redis::RecoveringConnection;
 use ipnetwork::IpNetwork;
+use patchbay_redis::RecoveringConnection;
 use std::net::IpAddr;
 use std::time::Duration;
 

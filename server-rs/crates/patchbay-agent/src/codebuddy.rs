@@ -125,7 +125,8 @@ impl Backend for CodebuddyBackend {
         let mut argv = prefix.args;
         argv.extend(build_codebuddy_args(&options));
 
-        let mut mcp_file = write_managed_temp(options.mcp_config.as_ref(), "patchbay-codebuddy-mcp-")?;
+        let mut mcp_file =
+            write_managed_temp(options.mcp_config.as_ref(), "patchbay-codebuddy-mcp-")?;
         if let Some(file) = mcp_file.as_ref() {
             let path = file.path().to_str().ok_or_else(|| {
                 AgentError::InvalidConfig("CodeBuddy MCP path is not valid UTF-8".to_string())

@@ -301,7 +301,8 @@ impl UpdateExecutor {
         download_timeout: Duration,
     ) -> Result<String> {
         let tag = normalize_release_tag(target_version);
-        let endpoint = format!("https://api.github.com/repos/patchbay-ai/patchbay/releases/tags/{tag}");
+        let endpoint =
+            format!("https://api.github.com/repos/patchbay-ai/patchbay/releases/tags/{tag}");
         let response = self
             .metadata_client
             .get(endpoint)

@@ -319,7 +319,10 @@ impl ProviderExecutionPlan {
             );
         }
         if !task.autopilot_id.is_empty() {
-            values.insert("PATCHBAY_AUTOPILOT_ID".to_string(), task.autopilot_id.clone());
+            values.insert(
+                "PATCHBAY_AUTOPILOT_ID".to_string(),
+                task.autopilot_id.clone(),
+            );
         }
         if !task.quick_create_prompt.is_empty() {
             values.insert("PATCHBAY_QUICK_CREATE_TASK_ID".to_string(), task.id.clone());
@@ -954,7 +957,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(bound.child_env.get("PATCHBAY_TOKEN"), Some("mat_task_secret"));
+        assert_eq!(
+            bound.child_env.get("PATCHBAY_TOKEN"),
+            Some("mat_task_secret")
+        );
         assert!(
             !bound
                 .child_env
@@ -1066,7 +1072,10 @@ mod tests {
                 PreparedEnvironmentInputs::default(),
             )
             .unwrap();
-        assert_eq!(bound.child_env.get("PATCHBAY_AUTOPILOT_RUN_ID"), Some("run-1"));
+        assert_eq!(
+            bound.child_env.get("PATCHBAY_AUTOPILOT_RUN_ID"),
+            Some("run-1")
+        );
         assert_eq!(
             bound.child_env.get("PATCHBAY_QUICK_CREATE_TASK_ID"),
             Some("task-1")
@@ -1092,7 +1101,8 @@ mod tests {
 
         let mut plan =
             ProviderExecutionPlan::build(&config(), &claim, &target(), inputs()).unwrap();
-        plan.set_task_temp_dir("/tmp/patchbay-task-private").unwrap();
+        plan.set_task_temp_dir("/tmp/patchbay-task-private")
+            .unwrap();
         let bound = plan
             .bind_environment(
                 &Environment {

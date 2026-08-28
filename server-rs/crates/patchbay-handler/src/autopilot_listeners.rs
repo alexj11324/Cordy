@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use patchbay_events::{Bus, Event};
 use patchbay_service::autopilot::AutopilotService;
-use futures_util::FutureExt;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;

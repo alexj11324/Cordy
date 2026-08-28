@@ -395,8 +395,9 @@ async fn squad_delete_matches_go_json_and_table_output_contracts() {
     assert!(table.stdout.is_empty());
     assert_eq!(table.stderr, "Squad squad-1 deleted.\n");
 
-    let json_cli = Cli::try_parse_from(["patchbay", "squad", "delete", "squad-1", "--output", "json"])
-        .expect("squad delete JSON CLI");
+    let json_cli =
+        Cli::try_parse_from(["patchbay", "squad", "delete", "squad-1", "--output", "json"])
+            .expect("squad delete JSON CLI");
     let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("delete squad JSON");

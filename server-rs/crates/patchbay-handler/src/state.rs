@@ -507,7 +507,12 @@ pub struct HandlerState {
 
 impl HandlerState {
     pub fn new(pool: sqlx::PgPool, pat_cache: PatCache, hub: Option<Arc<Hub>>) -> Self {
-        Self::new_with_analytics(pool, pat_cache, hub, Arc::new(patchbay_analytics::NoopClient))
+        Self::new_with_analytics(
+            pool,
+            pat_cache,
+            hub,
+            Arc::new(patchbay_analytics::NoopClient),
+        )
     }
 
     pub fn new_with_analytics(
@@ -1020,7 +1025,8 @@ impl HandlerState {
     }
 
     pub fn with_rate_limit_trusted_proxies(mut self, raw: Option<&str>) -> Self {
-        let trusted = patchbay_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
+        let trusted =
+            patchbay_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
         self.auth_rate_limit.trusted_proxies = trusted.clone();
         self.auth_verify_rate_limit.trusted_proxies = trusted;
         self

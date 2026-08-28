@@ -506,7 +506,8 @@ pub(crate) fn load_config(
         std::env::var("PATCHBAY_GC_ENABLED").as_deref(),
         Ok("false") | Ok("0")
     );
-    let gc_interval = crate::helpers::duration_from_env("PATCHBAY_GC_INTERVAL", DEFAULT_GC_INTERVAL)?;
+    let gc_interval =
+        crate::helpers::duration_from_env("PATCHBAY_GC_INTERVAL", DEFAULT_GC_INTERVAL)?;
     let gc_ttl = crate::helpers::duration_from_env("PATCHBAY_GC_TTL", DEFAULT_GC_TTL)?;
     let gc_completed_task_ttl = crate::helpers::duration_from_env(
         "PATCHBAY_GC_COMPLETED_TASK_TTL",
@@ -528,7 +529,8 @@ pub(crate) fn load_config(
         "PATCHBAY_GC_HERMES_SESSION_TTL",
         DEFAULT_GC_HERMES_SESSION_TTL,
     )?;
-    let gc_repo_ttl = crate::helpers::duration_from_env("PATCHBAY_GC_REPO_TTL", DEFAULT_GC_REPO_TTL)?;
+    let gc_repo_ttl =
+        crate::helpers::duration_from_env("PATCHBAY_GC_REPO_TTL", DEFAULT_GC_REPO_TTL)?;
     let gc_repo_maintenance_enabled =
         crate::helpers::bool_from_env("PATCHBAY_GC_REPO_MAINTENANCE_ENABLED", true);
     let gc_artifact_patterns = patterns_from_env(
@@ -555,7 +557,8 @@ pub(crate) fn load_config(
     // Auto-reload is deliberately NOT gated on autoUpdateEnabled ("don't pull
     // new versions" vs "follow the binary I replaced myself" are different
     // concerns).
-    let mut auto_reload_enabled = crate::helpers::bool_from_env("PATCHBAY_DAEMON_AUTO_RELOAD", true);
+    let mut auto_reload_enabled =
+        crate::helpers::bool_from_env("PATCHBAY_DAEMON_AUTO_RELOAD", true);
     if overrides.disable_auto_reload {
         auto_reload_enabled = false;
     }

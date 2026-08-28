@@ -40,8 +40,14 @@ pub(crate) const OUTCOME: &str = "outcome";
 /// [`validate_business_metric_labels`] can guard future edits against
 /// high-cardinality accidents.
 pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
-    ("patchbay_agent_task_enqueued_total", &[SOURCE, RUNTIME_MODE]),
-    ("patchbay_agent_task_dispatched_total", &[SOURCE, RUNTIME_MODE]),
+    (
+        "patchbay_agent_task_enqueued_total",
+        &[SOURCE, RUNTIME_MODE],
+    ),
+    (
+        "patchbay_agent_task_dispatched_total",
+        &[SOURCE, RUNTIME_MODE],
+    ),
     (
         "patchbay_agent_task_started_total",
         &[SOURCE, RUNTIME_MODE, PROVIDER],
@@ -83,12 +89,24 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
         "patchbay_llm_unpriced_tokens_total",
         &[PROVIDER, MODEL_ALIAS, TOKEN_TYPE],
     ),
-    ("patchbay_llm_request_total", &[PROVIDER, MODEL, RUNTIME_MODE]),
-    ("patchbay_task_queued_expired_total", &[SOURCE, RUNTIME_MODE]),
+    (
+        "patchbay_llm_request_total",
+        &[PROVIDER, MODEL, RUNTIME_MODE],
+    ),
+    (
+        "patchbay_task_queued_expired_total",
+        &[SOURCE, RUNTIME_MODE],
+    ),
     ("patchbay_task_lease_expired_total", &[SOURCE]),
     ("patchbay_chat_claim_session_fallback_needed_total", &[]),
-    ("patchbay_chat_claim_session_fallback_result_total", &[RESULT]),
-    ("patchbay_chat_claim_resume_query_duration_seconds", &[QUERY]),
+    (
+        "patchbay_chat_claim_session_fallback_result_total",
+        &[RESULT],
+    ),
+    (
+        "patchbay_chat_claim_resume_query_duration_seconds",
+        &[QUERY],
+    ),
     // PR3 funnel / community / commercial.
     ("patchbay_signup_total", &[SIGNUP_SOURCE]),
     ("patchbay_workspace_created_total", &[SOURCE]),
@@ -105,7 +123,10 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ("patchbay_squad_created_total", &[]),
     ("patchbay_autopilot_created_total", &[CADENCE]),
     ("patchbay_issue_executed_total", &[SOURCE]),
-    ("patchbay_runtime_registered_total", &[RUNTIME_MODE, PROVIDER]),
+    (
+        "patchbay_runtime_registered_total",
+        &[RUNTIME_MODE, PROVIDER],
+    ),
     ("patchbay_runtime_ready_total", &[RUNTIME_MODE, PROVIDER]),
     ("patchbay_runtime_ready_seconds", &[RUNTIME_MODE, PROVIDER]),
     (
@@ -126,7 +147,10 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ("patchbay_webhook_delivery_total", &[PROVIDER, STATUS]),
     ("patchbay_webhook_rate_limited_total", &[GATE]),
     ("patchbay_email_rate_limited_total", &[ACTION, GATE]),
-    ("patchbay_github_event_received_total", &[EVENT_KIND, ACTION]),
+    (
+        "patchbay_github_event_received_total",
+        &[EVENT_KIND, ACTION],
+    ),
     ("patchbay_github_pr_review_total", &[RESULT]),
     ("patchbay_cloudruntime_request_total", &[OP, STATUS]),
     ("patchbay_cloudruntime_request_duration_seconds", &[OP]),
@@ -136,14 +160,23 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ("patchbay_entitlement_cache_total", &[OUTCOME]),
     ("patchbay_entitlement_refresh_total", &[OUTCOME]),
     ("patchbay_entitlement_refresh_duration_seconds", &[OUTCOME]),
-    ("patchbay_entitlement_decision_total", &[GATE, ACTION, REASON]),
+    (
+        "patchbay_entitlement_decision_total",
+        &[GATE, ACTION, REASON],
+    ),
     ("patchbay_entitlement_version_regression_total", &[SOURCE]),
     (
         "patchbay_autopilot_quota_decision_total",
         &[ACTION, SOURCE, RESULT],
     ),
-    ("patchbay_autopilot_failure_monitor_total", &[ACTION, OUTCOME]),
-    ("patchbay_autopilot_quota_reconciler_total", &[ACTION, OUTCOME]),
+    (
+        "patchbay_autopilot_failure_monitor_total",
+        &[ACTION, OUTCOME],
+    ),
+    (
+        "patchbay_autopilot_quota_reconciler_total",
+        &[ACTION, OUTCOME],
+    ),
 ];
 
 /// High-cardinality label names that must never appear on a business metric:

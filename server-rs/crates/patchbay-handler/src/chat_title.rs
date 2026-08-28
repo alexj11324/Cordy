@@ -2,9 +2,9 @@
 
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use patchbay_db::models::ChatSession;
 use patchbay_db::queries::chat;
-use futures_util::FutureExt;
 use serde_json::json;
 use uuid::Uuid;
 

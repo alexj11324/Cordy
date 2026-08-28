@@ -31,7 +31,8 @@ fn agent_read_parser_matches_go_registry() {
     assert_eq!(output, OutputFormat::Json);
     assert!(include_archived);
 
-    let get = Cli::try_parse_from(["patchbay", "agent", "get", "agent-123"]).expect("agent get CLI");
+    let get =
+        Cli::try_parse_from(["patchbay", "agent", "get", "agent-123"]).expect("agent get CLI");
     let Command::Agent(AgentArgs {
         command: AgentCommand::Get { id, output },
     }) = get.command
@@ -408,9 +409,15 @@ async fn agent_update_puts_only_changed_fields_and_supports_mcp_clear() {
 
 #[tokio::test]
 async fn agent_update_rejects_no_changes_and_does_not_expose_custom_env() {
-    assert!(
-        Cli::try_parse_from(["patchbay", "agent", "update", "agent-1", "--custom-env", "{}"]).is_err()
-    );
+    assert!(Cli::try_parse_from([
+        "patchbay",
+        "agent",
+        "update",
+        "agent-1",
+        "--custom-env",
+        "{}"
+    ])
+    .is_err());
     let home = tempfile::tempdir().expect("temp home");
     let cwd = tempfile::tempdir().expect("temp cwd");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
@@ -467,8 +474,9 @@ async fn agent_lifecycle_and_tasks_match_go_requests_and_outputs() {
         ("archive", "Agent archived: Builder (agent-1)\n"),
         ("restore", "Agent restored: Builder (agent-1)\n"),
     ] {
-        let cli = Cli::try_parse_from(["patchbay", "agent", command, "agent-1", "--output", "table"])
-            .expect("agent lifecycle CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "agent", command, "agent-1", "--output", "table"])
+                .expect("agent lifecycle CLI");
         let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect("agent lifecycle request");
@@ -590,7 +598,14 @@ async fn agent_avatar_rejects_missing_bad_and_oversized_files_before_api_calls()
             "unsupported file format",
         ),
         (
-            vec!["patchbay", "agent", "avatar", "agent-1", "--file", "large.png"],
+            vec![
+                "patchbay",
+                "agent",
+                "avatar",
+                "agent-1",
+                "--file",
+                "large.png",
+            ],
             "file too large",
         ),
     ] {

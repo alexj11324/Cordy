@@ -21,9 +21,15 @@ fn autopilot_read_parser_matches_go_registry() {
         "--full-id",
     ])
     .expect("autopilot list CLI");
-    let trigger =
-        Cli::try_parse_from(["patchbay", "autopilot", "trigger", "abcd", "--output", "table"])
-            .expect("autopilot trigger CLI");
+    let trigger = Cli::try_parse_from([
+        "patchbay",
+        "autopilot",
+        "trigger",
+        "abcd",
+        "--output",
+        "table",
+    ])
+    .expect("autopilot trigger CLI");
     let Command::Autopilot(AutopilotArgs {
         command: AutopilotCommand::Trigger { id, output },
     }) = trigger.command
@@ -328,7 +334,10 @@ async fn autopilot_create_rejects_missing_and_invalid_required_values() {
     environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
 
     for (argv, expected) in [
-        (vec!["patchbay", "autopilot", "create"], "--title is required"),
+        (
+            vec!["patchbay", "autopilot", "create"],
+            "--title is required",
+        ),
         (
             vec!["patchbay", "autopilot", "create", "--title", "Daily"],
             "--agent is required (agent name or ID)",
@@ -510,8 +519,8 @@ async fn autopilot_update_preserves_clear_and_no_change_semantics() {
     assert!(body["project_id"].is_null());
     assert_eq!(body["subscribers"], serde_json::json!([]));
 
-    let no_change =
-        Cli::try_parse_from(["patchbay", "autopilot", "update", ID]).expect("autopilot no-change CLI");
+    let no_change = Cli::try_parse_from(["patchbay", "autopilot", "update", ID])
+        .expect("autopilot no-change CLI");
     let error = run_with_input(&no_change, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("no-change update rejected");
@@ -620,8 +629,9 @@ async fn autopilot_trigger_and_runs_match_go_requests_and_outputs() {
     environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
     environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
 
-    let trigger = Cli::try_parse_from(["patchbay", "autopilot", "trigger", ID, "--output", "table"])
-        .expect("autopilot trigger CLI");
+    let trigger =
+        Cli::try_parse_from(["patchbay", "autopilot", "trigger", ID, "--output", "table"])
+            .expect("autopilot trigger CLI");
     let output = run_with_input(&trigger, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("trigger autopilot");
@@ -943,9 +953,14 @@ async fn autopilot_trigger_update_and_delete_resolve_prefixes_and_mutate() {
         }))
     );
 
-    let delete =
-        Cli::try_parse_from(["patchbay", "autopilot", "trigger-delete", AUTOPILOT_ID, "bbbb"])
-            .expect("trigger-delete CLI");
+    let delete = Cli::try_parse_from([
+        "patchbay",
+        "autopilot",
+        "trigger-delete",
+        AUTOPILOT_ID,
+        "bbbb",
+    ])
+    .expect("trigger-delete CLI");
     let output = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("delete trigger");
@@ -1156,8 +1171,8 @@ async fn autopilot_prefix_errors_match_go_resolver_contract() {
         "resolve autopilot: resolve autopilot: expected a full UUID or at least 4 hex characters, got \"abc\""
     );
 
-    let ambiguous =
-        Cli::try_parse_from(["patchbay", "autopilot", "get", "abcd"]).expect("ambiguous prefix CLI");
+    let ambiguous = Cli::try_parse_from(["patchbay", "autopilot", "get", "abcd"])
+        .expect("ambiguous prefix CLI");
     let error = run_with_input(&ambiguous, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("ambiguous prefix rejected");

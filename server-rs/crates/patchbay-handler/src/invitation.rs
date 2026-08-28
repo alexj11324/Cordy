@@ -1092,8 +1092,14 @@ mod tests {
         let events =
             acceptance_metric_events(user_id, workspace_id, &invitation, true, &onboarded_user);
         assert_eq!(events.len(), 2);
-        assert_eq!(events[0].name, patchbay_analytics::EVENT_TEAM_INVITE_ACCEPTED);
-        assert_eq!(events[1].name, patchbay_analytics::EVENT_ONBOARDING_COMPLETED);
+        assert_eq!(
+            events[0].name,
+            patchbay_analytics::EVENT_TEAM_INVITE_ACCEPTED
+        );
+        assert_eq!(
+            events[1].name,
+            patchbay_analytics::EVENT_ONBOARDING_COMPLETED
+        );
     }
 
     #[test]

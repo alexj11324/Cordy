@@ -306,7 +306,10 @@ mod tests {
             assert!(accepts_inbound_type(&message_type, true));
             assert!(!accepts_inbound_type(&message_type, false));
         }
-        assert!(accepts_inbound_type(&patchbay_channel::MsgType::text(), false));
+        assert!(accepts_inbound_type(
+            &patchbay_channel::MsgType::text(),
+            false
+        ));
         assert!(!accepts_inbound_type(
             &patchbay_channel::MsgType::unknown(),
             true

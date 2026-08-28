@@ -324,7 +324,8 @@ pub(super) async fn run_agent_avatar(
     file: Option<&Path>,
     output: OutputFormat,
 ) -> Result<RunOutput> {
-    let timeout = http_timeout(environment.raw("PATCHBAY_HTTP_TIMEOUT")).max(Duration::from_secs(60));
+    let timeout =
+        http_timeout(environment.raw("PATCHBAY_HTTP_TIMEOUT")).max(Duration::from_secs(60));
     let client = new_api_client(cli, environment)?.with_request_timeout(timeout);
     let file = file.context("--file is required")?;
     let file = if file.is_absolute() {

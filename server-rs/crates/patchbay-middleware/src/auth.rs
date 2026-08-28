@@ -22,15 +22,15 @@ use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
-use patchbay_auth::cookie::{
-    verify_csrf_signature, AUTH_COOKIE_NAME, LEGACY_AUTH_COOKIE_NAME,
+use ipnetwork::IpNetwork;
+use patchbay_auth::cookie::{verify_csrf_signature, AUTH_COOKIE_NAME, LEGACY_AUTH_COOKIE_NAME};
+use patchbay_auth::disabled_users::{
+    is_temporarily_disabled_user, TEMPORARILY_DISABLED_USER_ERROR,
 };
-use patchbay_auth::disabled_users::{is_temporarily_disabled_user, TEMPORARILY_DISABLED_USER_ERROR};
 use patchbay_auth::jwt::{hash_token, jwt_secret};
 use patchbay_auth::pat_cache::{ttl_for_expiry, PatCache};
 use patchbay_db::queries::user;
 use patchbay_db::queries::{personal_access_token, task_token};
-use ipnetwork::IpNetwork;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 

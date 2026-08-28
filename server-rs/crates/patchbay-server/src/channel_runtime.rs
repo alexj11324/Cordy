@@ -9,7 +9,9 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use patchbay_channel_engine::lease::{AcquireLeaseParams, LeaseError, LeaseStore, ReleaseLeaseParams};
+use patchbay_channel_engine::lease::{
+    AcquireLeaseParams, LeaseError, LeaseStore, ReleaseLeaseParams,
+};
 use patchbay_channel_engine::postgres_store::PostgresChannelStore;
 use patchbay_channel_engine::resolvers::{
     IssueCreator, RouterIssueCreateParams, RouterIssueOutcome, SessionReader, TaskEnqueuer,
@@ -306,9 +308,8 @@ fn configure_slack(
     let decrypt: Arc<patchbay_slack::config::Decrypter> =
         Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
 
-    let typing = Arc::new(patchbay_slack::typing_indicator::TypingIndicatorManager::new(
-        state.pool.clone(),
-    ));
+    let typing =
+        Arc::new(patchbay_slack::typing_indicator::TypingIndicatorManager::new(state.pool.clone()));
     // Registration order is observable: clear the processing reaction
     // before the terminal outbound subscriber posts the reply.
     typing.register(&state.bus, Some(decrypt.clone()), outbound_tasks.clone());
@@ -325,9 +326,9 @@ fn configure_slack(
         Arc::new(patchbay_slack::media_ingest::SlackMediaResolver::new(
             Some(decrypt.clone()),
             storage.clone(),
-            Arc::new(patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
-                state.pool.clone(),
-            )),
+            Arc::new(
+                patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(state.pool.clone()),
+            ),
         )) as Arc<dyn patchbay_channel_engine::resolvers::MediaResolver>
     });
     router.register(
@@ -378,7 +379,9 @@ fn configure_dingtalk(
     let secret_box = match channel_secret_box("PATCHBAY_DINGTALK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
-            tracing::info!("dingtalk channel runtime disabled: PATCHBAY_DINGTALK_SECRET_KEY not set");
+            tracing::info!(
+                "dingtalk channel runtime disabled: PATCHBAY_DINGTALK_SECRET_KEY not set"
+            );
             return;
         }
         Err(error) => {
@@ -410,9 +413,9 @@ fn configure_dingtalk(
             client.clone(),
             Some(decrypt.clone()),
             storage.clone(),
-            Arc::new(patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
-                state.pool.clone(),
-            )),
+            Arc::new(
+                patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(state.pool.clone()),
+            ),
         )) as Arc<dyn patchbay_channel_engine::resolvers::MediaResolver>
     });
     router.register(
@@ -452,7 +455,9 @@ fn configure_telegram(
     let secret_box = match channel_secret_box("PATCHBAY_TELEGRAM_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
-            tracing::info!("telegram channel runtime disabled: PATCHBAY_TELEGRAM_SECRET_KEY not set");
+            tracing::info!(
+                "telegram channel runtime disabled: PATCHBAY_TELEGRAM_SECRET_KEY not set"
+            );
             return;
         }
         Err(error) => {
@@ -700,7 +705,8 @@ fn configure_wecom(
     let relay_tasks = relay
         .as_ref()
         .map(|relay| {
-            let handler: Arc<dyn patchbay_wecom::outbound_relay::RelayEventHandler> = outbound.clone();
+            let handler: Arc<dyn patchbay_wecom::outbound_relay::RelayEventHandler> =
+                outbound.clone();
             relay.start(handler, cancel.clone())
         })
         .unwrap_or_default();
@@ -806,12 +812,13 @@ fn configure_lark(
         .lark_callback_base_url
         .clone()
         .unwrap_or_default();
-    let api: Arc<dyn patchbay_lark::client::ApiClient> = Arc::new(
-        patchbay_lark::http_client::HttpApiClient::new(patchbay_lark::http_client::HttpClientConfig {
-            base_url: http_base_url.clone(),
-            ..Default::default()
-        }),
-    );
+    let api: Arc<dyn patchbay_lark::client::ApiClient> =
+        Arc::new(patchbay_lark::http_client::HttpApiClient::new(
+            patchbay_lark::http_client::HttpClientConfig {
+                base_url: http_base_url.clone(),
+                ..Default::default()
+            },
+        ));
     let endpoint = Arc::new(patchbay_lark::ws_endpoint::HttpConnectionTokenFetcher::new(
         patchbay_lark::ws_endpoint::HttpConnectionTokenConfig {
             base_url: callback_base_url.clone(),
@@ -902,11 +909,13 @@ fn configure_lark(
             binding_path: String::new(),
         },
     );
-    let typing = Arc::new(patchbay_lark::typing_indicator::TypingIndicatorManager::new(
-        api.clone(),
-        installations.clone(),
-        store.clone(),
-    ));
+    let typing = Arc::new(
+        patchbay_lark::typing_indicator::TypingIndicatorManager::new(
+            api.clone(),
+            installations.clone(),
+            store.clone(),
+        ),
+    );
     let patcher = Arc::new(patchbay_lark::outbound::LarkPatcher::new(
         state.pool.clone(),
         Some(installations.clone()),
@@ -921,9 +930,9 @@ fn configure_lark(
             api.clone(),
             installations.clone(),
             storage.clone(),
-            Arc::new(patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
-                state.pool.clone(),
-            )),
+            Arc::new(
+                patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(state.pool.clone()),
+            ),
         )) as Arc<dyn patchbay_channel_engine::resolvers::MediaResolver>
     });
     let session = Arc::new(patchbay_channel_engine::session::ChatSession::new(
@@ -958,7 +967,9 @@ fn configure_lark(
     Ok(Some(backfill_handle))
 }
 
-fn channel_secret_box(env_name: &str) -> anyhow::Result<Option<patchbay_util::secretbox::SecretBox>> {
+fn channel_secret_box(
+    env_name: &str,
+) -> anyhow::Result<Option<patchbay_util::secretbox::SecretBox>> {
     if std::env::var(env_name)
         .unwrap_or_default()
         .trim()
@@ -1069,9 +1080,10 @@ impl RuntimeLeaseStore {
             LeaseBackendSettings::Redis { url, namespace } => {
                 let client = redis::Client::open(url)?;
                 let conn = client.get_connection_manager().await?;
-                let store =
-                    patchbay_channel_engine::redis_lease_store::RedisLeaseStore::new(conn, &namespace)
-                        .map_err(anyhow::Error::from)?;
+                let store = patchbay_channel_engine::redis_lease_store::RedisLeaseStore::new(
+                    conn, &namespace,
+                )
+                .map_err(anyhow::Error::from)?;
                 tokio::time::timeout(Duration::from_secs(5), store.ready())
                     .await
                     .map_err(|_| anyhow::anyhow!("Redis lease readiness timed out"))??;
@@ -1270,7 +1282,9 @@ impl IssueCreator for ChannelServices {
         &self,
         p: RouterIssueCreateParams,
     ) -> anyhow::Result<RouterIssueOutcome> {
-        use patchbay_service::issue_service::{IssueCreateError, IssueCreateOpts, IssueCreateParams};
+        use patchbay_service::issue_service::{
+            IssueCreateError, IssueCreateOpts, IssueCreateParams,
+        };
         let result = self
             .issues
             .create(
@@ -1318,7 +1332,8 @@ impl IssueCreator for ChannelServices {
     }
 
     async fn publish_attachments_changed(&self, issue_id: Uuid, actor_id: Uuid) {
-        if let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue(&self.pool, issue_id).await {
+        if let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue(&self.pool, issue_id).await
+        {
             self.issues
                 .publish_attachments_changed(&issue, actor_id)
                 .await;
@@ -1372,10 +1387,12 @@ impl SessionReader for ChannelServices {
     }
 
     async fn get_workspace_issue_prefix(&self, id: Uuid) -> anyhow::Result<String> {
-        Ok(patchbay_db::queries::workspace::get_workspace(&self.pool, id)
-            .await?
-            .map(|workspace| workspace.issue_prefix)
-            .unwrap_or_default())
+        Ok(
+            patchbay_db::queries::workspace::get_workspace(&self.pool, id)
+                .await?
+                .map(|workspace| workspace.issue_prefix)
+                .unwrap_or_default(),
+        )
     }
 }
 
@@ -1528,7 +1545,9 @@ mod tests {
             .await
             .expect("production Lark factory builds its WebSocket channel");
         assert_eq!(channel.r#type(), lark);
-        assert!(channel.capabilities().has(patchbay_channel::Capability::TEXT));
+        assert!(channel
+            .capabilities()
+            .has(patchbay_channel::Capability::TEXT));
 
         // The backfill is ancillary to this assembly contract and must not
         // outlive the test's intentionally disconnected pool.
@@ -1665,7 +1684,9 @@ mod tests {
             .await
             .expect("production Slack factory decrypts and builds the channel");
         assert_eq!(channel.r#type(), slack);
-        assert!(channel.capabilities().has(patchbay_channel::Capability::TEXT));
+        assert!(channel
+            .capabilities()
+            .has(patchbay_channel::Capability::TEXT));
         assert!(channel
             .capabilities()
             .has(patchbay_channel::Capability::THREAD_REPLY));
@@ -1734,7 +1755,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(channel.r#type(), telegram);
-        assert_eq!(patchbay_telegram::DEFAULT_API_BASE, "https://api.telegram.org");
+        assert_eq!(
+            patchbay_telegram::DEFAULT_API_BASE,
+            "https://api.telegram.org"
+        );
 
         match original {
             Some(value) => std::env::set_var(KEY_ENV, value),
@@ -1819,7 +1843,8 @@ mod tests {
         let _temp = TempStorageDir(root.clone());
         let storage = Arc::new(ChannelStorage {
             inner: Arc::new(
-                patchbay_handler::attachment_storage::LocalStorage::new(root, String::new()).unwrap(),
+                patchbay_handler::attachment_storage::LocalStorage::new(root, String::new())
+                    .unwrap(),
             ),
         });
         let handle = start_media_reconciler(&state, Some(storage), None).unwrap();

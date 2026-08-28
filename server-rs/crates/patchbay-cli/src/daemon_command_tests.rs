@@ -176,8 +176,14 @@ fn daemon_restart_reuses_start_flags_and_rejects_foreground() {
 
 #[test]
 fn daemon_probe_runtimes_is_hidden_but_parses_as_a_local_command() {
-    let cli = Cli::try_parse_from(["patchbay", "--profile", "staging", "daemon", "probe-runtimes"])
-        .expect("probe-runtimes command");
+    let cli = Cli::try_parse_from([
+        "patchbay",
+        "--profile",
+        "staging",
+        "daemon",
+        "probe-runtimes",
+    ])
+    .expect("probe-runtimes command");
     assert_eq!(cli.profile, "staging");
     assert!(matches!(
         cli.command,

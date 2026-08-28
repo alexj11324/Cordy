@@ -1187,9 +1187,10 @@ mod tests {
             .await
             .expect("apply");
         assert!(!applied, "mismatched-head snapshot must be discarded");
-        let got = patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
-            .await
-            .expect("get pr");
+        let got =
+            patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
+                .await
+                .expect("get pr");
         let got = got.expect("row exists");
         assert!(
             got.snapshot_head_sha.is_empty() && got.api_mergeable.is_none(),
@@ -1227,10 +1228,11 @@ mod tests {
             .await
             .expect("apply");
         assert!(applied, "matching-head snapshot must apply");
-        let got = patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
-            .await
-            .expect("get pr")
-            .expect("row exists");
+        let got =
+            patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
+                .await
+                .expect("get pr")
+                .expect("row exists");
         assert_eq!(got.snapshot_head_sha, "B");
         assert_eq!(got.api_mergeable.as_deref(), Some("MERGEABLE"));
         assert_eq!(got.checks_rollup_state.as_deref(), Some("FAILURE"));
@@ -1256,10 +1258,11 @@ mod tests {
             .await
             .expect("apply");
         assert!(!applied, "late response for old head must be discarded");
-        let got = patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
-            .await
-            .expect("get pr")
-            .expect("row exists");
+        let got =
+            patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
+                .await
+                .expect("get pr")
+                .expect("row exists");
         assert_eq!(got.snapshot_head_sha, "B");
         assert_eq!(got.api_mergeable.as_deref(), Some("MERGEABLE"));
         assert_eq!(
@@ -1444,10 +1447,11 @@ mod tests {
             .expect("new-head snapshot was not applied")
             .expect("applied signal");
 
-        let got = patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
-            .await
-            .expect("get pr")
-            .expect("row exists");
+        let got =
+            patchbay_db::queries::github_snapshot::get_git_hub_pull_request_by_id(&pool, pr.id)
+                .await
+                .expect("get pr")
+                .expect("row exists");
         assert_eq!(got.snapshot_head_sha, "B");
         assert_eq!(got.api_mergeable.as_deref(), Some("CONFLICTING"));
         assert_eq!(

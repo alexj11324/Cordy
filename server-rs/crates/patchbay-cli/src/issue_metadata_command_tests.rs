@@ -8,8 +8,8 @@ use tokio::net::TcpListener;
 #[test]
 fn issue_metadata_parser_value_types_and_table_match_go_contract() {
     let cli = Cli::try_parse_from([
-        "patchbay", "issue", "metadata", "set", "CORD-18", "--key", "attempt", "--value=", "--type",
-        "string", "--output", "json",
+        "patchbay", "issue", "metadata", "set", "CORD-18", "--key", "attempt", "--value=",
+        "--type", "string", "--output", "json",
     ])
     .expect("metadata set CLI");
     let Command::Issue(IssueArgs {

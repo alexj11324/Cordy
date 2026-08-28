@@ -202,7 +202,8 @@ impl PiBackend {
                     let _ = serde_json::from_value::<PiRpcState>(response.data)
                         .map(|value| state = value);
                 }
-            } else if response.id == "patchbay-models" || response.command == "get_available_models" {
+            } else if response.id == "patchbay-models" || response.command == "get_available_models"
+            {
                 models_done = true;
                 if response.success {
                     if let Ok(payload) = serde_json::from_value::<PiRpcModelsPayload>(response.data)

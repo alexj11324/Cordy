@@ -34,7 +34,8 @@ async fn skill_list_matches_go_requests_and_table_json_outputs() {
     environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
     environment.set("PATCHBAY_TOKEN", "token-1");
 
-    let table_cli = Cli::try_parse_from(["patchbay", "skill", "list"]).expect("skill list table CLI");
+    let table_cli =
+        Cli::try_parse_from(["patchbay", "skill", "list"]).expect("skill list table CLI");
     let Command::Skill(SkillArgs {
         command: SkillCommand::List { output },
     }) = &table_cli.command
@@ -94,8 +95,8 @@ async fn skill_get_matches_go_path_headers_and_output_contracts() {
     environment.set("PATCHBAY_WORKSPACE_ID", "workspace-1");
     environment.set("PATCHBAY_TOKEN", "token-1");
 
-    let defaults =
-        Cli::try_parse_from(["patchbay", "skill", "get", "skill-1"]).expect("skill get default CLI");
+    let defaults = Cli::try_parse_from(["patchbay", "skill", "get", "skill-1"])
+        .expect("skill get default CLI");
     let Command::Skill(SkillArgs {
         command: SkillCommand::Get(args),
     }) = &defaults.command
@@ -110,8 +111,9 @@ async fn skill_get_matches_go_path_headers_and_output_contracts() {
     assert_eq!(skill["server_only"], "preserved");
     assert!(json.stderr.is_empty());
 
-    let table_cli = Cli::try_parse_from(["patchbay", "skill", "get", "skill-1", "--output", "table"])
-        .expect("skill get table CLI");
+    let table_cli =
+        Cli::try_parse_from(["patchbay", "skill", "get", "skill-1", "--output", "table"])
+            .expect("skill get table CLI");
     let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("get skill table");
@@ -778,9 +780,10 @@ async fn skill_refresh_matches_go_body_headers_and_output_contracts() {
     assert_eq!(refreshed["id"], "skill-1");
     assert!(json.stderr.is_empty());
 
-    let table_cli =
-        Cli::try_parse_from(["patchbay", "skill", "refresh", "skill-1", "--output", "table"])
-            .expect("skill refresh table CLI");
+    let table_cli = Cli::try_parse_from([
+        "patchbay", "skill", "refresh", "skill-1", "--output", "table",
+    ])
+    .expect("skill refresh table CLI");
     let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("refresh skill table");

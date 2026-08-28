@@ -19,9 +19,9 @@ use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Extension, Query as AxumQuery, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
+use futures_util::{SinkExt, StreamExt};
 use patchbay_daemon::hub::{ClientIdentity, DaemonHub};
 use patchbay_middleware::daemon_auth::DaemonContext;
-use futures_util::{SinkExt, StreamExt};
 
 use crate::error::error_response;
 use crate::state::HandlerState;

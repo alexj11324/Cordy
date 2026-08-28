@@ -1642,7 +1642,8 @@ mod tests {
             "user"
         );
         let skill_md =
-            std::fs::read_to_string(join_path(&[&skills_dir, "review-patchbay", "SKILL.md"])).unwrap();
+            std::fs::read_to_string(join_path(&[&skills_dir, "review-patchbay", "SKILL.md"]))
+                .unwrap();
         assert!(skill_md.starts_with("---\nname: review-patchbay\n"));
         assert_eq!(
             std::fs::read_to_string(join_path(&[

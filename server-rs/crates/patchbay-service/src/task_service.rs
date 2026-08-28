@@ -1784,8 +1784,12 @@ impl TaskService {
         }
         // Order matters: broadcast first, notify daemon second — see Go
         // comment on observe-order correctness.
-        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-            .await;
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &task,
+            Default::default(),
+        )
+        .await;
         self.notify_task_enqueued(&task).await;
         Ok(task)
     }
@@ -2112,8 +2116,12 @@ impl TaskService {
             is_leader_task = is_leader,
             "mention task enqueued"
         );
-        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-            .await;
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &task,
+            Default::default(),
+        )
+        .await;
         self.notify_task_enqueued(&task).await;
         Ok(task)
     }
@@ -2319,8 +2327,12 @@ impl TaskService {
             agent_id = %task.agent_id,
             "channel media-ready issue task promoted"
         );
-        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-            .await;
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &task,
+            Default::default(),
+        )
+        .await;
         self.notify_task_enqueued(&task).await;
         Ok(())
     }
@@ -2344,8 +2356,12 @@ impl TaskService {
                 agent_id = %task.agent_id,
                 "channel media-ready chat task promoted"
             );
-            self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-                .await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_QUEUED,
+                &task,
+                Default::default(),
+            )
+            .await;
             self.notify_task_enqueued(&task).await;
         }
         Ok(())
@@ -2361,8 +2377,12 @@ impl TaskService {
             .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
         for t in &cancelled {
             self.capture_task_cancelled(t).await;
-            self.broadcast_task_event(patchbay_protocol::EVENT_TASK_CANCELLED, t, Default::default())
-                .await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                t,
+                Default::default(),
+            )
+            .await;
         }
         self.notify_tasks_finished(&cancelled).await;
         Ok(())
@@ -2537,8 +2557,12 @@ impl TaskService {
             agent_id = %chat_session.agent_id,
             "chat task enqueued"
         );
-        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-            .await;
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &task,
+            Default::default(),
+        )
+        .await;
         self.notify_task_enqueued(&task).await;
         Ok(task)
     }
@@ -2701,8 +2725,12 @@ impl TaskService {
             agent_id = %session.agent_id,
             "direct chat task enqueued"
         );
-        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-            .await;
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &task,
+            Default::default(),
+        )
+        .await;
         self.notify_task_enqueued(&task).await;
         Ok(out)
     }
@@ -3080,8 +3108,12 @@ impl TaskService {
             .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
         for t in &cancelled {
             self.capture_task_cancelled(t).await;
-            self.broadcast_task_event(patchbay_protocol::EVENT_TASK_CANCELLED, t, Default::default())
-                .await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                t,
+                Default::default(),
+            )
+            .await;
         }
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
@@ -3101,8 +3133,12 @@ impl TaskService {
             .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
         for t in &cancelled {
             self.capture_task_cancelled(t).await;
-            self.broadcast_task_event(patchbay_protocol::EVENT_TASK_CANCELLED, t, Default::default())
-                .await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                t,
+                Default::default(),
+            )
+            .await;
         }
         for agent_id in distinct_agent_ids(&cancelled) {
             self.reconcile_agent_status(agent_id).await;
@@ -3137,8 +3173,12 @@ impl TaskService {
 
     /// Post-commit queue invalidation for clients.
     pub async fn broadcast_task_queued(&self, task: &AgentTaskQueue) {
-        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, task, Default::default())
-            .await;
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            task,
+            Default::default(),
+        )
+        .await;
     }
 
     pub async fn capture_cancelled_tasks(&self, cancelled: &[AgentTaskQueue]) {
@@ -4069,8 +4109,12 @@ impl TaskService {
                 agent_id = %task.agent_id,
                 "deferred fallback task promoted (batch)"
             );
-            self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-                .await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_QUEUED,
+                &task,
+                Default::default(),
+            )
+            .await;
             self.notify_task_enqueued(&task).await;
         }
 
@@ -4253,8 +4297,12 @@ impl TaskService {
                 agent_id = %task.agent_id,
                 "deferred fallback task promoted"
             );
-            self.broadcast_task_event(patchbay_protocol::EVENT_TASK_QUEUED, &task, Default::default())
-                .await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_QUEUED,
+                &task,
+                Default::default(),
+            )
+            .await;
             self.notify_task_enqueued(&task).await;
         }
         Ok(())
@@ -4723,7 +4771,10 @@ mod tests {
     async fn task_side_effect_runtime_is_owned_and_idempotent() {
         let pool =
             sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy pool");
-        let svc = Arc::new(TaskService::new(pool, Arc::new(patchbay_events::Bus::new())));
+        let svc = Arc::new(TaskService::new(
+            pool,
+            Arc::new(patchbay_events::Bus::new()),
+        ));
         let root = tokio_util::sync::CancellationToken::new();
         let runtime = svc
             .start_side_effect_runtime(root.child_token())

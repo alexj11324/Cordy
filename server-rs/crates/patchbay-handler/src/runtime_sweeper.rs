@@ -572,8 +572,11 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_chat_messages(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_chat_messages(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_communication_roots(
             &mut *tx,
             workspace_id,
@@ -581,8 +584,11 @@ mod tests {
         .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_comments(&mut *tx, workspace_id)
             .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_issue_roots(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_issue_roots(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::issue_status::delete_issue_status_entries_for_workspace(
             &mut *tx,
             workspace_id,
@@ -595,17 +601,26 @@ mod tests {
         .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
             .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(&mut *tx, workspace_id)
-            .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_connections(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_connections(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_squads_and_skills(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_plugin_data(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_plugin_data(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_agents(&mut *tx, workspace_id)
             .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_runtimes_and_projects(
@@ -927,7 +942,10 @@ mod tests {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].workspace_id, workspace_id);
-            assert_eq!(events[0].event_type, patchbay_protocol::EVENT_DAEMON_REGISTER);
+            assert_eq!(
+                events[0].event_type,
+                patchbay_protocol::EVENT_DAEMON_REGISTER
+            );
             assert_eq!(
                 events[0].payload,
                 serde_json::json!({"action": "stale_sweep"})
@@ -3199,7 +3217,9 @@ mod tests {
             )
         }
 
-        async fn list_restores(&self) -> anyhow::Result<Vec<patchbay_db::models::ChatDraftRestore>> {
+        async fn list_restores(
+            &self,
+        ) -> anyhow::Result<Vec<patchbay_db::models::ChatDraftRestore>> {
             patchbay_db::queries::chat::list_chat_draft_restores_by_session(
                 &self.pool,
                 self.session_id,

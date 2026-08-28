@@ -11,9 +11,17 @@ use super::*;
     long_about = "Work seamlessly with Patchbay from the command line."
 )]
 pub struct Cli {
-    #[arg(long, global = true, help = "Patchbay server URL (env: PATCHBAY_SERVER_URL)")]
+    #[arg(
+        long,
+        global = true,
+        help = "Patchbay server URL (env: PATCHBAY_SERVER_URL)"
+    )]
     pub(super) server_url: Option<String>,
-    #[arg(long, global = true, help = "Workspace ID (env: PATCHBAY_WORKSPACE_ID)")]
+    #[arg(
+        long,
+        global = true,
+        help = "Workspace ID (env: PATCHBAY_WORKSPACE_ID)"
+    )]
     pub(super) workspace_id: Option<String>,
     #[arg(
         long,

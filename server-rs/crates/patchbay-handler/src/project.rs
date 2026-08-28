@@ -1782,7 +1782,11 @@ mod tests {
         for value in ["not-a-url", "git@github.com", "host:path@user"] {
             assert!(!is_valid_git_repo_url(value), "{value}");
         }
-        for value in ["/Users/alex/Patchbay", r"C:\\code\\Patchbay", r"\\server\\share"] {
+        for value in [
+            "/Users/alex/Patchbay",
+            r"C:\\code\\Patchbay",
+            r"\\server\\share",
+        ] {
             assert!(is_absolute_local_path(value), "{value}");
         }
         assert!(!is_absolute_local_path("relative/path"));

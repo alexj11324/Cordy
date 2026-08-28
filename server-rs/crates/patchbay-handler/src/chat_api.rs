@@ -182,15 +182,16 @@ async fn can_invoke_agent(
     if target.permission_mode != "public_to" {
         return false;
     }
-    let targets = match patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets(
-        &state.pool,
-        target.id,
-    )
-    .await
-    {
-        Ok(targets) => targets,
-        Err(_) => return false,
-    };
+    let targets =
+        match patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets(
+            &state.pool,
+            target.id,
+        )
+        .await
+        {
+            Ok(targets) => targets,
+            Err(_) => return false,
+        };
     let workspace_principal = matches!(actor_type, "agent" | "system");
     let workspace_member = if let Some(user_id) = effective_user {
         member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)

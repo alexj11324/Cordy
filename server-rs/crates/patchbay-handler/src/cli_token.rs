@@ -28,7 +28,10 @@ async fn issue(State(state): State<HandlerState>, headers: HeaderMap) -> Respons
         Ok(Some(user)) => user,
         Ok(None) | Err(_) => return error_response(StatusCode::NOT_FOUND, "user not found"),
     };
-    if patchbay_auth::disabled_users::is_temporarily_disabled_user(&user.id.to_string(), &user.email) {
+    if patchbay_auth::disabled_users::is_temporarily_disabled_user(
+        &user.id.to_string(),
+        &user.email,
+    ) {
         return error_response(StatusCode::FORBIDDEN, "account disabled");
     }
     match patchbay_auth::jwt::issue_user_jwt(&user.id.to_string(), &user.email, &user.name) {

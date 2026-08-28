@@ -1132,7 +1132,10 @@ mod tests {
             json!("patchbay.ai")
         );
         assert_eq!(e.properties.as_ref().unwrap()["signup_source"], json!("x"));
-        assert_eq!(e.set_once.as_ref().unwrap()["email"], json!("Dev@Patchbay.AI"));
+        assert_eq!(
+            e.set_once.as_ref().unwrap()["email"],
+            json!("Dev@Patchbay.AI")
+        );
     }
 
     #[test]

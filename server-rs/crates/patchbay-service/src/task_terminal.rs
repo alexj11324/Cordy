@@ -349,7 +349,8 @@ impl TaskService {
                     if delay > Duration::ZERO {
                         retry_fire_at = Some(chrono::Utc::now() + delay);
                     }
-                    match patchbay_db::queries::agent::get_agent(&self.pool, parent.agent_id).await {
+                    match patchbay_db::queries::agent::get_agent(&self.pool, parent.agent_id).await
+                    {
                         Err(aerr) => {
                             // Missing overlay is not retry-fatal.
                             tracing::warn!(

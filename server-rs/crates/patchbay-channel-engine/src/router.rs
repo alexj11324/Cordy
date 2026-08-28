@@ -544,7 +544,8 @@ impl Router {
         // 3. Group-mention filter (group chats only), before identity so
         //    an unbound user's idle group chatter never spams a binding
         //    card.
-        if msg.source.chat_type.0 == patchbay_channel::ChatType::group().0 && !msg.addressed_to_bot {
+        if msg.source.chat_type.0 == patchbay_channel::ChatType::group().0 && !msg.addressed_to_bot
+        {
             let res = self
                 .drop(set, &msg, inst.id, DropReason::not_addressed_in_group())
                 .await;

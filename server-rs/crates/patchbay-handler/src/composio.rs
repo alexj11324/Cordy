@@ -515,9 +515,10 @@ impl Store for DbStore {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<ComposioConnectionRow>> {
-        let rows =
-            patchbay_db::queries::composio::list_active_user_composio_connections(&self.pool, user_id)
-                .await?;
+        let rows = patchbay_db::queries::composio::list_active_user_composio_connections(
+            &self.pool, user_id,
+        )
+        .await?;
         Ok(rows.into_iter().map(db_row).collect())
     }
 
@@ -534,8 +535,10 @@ impl Store for DbStore {
     }
 
     async fn mark_user_composio_connection_revoked(&self, id: Uuid, user_id: Uuid) -> Result<()> {
-        patchbay_db::queries::composio::mark_user_composio_connection_revoked(&self.pool, id, user_id)
-            .await?;
+        patchbay_db::queries::composio::mark_user_composio_connection_revoked(
+            &self.pool, id, user_id,
+        )
+        .await?;
         Ok(())
     }
 }

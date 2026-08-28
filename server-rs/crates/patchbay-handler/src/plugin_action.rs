@@ -27,7 +27,9 @@ use patchbay_service::plugin_storage::{
     delete_storage_value, get_storage_value, list_storage_keys, resolve_storage_scope,
     set_storage_value, PLUGIN_STORAGE_USER,
 };
-use patchbay_service::plugin_token::{authenticate_install_token, HookActor, CALLBACK_TOKEN_PREFIX};
+use patchbay_service::plugin_token::{
+    authenticate_install_token, HookActor, CALLBACK_TOKEN_PREFIX,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;

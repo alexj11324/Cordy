@@ -21,7 +21,9 @@ use patchbay_db::queries::{
     agent, autopilot as autopilot_q, member, project, squad, webhook_delivery,
 };
 use patchbay_middleware::workspace::WorkspaceContext;
-use patchbay_protocol::{EVENT_AUTOPILOT_CREATED, EVENT_AUTOPILOT_DELETED, EVENT_AUTOPILOT_UPDATED};
+use patchbay_protocol::{
+    EVENT_AUTOPILOT_CREATED, EVENT_AUTOPILOT_DELETED, EVENT_AUTOPILOT_UPDATED,
+};
 use patchbay_service::autopilot::{
     new_request_idempotency_key, AutopilotQuotaExceededError, AutopilotService,
 };

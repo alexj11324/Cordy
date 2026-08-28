@@ -121,7 +121,9 @@ fn daemon_disk_usage_task_scope_requires_absolute_injected_root() {
     };
     let missing = validate_disk_usage_args(&cli, &environment, &args, true)
         .expect_err("task must carry an injected root");
-    assert!(missing.to_string().contains("PATCHBAY_TASK_WORKSPACES_ROOT"));
+    assert!(missing
+        .to_string()
+        .contains("PATCHBAY_TASK_WORKSPACES_ROOT"));
 
     environment.set("PATCHBAY_TASK_WORKSPACES_ROOT", "relative/workspaces");
     let relative = resolve_disk_usage_root(&cli, &environment, &args, true)

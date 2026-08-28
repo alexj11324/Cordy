@@ -428,7 +428,10 @@ async fn send_hook_request(
                 "X-Cordy-Signature", // legacy-brand-compat
                 format!("{HOOK_SIGNATURE_VERSION}={signature}"),
             )
-            .header("X-Patchbay-Plugin-Installation", uuid_string(installation_id))
+            .header(
+                "X-Patchbay-Plugin-Installation",
+                uuid_string(installation_id),
+            )
             .header(
                 "X-Cordy-Plugin-Installation", // legacy-brand-compat
                 uuid_string(installation_id),
@@ -466,7 +469,10 @@ async fn send_hook_request(
                 "X-Cordy-Signature", // legacy-brand-compat
                 format!("{HOOK_SIGNATURE_VERSION}={signature}"),
             )
-            .header("X-Patchbay-Plugin-Installation", uuid_string(installation_id))
+            .header(
+                "X-Patchbay-Plugin-Installation",
+                uuid_string(installation_id),
+            )
             .header(
                 "X-Cordy-Plugin-Installation", // legacy-brand-compat
                 uuid_string(installation_id),

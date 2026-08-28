@@ -17,6 +17,7 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use http_body_util::BodyExt as _;
 use patchbay_daemon::hub::{
     ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
 };
@@ -35,7 +36,6 @@ use patchbay_protocol::{
 use patchbay_service::issue_status as issue_status_svc;
 use patchbay_service::plugin::PluginService;
 use patchbay_service::task_service::TaskService;
-use http_body_util::BodyExt as _;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
@@ -4294,9 +4294,12 @@ async fn report_local_skill_import_result(
             "local skill import Complete failed — rolling back created skill"
         );
         if !is_overwrite {
-            let _ =
-                patchbay_db::queries::skill::delete_skill(&state.pool, persisted.id, rt.workspace_id)
-                    .await;
+            let _ = patchbay_db::queries::skill::delete_skill(
+                &state.pool,
+                persisted.id,
+                rt.workspace_id,
+            )
+            .await;
         }
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,

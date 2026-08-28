@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use hmac::{Hmac, Mac};
 use patchbay_db::{
     models::Attachment,
     queries::{
@@ -13,7 +14,6 @@ use patchbay_db::{
     },
 };
 use patchbay_middleware::workspace::WorkspaceContext;
-use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};

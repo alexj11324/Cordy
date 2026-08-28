@@ -49,8 +49,14 @@ fn setup_parser_exposes_cloud_and_self_host_boundaries() {
 
 #[test]
 fn setup_callback_host_is_available_for_cloud_and_self_host_browser_flows() {
-    let cloud = Cli::try_parse_from(["patchbay", "setup", "cloud", "--callback-host", "192.168.1.20"])
-        .expect("cloud callback host");
+    let cloud = Cli::try_parse_from([
+        "patchbay",
+        "setup",
+        "cloud",
+        "--callback-host",
+        "192.168.1.20",
+    ])
+    .expect("cloud callback host");
     let Command::Setup(SetupArgs {
         command: Some(command),
         ..
@@ -70,9 +76,14 @@ fn setup_callback_host_is_available_for_cloud_and_self_host_browser_flows() {
         Some("192.168.1.20".into())
     );
 
-    let self_host =
-        Cli::try_parse_from(["patchbay", "setup", "self-host", "--callback-host", "10.0.0.7"])
-            .expect("self-host callback host");
+    let self_host = Cli::try_parse_from([
+        "patchbay",
+        "setup",
+        "self-host",
+        "--callback-host",
+        "10.0.0.7",
+    ])
+    .expect("self-host callback host");
     let Command::Setup(SetupArgs {
         command: Some(command),
         ..

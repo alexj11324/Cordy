@@ -222,9 +222,12 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 &details,
             )
             .await;
-            let effective =
-                patchbay_service::issue_status::effective(&pool, fields.workspace_id, &fields.status)
-                    .await;
+            let effective = patchbay_service::issue_status::effective(
+                &pool,
+                fields.workspace_id,
+                &fields.status,
+            )
+            .await;
             if matches!(effective.as_str(), "in_review" | "done" | "cancelled") {
                 archive_task_failures(&pool, &bus, fields.workspace_id, fields.id).await;
             }

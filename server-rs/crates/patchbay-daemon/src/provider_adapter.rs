@@ -292,8 +292,9 @@ impl ProductionProviderAdapter {
         };
 
         if !selection.model.is_empty()
-            && (patchbay_agent::registry::model_selector_must_be_provider_qualified(&target.provider)
-                || capability_checks_pending)
+            && (patchbay_agent::registry::model_selector_must_be_provider_qualified(
+                &target.provider,
+            ) || capability_checks_pending)
         {
             match catalog.as_ref() {
                 Some(Ok(catalog)) => {
@@ -1525,9 +1526,9 @@ async fn probe_launch_version(
             );
         }
     };
-    Ok(patchbay_agent::extract_version_line(&String::from_utf8_lossy(
-        &output,
-    )))
+    Ok(patchbay_agent::extract_version_line(
+        &String::from_utf8_lossy(&output),
+    ))
 }
 
 fn apply_verified_launch_version(
@@ -1540,12 +1541,14 @@ fn apply_verified_launch_version(
         "provider {} returned no version",
         launch.target.provider
     );
-    patchbay_agent::check_provider_minimum(&launch.target.provider, &version).with_context(|| {
-        format!(
-            "provider {} version {version:?} is not supported",
-            launch.target.provider
-        )
-    })?;
+    patchbay_agent::check_provider_minimum(&launch.target.provider, &version).with_context(
+        || {
+            format!(
+                "provider {} version {version:?} is not supported",
+                launch.target.provider
+            )
+        },
+    )?;
     let mut verified = launch.clone();
     verified.command_path = path;
     verified.version = version;

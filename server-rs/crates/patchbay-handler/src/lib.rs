@@ -613,7 +613,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         ),
     );
     let stripe_webhooks = cloud_billing::stripe_webhook_router(cloud_runtime_proxy).route_layer(
-        middleware::from_fn_with_state(webhook_ip_limit, patchbay_middleware::ratelimit::rate_limit),
+        middleware::from_fn_with_state(
+            webhook_ip_limit,
+            patchbay_middleware::ratelimit::rate_limit,
+        ),
     );
 
     let http_metrics = state.http_metrics.clone();

@@ -38,7 +38,10 @@ pub fn init_logging() {
 /// implicit default is stdout, while the Go migration/logger contract and the
 /// existing TTY check both use stderr.
 fn logging_output() -> (fn() -> std::io::Stderr, bool) {
-    (std::io::stderr, patchbay_util::logging::stderr_is_terminal())
+    (
+        std::io::stderr,
+        patchbay_util::logging::stderr_is_terminal(),
+    )
 }
 
 #[cfg(test)]

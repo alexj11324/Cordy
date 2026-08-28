@@ -464,11 +464,11 @@ mod tests {
 
     use std::sync::{Arc, Mutex};
 
+    use http_body_util::BodyExt as _;
     use patchbay_auth::pat_cache::PatCache;
     use patchbay_db::models::Member;
     use patchbay_service::feature_flags::FlagSource;
     use patchbay_service::issue_service::{IssueCreateError, IssueCreateOpts, IssueCreateParams};
-    use http_body_util::BodyExt as _;
     use sqlx::postgres::PgPoolOptions;
     use tokio::time::{sleep, timeout};
     use tower::ServiceExt as _;

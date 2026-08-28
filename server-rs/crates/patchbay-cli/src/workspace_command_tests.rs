@@ -32,7 +32,10 @@ async fn workspace_list_authenticates_without_workspace_scope() {
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
     environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
     environment.set("PATCHBAY_TOKEN", "workspace-token");
-    environment.set("PATCHBAY_WORKSPACE_ID", "22222222-2222-2222-2222-222222222222");
+    environment.set(
+        "PATCHBAY_WORKSPACE_ID",
+        "22222222-2222-2222-2222-222222222222",
+    );
     let cli = Cli::try_parse_from(["patchbay", "workspace", "list", "--output", "json"])
         .expect("workspace list CLI");
 
@@ -503,8 +506,8 @@ fn workspace_update_supports_safe_files_and_rejects_ambiguous_or_empty_changes()
     .to_string()
     .contains("mutually exclusive"));
 
-    let empty =
-        Cli::try_parse_from(["patchbay", "workspace", "update", "workspace-id"]).expect("empty CLI");
+    let empty = Cli::try_parse_from(["patchbay", "workspace", "update", "workspace-id"])
+        .expect("empty CLI");
     assert!(build_workspace_update_body(
         update_workspace_args(&empty),
         &environment,
@@ -665,8 +668,15 @@ async fn workspace_switch_verifies_access_and_atomically_updates_only_current_pr
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
     environment.set("PATCHBAY_SERVER_URL", format!("http://{address}"));
     environment.set("PATCHBAY_TOKEN", "token-1");
-    let cli = Cli::try_parse_from(["patchbay", "--profile", "dev", "workspace", "switch", "ALPHA"])
-        .expect("workspace switch CLI");
+    let cli = Cli::try_parse_from([
+        "patchbay",
+        "--profile",
+        "dev",
+        "workspace",
+        "switch",
+        "ALPHA",
+    ])
+    .expect("workspace switch CLI");
     let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("switch workspace");

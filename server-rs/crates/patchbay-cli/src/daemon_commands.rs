@@ -340,7 +340,9 @@ fn daemon_status_label(profile: &str) -> String {
     }
 }
 
-fn daemon_status_conflict_note(conflict: &patchbay_daemon::control_client::ProfileMismatch) -> String {
+fn daemon_status_conflict_note(
+    conflict: &patchbay_daemon::control_client::ProfileMismatch,
+) -> String {
     match &conflict.actual {
         Some(actual) => format!(
             "Note: port {} is serving {:?}, which hashes to the same port.",
@@ -680,12 +682,16 @@ fn render_daemon_restart_outcome(
     outcome: patchbay_daemon::process_control::DaemonRestartOutcome,
 ) -> Result<RunOutput> {
     match outcome {
-        patchbay_daemon::process_control::DaemonRestartOutcome::StopIncomplete(stop) => match stop {
-            patchbay_daemon::process_control::DaemonStopOutcome::StillStopping { pid, .. } => {
-                bail!("daemon is still stopping (pid {pid}); refusing to launch a replacement")
+        patchbay_daemon::process_control::DaemonRestartOutcome::StopIncomplete(stop) => {
+            match stop {
+                patchbay_daemon::process_control::DaemonStopOutcome::StillStopping {
+                    pid, ..
+                } => {
+                    bail!("daemon is still stopping (pid {pid}); refusing to launch a replacement")
+                }
+                _ => bail!("daemon restart did not complete its stop phase"),
             }
-            _ => bail!("daemon restart did not complete its stop phase"),
-        },
+        }
         patchbay_daemon::process_control::DaemonRestartOutcome::Launch { startup, .. } => {
             render_daemon_startup(startup, "restarted")
         }
@@ -703,7 +709,11 @@ fn render_daemon_startup(
                 stderr: String::new(),
             })
         }
-        patchbay_daemon::process_control::BackgroundStartupOutcome::Exited { pid, status, logs } => {
+        patchbay_daemon::process_control::BackgroundStartupOutcome::Exited {
+            pid,
+            status,
+            logs,
+        } => {
             let evidence = logs.failure_evidence(8);
             let detail = evidence
                 .structured_lines

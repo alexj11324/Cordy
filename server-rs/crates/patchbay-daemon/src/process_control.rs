@@ -1140,8 +1140,8 @@ mod tests {
         assert!(error
             .to_string()
             .contains("daemon restart start preflight failed"));
-        assert!(error
-            .chain()
-            .any(|cause| cause.to_string().contains("patchbay login --profile staging")));
+        assert!(error.chain().any(|cause| cause
+            .to_string()
+            .contains("patchbay login --profile staging")));
     }
 }

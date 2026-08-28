@@ -228,7 +228,11 @@ pub fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     );
     add(
         "opencode",
-        probe("PATCHBAY_OPENCODE_PATH", "opencode", "PATCHBAY_OPENCODE_MODEL"),
+        probe(
+            "PATCHBAY_OPENCODE_PATH",
+            "opencode",
+            "PATCHBAY_OPENCODE_MODEL",
+        ),
     );
     add(
         "deveco",
@@ -236,7 +240,11 @@ pub fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     );
     add(
         "openclaw",
-        probe("PATCHBAY_OPENCLAW_PATH", "openclaw", "PATCHBAY_OPENCLAW_MODEL"),
+        probe(
+            "PATCHBAY_OPENCLAW_PATH",
+            "openclaw",
+            "PATCHBAY_OPENCLAW_MODEL",
+        ),
     );
     add(
         "hermes",
@@ -252,16 +260,27 @@ pub fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     }
     add(
         "cursor",
-        probe("PATCHBAY_CURSOR_PATH", "cursor-agent", "PATCHBAY_CURSOR_MODEL"),
+        probe(
+            "PATCHBAY_CURSOR_PATH",
+            "cursor-agent",
+            "PATCHBAY_CURSOR_MODEL",
+        ),
     );
     add(
         "copilot",
         probe("PATCHBAY_COPILOT_PATH", "copilot", "PATCHBAY_COPILOT_MODEL"),
     );
-    add("kimi", probe("PATCHBAY_KIMI_PATH", "kimi", "PATCHBAY_KIMI_MODEL"));
+    add(
+        "kimi",
+        probe("PATCHBAY_KIMI_PATH", "kimi", "PATCHBAY_KIMI_MODEL"),
+    );
     add(
         "reasonix",
-        probe("PATCHBAY_REASONIX_PATH", "reasonix", "PATCHBAY_REASONIX_MODEL"),
+        probe(
+            "PATCHBAY_REASONIX_PATH",
+            "reasonix",
+            "PATCHBAY_REASONIX_MODEL",
+        ),
     );
     // DSH registers only when its Patchbay runtime profile is installed: a bare
     // dsh binary has no --stdio protocol and every task would fail after
@@ -276,11 +295,19 @@ pub fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     );
     add(
         "codebuddy",
-        probe("PATCHBAY_CODEBUDDY_PATH", "codebuddy", "PATCHBAY_CODEBUDDY_MODEL"),
+        probe(
+            "PATCHBAY_CODEBUDDY_PATH",
+            "codebuddy",
+            "PATCHBAY_CODEBUDDY_MODEL",
+        ),
     );
     add(
         "antigravity",
-        probe("PATCHBAY_ANTIGRAVITY_PATH", "agy", "PATCHBAY_ANTIGRAVITY_MODEL"),
+        probe(
+            "PATCHBAY_ANTIGRAVITY_PATH",
+            "agy",
+            "PATCHBAY_ANTIGRAVITY_MODEL",
+        ),
     );
     add(
         "qoder",
@@ -298,11 +325,20 @@ pub fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
         "traecli",
         probe("PATCHBAY_TRAECLI_PATH", "traecli", "PATCHBAY_TRAECLI_MODEL"),
     );
-    add("grok", probe("PATCHBAY_GROK_PATH", "grok", "PATCHBAY_GROK_MODEL"));
-    add("qwen", probe("PATCHBAY_QWEN_PATH", "qwen", "PATCHBAY_QWEN_MODEL"));
+    add(
+        "grok",
+        probe("PATCHBAY_GROK_PATH", "grok", "PATCHBAY_GROK_MODEL"),
+    );
+    add(
+        "qwen",
+        probe("PATCHBAY_QWEN_PATH", "qwen", "PATCHBAY_QWEN_MODEL"),
+    );
     // QwenPaw takes no model env var: the backend never calls session/set_model.
     add("qwenpaw", probe("PATCHBAY_QWENPAW_PATH", "qwenpaw", ""));
-    add("dim", probe("PATCHBAY_DIM_PATH", "dim", "PATCHBAY_DIM_MODEL"));
+    add(
+        "dim",
+        probe("PATCHBAY_DIM_PATH", "dim", "PATCHBAY_DIM_MODEL"),
+    );
     // MiniMax Code model selection is owned by the runtime: no model env.
     add("mcode", probe("PATCHBAY_MCODE_PATH", "mcode", ""));
     agents

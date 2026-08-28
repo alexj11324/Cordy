@@ -769,7 +769,10 @@ async fn repo_checkout_handler<S: ProductionRuntimeServices>(
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             let mut headers = HeaderMap::new();
             if failure.retryable_busy && retry_aware {
-                headers.insert("X-Patchbay-Retryable", HeaderValue::from_static("repo-busy"));
+                headers.insert(
+                    "X-Patchbay-Retryable",
+                    HeaderValue::from_static("repo-busy"),
+                );
                 headers.insert(
                     "X-Cordy-Retryable", // legacy-brand-compat
                     HeaderValue::from_static("repo-busy"),

@@ -266,7 +266,12 @@ async fn publish(
         None
     };
     for (event_type, payload) in [
-        created_agent.map(|value| (patchbay_protocol::EVENT_AGENT_CREATED, json!({"agent": value}))),
+        created_agent.map(|value| {
+            (
+                patchbay_protocol::EVENT_AGENT_CREATED,
+                json!({"agent": value}),
+            )
+        }),
         issue_payload.map(|value| (patchbay_protocol::EVENT_ISSUE_CREATED, value)),
     ]
     .into_iter()
@@ -750,7 +755,10 @@ mod tests {
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].name, patchbay_analytics::EVENT_AGENT_CREATED);
         assert_eq!(events[1].name, patchbay_analytics::EVENT_ISSUE_CREATED);
-        assert_eq!(events[2].name, patchbay_analytics::EVENT_ONBOARDING_COMPLETED);
+        assert_eq!(
+            events[2].name,
+            patchbay_analytics::EVENT_ONBOARDING_COMPLETED
+        );
         let repeat = legacy_onboarding_metric_events(
             user_id,
             workspace_id,

@@ -305,7 +305,11 @@ async fn create(
         &request.source,
         !request.goals.is_empty(),
     );
-    patchbay_metrics::business_events::record_event(None, state.business_metrics.as_deref(), &event);
+    patchbay_metrics::business_events::record_event(
+        None,
+        state.business_metrics.as_deref(),
+        &event,
+    );
     (
         StatusCode::CREATED,
         Json(CreateResponse {

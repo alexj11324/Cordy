@@ -58,8 +58,10 @@ async fn chat_history_and_thread_match_go_query_and_render_contracts() {
     assert!(history.stdout.contains("2"));
     assert!(history.stdout.contains("status?"));
 
-    let thread = Cli::try_parse_from(["patchbay", "chat", "thread", "thread/1", "--output", "table"])
-        .expect("chat thread CLI");
+    let thread = Cli::try_parse_from([
+        "patchbay", "chat", "thread", "thread/1", "--output", "table",
+    ])
+    .expect("chat thread CLI");
     let thread = run_with_input(&thread, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("chat thread");

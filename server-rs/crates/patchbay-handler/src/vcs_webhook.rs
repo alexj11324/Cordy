@@ -12,9 +12,9 @@ use axum::Router;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
+use futures_util::StreamExt;
 use patchbay_db::models::{Issue, VcsConnection, VcsPullRequest};
 use patchbay_vcs::{CiStatusEvent, EventKind, PullRequestEvent};
-use futures_util::StreamExt;
 use regex::Regex;
 use uuid::Uuid;
 
@@ -62,7 +62,8 @@ async fn handle(
         }
     };
     let connection =
-        match patchbay_db::queries::vcs::get_vcs_connection_by_id(&state.pool, connection_id).await {
+        match patchbay_db::queries::vcs::get_vcs_connection_by_id(&state.pool, connection_id).await
+        {
             Ok(Some(connection)) => connection,
             Ok(None) => return error_response(StatusCode::NOT_FOUND, "unknown connection"),
             Err(error) => {
@@ -284,19 +285,20 @@ pub(crate) async fn maybe_complete_issue(state: &HandlerState, issue: Issue) {
     if matches!(category.as_str(), "done" | "cancelled") {
         return;
     }
-    let aggregate = match patchbay_db::queries::vcs::get_issue_combined_pull_request_close_aggregate(
-        &state.pool,
-        issue.id,
-    )
-    .await
-    {
-        Ok(Some(aggregate)) => aggregate,
-        Ok(None) => return,
-        Err(error) => {
-            tracing::warn!(%error, issue_id = %issue.id, "vcs: count linked pr states failed");
-            return;
-        }
-    };
+    let aggregate =
+        match patchbay_db::queries::vcs::get_issue_combined_pull_request_close_aggregate(
+            &state.pool,
+            issue.id,
+        )
+        .await
+        {
+            Ok(Some(aggregate)) => aggregate,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, issue_id = %issue.id, "vcs: count linked pr states failed");
+                return;
+            }
+        };
     if aggregate.open_count == 0 && aggregate.merged_with_close_intent_count > 0 {
         crate::issue::advance_issue_to_done_from_pr(state, &issue, "github_pr_merged").await;
     }

@@ -472,16 +472,17 @@ impl LarkPatcher {
             return Ok(());
         }
 
-        let binding = match patchbay_db::queries::channel::get_channel_chat_session_binding_by_session(
-            &self.pool,
-            chat_session_id,
-            crate::channel_store::CHANNEL_TYPE_FEISHU,
-        )
-        .await?
-        {
-            Some(row) => chat_session_binding_from_row(row),
-            None => return Ok(()), // web-only chat session — not a Lark target
-        };
+        let binding =
+            match patchbay_db::queries::channel::get_channel_chat_session_binding_by_session(
+                &self.pool,
+                chat_session_id,
+                crate::channel_store::CHANNEL_TYPE_FEISHU,
+            )
+            .await?
+            {
+                Some(row) => chat_session_binding_from_row(row),
+                None => return Ok(()), // web-only chat session — not a Lark target
+            };
 
         // Only bound sessions reach here, so classify the task origin before
         // spending any send work. Web/mobile direct-chat tasks can reuse a

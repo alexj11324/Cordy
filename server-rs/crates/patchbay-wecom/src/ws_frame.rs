@@ -14,7 +14,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use patchbay_channel::message::{ChatType, InboundMessage as ChannelInboundMessage, MsgType, Source};
+use patchbay_channel::message::{
+    ChatType, InboundMessage as ChannelInboundMessage, MsgType, Source,
+};
 
 use crate::type_wecom;
 

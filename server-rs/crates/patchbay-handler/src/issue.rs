@@ -5418,13 +5418,16 @@ async fn apply_issue_update(
         next.description = Some(value);
     }
     if let UpdateField::Value(value) = update_field::<String>(fields, "status")? {
-        next.status =
-            match patchbay_service::issue_status::resolve(&state.pool, previous.workspace_id, &value)
-                .await
-            {
-                Ok(entry) => entry.key,
-                Err(_) => return Err(invalid_status(state, previous.workspace_id, &value).await),
-            };
+        next.status = match patchbay_service::issue_status::resolve(
+            &state.pool,
+            previous.workspace_id,
+            &value,
+        )
+        .await
+        {
+            Ok(entry) => entry.key,
+            Err(_) => return Err(invalid_status(state, previous.workspace_id, &value).await),
+        };
     }
     if let UpdateField::Value(value) = update_field::<String>(fields, "priority")? {
         if !PRIORITIES.contains(&value.as_str()) {
@@ -5671,7 +5674,8 @@ async fn apply_issue_update(
     }
 
     let previous_category =
-        patchbay_service::issue_status::effective(&mut *tx, locked.workspace_id, &locked.status).await;
+        patchbay_service::issue_status::effective(&mut *tx, locked.workspace_id, &locked.status)
+            .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
     if let Some(violation) = issue_workflow_violation(
@@ -7205,16 +7209,19 @@ async fn expand_status_categories(
     if categories.is_empty() {
         return Ok(Vec::new());
     }
-    let entries =
-        patchbay_db::queries::issue_status::list_issue_status_entries(&state.pool, workspace_id, true)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to expand issue status categories");
-                error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to resolve status categories",
-                )
-            })?;
+    let entries = patchbay_db::queries::issue_status::list_issue_status_entries(
+        &state.pool,
+        workspace_id,
+        true,
+    )
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, "failed to expand issue status categories");
+        error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to resolve status categories",
+        )
+    })?;
     let mut keys = Vec::new();
     for category in categories {
         if patchbay_service::issue_status::is_built_in(category) {
@@ -7646,8 +7653,8 @@ impl From<&IssueLabel> for LabelResponse {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
-    use patchbay_auth::pat_cache::PatCache;
     use http_body_util::BodyExt as _;
+    use patchbay_auth::pat_cache::PatCache;
     use sqlx::postgres::PgPoolOptions;
     use tower::ServiceExt as _;
 

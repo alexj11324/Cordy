@@ -90,8 +90,10 @@ async fn property_list_and_get_preserve_archive_query_and_full_json_fields() {
         serde_json::json!([])
     );
 
-    let get = Cli::try_parse_from(["patchbay", "property", "get", "severity", "--output", "json"])
-        .expect("property get CLI");
+    let get = Cli::try_parse_from([
+        "patchbay", "property", "get", "severity", "--output", "json",
+    ])
+    .expect("property get CLI");
     let got = run_with_input(&get, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("get archived property by name");

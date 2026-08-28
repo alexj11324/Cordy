@@ -908,8 +908,11 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_chat_messages(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_chat_messages(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_communication_roots(
             &mut *tx,
             workspace_id,
@@ -917,8 +920,11 @@ mod tests {
         .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_comments(&mut *tx, workspace_id)
             .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_issue_roots(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_issue_roots(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::issue_status::delete_issue_status_entries_for_workspace(
             &mut *tx,
             workspace_id,
@@ -931,17 +937,26 @@ mod tests {
         .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
             .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(&mut *tx, workspace_id)
-            .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_connections(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_connections(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_squads_and_skills(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_plugin_data(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_plugin_data(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_agents(&mut *tx, workspace_id)
             .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_runtimes_and_projects(

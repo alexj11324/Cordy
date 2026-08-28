@@ -25,8 +25,8 @@ fn version_text_json_and_root_flag_match_release_contract() {
     assert_eq!(info["os"], BUILD_OS);
     assert_eq!(info["arch"], BUILD_ARCH);
 
-    let root =
-        Cli::try_parse_from(["patchbay", "--version"]).expect_err("--version exits after rendering");
+    let root = Cli::try_parse_from(["patchbay", "--version"])
+        .expect_err("--version exits after rendering");
     assert_eq!(root.kind(), clap::error::ErrorKind::DisplayVersion);
     assert_eq!(root.to_string(), format!("patchbay {ROOT_LONG_VERSION}\n"));
     let first_line =

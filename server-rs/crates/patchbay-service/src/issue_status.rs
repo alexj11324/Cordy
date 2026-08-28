@@ -272,9 +272,12 @@ pub async fn active_keys<'e, E>(executor: E, workspace_id: Uuid) -> anyhow::Resu
 where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
-    let entries =
-        patchbay_db::queries::issue_status::list_issue_status_entries(executor, workspace_id, false)
-            .await?;
+    let entries = patchbay_db::queries::issue_status::list_issue_status_entries(
+        executor,
+        workspace_id,
+        false,
+    )
+    .await?;
     let mut keys: Vec<String> = Vec::with_capacity(entries.len() + CANONICAL_ORDER.len());
     let mut seen = std::collections::HashSet::with_capacity(entries.len());
     for e in &entries {

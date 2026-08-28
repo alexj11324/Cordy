@@ -443,8 +443,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(values[0]
-            .starts_with("patchbay_auth=header.payload.sig; Path=/; Domain=.example.com; Expires="));
+        assert!(values[0].starts_with(
+            "patchbay_auth=header.payload.sig; Path=/; Domain=.example.com; Expires="
+        ));
         assert!(values[0].contains("; Max-Age=2592000; HttpOnly; Secure; SameSite=Strict"));
         assert!(values[1].starts_with("patchbay_csrf="));
         assert!(values[1].contains("; Domain=.example.com; Expires="));

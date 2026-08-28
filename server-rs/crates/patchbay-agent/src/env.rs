@@ -85,7 +85,10 @@ mod tests {
         ]);
         let env = merge_child_env(ambient, &overrides);
         assert_eq!(env.get("PATH").map(String::as_str), Some("/usr/bin"));
-        assert_eq!(env.get("PATCHBAY_TOKEN").map(String::as_str), Some("mat_task"));
+        assert_eq!(
+            env.get("PATCHBAY_TOKEN").map(String::as_str),
+            Some("mat_task")
+        );
         assert_eq!(
             env.get("PATCHBAY_SERVER_URL").map(String::as_str),
             Some("https://task.example")

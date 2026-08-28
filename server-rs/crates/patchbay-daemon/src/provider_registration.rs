@@ -176,7 +176,9 @@ impl LocalProviderCatalog {
     fn display_name(provider: &str) -> Option<&'static str> {
         patchbay_agent::provider(provider)
             .map(|descriptor| descriptor.display_name)
-            .or_else(|| patchbay_agent::builtin_runtime(provider).map(|runtime| runtime.display_name))
+            .or_else(|| {
+                patchbay_agent::builtin_runtime(provider).map(|runtime| runtime.display_name)
+            })
     }
 
     fn fixed_args(provider: &str) -> Vec<String> {

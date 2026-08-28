@@ -41,9 +41,9 @@ describe("worktree-dev-env", () => {
   });
 
   it("never reuses 5173 even when the offset is 0", () => {
-    expect(offsetForPath("/tmp/patchbay-452")).toBe(0);
-    expect(rendererPortForPath("/tmp/patchbay-452")).toBe(5174);
-    expect(rendererPortForPath("/tmp/patchbay-452")).not.toBe(5173);
+    expect(offsetForPath("/tmp/patchbay-3030")).toBe(0);
+    expect(rendererPortForPath("/tmp/patchbay-3030")).toBe(5174);
+    expect(rendererPortForPath("/tmp/patchbay-3030")).not.toBe(5173);
   });
 
   it("skips 6000, which Chromium refuses to load (ERR_UNSAFE_PORT)", () => {

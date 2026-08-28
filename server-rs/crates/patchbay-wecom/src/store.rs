@@ -65,12 +65,14 @@ impl Store {
         workspace_id: Uuid,
         user_id: Uuid,
     ) -> anyhow::Result<bool> {
-        Ok(patchbay_db::queries::member::get_member_by_user_and_workspace(
-            &self.pool,
-            user_id,
-            workspace_id,
+        Ok(
+            patchbay_db::queries::member::get_member_by_user_and_workspace(
+                &self.pool,
+                user_id,
+                workspace_id,
+            )
+            .await?
+            .is_some(),
         )
-        .await?
-        .is_some())
     }
 }

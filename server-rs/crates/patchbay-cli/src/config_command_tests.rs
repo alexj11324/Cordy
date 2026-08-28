@@ -99,8 +99,9 @@ async fn config_set_is_profile_scoped_and_preserves_unrelated_fields() {
         ("max_concurrent_tasks", "4", "4"),
         ("disable_auto_reload", "true", "true"),
     ] {
-        let cli = Cli::try_parse_from(["patchbay", "--profile", "dev", "config", "set", key, value])
-            .expect("config set CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "--profile", "dev", "config", "set", key, value])
+                .expect("config set CLI");
         let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect("config set");
@@ -188,7 +189,9 @@ async fn config_commands_fail_closed_without_task_local_root() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("missing task root");
-    assert!(error.to_string().contains("task-local Patchbay config root"));
+    assert!(error
+        .to_string()
+        .contains("task-local Patchbay config root"));
     assert_eq!(fs::read(&owner_path).expect("owner unchanged"), owner_bytes);
 
     let task_root = tempfile::tempdir().expect("task root");

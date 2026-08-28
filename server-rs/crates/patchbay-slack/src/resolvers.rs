@@ -210,8 +210,12 @@ impl patchbay_channel_engine::resolvers::IdentityResolver for IdentityResolver {
         // Binding existence no longer proves membership (no FK); re-check. For
         // a reused link this also gates materialization: we never persist a
         // binding for a user who has since left the workspace.
-        match get_member_by_user_and_workspace(&self.pool, binding.patchbay_user_id, inst.workspace_id)
-            .await
+        match get_member_by_user_and_workspace(
+            &self.pool,
+            binding.patchbay_user_id,
+            inst.workspace_id,
+        )
+        .await
         {
             Ok(Some(_)) => {}
             Ok(None) => {

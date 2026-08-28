@@ -41,7 +41,8 @@ pub fn telegram_session_routing(msg: &InboundMessage) -> (String, serde_json::Va
         chat_id: chat_id.clone(),
     })
     .unwrap_or_else(|_| json!({}));
-    if msg.source.chat_type == patchbay_channel::ChatType::group() && !msg.source.thread_id.is_empty()
+    if msg.source.chat_type == patchbay_channel::ChatType::group()
+        && !msg.source.thread_id.is_empty()
     {
         (
             format!("{chat_id}:{}", msg.source.thread_id),

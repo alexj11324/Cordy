@@ -1220,15 +1220,16 @@ impl PluginService {
         &self,
         installation_id: Uuid,
     ) -> Result<Vec<String>, PluginError> {
-        let rows = patchbay_db::queries::plugin::list_plugin_secret_keys(&self.pool, installation_id)
-            .await
-            .map_err(|e| {
-                PluginError::with_source(
-                    PluginErrorKind::Unavailable,
-                    "list plugin secrets",
-                    crate::plugin::box_anyhow(e),
-                )
-            })?;
+        let rows =
+            patchbay_db::queries::plugin::list_plugin_secret_keys(&self.pool, installation_id)
+                .await
+                .map_err(|e| {
+                    PluginError::with_source(
+                        PluginErrorKind::Unavailable,
+                        "list plugin secrets",
+                        crate::plugin::box_anyhow(e),
+                    )
+                })?;
         Ok(rows.into_iter().map(|row| row.key).collect())
     }
 

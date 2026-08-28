@@ -10,7 +10,8 @@ use patchbay_migrate::backfill::task_usage::{run_standalone, StandaloneOptions};
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 
-const DEFAULT_DATABASE_URL: &str = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
+const DEFAULT_DATABASE_URL: &str =
+    "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
 
 #[derive(Debug, Parser)]
 #[command(

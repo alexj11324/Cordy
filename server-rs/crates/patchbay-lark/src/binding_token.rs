@@ -204,7 +204,8 @@ impl BindingTokenService {
         // here. Returning before Commit rolls the consume back, so a
         // non-member's attempt does not burn the token — same outcome the FK
         // violation produced.
-        let is_member = is_workspace_member_on(&mut *tx, row.workspace_id, patchbay_user_id).await?;
+        let is_member =
+            is_workspace_member_on(&mut *tx, row.workspace_id, patchbay_user_id).await?;
         if !is_member {
             return Err(ErrBindingNotWorkspaceMember.into());
         }

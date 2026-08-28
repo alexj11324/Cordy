@@ -138,7 +138,8 @@ mod tests {
 
     fn test_state(token: &str) -> HandlerState {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
-        let mut state = HandlerState::new(pool, patchbay_auth::pat_cache::PatCache::disabled(), None);
+        let mut state =
+            HandlerState::new(pool, patchbay_auth::pat_cache::PatCache::disabled(), None);
         state.realtime_metrics_token = token.to_string();
         state
     }

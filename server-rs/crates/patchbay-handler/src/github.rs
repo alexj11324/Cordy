@@ -10,11 +10,11 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
+use futures_util::StreamExt;
+use hmac::{Hmac, Mac};
 use patchbay_db::models::{GithubInstallation, GithubPullRequest};
 use patchbay_db::queries::{github, member};
 use patchbay_middleware::workspace::WorkspaceContext;
-use futures_util::StreamExt;
-use hmac::{Hmac, Mac};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -919,16 +919,18 @@ async fn mirror_issue_links(
     pull_request: &GithubPullRequest,
     close_policy: &CloseIntentPolicy,
 ) {
-    let workspace =
-        match patchbay_db::queries::workspace::get_workspace(&state.pool, pull_request.workspace_id)
-            .await
-        {
-            Ok(Some(workspace)) => workspace,
-            _ => {
-                publish_pr(state, pull_request, Vec::new());
-                return;
-            }
-        };
+    let workspace = match patchbay_db::queries::workspace::get_workspace(
+        &state.pool,
+        pull_request.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(workspace)) => workspace,
+        _ => {
+            publish_pr(state, pull_request, Vec::new());
+            return;
+        }
+    };
     if !auto_link_enabled(&workspace.settings).unwrap_or(true) {
         publish_pr(state, pull_request, Vec::new());
         return;

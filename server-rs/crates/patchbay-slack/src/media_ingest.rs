@@ -700,9 +700,11 @@ mod tests {
             Arc::new(StubStorage {
                 url_base: "http://stub".into(),
             }),
-            Arc::new(patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
-                sqlx::PgPool::connect_lazy("postgres://unused").unwrap(),
-            )),
+            Arc::new(
+                patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
+                    sqlx::PgPool::connect_lazy("postgres://unused").unwrap(),
+                ),
+            ),
         );
         let plain = InboundMessage::default();
         assert!(!resolver.has_media(&plain));
@@ -732,9 +734,11 @@ mod tests {
             Arc::new(StubStorage {
                 url_base: "http://stub".into(),
             }),
-            Arc::new(patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
-                sqlx::PgPool::connect_lazy("postgres://unused").unwrap(),
-            )),
+            Arc::new(
+                patchbay_channel_engine::resolvers::DbMediaIntentLedger::new(
+                    sqlx::PgPool::connect_lazy("postgres://unused").unwrap(),
+                ),
+            ),
         )
         .with_allowed_host(|h| h.ends_with(".slack.com") || h == "127.0.0.1");
 

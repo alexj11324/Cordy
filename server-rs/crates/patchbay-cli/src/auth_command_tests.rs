@@ -132,8 +132,8 @@ fn auth_logout_only_clears_current_profile_and_is_task_guarded() {
     .expect("profile config");
     let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
     environment.set("PATCHBAY_TOKEN", "pby_env_must_not_affect_logout");
-    let cli =
-        Cli::try_parse_from(["patchbay", "--profile", "dev", "auth", "logout"]).expect("logout CLI");
+    let cli = Cli::try_parse_from(["patchbay", "--profile", "dev", "auth", "logout"])
+        .expect("logout CLI");
     let output = run_auth_logout(&cli, &environment).expect("logout");
     assert_eq!(output.stderr, "Token removed. You are now logged out.\n");
     let saved: Value = serde_json::from_slice(&fs::read(&profile_path).expect("saved profile"))

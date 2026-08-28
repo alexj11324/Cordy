@@ -88,8 +88,9 @@ async fn runtime_usage_rejects_days_outside_go_range() {
     environment.set("PATCHBAY_SERVER_URL", "http://127.0.0.1:9");
     environment.set("PATCHBAY_TOKEN", "token-1");
     for days in ["0", "366"] {
-        let cli = Cli::try_parse_from(["patchbay", "runtime", "usage", "runtime-1", "--days", days])
-            .expect("runtime usage CLI");
+        let cli =
+            Cli::try_parse_from(["patchbay", "runtime", "usage", "runtime-1", "--days", days])
+                .expect("runtime usage CLI");
         let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect_err("days range");
@@ -502,8 +503,9 @@ async fn runtime_profile_validates_create_update_and_delete_conflict() {
         .expect_err("invalid protocol family");
     assert!(error.to_string().contains("must be one of"));
 
-    let empty_update = Cli::try_parse_from(["patchbay", "runtime", "profile", "update", "profile-1"])
-        .expect("empty runtime profile update CLI");
+    let empty_update =
+        Cli::try_parse_from(["patchbay", "runtime", "profile", "update", "profile-1"])
+            .expect("empty runtime profile update CLI");
     let error = run_with_input(
         &empty_update,
         &environment,

@@ -26,6 +26,7 @@ mod profiling;
 mod realtime_runtime;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+const LEGACY_CONFIG_FILENAME: &str = "cordy.toml"; // legacy-brand-compat
 
 fn build_version() -> &'static str {
     env!("PATCHBAY_EFFECTIVE_BUILD_VERSION")
@@ -433,13 +434,14 @@ async fn build_production_router(
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
         metrics as Arc<dyn patchbay_service::autopilot_failure_monitor::FailureMonitorMetrics>
     });
-    let failure_monitor = patchbay_service::autopilot_failure_monitor::AutopilotFailureMonitor::new(
-        state.pool.clone(),
-        state.bus.clone(),
-        failure_metrics,
-        patchbay_service::autopilot_failure_monitor::FailureMonitorConfig::from_env(),
-    )
-    .start(root_cancel.child_token());
+    let failure_monitor =
+        patchbay_service::autopilot_failure_monitor::AutopilotFailureMonitor::new(
+            state.pool.clone(),
+            state.bus.clone(),
+            failure_metrics,
+            patchbay_service::autopilot_failure_monitor::FailureMonitorConfig::from_env(),
+        )
+        .start(root_cancel.child_token());
     let quota_metrics = state.business_metrics.clone().map(|metrics| {
         metrics as Arc<dyn patchbay_service::autopilot_quota_reconciler::QuotaReconcilerMetrics>
     });
@@ -566,8 +568,8 @@ async fn main() -> anyhow::Result<()> {
 
     let config_path = if std::path::Path::new("patchbay.toml").exists() {
         std::path::Path::new("patchbay.toml")
-    } else if std::path::Path::new("cordy.toml").exists() { // legacy-brand-compat
-        std::path::Path::new("cordy.toml") // legacy-brand-compat
+    } else if std::path::Path::new(LEGACY_CONFIG_FILENAME).exists() {
+        std::path::Path::new(LEGACY_CONFIG_FILENAME)
     } else {
         std::path::Path::new("patchbay.toml")
     };
@@ -590,14 +592,15 @@ async fn main() -> anyhow::Result<()> {
         lark_backfill_metrics,
         metrics_runtime,
     ) = if metrics_config.enabled() {
-        let registry = patchbay_metrics::Registry::new(patchbay_metrics::registry::RegistryOptions {
-            pool: Some(Arc::new(db.clone())),
-            realtime: Some(&patchbay_realtime::M),
-            daemonws: Some(&patchbay_daemon::hub::M),
-            version: build_version().to_string(),
-            commit: build_commit().to_string(),
-            sampler: dedicated_sampler_pool(&cfg.database),
-        });
+        let registry =
+            patchbay_metrics::Registry::new(patchbay_metrics::registry::RegistryOptions {
+                pool: Some(Arc::new(db.clone())),
+                realtime: Some(&patchbay_realtime::M),
+                daemonws: Some(&patchbay_daemon::hub::M),
+                version: build_version().to_string(),
+                commit: build_commit().to_string(),
+                sampler: dedicated_sampler_pool(&cfg.database),
+            });
         let business = registry.business.clone();
         let http = registry.http.clone();
         let channel_lease = registry.channel_lease.clone();
@@ -744,7 +747,8 @@ async fn main() -> anyhow::Result<()> {
             .shutdown(patchbay_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
         quota_reconciler
             .shutdown(patchbay_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
-        webhook_delivery.shutdown(patchbay_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
+        webhook_delivery
+            .shutdown(patchbay_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         scheduler.shutdown(),
         heartbeat_scheduler.shutdown(),
         runtime_sweeper.shutdown(),
@@ -834,7 +838,8 @@ async fn main() -> anyhow::Result<()> {
         Some(patchbay_service::plugin_event_dispatch::PluginEventShutdownOutcome::Panicked) => {
             tracing::error!("plugin event dispatcher supervisor panicked during shutdown");
         }
-        Some(patchbay_service::plugin_event_dispatch::PluginEventShutdownOutcome::Stopped) | None => {}
+        Some(patchbay_service::plugin_event_dispatch::PluginEventShutdownOutcome::Stopped)
+        | None => {}
     }
     match github_snapshots_shutdown {
         Some(patchbay_ghsnapshot::ManagerShutdownOutcome::TimedOut) => {
@@ -846,15 +851,21 @@ async fn main() -> anyhow::Result<()> {
         Some(patchbay_ghsnapshot::ManagerShutdownOutcome::Stopped) | None => {}
     }
     match ordered_event_side_effects_shutdown {
-        Some(patchbay_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::TimedOut) => {
+        Some(
+            patchbay_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::TimedOut,
+        ) => {
             tracing::warn!(
                 "ordered event side effects exceeded shutdown deadline and were aborted"
             );
         }
-        Some(patchbay_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Panicked) => {
+        Some(
+            patchbay_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Panicked,
+        ) => {
             tracing::error!("ordered event side-effect task panicked during shutdown");
         }
-        Some(patchbay_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Stopped)
+        Some(
+            patchbay_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Stopped,
+        )
         | None => {}
     }
     match autopilot_event_listeners_shutdown {
@@ -864,8 +875,8 @@ async fn main() -> anyhow::Result<()> {
         Some(patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Panicked) => {
             tracing::error!("autopilot event listener task panicked during shutdown");
         }
-        Some(patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Stopped) | None => {
-        }
+        Some(patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Stopped)
+        | None => {}
     }
     match task_side_effects_shutdown {
         Some(patchbay_service::task_service::TaskSideEffectShutdownOutcome::TimedOut) => {
@@ -947,7 +958,8 @@ mod tests {
         }
     }
 
-    fn test_attachment_storage() -> Arc<dyn patchbay_handler::attachment_storage::AttachmentStorage> {
+    fn test_attachment_storage() -> Arc<dyn patchbay_handler::attachment_storage::AttachmentStorage>
+    {
         Arc::new(
             patchbay_handler::attachment_storage::LocalStorage::new(
                 std::env::temp_dir().join("patchbay-server-route-tests"),

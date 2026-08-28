@@ -79,8 +79,8 @@ async fn repo_registry_add_remove_and_list_match_go_patch_contracts() {
     assert!(removed.stdout.starts_with("REMOVED URL"));
     assert!(removed.stdout.contains("web.git"));
 
-    let list =
-        Cli::try_parse_from(["patchbay", "repo", "list", "--output", "table"]).expect("repo list CLI");
+    let list = Cli::try_parse_from(["patchbay", "repo", "list", "--output", "table"])
+        .expect("repo list CLI");
     let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("list repos");

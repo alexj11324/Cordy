@@ -102,16 +102,18 @@ pub async fn agent_hook_tools(
     service: &PluginService,
     workspace_id: Uuid,
 ) -> Result<Vec<PluginHookTool>, crate::plugin::PluginError> {
-    let installations =
-        patchbay_db::queries::plugin::list_workspace_plugin_installations(&service.pool, workspace_id)
-            .await
-            .map_err(|e| {
-                crate::plugin::PluginError::with_source(
-                    PluginErrorKind::Unavailable,
-                    "list plugin installations",
-                    crate::plugin::box_anyhow(e),
-                )
-            })?;
+    let installations = patchbay_db::queries::plugin::list_workspace_plugin_installations(
+        &service.pool,
+        workspace_id,
+    )
+    .await
+    .map_err(|e| {
+        crate::plugin::PluginError::with_source(
+            PluginErrorKind::Unavailable,
+            "list plugin installations",
+            crate::plugin::box_anyhow(e),
+        )
+    })?;
 
     let mut tools = Vec::new();
     for installation in &installations {

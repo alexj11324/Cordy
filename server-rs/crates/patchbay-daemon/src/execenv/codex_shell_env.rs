@@ -448,12 +448,12 @@ mod tests {
                 "ANTHROPIC_API_KEY",
                 "APPDATA",
                 "COMSPEC",
-                "PATCHBAY_SERVER_URL",
-                "PATCHBAY_TOKEN",
                 "CUSTOM_FLAG",
                 "HTTPS_PROXY",
                 "LANG",
                 "LOCALAPPDATA",
+                "PATCHBAY_SERVER_URL",
+                "PATCHBAY_TOKEN",
                 "PATH",
                 "PATHEXT",
                 "SDKROOT",
@@ -493,8 +493,8 @@ mod tests {
         assert_eq!(
             got,
             vec![
-                "PATCHBAY_TOKEN",
                 "CUSTOM_ACCESS_TOKEN",
+                "PATCHBAY_TOKEN",
                 "PATH",
                 "x_secret",
                 "Y_KEY"
