@@ -244,8 +244,8 @@ Set `DATABASE_URL` in your `.env` and remove the `postgres` service from the com
 The Docker Compose setup runs migrations automatically. If you need to run them manually:
 
 ```bash
-# Using the built binary
-./server/bin/migrate up
+# Using the built Rust binary
+./server-rs/target/release/cordy-migrate up
 
 # Or from the Rust source
 cd server-rs && cargo run --locked -p cordy-migrate --bin cordy-migrate -- up

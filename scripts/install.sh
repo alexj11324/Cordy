@@ -288,12 +288,17 @@ get_selfhost_ref() {
     validate_selfhost_image_tag "$existing_pin"
     case "$existing_pin" in
       latest)
-        printf '%s' "main"
+        latest="$(get_latest_version)"
+        if [ -z "$latest" ]; then
+          fail "Existing self-host image pin 'latest' cannot be mapped to a published release. Set CORDY_SELFHOST_REF explicitly."
+        fi
+        validate_selfhost_image_tag "$latest"
+        printf '%s' "$latest"
         ;;
       sha-*)
         local commit_ref="${existing_pin#sha-}"
-        if ! printf '%s' "$commit_ref" | grep -Eq '^[0-9A-Fa-f]{7,40}$'; then
-          fail "Existing self-host image pin '$existing_pin' cannot be mapped to a Git commit. Set CORDY_SELFHOST_REF explicitly."
+        if ! printf '%s' "$commit_ref" | grep -Eq '^[0-9A-Fa-f]{40}$'; then
+          fail "Existing self-host image pin '$existing_pin' cannot be mapped reliably to a full Git commit. Set CORDY_SELFHOST_REF explicitly."
         fi
         printf '%s' "$commit_ref"
         ;;
@@ -320,13 +325,21 @@ checkout_server_ref() {
 }
 
 pin_selfhost_image_tag() {
-  local ref="$1" image_tag
+  local ref="$1" image_tag preserve_existing=false
 
   # A durable pin in an existing installation is an operator choice. Only an
   # explicit CORDY_SELFHOST_REF is allowed to replace it; otherwise rerunning
   # the installer could unexpectedly start a newer image and its migrations.
   if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
     image_tag="$(sed -n 's/^CORDY_IMAGE_TAG=//p' .env | tail -n 1)"
+    if [ "$image_tag" = "latest" ]; then
+      # `latest` is a moving channel rather than a durable version boundary.
+      # Resolve it to the same stable release ref selected for the deployment
+      # assets, then persist that exact version below.
+      image_tag="$ref"
+    else
+      preserve_existing=true
+    fi
   elif [ "$ref" = "main" ]; then
     image_tag="latest"
   else
@@ -335,7 +348,7 @@ pin_selfhost_image_tag() {
 
   validate_selfhost_image_tag "$image_tag"
 
-  if [ "$SELFHOST_ENV_EXISTED" = true ] && [ -z "${CORDY_SELFHOST_REF:-}" ] && grep -q '^CORDY_IMAGE_TAG=.' .env; then
+  if [ "$preserve_existing" = true ]; then
     export CORDY_IMAGE_TAG="$image_tag"
     ok "Preserved existing backend and web image pin $image_tag"
     return

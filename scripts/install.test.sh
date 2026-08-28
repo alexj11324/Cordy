@@ -404,11 +404,16 @@ STUB
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
+latest_request=false
 for arg in "$@"; do
   case "$arg" in
+    */releases/latest) latest_request=true ;;
     http*) printf '%s\n' "$arg" >>"$CORDY_TEST_CURL_LOG" ;;
   esac
 done
+if [ "$latest_request" = true ] && [ -n "${CORDY_TEST_LATEST_TAG:-}" ]; then
+  printf 'HTTP/2 302\nlocation: https://github.com/cordy-ai/cordy/releases/tag/%s\n' "$CORDY_TEST_LATEST_TAG"
+fi
 exit 0
 STUB
   chmod +x "$stub_bin/curl"
@@ -600,6 +605,29 @@ test_with_server_preserves_existing_image_pin_without_explicit_ref() {
   fi
 }
 
+test_with_server_resolves_latest_pin_to_matching_release_assets() {
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+
+  _setup_server_sandbox "$tmp"
+  cp "$tmp/server/.env.example" "$tmp/server/.env"
+  printf '\nCORDY_IMAGE_TAG=latest\n' >>"$tmp/server/.env"
+
+  _run_with_server "$tmp" CORDY_SELFHOST_REF= CORDY_TEST_LATEST_TAG=v0.3.2 || return 1
+
+  if [ "$(grep '^CORDY_IMAGE_TAG=' "$tmp/server/.env")" != "CORDY_IMAGE_TAG=v0.3.2" ]; then
+    echo "installer did not replace the moving latest pin with the resolved release" >&2
+    cat "$tmp/server/.env" >&2 || true
+    return 1
+  fi
+  if ! grep -Fq "fetch origin v0.3.2 --depth 1" "$tmp/git.log"; then
+    echo "installer did not check out the release assets matching the resolved latest image" >&2
+    cat "$tmp/git.log" >&2 || true
+    return 1
+  fi
+}
+
 test_systemd_preflight_fails_before_server_mutation() {
   if [[ "$(uname -s)" != "Linux" ]]; then
     echo "skipping Linux-only systemd preflight test on $(uname -s)"
@@ -765,6 +793,7 @@ test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
 test_with_server_pins_selected_release_images
 test_with_server_preserves_existing_image_pin_without_explicit_ref
+test_with_server_resolves_latest_pin_to_matching_release_assets
 test_systemd_preflight_fails_before_server_mutation
 test_with_server_systemd_owns_compose_lifecycle
 test_container_entrypoint_forwards_migration_signal

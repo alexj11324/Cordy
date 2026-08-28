@@ -720,6 +720,9 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --json assets \
             --jq '.assets[].name')"
+          # electron-builder maps its `${arch}` macro per Linux package type:
+          # x64 becomes x86_64 for AppImage/RPM and amd64 for deb, while arm64
+          # becomes aarch64 for RPM. These are the actual uploaded filenames.
           for asset in \
             checksums.txt \
             "cordy-cli-$version-linux-amd64.tar.gz" \
@@ -728,12 +731,12 @@ jobs:
             "cordy-cli-$version-darwin-arm64.tar.gz" \
             "cordy-cli-$version-windows-amd64.zip" \
             "cordy-cli-$version-windows-arm64.zip" \
-            "cordy-desktop-$version-linux-x64.AppImage" \
-            "cordy-desktop-$version-linux-x64.deb" \
-            "cordy-desktop-$version-linux-x64.rpm" \
+            "cordy-desktop-$version-linux-x86_64.AppImage" \
+            "cordy-desktop-$version-linux-amd64.deb" \
+            "cordy-desktop-$version-linux-x86_64.rpm" \
             "cordy-desktop-$version-linux-arm64.AppImage" \
             "cordy-desktop-$version-linux-arm64.deb" \
-            "cordy-desktop-$version-linux-arm64.rpm" \
+            "cordy-desktop-$version-linux-aarch64.rpm" \
             "latest-linux.yml" \
             "latest-linux-arm64.yml" \
             "cordy-desktop-$version-windows-x64.exe" \
