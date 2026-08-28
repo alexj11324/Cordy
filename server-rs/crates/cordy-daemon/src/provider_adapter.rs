@@ -3284,15 +3284,27 @@ mod tests {
             provider: "deveco".to_string(),
             profile_id: String::new(),
         };
+        let command_path = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let verified_path = crate::canonical_path::executable_path_for_launch(&command_path)
+            .unwrap()
+            .unwrap_or_else(|| command_path.clone());
+        adapter.verified_launches.write().unwrap().insert(
+            launch_cache_key(&target),
+            VerifiedLaunch {
+                path: verified_path,
+                version: "1".to_string(),
+                registered_version: "1".to_string(),
+            },
+        );
         launches.replace_builtins(
             "workspace-1",
             vec![RuntimeLaunchSpec {
                 target: target.clone(),
                 display_name: "Deveco".to_string(),
-                command_path: std::env::current_exe()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
+                command_path,
                 fixed_args: Vec::new(),
                 version: "1".to_string(),
             }],

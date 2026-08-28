@@ -266,7 +266,9 @@ mod tests {
     use std::fs;
 
     fn plugin_path(leaf: &str) -> String {
-        Path::new("/plugins/foo")
+        Path::new(std::path::MAIN_SEPARATOR_STR)
+            .join("plugins")
+            .join("foo")
             .join(leaf)
             .to_string_lossy()
             .into_owned()
