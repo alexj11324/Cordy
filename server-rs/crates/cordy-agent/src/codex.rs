@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -600,7 +600,8 @@ fn is_mcp_config_key(value: &str) -> bool {
     let Some(rest) = value.strip_prefix("mcp_servers") else {
         return false;
     };
-    rest.is_empty() || rest.starts_with('.') || rest.trim_start().starts_with('=')
+    let rest = rest.trim_start();
+    rest.is_empty() || rest.starts_with('.') || rest.starts_with('=')
 }
 
 fn ensure_codex_mcp_config(path: &Path, config: Option<&Value>) -> Result<(), AgentError> {
@@ -631,14 +632,34 @@ fn ensure_codex_mcp_config(path: &Path, config: Option<&Value>) -> Result<(), Ag
     if updated == existing {
         return Ok(());
     }
-    fs::write(path, updated).map_err(AgentError::Process)?;
+    write_private_codex_config(path, &updated).map_err(AgentError::Process)?;
+    Ok(())
+}
+
+fn write_private_codex_config(path: &Path, content: &str) -> io::Result<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-            .map_err(AgentError::Process)?;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+        // Open without truncating first so an existing 0644 file is tightened
+        // before any managed MCP credentials are written into it.
+        let mut options = fs::OpenOptions::new();
+        options.create(true).write(true).mode(0o600);
+        let mut file = options.open(path)?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        file.set_len(0)?;
+        file.write_all(content.as_bytes())?;
+        file.flush()?;
+        // Keep the final chmod as defense in depth if another local process
+        // changed the mode while the file was being regenerated.
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        return Ok(());
     }
-    Ok(())
+
+    #[cfg(not(unix))]
+    {
+        fs::write(path, content)
+    }
 }
 
 fn strip_codex_managed_block(content: &str) -> String {
@@ -686,7 +707,17 @@ fn strip_codex_user_mcp_tables(content: &str) -> String {
 }
 
 fn is_codex_mcp_table_header(line: &str) -> bool {
-    line.starts_with("[mcp_servers.") || line.starts_with("[ mcp_servers.")
+    let Some(inner) = line
+        .trim()
+        .strip_prefix('[')
+        .and_then(|line| line.strip_suffix(']'))
+    else {
+        return false;
+    };
+    let Some(rest) = inner.trim().strip_prefix("mcp_servers") else {
+        return false;
+    };
+    rest.trim_start().starts_with('.')
 }
 
 fn render_codex_mcp_servers_block(config: Option<&Value>) -> Result<String, AgentError> {
@@ -858,6 +889,9 @@ fn codex_toml_basic_string(value: &str) -> String {
 #[async_trait]
 impl Backend for CodexBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        let deadline = (!options.timeout.is_zero())
+            .then(|| Instant::now().checked_add(options.timeout))
+            .flatten();
         let first_attempt = self.execute_once(prompt, options.clone()).await?;
         let (message_tx, message_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
@@ -874,6 +908,7 @@ impl Backend for CodexBackend {
                 message_tx,
                 result_tx,
                 cancellation,
+                deadline,
             )
             .await;
         });
@@ -973,7 +1008,6 @@ impl CodexBackend {
         let cancellation = options.cancellation.clone();
         let configured_model = options.model.clone();
         let codex_home = self.config.env.get("CODEX_HOME").cloned();
-        let resumed = !options.resume_session_id.is_empty();
         let started = Instant::now();
         let started_at = SystemTime::now();
         let prompt = prompt.to_string();
@@ -998,7 +1032,6 @@ impl CodexBackend {
                 diagnostic_command_path,
                 diagnostic_prefix,
                 diagnostic_env,
-                resumed,
                 started,
                 started_at,
                 stderr_tail,
@@ -1025,25 +1058,46 @@ async fn run_codex_attempts(
     messages: mpsc::Sender<Message>,
     result_tx: oneshot::Sender<ExecutionResult>,
     cancellation: CancellationToken,
+    deadline: Option<Instant>,
 ) {
     let mut attempt = Some(attempt);
     let mut attempt_options = options;
     for attempt_number in 1..=2 {
         if attempt_number > 1 {
-            attempt = Some(match backend
-                .execute_once(&prompt, attempt_options.clone())
-                .await
-            {
-                Ok(attempt) => attempt,
-                Err(error) => {
+            if let Some(deadline) = deadline {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
                     let _ = result_tx.send(ExecutionResult {
-                        status: "failed".to_string(),
-                        error: error.to_string(),
+                        status: "timeout".to_string(),
+                        error: "codex retry budget expired".to_string(),
                         ..ExecutionResult::default()
                     });
                     return;
                 }
-            });
+                attempt_options.timeout = remaining;
+                let handshake_timeout = if attempt_options.handshake_timeout.is_zero() {
+                    DEFAULT_HANDSHAKE_TIMEOUT
+                } else {
+                    attempt_options.handshake_timeout
+                };
+                attempt_options.handshake_timeout = handshake_timeout.min(remaining);
+            }
+            attempt = Some(
+                match backend
+                    .execute_once(&prompt, attempt_options.clone())
+                    .await
+                {
+                    Ok(attempt) => attempt,
+                    Err(error) => {
+                        let _ = result_tx.send(ExecutionResult {
+                            status: "failed".to_string(),
+                            error: error.to_string(),
+                            ..ExecutionResult::default()
+                        });
+                        return;
+                    }
+                },
+            );
         }
 
         let Some(CodexAttempt {
@@ -1105,7 +1159,20 @@ async fn run_codex_attempts(
         if retry_reason == RetryReason::ModelCatalogRefresh {
             reset_resume_for_model_catalog_retry(&mut attempt_options);
         }
-        let retry = tokio::time::sleep(retry_backoff(retry_reason));
+        let retry_delay = retry_backoff(retry_reason);
+        if let Some(deadline) = deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining <= retry_delay {
+                for held_message in held {
+                    if messages.send(held_message).await.is_err() {
+                        return;
+                    }
+                }
+                let _ = result_tx.send(result);
+                return;
+            }
+        }
+        let retry = tokio::time::sleep(retry_delay);
         tokio::pin!(retry);
         tokio::select! {
             () = cancellation.cancelled() => {
@@ -1139,7 +1206,6 @@ async fn run_codex(
     diagnostic_command_path: String,
     diagnostic_prefix: Vec<String>,
     diagnostic_env: BTreeMap<String, String>,
-    resumed: bool,
     started: Instant,
     started_at: SystemTime,
     stderr_tail: SharedDiagnosticBuffer,
@@ -1247,12 +1313,13 @@ async fn run_codex(
             }
         }
     }
+    let actual_resumed = result.resumed;
     if !has_usage(&result.usage) && !result.session_id.is_empty() {
         if let Some(scanned) = scan_codex_session_usage(
             codex_home.as_deref(),
             &result.session_id,
             started_at,
-            resumed,
+            actual_resumed,
         ) {
             let model = if configured_model.is_empty() {
                 if scanned.model.is_empty() {
@@ -1263,7 +1330,10 @@ async fn run_codex(
             } else {
                 configured_model
             };
-            result.usage.insert(model, scanned.usage);
+            // Rollout usage is the authoritative fallback. Replace any
+            // cache-only RPC bucket atomically so the same turn is not
+            // double-counted under two model keys.
+            result.usage = BTreeMap::from([(model, scanned.usage)]);
         }
     }
     if !has_timeout_diagnostic && !result.error.is_empty() {
@@ -1293,6 +1363,7 @@ struct ProtocolOutcome {
     error: String,
     session_id: String,
     usage: BTreeMap<String, TokenUsage>,
+    resumed: bool,
     resume_rejected: bool,
     timeout_diagnostic: Option<CodexTimeoutDiagnostic>,
     first_item_wait: Option<CodexFirstItemWaitObservation>,
@@ -1436,6 +1507,7 @@ async fn run_protocol(
             status: "failed".to_string(),
             error,
             session_id: client.state.thread_id,
+            resumed,
             resume_rejected,
             ..ProtocolOutcome::default()
         };
@@ -1474,6 +1546,7 @@ async fn run_protocol(
                     status: "timeout".to_string(),
                     error,
                     session_id,
+                    resumed,
                     resume_rejected,
                     timeout_diagnostic: Some(diagnostic),
                     first_item_wait,
@@ -1490,6 +1563,7 @@ async fn run_protocol(
                     status: "failed".to_string(),
                     error,
                     session_id,
+                    resumed,
                     resume_rejected,
                     first_item_wait,
                     ..ProtocolOutcome::default()
@@ -1515,6 +1589,7 @@ async fn run_protocol(
         },
         session_id,
         usage,
+        resumed,
         resume_rejected,
         first_item_wait,
         ..ProtocolOutcome::default()
@@ -3164,6 +3239,37 @@ exit 1
     }
 
     #[test]
+    fn managed_mcp_filters_whitespace_around_namespace_separator() {
+        assert!(is_mcp_config_key("mcp_servers . evil.command=\"evil\""));
+        assert!(is_mcp_config_key("mcp_servers = {command=\"evil\"}"));
+        assert!(!is_mcp_config_key("mcp_servers_evil.command=\"evil\""));
+
+        let filtered = filter_managed_mcp_overrides(vec![
+            "-c".to_string(),
+            "mcp_servers . evil.command=\"evil\"".to_string(),
+            "--config=mcp_servers . other.command=\"other\"".to_string(),
+            "-c".to_string(),
+            "model=\"o3\"".to_string(),
+        ]);
+        assert_eq!(
+            filtered,
+            vec!["-c", "model=\"o3\""]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+
+        assert!(is_codex_mcp_table_header("[mcp_servers . managed]"));
+        assert!(is_codex_mcp_table_header("[ mcp_servers . managed ]"));
+        assert!(!is_codex_mcp_table_header("[mcp_servers_evil.managed]"));
+        let stripped = strip_codex_user_mcp_tables(
+            "[mcp_servers . managed]\ncommand = \"old\"\n\n[workspace]\nvalue = true\n",
+        );
+        assert!(!stripped.contains("command = \"old\""));
+        assert!(stripped.contains("[workspace]"));
+    }
+
+    #[test]
     fn continuity_notice_is_added_only_after_resume_fallback() {
         let fresh = codex_turn_input("prompt", true, false, "NOTICE: ");
         let resumed = codex_turn_input("prompt", true, true, "NOTICE: ");
@@ -3300,6 +3406,7 @@ exit 1
             message_tx,
             result_tx,
             CancellationToken::new(),
+            None,
         ));
 
         attempt_message_tx
@@ -3411,6 +3518,16 @@ exit 1
                 & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    #[test]
+    fn protocol_outcome_records_actual_resume_landing() {
+        assert!(!ProtocolOutcome::default().resumed);
+        assert!(ProtocolOutcome {
+            resumed: true,
+            ..ProtocolOutcome::default()
+        }
+        .resumed);
     }
 
     #[test]

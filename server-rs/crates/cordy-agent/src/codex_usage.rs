@@ -77,11 +77,11 @@ fn codex_session_root(configured_home: Option<&str>) -> Option<PathBuf> {
             }
         }
     }
-    std::env::var("HOME")
-        .ok()
-        .map(|home| home.trim().to_string())
-        .filter(|home| !home.is_empty())
-        .map(|home| Path::new(&home).join(".codex").join("sessions"))
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .filter(|home| !home.as_os_str().is_empty())
+        .map(|home| home.join(".codex").join("sessions"))
         .filter(|root| root.is_dir())
 }
 
