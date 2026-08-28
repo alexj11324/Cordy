@@ -461,6 +461,9 @@ async fn production_scheduler_reclaims_stale_lease_and_fences_old_owner() {
                 if input.attempt == 1 {
                     first_entered.notify_one();
                     release_first.notified().await;
+                    // The old owner must not be able to refresh a lease that
+                    // was reclaimed by another manager.
+                    (input.heartbeat)(CancellationToken::new()).await?;
                 }
                 Ok(HandlerResult::default())
             })

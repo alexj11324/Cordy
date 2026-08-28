@@ -1373,9 +1373,14 @@ mod tests {
 
         let first_service = service.clone();
         let first = tokio::spawn(async move {
+            let mut first_params = params(workspace_id, "Concurrent identity", "todo");
+            // The duplicate override still has to take the transaction-scoped
+            // advisory lock; otherwise a normal create can pass its lookup
+            // while this transaction is blocked on the counter row.
+            first_params.allow_duplicate = true;
             create(
                 &first_service,
-                params(workspace_id, "Concurrent identity", "todo"),
+                first_params,
             )
             .await
         });
