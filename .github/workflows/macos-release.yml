@@ -255,19 +255,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          INCLUDE_X64: ${{ inputs.include_x64 }}
         shell: bash
         run: |
           published_assets="$(gh release view "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --json assets \
             --jq '.assets[].name')"
-          for asset in \
-            "patchbay-desktop-$VERSION-mac-arm64.dmg" \
-            "patchbay-desktop-$VERSION-mac-arm64.zip" \
-            "patchbay-desktop-$VERSION-mac-x64.dmg" \
-            "patchbay-desktop-$VERSION-mac-x64.zip" \
-            latest-mac.yml \
-            latest-x64-mac.yml; do
+          required_assets=(
+            "patchbay-desktop-$VERSION-mac-arm64.dmg"
+            "patchbay-desktop-$VERSION-mac-arm64.zip"
+            latest-mac.yml
+          )
+          if [ "$INCLUDE_X64" = "true" ]; then
+            required_assets+=(
+              "patchbay-desktop-$VERSION-mac-x64.dmg"
+              "patchbay-desktop-$VERSION-mac-x64.zip"
+              latest-x64-mac.yml
+            )
+          fi
+          for asset in "${required_assets[@]}"; do
             grep -Fxq "$asset" <<< "$published_assets" || {
               echo "::error::Draft release is missing required macOS asset $asset."
               exit 1
