@@ -891,6 +891,10 @@ export function ChatWindow() {
         <ChatMessageList
           key={activeSessionId}
           messages={messages}
+          agentId={activeAgent?.id}
+          agentName={activeAgent?.name}
+          userId={user?.id}
+          userName={user?.name}
           pendingTask={pendingTask}
           availability={availability}
           firstItemIndex={firstItemIndex}

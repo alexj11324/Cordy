@@ -257,6 +257,10 @@ export function ChatPage() {
         <ChatMessageList
           key={c.activeSessionId}
           messages={c.messages}
+          agentId={c.activeAgent?.id}
+          agentName={c.activeAgent?.name}
+          userId={c.user?.id}
+          userName={c.user?.name}
           pendingTask={c.pendingTask}
           availability={c.availability}
           firstItemIndex={c.firstItemIndex}
