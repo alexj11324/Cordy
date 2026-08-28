@@ -1,9 +1,5 @@
 //! Daemon configuration and executable-path resolution.
 
-// S9-integration: consumed by daemon bootstrap wiring that lands with
-// integration; silence dead-code until then.
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
 /// `canonicalExecutablePath` (config.go:835–847): absolutize, then resolve
@@ -299,8 +295,7 @@ pub(crate) struct Overrides {
     pub launched_by: String,
 }
 
-/// Minimal port of the CLI-config fields LoadConfig reads (Go:
-/// internal/cli/config.go). Full CLI config lands with the S10 CLI bins.
+/// CLI profile fields consumed by daemon configuration.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CliProfileConfig {
     pub profile_command_overrides: BTreeMap<String, String>,
@@ -316,13 +311,9 @@ pub(crate) struct CliProfileConfig {
 /// `LoadConfig`: builds the daemon configuration from environment variables
 /// and optional CLI flag overrides.
 ///
-/// S9-integration notes:
-/// - `probeAgentCLIs()` (agents_probe.go) and `cli.LoadCLIConfigForProfile`
-///   belong to lane B / the CLI crate respectively. Until they land, agent
-///   discovery is left as an injected [`ProbeAgents`] hook defaulting to an
-///   empty map (which errors exactly like Go when AllowNoAgents is false),
-///   and the openclaw backend override is applied only when a loaded CLI
-///   config is supplied via [`Overrides::openclaw_override`].
+/// Agent discovery remains an injected [`ProbeAgents`] hook so production and
+/// tests share the same validation path. OpenClaw overrides are applied from
+/// the loaded CLI profile supplied through [`Overrides::openclaw_override`].
 #[allow(clippy::too_many_lines)]
 pub(crate) fn load_config(
     overrides: Overrides,
@@ -617,8 +608,7 @@ pub(crate) fn load_config(
     })
 }
 
-/// Injected agent-CLI discovery seam standing in for Go's package-level
-/// `probeAgentCLIs()` (lane B owns agents_probe.go). Returns provider → entry.
+/// Injected agent-CLI discovery seam. Returns provider → entry.
 pub(crate) type ProbeAgents<'a> = &'a dyn Fn() -> BTreeMap<String, crate::types::AgentEntry>;
 
 /// `openclawOverrideFrom` + navigation over the nullable chain (config.go:1100).

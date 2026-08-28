@@ -1,24 +1,5 @@
-//! The daemon's local health endpoint surface.
-//!
-//! Symbol map (Go → Rust):
-//! - `HealthResponse` / `healthWorkspace` → [`HealthResponse`] /
-//!   [`HealthWorkspace`]
-//! - `repoCheckoutRequest` → [`RepoCheckoutRequest`]
-//! - `activeRepoCheckoutTask` → [`ActiveRepoCheckoutTask`]
-//! - `registerActiveRepoCheckoutTask` / `clearActiveRepoCheckoutTask` /
-//!   `activeRepoCheckoutTask(r)` → [`RepoCheckoutRegistry`] methods
-//! - `authorizeRepoCheckoutWorkDir` → [`authorize_repo_checkout_workdir`]
-//! - constants → [`REPO_CHECKOUT_*`]
-//!
-//! S9-integration: `listenHealth`, `healthHandler`, `shutdownHandler`,
-//! `serveHealth` and `repoCheckoutHandler` are Daemon methods (lane B) — they
-//! read d.cfg/d.mu/d.ready/d.repoCache and own the HTTP mux. They land with
-//! daemon.go core; this module carries everything those handlers need that is
-//! Daemon-independent (wire types + workdir authorization + the bearer-token
-//! registry), so lane B only wires them.
-
-// S9-integration: consumed by daemon.go core (lane B) health server wiring; silence dead-code until wired.
-#![allow(dead_code)]
+//! The daemon's local health endpoint wire types, repository-checkout
+//! authorization, and bearer-token registry.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 /// `HealthResponse`: returned by the daemon's local health endpoint.
 ///
-/// Field-level notes preserved from Go: OS lets the desktop app detect a
-/// foreign-OS daemon (#3916); Profile is deliberately NOT omitempty because the
+/// OS lets the desktop app detect a foreign-OS daemon (#3916); Profile is
+/// deliberately NOT omitted because the
 /// empty string is a real answer ("I am the default profile's daemon") that
 /// must stay distinguishable from a pre-#6694 daemon (#6694); SkippedAgents is
 /// what made GH #6077 actionable (MUL-5439).

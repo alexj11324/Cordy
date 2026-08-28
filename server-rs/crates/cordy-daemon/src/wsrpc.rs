@@ -19,20 +19,12 @@
 //! - `attach` / `markRPCV1Supported` / `currentGeneration` /
 //!   `supportsRPCV1` / `call` / `deliver` → same-named methods
 //!
-//! Deviations from Go:
-//! - `ClaimTasksWSFirst` (wsrpc.go:307–380) is Daemon wiring — it reads
-//!   `d.batchClaimUnsupported`, `d.wsClaimHTTPFallbackAfter`, `d.logger` and
-//!   `d.client`. It lands with the daemon.go core (lane B), which owns those
-//!   fields.
-//! - `batchClaimRequestTimeout` (client.go:255) is defined in `client.rs`
-//!   alongside the rest of client.go; `ws_claim_uncertain_fallback_delay`
-//!   references it through that module to keep one source of truth.
-//! - Go's `<-chan protocol.RPCResponsePayload` pending map becomes
-//!   `HashMap<String, mpsc::Sender<..>>`; `deliver` uses `try_send` on a
-//!   capacity-1 channel to replicate the non-blocking send. Detach closes
-//!   delivery by removing the entry (the caller observes the removal as
-//!   [`WsRpcError::Unavailable`]-vs-[`WsRpcError::Uncertain`] via
-//!   [`WsOutbound::cancel`], exactly like Go's closed channel).
+//! `batch_claim_request_timeout` is defined in `client.rs`, and
+//! `ws_claim_uncertain_fallback_delay` references it there to keep one source
+//! of truth. The pending map uses capacity-one channels and non-blocking
+//! delivery. Detach closes delivery by removing the entry; callers distinguish
+//! [`WsRpcError::Unavailable`] from [`WsRpcError::Uncertain`] via
+//! [`WsOutbound::cancel`].
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

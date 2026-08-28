@@ -189,9 +189,7 @@ pub(crate) async fn run_ws_heartbeat_sender(
     }
 }
 
-/// `ack_advertises_rpc_v1`: the capability scan from
-/// `handleWSHeartbeatAckForConnection` (wakeup.go:359–364), extracted so lane B
-/// only wires the state mutation.
+/// Reports whether a heartbeat acknowledgement advertises RPC v1.
 pub(crate) fn ack_advertises_rpc_v1(ack: &HeartbeatResponse) -> bool {
     ack.server_capabilities
         .iter()

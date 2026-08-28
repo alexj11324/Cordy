@@ -524,10 +524,7 @@ pub(crate) mod processtree {
 /// explicitly what to do with it.
 pub(crate) const REPOS_DIR_NAME: &str = ".repos";
 
-// S9-integration: mirrors daemon client requestError + isAccessNotFound
-// (gc.go:472–475). The real client lives behind GcHost.
-
-/// Stand-in for the daemon client's `requestError`.
+/// Error returned by a GC control-plane request.
 #[derive(Debug, thiserror::Error)]
 #[error("request failed with status {status_code}")]
 pub(crate) struct RequestError {
@@ -551,8 +548,7 @@ pub(crate) struct IssueGCCheckResult {
     pub(crate) found: bool,
     pub(crate) status: String,
     pub(crate) updated_at: Option<DateTime<Utc>>,
-    /// Go stores `err error`; we keep the rendered message (Clone needed for
-    /// the batch-check map fan-out).
+    /// Rendered error message, kept cloneable for batch-check fan-out.
     pub(crate) err: Option<String>,
 }
 
@@ -564,18 +560,10 @@ pub(crate) struct IssueGCCheckStatus {
     pub(crate) updated_at: Option<DateTime<Utc>>,
 }
 
-// S9-integration: mirrors execenv.ManagedReclaimableArtifactSubpaths and the
-// hasManagedArtifact probe (codex-home/.sandbox-bin under the env root).
-
-/// `execenv.ManagedReclaimableArtifactSubpaths`: labels logged at GC startup.
+/// Managed artifact labels logged at GC startup.
 fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
     crate::execenv::reclaimable::managed_reclaimable_artifact_subpaths()
 }
-
-// S9-integration: mirrors execenv.PruneCodexSessionStores /
-// PruneHermesMemoryStores / PruneHermesSessionStores. Each returns
-// (storesRemoved, bytesReclaimed); the real implementations live in execenv
-// and receive `reserve_store_for_deletion` as a reservation callback.
 
 /// Reservation callback handed to store pruners (`d.reserveStoreForDeletion`).
 pub(crate) type ReserveStoreForDeletion<'a> =

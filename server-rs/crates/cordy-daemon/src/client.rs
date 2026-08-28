@@ -115,7 +115,7 @@ impl Client {
         }
     }
 
-    /// `CloseIdleConnections` (client.go:142): drops pooled control-plane HTTP
+    /// Drops pooled control-plane HTTP
     /// connections. Called after repeated heartbeat transport failures so a
     /// stale keep-alive socket from a server restart cannot delay recovery.
     pub fn close_idle_connections(&self) {
