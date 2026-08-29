@@ -1,11 +1,16 @@
 # Release runbook
 
-## Normal release
+## Automatic macOS ARM release
 
 Release from a reviewed commit on `main` by creating and pushing a new semantic
-version tag such as `v0.18.4`. A tag push publishes the Rust CLI archives and
-desktop installers. It does not build self-hosted container images or the Helm
-chart, so desktop downloads are not blocked by server-image publication.
+version tag such as `v0.18.4`. The version-tag push first runs the normal CI
+workflow. Only after that CI run succeeds does `macos-release.yml` publish the
+Apple Silicon (`arm64`) desktop release. Pull-request CI and ordinary `main`
+pushes never create a Release.
+
+The automatic path publishes no Rust CLI archive, Intel macOS package, Linux or
+Windows installer, container image, or Helm chart. Those assets are all
+manual-only release paths.
 
 The verification job applies migrations with `patchbay-migrate`, runs every Rust
 workspace target, builds the server, CLI, migration runner, and all three
@@ -25,29 +30,32 @@ these GitHub Actions secrets:
 - `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for that account
 - `APPLE_TEAM_ID`: Apple Developer team that owns the signing identity
 
-The macOS jobs build Intel and Apple Silicon DMG/ZIP assets without publishing
-them, verify the Developer ID signature and expected team, validate the stapled
-notarization ticket, and require Gatekeeper to report `Notarized Developer ID`.
-Only then are the macOS assets uploaded to the draft Release. The public
-Release job still waits for both macOS matrix entries, so an unsigned or
-unnotarized package cannot become the production auto-update baseline.
+The automatic macOS ARM job builds the Apple Silicon DMG/ZIP assets without
+publishing them first, verifies the Developer ID signature and expected team,
+validates the stapled notarization ticket, and requires Gatekeeper to report
+`Notarized Developer ID`. Only then are the ARM assets uploaded to and
+published from the draft Release.
 
 ### Manual macOS-only release
 
-When only the macOS desktop app is needed, run **Actions → macOS Desktop
-Release → Run workflow** and enter an existing semantic version tag. This path
-builds only the Apple Silicon and Intel DMG/ZIP artifacts, applies the same
-Developer ID/notarization/Gatekeeper gates, uploads both auto-update metadata
-files, and publishes the GitHub Release. It does not build server containers,
-the Web image, Helm, or non-macOS installers.
+When a non-automatic macOS package is needed, run **Actions → macOS Desktop
+Release → Run workflow**, enter an existing semantic version tag, and choose
+`x64`, `arm64`, or `all`. This path is manual and applies the same Developer
+ID/notarization/Gatekeeper gates. The ARM choice is also useful for rerunning
+the automatic artifact after a transient failure.
 
-## Manual self-hosted publication
+## Manual publication for all other assets
 
-Backend/Web container images and the Helm chart are published only through a
-manual **Release** workflow run. In **Actions → Release → Run workflow**, enter
-an existing semantic version tag. The workflow checks out that exact tag,
-builds native `linux/amd64` and `linux/arm64` images, publishes the versioned
-multi-architecture manifests, and then publishes the matching Helm chart.
+Rust CLI archives, non-ARM desktop installers, backend/Web container images,
+and the Helm chart are published only through a manual **Release** workflow
+run. In **Actions → Release → Run workflow**, enter an existing semantic
+version tag. The workflow checks out that exact tag and runs the full manually
+requested release path; it does not run from a tag push automatically.
+
+Backend/Web container images and the Helm chart are still manual jobs in that
+workflow. They build native `linux/amd64` and `linux/arm64` images, publish the
+versioned multi-architecture manifests, and can optionally promote stable
+images to `latest`.
 
 Select **promote_latest** only when the requested tag is a stable release and
 the versioned images have been intentionally chosen as the new self-hosted

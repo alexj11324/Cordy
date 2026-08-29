@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # Version-tag pushes must pass the same CI gate before the automatic
+    # macOS ARM64 release workflow is allowed to run.
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, edited]

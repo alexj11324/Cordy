@@ -1,12 +1,9 @@
 name: Release
 
 on:
-  push:
-    tags:
-      # GitHub Actions uses glob patterns here, not regex. Match versioned
-      # tags broadly at the trigger layer, then enforce strict semver below.
-      - "v*.*.*"
-      - "!v*-dirty*"
+  # Non-macOS-ARM publication is intentionally manual. The automatic
+  # macOS ARM64 path is owned by macos-release.yml and starts only after CI
+  # succeeds for a version tag.
   workflow_dispatch:
     inputs:
       tag:
@@ -29,7 +26,7 @@ jobs:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization
     # credential is present in the canonical repository's Actions secrets.
-    if: github.event_name == 'push' && github.repository == 'patchbay-ai/patchbay'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -58,7 +55,7 @@ jobs:
           fi
 
   verify:
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -79,18 +76,22 @@ jobs:
       SQLX_OFFLINE: "false"
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
+      commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
 
       - name: Validate tag name
         id: release_meta
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME}"
+          tag="$REQUESTED_TAG"
           echo "Triggered by tag: $tag"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$tag'."
@@ -101,6 +102,7 @@ jobs:
             exit 1
           fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
@@ -130,7 +132,7 @@ jobs:
         working-directory: server-rs
         env:
           PATCHBAY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
-          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
+          PATCHBAY_BUILD_COMMIT: ${{ steps.release_meta.outputs.commit_sha }}
         run: |
           PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
           export PATCHBAY_BUILD_DATE
@@ -139,7 +141,7 @@ jobs:
       - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
         # override to this exact tag. See .github/RELEASING.md.
-        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != github.ref_name }}
+        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != steps.release_meta.outputs.tag_name }}
         uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -150,8 +152,10 @@ jobs:
           ignore: RUSTSEC-2023-0071
 
       - name: Record emergency vulnerability-scan bypass
-        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
-        run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
+        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == steps.release_meta.outputs.tag_name }}
+        env:
+          TAG_NAME: ${{ steps.release_meta.outputs.tag_name }}
+        run: echo "::warning::RustSec audit was explicitly skipped for ${TAG_NAME}; see .github/RELEASING.md"
 
   self-hosted-prepare:
     if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
@@ -264,7 +268,7 @@ jobs:
         shell: bash
         env:
           PATCHBAY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
-          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
+          PATCHBAY_BUILD_COMMIT: ${{ needs.verify.outputs.commit_sha }}
         run: |
           PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
           export PATCHBAY_BUILD_DATE
@@ -359,8 +363,8 @@ jobs:
             tag_type="$(jq -r '.object.type' <<<"$tag_object")"
             tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
           done
-          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$GITHUB_SHA" ]; then
-            echo "::error::Tag $TAG_NAME no longer resolves to workflow commit $GITHUB_SHA"
+          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "${{ needs.verify.outputs.commit_sha }}" ]; then
+            echo "::error::Tag $TAG_NAME no longer resolves to workflow commit ${{ needs.verify.outputs.commit_sha }}"
             exit 1
           fi
 
@@ -739,7 +743,7 @@ jobs:
   # until every matrix entry succeeds. macOS production builds require a
   # Developer ID Application identity and successful Apple notarization.
   desktop:
-    needs: release
+    needs: [release, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -769,6 +773,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.verify.outputs.tag_name }}
           fetch-depth: 0
 
       - name: Install rpmbuild (Linux)
@@ -889,7 +894,7 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         shell: bash
         run: |
           version="${TAG_NAME#v}"
