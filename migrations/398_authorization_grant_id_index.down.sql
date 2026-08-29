@@ -1,1 +1,1 @@
-DROP INDEX IF EXISTS authorization_grant_id_idx;
+DROP INDEX CONCURRENTLY IF EXISTS authorization_grant_id_idx;

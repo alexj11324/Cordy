@@ -1,1 +1,1 @@
-DROP INDEX IF EXISTS task_token_active_claim_fence_idx;
+DROP INDEX CONCURRENTLY IF EXISTS task_token_claim_fence_idx;

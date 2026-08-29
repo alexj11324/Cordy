@@ -508,7 +508,7 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
     ),
     (
         "403_task_capability_claim_fence_index",
-        "task_token_active_claim_fence_idx",
+        "task_token_claim_fence_idx",
     ),
 ];
 

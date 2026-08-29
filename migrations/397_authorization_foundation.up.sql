@@ -75,7 +75,7 @@ COMMENT ON TABLE task_token IS
     'Short-lived, revocable task capability leases. Raw mat_ bearer values are never stored. scope is server-computed; parent/depth/fences enforce monotonic delegation.';
 
 COMMENT ON COLUMN task_token.user_id IS
-    'Compatibility member identity used by legacy handlers. Authorization decisions use task/run principal + on_behalf_of_user_id + lease scope, never this field as ambient owner authority.';
+    'Compatibility workspace-guard projection of the initiating human. Active leases never project the Agent or Runtime owner through this field.';
 
 WITH ranked AS (
     SELECT id,
@@ -89,13 +89,23 @@ WHERE token.id = ranked.id;
 
 UPDATE task_token token
 SET claim_dispatched_at = task.dispatched_at,
-    on_behalf_of_user_id = task.originator_user_id
+    on_behalf_of_user_id = task.originator_user_id,
+    user_id = COALESCE(task.originator_user_id, token.user_id),
+    revoked_at = CASE
+        WHEN task.originator_user_id IS NULL THEN now()
+        ELSE token.revoked_at
+    END,
+    revoked_reason = CASE
+        WHEN task.originator_user_id IS NULL THEN 'migration_missing_on_behalf_identity'
+        ELSE token.revoked_reason
+    END
 FROM agent_task_queue task
 WHERE task.id = token.task_id;
 
--- If historical claim retries left multiple live tokens for the same claim,
--- preserve the newest and monotonically revoke the rest before the partial
--- unique claim index is built.
+-- If historical claim retries left multiple tokens for the same dispatch,
+-- preserve only the newest. Claim consumption is immutable even after
+-- revocation, so duplicate historical rows cannot remain before the
+-- unconditional claim-fence index is built.
 WITH duplicates AS (
     SELECT id,
            row_number() OVER (
@@ -103,12 +113,10 @@ WITH duplicates AS (
                ORDER BY created_at DESC, id DESC
            ) AS ordinal
     FROM task_token
-    WHERE revoked_at IS NULL AND claim_dispatched_at IS NOT NULL
+    WHERE claim_dispatched_at IS NOT NULL
 )
-UPDATE task_token token
-SET revoked_at = now(),
-    revoked_reason = 'migration_duplicate_claim_lease'
-FROM duplicates
+DELETE FROM task_token token
+USING duplicates
 WHERE token.id = duplicates.id AND duplicates.ordinal > 1;
 
 CREATE OR REPLACE FUNCTION enforce_task_capability_lease_immutability()
@@ -118,6 +126,7 @@ BEGIN
         RAISE EXCEPTION 'revoked task capability leases cannot be revived';
     END IF;
     IF NEW.scope IS DISTINCT FROM OLD.scope
+       OR NEW.token_hash IS DISTINCT FROM OLD.token_hash
        OR NEW.parent_token_id IS DISTINCT FROM OLD.parent_token_id
        OR NEW.parent_fence IS DISTINCT FROM OLD.parent_fence
        OR NEW.delegation_depth IS DISTINCT FROM OLD.delegation_depth
@@ -125,7 +134,11 @@ BEGIN
        OR NEW.claim_dispatched_at IS DISTINCT FROM OLD.claim_dispatched_at
        OR NEW.task_id IS DISTINCT FROM OLD.task_id
        OR NEW.agent_id IS DISTINCT FROM OLD.agent_id
-       OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id THEN
+       OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id
+       OR NEW.user_id IS DISTINCT FROM OLD.user_id
+       OR NEW.expires_at IS DISTINCT FROM OLD.expires_at
+       OR NEW.on_behalf_of_user_id IS DISTINCT FROM OLD.on_behalf_of_user_id
+       OR NEW.device_id IS DISTINCT FROM OLD.device_id THEN
         RAISE EXCEPTION 'task capability lease identity and scope are immutable';
     END IF;
     RETURN NEW;

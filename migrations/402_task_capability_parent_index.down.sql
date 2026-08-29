@@ -1,1 +1,1 @@
-DROP INDEX IF EXISTS task_token_parent_token_id_idx;
+DROP INDEX CONCURRENTLY IF EXISTS task_token_parent_token_id_idx;

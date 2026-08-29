@@ -59,7 +59,7 @@ use patchbay_db::queries::github::get_issue_review_head_sha;
 use patchbay_db::queries::issue::get_issue;
 use patchbay_db::queries::runtime::get_agent_runtime;
 use patchbay_db::queries::task_message::list_task_messages;
-use patchbay_db::queries::task_token::{create_task_token, delete_task_tokens_by_task};
+use patchbay_db::queries::task_token::{create_task_token, revoke_task_tokens_by_task};
 use patchbay_db::queries::workspace::get_workspace_attribution_fail_closed;
 
 use crate::attribution::{
@@ -188,6 +188,10 @@ pub enum TaskServiceError {
     ChatQuickActionsStale,
     #[error("chat quick actions: session busy")]
     ChatQuickActionsBusy,
+    #[error("capability lease is already finalized for this task claim")]
+    CapabilityLeaseAlreadyFinalized,
+    #[error("capability lease delegation boundary denied issuance")]
+    CapabilityLeaseIssuanceDenied,
     #[error("task is no longer queued")]
     NoLongerQueued(ErrTaskNoLongerQueued),
     #[error("rerun: operator not allowed to invoke target agent")]
@@ -1064,10 +1068,9 @@ impl TaskService {
         }
     }
 
-    /// Terminal-cancelled capture plus eager revocation of any mat_ task
-    /// tokens minted for this task (PB-2600): cancellation is terminal, so
-    /// deleting the token closes the window where a compromised process could
-    /// keep authenticating until the 24h expiry. Failure is non-fatal.
+    /// Terminal-cancelled capture plus eager, monotonic revocation of any mat_
+    /// capability leases. Keep the rows for explain/audit; authentication
+    /// rejects revoked leases and a separate retention policy may purge them.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
         if let Some(metrics) = &self.metrics {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
@@ -1081,7 +1084,9 @@ impl TaskService {
                 task.attempt,
             );
         }
-        if let Err(err) = delete_task_tokens_by_task(&self.pool, task.id).await {
+        if let Err(err) =
+            revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await
+        {
             tracing::warn!(
                 task_id = %task.id,
                 error = %err,
@@ -5142,9 +5147,18 @@ impl TaskService {
         .await
         .map_err(|e| TaskServiceError::Internal(format!("create task token: {e}")))?;
         if created_lease.is_none() {
-            return Err(TaskServiceError::Internal(
-                "capability lease already finalized for this task claim".to_string(),
-            ));
+            let replay = patchbay_db::queries::task_token::task_token_exists_for_claim(
+                &mut *tx,
+                token.task_id,
+                token.claim_dispatched_at,
+            )
+            .await
+            .map_err(|e| TaskServiceError::Internal(format!("inspect task token claim: {e}")))?;
+            return Err(if replay {
+                TaskServiceError::CapabilityLeaseAlreadyFinalized
+            } else {
+                TaskServiceError::CapabilityLeaseIssuanceDenied
+            });
         }
         if let Some(dt) = &daemon_token {
             // Opportunistic bounded cleanup keeps short-lived per-task daemon

@@ -21,6 +21,10 @@ use http_body_util::BodyExt as _;
 use patchbay_daemon::hub::{
     ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
 };
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Authorizer, Principal, PrincipalType,
+    Resource, ResourceType, WorkspaceRole,
+};
 use patchbay_db::models::AgentRuntime;
 use patchbay_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
@@ -1567,6 +1571,7 @@ pub(crate) struct DaemonClaimServices {
     pub(crate) pool: sqlx::PgPool,
     pub(crate) tasks: Arc<TaskService>,
     pub(crate) plugins: Arc<PluginService>,
+    pub(crate) authorization: Arc<dyn Authorizer>,
 }
 
 impl DaemonClaimServices {
@@ -1575,6 +1580,7 @@ impl DaemonClaimServices {
             pool: state.pool.clone(),
             tasks: state.tasks.clone(),
             plugins: state.plugins.clone(),
+            authorization: state.authorization.clone(),
         }
     }
 }
@@ -2051,7 +2057,7 @@ async fn repair_stale_comment_plan(
 async fn finalize_claim_enriched_full(
     state: &DaemonClaimServices,
     task: &patchbay_db::models::AgentTaskQueue,
-    owner_id: Uuid,
+    _owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
     runtime: Option<&AgentRuntime>,
 ) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
@@ -2066,6 +2072,111 @@ async fn finalize_claim_enriched_full(
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or(false)?;
+
+    let Some(originator) = task.originator_user_id else {
+        tracing::warn!(
+            task_id = %task.id,
+            "capability lease issuance denied because the task has no on-behalf user"
+        );
+        if let Err(error) = state
+            .tasks
+            .cancel_task_with_reason(
+                task.id,
+                "Task capability issuance requires an initiating user.",
+                "authorization_denied",
+            )
+            .await
+        {
+            tracing::error!(%error, task_id = %task.id, "failed to settle unattributed task");
+        }
+        return Err(false);
+    };
+
+    if let Some(runtime) = runtime {
+        let workspace_role = member::get_member_by_user_and_workspace(
+            &state.pool,
+            originator,
+            workspace_id,
+        )
+        .await
+        .ok()
+        .flatten()
+        .and_then(|membership| match membership.role.as_str() {
+            "owner" => Some(WorkspaceRole::Owner),
+            "admin" => Some(WorkspaceRole::Admin),
+            "member" => Some(WorkspaceRole::Member),
+            _ => None,
+        });
+        let Some(workspace_role) = workspace_role else {
+            tracing::warn!(
+                task_id = %task.id,
+                originator_user_id = %originator,
+                "runtime capability issuance denied because the initiating user is not a current workspace member"
+            );
+            if let Err(error) = state
+                .tasks
+                .cancel_task_with_reason(
+                    task.id,
+                    "The initiating user is no longer a member of this workspace.",
+                    "authorization_denied",
+                )
+                .await
+            {
+                tracing::error!(%error, task_id = %task.id, "failed to settle removed-member task");
+            }
+            return Err(false);
+        };
+        let runtime_decision = state
+            .authorization
+            .authorize(AuthorizationRequest {
+                principal: Principal {
+                    principal_type: PrincipalType::User,
+                    id: Some(originator),
+                },
+                action: Action::new(Action::RUNTIME_USE),
+                resource: Resource {
+                    resource_type: ResourceType::new(ResourceType::RUNTIME),
+                    id: Some(runtime.id),
+                    workspace_id,
+                    owner_id: runtime.owner_id,
+                    attributes: json!({"private": runtime.visibility != "public"}),
+                },
+                context: AuthorizationContext {
+                    workspace_role: Some(workspace_role),
+                    on_behalf_of_user_id: Some(originator),
+                    via_agent_id: Some(task.agent_id),
+                    device_id: Some(runtime.id),
+                    task_id: Some(task.id),
+                    ..Default::default()
+                },
+                delegation_chain: Vec::new(),
+            })
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, task_id = %task.id, runtime_id = %runtime.id, "runtime capability issuance failed closed");
+                true
+            })?;
+        if !runtime_decision.is_allowed() {
+            tracing::warn!(
+                task_id = %task.id,
+                runtime_id = %runtime.id,
+                originator_user_id = ?originator,
+                "runtime capability issuance denied"
+            );
+            if let Err(error) = state
+                .tasks
+                .cancel_task_with_reason(
+                    task.id,
+                    "The initiating user is not authorized to use this Runtime.",
+                    "authorization_denied",
+                )
+                .await
+            {
+                tracing::error!(%error, task_id = %task.id, "failed to settle runtime authorization denial");
+            }
+            return Err(false);
+        }
+    }
 
     // Both Remote MCP brokers and plugin hook tools call daemon-authenticated
     // endpoints. The raw token rides only in this response; its hash commits
@@ -2112,7 +2223,11 @@ async fn finalize_claim_enriched_full(
                 task_id: task.id,
                 agent_id: task.agent_id,
                 workspace_id,
-                user_id: owner_id,
+                // Legacy workspace guards still require x-user-id, but that
+                // compatibility projection must never be the Agent definition
+                // owner. Bind it only to the initiating human; unattributed
+                // tasks were denied and settled before lease creation.
+                user_id: originator,
                 expires_at: Some(expires),
                 scope: patchbay_service::task_service::root_task_capability_scope(task),
                 parent_task_id: task.delegated_from_task_id,
@@ -2128,6 +2243,25 @@ async fn finalize_claim_enriched_full(
         .await;
     match receipt {
         Ok(receipt) => Ok((token_str, raw_daemon_token, receipt)),
+        Err(patchbay_service::task_service::TaskServiceError::CapabilityLeaseAlreadyFinalized) => {
+            tracing::warn!(task_id = %task.id, "claim finalization replay lost the immutable lease fence");
+            Err(false)
+        }
+        Err(patchbay_service::task_service::TaskServiceError::CapabilityLeaseIssuanceDenied) => {
+            tracing::warn!(task_id = %task.id, "claim finalization rejected a widened delegation boundary");
+            if let Err(error) = state
+                .tasks
+                .cancel_task_with_reason(
+                    task.id,
+                    "The delegated capability exceeds its parent task boundary.",
+                    "authorization_denied",
+                )
+                .await
+            {
+                tracing::error!(%error, task_id = %task.id, "failed to settle rejected delegated capability");
+            }
+            Err(false)
+        }
         Err(e) => {
             tracing::error!(error = %e, task_id = %task.id, "claim finalization failed");
             Err(true)
@@ -2662,7 +2796,9 @@ async fn complete_task(
 }
 
 async fn revoke_tokens_best_effort(state: &HandlerState, task_id: Uuid) {
-    if let Err(e) = task_token::delete_task_tokens_by_task(&state.pool, task_id).await {
+    if let Err(e) =
+        task_token::revoke_task_tokens_by_task(&state.pool, task_id, "task_completed").await
+    {
         tracing::warn!(error = %e, task_id = %task_id, "failed to revoke task tokens");
     }
 }

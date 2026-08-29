@@ -34,7 +34,8 @@ pub async fn create_task_token(
       AND dispatched_at IS NOT DISTINCT FROM $9::timestamptz
     FOR SHARE
 ), parent AS (
-    SELECT token.id, token.scope, token.delegation_depth, token.delegation_fence
+    SELECT token.id, token.scope, token.delegation_depth, token.delegation_fence,
+           token.workspace_id, token.on_behalf_of_user_id, token.device_id
     FROM task_token token
     JOIN agent_task_queue task ON task.id = token.task_id
     WHERE token.task_id = $8
@@ -67,7 +68,11 @@ pub async fn create_task_token(
     FROM claim
     LEFT JOIN parent ON TRUE
     WHERE $8::uuid IS NULL
-       OR (claim.delegated_from_task_id = $8 AND parent.id IS NOT NULL)
+       OR (claim.delegated_from_task_id = $8
+           AND parent.id IS NOT NULL
+           AND parent.workspace_id = $4
+           AND parent.on_behalf_of_user_id IS NOT DISTINCT FROM $11
+           AND parent.device_id IS NOT DISTINCT FROM $12)
 ), inserted AS (
     INSERT INTO task_token (
         token_hash, task_id, agent_id, workspace_id, user_id, expires_at, id,
@@ -80,7 +85,7 @@ pub async fn create_task_token(
     FROM lease
     WHERE lease.depth <= 8
     ON CONFLICT (task_id, claim_dispatched_at)
-        WHERE revoked_at IS NULL AND claim_dispatched_at IS NOT NULL
+        WHERE claim_dispatched_at IS NOT NULL
         DO NOTHING
     RETURNING id, token_hash, task_id, agent_id, workspace_id, user_id,
               expires_at, created_at, scope, parent_token_id, parent_fence,
@@ -136,12 +141,19 @@ pub async fn delete_expired_task_tokens(
     Ok(r.rows_affected())
 }
 
-pub async fn delete_task_tokens_by_task(
+pub async fn revoke_task_tokens_by_task(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_id: Uuid,
+    reason: &str,
 ) -> anyhow::Result<u64> {
-    let r = sqlx::query(r#"DELETE FROM task_token WHERE task_id = $1"#)
+    let r = sqlx::query(
+        r#"UPDATE task_token
+SET revoked_at = COALESCE(revoked_at, now()),
+    revoked_reason = COALESCE(revoked_reason, $2)
+WHERE task_id = $1 AND revoked_at IS NULL"#,
+    )
         .bind(task_id)
+        .bind(reason)
         .execute(executor)
         .await?;
     Ok(r.rows_affected())
@@ -193,6 +205,9 @@ pub async fn get_task_token_by_hash(
               parent.id IS NULL
               OR lease.delegation_depth <> parent.delegation_depth + 1
               OR lease.parent_fence IS DISTINCT FROM parent.delegation_fence
+              OR lease.workspace_id <> parent.workspace_id
+              OR lease.on_behalf_of_user_id IS DISTINCT FROM parent.on_behalf_of_user_id
+              OR lease.device_id IS DISTINCT FROM parent.device_id
               OR EXISTS (
                   SELECT 1
                   FROM jsonb_array_elements(lease.scope) child_cap(capability)
@@ -263,4 +278,23 @@ WHERE id = $1 AND revoked_at IS NULL"#,
     .execute(executor)
     .await?;
     Ok(result.rows_affected())
+}
+
+pub async fn task_token_exists_for_claim(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+    claim_dispatched_at: Option<DateTime<Utc>>,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT EXISTS (
+    SELECT 1
+    FROM task_token
+    WHERE task_id = $1
+      AND claim_dispatched_at IS NOT DISTINCT FROM $2::timestamptz
+)"#,
+    )
+    .bind(task_id)
+    .bind(claim_dispatched_at)
+    .fetch_one(executor)
+    .await?)
 }

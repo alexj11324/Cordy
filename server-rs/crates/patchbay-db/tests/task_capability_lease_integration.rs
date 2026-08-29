@@ -3,6 +3,7 @@
 use chrono::{Duration, Utc};
 use patchbay_db::queries::task_token::{
     create_task_token, get_task_token_by_hash, revoke_task_token,
+    task_token_exists_for_claim,
 };
 use serde_json::json;
 use sqlx::PgPool;
@@ -168,6 +169,15 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         .execute(&rows.pool)
         .await?;
     assert!(get_task_token_by_hash(&rows.pool, winner_hash).await?.is_none());
+    let persisted_revocation: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT revoked_at FROM task_token WHERE id = $1")
+            .bind(winner.id)
+            .fetch_one(&rows.pool)
+            .await?;
+    assert!(
+        persisted_revocation.is_some(),
+        "terminal leases remain queryable as revoked audit evidence"
+    );
     assert!(sqlx::query("UPDATE task_token SET revoked_at = NULL WHERE id = $1")
         .bind(winner.id)
         .execute(&rows.pool)
@@ -238,6 +248,24 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     assert_eq!(revoke_task_token(&rows.pool, revoked.id, "contract").await?, 1);
     assert_eq!(revoke_task_token(&rows.pool, revoked.id, "replay").await?, 0);
     assert!(get_task_token_by_hash(&rows.pool, &revoked_hash).await?.is_none());
+    assert!(create_task_token(
+        &rows.pool,
+        &format!("lease-revoked-replay-{revoked_task}"),
+        revoked_task,
+        rows.agent_id,
+        rows.workspace_id,
+        rows.user_id,
+        Some(Utc::now() + Duration::hours(1)),
+        &task_scope(),
+        None,
+        Some(revoked_dispatched_at),
+        30,
+        Some(rows.user_id),
+        None,
+        Uuid::now_v7(),
+    )
+    .await?
+    .is_none());
 
     let parent_dispatched_at = Utc::now();
     let parent_task = rows.task(parent_dispatched_at).await?;
@@ -290,6 +318,38 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     .expect("child lease");
     assert_eq!(child.delegation_depth, 1);
     assert_eq!(child.scope, task_scope());
+
+    let rejected_dispatched_at = Utc::now();
+    let rejected_task = rows.task(rejected_dispatched_at).await?;
+    sqlx::query("UPDATE agent_task_queue SET delegated_from_task_id = $2 WHERE id = $1")
+        .bind(rejected_task)
+        .bind(parent_task)
+        .execute(&rows.pool)
+        .await?;
+    assert!(create_task_token(
+        &rows.pool,
+        &format!("lease-widened-identity-{rejected_task}"),
+        rejected_task,
+        rows.agent_id,
+        rows.workspace_id,
+        rows.user_id,
+        Some(Utc::now() + Duration::hours(1)),
+        &task_scope(),
+        Some(parent_task),
+        Some(rejected_dispatched_at),
+        6,
+        Some(Uuid::now_v7()),
+        None,
+        Uuid::now_v7(),
+    )
+    .await?
+    .is_none());
+    assert!(!task_token_exists_for_claim(
+        &rows.pool,
+        rejected_task,
+        Some(rejected_dispatched_at),
+    )
+    .await?);
 
     rows.cleanup().await;
     Ok(())
