@@ -15,6 +15,7 @@ import { WorkspacePresencePrefetch } from "@patchbay/views/layout";
 import { SourceBackfillModal } from "@patchbay/views/onboarding";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
+import { isDesktopWebPreview } from "../platform/web-bridge";
 
 /**
  * Which mounted layout instance currently owns the platform workspace
@@ -193,7 +194,7 @@ export function WorkspaceRouteLayout() {
        *  here. Same overlay-suppression rule as WelcomeAfterOnboarding —
        *  a portal-rendered Dialog at z-50 would otherwise sit above an
        *  active pre-workspace overlay. */}
-      {!overlayActive && <SourceBackfillModal />}
+      {!overlayActive && !isDesktopWebPreview() && <SourceBackfillModal />}
     </WorkspaceSlugProvider>
   );
 }

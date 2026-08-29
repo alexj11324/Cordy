@@ -131,5 +131,19 @@
   },
   "navigation": {
     "open_in_new_tab": "새 탭에서 열기"
+  },
+  "preview": {
+    "badge": "로컬 미리보기",
+    "sample_data": "샘플 데이터만 표시",
+    "no_backend": "백엔드 연결 안 됨",
+    "task_detail": "샘플 작업 상세",
+    "back_to_issues": "이슈로 돌아가기",
+    "execution": "실행 기록",
+    "runs_one": "실행 {{count}}회",
+    "runs_other": "실행 {{count}}회",
+    "assignee": "담당자",
+    "created": "생성일",
+    "updated": "업데이트일",
+    "not_found": "샘플 이슈를 찾을 수 없습니다"
   }
 }

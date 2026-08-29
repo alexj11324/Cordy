@@ -131,5 +131,19 @@
   },
   "navigation": {
     "open_in_new_tab": "新しいタブで開く"
+  },
+  "preview": {
+    "badge": "ローカルプレビュー",
+    "sample_data": "サンプルデータのみ",
+    "no_backend": "バックエンド未接続",
+    "task_detail": "サンプルタスク詳細",
+    "back_to_issues": "課題に戻る",
+    "execution": "実行履歴",
+    "runs_one": "{{count}} 件の実行",
+    "runs_other": "{{count}} 件の実行",
+    "assignee": "担当者",
+    "created": "作成日時",
+    "updated": "更新日時",
+    "not_found": "サンプル課題が見つかりません"
   }
 }

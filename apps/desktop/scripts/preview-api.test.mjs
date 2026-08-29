@@ -130,4 +130,109 @@ describe("local Vite preview API", () => {
     expect(comments.body).toEqual([]);
     expect(unsupported.handled).toBe(false);
   });
+
+  it("keeps the sample directory and issue execution log linked", async () => {
+    const agents = await call("GET", "/api/agents");
+    const tasks = await call("GET", "/api/issues/PRE-105/task-runs");
+
+    expect(agents.body.map((agent) => agent.name)).toEqual(
+      expect.arrayContaining(["Atlas", "Mika", "Nova", "Quill"]),
+    );
+    expect(tasks.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          issue_id: "00000000-0000-4000-8000-000000000105",
+          agent_id: "agent-preview",
+          status: "completed",
+        }),
+        expect.objectContaining({
+          issue_id: "00000000-0000-4000-8000-000000000105",
+          agent_id: "agent-mika",
+          status: "running",
+        }),
+      ]),
+    );
+  });
+
+  it("serves read-only automation samples with runs and an explicit write boundary", async () => {
+    const list = await call("GET", "/api/autopilots");
+    const detail = await call("GET", "/api/autopilots/autopilot-pr-review");
+    const runs = await call("GET", "/api/autopilots/autopilot-pr-review/runs");
+
+    expect(list.body.total).toBe(3);
+    expect(detail.body.autopilot).toMatchObject({
+      title: "PR review handoff",
+      can_write: false,
+    });
+    expect(runs.body.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "running", task_id: "task-pre-105-review" }),
+        expect.objectContaining({ status: "completed", task_id: "task-pre-106" }),
+        expect.objectContaining({
+          id: "run-pr-review-queued",
+          autopilot_id: "autopilot-pr-review",
+          task_id: "task-pre-102",
+        }),
+      ]),
+    );
+
+    const unsupportedTrigger = await call(
+      "POST",
+      "/api/autopilots/autopilot-pr-review/trigger",
+    );
+    expect(unsupportedTrigger.handled).toBe(false);
+  });
+
+  it("keeps shared issue list and optional detail reads on the JSON boundary", async () => {
+    const list = await call("GET", "/api/issues?limit=50");
+    const window = await call("POST", "/api/issues/query", {
+      ids: ["00000000-0000-4000-8000-000000000104"],
+    });
+    const quickActions = await call("GET", "/api/quick-actions");
+    const assigneeFrequency = await call("GET", "/api/assignee-frequency");
+
+    expect(list).toMatchObject({ handled: true, status: 200 });
+    expect(list.body.total).toBe(6);
+    expect(window.body.issues.map((issue) => issue.identifier)).toEqual(["PRE-104"]);
+    expect(quickActions.body).toEqual({ quick_actions: [], total: 0 });
+    expect(assigneeFrequency.body).toEqual([]);
+  });
+
+  it("resolves optional shared reads without enabling preview mutations", async () => {
+    const [lark, slack, dingtalk, groupRoutes, wecom, telegram, weixin, profiles, plugins] =
+      await Promise.all([
+        call("GET", "/api/workspaces/ws-preview/lark/installations"),
+        call("GET", "/api/workspaces/ws-preview/slack/installations"),
+        call("GET", "/api/workspaces/ws-preview/dingtalk/installations"),
+        call("GET", "/api/workspaces/ws-preview/dingtalk/group-routes"),
+        call("GET", "/api/workspaces/ws-preview/wecom/installations"),
+        call("GET", "/api/workspaces/ws-preview/telegram/installations"),
+        call("GET", "/api/workspaces/ws-preview/weixin/installations"),
+        call("GET", "/api/workspaces/ws-preview/runtime-profiles"),
+        call("GET", "/api/workspaces/ws-preview/plugins"),
+      ]);
+
+    for (const result of [lark, slack, dingtalk, wecom, telegram, weixin]) {
+      expect(result).toMatchObject({
+        handled: true,
+        status: 200,
+        body: { installations: [], configured: false, install_supported: false },
+      });
+    }
+    expect(groupRoutes).toMatchObject({
+      handled: true,
+      status: 200,
+      body: { routes: [] },
+    });
+    expect(profiles).toMatchObject({
+      handled: true,
+      status: 200,
+      body: { runtime_profiles: [] },
+    });
+    expect(plugins).toMatchObject({
+      handled: true,
+      status: 200,
+      body: { plugins: [] },
+    });
+  });
 });

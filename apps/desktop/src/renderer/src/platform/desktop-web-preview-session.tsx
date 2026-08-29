@@ -4,10 +4,11 @@ import { useAuthStore } from "@patchbay/core/auth";
 import { chatKeys } from "@patchbay/core/chat/queries";
 import { inboxKeys } from "@patchbay/core/inbox";
 import { pinKeys } from "@patchbay/core/pins";
-import { runtimeKeys } from "@patchbay/core/runtimes";
 import { workspaceKeys } from "@patchbay/core/workspace";
 import type { User, Workspace } from "@patchbay/core/types";
 import { isDesktopWebPreview } from "./web-bridge";
+
+const PREVIEW_SESSION_STARTED_AT = new Date().toISOString();
 
 const PREVIEW_WORKSPACE: Workspace = {
   id: "ws-preview",
@@ -19,8 +20,8 @@ const PREVIEW_WORKSPACE: Workspace = {
   repos: [],
   issue_prefix: "PRE",
   avatar_url: null,
-  created_at: "2026-01-01T00:00:00Z",
-  updated_at: "2026-01-01T00:00:00Z",
+  created_at: PREVIEW_SESSION_STARTED_AT,
+  updated_at: PREVIEW_SESSION_STARTED_AT,
 };
 
 const PREVIEW_USER_ID = "user-preview";
@@ -38,14 +39,14 @@ function previewUser(onboarded: boolean): User {
     name: "Preview",
     email: "preview@local",
     avatar_url: null,
-    onboarded_at: onboarded ? "2026-01-01T00:00:00Z" : null,
+    onboarded_at: onboarded ? PREVIEW_SESSION_STARTED_AT : null,
     onboarding_questionnaire: {},
     starter_content_state: null,
     language: null,
     profile_description: "",
     timezone: null,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
+    created_at: PREVIEW_SESSION_STARTED_AT,
+    updated_at: PREVIEW_SESSION_STARTED_AT,
   };
 }
 
@@ -87,6 +88,18 @@ export function DesktopWebPreviewSession({ children }: { children: ReactNode }) 
       staleTime: Infinity,
       retry: false,
     });
+    queryClient.setQueryDefaults(["issues"], {
+      staleTime: Infinity,
+      retry: false,
+    });
+    queryClient.setQueryDefaults(["autopilots"], {
+      staleTime: Infinity,
+      retry: false,
+    });
+    queryClient.setQueryDefaults(["projects"], {
+      staleTime: Infinity,
+      retry: false,
+    });
 
     queryClient.setQueryData(workspaceKeys.list(), [PREVIEW_WORKSPACE]);
     queryClient.setQueryData(workspaceKeys.myInvitations(), []);
@@ -110,7 +123,6 @@ export function DesktopWebPreviewSession({ children }: { children: ReactNode }) 
     // resolved and prevent the shared renderer from discovering preview
     // members/agents.
     queryClient.setQueryData(workspaceKeys.skills(PREVIEW_WORKSPACE.id), []);
-    queryClient.setQueryData(runtimeKeys.list(PREVIEW_WORKSPACE.id), []);
     useAuthStore.setState({
       user: previewUser(onboarded),
       isLoading: false,

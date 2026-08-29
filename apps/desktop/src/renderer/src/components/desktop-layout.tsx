@@ -42,6 +42,8 @@ import {
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
+import { DesktopWebPreviewNotice } from "./desktop-web-preview-notice";
+import { isDesktopWebPreview } from "../platform/web-bridge";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
 const WINDOW_TOOLBAR_CLEARANCE = 184;
@@ -297,7 +299,10 @@ export function DesktopShell() {
             hoverReveal
             className="flex-1 bg-app-shell [--sidebar-wrapper-fill:var(--app-shell)]"
           >
-            {slug && <GlobalShortcuts />}
+            {/* GlobalShortcuts owns live issue-context queries. Keep it out of
+                the no-backend fixture; preview cards provide their own native
+                keyboard navigation and should not generate failed API calls. */}
+            {slug && !isDesktopWebPreview() && <GlobalShortcuts />}
             {slug && <WindowToolbar />}
             {slug && (
               <AppSidebar
@@ -309,6 +314,7 @@ export function DesktopShell() {
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />
               <MainCanvas>
+                {isDesktopWebPreview() && <DesktopWebPreviewNotice />}
                 {/* Same indicator, same anchor as web: DashboardLayout puts it
                     at the top of SidebarInset, and MainCanvas is desktop's
                     equivalent relative/overflow-hidden content box. Desktop
@@ -316,7 +322,7 @@ export function DesktopShell() {
                     froze until the destination committed (PB-6404). */}
                 <NavigationProgress />
                 <TabContent />
-                {slug && <FloatingChat />}
+                {slug && !isDesktopWebPreview() && <FloatingChat />}
               </MainCanvas>
             </div>
           </SidebarProvider>

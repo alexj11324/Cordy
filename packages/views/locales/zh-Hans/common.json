@@ -131,5 +131,19 @@
   },
   "navigation": {
     "open_in_new_tab": "在新标签页打开"
+  },
+  "preview": {
+    "badge": "本地预览",
+    "sample_data": "仅为样例数据",
+    "no_backend": "后端未连接",
+    "task_detail": "样例任务详情",
+    "back_to_issues": "返回任务",
+    "execution": "执行记录",
+    "runs_one": "{{count}} 次运行",
+    "runs_other": "{{count}} 次运行",
+    "assignee": "负责人",
+    "created": "创建时间",
+    "updated": "更新时间",
+    "not_found": "找不到样例任务"
   }
 }

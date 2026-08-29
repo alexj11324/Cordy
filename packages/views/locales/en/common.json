@@ -131,5 +131,19 @@
   },
   "navigation": {
     "open_in_new_tab": "Open in new tab"
+  },
+  "preview": {
+    "badge": "Local preview",
+    "sample_data": "Sample data only",
+    "no_backend": "Backend not connected",
+    "task_detail": "Sample task detail",
+    "back_to_issues": "Back to issues",
+    "execution": "Execution",
+    "runs_one": "{{count}} run",
+    "runs_other": "{{count}} runs",
+    "assignee": "Assignee",
+    "created": "Created",
+    "updated": "Updated",
+    "not_found": "Sample issue not found"
   }
 }
