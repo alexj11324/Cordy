@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS authorization_audit_event_lookup_idx;

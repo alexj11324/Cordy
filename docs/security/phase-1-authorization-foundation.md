@@ -1,0 +1,114 @@
+# Phase 1 authorization foundation
+
+Status: implementation contract for the first production slice.
+
+## Observable acceptance
+
+Phase 1 is complete only when all of the following are observable in production
+code and in CI:
+
+1. One authorizer accepts `Principal + Action + Resource + Context +
+   DelegationChain` and returns `allow`, `deny`, or `require_approval` with a
+   reason, matched grant IDs, a policy version, and obligations. Callers treat
+   only `allow` as permission to continue.
+2. The vocabulary distinguishes user, team, agent definition, task/run,
+   device/runtime, service, and system principals. Agent invocation is a
+   separate `agent.invoke` decision; it never implies tool, credential, runtime,
+   or directory authority.
+3. `task_token` is the persisted capability lease for a run. The server writes
+   its scope, expiry, revocation, claim fence, parent lease, parent fence, and
+   delegation depth. Authentication rejects a lease when its task is terminal,
+   its claim has been superseded, it or an ancestor is expired/revoked, an
+   ancestor fence changed, or a child scope is not a subset of its parent.
+4. A delegated task lease is derived from the parent lease and cannot add an
+   action/resource capability. Delegation is capped at eight hops. Concurrent
+   or replayed finalization cannot create two active leases for one task claim,
+   and revocation is monotonic.
+5. Permanent grants are persisted separately from resources. Explicit deny
+   wins; grants can require approval; task/run decisions still require a valid
+   lease, so a standing grant cannot widen a task scope.
+6. A shared agent invoked by another user does not mount the agent owner's
+   private Composio connection. `credential.use` is checked separately and the
+   connection selected for a run belongs to the run originator. Long-lived
+   credential material is never returned to an agent.
+7. Runtime read/update is enforced by the same authorizer. Workspace admins do
+   not automatically read or mutate another user's private runtime. Public
+   runtime metadata remains readable to workspace members; private runtime
+   access remains owner- or explicit-grant-only.
+8. Every authorizer result appends an explain record that can answer: who,
+   on whose behalf, via which agent, on which device, action, resource,
+   decision, why, matched grants, policy version, obligations, and delegation
+   chain. Explain reads are actor-scoped; workspace owners may inspect their
+   workspace, while admins do not receive a private-resource bypass.
+
+Required negative tests cover cross-user shared-agent credential isolation,
+child-scope narrowing, expiry/revocation/task completion, private-resource admin
+denial, `require_approval` fail-closed behavior, and concurrent/replayed claim
+fencing.
+
+## Root cause and risk boundary
+
+The immediate confused-deputy root cause is earlier than daemon execution:
+the existing Composio dispatch code treats successful `agent.invoke` admission
+as permission to mint a session over the agent owner's connected accounts.
+The originator is carried only for attribution. A shared agent therefore turns
+its owner's private integration into ambient authority for callers.
+
+The existing `mat_` token fixes actor-header forgery but is an identity token,
+not yet a complete lease: it carries no scope or parent chain, lasts up to 24
+hours, and authentication checks expiry only. Completed and failed tasks do not
+eagerly revoke it. Runtime handlers also contain role shortcuts that let an
+admin enumerate or edit private runtimes.
+
+Phase 1 fixes those earliest boundaries. It intentionally does not rewrite all
+legacy resource handlers, introduce a universal resource registry, expose
+long-lived secrets, add an external policy service, or reinterpret
+`team_member.role`. That field remains an orchestration label (`leader`,
+`worker`, `reviewer`, and similar); future team security membership must use a
+separate field/table. Workspace database roles remain owner/admin/member; the
+authorizer vocabulary reserves guest as a deny-by-default boundary without
+making guest a valid persisted membership in this migration.
+
+## Effective-permission invariant
+
+For task/run principals, the engine applies boundaries in this order:
+
+1. workspace guardrails and non-delegable hard denies;
+2. an active, claim-bound task lease and every ancestor lease;
+3. parent-scope containment and delegation-depth/fence checks;
+4. resource relationship/visibility and request attributes;
+5. explicit deny / require-approval / allow grants;
+6. device and approval obligations.
+
+No later layer can turn an earlier deny into allow. A standing grant may grant a
+human access, but it cannot add an action/resource pair absent from a task's
+lease. A child lease stores only the intersection of its requested scope and
+the parent's effective scope.
+
+## Migration and rollback
+
+The migration is additive and compatible with rows from current `main`:
+
+- add authorization grant and append-only decision-audit tables without
+  foreign keys or cascades;
+- add lease columns to `task_token`, backfilling existing live tokens with a
+  conservative invocation scope and their current claim timestamp;
+- mark duplicate active claim tokens revoked before creating the partial unique
+  claim-fence index;
+- build every new index concurrently in its own migration;
+- keep raw bearer values out of the new tables and audit payloads.
+
+Rollback first removes concurrent indexes, then drops the two additive tables
+and the added `task_token` columns. Existing token hashes and task data remain
+unchanged, so rollback does not invalidate unrelated user data. Rollback is not
+permission-preserving: it removes the new enforcement and must be treated as a
+security rollback, not a normal operational toggle.
+
+## Explicit follow-ups
+
+Later slices should move remaining private Agent, Directory, Chat,
+Integration/Connection, plugin/tool, and device-management handlers onto the
+same interface; add separate team security membership; add Guest membership
+storage and invitation rules; and replace remaining member-shaped task-token
+compatibility reads. Those are not prerequisites for this slice's three real
+enforcement consumers and must not weaken the Phase 1 boundaries while pending.

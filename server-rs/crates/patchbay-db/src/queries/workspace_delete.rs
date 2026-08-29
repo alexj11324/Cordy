@@ -331,6 +331,12 @@ deleted_task_tokens AS (
     DELETE FROM task_token
     WHERE workspace_id = $1
 ),
+deleted_authorization_audit AS (
+    DELETE FROM authorization_audit_event WHERE workspace_id = $1
+),
+deleted_authorization_grants AS (
+    DELETE FROM authorization_grant WHERE workspace_id = $1
+),
 deleted_hourly_dirty AS (
     DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1
 ),

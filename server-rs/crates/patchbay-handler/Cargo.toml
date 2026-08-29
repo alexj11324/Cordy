@@ -18,6 +18,7 @@ crc32fast = { workspace = true }
 patchbay-analytics = { path = "../patchbay-analytics" }
 patchbay-agent = { path = "../patchbay-agent" }
 patchbay-auth = { path = "../patchbay-auth" }
+patchbay-authorization = { path = "../patchbay-authorization" }
 patchbay-channel = { path = "../patchbay-channel" }
 patchbay-config = { path = "../patchbay-config" }
 patchbay-composio = { path = "../patchbay-composio" }
