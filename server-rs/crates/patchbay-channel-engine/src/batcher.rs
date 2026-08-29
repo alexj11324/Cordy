@@ -321,8 +321,8 @@ mod tests {
         assert_eq!(b.pending_count(), 0, "entry cleaned up after flush");
     }
 
-    #[test]
-    fn flush_now_removes_one_pending_entry() {
+    #[tokio::test]
+    async fn flush_now_removes_one_pending_entry() {
         let b = PendingBatcher::new(Duration::from_secs(60));
         let calls = Arc::new(AtomicUsize::new(0));
         let calls2 = calls.clone();
