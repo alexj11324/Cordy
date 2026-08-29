@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@patchbay/ui/lib/utils";
-import { UnicodeSpinner } from "@patchbay/ui/components/common/unicode-spinner";
+import { ThinkingOrb } from "thinking-orbs";
 import type { AgentAvailability } from "@patchbay/core/agents";
 import type { ChatPendingTask, TaskMessagePayload } from "@patchbay/core/types";
 import { formatElapsedSecs } from "../lib/format";
@@ -182,7 +182,7 @@ export function TaskStatusPill({
       aria-live="polite"
     >
       {!stage.static && (
-        <UnicodeSpinner name="breathe" className="opacity-70" />
+        <ThinkingOrb aria-hidden size={20} state="working" theme="auto" />
       )}
       <span className="truncate">
         <span className={cn(!stage.static && "animate-chat-text-shimmer")}>

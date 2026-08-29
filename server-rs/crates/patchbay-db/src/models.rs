@@ -377,9 +377,7 @@ pub struct ChannelInboundMessageDedup {
 /// Row of `channel_installation`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChannelInstallation {
-    /// `None` means the platform is connected at workspace scope. The active
-    /// Agent is selected per chat by the channel hub (`/agents`).
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Uuid,
     pub channel_type: String,
     pub config: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -813,6 +811,8 @@ pub struct Issue {
     pub project_id: Option<Uuid>,
     pub properties: serde_json::Value,
     pub revision: i64,
+    pub reviewer_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
     pub stage: Option<i32>,
     pub start_date: Option<chrono::NaiveDate>,
     pub status: String,

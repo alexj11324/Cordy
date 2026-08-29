@@ -10,7 +10,7 @@
     "agents": "智能体",
     "teams": "团队",
     "usage": "统计",
-    "runtimes": "运行时",
+    "runtimes": "设备",
     "skills": "Skills",
     "settings": "设置"
   },
@@ -23,7 +23,7 @@
     "team": "团队",
     "skill": "Skill",
     "machine": "机器",
-    "runtime": "运行时",
+    "runtime": "设备",
     "attachment": "附件",
     "create_agent": "创建智能体",
     "unknown": "未知页面"

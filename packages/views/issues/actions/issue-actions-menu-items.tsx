@@ -128,8 +128,8 @@ export function IssueActionsMenuItems({
   // that wrap every row in IssueActionsContextMenu pay nothing until the
   // menu actually opens.
   //
-  // The query shares its key with ExecutionLogSection, so navigating from
-  // the issue detail page is a free cache hit.
+  // The query shares its key with the issue-detail Agent surfaces, so
+  // navigating from the issue detail page is a free cache hit.
   const { data: tasks } = useQuery({
     queryKey: issueKeys.tasks(issue.id),
     queryFn: () => api.listTasksByIssue(issue.id),

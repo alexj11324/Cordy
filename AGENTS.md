@@ -48,6 +48,8 @@ These are developer commands, not the default agent verification path:
 
 ```bash
 make dev              # Auto-setup + start everything
+make web-dev          # Next.js + local fixture API; real product UI, no Rust
+make api-dev          # Rust API only (pair with PATCHBAY_UI_FIXTURES=0 make web-dev)
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Developer helper for Rust tests; GitHub Actions is authoritative
@@ -79,21 +81,27 @@ make check            # Product-wide local helper; not an agent/default migratio
   user-installed agent CLIs. Tests must supply a fixture executable or an
   explicitly missing path.
 
-### Rust migration verification scope
+### CI and local verification scope
 
-GitHub Actions is the sole CI, compilation, and test environment for this
+GitHub Actions is the sole CI, release-compilation, and test environment for this
 repository. After pushing a PR branch, use its GitHub checks for Rust formatting,
 check, Clippy, tests, builds, deployment contracts, production images, installers,
 and platform coverage. Diagnose failures from the Actions logs, push a fix, and
 wait for the replacement run; do not substitute a local result for a required
 GitHub check.
 
-Agents must not run local `cargo`, `pnpm`/Vitest/Playwright, Go commands, Docker
-builds, `make test`, `make check`, or any other compilation or test pipeline.
-Agent-side verification is limited to editing and lightweight non-compiling
-checks such as `git diff --check`, conflict-marker scans, shell syntax checks,
-and configuration parsing. Rust migration work must never run Go tooling or Go
-tests.
+Local Web development is allowed for runtime UI acceptance. Agents may start
+the `apps/web` development server with `make web-dev` (including Next.js
+on-demand compilation) and inspect it in a browser. `make web-dev` serves a
+local fixture API so the real onboarding and app routes render without Rust.
+Do not paint substitute screens; open `/onboarding` and `/{slug}/issues`.
+This exception does not authorize local test suites, production builds,
+desktop/mobile packaging, or release signing.
+
+Agents must not run local `cargo`, Vitest/Playwright, Go commands, Docker builds,
+`make test`, `make check`, or any other compilation or test pipeline outside the
+local Web-development exception above. Rust migration work must never run Go
+tooling or Go tests.
 
 ### Commits, PRs, and Releases
 

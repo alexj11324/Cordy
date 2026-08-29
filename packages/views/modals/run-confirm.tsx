@@ -195,8 +195,8 @@ export function RunConfirmModal({
     const base: UpdateIssueRequest = isReview
       ? {
           status: d.status,
-          assignee_type: reviewerType,
-          assignee_id: reviewerId,
+          reviewer_type: reviewerType,
+          reviewer_id: reviewerId,
           ...(d.issueRevision !== undefined
             ? { expected_revision: d.issueRevision }
             : {}),

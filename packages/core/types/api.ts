@@ -37,6 +37,8 @@ export interface UpdateIssueRequest {
   priority?: IssuePriority;
   assignee_type?: IssueAssigneeType | null;
   assignee_id?: string | null;
+  reviewer_type?: IssueAssigneeType | null;
+  reviewer_id?: string | null;
   position?: number;
   start_date?: string | null;
   due_date?: string | null;

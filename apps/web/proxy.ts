@@ -7,6 +7,7 @@ import {
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
 import { isOfficialMarketingHost } from "./lib/public-host";
+import { isUiFixturesEnabled } from "./lib/ui-fixtures/enabled";
 
 // Clerk public routes — no authentication required
 const clerkPublicRoutes = createRouteMatcher([
@@ -21,6 +22,7 @@ const clerkPublicRoutes = createRouteMatcher([
   "/docs(.*)",
   "/legal(.*)",
   "/changelog",
+  "/ui-preview(.*)",
 ]);
 
 // Old workspace-scoped route segments that existed before the URL refactor
@@ -62,8 +64,27 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // NextResponse / cookies / matcher) is identical; the only behavioral
 // change is the runtime — proxy is forced to nodejs and cannot opt into
 // edge.
+function isClerkAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/")
+  );
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  if (isUiFixturesEnabled()) {
+    if (isClerkAuthPath(pathname)) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/ui-preview";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return nextWithLocale(req);
+  }
 
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
   if (runtimeDestination) {
@@ -151,6 +172,6 @@ export const config = {
     "/uploads/:path*",
     "/docs/:path*",
     "/ws",
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|ui-preview|.*\\.).*)",
   ],
 };

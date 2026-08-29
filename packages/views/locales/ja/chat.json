@@ -13,7 +13,7 @@
     "placeholder_no_agent": "チャットを始めるにはエージェントを作成してください",
     "placeholder_archived": "このセッションはアーカイブされています",
     "placeholder_archived_agent": "このエージェントはアーカイブされています",
-    "placeholder_runtime_required": "ランタイムを設定して続ける",
+    "placeholder_runtime_required": "デバイスを設定して続ける",
     "placeholder_access_revoked": "このエージェントを実行する権限がありません",
     "placeholder_named": "{{name}} にメッセージ…",
     "placeholder_default": "メッセージを入力…",
@@ -22,7 +22,7 @@
     "stop_tooltip": "停止",
     "send_failed_toast": "メッセージを送信できませんでした",
     "send_blocked_toast": "メッセージは送信されませんでした — このエージェントを使用する権限がありません",
-    "runtime_required_toast": "メッセージは送信されませんでした — 先にこのエージェントのランタイムを設定してください",
+    "runtime_required_toast": "メッセージは送信されませんでした — 先にこのエージェントのデバイスを設定してください",
     "attachment_bind_failed_toast": "メッセージは送信されましたが、ファイルを添付できませんでした。しばらくしてからもう一度お試しください。",
     "add_tooltip": "追加",
     "upload_file": "画像・ファイル",
@@ -134,8 +134,8 @@
     "no_agents": "エージェントなし",
     "history_group": "チャット履歴",
     "agent_filter_placeholder": "エージェントを検索...",
-    "agent_needs_runtime": "ランタイム未設定",
-    "agent_needs_runtime_hint": "このエージェントとチャットする前にランタイムを設定してください"
+    "agent_needs_runtime": "デバイス未設定",
+    "agent_needs_runtime_hint": "このエージェントとチャットする前にデバイスを設定してください"
   },
   "empty_state": {
     "first_time_title": "エージェントとチャット",
@@ -178,8 +178,8 @@
   "agent_access_revoked_banner": "{{name}} を実行する権限がありません。この会話は読み取り専用です。",
   "runtime_required_banner": {
     "fallback_name": "このエージェント",
-    "message": "{{name}} が返信するにはランタイムの設定が必要です。",
-    "action": "ランタイムを設定"
+    "message": "{{name}} が返信するにはデバイスの設定が必要です。",
+    "action": "デバイスを設定"
   },
   "offline_banner": {
     "fallback_name": "エージェント",

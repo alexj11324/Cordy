@@ -25,7 +25,7 @@
     },
     "empty": {
       "title": "No skills yet",
-      "description": "Create your first skill, import one from a URL, or copy one from a connected runtime — and every agent in the workspace can use it."
+      "description": "Create your first skill, import one from a URL, or copy one from a connected device — and every agent in the workspace can use it."
     },
     "no_matches": {
       "title": "No matches",
@@ -36,15 +36,15 @@
     },
     "intro_banner": {
       "title": "Shared with your workspace.",
-      "body": "Anyone can create a skill, import one from a URL, or copy one from their local runtime — and every agent can use it.",
-      "highlight": "Local runtime skills stay private until you copy one here."
+      "body": "Anyone can create a skill, import one from a URL, or copy one from their local device — and every agent can use it.",
+      "highlight": "Local device skills stay private until you copy one here."
     },
     "list_error": {
       "title": "Couldn't load skills",
       "fallback": "Something went wrong fetching the skill list.",
       "retry": "Try again"
     },
-    "supporting_data_warning": "Some workspace data failed to load. Creator attribution, runtime names, or edit permissions may appear incomplete."
+    "supporting_data_warning": "Some workspace data failed to load. Creator attribution, device names, or edit permissions may appear incomplete."
   },
   "table": {
     "name": "Name",
@@ -58,8 +58,8 @@
     "by_creator": "by {{name}}",
     "source_manual": "Created manually",
     "source_runtime_named": "From {{name}}",
-    "source_runtime_provider": "From {{provider}} runtime",
-    "source_runtime_unknown": "From a runtime",
+    "source_runtime_provider": "From {{provider}} device",
+    "source_runtime_unknown": "From a device",
     "source_clawhub": "From ClawHub",
     "source_skills_sh": "From Skills.sh",
     "source_github": "From GitHub"
@@ -124,14 +124,14 @@
     "read_only": "Read-only",
     "delete_aria": "Delete skill",
     "delete_tooltip": "Delete skill",
-    "supporting_data_warning": "Some workspace data failed to load. Creator attribution, runtime names, or edit permissions may appear incomplete until the next refresh.",
+    "supporting_data_warning": "Some workspace data failed to load. Creator attribution, device names, or edit permissions may appear incomplete until the next refresh.",
     "delete_file": "Delete file",
     "name_placeholder": "skill-name",
     "description_placeholder": "One sentence describing when an agent should use this skill…",
     "subline": {
-      "origin_runtime_named": "Local runtime · {{name}}",
-      "origin_runtime_provider": "Local runtime · {{provider}}",
-      "origin_runtime_unknown": "Local runtime",
+      "origin_runtime_named": "Local device · {{name}}",
+      "origin_runtime_provider": "Local device · {{provider}}",
+      "origin_runtime_unknown": "Local device",
       "origin_clawhub": "Imported · ClawHub",
       "origin_skills_sh": "Imported · Skills.sh",
       "origin_github": "Imported · GitHub",
@@ -259,8 +259,8 @@
         "desc": "Fetch a published skill by URL. Files are pulled server-side."
       },
       "runtime": {
-        "title": "Copy from runtime",
-        "desc": "Scan a local runtime and promote one of its on-disk skills into this workspace."
+        "title": "Copy from device",
+        "desc": "Scan a local device and promote one of its on-disk skills into this workspace."
       }
     },
     "method_card": {
@@ -268,8 +268,8 @@
       "manual_desc": "Start from a blank SKILL.md and write your own instructions.",
       "url_title": "Import from URL",
       "url_desc": "Pull a published skill from ClawHub or Skills.sh.",
-      "runtime_title": "Copy from runtime",
-      "runtime_desc": "Promote a skill already installed on your local runtime."
+      "runtime_title": "Copy from device",
+      "runtime_desc": "Promote a skill already installed on your local device."
     },
     "manual": {
       "name_label": "Name",
@@ -299,16 +299,16 @@
     }
   },
   "runtime_import": {
-    "runtime_label": "Runtime",
-    "runtime_placeholder": "Select a local runtime",
-    "no_local_runtimes_title": "No local runtimes available",
-    "no_local_runtimes_hint": "Connect a local runtime to browse and import its local skills.",
-    "choose_runtime": "Choose a runtime to continue",
-    "must_be_online": "Runtime must be online to browse local skills.",
-    "load_failed": "Failed to load runtime local skills",
-    "not_supported": "This runtime provider does not expose local skill inventory yet.",
+    "runtime_label": "Device",
+    "runtime_placeholder": "Select a local device",
+    "no_local_runtimes_title": "No local devices available",
+    "no_local_runtimes_hint": "Connect a local device to browse and import its local skills.",
+    "choose_runtime": "Choose a device to continue",
+    "must_be_online": "Device must be online to browse local skills.",
+    "load_failed": "Failed to load device local skills",
+    "not_supported": "This device provider does not expose local skill inventory yet.",
     "no_skills_title": "No local skills found",
-    "no_skills_hint": "This runtime does not have any discoverable local skills yet.",
+    "no_skills_hint": "This device does not have any discoverable local skills yet.",
     "search_placeholder": "Search local skills",
     "no_search_results_title": "No matching local skills",
     "no_search_results_hint": "No local skills match \"{{query}}\".",

@@ -13,7 +13,7 @@
     "placeholder_no_agent": "创建一个智能体后才能开始对话",
     "placeholder_archived": "此会话已归档",
     "placeholder_archived_agent": "该智能体已归档",
-    "placeholder_runtime_required": "绑定运行时后继续",
+    "placeholder_runtime_required": "绑定设备后继续",
     "placeholder_access_revoked": "你已没有运行该智能体的权限",
     "placeholder_named": "给 {{name}} 发消息…",
     "placeholder_default": "输入消息…",
@@ -22,7 +22,7 @@
     "stop_tooltip": "停止",
     "send_failed_toast": "发送消息失败",
     "send_blocked_toast": "消息未发送——你已没有该智能体的使用权限",
-    "runtime_required_toast": "消息未发送——请先为该智能体绑定运行时",
+    "runtime_required_toast": "消息未发送——请先为该智能体绑定设备",
     "attachment_bind_failed_toast": "消息已发送，但文件未能附加。请稍后重试。",
     "add_tooltip": "添加",
     "upload_file": "图片或文件",
@@ -54,7 +54,7 @@
     "reasoning_active": "正在思考…",
     "reasoning_complete": "思考过程",
     "failure": {
-      "agent_error": "智能体运行时出错，没能完成回复。请重试。",
+      "agent_error": "智能体设备出错，没能完成回复。请重试。",
       "timeout": "智能体处理超时，未能完成。可以重试，或把需求拆得更小一些。",
       "codex_semantic_inactivity": "智能体长时间无响应，已停止。请重试。",
       "runtime_offline": "智能体当前离线，暂时无法回复。等它恢复在线后再试。",
@@ -134,8 +134,8 @@
     "no_agents": "暂无智能体",
     "history_group": "历史对话",
     "agent_filter_placeholder": "搜索智能体...",
-    "agent_needs_runtime": "需绑定运行时",
-    "agent_needs_runtime_hint": "请先绑定运行时，再与该智能体开始对话"
+    "agent_needs_runtime": "需绑定设备",
+    "agent_needs_runtime_hint": "请先绑定设备，再与该智能体开始对话"
   },
   "empty_state": {
     "first_time_title": "和你的智能体对话",
@@ -178,8 +178,8 @@
   "agent_access_revoked_banner": "你已没有运行 {{name}} 的权限——此会话为只读。",
   "runtime_required_banner": {
     "fallback_name": "该智能体",
-    "message": "{{name}} 需要绑定运行时后才能回复。",
-    "action": "绑定运行时"
+    "message": "{{name}} 需要绑定设备后才能回复。",
+    "action": "绑定设备"
   },
   "offline_banner": {
     "fallback_name": "智能体",

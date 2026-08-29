@@ -17,6 +17,9 @@ config({ path: resolve(__dirname, "../../.env") });
 // `next dev` falls back to the conventional localhost upstreams; builds use
 // the strict resolvers so prebuilt images keep unset upstreams unproxied.
 const isDev = process.env.NODE_ENV === "development";
+const uiFixtures =
+  process.env.NODE_ENV !== "production" &&
+  process.env.PATCHBAY_UI_FIXTURES === "1";
 const remoteApiUrl = isDev
   ? resolveDevRemoteApiUrl(process.env)
   : resolveRemoteApiUrl(process.env);
@@ -64,7 +67,7 @@ const nextConfig: NextConfig = {
             },
           ]
         : [],
-      afterFiles: remoteApiUrl
+      afterFiles: remoteApiUrl && !uiFixtures
         ? [
             {
               source: "/api/:path*",

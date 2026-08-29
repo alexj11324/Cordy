@@ -64,7 +64,7 @@
     "unassigned": "Unassigned",
     "note_label": "Handoff note (optional)",
     "note_placeholder": "Tell them what matters — scope, focus, or what to avoid…",
-    "note_unsupported": "Their runtime is too old to receive this handoff note; it may not be read.",
+    "note_unsupported": "Their device is too old to receive this handoff note; it may not be read.",
     "confirm_assign": "Confirm assignment",
     "confirm_promote": "Move and start",
     "confirm_review": "Hand off for review",

@@ -161,14 +161,24 @@ describe("runConfirmIntent — review handoff", () => {
     expect(
       runConfirmIntent(
         issue({ status: "in_progress" }),
-        { status: "in_review", assignee_type: "member", assignee_id: "user-2" },
+        { status: "in_review", reviewer_type: "member", reviewer_id: "user-2" },
         CATALOG,
       ),
-    ).toEqual(expect.objectContaining({
-      mode: "review",
-      assigneeType: "member",
-      assigneeId: "user-2",
-    }));
+    ).toBeNull();
+  });
+
+  it("applies directly when the issue already has a reviewer", () => {
+    expect(
+      runConfirmIntent(
+        issue({
+          status: "in_progress",
+          reviewer_type: "member",
+          reviewer_id: "user-2",
+        }),
+        { status: "in_review" },
+        CATALOG,
+      ),
+    ).toBeNull();
   });
 
   it("does not ask for another handoff within the review category", () => {

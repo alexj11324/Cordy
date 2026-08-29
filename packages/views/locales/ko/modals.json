@@ -64,7 +64,7 @@
     "unassigned": "미할당",
     "note_label": "인계 메모 (선택)",
     "note_placeholder": "범위·핵심·건드리지 말 것 등을 한마디로…",
-    "note_unsupported": "상대 런타임이 오래되어 이 인계 메모를 읽지 못할 수 있습니다.",
+    "note_unsupported": "상대 기기가 오래되어 이 인계 메모를 읽지 못할 수 있습니다.",
     "confirm_assign": "할당 확인",
     "confirm_promote": "옮기고 시작",
     "confirm_review": "리뷰로 인계",

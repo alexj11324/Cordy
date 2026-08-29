@@ -121,7 +121,7 @@ SET properties = properties - $1::text,
     END,
     updated_at = CASE WHEN properties ? $1::text THEN now() ELSE updated_at END
 WHERE id = $2::uuid AND workspace_id = $3::uuid
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(key)
         .bind(id)
@@ -158,6 +158,8 @@ RETURNING id, workspace_id, title, description, status, priority, assignee_type,
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -266,7 +268,7 @@ SET properties = jsonb_set(properties, ARRAY[$1::text], $2::jsonb, true),
     END,
     updated_at = CASE WHEN properties -> $1::text IS DISTINCT FROM $2::jsonb THEN now() ELSE updated_at END
 WHERE id = $3::uuid AND workspace_id = $4::uuid
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(key)
         .bind(value)
@@ -304,6 +306,8 @@ RETURNING id, workspace_id, title, description, status, priority, assignee_type,
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 

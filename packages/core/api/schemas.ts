@@ -1081,6 +1081,8 @@ export const IssueSchema = z.object({
   priority: z.string(),
   assignee_type: z.string().nullable(),
   assignee_id: z.string().nullable(),
+  reviewer_type: z.string().nullable().optional().default(null),
+  reviewer_id: z.string().nullable().optional().default(null),
   creator_type: z.string(),
   creator_id: z.string(),
   parent_issue_id: z.string().nullable(),
