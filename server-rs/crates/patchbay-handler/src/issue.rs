@@ -5945,7 +5945,13 @@ RETURNING *"#,
         // Persist the executor handoff in the same transaction as the review
         // return. The coordinator's PostgreSQL outbox is authoritative; the
         // in-memory notification below is only a latency hint.
-        patchbay_service::coordination::record_review_return(&mut tx, &updated, None)
+        let handoff_note = (!handoff_note.is_empty()).then_some(handoff_note.as_str());
+        patchbay_service::coordination::record_review_return(
+            &mut tx,
+            &updated,
+            None,
+            handoff_note,
+        )
             .await
             .map_err(|error| {
                 tracing::warn!(%error, issue_id = %previous.id, "failed to record review return handoff");
