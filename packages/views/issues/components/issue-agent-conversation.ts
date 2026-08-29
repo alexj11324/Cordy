@@ -2,6 +2,7 @@ import type {
   AgentTask,
   ChatMessage,
   ChatPendingTask,
+  ChatQueuedTask,
   TimelineEntry,
 } from "@patchbay/core/types";
 import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
@@ -251,9 +252,9 @@ export function buildIssueAgentConversation({
 export function queuedIssueFollowUps(
   pendingTask: ChatPendingTask | null,
   tasks: readonly AgentTask[],
-): ChatPendingTask["queued_tasks"] {
+): ChatQueuedTask[] {
   if (!pendingTask) return [];
-  const rows: NonNullable<ChatPendingTask["queued_tasks"]> = [];
+  const rows: ChatQueuedTask[] = [];
   if (
     pendingTask.status === "queued" &&
     pendingTask.task_id &&

@@ -495,7 +495,9 @@ export function IssueAgentConversationDialog({
                 tasks={queuedFollowUps}
                 headStatus={conversation.pendingTask?.status}
                 onEdit={handleEditQueuedFollowUp}
-                onRemove={cancelQueuedFollowUp}
+                onRemove={async (taskId) => {
+                  await cancelQueuedFollowUp(taskId);
+                }}
                 onClear={handleClearQueuedFollowUps}
               />
             }
