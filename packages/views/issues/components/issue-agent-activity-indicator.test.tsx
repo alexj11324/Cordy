@@ -133,6 +133,27 @@ describe("IssueAgentActivityIndicator", () => {
     expect(screen.getByText("Working")).not.toBeNull();
   });
 
+  it("marks running and queued activity for card-level visuals", () => {
+    const { container, rerender } = render(
+      <IssueAgentActivityIndicator issueId="issue-1" hoverCard={false} />,
+    );
+
+    expect(container.firstElementChild).toHaveAttribute(
+      "data-issue-agent-activity",
+      "running",
+    );
+
+    mockState.snapshot = [makeTask({ status: "queued" })];
+    rerender(
+      <IssueAgentActivityIndicator issueId="issue-1" hoverCard={false} />,
+    );
+
+    expect(container.firstElementChild).toHaveAttribute(
+      "data-issue-agent-activity",
+      "queued",
+    );
+  });
+
   it("renders nothing when no agent is on the issue", () => {
     mockState.snapshot = [];
     const { container } = render(
