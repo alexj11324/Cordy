@@ -169,7 +169,7 @@ export function TaskRunDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="task-run-detail-dialog"
-        className="max-w-2xl overflow-hidden"
+        className="grid max-h-[calc(100vh-2rem)] grid-rows-[auto_minmax(0,1fr)] max-w-2xl overflow-hidden"
       >
         <DialogHeader>
           <DialogTitle>{t(($) => $.task_detail.title)}</DialogTitle>
@@ -180,7 +180,7 @@ export function TaskRunDetailDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 space-y-3 overflow-y-auto">
+        <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto">
           {headerSlot}
           {query.isLoading ? (
             <div className="flex items-center gap-2 rounded-md border px-3 py-4 text-caption text-muted-foreground">

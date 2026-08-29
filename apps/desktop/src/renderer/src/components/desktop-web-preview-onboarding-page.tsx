@@ -11,6 +11,7 @@ export function DesktopWebPreviewOnboardingPage() {
     >
       <OnboardingFlow
         singlePane
+        backendFree
         onComplete={() => undefined}
         runtimeInstructions={<CliInstallInstructions />}
       />

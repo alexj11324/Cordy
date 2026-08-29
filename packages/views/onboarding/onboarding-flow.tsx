@@ -125,6 +125,10 @@ interface OnboardingFlowProps {
   /** Render the post-welcome steps as one centred shadcn card. The Web app
    *  enables this; Desktop keeps the progress rail until separately approved. */
   singlePane?: boolean;
+  /** Disable server-backed workspace/runtime discovery for the browser-only
+   *  preview. The preview can still render and navigate the flow, but must not
+   *  poll endpoints it cannot provide. */
+  backendFree?: boolean;
 }
 
 export function OnboardingFlow(props: OnboardingFlowProps) {
@@ -139,6 +143,7 @@ function OnboardingStepFlow({
   onRuntimeRefresh,
   runtimesPending,
   singlePane = false,
+  backendFree = false,
 }: OnboardingFlowProps) {
   const { t, i18n } = useT("onboarding");
   const user = useAuthStore((s) => s.user);
@@ -170,7 +175,7 @@ function OnboardingStepFlow({
   // shown when the user already has at least one workspace, otherwise
   // skipping would land them in limbo.
   const { workspaces, ready: workspacesReady } = useWorkspaceList({
-    enabled: step === "welcome" || step === "workspace",
+    enabled: !backendFree && (step === "welcome" || step === "workspace"),
   });
   const existingWorkspace = isNewWorkspace
     ? workspace
@@ -397,6 +402,7 @@ function OnboardingStepFlow({
             wsSlug={workspace.slug}
             onNext={handleRuntimeNext}
             cliInstructions={runtimeInstructions}
+            backendFree={backendFree}
           />
         ))}
     </StepShell>

@@ -72,7 +72,12 @@ describe("TaskRunDetailButton", () => {
     renderButton();
     fireEvent.click(screen.getByTestId("task-run-detail-trigger"));
 
-    expect(await screen.findByTestId("task-run-detail-dialog")).toBeInTheDocument();
+    const dialog = await screen.findByTestId("task-run-detail-dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveClass(
+      "max-h-[calc(100vh-2rem)]",
+      "grid-rows-[auto_minmax(0,1fr)]",
+    );
     expect(await screen.findByText("Inspected the repository")).toBeInTheDocument();
     expect(listTaskMessages).toHaveBeenCalledWith("task-1");
   });

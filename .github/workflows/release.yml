@@ -250,6 +250,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.tag_name }}
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         run: |
@@ -379,9 +382,10 @@ jobs:
           fi
 
           # A failed upload must be recoverable with GitHub's "rerun failed
-          # jobs" button. Reuse an existing draft for this exact tag, but
-          # refuse to mutate a release that is already public or whose channel
-          # no longer matches this workflow invocation.
+          # jobs" button. Reuse an existing release for this exact tag. The
+          # automatic macOS workflow may have already published the matching
+          # ARM64 release, in which case this manual workflow appends the
+          # remaining assets after rechecking the immutable tag and channel.
           if release_json="$(gh release view "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --json isDraft,isPrerelease 2>/dev/null)"; then
@@ -391,9 +395,14 @@ jobs:
             if [ "$IS_STABLE" != "true" ]; then
               expected_prerelease=true
             fi
-            if [ "$is_draft" != "true" ] || [ "$is_prerelease" != "$expected_prerelease" ]; then
-              echo "::error::Release $TAG_NAME already exists with incompatible draft/channel state"
+            if [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with an incompatible channel"
               exit 1
+            fi
+            if [ "$is_draft" = "true" ]; then
+              echo "Reusing the draft release for $TAG_NAME"
+            else
+              echo "Appending verified assets to the already-public release for $TAG_NAME"
             fi
           else
             gh release create "$TAG_NAME" \

@@ -158,7 +158,9 @@ const HTML = `<!doctype html>
       function localizedCallbackMessages() {
         const locale = callbackLocale();
         document.documentElement.lang = locale;
-        return callbackMessages[locale] || callbackMessages.en;
+        const messages = callbackMessages[locale] || callbackMessages.en;
+        document.title = messages.title || "Sign in · Patchbay";
+        return messages;
       }
 
       function showCallbackError(target) {

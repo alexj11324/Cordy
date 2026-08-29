@@ -68,7 +68,7 @@ export function WebProviders({
         apiBaseUrl={apiBaseUrl}
         wsUrl={wsUrl || deriveWsUrl()}
         clerkAuth={clerkAuth}
-        cookieAuth={false}
+        cookieAuth
         onLogin={setLoggedInCookie}
         onLogout={() => {
           useWelcomeStore.getState().reset();
