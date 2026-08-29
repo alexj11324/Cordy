@@ -238,7 +238,7 @@ export function IntegrationsTab() {
           <IntegrationCard
             channel="lark"
             title={t(($) => $.lark.section_title)}
-            description={t(($) => $.lark.page_description)}
+            description={t(($) => $.lark.workspace_description)}
             iconClassName="bg-[#3370FF]/10"
             action={
               <HubAction canManage={canManage} isGuest={isGuest} query={lark}>
@@ -249,7 +249,7 @@ export function IntegrationsTab() {
           <IntegrationCard
             channel="slack"
             title={t(($) => $.slack.section_title)}
-            description={t(($) => $.slack.page_description)}
+            description={t(($) => $.slack.workspace_description)}
             iconClassName="bg-[#611f69]/10"
             action={
               <HubAction canManage={canManage} isGuest={isGuest} query={slack}>
@@ -260,7 +260,7 @@ export function IntegrationsTab() {
           <IntegrationCard
             channel="dingtalk"
             title={t(($) => $.dingtalk.section_title)}
-            description={t(($) => $.dingtalk.page_description)}
+            description={t(($) => $.dingtalk.workspace_description)}
             iconClassName="bg-[#1677FF]/10"
             action={
               <HubAction canManage={canManage} isGuest={isGuest} query={dingtalk}>
@@ -271,7 +271,7 @@ export function IntegrationsTab() {
           <IntegrationCard
             channel="wecom"
             title={t(($) => $.wecom.section_title)}
-            description={t(($) => $.wecom.page_description)}
+            description={t(($) => $.wecom.workspace_description)}
             iconClassName="bg-[#07C160]/10"
             action={
               <HubAction canManage={canManage} isGuest={isGuest} query={wecom}>
@@ -282,7 +282,7 @@ export function IntegrationsTab() {
           <IntegrationCard
             channel="telegram"
             title={t(($) => $.telegram.section_title)}
-            description={t(($) => $.telegram.page_description)}
+            description={t(($) => $.telegram.workspace_description)}
             iconClassName="bg-[#2AABEE]/10"
             action={
               <HubAction canManage={canManage} isGuest={isGuest} query={telegram}>
@@ -293,7 +293,7 @@ export function IntegrationsTab() {
           <IntegrationCard
             channel="weixin"
             title={t(($) => $.weixin.section_title)}
-            description={t(($) => $.weixin.page_description)}
+            description={t(($) => $.weixin.workspace_description)}
             iconClassName="bg-[#07C160]/10"
             action={
               <HubAction canManage={canManage} isGuest={isGuest} query={weixin}>

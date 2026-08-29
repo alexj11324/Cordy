@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useCreateComment } from "@patchbay/core/issues/mutations";
-import { issueTimelineOptions } from "@patchbay/core/issues/queries";
+import { issueKeys, issueTimelineOptions } from "@patchbay/core/issues/queries";
 import { unhandledCommentTriggerOutcomes } from "@patchbay/core/issues/comment-trigger-outcomes";
 import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { agentDetailOptions } from "@patchbay/core/workspace/queries";
@@ -41,55 +41,24 @@ const SIDE_CHAT_MAIN_STATUSES = new Set<AgentTask["status"]>([
   "waiting_local_directory",
 ]);
 
-export function IssueAgentConversationTrigger({
-  onClick,
-}: {
-  onClick: () => void;
-}) {
-  const { t } = useT("issues");
-  const title = t(($) => $.execution_log.conversation_tooltip);
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={<button type="button" />}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onClick();
-        }}
-        aria-label={title}
-        className="flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-      >
-        <MessageSquare className="h-3.5 w-3.5" />
-      </TooltipTrigger>
-      <TooltipContent>{title}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-export function IssueAgentConversationDialog({
+/**
+ * Posts a comment that mentions this agent. While a main run is live the
+ * comment opens (or continues) a Side Chat; otherwise it starts a new run.
+ */
+export function useIssueAgentMessageSend({
   issueId,
   agentId,
+  agentName,
   tasks,
-  onOpenChange,
 }: {
   issueId: string;
   agentId: string;
-  tasks: AgentTask[];
-  onOpenChange: (open: boolean) => void;
+  agentName: string;
+  tasks: readonly AgentTask[];
 }) {
   const { t } = useT("issues");
-  const wsId = useWorkspaceId();
-  const user = useAuthStore((state) => state.user);
-  const { data: agent } = useQuery(agentDetailOptions(wsId, agentId));
-  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
-  const { data: timeline = [], isLoading } = useQuery(issueTimelineOptions(issueId));
-  const { mutateAsync: createComment, isPending: isSending } = useCreateComment(issueId);
-  const agentName = agent?.name || t(($) => $.agent_live.fallback_name);
-  const supportsGoal = runtimes.some(
-    (runtime) => runtime.id === agent?.runtime_id && runtime.provider === "codex",
-  );
+  const { mutateAsync: createComment, isPending: isSending } =
+    useCreateComment(issueId);
   const agentTasks = useMemo(
     () => tasks.filter((candidate) => candidate.agent_id === agentId),
     [agentId, tasks],
@@ -130,37 +99,23 @@ export function IssueAgentConversationDialog({
     localSideChat && localSideChat.mainTaskId === activeMainTask?.id
       ? localSideChat.rootCommentId
       : persistedSideChatRootId;
-  const conversation = useMemo(
-    () =>
-      buildIssueAgentConversation({
-        issueId,
-        agentId,
-        tasks: agentTasks,
-        timeline,
-        initialRunPrompt: t(($) => $.execution_log.conversation_initial_prompt),
-      }),
-    [agentId, agentTasks, issueId, t, timeline],
-  );
-  const currentTask = conversation.pendingTask?.task_id
-    ? agentTasks.find(
-        (candidate) => candidate.id === conversation.pendingTask?.task_id,
-      )
-    : undefined;
-  const handleSend = useCallback(
+
+  const send = useCallback(
     async (
       content: string,
-      attachmentIds: string[] | undefined,
-      commitInput: () => void,
-    ) => {
+      attachmentIds?: string[],
+      suppressAgentIds?: string[],
+    ): Promise<string | false> => {
       if (!content.trim() || isSending) return false;
       const mention = `[@${escapeMarkdownLabel(agentName)}](mention://agent/${agentId})`;
+      const suppress = suppressAgentIds?.filter((id) => id !== agentId);
       try {
         const comment = await createComment({
           content: `${mention}\n\n${content.trim()}`,
           parentId: activeMainTask ? sideChatRootId : undefined,
           attachmentIds,
+          suppressAgentIds: suppress && suppress.length > 0 ? suppress : undefined,
         });
-        commitInput();
         const openedSideChat = comment.trigger_outcomes?.some(
           (outcome) =>
             outcome.target_type === "agent" &&
@@ -186,7 +141,7 @@ export function IssueAgentConversationDialog({
             }),
           );
         }
-        return true;
+        return comment.id;
       } catch (error) {
         toast.error(
           error instanceof Error && error.message
@@ -205,6 +160,127 @@ export function IssueAgentConversationDialog({
       sideChatRootId,
       t,
     ],
+  );
+
+  return { send, isSending };
+}
+
+export function useIssueAgentTasks(issueId: string) {
+  const { data: tasks = [] } = useQuery({
+    queryKey: issueKeys.tasks(issueId),
+    queryFn: () => api.listTasksByIssue(issueId),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  return tasks;
+}
+
+export function IssueAgentConversationTrigger({
+  onClick,
+}: {
+  onClick: () => void;
+}) {
+  const { t } = useT("issues");
+  const title = t(($) => $.execution_log.conversation_tooltip);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<button type="button" />}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onClick();
+        }}
+        aria-label={title}
+        className="flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
+      </TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function IssueAgentConversationOpener({
+  issueId,
+  agentId,
+  onOpenChange,
+}: {
+  issueId: string;
+  agentId: string;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const tasks = useIssueAgentTasks(issueId);
+  return (
+    <IssueAgentConversationDialog
+      issueId={issueId}
+      agentId={agentId}
+      tasks={tasks}
+      onOpenChange={onOpenChange}
+    />
+  );
+}
+
+export function IssueAgentConversationDialog({
+  issueId,
+  agentId,
+  tasks,
+  onOpenChange,
+}: {
+  issueId: string;
+  agentId: string;
+  tasks: AgentTask[];
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useT("issues");
+  const wsId = useWorkspaceId();
+  const user = useAuthStore((state) => state.user);
+  const { data: agent } = useQuery(agentDetailOptions(wsId, agentId));
+  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
+  const { data: timeline = [], isLoading } = useQuery(issueTimelineOptions(issueId));
+  const agentName = agent?.name || t(($) => $.agent_live.fallback_name);
+  const { send } = useIssueAgentMessageSend({
+    issueId,
+    agentId,
+    agentName,
+    tasks,
+  });
+  const supportsGoal = runtimes.some(
+    (runtime) => runtime.id === agent?.runtime_id && runtime.provider === "codex",
+  );
+  const agentTasks = useMemo(
+    () => tasks.filter((candidate) => candidate.agent_id === agentId),
+    [agentId, tasks],
+  );
+  const conversation = useMemo(
+    () =>
+      buildIssueAgentConversation({
+        issueId,
+        agentId,
+        tasks: agentTasks,
+        timeline,
+        initialRunPrompt: t(($) => $.execution_log.conversation_initial_prompt),
+      }),
+    [agentId, agentTasks, issueId, t, timeline],
+  );
+  const currentTask = conversation.pendingTask?.task_id
+    ? agentTasks.find(
+        (candidate) => candidate.id === conversation.pendingTask?.task_id,
+      )
+    : undefined;
+  const handleSend = useCallback(
+    async (
+      content: string,
+      attachmentIds: string[] | undefined,
+      commitInput: () => void,
+    ) => {
+      const commentId = await send(content, attachmentIds);
+      if (!commentId) return false;
+      commitInput();
+      return true;
+    },
+    [send],
   );
 
   const handleStop = useCallback(async () => {

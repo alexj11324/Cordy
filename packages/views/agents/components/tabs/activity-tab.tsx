@@ -32,7 +32,10 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { issueDetailOptions } from "@patchbay/core/issues/queries";
 import { AppLink } from "../../../navigation";
-import { TranscriptButton } from "../../../common/task-transcript";
+import {
+  IssueAgentConversationOpener,
+  IssueAgentConversationTrigger,
+} from "../../../issues/components/issue-agent-conversation-dialog";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
 import { taskStatusConfig } from "../../config";
 import { cancelReasonLabel, failureReasonLabel } from "./task-failure";
@@ -515,14 +518,14 @@ function TaskRow({
   const timeAgo = useTimeAgo();
   const paths = useWorkspacePaths();
   const [cancelling, setCancelling] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(false);
   const cfg = taskStatusConfig[task.status] ?? taskStatusConfig.queued!;
   const Icon = cfg.icon;
   const hasIssue = task.issue_id !== "";
   const issue = hasIssue ? issueMap.get(task.issue_id) : undefined;
   const isRunning = task.status === "running";
-  // Queued tasks have no messages yet — hiding the transcript button avoids
-  // a guaranteed "No execution data recorded." dialog open.
-  const showTranscript = task.status !== "queued";
+  const chatSessionId = task.chat_session_id;
+  const showChat = !hasIssue && Boolean(chatSessionId);
   // Cancel only makes sense for the three active states. Terminal rows
   // (completed / failed / cancelled) hide the button entirely.
   const showCancel =
@@ -708,9 +711,9 @@ function TaskRow({
       </div>
 
       {/* Hover-only actions. The row is intentionally non-clickable so
-          neither destination is privileged — issue detail and transcript
-          are equally valid follow-ups. focus-within keeps the slot
-          reachable for keyboard users. */}
+          neither destination is privileged — issue detail and the agent
+          conversation are equally valid follow-ups. focus-within keeps the
+          slot reachable for keyboard users. */}
       <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
         {hasIssue && (
           <Tooltip>
@@ -724,13 +727,29 @@ function TaskRow({
             <TooltipContent>{t(($) => $.tab_body.activity.open_issue_tooltip)}</TooltipContent>
           </Tooltip>
         )}
-        {showTranscript && (
-          <TranscriptButton
-            task={task}
-            agentName={agent.name}
-            isLive={isRunning}
-            title={t(($) => $.tab_body.activity.transcript_tooltip)}
-          />
+        {hasIssue && (
+          <>
+            <IssueAgentConversationTrigger onClick={() => setConversationOpen(true)} />
+            {conversationOpen && (
+              <IssueAgentConversationOpener
+                issueId={task.issue_id}
+                agentId={agent.id}
+                onOpenChange={setConversationOpen}
+              />
+            )}
+          </>
+        )}
+        {showChat && chatSessionId && (
+          <Tooltip>
+            <TooltipTrigger
+              render={<AppLink href={paths.chatSession(chatSessionId)} />}
+              aria-label={t(($) => $.tab_body.activity.open_chat_aria)}
+              className="flex items-center justify-center rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            >
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent>{t(($) => $.tab_body.activity.open_chat_tooltip)}</TooltipContent>
+          </Tooltip>
         )}
         {showCancel && (
           <Tooltip>

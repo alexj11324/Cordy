@@ -88,8 +88,7 @@ import { isImeComposing } from "@patchbay/core/utils";
 import { ThreadMinimap } from "./thread-minimap";
 import { ThreadNavPanel, mentionsUser, type ThreadNavThread } from "./thread-nav-panel";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
-import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
-import { ExecutionLogSection } from "./execution-log-section";
+import { IssueAgentWorkingStatus } from "./issue-agent-live";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
@@ -2571,16 +2570,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>
       )}
 
-      {/* Execution log — active runs + collapsed past runs, each carrying its
-          own token spend, with the issue total on the section header.
-          Self-contained; owns its own collapse state and WS subscriptions.
-          Hides itself when there are no runs to show. */}
-      <ExecutionLogSection issueId={id} identifier={issue.identifier} />
-
-      {/* Details — creator and timestamps. Sits below the execution log
-          because it is the least-read block in the sidebar: the values
-          never change once the issue exists, while the log above it is
-          what people actually come here to check. */}
+      {/* Details — creator and timestamps. Least-read block in the
+          sidebar now that Agent conversation lives on the Working card. */}
       <div>
         <button
           type="button"
@@ -2604,12 +2595,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>}
       </div>
 
-      {/* The standalone "Token usage" section that used to sit here is gone:
-          it showed the same issue totals the execution-log header now carries,
-          minus the cost and minus any way to tell which run spent them. Its
-          every field (input / output / cache / run count) lives in the usage
-          dialog that header opens. The `/api/issues/:id/usage` endpoint it
-          read stays — the CLI's `issue usage` command still uses it. */}
+      {/* Token usage used to live in the execution-log header. That panel
+          is gone; the `/api/issues/:id/usage` endpoint stays for the CLI. */}
 
       {/* Metadata — agent-facing free-form KV bag. The values almost
           never mean anything to humans, so the trigger row matches the
@@ -2769,10 +2756,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           }
           actions={
             <>
-            {/* Live "agent is working" chip, leftmost in the right cluster so
-                it never overlaps the title (which truncates to make room).
-                It self-hides when no agent is active. */}
-            <IssueAgentHeaderChip issueId={id} />
             {/* Thread navigator. Leftmost of the action buttons because it
                 navigates the document, while everything to its right acts on
                 the issue. Hidden on mobile with the rail: the panel would work
@@ -3393,12 +3376,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
             <LocalDirectoryHint projectId={issue?.project_id} />
 
-            {/* The "agent is working" live signal now lives in the header
-                (IssueAgentHeaderChip) so it stays in one fixed place and
-                doesn't compete with sticky banners in this content column.
-                The per-task timeline + past runs live in the right panel
-                via ExecutionLogSection. */}
-
             {/* Timeline entries — virtualized via react-virtuoso to keep
                 first-paint cost O(viewport) instead of O(N). On a 500-comment
                 issue the unvirtualized .map froze the page for several
@@ -3466,6 +3443,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 </div>
               )
             )}
+
+            {/* Live agent turn — same thread as human comments, not a chip
+                above the composer. */}
+            <IssueAgentWorkingStatus issueId={id} />
 
           </div>
 

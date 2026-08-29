@@ -29,8 +29,7 @@ const EMPTY_GROUPS: IssueTaskGroups = { running: [], queued: [] };
 // travel rather than on intent and a 288px card lands over the rows below.
 //
 // 900ms sits past casual travel but still inside a deliberate "what is it
-// doing?" pause. The header chip (issue-agent-header-chip) keeps its 150ms
-// on purpose: it is one large chip the user aims at, not a per-row cue.
+// doing?" pause.
 //
 // The card body is read-only — no links, no buttons — so there is no hover
 // bridge to protect and the close delay only needs to absorb pointer wobble

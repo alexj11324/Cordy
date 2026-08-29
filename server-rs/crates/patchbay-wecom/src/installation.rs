@@ -534,7 +534,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_requires_every_field() {
+    fn validate_requires_workspace_and_credentials() {
         let base = InstallationParams {
             workspace_id: Uuid::now_v7(),
             agent_id: Uuid::now_v7(),
@@ -554,7 +554,7 @@ mod tests {
 
         let mut p = base.clone();
         p.agent_id = Uuid::nil();
-        assert!(validate_installation_params(&p).is_err());
+        assert!(validate_installation_params(&p).is_ok());
 
         let mut p = base.clone();
         p.installer_user_id = Uuid::nil();

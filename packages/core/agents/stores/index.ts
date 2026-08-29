@@ -11,8 +11,3 @@ export {
   type AgentColumnKey,
   type AgentListFilters,
 } from "./view-store";
-export {
-  useTranscriptViewStore,
-  type TranscriptFilterKey,
-  type TranscriptSortDirection,
-} from "./transcript-view-store";

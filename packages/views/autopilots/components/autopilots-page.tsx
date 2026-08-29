@@ -810,7 +810,7 @@ export function AutopilotsPage() {
           <p className="mb-6 mt-1 text-caption text-muted-foreground">
             {t(($) => $.page.empty.hint)}
           </p>
-          <div className="grid w-full max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex w-full max-w-3xl flex-col gap-3">
             {TEMPLATES.map((tpl) => {
               const Icon = tpl.icon;
               return (
