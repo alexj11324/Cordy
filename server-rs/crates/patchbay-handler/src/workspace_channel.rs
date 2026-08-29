@@ -8,7 +8,7 @@
 use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use patchbay_db::models::{WorkspaceChannel, WorkspaceChannelMessage};
 use patchbay_db::queries::workspace_channel as channel_q;
