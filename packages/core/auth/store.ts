@@ -39,7 +39,7 @@ export interface AuthState {
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
 
-  return create<AuthState>((set) => ({
+  return create<AuthState>((set, get) => ({
     user: null,
     isLoading: true,
     status: "authenticating",
@@ -107,8 +107,9 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: () => {
-      if (cookieAuth) {
-        // Clear server-side HttpOnly cookie.
+      if (cookieAuth || get().user?.is_guest === true) {
+        // Clear server-side HttpOnly cookies and revoke any server-backed
+        // guest bearer before local state removes the credential.
         api.logout().catch(() => {});
       }
       storage.removeItem("patchbay_token");

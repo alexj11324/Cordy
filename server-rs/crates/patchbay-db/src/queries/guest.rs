@@ -48,3 +48,22 @@ pub async fn find_active_by_token_hash(
     })
     .transpose()
 }
+
+/// Revokes the active session for a bearer token without ever persisting the
+/// raw token. A guest user has one session token, so matching by its hash also
+/// avoids revoking a different session if the schema gains multi-session
+/// support later.
+pub async fn revoke_active_by_token_hash(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    token_hash: &str,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE guest_session
+           SET status = 'revoked'
+           WHERE token_hash = $1 AND status = 'active'"#,
+    )
+    .bind(token_hash)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}

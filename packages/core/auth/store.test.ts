@@ -104,4 +104,24 @@ describe("authStore", () => {
     expect(store.getState().user).toBeNull();
     expect(store.getState().status).toBe("unauthenticated");
   });
+
+  it("revokes a server-backed guest session on logout", () => {
+    const storage = makeStorage({ patchbay_token: "pbg_guest-token" });
+    const api = {
+      logout: vi.fn().mockResolvedValue(undefined),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage });
+
+    store.setState({
+      user: { ...fakeUser, id: "guest-1", is_guest: true },
+      status: "authenticated",
+      isLoading: false,
+    });
+    store.getState().logout();
+
+    expect(api.logout).toHaveBeenCalledOnce();
+    expect(api.setToken).toHaveBeenCalledWith(null);
+    expect(storage.snapshot().patchbay_token).toBeUndefined();
+  });
 });

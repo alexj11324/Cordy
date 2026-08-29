@@ -321,13 +321,15 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
-            workspace_mcp::admin_router().route_layer(middleware::from_fn_with_state(
-                WorkspaceGuardState::from_url_with_roles(
-                    state.pool.clone(),
-                    "id",
-                    vec!["owner".into(), "admin".into()],
+            formal_guard(workspace_mcp::admin_router().route_layer(
+                middleware::from_fn_with_state(
+                    WorkspaceGuardState::from_url_with_roles(
+                        state.pool.clone(),
+                        "id",
+                        vec!["owner".into(), "admin".into()],
+                    ),
+                    patchbay_middleware::workspace::require_workspace,
                 ),
-                patchbay_middleware::workspace::require_workspace,
             )),
         )
         .merge(formal_guard(vcs::member_router().route_layer(
@@ -501,7 +503,11 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 patchbay_middleware::workspace::require_workspace,
             )),
         )
-        .merge(formal_guard(pat::router()))
+        // Desktop needs the POST exchange to mint its daemon PAT while a
+        // guest session is active. Token listing, renewal, and revocation
+        // remain formal-account-only.
+        .merge(pat::guest_router())
+        .merge(formal_guard(pat::formal_router()))
         .merge(
             project::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
