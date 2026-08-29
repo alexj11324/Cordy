@@ -359,25 +359,33 @@ pub async fn auth_middleware(
     // against both the session table and the real user row instead of being
     // accepted as a self-describing/local-only identity.
     if token.starts_with("pbg_") {
-        let Some(session) = guest::find_active_by_token_hash(&state.pool, &hash)
-            .await
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "auth: guest session lookup failed");
-                None
-            })
-        else {
-            tracing::warn!(path = ?req.uri().path(), "auth: invalid guest token");
-            return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+        let session = match guest::find_active_by_token_hash(&state.pool, &hash).await {
+            Ok(Some(session)) => session,
+            Ok(None) => {
+                tracing::warn!(path = ?req.uri().path(), "auth: invalid guest token");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(error) => {
+                tracing::error!(%error, "auth: guest session lookup unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"authentication temporarily unavailable"}"#,
+                ));
+            }
         };
-        let Some(guest_user) = user::get_user(&state.pool, session.user_id)
-            .await
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "auth: guest user lookup failed");
-                None
-            })
-        else {
-            tracing::warn!(path = ?req.uri().path(), "auth: guest user not found");
-            return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+        let guest_user = match user::get_user(&state.pool, session.user_id).await {
+            Ok(Some(guest_user)) => guest_user,
+            Ok(None) => {
+                tracing::warn!(path = ?req.uri().path(), "auth: guest user not found");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(error) => {
+                tracing::error!(%error, "auth: guest user lookup unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"authentication temporarily unavailable"}"#,
+                ));
+            }
         };
         if !guest_user.is_guest {
             tracing::warn!(path = ?req.uri().path(), "auth: guest session points to formal user");

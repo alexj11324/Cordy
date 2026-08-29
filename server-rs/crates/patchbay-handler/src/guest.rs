@@ -233,14 +233,26 @@ async fn claim_guest(
         Ok(Some(value)) => value,
         Ok(None) | Err(_) => return guest_transfer_error(),
     };
-    if transfer.consumed_at.is_some() || transfer.expires_at <= Utc::now() {
-        return guest_transfer_error();
-    }
     let session = match guest_queries::lock_by_id(&mut *tx, transfer.guest_session_id).await {
         Ok(Some(value)) => value,
         Ok(None) | Err(_) => return guest_transfer_error(),
     };
-    if session.status != "active" || session.user_id != transfer.guest_user_id {
+    if session.user_id != transfer.guest_user_id {
+        return guest_transfer_error();
+    }
+    if transfer.consumed_at.is_some() {
+        if transfer.claimed_user_id == Some(formal_user_id) && session.status == "claimed" {
+            // The migration and token issuance happen in separate requests.
+            // A browser reload after a successful claim must be able to retry
+            // the formal Desktop-token handoff without replaying the transfer.
+            return Json(ClaimResponse {
+                migrated_workspace_ids: Vec::new(),
+            })
+            .into_response();
+        }
+        return guest_transfer_error();
+    }
+    if session.status != "active" || transfer.expires_at <= Utc::now() {
         return guest_transfer_error();
     }
     let guest_user = match user::get_user_for_update(&mut *tx, transfer.guest_user_id).await {
@@ -399,6 +411,17 @@ async fn migrate_guest_data(
             .execute(&mut **tx)
             .await?;
     }
+
+    // Member-targeted inbox rows carry the member id directly. Preserve their
+    // read, archived, and unread state while moving the recipient to the new
+    // formal member created below.
+    sqlx::query(
+        "UPDATE inbox_item SET recipient_id = $1 WHERE recipient_type = 'member' AND recipient_id = $2",
+    )
+    .bind(formal_user_id)
+    .bind(guest_user_id)
+    .execute(&mut **tx)
+    .await?;
 
     // The guest workspace is not an existing formal workspace, so the normal
     // case is a single safe UPDATE. A formal membership collision causes a
