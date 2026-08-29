@@ -83,6 +83,9 @@ type RunConfirmData = {
   excludedAssignees?: Array<{ type: IssueAssigneeType; id: string }>;
   additionalUpdates?: Partial<Omit<UpdateIssueMutationInput, "id">>;
   issueRevision?: number;
+  /** Board-only callbacks kept in the in-memory modal store until the write settles. */
+  onSuccess?: () => void;
+  onError?: () => void;
 };
 
 /**
@@ -242,8 +245,10 @@ export function RunConfirmModal({
       } else {
         await batchUpdate.mutateAsync({ ids: issueIds, updates: payload });
       }
+      d.onSuccess?.();
       onClose();
     } catch (err) {
+      d.onError?.();
       toast.error(
         errorCode(err) === "revision_conflict"
           ? tIssues(($) => $.revision.conflict)
