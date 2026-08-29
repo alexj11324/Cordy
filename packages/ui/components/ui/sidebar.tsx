@@ -204,7 +204,7 @@ function SidebarProvider({
 
   const [width, _setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
   React.useEffect(() => {
-    const stored = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
     if (stored) {
       const storedWidth = Number(stored)
       if (Number.isFinite(storedWidth)) {
@@ -215,7 +215,7 @@ function SidebarProvider({
   const commitWidth = React.useCallback((w: number) => {
     const clamped = clampSidebarWidth(w)
     _setWidth(clamped)
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped))
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped))
   }, [])
 
   // Auto-collapse across the `lg`–`xl` band. Only the two crossings are

@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { env } from "node:process";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -8,9 +9,7 @@ import { previewApiPlugin } from "./scripts/preview-api.mjs";
 const desktopRoot = dirname(fileURLToPath(import.meta.url));
 const port =
   Number(
-    process.env.DESKTOP_RENDERER_PORT ??
-      process.env.VITE_PORT ??
-      process.env.FRONTEND_PORT,
+    env.DESKTOP_RENDERER_PORT ?? env.VITE_PORT ?? env.FRONTEND_PORT,
   ) || 5173;
 
 export default defineConfig({

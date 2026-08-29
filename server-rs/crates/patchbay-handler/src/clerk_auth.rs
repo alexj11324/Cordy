@@ -269,10 +269,7 @@ mod tests {
     fn missing_or_unknown_authorized_party_is_rejected() {
         let allowed = vec!["https://accounts.aspectlylabs.com".to_string()];
         assert!(!is_authorized_party(&allowed, None));
-        assert!(!is_authorized_party(
-            &allowed,
-            Some("https://evil.example")
-        ));
+        assert!(!is_authorized_party(&allowed, Some("https://evil.example")));
         assert!(is_authorized_party(
             &allowed,
             Some("https://accounts.aspectlylabs.com/")
