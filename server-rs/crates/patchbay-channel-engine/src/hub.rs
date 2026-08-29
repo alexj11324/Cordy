@@ -114,31 +114,27 @@ impl PostgresHubRouter {
         installation_id: Uuid,
         binding_key: &str,
     ) -> anyhow::Result<Option<Uuid>> {
-        let binding = match get_channel_chat_session_binding(
-            &self.pool,
-            installation_id,
-            binding_key,
-        )
-        .await?
-        {
-            Some(binding) => Some(binding),
-            None => {
-                // Slack slash commands only carry the channel id. A normal
-                // hub conversation may be stored as `channel:thread`, so
-                // fall back to the newest binding in that channel for
-                // channel-addressable commands such as `/issue`.
-                let channel_id = binding_key
-                    .split_once(':')
-                    .map(|(channel, _)| channel)
-                    .unwrap_or(binding_key);
-                get_channel_chat_session_binding_for_channel(
-                    &self.pool,
-                    installation_id,
-                    channel_id,
-                )
-                .await?
-            }
-        };
+        let binding =
+            match get_channel_chat_session_binding(&self.pool, installation_id, binding_key).await?
+            {
+                Some(binding) => Some(binding),
+                None => {
+                    // Slack slash commands only carry the channel id. A normal
+                    // hub conversation may be stored as `channel:thread`, so
+                    // fall back to the newest binding in that channel for
+                    // channel-addressable commands such as `/issue`.
+                    let channel_id = binding_key
+                        .split_once(':')
+                        .map(|(channel, _)| channel)
+                        .unwrap_or(binding_key);
+                    get_channel_chat_session_binding_for_channel(
+                        &self.pool,
+                        installation_id,
+                        channel_id,
+                    )
+                    .await?
+                }
+            };
         let Some(binding) = binding else {
             return Ok(None);
         };
