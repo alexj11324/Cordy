@@ -67,7 +67,7 @@ tokio-util = { workspace = true, features = ["io"] }
 tracing = { workspace = true }
 tower-http = { workspace = true }
 url = { workspace = true }
-uuid = { workspace = true, features = ["v4"] }
+uuid = { workspace = true, features = ["v4", "v5"] }
 zip = { workspace = true }
 
 [dev-dependencies]

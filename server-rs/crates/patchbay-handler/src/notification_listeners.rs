@@ -208,7 +208,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
             )
             .await;
         }
-        if flag(&event.payload, "review_handoff") {
+        if flag(&event.payload, "review_handoff") || flag(&event.payload, "reviewer_changed") {
             if let (Some(recipient_type), Some(recipient_id)) =
                 (fields.reviewer_type.as_deref(), fields.reviewer_id)
             {
@@ -650,7 +650,7 @@ async fn create_and_publish(pool: &PgPool, bus: &Bus, event: &Event, spec: Inbox
         actor_type,
         actor_id,
         spec.details,
-        patchbay_db::dbid::new_v7(),
+        durable_coordination_inbox_id(event, &spec),
     )
     .await
     {
@@ -935,6 +935,25 @@ fn is_assignment_recipient(value: &str) -> bool {
     matches!(value, "member" | "agent")
 }
 
+fn durable_coordination_inbox_id(event: &Event, spec: &InboxSpec<'_>) -> Uuid {
+    let Some(event_id) = event
+        .payload
+        .get("coordination_event_id")
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<Uuid>().ok())
+    else {
+        return patchbay_db::dbid::new_v7();
+    };
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!(
+            "patchbay:coordination:inbox:{event_id}:{}:{}:{}:{}",
+            spec.recipient_type, spec.recipient_id, spec.notif_type, spec.issue_id
+        )
+        .as_bytes(),
+    )
+}
+
 fn is_muted(prefs: &HashMap<String, String>, notif_type: &str) -> bool {
     let group = match notif_type {
         "issue_assigned" | "unassigned" | "assignee_changed" => "assignments",
@@ -1028,6 +1047,51 @@ mod tests {
             ))
             .len(),
             2
+        );
+    }
+
+    #[test]
+    fn reviewer_replacement_notifications_are_idempotent_per_recipient() {
+        let event = Event {
+            task_id: "11111111-1111-4111-8111-111111111111".into(),
+            payload: json!({
+                "reviewer_changed": true,
+                "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+            }),
+            ..Default::default()
+        };
+        let reviewer_id = Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
+        let issue_id = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        let details = json!({});
+        let spec = InboxSpec {
+            recipient_type: "agent",
+            recipient_id: reviewer_id,
+            issue_id,
+            issue_status: "in_review",
+            notif_type: "issue_assigned",
+            severity: "action_required",
+            title: "Issue",
+            body: None,
+            details: &details,
+        };
+        assert_eq!(
+            durable_coordination_inbox_id(&event, &spec),
+            durable_coordination_inbox_id(&event, &spec)
+        );
+        let other = InboxSpec {
+            recipient_type: spec.recipient_type,
+            recipient_id: Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap(),
+            issue_id: spec.issue_id,
+            issue_status: spec.issue_status,
+            notif_type: spec.notif_type,
+            severity: spec.severity,
+            title: spec.title,
+            body: spec.body,
+            details: spec.details,
+        };
+        assert_ne!(
+            durable_coordination_inbox_id(&event, &spec),
+            durable_coordination_inbox_id(&event, &other)
         );
     }
 }

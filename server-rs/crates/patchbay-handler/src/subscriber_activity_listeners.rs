@@ -178,7 +178,8 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
         return;
     }
     let review_handoff = flag(&event.payload, "review_handoff");
-    if review_handoff {
+    let reviewer_assignment = review_handoff || flag(&event.payload, "reviewer_changed");
+    if reviewer_assignment {
         if let (Some(user_type), Some(user_id)) =
             (fields.reviewer_type.as_deref(), fields.reviewer_id)
         {
@@ -196,16 +197,22 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             }
         }
         let mut details = Map::new();
+        let previous_type_key = if review_handoff {
+            "prev_assignee_type"
+        } else {
+            "prev_reviewer_type"
+        };
+        let previous_id_key = if review_handoff {
+            "prev_assignee_id"
+        } else {
+            "prev_reviewer_id"
+        };
         insert_optional(
             &mut details,
             "from_type",
-            event.payload.get("prev_assignee_type"),
+            event.payload.get(previous_type_key),
         );
-        insert_optional(
-            &mut details,
-            "from_id",
-            event.payload.get("prev_assignee_id"),
-        );
+        insert_optional(&mut details, "from_id", event.payload.get(previous_id_key));
         insert_optional_str(&mut details, "to_type", fields.reviewer_type.as_deref());
         if let Some(to_id) = fields.reviewer_id {
             details.insert("to_id".into(), Value::String(to_id.to_string()));
@@ -538,7 +545,7 @@ async fn insert_activity(
         actor_id,
         action,
         &details,
-        patchbay_db::dbid::new_v7(),
+        durable_coordination_activity_id(event).unwrap_or_else(patchbay_db::dbid::new_v7),
     )
     .await
     {
@@ -638,6 +645,18 @@ fn is_assignment_recipient(user_type: &str) -> bool {
     matches!(user_type, "member" | "agent")
 }
 
+fn durable_coordination_activity_id(event: &Event) -> Option<Uuid> {
+    let event_id = event
+        .payload
+        .get("coordination_event_id")
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<Uuid>().ok())?;
+    Some(Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!("patchbay:coordination:activity:{event_id}").as_bytes(),
+    ))
+}
+
 fn parse_mentions(content: &str) -> Vec<Mention> {
     static MENTION_RE: OnceLock<Regex> = OnceLock::new();
     let re = MENTION_RE.get_or_init(|| {
@@ -700,5 +719,23 @@ mod tests {
         assert!(is_assignment_recipient("agent"));
         assert!(!is_assignment_recipient("team"));
         assert!(!is_assignment_recipient("system"));
+    }
+
+    #[test]
+    fn reviewer_replacement_uses_a_stable_activity_id() {
+        let event = Event {
+            task_id: "11111111-1111-4111-8111-111111111111".into(),
+            payload: json!({
+                "reviewer_changed": true,
+                "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            durable_coordination_activity_id(&event),
+            durable_coordination_activity_id(&event)
+        );
+        assert!(durable_coordination_activity_id(&event).is_some());
+        assert!(durable_coordination_activity_id(&Event::default()).is_none());
     }
 }

@@ -217,19 +217,11 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
             return Ok(());
         };
 
-        if plan.publish_issue_update {
-            self.publish_review_handoff(&plan).await;
-        }
-        if plan.publish_reviewer_update {
-            self.publish_reviewer_update(&plan).await;
-        }
-        if plan.publish_issue_update || plan.publish_reviewer_update {
-            self.mark_issue_update_published(&event, &plan).await?;
-        }
-        if let Some(activity) = &plan.assignment_activity {
-            self.publish_assignment_activity(activity);
-        }
-
+        // The prepare transaction is intentionally short so it never holds a
+        // database lock across task creation or event fanout. Re-check the
+        // issue after the deferred task exists and immediately before any
+        // handoff publication; a newer user update must not receive stale
+        // reviewer side effects.
         let task_id = match self.dispatch(&plan).await {
             Ok(task_id) => task_id,
             Err(error) => {
@@ -257,6 +249,28 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
                 }
             }
         };
+
+        if !self
+            .revalidate_before_publication(&event, &plan, task_id)
+            .await?
+        {
+            return Ok(());
+        }
+
+        if plan.publish_issue_update {
+            self.publish_review_handoff(&plan).await;
+        }
+        if plan.publish_reviewer_update {
+            self.publish_reviewer_update(&plan).await;
+        }
+        if plan.publish_issue_update || plan.publish_reviewer_update {
+            self.mark_issue_update_published(&event, &plan).await?;
+        }
+        if let Some(activity) = &plan.assignment_activity {
+            self.publish_assignment_activity(activity);
+            self.mark_assignment_activity_published(&event, &plan)
+                .await?;
+        }
 
         let promoted = self.mark_dispatched(&event, &plan, task_id).await?;
         if promoted {
@@ -518,6 +532,16 @@ FOR UPDATE"#,
                     .and_then(|value| Uuid::parse_str(value).ok());
                 let reviewer_before_recovery_type = issue.reviewer_type.clone();
                 let reviewer_before_recovery_id = issue.reviewer_id;
+                let persisted_assignment_activity = if assignment
+                    .decision
+                    .get("assignment_activity_published")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+                {
+                    find_assignment_activity(&mut *tx, issue.id, event.id, assignment.id).await?
+                } else {
+                    None
+                };
                 let (dispatch_owner_id, issue, assignment_activity, reviewer_replaced) =
                     if reviewer_is_dispatchable(
                         &mut *tx,
@@ -529,11 +553,18 @@ FOR UPDATE"#,
                     )
                     .await?
                     {
-                        (owner_id, issue, None, false)
+                        (owner_id, issue, persisted_assignment_activity, false)
                     } else if let Some(candidate) =
                         select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id)
                             .await?
                     {
+                        cancel_unpromoted_reviewer_task(
+                            &mut *tx,
+                            issue.id,
+                            assignment.id,
+                            owner_id,
+                        )
+                        .await?;
                         let updated = sqlx::query_as::<_, Issue>(
                             r#"UPDATE issue SET
     reviewer_type = 'agent',
@@ -554,6 +585,7 @@ RETURNING *"#,
                             "role": ASSIGNMENT_REVIEWER,
                             "review_publication": "reviewer_replacement",
                             "issue_update_published": false,
+                            "assignment_activity_published": false,
                             "candidate_agent_id": candidate.id,
                             "candidate_agent_name": candidate.name,
                             "previous_status": issue.status,
@@ -821,6 +853,7 @@ RETURNING *"#,
                     "role": ASSIGNMENT_REVIEWER,
                     "review_publication": "review_handoff",
                     "issue_update_published": false,
+                    "assignment_activity_published": false,
                     "candidate_agent_id": candidate.id,
                     "candidate_agent_name": candidate.name,
                     "previous_status": issue.status,
@@ -959,13 +992,24 @@ RETURNING *"#,
                     && assignment.owner_type.as_deref() == Some(target_type.as_str())
                     && assignment.owner_id == Some(target_id);
                 let assignment_activity = if assignment_is_reused {
-                    None
+                    if assignment
+                        .decision
+                        .get("assignment_activity_published")
+                        .and_then(Value::as_bool)
+                        != Some(true)
+                    {
+                        find_assignment_activity(&mut *tx, issue.id, event.id, assignment.id)
+                            .await?
+                    } else {
+                        None
+                    }
                 } else {
                     let decision = json!({
                         "policy": "review_return_original_owner",
                         "role": ASSIGNMENT_EXECUTOR,
                         "owner_type": target_type,
                         "owner_id": target_id,
+                        "assignment_activity_published": false,
                     });
                     record_assignment_decision(
                         &mut *tx,
@@ -1131,6 +1175,95 @@ LIMIT 1"#,
         .await?)
     }
 
+    async fn revalidate_before_publication(
+        &self,
+        event: &CoordinationEvent,
+        plan: &DispatchPlan,
+        task_id: Uuid,
+    ) -> anyhow::Result<bool> {
+        let mut tx = self.pool.begin().await?;
+        let assignment = sqlx::query(
+            "SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision FROM agent_coordination_assignment WHERE id = $1 FOR UPDATE",
+        )
+        .bind(plan.assignment_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let assignment = Assignment {
+            id: assignment.try_get(0)?,
+            role: assignment.try_get(1)?,
+            status: assignment.try_get(2)?,
+            owner_type: assignment.try_get(3)?,
+            owner_id: assignment.try_get(4)?,
+            dispatched_task_id: assignment.try_get(5)?,
+            decision: assignment.try_get(6)?,
+        };
+        let coordinated_task_status: Option<String> = sqlx::query_scalar(
+            r#"SELECT status
+FROM agent_task_queue
+WHERE id = $1
+  AND context->>$2 = $3::text
+FOR UPDATE"#,
+        )
+        .bind(task_id)
+        .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
+        .bind(plan.assignment_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let issue = sqlx::query_as::<_, Issue>(
+            "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+        )
+        .bind(plan.issue.id)
+        .bind(plan.issue.workspace_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let issue_is_current = if let Some(issue) = issue.as_ref() {
+            issue_matches_dispatch_plan(&mut *tx, issue, plan).await
+        } else {
+            false
+        };
+        if issue_is_current {
+            tx.commit().await?;
+            return Ok(true);
+        }
+
+        let reason = "coordinator handoff became stale before publication";
+        if matches!(
+            coordinated_task_status.as_deref(),
+            Some("deferred") | Some("queued")
+        ) {
+            sqlx::query(
+                r#"UPDATE agent_task_queue
+SET status = 'cancelled', completed_at = now(), error = $4
+WHERE id = $1
+  AND status IN ('deferred', 'queued')
+  AND context->>$2 = $3::text"#,
+            )
+            .bind(task_id)
+            .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
+            .bind(plan.assignment_id.to_string())
+            .bind(reason)
+            .execute(&mut *tx)
+            .await?;
+        }
+        complete_claimed_tx(
+            &mut *tx,
+            event,
+            &assignment,
+            "completed",
+            Some(task_id),
+            json!({
+                "outcome": "stale_dispatch",
+                "reason": reason,
+                "task_id": task_id,
+                "expected_issue_category": plan.expected_issue_category,
+            }),
+            Some(reason),
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(false)
+    }
+
     async fn mark_dispatched(
         &self,
         event: &CoordinationEvent,
@@ -1174,19 +1307,7 @@ FOR UPDATE"#,
         .fetch_optional(&mut *tx)
         .await?;
         let issue_is_current = if let Some(issue) = issue.as_ref() {
-            let category =
-                issue_status::effective(&mut *tx, issue.workspace_id, &issue.status).await;
-            category == plan.expected_issue_category
-                && if plan.expected_issue_category == issue_status::IN_REVIEW {
-                    plan.owner_type == "agent"
-                        && issue.reviewer_type.as_deref() == Some("agent")
-                        && issue.reviewer_id == Some(plan.owner_id)
-                } else if plan.expected_issue_category == issue_status::IN_PROGRESS {
-                    issue.assignee_type.as_deref() == Some(plan.owner_type.as_str())
-                        && issue.assignee_id == Some(plan.owner_id)
-                } else {
-                    false
-                }
+            issue_matches_dispatch_plan(&mut *tx, issue, plan).await
         } else {
             false
         };
@@ -1296,7 +1417,7 @@ WHERE id = $1
             )
             .await?;
         } else {
-            sqlx::query(
+            let updated = sqlx::query(
                 r#"UPDATE agent_coordination_outbox
 SET status = 'pending', available_at = now() + $2::interval,
     lease_owner = NULL, lease_expires_at = NULL, last_error = $3,
@@ -1309,6 +1430,11 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $4"#,
             .bind(&event.lease_owner)
             .execute(&mut *tx)
             .await?;
+            if updated.rows_affected() != 1 {
+                return Err(anyhow::anyhow!(
+                    "coordination event lease is no longer owned"
+                ));
+            }
         }
         tx.commit().await?;
         Ok(())
@@ -1342,6 +1468,34 @@ WHERE id = $1
         Ok(())
     }
 
+    async fn mark_assignment_activity_published(
+        &self,
+        event: &CoordinationEvent,
+        plan: &DispatchPlan,
+    ) -> anyhow::Result<()> {
+        let updated = sqlx::query(
+            r#"UPDATE agent_coordination_assignment
+SET decision = decision || jsonb_build_object('assignment_activity_published', true),
+    updated_at = now()
+WHERE id = $1
+  AND EXISTS (
+      SELECT 1 FROM agent_coordination_outbox
+      WHERE id = $2 AND status = 'processing' AND lease_owner = $3
+  )"#,
+        )
+        .bind(plan.assignment_id)
+        .bind(event.id)
+        .bind(&event.lease_owner)
+        .execute(&self.pool)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(anyhow::anyhow!(
+                "coordination assignment lease is no longer owned while recording assignment activity publication"
+            ));
+        }
+        Ok(())
+    }
+
     fn publish_assignment_activity(&self, row: &ActivityLog) {
         self.bus.publish(&Event {
             event_type: patchbay_protocol::EVENT_ACTIVITY_CREATED.to_string(),
@@ -1360,7 +1514,7 @@ WHERE id = $1
                     "created_at": rfc3339(row.created_at),
                 },
             }),
-            task_id: String::new(),
+            task_id: row.id.to_string(),
             chat_session_id: String::new(),
         });
     }
@@ -1435,6 +1589,85 @@ WHERE id = $1
             chat_session_id: String::new(),
         });
     }
+}
+
+async fn issue_matches_dispatch_plan(
+    executor: &mut sqlx::PgConnection,
+    issue: &Issue,
+    plan: &DispatchPlan,
+) -> bool {
+    let category = issue_status::effective(executor, issue.workspace_id, &issue.status).await;
+    category == plan.expected_issue_category
+        && if plan.expected_issue_category == issue_status::IN_REVIEW {
+            plan.owner_type == "agent"
+                && issue.reviewer_type.as_deref() == Some("agent")
+                && issue.reviewer_id == Some(plan.owner_id)
+        } else if plan.expected_issue_category == issue_status::IN_PROGRESS {
+            issue.assignee_type.as_deref() == Some(plan.owner_type.as_str())
+                && issue.assignee_id == Some(plan.owner_id)
+        } else {
+            false
+        }
+}
+
+async fn find_assignment_activity(
+    executor: &mut sqlx::PgConnection,
+    issue_id: Uuid,
+    event_id: Uuid,
+    assignment_id: Uuid,
+) -> anyhow::Result<Option<ActivityLog>> {
+    let row = sqlx::query(
+        r#"SELECT id, workspace_id, issue_id, actor_type, actor_id, action, details, created_at
+FROM activity_log
+WHERE issue_id = $1
+  AND action = 'coordinator_assignment'
+  AND details->>'event_id' = $2::uuid::text
+  AND details->>'assignment_id' = $3::uuid::text
+ORDER BY created_at DESC, id DESC
+LIMIT 1"#,
+    )
+    .bind(issue_id)
+    .bind(event_id)
+    .bind(assignment_id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    Ok(Some(ActivityLog {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        issue_id: row.try_get(2)?,
+        actor_type: row.try_get(3)?,
+        actor_id: row.try_get(4)?,
+        action: row.try_get(5)?,
+        details: row.try_get(6)?,
+        created_at: row.try_get(7)?,
+    }))
+}
+
+async fn cancel_unpromoted_reviewer_task(
+    executor: &mut sqlx::PgConnection,
+    issue_id: Uuid,
+    assignment_id: Uuid,
+    reviewer_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"UPDATE agent_task_queue
+SET status = 'cancelled', completed_at = now(),
+    error = 'reviewer assignment was replaced before dispatch'
+WHERE issue_id = $1
+  AND agent_id = $2
+  AND context->>$3 = $4::text
+  AND status IN ('deferred', 'queued')"#,
+    )
+    .bind(issue_id)
+    .bind(reviewer_id)
+    .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
+    .bind(assignment_id.to_string())
+    .execute(&mut *executor)
+    .await?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -1746,30 +1979,54 @@ async fn defer_claimed_tx(
         "pending"
     };
     if let Some((owner_type, owner_id)) = owner {
-        sqlx::query(
+        let assignment_update = sqlx::query(
             r#"UPDATE agent_coordination_assignment
 SET status = $2, owner_type = COALESCE(owner_type, $3), owner_id = COALESCE(owner_id, $4),
     last_error = $5, updated_at = now()
-WHERE id = $1"#,
+WHERE id = $1
+  AND EXISTS (
+      SELECT 1 FROM agent_coordination_outbox
+      WHERE id = $6 AND status = 'processing' AND lease_owner = $7
+  )"#,
         )
         .bind(assignment.id)
         .bind(assignment_status)
         .bind(owner_type)
         .bind(owner_id)
         .bind(reason)
+        .bind(event.id)
+        .bind(&event.lease_owner)
         .execute(&mut *executor)
         .await?;
+        if assignment_update.rows_affected() != 1 {
+            return Err(anyhow::anyhow!(
+                "coordination assignment lease is no longer owned"
+            ));
+        }
     } else {
-        sqlx::query(
-            "UPDATE agent_coordination_assignment SET status = $2, last_error = $3, updated_at = now() WHERE id = $1",
+        let assignment_update = sqlx::query(
+            r#"UPDATE agent_coordination_assignment
+SET status = $2, last_error = $3, updated_at = now()
+WHERE id = $1
+  AND EXISTS (
+      SELECT 1 FROM agent_coordination_outbox
+      WHERE id = $4 AND status = 'processing' AND lease_owner = $5
+  )"#,
         )
         .bind(assignment.id)
         .bind(assignment_status)
         .bind(reason)
+        .bind(event.id)
+        .bind(&event.lease_owner)
         .execute(&mut *executor)
         .await?;
+        if assignment_update.rows_affected() != 1 {
+            return Err(anyhow::anyhow!(
+                "coordination assignment lease is no longer owned"
+            ));
+        }
     }
-    sqlx::query(
+    let outbox_update = sqlx::query(
         r#"UPDATE agent_coordination_outbox
 SET status = 'pending',
     available_at = now() + $2::interval,
@@ -1785,6 +2042,11 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $4"#,
     .bind(&event.lease_owner)
     .execute(&mut *executor)
     .await?;
+    if outbox_update.rows_affected() != 1 {
+        return Err(anyhow::anyhow!(
+            "coordination event lease is no longer owned"
+        ));
+    }
     Ok(())
 }
 
@@ -1849,37 +2111,32 @@ pub async fn record_task_completed(
         ));
     }
 
-    let issue =
-        sqlx::query("SELECT workspace_id, assignee_type, assignee_id FROM issue WHERE id = $1")
-            .bind(issue_id)
-            .fetch_optional(&mut *executor)
-            .await?;
+    let issue = sqlx::query(
+        "SELECT workspace_id, assignee_type, assignee_id, revision FROM issue WHERE id = $1",
+    )
+    .bind(issue_id)
+    .fetch_optional(&mut *executor)
+    .await?;
     let Some(issue) = issue else {
         return Ok(());
     };
     let workspace_id: Uuid = issue.try_get(0)?;
     let current_owner_type: Option<String> = issue.try_get(1)?;
     let current_owner_id: Option<Uuid> = issue.try_get(2)?;
+    let current_issue_revision: i64 = issue.try_get(3)?;
     if let (Some(captured_owner_type), Some(captured_owner_id)) =
         (captured_owner_type, captured_owner_id)
     {
-        let owner_changed_after_task_start: bool = sqlx::query_scalar(
-            r#"SELECT EXISTS (
-    SELECT 1
-    FROM activity_log
-    WHERE issue_id = $1
-      AND action = 'assignee_changed'
-      AND created_at > $2
-)"#,
-        )
-        .bind(issue_id)
-        .bind(task.created_at)
-        .fetch_one(&mut *executor)
-        .await?;
-        if current_owner_type.as_deref() != Some(captured_owner_type)
-            || current_owner_id != Some(captured_owner_id)
-            || owner_changed_after_task_start
-        {
+        if implementation_completion_is_superseded(
+            current_owner_type.as_deref(),
+            current_owner_id,
+            captured_owner_type,
+            captured_owner_id,
+            captured_issue_revision,
+            current_issue_revision,
+        ) {
+            let issue_changed_after_task_start = captured_issue_revision
+                .is_some_and(|captured_revision| current_issue_revision > captured_revision);
             tracing::info!(
                 task_id = %task.id,
                 issue_id = %issue_id,
@@ -1888,7 +2145,7 @@ pub async fn record_task_completed(
                 current_owner_type = ?current_owner_type,
                 current_owner_id = ?current_owner_id,
                 captured_issue_revision,
-                owner_changed_after_task_start,
+                issue_changed_after_task_start,
                 "ignoring completion from a superseded implementation owner"
             );
             return Ok(());
@@ -1915,6 +2172,20 @@ pub async fn record_task_completed(
         ASSIGNMENT_REVIEWER,
     )
     .await
+}
+
+fn implementation_completion_is_superseded(
+    current_owner_type: Option<&str>,
+    current_owner_id: Option<Uuid>,
+    captured_owner_type: &str,
+    captured_owner_id: Uuid,
+    captured_issue_revision: Option<i64>,
+    current_issue_revision: i64,
+) -> bool {
+    current_owner_type != Some(captured_owner_type)
+        || current_owner_id != Some(captured_owner_id)
+        || captured_issue_revision
+            .is_some_and(|captured_revision| current_issue_revision > captured_revision)
 }
 
 /// Writes the review-return outbox event and its pending executor assignment
@@ -2029,5 +2300,39 @@ impl Drop for CoordinatorRuntime {
         if let Some(task) = self.task.take() {
             task.abort();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn implementation_completion_uses_revision_as_owner_change_fence() {
+        let owner_id = Uuid::from_u128(1);
+        assert!(!implementation_completion_is_superseded(
+            Some("agent"),
+            Some(owner_id),
+            "agent",
+            owner_id,
+            Some(7),
+            7,
+        ));
+        assert!(implementation_completion_is_superseded(
+            Some("agent"),
+            Some(owner_id),
+            "agent",
+            owner_id,
+            Some(7),
+            8,
+        ));
+        assert!(implementation_completion_is_superseded(
+            Some("agent"),
+            Some(Uuid::from_u128(2)),
+            "agent",
+            owner_id,
+            Some(7),
+            7,
+        ));
     }
 }
