@@ -1966,6 +1966,7 @@ mod tests {
             created_at: timestamp,
             email: "alex@example.com".into(),
             id: user_id,
+            is_guest: false,
             language: None,
             name: "Alex".into(),
             onboarded_at: None,

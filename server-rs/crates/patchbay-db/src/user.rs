@@ -12,6 +12,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct User {
     pub id: Uuid,
+    pub is_guest: bool,
     pub name: String,
     pub email: String,
     pub avatar_url: Option<String>,
@@ -37,7 +38,7 @@ pub async fn get_user(
         r#"SELECT id, name, email, avatar_url, created_at, updated_at,
                   onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                   cloud_waitlist_reason, starter_content_state, language,
-                  profile_description, timezone
+                  profile_description, timezone, is_guest
            FROM "user" WHERE id = $1"#,
         id
     )
@@ -54,7 +55,7 @@ pub async fn get_user_by_email(
         r#"SELECT id, name, email, avatar_url, created_at, updated_at,
                   onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                   cloud_waitlist_reason, starter_content_state, language,
-                  profile_description, timezone
+                  profile_description, timezone, is_guest
            FROM "user" WHERE email = $1"#,
         email
     )
@@ -87,7 +88,7 @@ pub async fn create_user(
            RETURNING id, name, email, avatar_url, created_at, updated_at,
                      onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                      cloud_waitlist_reason, starter_content_state, language,
-                     profile_description, timezone"#,
+                     profile_description, timezone, is_guest"#,
         name,
         email,
         avatar_url
@@ -109,7 +110,7 @@ pub async fn mark_user_onboarded(
            RETURNING id, name, email, avatar_url, created_at, updated_at,
                      onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                      cloud_waitlist_reason, starter_content_state, language,
-                     profile_description, timezone"#,
+                     profile_description, timezone, is_guest"#,
         id
     )
     .fetch_one(executor)

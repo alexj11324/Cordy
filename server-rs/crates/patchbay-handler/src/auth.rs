@@ -149,29 +149,30 @@ struct GoogleUserInfo {
 }
 
 #[derive(Debug, Serialize)]
-struct LoginResponse {
-    token: String,
-    user: UserResponse,
+pub(crate) struct LoginResponse {
+    pub(crate) token: String,
+    pub(crate) user: UserResponse,
 }
 
 #[derive(Debug, Serialize)]
-struct UserResponse {
-    id: String,
-    name: String,
-    email: String,
-    avatar_url: Option<String>,
-    language: Option<String>,
-    timezone: Option<String>,
-    onboarded_at: Option<String>,
-    onboarding_questionnaire: serde_json::Value,
-    starter_content_state: Option<String>,
-    profile_description: String,
-    created_at: String,
-    updated_at: String,
+pub(crate) struct UserResponse {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
+    pub(crate) avatar_url: Option<String>,
+    pub(crate) language: Option<String>,
+    pub(crate) timezone: Option<String>,
+    pub(crate) onboarded_at: Option<String>,
+    pub(crate) onboarding_questionnaire: serde_json::Value,
+    pub(crate) starter_content_state: Option<String>,
+    pub(crate) profile_description: String,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) is_guest: bool,
 }
 
 impl UserResponse {
-    fn from_user(state: &HandlerState, value: &User) -> Self {
+    pub(crate) fn from_user(state: &HandlerState, value: &User) -> Self {
         Self {
             id: value.id.to_string(),
             name: value.name.clone(),
@@ -188,6 +189,7 @@ impl UserResponse {
             profile_description: value.profile_description.clone(),
             created_at: crate::timefmt::rfc3339(value.created_at),
             updated_at: crate::timefmt::rfc3339(value.updated_at),
+            is_guest: value.is_guest,
         }
     }
 }
