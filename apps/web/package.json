@@ -33,6 +33,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@mdx-js/rollup": "^3.0.0",
     "@patchbay/eslint-config": "workspace:*",
     "@vinext/cloudflare": "catalog:",
     "@cloudflare/vite-plugin": "catalog:",

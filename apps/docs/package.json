@@ -27,6 +27,7 @@
     "react-server-dom-webpack": "19.2.6"
   },
   "devDependencies": {
+    "@mdx-js/rollup": "^3.0.0",
     "@cloudflare/vite-plugin": "catalog:",
     "@tailwindcss/postcss": "catalog:",
     "@vitejs/plugin-rsc": "catalog:",
