@@ -12,12 +12,6 @@ The automatic path publishes no Rust CLI archive, Intel macOS package, Linux or
 Windows installer, container image, or Helm chart. Those assets are all
 manual-only release paths.
 
-The verification job applies migrations with `patchbay-migrate`, runs every Rust
-workspace target, builds the server, CLI, migration runner, and all three
-backfill binaries, and runs RustSec before any publishing job starts. The Rust
-CLI build matrix then packages release assets for every supported
-OS/architecture pair. The vulnerability scan is fail-closed by default.
-
 ### Required macOS release secrets
 
 A production release is fail-closed unless the canonical repository has all of
@@ -52,10 +46,16 @@ run. In **Actions → Release → Run workflow**, enter an existing semantic
 version tag. The workflow checks out that exact tag and runs the full manually
 requested release path; it does not run from a tag push automatically.
 
-Backend/Web container images and the Helm chart are still manual jobs in that
-workflow. They build native `linux/amd64` and `linux/arm64` images, publish the
-versioned multi-architecture manifests, and can optionally promote stable
-images to `latest`.
+The manual **Release** workflow first applies migrations with
+`patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,
+migration runner, and all three backfill binaries, and runs RustSec before any
+publishing job starts. It then packages the requested non-macOS assets and
+publishes backend/Web container images and the Helm chart. The vulnerability
+scan is fail-closed by default.
+
+Backend/Web container images and the Helm chart build native `linux/amd64` and
+`linux/arm64` images, publish the versioned multi-architecture manifests, and
+can optionally promote stable images to `latest`.
 
 Select **promote_latest** only when the requested tag is a stable release and
 the versioned images have been intentionally chosen as the new self-hosted
