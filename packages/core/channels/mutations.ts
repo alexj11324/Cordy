@@ -3,7 +3,6 @@ import { api } from "../api";
 import { useWorkspaceId } from "../hooks";
 import type {
   Channel,
-  ChannelMessage,
   ChannelMessagesPage,
   CreateChannelRequest,
   SendChannelMessageRequest,

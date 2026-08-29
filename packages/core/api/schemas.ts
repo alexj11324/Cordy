@@ -13,7 +13,6 @@ import type {
   BillingTransactionsPage,
   CancelTaskResponse,
   Channel,
-  ChannelMessagesPage,
   ChannelMessage,
   ChatMessage,
   ChatDraftRestoresResponse,
@@ -759,9 +758,14 @@ export const ChatMessagesPageSchema = z.object({
   }).loose().nullable().optional(),
 }).loose();
 
+const ChannelActorTypeSchema = z.preprocess(
+  (value) => (value === "member" || value === "agent" ? value : "unknown"),
+  z.enum(["member", "agent", "unknown"]),
+);
+
 const ChannelQuotedMessageSchema = z.object({
   id: z.string(),
-  author_type: z.enum(["member", "agent"]).catch("unknown"),
+  author_type: ChannelActorTypeSchema,
   author_id: z.string(),
   author_name: z.string().default("Unknown"),
   content: z.string().default(""),
@@ -786,7 +790,7 @@ export const ChannelMessageSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   channel_id: z.string(),
-  author_type: z.enum(["member", "agent"]).catch("unknown"),
+  author_type: ChannelActorTypeSchema,
   author_id: z.string(),
   author_name: z.string().default("Unknown"),
   author_avatar_url: z.string().nullable().optional(),

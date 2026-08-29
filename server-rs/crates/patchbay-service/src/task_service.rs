@@ -24,8 +24,7 @@ use patchbay_db::queries::agent::{
     create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
     get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
     list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
-    merge_agent_task_context,
-    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred,
+    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
     reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
@@ -2886,14 +2885,16 @@ impl TaskService {
                     "source_message_id": dispatch.source_message_id,
                 }
             });
-            task.context = merge_agent_task_context(&mut *tx, task.id, &context)
-                .await
-                .map_err(|e| {
-                    TaskServiceError::Internal(format!(
-                        "set workspace channel task context: {e}"
-                    ))
-                })?
-                .ok_or(TaskServiceError::AgentNoRuntime)?;
+            task.context = Some(
+                merge_agent_task_context(&mut *tx, task.id, &context)
+                    .await
+                    .map_err(|e| {
+                        TaskServiceError::Internal(format!(
+                            "set workspace channel task context: {e}"
+                        ))
+                    })?
+                    .ok_or(TaskServiceError::AgentNoRuntime)?,
+            );
         }
         out.task = Some(task.clone());
 

@@ -26,9 +26,9 @@ use patchbay_db::queries::chat::{
     task_has_channel_ingested_messages, task_input_is_onboarding_kickoff_only,
     update_chat_session_session,
 };
-use patchbay_db::queries::workspace_channel as workspace_channel_q;
 use patchbay_db::queries::comment::get_comment;
 use patchbay_db::queries::issue::{get_issue, update_issue_status};
+use patchbay_db::queries::workspace_channel as workspace_channel_q;
 
 use crate::chat_quick_actions::{split_chat_quick_actions, ChatQuickActionsOrigin};
 use crate::issue_status;
@@ -1290,9 +1290,7 @@ impl TaskService {
                 )
                 .await
                 .map_err(|e| {
-                    TaskServiceError::Internal(format!(
-                        "create workspace channel agent reply: {e}"
-                    ))
+                    TaskServiceError::Internal(format!("create workspace channel agent reply: {e}"))
                 })?
                 .ok_or_else(|| {
                     TaskServiceError::Internal(
@@ -1384,7 +1382,10 @@ impl TaskService {
                 },
             }),
             task_id: task.id.to_string(),
-            chat_session_id: task.chat_session_id.map(|id| id.to_string()).unwrap_or_default(),
+            chat_session_id: task
+                .chat_session_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
             ..Default::default()
         });
     }

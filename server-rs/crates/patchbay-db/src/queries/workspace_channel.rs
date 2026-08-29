@@ -157,9 +157,7 @@ pub async fn list_messages(
         .fetch_all(executor)
         .await?;
 
-    rows.into_iter()
-        .map(message_from_row)
-        .collect()
+    rows.into_iter().map(message_from_row).collect()
 }
 
 pub async fn create_message(

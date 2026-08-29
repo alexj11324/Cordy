@@ -10,12 +10,12 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
 use patchbay_db::models::{WorkspaceChannel, WorkspaceChannelMessage};
 use patchbay_db::queries::{agent, chat};
 use patchbay_db::queries::workspace_channel as channel_q;
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_service::task_service::WorkspaceChannelDispatch;
-use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -222,25 +222,22 @@ async fn dispatch_agent_mentions(
     content: &str,
 ) {
     for agent_id in mentioned_agent_ids(content) {
-        let target = match agent::get_agent_in_workspace(
-            &state.pool,
-            agent_id,
-            context.member.workspace_id,
-        )
-        .await
-        {
-            Ok(Some(target)) => target,
-            Ok(None) => continue,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    agent_id = %agent_id,
-                    channel_id = %channel.id,
-                    "failed to load mentioned channel agent"
-                );
-                continue;
-            }
-        };
+        let target =
+            match agent::get_agent_in_workspace(&state.pool, agent_id, context.member.workspace_id)
+                .await
+            {
+                Ok(Some(target)) => target,
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        agent_id = %agent_id,
+                        channel_id = %channel.id,
+                        "failed to load mentioned channel agent"
+                    );
+                    continue;
+                }
+            };
         if target.archived_at.is_some() || target.runtime_id.is_none() {
             continue;
         }
@@ -617,7 +614,8 @@ mod tests {
     #[test]
     fn mentioned_agent_ids_deduplicates_canonical_mentions() {
         let id = Uuid::now_v7();
-        let content = format!("[A](mention://agent/{id}) mention://agent/{id} mention://member/{id}");
+        let content =
+            format!("[A](mention://agent/{id}) mention://agent/{id} mention://member/{id}");
         assert_eq!(mentioned_agent_ids(&content), vec![id]);
     }
 }
