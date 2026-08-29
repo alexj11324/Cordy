@@ -23,7 +23,11 @@ use uuid::Uuid;
 
 use crate::issue_status;
 use crate::task_notify::issue_to_map_with_category;
-use crate::task_service::{TaskService, TaskServiceError};
+use crate::task_service::{
+    TaskService, TaskServiceError, COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY,
+    COORDINATION_ISSUE_REVISION_CONTEXT_KEY, COORDINATION_OWNER_ID_CONTEXT_KEY,
+    COORDINATION_OWNER_TYPE_CONTEXT_KEY,
+};
 
 pub const EVENT_TASK_COMPLETED: &str = "task_completed";
 pub const EVENT_REVIEW_RETURNED: &str = "review_returned";
@@ -230,7 +234,9 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
             }
         };
 
-        self.mark_dispatched(&event, &plan, task_id).await
+        self.mark_dispatched(&event, &plan, task_id).await?;
+        self.tasks.publish_task_queued(task_id).await;
+        Ok(())
     }
 
     async fn prepare_dispatch(
@@ -331,6 +337,49 @@ FOR UPDATE"#,
             .await?;
             tx.commit().await?;
             return Ok(None);
+        }
+
+        // The task captures the implementation owner when it is enqueued.
+        // A still-running task must not promote a newer owner after an
+        // explicit reassignment (A -> B); the current owner is authoritative
+        // for the issue, while the captured revision remains audit metadata.
+        if is_task_completion {
+            let captured_owner_type = event
+                .payload
+                .get("implementation_owner_type")
+                .and_then(Value::as_str);
+            let captured_owner_id = event
+                .payload
+                .get("implementation_owner_id")
+                .and_then(Value::as_str)
+                .and_then(|value| Uuid::parse_str(value).ok());
+            if let (Some(captured_owner_type), Some(captured_owner_id)) =
+                (captured_owner_type, captured_owner_id)
+            {
+                if issue.assignee_type.as_deref() != Some(captured_owner_type)
+                    || issue.assignee_id != Some(captured_owner_id)
+                {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "completed",
+                        None,
+                        json!({
+                            "outcome": "stale_completion",
+                            "reason": "implementation owner changed after task was assigned",
+                            "captured_owner_type": captured_owner_type,
+                            "captured_owner_id": captured_owner_id,
+                            "current_owner_type": issue.assignee_type,
+                            "current_owner_id": issue.assignee_id,
+                        }),
+                        Some("implementation owner changed after task was assigned"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+            }
         }
 
         // A crash after the issue/status transaction but before dispatch leaves
@@ -688,17 +737,23 @@ RETURNING *"#,
                     .map_err(|error| TaskServiceError::Internal(error.to_string()))?
                     .ok_or_else(|| TaskServiceError::Internal("executor team not found".into()))?;
             self.tasks
-                .enqueue_task_for_team_leader_with_handoff(
+                .enqueue_task_for_team_leader_with_handoff_unpublished(
                     &plan.issue,
                     selected.leader_id,
                     selected.id,
                     handoff_note,
                     None,
+                    plan.assignment_id,
                 )
                 .await?
         } else {
             self.tasks
-                .enqueue_task_for_issue_with_handoff(&plan.issue, handoff_note, None)
+                .enqueue_task_for_issue_with_handoff_unpublished(
+                    &plan.issue,
+                    handoff_note,
+                    None,
+                    plan.assignment_id,
+                )
                 .await?
         };
         Ok(task.id)
@@ -756,6 +811,18 @@ LIMIT 1"#,
             owner_id: assignment.try_get(3)?,
             dispatched_task_id: assignment.try_get(4)?,
         };
+        let coordinated_task_status: Option<String> = sqlx::query_scalar(
+            r#"SELECT status
+FROM agent_task_queue
+WHERE id = $1
+  AND context->>$2 = $3::text
+FOR UPDATE"#,
+        )
+        .bind(task_id)
+        .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
+        .bind(plan.assignment_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
         complete_claimed_tx(
             &mut *tx,
             event,
@@ -766,6 +833,25 @@ LIMIT 1"#,
             None,
         )
         .await?;
+        if coordinated_task_status.as_deref() == Some("deferred") {
+            let promoted = sqlx::query(
+                r#"UPDATE agent_task_queue
+SET status = 'queued', fire_at = NULL
+WHERE id = $1
+  AND status = 'deferred'
+  AND context->>$2 = $3::text"#,
+            )
+            .bind(task_id)
+            .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
+            .bind(plan.assignment_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+            if promoted.rows_affected() != 1 {
+                return Err(anyhow::anyhow!(
+                    "coordinator task was not promoted after assignment correlation"
+                ));
+            }
+        }
         tx.commit().await?;
         Ok(())
     }
@@ -878,6 +964,7 @@ WHERE a.workspace_id = $1
       SELECT 1
       FROM team_member tm
       JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
+                  AND t.archived_at IS NULL
       WHERE tm.member_type = 'agent'
         AND tm.member_id = a.id
         AND tm.role = 'reviewer'
@@ -1029,7 +1116,7 @@ async fn complete_claimed_tx(
     decision: Value,
     last_error: Option<&str>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    let assignment_update = sqlx::query(
         r#"UPDATE agent_coordination_assignment
 SET status = $2,
     dispatched_task_id = COALESCE($3, dispatched_task_id),
@@ -1052,7 +1139,12 @@ WHERE id = $1
     .bind(&event.lease_owner)
     .execute(&mut *executor)
     .await?;
-    sqlx::query(
+    if assignment_update.rows_affected() != 1 {
+        return Err(anyhow::anyhow!(
+            "coordination assignment lease is no longer owned"
+        ));
+    }
+    let outbox_update = sqlx::query(
         r#"UPDATE agent_coordination_outbox
 SET status = 'completed',
     processed_at = now(),
@@ -1067,6 +1159,11 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $3"#,
     .bind(&event.lease_owner)
     .execute(&mut *executor)
     .await?;
+    if outbox_update.rows_affected() != 1 {
+        return Err(anyhow::anyhow!(
+            "coordination event lease is no longer owned"
+        ));
+    }
     Ok(())
 }
 
@@ -1155,21 +1252,96 @@ pub async fn record_task_completed(
     let Some(issue_id) = task.issue_id else {
         return Ok(());
     };
-    let workspace_id: Uuid = sqlx::query_scalar("SELECT workspace_id FROM issue WHERE id = $1")
-        .bind(issue_id)
-        .fetch_one(&mut *executor)
-        .await?;
+    let is_side_chat = task
+        .context
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|context| context.contains_key("side_chat_parent_task_id"));
+    if is_side_chat {
+        return Ok(());
+    }
+
     let source_role: Option<String> = sqlx::query_scalar(
         "SELECT role FROM agent_coordination_assignment WHERE dispatched_task_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
     )
     .bind(task.id)
     .fetch_optional(&mut *executor)
     .await?;
+    let context = task.context.as_ref().and_then(Value::as_object);
+    let coordination_assignment_id = context
+        .and_then(|context| context.get(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY))
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok());
+    if coordination_assignment_id.is_some() && source_role.is_none() {
+        return Err(anyhow::anyhow!(
+            "coordinator task completed before its assignment was correlated"
+        ));
+    }
+    let captured_owner_type = context
+        .and_then(|context| context.get(COORDINATION_OWNER_TYPE_CONTEXT_KEY))
+        .and_then(Value::as_str);
+    let captured_owner_id = context
+        .and_then(|context| context.get(COORDINATION_OWNER_ID_CONTEXT_KEY))
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let captured_issue_revision = context
+        .and_then(|context| context.get(COORDINATION_ISSUE_REVISION_CONTEXT_KEY))
+        .and_then(Value::as_i64);
+
+    let issue =
+        sqlx::query("SELECT workspace_id, assignee_type, assignee_id FROM issue WHERE id = $1")
+            .bind(issue_id)
+            .fetch_optional(&mut *executor)
+            .await?;
+    let Some(issue) = issue else {
+        return Ok(());
+    };
+    let workspace_id: Uuid = issue.try_get(0)?;
+    let current_owner_type: Option<String> = issue.try_get(1)?;
+    let current_owner_id: Option<Uuid> = issue.try_get(2)?;
+    if let (Some(captured_owner_type), Some(captured_owner_id)) =
+        (captured_owner_type, captured_owner_id)
+    {
+        let owner_changed_after_task_start: bool = sqlx::query_scalar(
+            r#"SELECT EXISTS (
+    SELECT 1
+    FROM activity_log
+    WHERE issue_id = $1
+      AND action = 'assignee_changed'
+      AND created_at > $2
+)"#,
+        )
+        .bind(issue_id)
+        .bind(task.created_at)
+        .fetch_one(&mut *executor)
+        .await?;
+        if current_owner_type.as_deref() != Some(captured_owner_type)
+            || current_owner_id != Some(captured_owner_id)
+            || owner_changed_after_task_start
+        {
+            tracing::info!(
+                task_id = %task.id,
+                issue_id = %issue_id,
+                captured_owner_type,
+                captured_owner_id = %captured_owner_id,
+                current_owner_type = ?current_owner_type,
+                current_owner_id = ?current_owner_id,
+                captured_issue_revision,
+                owner_changed_after_task_start,
+                "ignoring completion from a superseded implementation owner"
+            );
+            return Ok(());
+        }
+    }
     let payload = json!({
         "task_id": task.id,
         "issue_id": issue_id,
         "agent_id": task.agent_id,
         "source_role": source_role.unwrap_or_else(|| "implementation".to_string()),
+        "implementation_owner_type": captured_owner_type,
+        "implementation_owner_id": captured_owner_id,
+        "implementation_issue_revision": captured_issue_revision,
+        "coordination_assignment_id": coordination_assignment_id,
     });
     record_event_and_assignment(
         executor,

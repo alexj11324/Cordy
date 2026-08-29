@@ -5835,7 +5835,11 @@ RETURNING *"#,
             }
         }
     }
-    if returning_from_review {
+    // `suppress_run` is an explicit request to leave returned work idle. The
+    // owner restoration still belongs to the atomic issue update, but it must
+    // not create a durable coordinator handoff or wake the worker.
+    let should_record_review_return = returning_from_review && !suppress_run;
+    if should_record_review_return {
         // Persist the executor handoff in the same transaction as the review
         // return. The coordinator's PostgreSQL outbox is authoritative; the
         // in-memory notification below is only a latency hint.
@@ -5853,7 +5857,7 @@ RETURNING *"#,
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
     })?;
-    if returning_from_review {
+    if should_record_review_return {
         state.coordinator.notify();
     }
     let (actor_type, actor_id, task_id) = mutation_actor(state, context, headers).await;

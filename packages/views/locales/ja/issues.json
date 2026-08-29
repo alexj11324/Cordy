@@ -401,6 +401,8 @@
     "team_leader_no_action_reason": "評価完了: 必要なアクションはありません（{{reason}}）",
     "team_leader_failed": "評価に失敗しました",
     "team_leader_failed_reason": "評価に失敗しました: {{reason}}",
+    "coordinator_assignment": "コーディネーターが次の担当者を割り当てました",
+    "coordinator_assignment_to": "コーディネーターが {{name}} に割り当てました",
     "coalesced_badge": "×{{count}}",
     "activity_count_other": "アクティビティ {{count}} 件",
     "show_more_activities_other": "アクティビティをさらに {{count}} 件表示"

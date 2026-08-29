@@ -122,6 +122,15 @@ export function formatActivity(
           return "evaluated the team trigger";
       }
     }
+    case "coordinator_assignment": {
+      const ownerName =
+        details.owner_id && details.owner_type
+          ? resolveActorName(details.owner_type, details.owner_id)
+          : null;
+      return ownerName
+        ? `Coordinator assigned ${ownerName}`
+        : "Coordinator assigned the next owner";
+    }
     default:
       return entry.action ?? "";
   }

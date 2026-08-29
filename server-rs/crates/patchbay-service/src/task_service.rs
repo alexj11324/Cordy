@@ -261,6 +261,63 @@ pub struct SideChatSeed {
     pub root_comment_id: Uuid,
 }
 
+// These task-context fields are the durable correlation contract between a
+// coordinator assignment and the task that will execute it. They live in the
+// existing JSONB context so the handoff can be rolled out without a schema
+// migration; the assignment row remains the authoritative audit record.
+pub(crate) const COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY: &str = "coordination_assignment_id";
+pub(crate) const COORDINATION_OWNER_TYPE_CONTEXT_KEY: &str = "coordination_owner_type";
+pub(crate) const COORDINATION_OWNER_ID_CONTEXT_KEY: &str = "coordination_owner_id";
+pub(crate) const COORDINATION_ISSUE_REVISION_CONTEXT_KEY: &str = "coordination_issue_revision";
+
+fn issue_task_context(issue: &Issue, assignment_id: Option<Uuid>) -> serde_json::Value {
+    let mut context = serde_json::Map::new();
+    if let (Some(owner_type), Some(owner_id)) = (&issue.assignee_type, issue.assignee_id) {
+        context.insert(
+            COORDINATION_OWNER_TYPE_CONTEXT_KEY.to_string(),
+            serde_json::json!(owner_type),
+        );
+        context.insert(
+            COORDINATION_OWNER_ID_CONTEXT_KEY.to_string(),
+            serde_json::json!(owner_id.to_string()),
+        );
+        context.insert(
+            COORDINATION_ISSUE_REVISION_CONTEXT_KEY.to_string(),
+            serde_json::json!(issue.revision),
+        );
+    }
+    if let Some(assignment_id) = assignment_id {
+        context.insert(
+            COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY.to_string(),
+            serde_json::json!(assignment_id.to_string()),
+        );
+    }
+    serde_json::Value::Object(context)
+}
+
+fn mention_task_context(
+    issue: &Issue,
+    side_chat: Option<&SideChatSeed>,
+    assignment_id: Option<Uuid>,
+) -> serde_json::Value {
+    let mut context = match side_chat {
+        Some(side_chat) => serde_json::json!({
+            "side_chat_parent_task_id": side_chat.parent_task_id.to_string(),
+            "side_chat_root_comment_id": side_chat.root_comment_id.to_string(),
+        }),
+        None => serde_json::Value::Object(serde_json::Map::new()),
+    };
+    if assignment_id.is_some() {
+        if let Some(object) = context.as_object_mut() {
+            let coordination = issue_task_context(issue, assignment_id);
+            if let Some(coordination) = coordination.as_object() {
+                object.extend(coordination.clone());
+            }
+        }
+    }
+    context
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskMessageBusReceipt {
     pub continuation_task_id: Uuid,
@@ -1306,6 +1363,29 @@ impl TaskService {
             .await;
     }
 
+    /// Publishes a coordinator task only after its assignment row and queued
+    /// status have committed. PostgreSQL polling remains the recovery path if
+    /// this best-effort realtime tail is interrupted.
+    pub async fn publish_task_queued(&self, task_id: Uuid) {
+        match get_agent_task(&self.pool, task_id).await {
+            Ok(Some(task)) => {
+                self.broadcast_task_event(
+                    patchbay_protocol::EVENT_TASK_QUEUED,
+                    &task,
+                    Default::default(),
+                )
+                .await;
+                self.notify_task_enqueued(&task).await;
+            }
+            Ok(None) => {
+                tracing::warn!(task_id = %task_id, "coordinator task disappeared before publish");
+            }
+            Err(error) => {
+                tracing::warn!(task_id = %task_id, %error, "coordinator task publish lookup failed");
+            }
+        }
+    }
+
     /// Best-effort daemon wakeup after a terminal state. The task ID is
     /// deliberately omitted: the completed task is not available; the hint
     /// only means a queued successor may have become claimable.
@@ -1604,6 +1684,30 @@ impl TaskService {
             .await
     }
 
+    /// Creates the coordinator's task while it is still unclaimable. The
+    /// coordinator links the returned task to its assignment in the same
+    /// transaction that promotes it to `queued`.
+    pub async fn enqueue_task_for_issue_with_handoff_unpublished(
+        &self,
+        issue: &Issue,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        coordination_assignment_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            None,
+            vec![],
+            false,
+            handoff_note,
+            actor_user_id,
+            None,
+            None,
+            Some(coordination_assignment_id),
+        )
+        .await
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn enqueue_issue_task(
         &self,
@@ -1718,9 +1822,45 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         fire_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            trigger_comment_id,
+            coalesced_comment_ids,
+            force_fresh_session,
+            handoff_note,
+            actor_user_id,
+            rerun_of_task_id,
+            fire_at,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn enqueue_issue_task_with_comment_plan_internal(
+        &self,
+        issue: &Issue,
+        trigger_comment_id: Option<Uuid>,
+        coalesced_comment_ids: Vec<Uuid>,
+        force_fresh_session: bool,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        rerun_of_task_id: Option<Uuid>,
+        fire_at: Option<chrono::DateTime<chrono::Utc>>,
+        coordination_assignment_id: Option<Uuid>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        if coordination_assignment_id.is_some() && fire_at.is_some() {
+            return Err(TaskServiceError::Internal(
+                "coordination tasks cannot be deferred by fire_at".to_string(),
+            ));
+        }
         let prep = self
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
+        let initial_context = issue_task_context(issue, coordination_assignment_id);
+        let initial_status = coordination_assignment_id
+            .map(|_| "deferred")
+            .unwrap_or("queued");
 
         let created = if fire_at.is_some() {
             create_deferred_channel_issue_task(
@@ -1749,6 +1889,7 @@ impl TaskService {
                 prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 fire_at,
                 new_v7(),
+                &initial_context,
             )
             .await
         } else {
@@ -1777,7 +1918,8 @@ impl TaskService {
                 prep.attr_evidence_kind.as_deref(),
                 prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 new_v7(),
-                &serde_json::Value::Null,
+                &initial_context,
+                initial_status,
             )
             .await
         };
@@ -1797,7 +1939,7 @@ impl TaskService {
             force_fresh_session,
             "task enqueued"
         );
-        if fire_at.is_some() {
+        if fire_at.is_some() || coordination_assignment_id.is_some() {
             return Ok(task);
         }
         // Order matters: broadcast first, notify daemon second — see Go
@@ -1901,6 +2043,7 @@ impl TaskService {
             trigger_summary: None,
             head_sha,
         };
+        let initial_context = issue_task_context(issue, None);
 
         let task = create_deferred_channel_issue_task(
             tx,
@@ -1928,6 +2071,7 @@ impl TaskService {
             prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
             Some(fire_at),
             new_v7(),
+            &initial_context,
         )
         .await
         .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?
@@ -2029,6 +2173,35 @@ impl TaskService {
             actor_user_id,
             None,
             None,
+        )
+        .await
+    }
+
+    /// Creates the coordinator's team-leader task while it is still
+    /// unclaimable. The assignment is linked before the coordinator promotes
+    /// it and publishes the queue event.
+    pub async fn enqueue_task_for_team_leader_with_handoff_unpublished(
+        &self,
+        issue: &Issue,
+        leader_id: Uuid,
+        team_id: Uuid,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        coordination_assignment_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            leader_id,
+            None,
+            vec![],
+            true,
+            Some(team_id),
+            false,
+            handoff_note,
+            actor_user_id,
+            None,
+            None,
+            Some(coordination_assignment_id),
         )
         .await
     }
@@ -2216,6 +2389,39 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         side_chat: Option<SideChatSeed>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            agent_id,
+            trigger_comment_id,
+            coalesced_comment_ids,
+            is_leader,
+            team_id,
+            force_fresh_session,
+            handoff_note,
+            actor_user_id,
+            rerun_of_task_id,
+            side_chat,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn enqueue_mention_task_internal(
+        &self,
+        issue: &Issue,
+        agent_id: Uuid,
+        trigger_comment_id: Option<Uuid>,
+        coalesced_comment_ids: Vec<Uuid>,
+        is_leader: bool,
+        team_id: Option<Uuid>,
+        force_fresh_session: bool,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        rerun_of_task_id: Option<Uuid>,
+        side_chat: Option<SideChatSeed>,
+        coordination_assignment_id: Option<Uuid>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
         let agent = get_agent(&self.pool, agent_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
@@ -2258,15 +2464,11 @@ impl TaskService {
         // context, and the pending-task index must be able to distinguish the
         // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        let initial_context = side_chat
-            .as_ref()
-            .map(|side_chat| {
-                serde_json::json!({
-                    "side_chat_parent_task_id": side_chat.parent_task_id.to_string(),
-                    "side_chat_root_comment_id": side_chat.root_comment_id.to_string(),
-                })
-            })
-            .unwrap_or(serde_json::Value::Null);
+        let initial_context =
+            mention_task_context(issue, side_chat.as_ref(), coordination_assignment_id);
+        let initial_status = coordination_assignment_id
+            .map(|_| "deferred")
+            .unwrap_or("queued");
         let created = create_agent_task(
             &mut *tx,
             agent_id,
@@ -2293,6 +2495,7 @@ impl TaskService {
             attr_evidence_ref.unwrap_or_else(Uuid::nil),
             new_v7(),
             &initial_context,
+            initial_status,
         )
         .await;
         let task = match created {
@@ -2321,6 +2524,9 @@ impl TaskService {
             is_leader_task = is_leader,
             "mention task enqueued"
         );
+        if coordination_assignment_id.is_some() {
+            return Ok(task);
+        }
         self.broadcast_task_event(
             patchbay_protocol::EVENT_TASK_QUEUED,
             &task,

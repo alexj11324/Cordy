@@ -368,6 +368,14 @@ function formatActivity(
           return t(($) => $.activity.team_leader_evaluated);
       }
     }
+    case "coordinator_assignment": {
+      const ownerName = details.owner_id && details.owner_type && resolveActorName
+        ? resolveActorName(details.owner_type, details.owner_id)
+        : null;
+      return ownerName
+        ? t(($) => $.activity.coordinator_assignment_to, { name: ownerName })
+        : t(($) => $.activity.coordinator_assignment);
+    }
     default:
       return entry.action ?? "";
   }
