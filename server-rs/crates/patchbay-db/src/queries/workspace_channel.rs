@@ -117,7 +117,10 @@ pub async fn get_message(
     channel_id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<WorkspaceChannelMessage>> {
-    let row = sqlx::query(message_select(Some("m.id = $1 AND m.channel_id = $2 AND m.workspace_id = $3")))
+    let query = message_select(Some(
+        "m.id = $1 AND m.channel_id = $2 AND m.workspace_id = $3",
+    ));
+    let row = sqlx::query(&query)
         .bind(id)
         .bind(channel_id)
         .bind(workspace_id)
@@ -131,13 +134,14 @@ pub async fn list_messages(
     channel_id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<Vec<WorkspaceChannelMessage>> {
-    let rows = sqlx::query(message_select(Some(
+    let query = message_select(Some(
         "m.channel_id = $1 AND m.workspace_id = $2",
-    )))
-    .bind(channel_id)
-    .bind(workspace_id)
-    .fetch_all(executor)
-    .await?;
+    ));
+    let rows = sqlx::query(&query)
+        .bind(channel_id)
+        .bind(workspace_id)
+        .fetch_all(executor)
+        .await?;
 
     let mut messages = rows
         .into_iter()
@@ -175,7 +179,9 @@ RETURNING id"#,
     .bind(quoted_message_id)
     .fetch_optional(executor)
     .await?;
-    row.map(|value| value.try_get(0)).transpose().map_err(Into::into)
+    row.map(|value| value.try_get(0))
+        .transpose()
+        .map_err(Into::into)
 }
 
 fn message_select(predicate: Option<&str>) -> String {
@@ -227,14 +233,16 @@ fn message_from_row(row: sqlx::postgres::PgRow) -> anyhow::Result<WorkspaceChann
         author_name: row.try_get(10)?,
         author_avatar_url: row.try_get(11)?,
         author_status: row.try_get(12)?,
-        quoted_message: quoted_id.map(|id| {
-            Ok(WorkspaceChannelQuotedMessage {
+        quoted_message: if let Some(id) = quoted_id {
+            Some(WorkspaceChannelQuotedMessage {
                 id,
                 author_type: row.try_get(14)?,
                 author_id: row.try_get(15)?,
                 content: row.try_get(16)?,
                 author_name: row.try_get(17)?,
             })
-        }).transpose()?,
+        } else {
+            None
+        },
     })
 }

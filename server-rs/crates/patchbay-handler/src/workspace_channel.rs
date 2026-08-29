@@ -186,13 +186,7 @@ async fn list_channels(
     Extension(context): Extension<WorkspaceContext>,
 ) -> Response {
     match channel_q::list_channels(&state.pool, context.member.workspace_id).await {
-        Ok(channels) => Json(
-            channels
-                .iter()
-                .map(channel_json)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(channels) => Json(channels.iter().map(channel_json).collect::<Vec<_>>()).into_response(),
         Err(error) => internal("failed to list channels", error),
     }
 }
@@ -210,11 +204,9 @@ async fn create_channel(
         return response;
     }
     let description = clean_text(&request.description);
-    if let Err(response) = validate_length(
-        &description,
-        CHANNEL_DESCRIPTION_MAX_CHARS,
-        "description",
-    ) {
+    if let Err(response) =
+        validate_length(&description, CHANNEL_DESCRIPTION_MAX_CHARS, "description")
+    {
         return response;
     }
     let slug = slugify(&name);
@@ -236,9 +228,17 @@ async fn create_channel(
     .await
     {
         Ok(Some(channel)) => channel,
-        Ok(None) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create channel"),
+        Ok(None) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create channel",
+            )
+        }
         Err(error) if unique_violation(&error) => {
-            return error_response(StatusCode::CONFLICT, "a channel with that name already exists")
+            return error_response(
+                StatusCode::CONFLICT,
+                "a channel with that name already exists",
+            )
         }
         Err(error) => return internal("failed to create channel", error),
     };
@@ -276,13 +276,7 @@ async fn list_messages(
         Err(response) => return response,
     };
     match channel_q::list_messages(&state.pool, channel.id, context.member.workspace_id).await {
-        Ok(messages) => Json(
-            messages
-                .iter()
-                .map(message_json)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(messages) => Json(messages.iter().map(message_json).collect::<Vec<_>>()).into_response(),
         Err(error) => internal("failed to list channel messages", error),
     }
 }
@@ -309,13 +303,11 @@ async fn create_message(
         Ok(id) => id,
         Err(response) => return response,
     };
-    let quoted_message_id = match optional_uuid(
-        request.quoted_message_id.as_deref(),
-        "quoted_message_id",
-    ) {
-        Ok(id) => id,
-        Err(response) => return response,
-    };
+    let quoted_message_id =
+        match optional_uuid(request.quoted_message_id.as_deref(), "quoted_message_id") {
+            Ok(id) => id,
+            Err(response) => return response,
+        };
     for (message_id, field) in [
         (parent_id, "parent message"),
         (quoted_message_id, "quoted message"),

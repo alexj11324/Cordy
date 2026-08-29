@@ -442,7 +442,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "384_agent_task_queue_side_chat_pending_unique_v3",
         "idx_one_pending_task_per_issue_agent_v3",
     ),
-    ("387_workspace_channel_id_index", "workspace_channel_id_uidx"),
+    (
+        "387_workspace_channel_id_index",
+        "workspace_channel_id_uidx",
+    ),
     (
         "389_workspace_channel_slug_index",
         "workspace_channel_workspace_slug_uidx",

@@ -67,7 +67,7 @@ function ParticipantStack({ members, agents }: { members: MemberWithUser[]; agen
         />
       ))}
       {participants.length > 5 && (
-        <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground ring-2 ring-background">
+        <span className="flex size-5 items-center justify-center rounded-full bg-muted text-micro font-medium text-muted-foreground ring-2 ring-background">
           +{participants.length - 5}
         </span>
       )}
@@ -83,7 +83,9 @@ function MessageReferencePreview({
   onClear: () => void;
 }) {
   const { t } = useT("chat");
-  const label = reference.kind === "reply" ? t("channels.replying_to", { name: reference.message.author_name }) : t("channels.quoted_prefix", { name: reference.message.author_name });
+  const label = reference.kind === "reply"
+    ? t(($) => $.channels.replying_to, { name: reference.message.author_name })
+    : t(($) => $.channels.quoted_prefix, { name: reference.message.author_name });
   return (
     <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2 text-caption">
       {reference.kind === "reply" ? (
@@ -100,8 +102,8 @@ function MessageReferencePreview({
         variant="ghost"
         size="icon-xs"
         onClick={onClear}
-        aria-label={t("channels.clear_reference")}
-        title={t("channels.clear_reference")}
+        aria-label={t(($) => $.channels.clear_reference)}
+        title={t(($) => $.channels.clear_reference)}
       >
         <X />
       </Button>
@@ -139,7 +141,7 @@ function ChannelMessageRow({
         <header className="flex flex-wrap items-center gap-2">
           <span className="text-body-sm font-semibold text-foreground">{message.author_name}</span>
           <Badge variant="outline" className={cn("h-4 px-1.5 text-micro", isAgent && "border-brand/30 bg-brand/10 text-brand")}>
-            {isAgent ? t("channels.agent_badge") : t("channels.member_badge")}
+            {isAgent ? t(($) => $.channels.agent_badge) : t(($) => $.channels.member_badge)}
           </Badge>
           <time dateTime={message.created_at} className="text-caption text-muted-foreground">
             {timeAgo(message.created_at)}
@@ -154,26 +156,26 @@ function ChannelMessageRow({
         {message.quoted_message && (
           <div className="mt-2 rounded-md border-l-2 border-brand/60 bg-muted/35 px-2.5 py-1.5 text-caption">
             <div className="font-medium text-muted-foreground">
-              {t("channels.quoted_prefix", { name: message.quoted_message.author_name })}
+              {t(($) => $.channels.quoted_prefix, { name: message.quoted_message.author_name })}
             </div>
-            <div className="mt-0.5 line-clamp-2 text-foreground/80">
+            <div className="mt-0.5 line-clamp-2 text-foreground">
               {message.quoted_message.content.replace(/\s+/g, " ")}
             </div>
           </div>
         )}
         <ReadonlyContent content={message.content} className="mt-1.5 leading-relaxed" />
         <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-          <Button type="button" variant="ghost" size="xs" onClick={() => onReply(message)} title={t("channels.reply")}>
+          <Button type="button" variant="ghost" size="xs" onClick={() => onReply(message)} title={t(($) => $.channels.reply)}>
             <CornerUpLeft />
-            <span>{t("channels.reply")}</span>
+            <span>{t(($) => $.channels.reply)}</span>
           </Button>
-          <Button type="button" variant="ghost" size="xs" onClick={() => onQuote(message)} title={t("channels.quote")}>
+          <Button type="button" variant="ghost" size="xs" onClick={() => onQuote(message)} title={t(($) => $.channels.quote)}>
             <MessageSquareQuote />
-            <span>{t("channels.quote")}</span>
+            <span>{t(($) => $.channels.quote)}</span>
           </Button>
-          <Button type="button" variant="ghost" size="xs" onClick={() => onCopy(message)} title={t("channels.copy")}>
+          <Button type="button" variant="ghost" size="xs" onClick={() => onCopy(message)} title={t(($) => $.channels.copy)}>
             <Clipboard />
-            <span>{t("channels.copy")}</span>
+            <span>{t(($) => $.channels.copy)}</span>
           </Button>
         </div>
       </div>
@@ -252,7 +254,7 @@ export function ChannelsPage() {
       });
       if (activeChannelIdRef.current === channelId) clearComposer();
     } catch {
-      toast.error(t("channels.send_failed"));
+      toast.error(t(($) => $.channels.send_failed));
     }
   };
 
@@ -270,7 +272,7 @@ export function ChannelsPage() {
       setCreateOpen(false);
       replace(channelHref(channelsPath, created.id));
     } catch {
-      toast.error(t("channels.create_failed"));
+      toast.error(t(($) => $.channels.create_failed));
     }
   };
 
@@ -278,9 +280,9 @@ export function ChannelsPage() {
     try {
       if (!navigator.clipboard) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(message.content);
-      toast.success(t("channels.copied"));
+      toast.success(t(($) => $.channels.copied));
     } catch {
-      toast.error(t("channels.copy_failed"));
+      toast.error(t(($) => $.channels.copy_failed));
     }
   };
 
@@ -289,39 +291,39 @@ export function ChannelsPage() {
       <PageHeader>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Hash className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <h1 className="truncate font-heading text-title-sm font-semibold">{t("channels.title")}</h1>
-          <span className="hidden truncate text-caption text-muted-foreground sm:inline">{t("channels.subtitle")}</span>
+          <h1 className="truncate font-heading text-title-sm font-semibold">{t(($) => $.channels.title)}</h1>
+          <span className="hidden truncate text-caption text-muted-foreground sm:inline">{t(($) => $.channels.subtitle)}</span>
         </div>
         <Button
           type="button"
           size="sm"
           onClick={() => setCreateOpen(true)}
-          aria-label={t("channels.new_channel")}
-          title={t("channels.new_channel")}
+          aria-label={t(($) => $.channels.new_channel)}
+          title={t(($) => $.channels.new_channel)}
         >
           <Plus />
-          <span className="hidden sm:inline">{t("channels.new_channel")}</span>
+          <span className="hidden sm:inline">{t(($) => $.channels.new_channel)}</span>
         </Button>
       </PageHeader>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="hidden w-60 shrink-0 flex-col border-r bg-muted/15 md:flex" aria-label={t("channels.title")}>
+        <aside className="hidden w-60 shrink-0 flex-col border-r bg-muted/15 md:flex" aria-label={t(($) => $.channels.title)}>
           <div className="flex h-11 items-center justify-between border-b px-3">
-            <span className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">{t("channels.title")}</span>
-            <Button type="button" variant="ghost" size="icon-xs" onClick={() => setCreateOpen(true)} title={t("channels.new_channel")} aria-label={t("channels.new_channel")}>
+            <span className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">{t(($) => $.channels.title)}</span>
+            <Button type="button" variant="ghost" size="icon-xs" onClick={() => setCreateOpen(true)} title={t(($) => $.channels.new_channel)} aria-label={t(($) => $.channels.new_channel)}>
               <Plus />
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {channelsPending ? (
               <div className="space-y-2 p-2" role="status" aria-live="polite">
-                <span className="sr-only">{t("channels.loading")}</span>
+                <span className="sr-only">{t(($) => $.channels.loading)}</span>
                 <div className="h-7 animate-pulse rounded-md bg-muted" />
                 <div className="h-7 animate-pulse rounded-md bg-muted" />
               </div>
             ) : channels.length === 0 ? (
               <button type="button" className="w-full rounded-md p-2 text-left text-caption text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setCreateOpen(true)}>
-                {t("channels.no_channels")}
+                {t(($) => $.channels.no_channels)}
               </button>
             ) : (
               <div className="space-y-0.5">
@@ -358,11 +360,11 @@ export function ChannelsPage() {
                 </div>
                 <div className="hidden items-center gap-2 sm:flex">
                   <ParticipantStack members={members} agents={agents} />
-                  <span className="text-caption text-muted-foreground">{t("channels.participants", { count: participantCount })}</span>
+                  <span className="text-caption text-muted-foreground">{t(($) => $.channels.participants, { count: participantCount })}</span>
                 </div>
               </header>
 
-              <nav className="flex gap-1 overflow-x-auto border-b px-2 py-2 md:hidden" aria-label={t("channels.title")}>
+              <nav className="flex gap-1 overflow-x-auto border-b px-2 py-2 md:hidden" aria-label={t(($) => $.channels.title)}>
                 {channels.map((channel) => (
                   <button
                     key={channel.id}
@@ -383,15 +385,15 @@ export function ChannelsPage() {
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-3 sm:px-3" aria-busy={messagesPending}>
                 {messagesPending ? (
                   <div className="space-y-4 px-3" role="status" aria-live="polite">
-                    <span className="sr-only">{t("channels.loading")}</span>
+                    <span className="sr-only">{t(($) => $.channels.loading)}</span>
                     <div className="h-12 animate-pulse rounded-lg bg-muted/50" />
                     <div className="h-16 animate-pulse rounded-lg bg-muted/50" />
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="flex h-full min-h-56 flex-col items-center justify-center gap-2 px-6 text-center">
                     <span className="flex size-10 items-center justify-center rounded-xl bg-brand/10 text-brand"><Hash className="size-5" aria-hidden="true" /></span>
-                    <h3 className="text-body font-semibold">{t("channels.empty_title")}</h3>
-                    <p className="max-w-sm text-caption text-muted-foreground">{t("channels.empty_message")}</p>
+                    <h3 className="text-body font-semibold">{t(($) => $.channels.empty_title)}</h3>
+                    <p className="max-w-sm text-caption text-muted-foreground">{t(($) => $.channels.empty_message)}</p>
                   </div>
                 ) : (
                   <div className="mx-auto max-w-4xl space-y-1">
@@ -418,7 +420,7 @@ export function ChannelsPage() {
                       key={activeChannel.id}
                       ref={editorRef}
                       defaultValue=""
-                      placeholder={t("channels.message_placeholder", { name: activeChannel.name })}
+                      placeholder={t(($) => $.channels.message_placeholder, { name: activeChannel.name })}
                       onUpdate={(markdown) => setDraft(markdown)}
                       onSubmit={() => void handleSend()}
                       mentionMode="default"
@@ -427,10 +429,10 @@ export function ChannelsPage() {
                     />
                   </div>
                   <div className="flex items-center justify-between border-t px-2 py-2">
-                    <span className="text-micro text-muted-foreground">{t("channels.mention_hint")}</span>
+                    <span className="text-micro text-muted-foreground">{t(($) => $.channels.mention_hint)}</span>
                     <Button type="button" size="sm" disabled={sendMessage.isPending} onClick={() => void handleSend()}>
                       {sendMessage.isPending ? <LoaderCircle className="animate-spin" /> : <Send />}
-                      <span>{t("channels.send")}</span>
+                      <span>{t(($) => $.channels.send)}</span>
                     </Button>
                   </div>
                 </div>
@@ -439,9 +441,9 @@ export function ChannelsPage() {
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               <span className="flex size-12 items-center justify-center rounded-2xl bg-brand/10 text-brand"><Hash className="size-6" aria-hidden="true" /></span>
-              <h2 className="text-title-sm font-semibold">{t("channels.empty_title")}</h2>
-              <p className="max-w-sm text-body-sm text-muted-foreground">{t("channels.empty_description")}</p>
-              <Button type="button" onClick={() => setCreateOpen(true)}><Plus />{t("channels.new_channel")}</Button>
+              <h2 className="text-title-sm font-semibold">{t(($) => $.channels.empty_title)}</h2>
+              <p className="max-w-sm text-body-sm text-muted-foreground">{t(($) => $.channels.empty_description)}</p>
+              <Button type="button" onClick={() => setCreateOpen(true)}><Plus />{t(($) => $.channels.new_channel)}</Button>
             </div>
           )}
         </main>
@@ -450,23 +452,23 @@ export function ChannelsPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("channels.create_title")}</DialogTitle>
-            <DialogDescription>{t("channels.create_description")}</DialogDescription>
+            <DialogTitle>{t(($) => $.channels.create_title)}</DialogTitle>
+            <DialogDescription>{t(($) => $.channels.create_description)}</DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleCreate}>
             <div className="space-y-1.5">
-              <label htmlFor="channel-name" className="text-caption font-medium">{t("channels.name_label")}</label>
-              <Input id="channel-name" name="name" autoComplete="off" value={channelName} onChange={(event) => setChannelName(event.target.value)} placeholder={t("channels.name_placeholder")} />
+              <label htmlFor="channel-name" className="text-caption font-medium">{t(($) => $.channels.name_label)}</label>
+              <Input id="channel-name" name="name" autoComplete="off" value={channelName} onChange={(event) => setChannelName(event.target.value)} placeholder={t(($) => $.channels.name_placeholder)} />
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="channel-description" className="text-caption font-medium">{t("channels.description_label")}</label>
-              <Textarea id="channel-description" name="description" autoComplete="off" value={channelDescription} onChange={(event) => setChannelDescription(event.target.value)} placeholder={t("channels.description_placeholder")} rows={3} />
+              <label htmlFor="channel-description" className="text-caption font-medium">{t(($) => $.channels.description_label)}</label>
+              <Textarea id="channel-description" name="description" autoComplete="off" value={channelDescription} onChange={(event) => setChannelDescription(event.target.value)} placeholder={t(($) => $.channels.description_placeholder)} rows={3} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>{t("channels.cancel")}</Button>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>{t(($) => $.channels.cancel)}</Button>
               <Button type="submit" disabled={createChannel.isPending || !channelName.trim()}>
                 {createChannel.isPending ? <LoaderCircle className="animate-spin" /> : <Check />}
-                {t("channels.create")}
+                {t(($) => $.channels.create)}
               </Button>
             </DialogFooter>
           </form>
