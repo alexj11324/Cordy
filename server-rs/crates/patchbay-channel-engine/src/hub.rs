@@ -261,9 +261,11 @@ fn render_agent_list(agents: &[Agent], current_id: Option<Uuid>) -> String {
     }
     let mut text = String::from("Available Agents:\n");
     for (index, agent) in agents.iter().enumerate() {
-        let marker = (Some(agent.id) == current_id)
-            .then_some(" (current)")
-            .unwrap_or("");
+        let marker = if Some(agent.id) == current_id {
+            " (current)"
+        } else {
+            ""
+        };
         text.push_str(&format!("{}. {}{}\n", index + 1, agent.name, marker));
     }
     text.push_str("\nSend `/agents <number>` or `/agents <name>` to switch.");
