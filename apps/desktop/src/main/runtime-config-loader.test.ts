@@ -49,7 +49,59 @@ describe("loadRuntimeConfig", () => {
         schemaVersion: 1,
         apiUrl: "https://api.patchbay.ai",
         wsUrl: "wss://api.patchbay.ai/ws",
-        appUrl: "https://patchbay.ai",
+        appUrl: "https://accounts.aspectlylabs.com",
+      },
+    });
+  });
+
+  it("ignores the built-in localhost dev tuple in packaged mode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
+    const configPath = join(dir, "desktop.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        apiUrl: "http://localhost:8080",
+        wsUrl: "ws://localhost:8080/ws",
+        appUrl: "http://localhost:3000",
+      }),
+    );
+
+    await expect(
+      loadRuntimeConfig({ isDev: false, configPath, env: {} }),
+    ).resolves.toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "https://api.patchbay.ai",
+        wsUrl: "wss://api.patchbay.ai/ws",
+        appUrl: "https://accounts.aspectlylabs.com",
+      },
+    });
+  });
+
+  it("preserves explicit self-hosted packaged runtime URLs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
+    const configPath = join(dir, "desktop.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        apiUrl: "https://api.example.com",
+        appUrl: "https://app.example.com",
+        wsUrl: "wss://ws.example.com/socket",
+      }),
+    );
+
+    await expect(
+      loadRuntimeConfig({ isDev: false, configPath, env: {} }),
+    ).resolves.toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "https://api.example.com",
+        appUrl: "https://app.example.com",
+        wsUrl: "wss://ws.example.com/socket",
       },
     });
   });

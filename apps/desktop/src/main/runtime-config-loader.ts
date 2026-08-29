@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import {
   DEFAULT_RUNTIME_CONFIG,
+  isStaleDevelopmentRuntimeConfig,
   parseRuntimeConfig,
   runtimeConfigFromDevEnv,
   type RuntimeConfig,
@@ -26,7 +27,13 @@ export async function loadRuntimeConfig(options: {
   const configPath = options.configPath ?? desktopConfigPath();
   try {
     const raw = await readFile(configPath, "utf-8");
-    return { ok: true, config: parseRuntimeConfig(raw) };
+    const config = parseRuntimeConfig(raw);
+    return {
+      ok: true,
+      config: isStaleDevelopmentRuntimeConfig(config)
+        ? { ...DEFAULT_RUNTIME_CONFIG }
+        : config,
+    };
   } catch (err) {
     if (isMissingFileError(err)) {
       return { ok: true, config: { ...DEFAULT_RUNTIME_CONFIG } };

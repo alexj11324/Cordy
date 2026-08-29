@@ -113,6 +113,8 @@ Usually `apiUrl` alone is enough. Override explicitly only when the derivation d
 
 Restart Desktop after saving — the file is read once at startup. The two failure modes look different, which is the fastest way to tell them apart:
 
+The packaged app ignores the built-in Vite development tuple (`http://localhost:8080`, `ws://localhost:8080/ws`, and `http://localhost:3000`) if it is left behind in `desktop.json`, and returns to the cloud defaults. Other explicit self-hosted URLs remain supported.
+
 - **File not found** (wrong directory, or a filename that isn't exactly `desktop.json`) — Desktop uses the default Cloud configuration and shows no error. So if Desktop still reports a Cloud address and no configuration error, the file is not where Desktop is looking.
 - **File found but invalid** JSON, version, or URLs — Desktop shows a configuration error and does not fall back to Cloud.
 

@@ -17,7 +17,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
   apiUrl: "https://api.patchbay.ai",
   wsUrl: "wss://api.patchbay.ai/ws",
-  appUrl: "https://patchbay.ai",
+  appUrl: "https://accounts.aspectlylabs.com",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
@@ -80,6 +80,19 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
     wsUrl: wsUrl ? normalizeWsUrl(wsUrl, "wsUrl") : deriveWsUrl(normalizedApiUrl),
     appUrl: appUrl ? normalizeHttpUrl(appUrl, "appUrl") : deriveAppUrl(normalizedApiUrl),
   };
+}
+
+/**
+ * A development desktop.json can outlive the dev session that created it.
+ * Only the exact built-in Vite localhost tuple is treated as stale; explicit
+ * self-hosted URLs continue to use the packaged override path.
+ */
+export function isStaleDevelopmentRuntimeConfig(config: RuntimeConfig): boolean {
+  return (
+    config.apiUrl === LOCAL_DEV_RUNTIME_CONFIG.apiUrl &&
+    config.wsUrl === LOCAL_DEV_RUNTIME_CONFIG.wsUrl &&
+    config.appUrl === LOCAL_DEV_RUNTIME_CONFIG.appUrl
+  );
 }
 
 export function deriveWsUrl(apiUrl: string): string {
