@@ -56,7 +56,6 @@
   },
   "members_tab": {
     "section_title": "メンバー",
-    "section_count_one": "このチームのメンバー {{count}}名",
     "section_count_other": "このチームのメンバー {{count}}名",
     "add_member_button": "メンバーを追加",
     "create_agent_button": "エージェントを作成",
@@ -77,10 +76,8 @@
     "unavailable": "チームを利用できません",
     "detail_link": "詳細 →",
     "archived": "アーカイブ済み",
-    "member_count_one": "メンバー {{count}}名",
     "member_count_other": "メンバー {{count}}名",
     "members_section": "メンバー",
-    "more_members_one": "他 {{count}}名",
     "more_members_other": "他 {{count}}名"
   },
   "instructions_tab": {
@@ -100,7 +97,6 @@
     "section_columns": "列",
     "result_count_title": "該当チーム / すべてのチーム",
     "filter_label": "フィルター",
-    "filter_active_count_one": "{{count}} 件のフィルター",
     "filter_active_count_other": "{{count}} 件のフィルター",
     "clear_filters": "フィルターをクリア"
   }
