@@ -7098,7 +7098,8 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "title is required");
     }
     let workspace_id = context.member.workspace_id;
-    if let Some(authorization) = TaskAuthorizationContext::from_headers(&headers) {
+    let task_authorization = TaskAuthorizationContext::from_headers(&headers);
+    if let Some(authorization) = task_authorization {
         let task = agent::get_agent_task_in_workspace(
             &state.pool,
             authorization.task_id,
@@ -7135,6 +7136,7 @@ async fn create_issue(
                         == quick_create.parent_issue_id
                     && requested_attachments == allowed_attachments
                     && request.label_ids.is_empty()
+                    && !request.allow_duplicate
                     && team_matches
                     && request.origin_type.as_deref() == Some("quick_create")
                     && request
@@ -7319,6 +7321,8 @@ async fn create_issue(
                     response.labels = Some(labels.iter().map(LabelResponse::from).collect());
                     json!({ "issue": response })
                 })),
+                consume_task_lease_id: task_authorization
+                    .map(|authorization| authorization.lease_id),
                 ..IssueCreateOpts::default()
             },
         )
@@ -7365,6 +7369,10 @@ async fn create_issue(
         Err(IssueCreateError::ActiveAssigneeRequired) => issue_workflow_error(
             "active_issue_requires_assignee",
             "issues in progress, in review, or blocked must have an assignee",
+        ),
+        Err(IssueCreateError::CapabilityConsumed) => error_response(
+            StatusCode::CONFLICT,
+            "task capability lease was already consumed",
         ),
         Err(error) => {
             tracing::warn!(%error, %workspace_id, "failed to create issue");
@@ -9355,7 +9363,7 @@ mod tests {
             "x-capability-lease-id",
             quick_lease.id.to_string().parse().expect("lease header"),
         );
-        assert_eq!(
+        let (first_quick_create, replayed_quick_create) = tokio::join!(
             post(
                 &app,
                 &quick_headers,
@@ -9365,9 +9373,42 @@ mod tests {
                     "origin_type": "quick_create",
                     "origin_id": quick_task_id,
                 }),
+            ),
+            post(
+                &app,
+                &quick_headers,
+                json!({
+                    "title": "replayed quick task must not create",
+                    "status": "todo",
+                    "origin_type": "quick_create",
+                    "origin_id": quick_task_id,
+                }),
+            ),
+        );
+        let statuses = [first_quick_create, replayed_quick_create];
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|status| **status == StatusCode::CREATED)
+                .count(),
+            1
+        );
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|status| **status == StatusCode::CONFLICT)
+                .count(),
+            1
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM issue WHERE origin_type = 'quick_create' AND origin_id = $1",
             )
-            .await,
-            StatusCode::CREATED
+            .bind(quick_task_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count quick-created issues"),
+            1
         );
         assert_eq!(
             post(
@@ -9390,13 +9431,13 @@ mod tests {
             .execute(&pool)
             .await
             .expect("delete audit");
-        sqlx::query("DELETE FROM task_token WHERE task_id = $1")
-            .bind(task_id)
+        sqlx::query("DELETE FROM task_token WHERE task_id = ANY($1)")
+            .bind(vec![task_id, quick_task_id])
             .execute(&pool)
             .await
             .expect("delete lease");
-        sqlx::query("DELETE FROM agent_task_queue WHERE id = $1")
-            .bind(task_id)
+        sqlx::query("DELETE FROM agent_task_queue WHERE id = ANY($1)")
+            .bind(vec![task_id, quick_task_id])
             .execute(&pool)
             .await
             .expect("delete task");
