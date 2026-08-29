@@ -8,9 +8,9 @@ import {
 } from "@patchbay/core/shortcuts";
 import { RunConfirmModal } from "./run-confirm";
 
-// --- Warm agent / squad / runtime caches (prefetched in the real app) --------
+// --- Warm agent / team / runtime caches (prefetched in the real app) --------
 // The modal resolves the target runtime's cli_version locally — an agent's own
-// runtime, or a squad leader's — so nothing in the dialog waits on the network.
+// runtime, or a team leader's — so nothing in the dialog waits on the network.
 // Tests drive the verdict by swapping the runtime's reported cli_version here.
 const cache = {
   agents: [{ id: "agent-1", runtime_id: "runtime-1" }] as Array<{ id: string; runtime_id: string }>,
@@ -18,13 +18,13 @@ const cache = {
     id: string;
     metadata: Record<string, unknown>;
   }>,
-  squads: [{ id: "squad-1", leader_id: "agent-1" }] as Array<{ id: string; leader_id: string }>,
+  teams: [{ id: "team-1", leader_id: "agent-1" }] as Array<{ id: string; leader_id: string }>,
 };
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
     if (queryKey[0] === "runtimes") return { data: cache.runtimes };
     if (queryKey[0] === "workspaces" && queryKey[2] === "agents") return { data: cache.agents };
-    if (queryKey[0] === "workspaces" && queryKey[2] === "squads") return { data: cache.squads };
+    if (queryKey[0] === "workspaces" && queryKey[2] === "teams") return { data: cache.teams };
     return { data: [] };
   },
 }));
@@ -50,7 +50,7 @@ vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
 }));
 vi.mock("@patchbay/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "agents"] }),
-  squadListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "squads"] }),
+  teamListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "teams"] }),
 }));
 // Stub the runtimes barrel: the query-options builder would otherwise drag the
 // network layer in, and the deep cli-version module isn't an exported subpath.
@@ -173,7 +173,7 @@ beforeEach(() => {
   mockToast.success.mockClear();
   cache.agents = [{ id: "agent-1", runtime_id: "runtime-1" }];
   cache.runtimes = [{ id: "runtime-1", metadata: { cli_version: "0.4.0" } }];
-  cache.squads = [{ id: "squad-1", leader_id: "agent-1" }];
+  cache.teams = [{ id: "team-1", leader_id: "agent-1" }];
   // The real shortcut store drives both the submit chord and the keycap hint,
   // and jsdom's platform follows the host OS — pin it so the chord is ⌘+Enter
   // everywhere, not Ctrl+Enter on a Linux CI runner.
@@ -333,14 +333,14 @@ describe("RunConfirmModal", () => {
     });
   });
 
-  it("resolves a squad's verdict through its leader's runtime, locally", () => {
-    // A squad run is executed by its leader, so the leader's runtime decides.
-    // The squad list gives us leader_id, so this needs no server verdict.
+  it("resolves a team's verdict through its leader's runtime, locally", () => {
+    // A team run is executed by its leader, so the leader's runtime decides.
+    // The team list gives us leader_id, so this needs no server verdict.
     cache.runtimes = [{ id: "runtime-1", metadata: { cli_version: "0.2.21" } }];
     render(
       <RunConfirmModal
         onClose={vi.fn()}
-        data={{ ...single, assigneeType: "squad", assigneeId: "squad-1" }}
+        data={{ ...single, assigneeType: "team", assigneeId: "team-1" }}
       />,
     );
     expect(noteBox()).toBeDisabled();

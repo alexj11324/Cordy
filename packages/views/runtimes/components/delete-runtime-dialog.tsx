@@ -326,7 +326,7 @@ function LightBody({
 // ---------------------------------------------------------------------------
 // Cascade mode — destructive warning, agent table, checkbox-confirmed
 // destructive button. Copy follows 赵刚's English text verbatim per the
-// squad lead's directive.
+// team lead's directive.
 // ---------------------------------------------------------------------------
 
 function CascadeBody({

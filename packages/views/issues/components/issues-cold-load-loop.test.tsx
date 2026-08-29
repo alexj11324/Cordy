@@ -4,7 +4,7 @@
  * PB-4985 regression — cold-load render loop on the Issues route.
  *
  * These tests render Board and Swimlane with the REAL react-virtuoso and the
- * REAL `useActorName`, while the member/agent/squad directory queries are held
+ * REAL `useActorName`, while the member/agent/team directory queries are held
  * pending (the cold-load state). Before the fix, `useActorName` returned a
  * fresh `getActorName` on every render, which churned BoardView's `groups` /
  * SwimLaneView's `laneGroups`, re-fired the column-resync effect without end,
@@ -260,7 +260,7 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     setApiInstance({
       listMembers: pending,
       listAgents: pending,
-      listSquads: pending,
+      listTeams: pending,
       getAgentTaskSnapshot: () => Promise.resolve([]),
       listChildrenByParents: () => Promise.resolve({ issues: [] }),
       listProjects: pending,

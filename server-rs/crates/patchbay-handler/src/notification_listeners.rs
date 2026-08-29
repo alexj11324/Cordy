@@ -4,7 +4,7 @@ use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
 use patchbay_db::models::{InboxItem, Issue};
-use patchbay_db::queries::{inbox, issue, member, notification_preference, squad, subscriber};
+use patchbay_db::queries::{inbox, issue, member, notification_preference, subscriber, team};
 use patchbay_events::{Bus, Event};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -656,11 +656,11 @@ async fn notify_mentions(
                 }
             }
             "all" => all = true,
-            "squad" => {
+            "team" => {
                 let Ok(id) = mention.user_id.parse() else {
                     continue;
                 };
-                if squad::get_squad_in_workspace(pool, id, workspace_id)
+                if team::get_team_in_workspace(pool, id, workspace_id)
                     .await
                     .ok()
                     .flatten()
@@ -668,7 +668,7 @@ async fn notify_mentions(
                 {
                     continue;
                 }
-                match squad::list_squad_members(pool, id).await {
+                match team::list_team_members(pool, id).await {
                     Ok(members) => recipients.extend(
                         members
                             .into_iter()
@@ -676,7 +676,7 @@ async fn notify_mentions(
                             .map(|m| m.member_id),
                     ),
                     Err(error) => {
-                        tracing::error!(%error, squad_id = %id, "notification listener: squad expansion failed")
+                        tracing::error!(%error, team_id = %id, "notification listener: team expansion failed")
                     }
                 }
             }
@@ -926,7 +926,7 @@ fn deliver_to_subscriber(reason: &str, notif_type: &str, status: &str) -> bool {
 fn parse_mentions(content: &str) -> Vec<Mention> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)")
+        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|team|issue|all)/([0-9a-fA-F-]+|all)\)")
             .expect("mention regex is valid")
     });
     let mut seen = HashSet::new();
@@ -988,8 +988,8 @@ mod tests {
         let id = "11111111-1111-4111-8111-111111111111";
         assert_eq!(
             parse_mentions(&format!(
-            "[@A](mention://member/{id}) [@A](mention://member/{id}) [@S](mention://squad/{id})"
-        ))
+                "[@A](mention://member/{id}) [@A](mention://member/{id}) [@S](mention://team/{id})"
+            ))
             .len(),
             2
         );

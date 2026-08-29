@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { agentListOptions, squadListOptions } from "../workspace/queries";
+import { agentListOptions, teamListOptions } from "../workspace/queries";
 import { runtimeListOptions } from "../runtimes/queries";
 import { agentTaskSnapshotOptions } from "./queries";
 
@@ -10,9 +10,9 @@ import { agentTaskSnapshotOptions } from "./queries";
 // indicator / mention popup first renders. Without this warm-up, surfaces
 // that don't otherwise touch the snapshot (inbox, issues, chat) flash a
 // skeleton on first hover while the fetch is in flight, and the @mention
-// list may show incomplete results (e.g. missing squads).
+// list may show incomplete results (e.g. missing teams).
 //
-// useRealtimeSync (WS task / agent / daemon / squad invalidations) and the
+// useRealtimeSync (WS task / agent / daemon / team invalidations) and the
 // 30s presence tick keep these caches fresh after the initial fetch — this
 // hook only collapses the cold-start window.
 //
@@ -25,5 +25,5 @@ export function useWorkspacePresencePrefetch(wsId: string | undefined): void {
   useQuery({ ...agentListOptions(wsId ?? ""), enabled: !!wsId });
   useQuery({ ...runtimeListOptions(wsId ?? ""), enabled: !!wsId });
   useQuery({ ...agentTaskSnapshotOptions(wsId ?? ""), enabled: !!wsId });
-  useQuery({ ...squadListOptions(wsId ?? ""), enabled: !!wsId });
+  useQuery({ ...teamListOptions(wsId ?? ""), enabled: !!wsId });
 }

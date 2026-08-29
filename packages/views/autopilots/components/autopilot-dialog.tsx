@@ -38,7 +38,7 @@ import {
 import { Button } from "@patchbay/ui/components/ui/button";
 import { useCurrentWorkspace } from "@patchbay/core/paths";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
 import { projectListOptions } from "@patchbay/core/projects/queries";
 import {
   useCreateAutopilot,
@@ -141,7 +141,7 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
   const workspaceName = useCurrentWorkspace()?.name;
   const wsId = useWorkspaceId();
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: squads = [] } = useQuery(squadListOptions(wsId));
+  const { data: teams = [] } = useQuery(teamListOptions(wsId));
   const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -238,13 +238,13 @@ export function AutopilotDialog(props: AutopilotDialogProps) {
 
   const selectedAssignee = useMemo(() => {
     if (!assigneeId) return null;
-    if (assigneeType === "squad") {
-      const squad = squads.find((s) => s.id === assigneeId);
-      return squad ? { name: squad.name, description: squad.description } : null;
+    if (assigneeType === "team") {
+      const team = teams.find((s) => s.id === assigneeId);
+      return team ? { name: team.name, description: team.description } : null;
     }
     const agent = agents.find((a) => a.id === assigneeId);
     return agent ? { name: agent.name, description: agent.description } : null;
-  }, [agents, squads, assigneeId, assigneeType]);
+  }, [agents, teams, assigneeId, assigneeType]);
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === projectId) ?? null,
     [projects, projectId],

@@ -226,7 +226,7 @@ pub struct CommentFacts {
 /// Resolves attribution for a comment-triggered run. `agent_authored_source`
 /// selects the label used when the trigger comment is agent-authored:
 /// COMMENT_SOURCE for the issue-assignee-reacting path, DELEGATION for an
-/// explicit mention / thread-parent / squad-leader path. The returned user_id
+/// explicit mention / thread-parent / team-leader path. The returned user_id
 /// is byte-identical to the legacy originator resolution so authorization
 /// behavior is unchanged.
 pub fn classify_comment(f: CommentFacts, agent_authored_source: Source) -> Result_ {

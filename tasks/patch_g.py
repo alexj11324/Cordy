@@ -150,7 +150,7 @@ impl AutopilotService {
             source: "webhook".to_string(),
             status: initial_status.to_string(),
             trigger_payload: payload.clone(),
-            squad_id: Self::squad_attribution(autopilot).unwrap_or_else(Uuid::nil),
+            team_id: Self::team_attribution(autopilot).unwrap_or_else(Uuid::nil),
             planned_at: None,
             webhook_delivery_id: delivery_id,
             reason_code: None,
@@ -265,15 +265,15 @@ impl AutopilotService {
         if effective != "todo" && effective != "in_progress" {
             return Ok(());
         }
-        if autopilot.assignee_type == "squad" {
+        if autopilot.assignee_type == "team" {
             let (leader, _) = self.resolve_leader(autopilot).await.map_err(|e| {
-                anyhow::anyhow!("dispatch for webhook delivery: resolve squad leader: {e}")
+                anyhow::anyhow!("dispatch for webhook delivery: resolve team leader: {e}")
             })?;
             self.task_svc
-                .enqueue_task_for_squad_leader(&issue, leader.id, autopilot.assignee_id, None)
+                .enqueue_task_for_team_leader(&issue, leader.id, autopilot.assignee_id, None)
                 .await
                 .map_err(|e| {
-                    anyhow::anyhow!("dispatch for webhook delivery: repair squad task: {e}")
+                    anyhow::anyhow!("dispatch for webhook delivery: repair team task: {e}")
                 })?;
             return Ok(());
         }

@@ -46,7 +46,7 @@ const {
   mockGetShareableUrl,
   mockMembers,
   mockAgents,
-  mockSquads,
+  mockTeams,
   mockOpenModal,
   mockToastSuccess,
   mockClipboardWrite,
@@ -84,7 +84,7 @@ const {
       avatar_url: string | null;
     }>,
   },
-  mockSquads: {
+  mockTeams: {
     current: [] as Array<{
       id: string;
       name: string;
@@ -122,8 +122,8 @@ vi.mock("../common/actor-avatar", () => ({
         ? mockMembers.current.find((m) => m.user_id === actorId)?.name
         : actorType === "agent"
           ? mockAgents.current.find((a) => a.id === actorId)?.name
-          : actorType === "squad"
-            ? mockSquads.current.find((s) => s.id === actorId)?.name
+          : actorType === "team"
+            ? mockTeams.current.find((s) => s.id === actorId)?.name
             : undefined;
     return (
       <span
@@ -183,7 +183,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     projects: () => "/ws-test/projects",
     autopilots: () => "/ws-test/autopilots",
     agents: () => "/ws-test/agents",
-    squads: () => "/ws-test/squads",
+    teams: () => "/ws-test/teams",
     usage: () => "/ws-test/usage",
     runtimes: () => "/ws-test/runtimes",
     skills: () => "/ws-test/skills",
@@ -191,7 +191,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
     memberDetail: (id: string) => `/ws-test/members/${id}`,
     agentDetail: (id: string) => `/ws-test/agents/${id}`,
-    squadDetail: (id: string) => `/ws-test/squads/${id}`,
+    teamDetail: (id: string) => `/ws-test/teams/${id}`,
     projectDetail: (id: string) => `/ws-test/projects/${id}`,
   }),
 }));
@@ -208,7 +208,7 @@ vi.mock("@patchbay/core/issues/queries", () => ({
 vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["workspaces", "ws-test", "members"] }),
   agentListOptions: () => ({ queryKey: ["workspaces", "ws-test", "agents"] }),
-  squadListOptions: () => ({ queryKey: ["workspaces", "ws-test", "squads"] }),
+  teamListOptions: () => ({ queryKey: ["workspaces", "ws-test", "teams"] }),
 }));
 
 vi.mock("@patchbay/core/modals", () => ({
@@ -235,8 +235,8 @@ vi.mock("@tanstack/react-query", () => ({
     if (key[0] === "workspaces" && key[2] === "agents") {
       return { data: mockAgents.current };
     }
-    if (key[0] === "workspaces" && key[2] === "squads") {
-      return { data: mockSquads.current };
+    if (key[0] === "workspaces" && key[2] === "teams") {
+      return { data: mockTeams.current };
     }
     if (opts.enabled === false) return { data: undefined };
     return { data: resolveIssue(key) };
@@ -282,7 +282,7 @@ describe("SearchCommand", () => {
     mockRecentItems.current = [];
     mockAllIssues.current = [];
     mockAgents.current = [];
-    mockSquads.current = [];
+    mockTeams.current = [];
     mockSetTheme.mockReset();
     mockTheme.current = "system";
     mockPathname.current = "/ws-test/issues";

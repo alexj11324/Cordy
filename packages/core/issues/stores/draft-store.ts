@@ -21,7 +21,7 @@ import { normalizeStoredUploads, type DraftUpload } from "../../drafts/draft-upl
 //   manual  — the manual form's own state: title, description, status, start
 //             date, assignee, labels, custom properties.
 //   agent   — the agent form's own state: the free-text prompt and the picked
-//             actor (agent or squad).
+//             actor (agent or team).
 //   activeMode — which form the draft is currently being edited in.
 //
 // Before this split, `switchToAgent` concatenated title + description into the

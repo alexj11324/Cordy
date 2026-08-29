@@ -20,7 +20,7 @@ vi.mock("@patchbay/core/hooks", () => ({
 vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     agentDetail: (agentId: string) => `/acme/agents/${agentId}`,
-    squadDetail: (squadId: string) => `/acme/squads/${squadId}`,
+    teamDetail: (teamId: string) => `/acme/teams/${teamId}`,
   }),
 }));
 
@@ -39,7 +39,7 @@ vi.mock("@patchbay/core/api", () => {
   return {
     api: {
       createAgent: mockCreateAgent,
-      addSquadMember: vi.fn(),
+      addTeamMember: vi.fn(),
     },
     ApiError,
   };
@@ -128,7 +128,7 @@ describe("useCreateAgentSubmit cache handoff", () => {
             runtimeId: CREATED_AGENT.runtime_id,
           },
           runtimeId: CREATED_AGENT.runtime_id,
-          squadId: null,
+          teamId: null,
         }),
       { wrapper: wrapper(queryClient) },
     );

@@ -159,7 +159,7 @@ patchbay runtime activity <runtime-id>
 | `issue` | 创建、更新、分配和搜索 issue；管理评论、订阅、标签、属性与执行记录 |
 | `project` | 管理项目及其资源 |
 | `label`、`property` | 管理工作区标签和自定义属性 |
-| `agent`、`skill`、`squad` | 管理智能体、skill 和小队 |
+| `agent`、`skill`、`team` | 管理智能体、skill 和团队 |
 | `autopilot` | 管理自动化、触发器和运行历史 |
 | `workspace` | 创建、查看、切换工作区和邀请成员 |
 | `repo` | 管理工作区仓库，并把仓库检出到本机 |
@@ -222,7 +222,7 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 | | `get <id>` | 查看单个 issue | |
 | | `create` | 创建 issue | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重复） |
 | | `update <id>` | 更新 issue 字段 | 与 `create` 同类字段，另有 `--position`、`--no-start` |
-| | `assign <id>` | 指派或取消指派 | `--to`（名称模糊匹配成员、智能体或小队）、`--to-id`、`--unassign`、`--no-start` |
+| | `assign <id>` | 指派或取消指派 | `--to`（名称模糊匹配成员、智能体或团队）、`--to-id`、`--unassign`、`--no-start` |
 | | `status <id> <status>` | 修改状态 | `--no-start` |
 | | `reorder <id>` | 在列内移动 | |
 | | `search <query>` | 搜索 issue | `--limit`、`--include-closed` |
@@ -262,8 +262,8 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 | | `import` | 从 URL 或本地文件导入 skill | `--url` / `--file`、`--on-conflict`（`fail`、`overwrite`、`rename`、`skip`，默认 `fail`） |
 | | `search <query>` | 搜索 skill | |
 | | `files list/upsert/delete <skill-id>` | 管理 skill 内的文件 | |
-| `squad` | `list/get/create/update/delete` | 管理小队（`delete` 为归档） | |
-| | `member list/add/set-role/remove` | 管理小队成员 | |
+| `team` | `list/get/create/update/delete` | 管理团队（`delete` 为归档） | |
+| | `member list/add/set-role/remove` | 管理团队成员 | |
 | | `activity <issue-id> <outcome>` | 记录队长评价 | |
 | `chat` | `history`、`thread [id]` | 读取智能体当前正在处理的外部聊天会话 | `--limit`、`--before` |
 

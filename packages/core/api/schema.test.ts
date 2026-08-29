@@ -341,7 +341,7 @@ describe("ApiClient schema fallback", () => {
         autopilots: [
           {
             ...baseAutopilot,
-            assignee_type: "squad",
+            assignee_type: "team",
             trigger_kinds: ["schedule", "some_future_kind"],
             next_run_at: "2026-06-13T09:00:00Z",
             last_run_status: "some_future_status",

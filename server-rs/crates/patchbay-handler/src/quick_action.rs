@@ -7,8 +7,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use patchbay_db::models::{Agent, QuickAction, Squad};
-use patchbay_db::queries::{agent, agent_invocation_target, quick_action as quick_action_q, squad};
+use patchbay_db::models::{Agent, QuickAction, Team};
+use patchbay_db::queries::{agent, agent_invocation_target, quick_action as quick_action_q, team};
 use patchbay_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -139,7 +139,7 @@ fn validate_prompt(raw: &str) -> Result<String, Response> {
     }
     if [
         "mention://agent/",
-        "mention://squad/",
+        "mention://team/",
         "mention://member/",
         "mention://all/",
     ]
@@ -148,7 +148,7 @@ fn validate_prompt(raw: &str) -> Result<String, Response> {
     {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
-            "the prompt cannot @mention an agent, squad, or person; a quick action reaches exactly the one target it is bound to (an issue link is fine)",
+            "the prompt cannot @mention an agent, team, or person; a quick action reaches exactly the one target it is bound to (an issue link is fine)",
         ));
     }
     Ok(value.to_string())
@@ -189,18 +189,18 @@ pub(crate) async fn target(
                 })?;
             (agent.name.clone(), agent)
         }
-        "squad" => {
-            let squad = squad::get_squad_in_workspace(&state.pool, assignee_id, workspace_id)
+        "team" => {
+            let team = team::get_team_in_workspace(&state.pool, assignee_id, workspace_id)
                 .await
                 .map_err(|error| db_error(error, "failed to resolve quick action target"))?
-                .filter(|squad| squad.archived_at.is_none())
+                .filter(|team| team.archived_at.is_none())
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
                         "assignee not found in this workspace",
                     )
                 })?;
-            let leader = agent::get_agent_in_workspace(&state.pool, squad.leader_id, workspace_id)
+            let leader = agent::get_agent_in_workspace(&state.pool, team.leader_id, workspace_id)
                 .await
                 .map_err(|error| db_error(error, "failed to resolve quick action target"))?
                 .filter(|agent| agent.archived_at.is_none())
@@ -210,12 +210,12 @@ pub(crate) async fn target(
                         "assignee not found in this workspace",
                     )
                 })?;
-            (squad.name, leader)
+            (team.name, leader)
         }
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
-                "assignee_type must be \"agent\" or \"squad\"",
+                "assignee_type must be \"agent\" or \"team\"",
             ));
         }
     };
@@ -278,7 +278,7 @@ fn response_with_target(
 
 struct QuickActionCatalog {
     agents: HashMap<Uuid, Agent>,
-    squads: HashMap<Uuid, Squad>,
+    teams: HashMap<Uuid, Team>,
     public_agents: HashSet<Uuid>,
 }
 
@@ -304,22 +304,22 @@ impl QuickActionCatalog {
         };
         Self {
             agents: agents.into_iter().map(|agent| (agent.id, agent)).collect(),
-            squads: squad::list_squads(&state.pool, workspace_id)
+            teams: team::list_teams(&state.pool, workspace_id)
                 .await
                 .unwrap_or_default()
                 .into_iter()
-                .map(|squad| (squad.id, squad))
+                .map(|team| (team.id, team))
                 .collect(),
             public_agents,
         }
     }
 
     fn response(&self, action: QuickAction) -> QuickActionResponse {
-        let target = if action.assignee_type == "squad" {
-            self.squads.get(&action.assignee_id).and_then(|squad| {
+        let target = if action.assignee_type == "team" {
+            self.teams.get(&action.assignee_id).and_then(|team| {
                 self.agents
-                    .get(&squad.leader_id)
-                    .map(|agent| (squad.name.clone(), agent))
+                    .get(&team.leader_id)
+                    .map(|agent| (team.name.clone(), agent))
             })
         } else {
             self.agents

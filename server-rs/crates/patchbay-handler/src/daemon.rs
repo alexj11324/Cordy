@@ -1716,7 +1716,7 @@ fn empty_tasks_response() -> Response {
 /// so the daemon routes it to the matching runtime locally.
 ///
 /// The full per-task response builder (Go buildClaimedTaskResponse — agent
-/// skills, comment plans, chat input, squad briefings) is a follow-on slice;
+/// skills, comment plans, chat input, team briefings) is a follow-on slice;
 /// this port delivers the ownership/fence/token skeleton with the same
 /// response envelope and cancellation semantics for the paths it covers.
 async fn claim_tasks_by_runtime(
@@ -2005,7 +2005,7 @@ async fn repair_stale_comment_plan(
                         Some(trigger.id),
                         coalesced,
                         task.is_leader_task,
-                        task.squad_id,
+                        task.team_id,
                         task.force_fresh_session,
                         task.handoff_note.as_deref().unwrap_or(""),
                         None,

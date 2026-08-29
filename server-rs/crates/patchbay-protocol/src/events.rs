@@ -139,10 +139,10 @@ pub const EVENT_AUTOPILOT_DELETED: &str = "autopilot:deleted";
 pub const EVENT_AUTOPILOT_RUN_START: &str = "autopilot:run_start";
 pub const EVENT_AUTOPILOT_RUN_DONE: &str = "autopilot:run_done";
 
-// Squad events
-pub const EVENT_SQUAD_CREATED: &str = "squad:created";
-pub const EVENT_SQUAD_UPDATED: &str = "squad:updated";
-pub const EVENT_SQUAD_DELETED: &str = "squad:deleted";
+// Team events
+pub const EVENT_TEAM_CREATED: &str = "team:created";
+pub const EVENT_TEAM_UPDATED: &str = "team:updated";
+pub const EVENT_TEAM_DELETED: &str = "team:deleted";
 
 // Daemon events
 pub const EVENT_DAEMON_HEARTBEAT: &str = "daemon:heartbeat";

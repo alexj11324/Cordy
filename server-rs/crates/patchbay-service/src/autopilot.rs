@@ -201,12 +201,12 @@ pub fn task_failure_reason_for_run(task: &patchbay_db::models::AgentTaskQueue) -
     "task failed".to_string()
 }
 
-/// For squad autopilots the message names the squad so an operator reading
-/// failure_reason knows which squad's leader is down without joining back to
-/// autopilot_run.squad_id.
+/// For team autopilots the message names the team so an operator reading
+/// failure_reason knows which team's leader is down without joining back to
+/// autopilot_run.team_id.
 pub fn format_admission_reason(assignee_type: &str, raw: &str) -> String {
-    let prefix = if assignee_type == "squad" {
-        "squad leader "
+    let prefix = if assignee_type == "team" {
+        "team leader "
     } else {
         "assignee "
     };
@@ -219,32 +219,32 @@ pub fn format_admission_reason(assignee_type: &str, raw: &str) -> String {
     }
 }
 
-/// Signals an archived squad assignee — distinct from a missing/unloadable
-/// squad so the gate phrases the skip reason precisely and the failure
+/// Signals an archived team assignee — distinct from a missing/unloadable
+/// team so the gate phrases the skip reason precisely and the failure
 /// monitor does not log noise for an expected post-archive condition.
 #[derive(Debug, thiserror::Error)]
-#[error("squad is archived")]
-pub struct ErrSquadArchived;
+#[error("team is archived")]
+pub struct ErrTeamArchived;
 
 /// Leader-resolution failure, keeping Go's three distinguishable outcomes:
-/// DB fault, known archived squad, unknown assignee_type.
+/// DB fault, known archived team, unknown assignee_type.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveLeaderError {
-    #[error("load squad: {0}")]
-    LoadSquad(anyhow::Error),
-    #[error("load squad leader: {0}")]
-    LoadSquadLeader(anyhow::Error),
+    #[error("load team: {0}")]
+    LoadTeam(anyhow::Error),
+    #[error("load team leader: {0}")]
+    LoadTeamLeader(anyhow::Error),
     #[error("load agent: {0}")]
     LoadAgent(anyhow::Error),
     #[error(transparent)]
-    SquadArchived(#[from] ErrSquadArchived),
+    TeamArchived(#[from] ErrTeamArchived),
     #[error("unknown assignee_type {0:?}")]
     UnknownAssigneeType(String),
     /// pgx.ErrNoRows equivalent somewhere along the lookup chain — retrying
     /// cannot succeed (hard-deleted agent under migration 096's no-FK world,
-    /// or a gone squad row).
+    /// or a gone team row).
     #[error("assignee lookup returned no row")]
-    NotFound { squad_resolved: bool },
+    NotFound { team_resolved: bool },
 }
 
 impl ResolveLeaderError {
@@ -252,17 +252,17 @@ impl ResolveLeaderError {
         matches!(self, Self::NotFound { .. })
     }
 
-    pub fn is_squad_archived(&self) -> bool {
-        matches!(self, Self::SquadArchived(_))
+    pub fn is_team_archived(&self) -> bool {
+        matches!(self, Self::TeamArchived(_))
     }
 }
 
 impl AutopilotService {
     /// Returns the agent that will actually execute the autopilot's work and
-    /// whether the resolver took the squad branch (callers choose fail-open
-    /// for transient agent-load faults vs fail-closed for a gone squad row).
+    /// whether the resolver took the team branch (callers choose fail-open
+    /// for transient agent-load faults vs fail-closed for a gone team row).
     ///
-    /// Archived squads are rejected here too: DeleteSquad transfers surviving
+    /// Archived teams are rejected here too: DeleteTeam transfers surviving
     /// autopilots to assignee_type='agent', but any row slipping through that
     /// transfer must never produce work. Unknown assignee_type values error —
     /// a CHECK constraint gates them at the DB layer, so this only fires for
@@ -277,25 +277,25 @@ impl AutopilotService {
                     .await
                     .map_err(ResolveLeaderError::LoadAgent)?
                     .ok_or_else(|| ResolveLeaderError::NotFound {
-                        squad_resolved: false,
+                        team_resolved: false,
                     })?;
                 Ok((agent, false))
             }
-            "squad" => {
-                let squad = patchbay_db::queries::squad::get_squad(&self.pool, ap.assignee_id)
+            "team" => {
+                let team = patchbay_db::queries::team::get_team(&self.pool, ap.assignee_id)
                     .await
-                    .map_err(ResolveLeaderError::LoadSquad)?
+                    .map_err(ResolveLeaderError::LoadTeam)?
                     .ok_or_else(|| ResolveLeaderError::NotFound {
-                        squad_resolved: true,
+                        team_resolved: true,
                     })?;
-                if squad.archived_at.is_some() {
-                    return Err(ResolveLeaderError::SquadArchived(ErrSquadArchived));
+                if team.archived_at.is_some() {
+                    return Err(ResolveLeaderError::TeamArchived(ErrTeamArchived));
                 }
-                let agent = patchbay_db::queries::agent::get_agent(&self.pool, squad.leader_id)
+                let agent = patchbay_db::queries::agent::get_agent(&self.pool, team.leader_id)
                     .await
-                    .map_err(ResolveLeaderError::LoadSquadLeader)?
+                    .map_err(ResolveLeaderError::LoadTeamLeader)?
                     .ok_or_else(|| ResolveLeaderError::NotFound {
-                        squad_resolved: true,
+                        team_resolved: true,
                     })?;
                 Ok((agent, true))
             }
@@ -303,26 +303,26 @@ impl AutopilotService {
         }
     }
 
-    /// Squad-id attribution hook for an autopilot_run row; only populated for
-    /// assignee_type='squad' (RFC §4.e / PB-2429).
-    pub fn squad_attribution(ap: &Autopilot) -> Option<Uuid> {
-        if ap.assignee_type == "squad" {
+    /// Team-id attribution hook for an autopilot_run row; only populated for
+    /// assignee_type='team' (RFC §4.e / PB-2429).
+    pub fn team_attribution(ap: &Autopilot) -> Option<Uuid> {
+        if ap.assignee_type == "team" {
             Some(ap.assignee_id)
         } else {
             None
         }
     }
 
-    /// Analytics assignee shape; resolves the squad leader best-effort and
-    /// falls back to the squad id when resolution fails.
+    /// Analytics assignee shape; resolves the team leader best-effort and
+    /// falls back to the team id when resolution fails.
     pub async fn assignee_analytics(&self, ap: &Autopilot) -> analytics::AutopilotAssignee {
         let mut out = analytics::AutopilotAssignee {
             assignee_type: ap.assignee_type.clone(),
-            squad_id: String::new(),
+            team_id: String::new(),
             agent_id: String::new(),
         };
-        if ap.assignee_type == "squad" {
-            out.squad_id = ap.assignee_id.to_string();
+        if ap.assignee_type == "team" {
+            out.team_id = ap.assignee_id.to_string();
             out.agent_id = match self.resolve_leader(ap).await {
                 Ok((leader, _)) => leader.id.to_string(),
                 Err(_) => ap.assignee_id.to_string(),
@@ -662,8 +662,8 @@ pub struct CreateAutopilotRunParams {
     pub source: String,
     pub status: String,
     pub trigger_payload: serde_json::Value,
-    /// Squad attribution hook; nil for agent assignees.
-    pub squad_id: Uuid,
+    /// Team attribution hook; nil for agent assignees.
+    pub team_id: Uuid,
     pub planned_at: Option<DateTime<Utc>>,
     /// Nil outside the webhook delivery worker path.
     pub webhook_delivery_id: Uuid,
@@ -685,7 +685,7 @@ where
         &p.status,
         p.trigger_id,
         &p.trigger_payload,
-        p.squad_id,
+        p.team_id,
         p.planned_at,
         p.webhook_delivery_id,
         quota_reservation_id,
@@ -722,7 +722,7 @@ impl AutopilotService {
             trigger_payload: row.trigger_payload,
             result: row.result,
             created_at: row.created_at.unwrap_or_default(),
-            squad_id: row.squad_id,
+            team_id: row.team_id,
             planned_at: row.planned_at,
             webhook_delivery_id: row.webhook_delivery_id,
             quota_reservation_id: row.quota_reservation_id,
@@ -853,7 +853,7 @@ impl AutopilotService {
     }
 
     /// For PostHog agent_id is the agent that will actually run the work (the
-    /// resolved leader for squad autopilots) so per-agent task counts line up
+    /// resolved leader for team autopilots) so per-agent task counts line up
     /// with what daemons report.
     async fn capture_issue_created_from_autopilot(
         &self,
@@ -1577,37 +1577,37 @@ impl AutopilotService {
             Ok((agent, _)) => agent,
             Err(err) => {
                 // Unconditional logging so ops can still spot a run of dangling
-                // rows pointing at a deleted agent / archived squad.
+                // rows pointing at a deleted agent / archived team.
                 tracing::warn!(
                     autopilot_id = %ap.id,
                     assignee_type = %ap.assignee_type,
                     missing = err.is_not_found(),
-                    archived = err.is_squad_archived(),
+                    archived = err.is_team_archived(),
                     error = %err,
                     "autopilot admission: failed to resolve leader"
                 );
                 match err {
-                    // Squad exists but is archived — DeleteSquad's transfer
+                    // Team exists but is archived — DeleteTeam's transfer
                     // should have rewritten the assignee already; surfacing it
                     // keeps the reason useful when something slips past.
-                    ResolveLeaderError::SquadArchived(_) => {
+                    ResolveLeaderError::TeamArchived(_) => {
                         return Some((
-                            "assignee squad is archived".to_string(),
+                            "assignee team is archived".to_string(),
                             ReasonCode::TargetUnavailable,
                         ));
                     }
                     ResolveLeaderError::NotFound {
-                        squad_resolved: true,
+                        team_resolved: true,
                     } => {
                         return Some((
-                            "assignee squad cannot be resolved".to_string(),
+                            "assignee team cannot be resolved".to_string(),
                             ReasonCode::TargetUnavailable,
                         ));
                     }
                     // Agent row hard-deleted under us — skipping beats failing
                     // open because retrying will not help either.
                     ResolveLeaderError::NotFound {
-                        squad_resolved: false,
+                        team_resolved: false,
                     } => {
                         return Some((
                             "assignee agent no longer exists".to_string(),
@@ -1793,7 +1793,7 @@ impl AutopilotService {
             source: source.to_string(),
             status: "skipped".to_string(),
             trigger_payload: payload.clone(),
-            squad_id: Self::squad_attribution(autopilot).unwrap_or_else(Uuid::nil),
+            team_id: Self::team_attribution(autopilot).unwrap_or_else(Uuid::nil),
             planned_at,
             webhook_delivery_id,
             reason_code: code_str.map(str::to_string),
@@ -1911,7 +1911,7 @@ impl AutopilotService {
             source: source.to_string(),
             status: initial_status.to_string(),
             trigger_payload: payload.clone(),
-            squad_id: Self::squad_attribution(autopilot).unwrap_or_else(Uuid::nil),
+            team_id: Self::team_attribution(autopilot).unwrap_or_else(Uuid::nil),
             planned_at,
             webhook_delivery_id,
             reason_code: None,
@@ -2095,7 +2095,7 @@ impl AutopilotService {
                 .map_err(|e| de("get next issue position", e))?;
 
         // Creator is the agent that will do the work (resolved leader for
-        // squads) so activity/mentions render with the right author identity;
+        // teams) so activity/mentions render with the right author identity;
         // the human configurer rides origin_type=autopilot + origin_id.
         let issue = patchbay_db::queries::issue::create_issue_with_origin(
             &mut *tx,
@@ -2149,9 +2149,9 @@ impl AutopilotService {
 
         tx.commit().await.map_err(|e| de("commit tx", e))?;
 
-        // issue:created drives the existing event chain; for squad autopilots
-        // this triggers shouldEnqueueSquadLeaderOnAssign downstream — no
-        // separate squad-routing code lives here.
+        // issue:created drives the existing event chain; for team autopilots
+        // this triggers shouldEnqueueTeamLeaderOnAssign downstream — no
+        // separate team-routing code lives here.
         let prefix = self.get_issue_prefix(ap.workspace_id).await;
         let effective_category =
             crate::issue_status::effective(&self.pool, ap.workspace_id, &issue.status).await;
@@ -2183,16 +2183,16 @@ impl AutopilotService {
         // attribution resolves direct_human to the triggering member
         // (PB-4302 §4); automation takes the plain paths where the
         // autopilot-origin issue resolves to rule_owner.
-        if ap.assignee_type == "squad" {
+        if ap.assignee_type == "team" {
             if !self
                 .autopilot_admit_invoke(ap, &leader, actor_user_id)
                 .await
             {
-                return Err(de_msg("not allowed to invoke private squad leader"));
+                return Err(de_msg("not allowed to invoke private team leader"));
             }
             if let Some(actor) = actor_user_id {
                 self.task_svc
-                    .enqueue_task_for_squad_leader_with_handoff(
+                    .enqueue_task_for_team_leader_with_handoff(
                         &issue,
                         leader.id,
                         ap.assignee_id,
@@ -2200,12 +2200,12 @@ impl AutopilotService {
                         Some(actor),
                     )
                     .await
-                    .map_err(|e| de("enqueue squad leader task", e))?;
+                    .map_err(|e| de("enqueue team leader task", e))?;
             } else {
                 self.task_svc
-                    .enqueue_task_for_squad_leader(&issue, leader.id, ap.assignee_id, None)
+                    .enqueue_task_for_team_leader(&issue, leader.id, ap.assignee_id, None)
                     .await
-                    .map_err(|e| de("enqueue squad leader task", e))?;
+                    .map_err(|e| de("enqueue team leader task", e))?;
             }
         } else if let Some(actor) = actor_user_id {
             self.task_svc
@@ -2323,7 +2323,7 @@ impl AutopilotService {
     ) -> Result<(), DispatchError> {
         let agent = match self.resolve_leader(ap).await {
             Ok((agent, _)) => agent,
-            Err(err) if err.is_not_found() || err.is_squad_archived() => {
+            Err(err) if err.is_not_found() || err.is_team_archived() => {
                 return Err(DispatchError::Skipped(ErrDispatchSkipped {
                     reason: format_admission_reason(
                         &ap.assignee_type,
@@ -2344,15 +2344,15 @@ impl AutopilotService {
             }));
         }
 
-        // Squad invocation gate re-check (admission principal = manual clicker,
+        // Team invocation gate re-check (admission principal = manual clicker,
         // else creator).
-        if ap.assignee_type == "squad"
+        if ap.assignee_type == "team"
             && !self.autopilot_admit_invoke(ap, &agent, actor_user_id).await
         {
             return Err(DispatchError::Skipped(ErrDispatchSkipped {
                 reason: format_admission_reason(
                     &ap.assignee_type,
-                    "not allowed to invoke private squad leader",
+                    "not allowed to invoke private team leader",
                 ),
                 code: ReasonCode::InvocationNotAllowed,
             }));
@@ -2621,7 +2621,7 @@ impl AutopilotService {
             source: "webhook".to_string(),
             status: initial_status.to_string(),
             trigger_payload: payload.clone(),
-            squad_id: Self::squad_attribution(autopilot).unwrap_or_else(Uuid::nil),
+            team_id: Self::team_attribution(autopilot).unwrap_or_else(Uuid::nil),
             planned_at: None,
             webhook_delivery_id: delivery_id,
             reason_code: None,
@@ -2737,15 +2737,15 @@ impl AutopilotService {
         if effective != "todo" && effective != "in_progress" {
             return Ok(());
         }
-        if autopilot.assignee_type == "squad" {
+        if autopilot.assignee_type == "team" {
             let (leader, _) = self.resolve_leader(autopilot).await.map_err(|e| {
-                anyhow::anyhow!("dispatch for webhook delivery: resolve squad leader: {e}")
+                anyhow::anyhow!("dispatch for webhook delivery: resolve team leader: {e}")
             })?;
             self.task_svc
-                .enqueue_task_for_squad_leader(&issue, leader.id, autopilot.assignee_id, None)
+                .enqueue_task_for_team_leader(&issue, leader.id, autopilot.assignee_id, None)
                 .await
                 .map_err(|e| {
-                    anyhow::anyhow!("dispatch for webhook delivery: repair squad task: {e}")
+                    anyhow::anyhow!("dispatch for webhook delivery: repair team task: {e}")
                 })?;
             return Ok(());
         }

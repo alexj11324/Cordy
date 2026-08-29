@@ -22,7 +22,7 @@ import enRuntimes from "./en/runtimes.json";
 import enLayout from "./en/layout.json";
 import enUsage from "./en/usage.json";
 import enUi from "./en/ui.json";
-import enSquads from "./en/squads.json";
+import enTeams from "./en/teams.json";
 import enBilling from "./en/billing.json";
 import zhHansCommon from "./zh-Hans/common.json";
 import zhHansAuth from "./zh-Hans/auth.json";
@@ -47,7 +47,7 @@ import zhHansRuntimes from "./zh-Hans/runtimes.json";
 import zhHansLayout from "./zh-Hans/layout.json";
 import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
-import zhHansSquads from "./zh-Hans/squads.json";
+import zhHansTeams from "./zh-Hans/teams.json";
 import zhHansBilling from "./zh-Hans/billing.json";
 import koCommon from "./ko/common.json";
 import koAuth from "./ko/auth.json";
@@ -72,7 +72,7 @@ import koRuntimes from "./ko/runtimes.json";
 import koLayout from "./ko/layout.json";
 import koUsage from "./ko/usage.json";
 import koUi from "./ko/ui.json";
-import koSquads from "./ko/squads.json";
+import koTeams from "./ko/teams.json";
 import koBilling from "./ko/billing.json";
 import jaCommon from "./ja/common.json";
 import jaAuth from "./ja/auth.json";
@@ -97,7 +97,7 @@ import jaRuntimes from "./ja/runtimes.json";
 import jaLayout from "./ja/layout.json";
 import jaUsage from "./ja/usage.json";
 import jaUi from "./ja/ui.json";
-import jaSquads from "./ja/squads.json";
+import jaTeams from "./ja/teams.json";
 import jaBilling from "./ja/billing.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
@@ -128,7 +128,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: enLayout,
     usage: enUsage,
     ui: enUi,
-    squads: enSquads,
+    teams: enTeams,
     billing: enBilling,
   },
   "zh-Hans": {
@@ -155,7 +155,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: zhHansLayout,
     usage: zhHansUsage,
     ui: zhHansUi,
-    squads: zhHansSquads,
+    teams: zhHansTeams,
     billing: zhHansBilling,
   },
   ko: {
@@ -182,7 +182,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: koLayout,
     usage: koUsage,
     ui: koUi,
-    squads: koSquads,
+    teams: koTeams,
     billing: koBilling,
   },
   ja: {
@@ -209,7 +209,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: jaLayout,
     usage: jaUsage,
     ui: jaUi,
-    squads: jaSquads,
+    teams: jaTeams,
     billing: jaBilling,
   },
 };

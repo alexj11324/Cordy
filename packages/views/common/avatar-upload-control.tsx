@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, lazy, useRef, useState } from "react";
-import { Bot, Camera, ImagePlus, Loader2, Users, X } from "lucide-react";
+import { Bot, Camera, ImagePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@patchbay/core/api";
+import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 import { useFileUpload } from "@patchbay/core/hooks/use-file-upload";
 import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
@@ -29,7 +30,7 @@ const EmojiPicker = lazy(() =>
   })),
 );
 
-export type AvatarUploadVariant = "user" | "agent" | "squad" | "workspace";
+export type AvatarUploadVariant = "user" | "agent" | "team" | "workspace";
 
 interface AvatarUploadControlProps {
   /** Current avatar URL, raw (unresolved). `null` renders the empty state. */
@@ -44,7 +45,7 @@ interface AvatarUploadControlProps {
   /**
    * Fires with the uploaded file URL after a successful crop + upload. The
    * parent persists it (updateMe / updateWorkspace / updateAgent /
-   * updateSquad, or stashing it for a create call). The crop dialog stays in
+   * updateTeam, or stashing it for a create call). The crop dialog stays in
    * its busy state until this resolves, then closes.
    */
   onUploaded: (url: string) => void | Promise<unknown>;
@@ -87,8 +88,8 @@ function AvatarFallback({
   if (variant === "agent") {
     return <Bot style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
-  if (variant === "squad") {
-    return <Users style={{ width: size * 0.5, height: size * 0.5 }} />;
+  if (variant === "team") {
+    return <PeopleGroupIcon style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
   const text =
     variant === "workspace"

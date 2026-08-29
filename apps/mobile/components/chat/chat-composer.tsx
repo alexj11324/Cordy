@@ -10,7 +10,7 @@
  *     with a Stop affordance (filled foreground bg + stop glyph). Tap →
  *     `onStop()` cancels the in-flight task.
  *   - **Mention picker mode=chat**: chat is user ↔ single agent so
- *     @member / @agent / @squad / @all are noise + would notify the
+ *     @member / @agent / @team / @all are noise + would notify the
  *     wrong people. Picker route honors `?mode=chat` and surfaces only
  *     Issues (useful for "reference this ticket for context").
  *   - **No reply target**: chat is a flat conversation; passes no

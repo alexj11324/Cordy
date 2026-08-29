@@ -23,7 +23,7 @@ pub enum ReasonCode {
     /// invocation-permission model. Deliberately generic — it does not
     /// distinguish "target is private" from "target does not exist".
     InvocationNotAllowed,
-    /// The target cannot run (archived agent, deleted / archived squad,
+    /// The target cannot run (archived agent, deleted / archived team,
     /// unresolvable leader, or no assignee).
     TargetUnavailable,
     /// The target is permitted and bound to a runtime, but that runtime is
@@ -54,7 +54,7 @@ pub enum ReasonCode {
     AlreadyActive,
     /// The target was intentionally not (re-)triggered because doing so would
     /// be a self-trigger the guard suppresses, and no active run remains to
-    /// cover it — e.g. a squad leader's own @mention of its squad whose
+    /// cover it — e.g. a team leader's own @mention of its team whose
     /// latest task is already terminal. Not a permission block, but NOT
     /// success: nothing new runs. (Named to avoid implying the NEW comment
     /// was already processed.)

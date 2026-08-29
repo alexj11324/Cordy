@@ -4,7 +4,7 @@ import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // PB-4155: batch status changes must apply directly (no run-confirm modal),
-// while agent/squad assignment still confirms and delete still confirms. These
+// while agent/team assignment still confirms and delete still confirms. These
 // tests drive the pickers' onUpdate callbacks and assert which path is taken.
 
 const selection = vi.hoisted(() => ({

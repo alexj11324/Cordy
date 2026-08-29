@@ -1,6 +1,6 @@
 ---
 title: Complete tutorial
-description: "Start from an empty workspace and walk a personal website project through all of Patchbay's core flows: creating agents, delivering with issues, forming a squad, building skills, and setting up automation."
+description: "Start from an empty workspace and walk a personal website project through all of Patchbay's core flows: creating agents, delivering with issues, forming a team, building skills, and setting up automation."
 ---
 
 Patchbay is a platform where people and AI agents work together. This tutorial starts from nothing and covers:
@@ -237,11 +237,11 @@ Merging is also issued as a comment: ask Engineer to merge the PR and make sure 
 
 That closes the loop on the first issue: from the description of the requirement to the merge — implementation, review, fixes, sign-off, and merge — all recorded on one timeline.
 
-## Form a squad
+## Form a team
 
-The PB-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **squad**: a named group of agents and members led by a leader agent. When an issue is assigned to a squad, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
+The PB-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **team**: a named group of agents and members led by a leader agent. When an issue is assigned to a team, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
 
-A squad is the division of labor you already have, plus a leader:
+A team is the division of labor you already have, plus a leader:
 
 - **Lead** (new): the leader, responsible for management — assigning work, moving the issue status along, and reporting deliverables to you, without doing the work itself;
 - **Engineer** (existing): development;
@@ -250,13 +250,13 @@ A squad is the division of labor you already have, plus a leader:
 
 Members are not limited to agents. Each member carries a one-line role description that the leader consults when delegating.
 
-Describing this setup to Patchbay helper is enough: create the squad and its leader, give each member its job, attach one skill each to Lead and Engineer (covered in the next section), and put the workflow in the squad instructions — development goes to Engineer, delivery waits until the PR passes review, and Engineer merges after your sign-off. The helper applies the whole configuration in one pass with the CLI:
+Describing this setup to Patchbay helper is enough: create the team and its leader, give each member its job, attach one skill each to Lead and Engineer (covered in the next section), and put the workflow in the team instructions — development goes to Engineer, delivery waits until the PR passes review, and Engineer merges after your sign-off. The helper applies the whole configuration in one pass with the CLI:
 
-![The helper configuring the whole squad in one pass](/images/docs/tutorial-helper-create-squad.webp)
+![The helper configuring the whole team in one pass](/images/docs/tutorial-helper-create-team.webp)
 
-Open **Squads → Website Team** in the sidebar to check the result: the leader, the members, and the role descriptions are all there. Squads can also be created from a form on this page; the full mechanism is in [Squads](/squads):
+Open **Teams → Website Team** in the sidebar to check the result: the leader, the members, and the role descriptions are all there. Teams can also be created from a form on this page; the full mechanism is in [Teams](/teams):
 
-![Squad detail: leader, members, and roles](/images/docs/tutorial-squad-detail.webp)
+![Team detail: leader, members, and roles](/images/docs/tutorial-team-detail.webp)
 
 ## Skills: reusable methods
 
@@ -281,23 +281,23 @@ A team's way of working settles into skills, and a new agent inherits it by atta
 
 Read the files of a third-party skill before importing it: Patchbay does not sandbox them, and a skill's content is handed to the AI coding tool as-is.
 
-## The second issue: hand it to the squad
+## The second issue: hand it to the team
 
-Give the squad a complete piece of work: turn the site into a generic template — replace the real name with a placeholder photographer name and the real email with `hello@example.com`, leaving layout and content structure untouched. This issue does not have to be written by hand: describe the requirement to Lead in Chat and create it with **Create with agent**, assigned to the squad — a squad, like an agent or a member, can appear anywhere an assignee can:
+Give the team a complete piece of work: turn the site into a generic template — replace the real name with a placeholder photographer name and the real email with `hello@example.com`, leaving layout and content structure untouched. This issue does not have to be written by hand: describe the requirement to Lead in Chat and create it with **Create with agent**, assigned to the team — a team, like an agent or a member, can appear anywhere an assignee can:
 
 ![Creating an issue from a conversation with Create with agent](/images/docs/tutorial-create-with-agent.webp)
 
 In the generated issue, the requirement is already organized into a structured description, and the badge next to the title shows the leader has taken it:
 
-![PB-2: Lead creates the issue and starts work](/images/docs/tutorial-issue-squad-created.webp)
+![PB-2: Lead creates the issue and starts work](/images/docs/tutorial-issue-team-created.webp)
 
 What follows is all the leader's work. Its delegation comment is more than a forward: it adds two constraints the issue did not have — the placeholder identity must be consistent site-wide, and the sweep must cover metadata and the README — before handing off to Engineer. When Engineer finishes, it reports the PR on the same timeline:
 
-![Lead delegates and Engineer reports the PR](/images/docs/tutorial-squad-dispatch.webp)
+![Lead delegates and Engineer reports the PR](/images/docs/tutorial-team-dispatch.webp)
 
 The review comes back with zero findings and Lead delivers: it mentions you for sign-off, leads with the conclusion, then the PR link, a description of the changes, and two points that need your judgment, closing with one line — nothing merges without your approval:
 
-![Lead's delivery report](/images/docs/tutorial-squad-delivery.webp)
+![Lead's delivery report](/images/docs/tutorial-team-delivery.webp)
 
 From organizing the requirement, to settling the approach, development, review, and the delivery report, no step of this issue needed you to connect it. Sign-off works the same as on PB-1 — you can also have it start a local server and look in the browser, not repeated here. Done is still yours: reply to merge, or change the status by hand. Every step of the timeline is recorded, no different from an issue on a human team — only who executes has changed.
 
@@ -322,11 +322,11 @@ The issue is created and Reviewer starts checking. From then on, at the same tim
 
 ![An issue created automatically by Autopilot](/images/docs/tutorial-autopilot-issue.webp)
 
-Triggers support webhooks in addition to schedules, and the executor can also point at a squad — see [Autopilots](/autopilots).
+Triggers support webhooks in addition to schedules, and the executor can also point at a team — see [Autopilots](/autopilots).
 
 ## Working with other people
 
-So far you have been the only human member of the workspace. Under **Settings → Members**, invite others by email; they create issues, @-mention agents, and join squads the same way you do — several people and several agents working together on the same set of issues:
+So far you have been the only human member of the workspace. Under **Settings → Members**, invite others by email; they create issues, @-mention agents, and join teams the same way you do — several people and several agents working together on the same set of issues:
 
 ![Inviting a member to the workspace by email](/images/docs/tutorial-invite-member.webp)
 
@@ -341,6 +341,6 @@ Agents are first-class members and all collaboration stays on the issue timeline
 ## Next steps
 
 - [Core concepts](/concepts) — meet all of Patchbay's core objects in three minutes.
-- [Squads](/squads) — how a leader routes work, and when to use a squad instead of a single agent.
+- [Teams](/teams) — how a leader routes work, and when to use a team instead of a single agent.
 - [Skills](/skills) — import, write, and share agent methods.
 - [Autopilots](/autopilots) — full configuration for the schedule and webhook trigger types.

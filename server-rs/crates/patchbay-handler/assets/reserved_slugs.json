@@ -72,15 +72,14 @@
         "projects",
         "autopilots",
         "agents",
-        "squads",
+        "teams",
         "inbox",
         "my-issues",
         "usage",
         "runtimes",
         "skills",
         "settings",
-        "workspaces",
-        "teams"
+        "workspaces"
       ]
     },
     {

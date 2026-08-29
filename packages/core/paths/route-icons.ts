@@ -13,9 +13,8 @@
  *
  * Icon values are *names*, not React components, so this module stays
  * React-free and safe inside `@patchbay/core`. The name → component registry
- * lives in `packages/views/layout/route-icon-components.tsx`; its
- * `Record<RouteIconName, LucideIcon>` type makes a missing component a compile
- * error.
+ * lives in `packages/views/layout/route-icon-components.tsx`; its total
+ * `Record<RouteIconName, ...>` type makes a missing component a compile error.
  */
 
 /** Every icon name a nav page or a tab type-icon can resolve to. */
@@ -26,9 +25,9 @@ export type RouteIconName =
   | "CircleUser"
   | "ListTodo"
   | "FolderKanban"
-  | "Zap"
+  | "AlarmClockCheck"
   | "Bot"
-  | "Users"
+  | "PeopleGroup"
   | "BarChart3"
   | "Monitor"
   | "Server"
@@ -53,7 +52,7 @@ export type NavLabelKey =
   | "projects"
   | "autopilots"
   | "agents"
-  | "squads"
+  | "teams"
   | "usage"
   | "runtimes"
   | "skills"
@@ -69,7 +68,7 @@ export type WorkspacePageKey =
   | "projects"
   | "autopilots"
   | "agents"
-  | "squads"
+  | "teams"
   | "usage"
   | "runtimes"
   | "skills"
@@ -95,9 +94,9 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   myIssues: { segment: "my-issues", icon: "CircleUser", navKey: "my_issues" },
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
-  autopilots: { segment: "autopilots", icon: "Zap", navKey: "autopilots" },
+  autopilots: { segment: "autopilots", icon: "AlarmClockCheck", navKey: "autopilots" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
-  squads: { segment: "squads", icon: "Users", navKey: "squads" },
+  teams: { segment: "teams", icon: "PeopleGroup", navKey: "teams" },
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
   runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },

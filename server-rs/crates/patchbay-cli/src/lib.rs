@@ -128,11 +128,11 @@ mod skill_command_schema;
 #[cfg(test)]
 mod skill_command_tests;
 mod skill_commands;
-mod squad_command_schema;
-#[cfg(test)]
-mod squad_command_tests;
-mod squad_commands;
 mod task_reference;
+mod team_command_schema;
+#[cfg(test)]
+mod team_command_tests;
+mod team_commands;
 mod text_input;
 mod update_commands;
 mod url_helpers;
@@ -422,22 +422,21 @@ use skill_commands::{
     run_skill_files_upsert, run_skill_get, run_skill_import, run_skill_list, run_skill_refresh,
     run_skill_search, run_skill_update,
 };
-pub(crate) use squad_command_schema::{
-    SquadActivityArgs, SquadArgs, SquadCommand, SquadCreateArgs, SquadMemberAddArgs,
-    SquadMemberArgs, SquadMemberCommand, SquadMemberRemoveArgs, SquadMemberSetRoleArgs,
-    SquadUpdateArgs,
+use task_reference::resolve_task_run_id;
+pub(crate) use team_command_schema::{
+    TeamActivityArgs, TeamArgs, TeamCommand, TeamCreateArgs, TeamMemberAddArgs, TeamMemberArgs,
+    TeamMemberCommand, TeamMemberRemoveArgs, TeamMemberSetRoleArgs, TeamUpdateArgs,
 };
 #[cfg(test)]
-use squad_commands::{
-    format_squad_details_table, format_squad_list_table, render_squad_member_output,
-    squad_member_count_display,
+use team_commands::{
+    format_team_details_table, format_team_list_table, render_team_member_output,
+    team_member_count_display,
 };
-use squad_commands::{
-    run_squad_activity, run_squad_create, run_squad_delete, run_squad_get, run_squad_list,
-    run_squad_member_add, run_squad_member_list, run_squad_member_remove,
-    run_squad_member_set_role, run_squad_update,
+use team_commands::{
+    run_team_activity, run_team_create, run_team_delete, run_team_get, run_team_list,
+    run_team_member_add, run_team_member_list, run_team_member_remove, run_team_member_set_role,
+    run_team_update,
 };
-use task_reference::resolve_task_run_id;
 pub(crate) use text_input::{trim_one_trailing_newline, unescape_backslash_escapes};
 use update_commands::run_update;
 #[cfg(test)]
@@ -948,7 +947,7 @@ mod tests {
                 }),
             )
             .route("/api/agents", get(|| async { Json(serde_json::json!([])) }))
-            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/teams", get(|| async { Json(serde_json::json!([])) }))
             .route(
                 "/api/projects",
                 get(|| async {
@@ -1850,7 +1849,7 @@ mod tests {
                 get(|| async { Json(serde_json::json!([{"user_id":"11111111-1111-1111-1111-111111111111","name":"Ada","email":"ada@example.com"}])) }),
             )
             .route("/api/agents", get(|| async { Json(serde_json::json!([])) }))
-            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/teams", get(|| async { Json(serde_json::json!([])) }))
             .route(
                 "/api/issues",
                 post(move |headers: HeaderMap, Json(body): Json<Value>| {
@@ -2132,7 +2131,7 @@ mod tests {
                 get(|| async { Json(serde_json::json!([{"user_id":"member-uuid","name":"Ada","email":"ada@example.com"}])) }),
             )
             .route("/api/agents", get(|| async { Json(serde_json::json!([])) }))
-            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/teams", get(|| async { Json(serde_json::json!([])) }))
             .route(
                 "/api/issues/issue-uuid",
                 put(move |headers: HeaderMap, Json(body): Json<Value>| {
@@ -2334,7 +2333,7 @@ mod tests {
                 "/api/agents",
                 get(|| async { Json(serde_json::json!([{"id":"11111111-1111-1111-1111-111111111111","name":"CodeBot"}])) }),
             )
-            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/teams", get(|| async { Json(serde_json::json!([])) }))
             .route(
                 "/api/issues/issue-uuid",
                 put(move |Json(body): Json<Value>| {

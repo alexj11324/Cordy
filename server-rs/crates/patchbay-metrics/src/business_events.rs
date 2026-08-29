@@ -63,7 +63,7 @@ pub(crate) struct BusinessEventMetrics {
     issue_created: CounterVec,
     chat_message_sent: CounterVec,
     agent_created: CounterVec,
-    squad_created: CounterVec,
+    team_created: CounterVec,
     autopilot_created: CounterVec,
     issue_executed: CounterVec,
     runtime_registered: CounterVec,
@@ -122,7 +122,7 @@ impl BusinessEventMetrics {
                 "Total user chat messages sent (excludes agent replies).",
             ),
             agent_created: cvec("patchbay_agent_created_total", "Total agents created."),
-            squad_created: cvec("patchbay_squad_created_total", "Total squads created."),
+            team_created: cvec("patchbay_team_created_total", "Total teams created."),
             autopilot_created: cvec("patchbay_autopilot_created_total", "Total autopilots created."),
             issue_executed: cvec(
                 "patchbay_issue_executed_total",
@@ -227,7 +227,7 @@ impl BusinessEventMetrics {
             Box::new(self.issue_created.clone()),
             Box::new(self.chat_message_sent.clone()),
             Box::new(self.agent_created.clone()),
-            Box::new(self.squad_created.clone()),
+            Box::new(self.team_created.clone()),
             Box::new(self.autopilot_created.clone()),
             Box::new(self.issue_executed.clone()),
             Box::new(self.runtime_registered.clone()),
@@ -496,9 +496,9 @@ impl BusinessMetrics {
                     &normalize_task_source(&string_prop(props, "source")),
                 ])
                 .inc(),
-            analytics::EVENT_SQUAD_CREATED => self
+            analytics::EVENT_TEAM_CREATED => self
                 .events
-                .squad_created
+                .team_created
                 .with_label_values(&[] as &[&str])
                 .inc(),
             analytics::EVENT_AUTOPILOT_CREATED => self

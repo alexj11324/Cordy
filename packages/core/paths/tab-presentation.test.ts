@@ -66,15 +66,15 @@ describe("resolveTabPresentation — direct resources", () => {
       visual: { kind: "actor", actorType: "member", id: "m1" },
       title: { kind: "text", text: "Ada" },
     });
-    expect(present("/acme/squads/sq1")).toEqual({
-      visual: { kind: "actor", actorType: "squad", id: "sq1" },
-      title: { kind: "tab", tabKey: "squad" },
+    expect(present("/acme/teams/team1")).toEqual({
+      visual: { kind: "actor", actorType: "team", id: "team1" },
+      title: { kind: "tab", tabKey: "team" },
     });
   });
 
   it("autopilot / skill / machine / runtime use a type icon + name", () => {
     expect(present("/acme/autopilots/a1", { autopilot: { title: "Nightly" } })).toEqual({
-      visual: { kind: "icon", icon: "Zap" },
+      visual: { kind: "icon", icon: "AlarmClockCheck" },
       title: { kind: "text", text: "Nightly" },
     });
     expect(present("/acme/skills/s1", { skill: { name: "Deploy" } })).toEqual({

@@ -69,9 +69,9 @@ export type WSEventType =
   | "project:created"
   | "project:updated"
   | "project:deleted"
-  | "squad:created"
-  | "squad:updated"
-  | "squad:deleted"
+  | "team:created"
+  | "team:updated"
+  | "team:deleted"
   | "label:created"
   | "label:updated"
   | "label:deleted"
@@ -614,9 +614,9 @@ export interface WSEventPayloadMap {
   "skill:created": unknown;
   "skill:updated": unknown;
   "skill:deleted": unknown;
-  "squad:created": unknown;
-  "squad:updated": unknown;
-  "squad:deleted": unknown;
+  "team:created": unknown;
+  "team:updated": unknown;
+  "team:deleted": unknown;
   "label:created": unknown;
   "label:updated": unknown;
   "label:deleted": unknown;

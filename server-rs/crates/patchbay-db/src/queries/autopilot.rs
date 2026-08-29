@@ -195,7 +195,7 @@ pub async fn create_autopilot_run(
     status: &str,
     trigger_id: Uuid,
     trigger_payload: &serde_json::Value,
-    squad_id: Uuid,
+    team_id: Uuid,
     planned_at: Option<DateTime<Utc>>,
     webhook_delivery_id: Uuid,
     quota_reservation_id: Uuid,
@@ -204,21 +204,21 @@ pub async fn create_autopilot_run(
 ) -> anyhow::Result<Option<AutopilotRun>> {
     let row = sqlx::query(
         r#"INSERT INTO autopilot_run (
-    autopilot_id, trigger_id, source, status, trigger_payload, squad_id, planned_at,
+    autopilot_id, trigger_id, source, status, trigger_payload, team_id, planned_at,
     webhook_delivery_id, quota_reservation_id, reason_code, id
 ) VALUES (
     $1, $4, $2, $3, $5,
     $6, $7,
     $8, $9,
     $10, COALESCE($11::uuid, gen_random_uuid())
-) RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+) RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(autopilot_id)
         .bind(source)
         .bind(status)
         .bind(trigger_id)
         .bind(trigger_payload)
-        .bind(squad_id)
+        .bind(team_id)
         .bind(planned_at)
         .bind(webhook_delivery_id)
         .bind(quota_reservation_id)
@@ -241,7 +241,7 @@ pub async fn create_autopilot_run(
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -281,7 +281,7 @@ SELECT
     $11,
     COALESCE($12::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, NULL, $2)
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
     )
         .bind(agent_id)
         .bind(runtime_id)
@@ -328,7 +328,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         initiator_user_id: row.try_get(26)?,
         handoff_note: row.try_get(27)?,
         prepare_lease_expires_at: row.try_get(28)?,
-        squad_id: row.try_get(29)?,
+        team_id: row.try_get(29)?,
         runtime_mcp_overlay: row.try_get(30)?,
         escalation_for_task_id: row.try_get(31)?,
         fire_at: row.try_get(32)?,
@@ -491,7 +491,7 @@ pub struct FailAutopilotRunsByIssueRow {
     pub trigger_payload: Option<serde_json::Value>,
     pub result: Option<serde_json::Value>,
     pub created_at: Option<DateTime<Utc>>,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub planned_at: Option<DateTime<Utc>>,
     pub webhook_delivery_id: Option<Uuid>,
     pub quota_reservation_id: Option<Uuid>,
@@ -508,7 +508,7 @@ pub async fn fail_autopilot_runs_by_issue(
     SET status = 'failed', completed_at = now(), failure_reason = 'linked issue was deleted'
     WHERE issue_id = $1
       AND status IN ('issue_created', 'running')
-    RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code
+    RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code
 ), locked_reservations AS MATERIALIZED (
     SELECT qr.id, qr.workspace_id, qr.period_start, qr.period_end, qr.policy_revision, qr.subscription_version, qr.source, qr.idempotency_key, qr.state, qr.created_at, qr.finalized_at
     FROM autopilot_quota_reservation qr
@@ -541,7 +541,7 @@ pub async fn fail_autopilot_runs_by_issue(
       AND p.period_end = released.period_end
     RETURNING p.workspace_id
 )
-SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM updated_runs"#
+SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM updated_runs"#
     )
         .bind(issue_id)
         .fetch_all(executor)
@@ -562,7 +562,7 @@ SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggere
             trigger_payload: row.try_get(10)?,
             result: row.try_get(11)?,
             created_at: row.try_get(12)?,
-            squad_id: row.try_get(13)?,
+            team_id: row.try_get(13)?,
             planned_at: row.try_get(14)?,
             webhook_delivery_id: row.try_get(15)?,
             quota_reservation_id: row.try_get(16)?,
@@ -670,7 +670,7 @@ pub async fn get_autopilot_run(
     id: Uuid,
 ) -> anyhow::Result<Option<AutopilotRun>> {
     let row = sqlx::query(
-        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
+        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
 WHERE id = $1"#
     )
         .bind(id)
@@ -691,7 +691,7 @@ WHERE id = $1"#
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -704,7 +704,7 @@ pub async fn get_autopilot_run_by_issue(
     issue_id: Uuid,
 ) -> anyhow::Result<Option<AutopilotRun>> {
     let row = sqlx::query(
-        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
+        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
 WHERE issue_id = $1 AND status IN ('issue_created', 'running')
 LIMIT 1"#
     )
@@ -726,7 +726,7 @@ LIMIT 1"#
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -739,7 +739,7 @@ pub async fn get_autopilot_run_by_quota_reservation(
     quota_reservation_id: Uuid,
 ) -> anyhow::Result<Option<AutopilotRun>> {
     let row = sqlx::query(
-        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
+        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
 WHERE quota_reservation_id = $1
 LIMIT 1"#
     )
@@ -761,7 +761,7 @@ LIMIT 1"#
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -775,7 +775,7 @@ pub async fn get_autopilot_run_by_trigger_and_planned(
     planned_at: Option<DateTime<Utc>>,
 ) -> anyhow::Result<Option<AutopilotRun>> {
     let row = sqlx::query(
-        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
+        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
 WHERE trigger_id = $1
   AND planned_at = $2
 LIMIT 1"#
@@ -799,7 +799,7 @@ LIMIT 1"#
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -812,7 +812,7 @@ pub async fn get_autopilot_run_by_webhook_delivery(
     webhook_delivery_id: Uuid,
 ) -> anyhow::Result<Option<AutopilotRun>> {
     let row = sqlx::query(
-        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
+        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
 WHERE webhook_delivery_id = $1
 LIMIT 1"#
     )
@@ -834,7 +834,7 @@ LIMIT 1"#
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -847,7 +847,7 @@ pub async fn get_autopilot_task_by_run(
     autopilot_run_id: Uuid,
 ) -> anyhow::Result<Option<AgentTaskQueue>> {
     let row = sqlx::query(
-        r#"SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir FROM agent_task_queue
+        r#"SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir FROM agent_task_queue
 WHERE autopilot_run_id = $1
 ORDER BY created_at
 LIMIT 1"#
@@ -886,7 +886,7 @@ LIMIT 1"#
         initiator_user_id: row.try_get(26)?,
         handoff_note: row.try_get(27)?,
         prepare_lease_expires_at: row.try_get(28)?,
-        squad_id: row.try_get(29)?,
+        team_id: row.try_get(29)?,
         runtime_mcp_overlay: row.try_get(30)?,
         escalation_for_task_id: row.try_get(31)?,
         fire_at: row.try_get(32)?,
@@ -1074,7 +1074,7 @@ pub async fn list_autopilot_runs(
     offset: i32,
 ) -> anyhow::Result<Vec<AutopilotRun>> {
     let rows = sqlx::query(
-        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
+        r#"SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM autopilot_run
 WHERE autopilot_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3"#
@@ -1100,7 +1100,7 @@ LIMIT $2 OFFSET $3"#
             trigger_payload: row.try_get(10)?,
             result: row.try_get(11)?,
             created_at: row.try_get(12)?,
-            squad_id: row.try_get(13)?,
+            team_id: row.try_get(13)?,
             planned_at: row.try_get(14)?,
             webhook_delivery_id: row.try_get(15)?,
             quota_reservation_id: row.try_get(16)?,
@@ -1333,10 +1333,10 @@ WHERE a.status = 'active'
   AND (
     (a.assignee_type = 'agent' AND a.assignee_id = ANY($1::uuid[]))
     OR (
-      a.assignee_type = 'squad'
+      a.assignee_type = 'team'
       AND EXISTS (
         SELECT 1
-        FROM squad s
+        FROM team s
         WHERE s.id = a.assignee_id
           AND s.leader_id = ANY($1::uuid[])
       )
@@ -1371,9 +1371,9 @@ RETURNING a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status,
     Ok(out)
 }
 
-pub async fn pause_autopilots_by_unrunnable_squad(
+pub async fn pause_autopilots_by_unrunnable_team(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    squad_id: Uuid,
+    team_id: Uuid,
 ) -> anyhow::Result<Vec<Autopilot>> {
     let rows = sqlx::query(
         r#"UPDATE autopilot
@@ -1381,11 +1381,11 @@ SET status = 'paused',
     pause_reason = 'agent_runtime_required',
     updated_at = now()
 WHERE status = 'active'
-  AND assignee_type = 'squad'
+  AND assignee_type = 'team'
   AND assignee_id = $1
 RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#
     )
-        .bind(squad_id)
+        .bind(team_id)
         .fetch_all(executor)
         .await?;
     let mut out = Vec::with_capacity(rows.len());
@@ -1860,7 +1860,7 @@ pub async fn update_autopilot_run_completed(
         r#"UPDATE autopilot_run
 SET status = 'completed', completed_at = now(), result = $2
 WHERE id = $1
-RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(id)
         .bind(result)
@@ -1881,7 +1881,7 @@ RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, trigg
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -1900,7 +1900,7 @@ pub async fn update_autopilot_run_failed(
 SET status = 'failed', completed_at = now(), failure_reason = $2,
     reason_code = $3
 WHERE id = $1
-RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(id)
         .bind(failure_reason)
@@ -1922,7 +1922,7 @@ RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, trigg
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -1939,7 +1939,7 @@ pub async fn update_autopilot_run_issue_created(
         r#"UPDATE autopilot_run
 SET status = 'issue_created', issue_id = $2
 WHERE id = $1
-RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(id)
         .bind(issue_id)
@@ -1960,7 +1960,7 @@ RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, trigg
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -1977,7 +1977,7 @@ pub async fn update_autopilot_run_running(
         r#"UPDATE autopilot_run
 SET status = 'running', task_id = $2
 WHERE id = $1
-RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(id)
         .bind(task_id)
@@ -1998,7 +1998,7 @@ RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, trigg
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -2017,7 +2017,7 @@ pub async fn update_autopilot_run_skipped(
 SET status = 'skipped', completed_at = now(), failure_reason = $2,
     reason_code = $3
 WHERE id = $1
-RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(id)
         .bind(failure_reason)
@@ -2039,7 +2039,7 @@ RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, trigg
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -2060,7 +2060,7 @@ SET status = 'skipped',
     failure_reason = $2,
     result = $3
 WHERE id = $1
-RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
+RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code"#
     )
         .bind(id)
         .bind(failure_reason)
@@ -2082,7 +2082,7 @@ RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, trigg
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,
@@ -2105,7 +2105,7 @@ pub struct UpdateAutopilotRunTerminalWithQuotaRow {
     pub trigger_payload: Option<serde_json::Value>,
     pub result: Option<serde_json::Value>,
     pub created_at: Option<DateTime<Utc>>,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub planned_at: Option<DateTime<Utc>>,
     pub webhook_delivery_id: Option<Uuid>,
     pub quota_reservation_id: Option<Uuid>,
@@ -2139,7 +2139,7 @@ pub async fn update_autopilot_run_terminal_with_quota(
             ELSE ar.reason_code
         END
     WHERE ar.id = $5
-    RETURNING ar.id, ar.autopilot_id, ar.trigger_id, ar.source, ar.status, ar.issue_id, ar.task_id, ar.triggered_at, ar.completed_at, ar.failure_reason, ar.trigger_payload, ar.result, ar.created_at, ar.squad_id, ar.planned_at, ar.webhook_delivery_id, ar.quota_reservation_id, ar.reason_code
+    RETURNING ar.id, ar.autopilot_id, ar.trigger_id, ar.source, ar.status, ar.issue_id, ar.task_id, ar.triggered_at, ar.completed_at, ar.failure_reason, ar.trigger_payload, ar.result, ar.created_at, ar.team_id, ar.planned_at, ar.webhook_delivery_id, ar.quota_reservation_id, ar.reason_code
 ), locked_reservation AS MATERIALIZED (
     SELECT qr.id, qr.workspace_id, qr.period_start, qr.period_end, qr.policy_revision, qr.subscription_version, qr.source, qr.idempotency_key, qr.state, qr.created_at, qr.finalized_at
     FROM autopilot_quota_reservation qr
@@ -2170,7 +2170,7 @@ pub async fn update_autopilot_run_terminal_with_quota(
       AND p.period_end = finalized.period_end
     RETURNING p.workspace_id
 )
-SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM updated_run"#
+SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code FROM updated_run"#
     )
         .bind(terminal_status)
         .bind(result)
@@ -2195,7 +2195,7 @@ SELECT id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggere
         trigger_payload: row.try_get(10)?,
         result: row.try_get(11)?,
         created_at: row.try_get(12)?,
-        squad_id: row.try_get(13)?,
+        team_id: row.try_get(13)?,
         planned_at: row.try_get(14)?,
         webhook_delivery_id: row.try_get(15)?,
         quota_reservation_id: row.try_get(16)?,

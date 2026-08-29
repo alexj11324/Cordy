@@ -103,7 +103,7 @@ export interface CardProperties {
 }
 
 export interface ActorFilterValue {
-  type: "member" | "agent" | "squad";
+  type: "member" | "agent" | "team";
   id: string;
 }
 

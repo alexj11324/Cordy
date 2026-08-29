@@ -4,7 +4,7 @@
  *   - assigned: issues where assignee_id = me
  *   - created:  issues where creator_id  = me
  *   - agents:   issues where the assignee is an *indirect* extension of me —
- *               an owned agent, OR a squad I'm a human member of, lead, or
+ *               an owned agent, OR a team I'm a human member of, lead, or
  *               have an owned agent inside. Driven server-side by the
  *               `involves_user_id` predicate (see PB-2397, 2026-05-19).
  *               Direct member assignment is intentionally EXCLUDED — that's

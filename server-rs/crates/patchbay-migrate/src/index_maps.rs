@@ -458,6 +458,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "393_workspace_channel_message_channel_index",
         "workspace_channel_message_channel_created_idx",
     ),
+    (
+        "395_team_no_action_activity_index",
+        "idx_activity_log_team_no_action_task",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[

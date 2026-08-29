@@ -34,8 +34,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
       },
     ],
   }),
-  squadListOptions: (wsId: string) => ({
-    queryKey: ["squads", wsId],
+  teamListOptions: (wsId: string) => ({
+    queryKey: ["teams", wsId],
     queryFn: async () => [],
   }),
 }));

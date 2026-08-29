@@ -297,8 +297,8 @@ ws_labels AS MATERIALIZED (
 ws_skills AS MATERIALIZED (
     SELECT id FROM skill WHERE workspace_id = $1
 ),
-ws_squads AS MATERIALIZED (
-    SELECT id FROM squad WHERE workspace_id = $1
+ws_teams AS MATERIALIZED (
+    SELECT id FROM team WHERE workspace_id = $1
 ),
 ws_sessions AS MATERIALIZED (
     SELECT id FROM chat_session WHERE workspace_id = $1
@@ -418,9 +418,9 @@ deleted_daemon_connections AS (
     DELETE FROM daemon_connection
     WHERE agent_id IN (SELECT id FROM ws_agents)
 ),
-deleted_squad_members AS (
-    DELETE FROM squad_member
-    WHERE squad_id IN (SELECT id FROM ws_squads)
+deleted_team_members AS (
+    DELETE FROM team_member
+    WHERE team_id IN (SELECT id FROM ws_teams)
 ),
 deleted_project_resources AS (
     DELETE FROM project_resource WHERE workspace_id = $1
@@ -576,13 +576,13 @@ DELETE FROM project WHERE project.workspace_id = $1"#,
     Ok(r.rows_affected())
 }
 
-pub async fn delete_workspace_squads_and_skills(
+pub async fn delete_workspace_teams_and_skills(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"WITH deleted_squads AS (
-    DELETE FROM squad WHERE squad.workspace_id = $1
+        r#"WITH deleted_teams AS (
+    DELETE FROM team WHERE team.workspace_id = $1
 )
 DELETE FROM skill WHERE skill.workspace_id = $1"#,
     )

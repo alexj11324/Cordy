@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_activity_log_team_no_action_task;

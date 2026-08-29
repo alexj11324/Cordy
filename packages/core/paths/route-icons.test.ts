@@ -57,10 +57,10 @@ describe("pageForSegment", () => {
 describe("resolveRouteIconName", () => {
   it("resolves a page path to its page icon", () => {
     expect(resolveRouteIconName("/acme/projects")).toBe("FolderKanban");
-    expect(resolveRouteIconName("/acme/autopilots")).toBe("Zap");
+    expect(resolveRouteIconName("/acme/autopilots")).toBe("AlarmClockCheck");
     expect(resolveRouteIconName("/acme/chat")).toBe("MessageSquare");
     expect(resolveRouteIconName("/acme/channels")).toBe("Hash");
-    expect(resolveRouteIconName("/acme/squads")).toBe("Users");
+    expect(resolveRouteIconName("/acme/teams")).toBe("PeopleGroup");
     expect(resolveRouteIconName("/acme/usage")).toBe("BarChart3");
     expect(resolveRouteIconName("/acme/my-issues")).toBe("CircleUser");
   });

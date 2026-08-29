@@ -18,7 +18,7 @@ import { useT } from "../../i18n";
 export function CreateAgentFooter({
   canCreate,
   creating,
-  squad,
+  team,
   error,
   onCreate,
   onDiscard,
@@ -26,7 +26,7 @@ export function CreateAgentFooter({
 }: {
   canCreate: boolean;
   creating: boolean;
-  squad: boolean;
+  team: boolean;
   error: string | null;
   onCreate: () => void;
   onDiscard?: () => void;
@@ -63,7 +63,7 @@ export function CreateAgentFooter({
         {creating && <Loader2 className="size-4 animate-spin" />}
         {creating
           ? t(($) => $.creation_studio.creating)
-          : squad
+          : team
             ? t(($) => $.creation_studio.create_and_add)
             : t(($) => $.creation_studio.create_and_open)}
       </Button>
