@@ -2779,8 +2779,19 @@ pub async fn delete_system_agent_by_id(
     id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"DELETE FROM agent
-WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%'"#,
+        r#"WITH victim AS MATERIALIZED (
+    SELECT id FROM agent
+    WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%'
+), revoked_grants AS (
+    UPDATE authorization_grant
+    SET revoked_at = COALESCE(revoked_at, now()), updated_at = now()
+    WHERE revoked_at IS NULL
+      AND (
+          (resource_type = 'agent_definition' AND resource_id IN (SELECT id FROM victim))
+          OR (principal_type = 'agent_definition' AND principal_id IN (SELECT id FROM victim))
+      )
+)
+DELETE FROM agent WHERE id IN (SELECT id FROM victim)"#,
     )
     .bind(id)
     .execute(executor)
