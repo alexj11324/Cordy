@@ -90,11 +90,15 @@ describe("local Vite preview API", () => {
 
   it("returns issue detail data and does not claim unsupported writes succeeded", async () => {
     const detail = await call("GET", "/api/issues/PRE-102");
+    const comments = await call("GET", "/api/issues/PRE-102/comments");
     const unsupported = await call("POST", "/api/issues/PRE-102/comments", {
       body: "not persisted",
     });
 
     expect(detail.body.identifier).toBe("PRE-102");
+    expect(comments.handled).toBe(true);
+    expect(comments.status).toBe(200);
+    expect(comments.body).toEqual([]);
     expect(unsupported.handled).toBe(false);
   });
 });

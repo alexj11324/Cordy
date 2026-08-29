@@ -400,6 +400,12 @@ export async function handlePreviewRequest(req, res) {
   }
   if (method === "GET" && path === "/api/working-agents") return json(res, [PREVIEW_AGENT]);
   if (method === "GET" && path === "/api/issues/child-progress") return json(res, { progress: [] });
+  const commentsResource = /^\/api\/issues\/([^/]+)\/comments$/.exec(path);
+  if (method === "GET" && commentsResource) {
+    return findPreviewIssue(commentsResource[1])
+      ? json(res, [])
+      : json(res, { error: "Preview issue not found" }, 404);
+  }
   const issueResource = /^\/api\/issues\/([^/]+)\/(timeline|subscribers|attachments|labels|task-runs|pull-requests|children)$/.exec(path);
   if (method === "GET" && issueResource) {
     if (!findPreviewIssue(issueResource[1])) {
