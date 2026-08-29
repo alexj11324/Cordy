@@ -40,48 +40,39 @@ function renderQueue(headStatus = "running", sendNowDisabled = false) {
 }
 
 describe("ChatQueue", () => {
-  it("renders a standalone queue card without a separate header", () => {
+  it("renders a LobeHub-style tray flush above the composer", () => {
     const { container } = renderQueue();
 
     expect(screen.getByRole("region", { name: "2 queued messages" })).toBeInTheDocument();
-    expect(screen.queryByText("2 queued messages")).not.toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("First follow-up")).toBeInTheDocument();
     expect(screen.getByText("Queued message")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Steer" })).toHaveLength(2);
+    expect(screen.getAllByLabelText("Edit queued message")).toHaveLength(2);
     expect(screen.getAllByLabelText("Remove queued message")).toHaveLength(2);
-    expect(screen.getAllByLabelText("More queue actions")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "Clear all" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("More queue actions")).not.toBeInTheDocument();
 
-    const shell = container.querySelector('[data-slot="chat-queue-shell"]');
     const queue = container.querySelector('[data-slot="chat-queue"]');
-    // Tucked stack, owned entirely by the queue: it slides under the composer
-    // (negative margin + z-0) while the composer's chrome stays untouched.
-    expect(shell).toHaveClass("z-0", "-mb-3");
-    expect(queue).toHaveClass(
-      "rounded-lg",
-      "border-surface-border",
-      "bg-surface",
-      "pb-4",
-    );
+    expect(queue).toHaveClass("border-b", "border-surface-border", "bg-surface-raised");
+    expect(queue).not.toHaveClass("rounded-t-xl");
     expect(container.querySelectorAll('[data-slot="chat-queue-row"]')).toHaveLength(2);
     expect(container.querySelectorAll('[data-slot="chat-queue-item-icon"]')).toHaveLength(2);
   });
 
-  it("runs steer, remove, and overflow actions against the selected queue state", async () => {
+  it("runs steer, edit, remove, and clear against the selected queue state", async () => {
     const actions = renderQueue();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Steer" })[1]!);
     await waitFor(() => expect(actions.onSendNow).toHaveBeenCalledWith("task-3"));
 
-    fireEvent.click(screen.getAllByLabelText("More queue actions")[0]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit queued message" }));
+    fireEvent.click(screen.getAllByLabelText("Edit queued message")[0]!);
     await waitFor(() => expect(actions.onEdit).toHaveBeenCalledWith("task-2"));
 
     fireEvent.click(screen.getAllByLabelText("Remove queued message")[1]!);
     await waitFor(() => expect(actions.onRemove).toHaveBeenCalledWith("task-3"));
 
-    fireEvent.click(screen.getAllByLabelText("More queue actions")[1]!);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Clear all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
     await waitFor(() => expect(actions.onClear).toHaveBeenCalledTimes(1));
   });
 
@@ -106,9 +97,8 @@ describe("ChatQueue", () => {
     const scroller = actions.container.querySelector('[data-slot="chat-queue-list"]');
     expect(scroller).toHaveClass("max-h-40");
 
-    const clearTrigger = screen.getAllByLabelText("More queue actions")[0]!;
+    const clearTrigger = screen.getByRole("button", { name: "Clear all" });
     fireEvent.click(clearTrigger);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Clear all" }));
     await waitFor(() => {
       expect(clearTrigger.querySelector(".animate-spin")).toBeInTheDocument();
       for (const button of screen.getAllByRole("button")) {
@@ -134,8 +124,6 @@ describe("ChatQueue send-now gating", () => {
   it("blocks Steer when the caller may no longer invoke the agent", async () => {
     const { onSendNow } = renderQueue("running", true);
 
-    // The label must state the real reason: "wait for the reply to start" would
-    // send the user waiting for something waiting cannot fix.
     const steer = screen.getAllByRole("button", {
       name: "You no longer have permission to run this agent",
     })[0]!;

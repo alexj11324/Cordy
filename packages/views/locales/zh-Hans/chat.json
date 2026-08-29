@@ -32,6 +32,14 @@
     "no_projects": "还没有项目",
     "project_context_unsupported": "项目描述不会生效——该智能体的守护进程版本过旧，需要升级"
   },
+  "follow_up": {
+    "title": "智能体仍在工作",
+    "wait": "等待",
+    "wait_hint": "先排队，等当前回复结束后再发",
+    "steer": "引导",
+    "steer_hint": "停下当前回复，立刻发送这条",
+    "choose_tooltip": "选择跟进方式"
+  },
   "queue": {
     "title_other": "{{count}} 条排队消息",
     "clear": "全部清空",

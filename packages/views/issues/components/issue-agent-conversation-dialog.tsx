@@ -12,6 +12,8 @@ import { unhandledCommentTriggerOutcomes } from "@patchbay/core/issues/comment-t
 import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { agentDetailOptions } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
+import { attachmentToDraftUpload } from "@patchbay/core/drafts";
+import { useChatStore } from "@patchbay/core/chat";
 import type { AgentTask } from "@patchbay/core/types";
 import {
   Dialog,
@@ -27,13 +29,18 @@ import {
 } from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ChatInput } from "../../chat/components/chat-input";
+import { ChatQueue } from "../../chat/components/chat-queue";
 import {
   ChatMessageList,
   ChatMessageSkeleton,
 } from "../../chat/components/chat-message-list";
 import { escapeMarkdownLabel } from "../../editor/utils/escape-markdown-label";
 import { useT } from "../../i18n";
-import { buildIssueAgentConversation } from "./issue-agent-conversation";
+import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
+import {
+  buildIssueAgentConversation,
+  queuedIssueFollowUps,
+} from "./issue-agent-conversation";
 
 const SIDE_CHAT_MAIN_STATUSES = new Set<AgentTask["status"]>([
   "dispatched",
@@ -41,9 +48,18 @@ const SIDE_CHAT_MAIN_STATUSES = new Set<AgentTask["status"]>([
   "waiting_local_directory",
 ]);
 
+const LIVE_FOLLOW_UP_STATUSES = new Set<AgentTask["status"]>([
+  "dispatched",
+  "running",
+  "waiting_local_directory",
+  "queued",
+]);
+
 /**
  * Posts a comment that mentions this agent. While a main run is live the
  * comment opens (or continues) a Side Chat; otherwise it starts a new run.
+ * Steer cancels every live and queued run for this agent, then posts a
+ * top-level comment so a Side Chat reply cannot keep going in the background.
  */
 export function useIssueAgentMessageSend({
   issueId,
@@ -162,7 +178,56 @@ export function useIssueAgentMessageSend({
     ],
   );
 
-  return { send, isSending };
+  const steer = useCallback(
+    async (
+      content: string,
+      attachmentIds?: string[],
+    ): Promise<string | false> => {
+      if (!content.trim() || isSending) return false;
+      const liveTasks = agentTasks.filter((task) =>
+        LIVE_FOLLOW_UP_STATUSES.has(task.status),
+      );
+      for (const task of liveTasks) {
+        try {
+          await api.cancelTask(issueId, task.id);
+        } catch (error) {
+          toast.error(
+            error instanceof Error && error.message
+              ? error.message
+              : t(($) => $.execution_log.cancel_failed),
+          );
+          return false;
+        }
+      }
+      const mention = `[@${escapeMarkdownLabel(agentName)}](mention://agent/${agentId})`;
+      try {
+        const comment = await createComment({
+          content: `${mention}\n\n${content.trim()}`,
+          attachmentIds,
+        });
+        const missedTarget = unhandledCommentTriggerOutcomes(
+          comment.trigger_outcomes,
+        ).some(
+          (outcome) =>
+            outcome.target_type === "agent" && outcome.target_id === agentId,
+        );
+        if (missedTarget) {
+          toast.warning(
+            t(($) => $.execution_log.conversation_not_triggered, {
+              name: agentName,
+            }),
+          );
+        }
+        return comment.id;
+      } catch (error) {
+        toast.error(t(($) => $.execution_log.conversation_steer_send_failed));
+        return false;
+      }
+    },
+    [agentId, agentName, agentTasks, createComment, isSending, issueId, t],
+  );
+
+  return { send, steer, isSending };
 }
 
 export function useIssueAgentTasks(issueId: string) {
@@ -240,7 +305,7 @@ export function IssueAgentConversationDialog({
   const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
   const { data: timeline = [], isLoading } = useQuery(issueTimelineOptions(issueId));
   const agentName = agent?.name || t(($) => $.agent_live.fallback_name);
-  const { send } = useIssueAgentMessageSend({
+  const { send, steer } = useIssueAgentMessageSend({
     issueId,
     agentId,
     agentName,
@@ -269,6 +334,12 @@ export function IssueAgentConversationDialog({
         (candidate) => candidate.id === conversation.pendingTask?.task_id,
       )
     : undefined;
+  const draftKey = `issue-agent:${issueId}:${agentId}`;
+  const queuedFollowUps = useMemo(
+    () => queuedIssueFollowUps(conversation.pendingTask, agentTasks),
+    [agentTasks, conversation.pendingTask],
+  );
+
   const handleSend = useCallback(
     async (
       content: string,
@@ -283,6 +354,20 @@ export function IssueAgentConversationDialog({
     [send],
   );
 
+  const handleSteer = useCallback(
+    async (
+      content: string,
+      attachmentIds: string[] | undefined,
+      commitInput: () => void,
+    ) => {
+      const commentId = await steer(content, attachmentIds);
+      if (!commentId) return false;
+      commitInput();
+      return true;
+    },
+    [steer],
+  );
+
   const handleStop = useCallback(async () => {
     if (!currentTask) return;
     try {
@@ -295,6 +380,61 @@ export function IssueAgentConversationDialog({
       );
     }
   }, [currentTask, issueId, t]);
+
+  const cancelQueuedFollowUp = useCallback(
+    async (taskId: string) => {
+      try {
+        await api.cancelTask(issueId, taskId);
+        return true;
+      } catch (error) {
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : t(($) => $.execution_log.cancel_failed),
+        );
+        return false;
+      }
+    },
+    [issueId, t],
+  );
+
+  const handleEditQueuedFollowUp = useCallback(
+    async (taskId: string) => {
+      const sourceTask = agentTasks.find((candidate) => candidate.id === taskId);
+      const comment = sourceTask?.trigger_comment_id
+        ? timeline.find(
+            (entry) =>
+              entry.type === "comment" &&
+              entry.id === sourceTask.trigger_comment_id,
+          )
+        : undefined;
+      const rawContent = comment?.content?.trim()
+        ? comment.content.includes("\n\n")
+          ? comment.content.slice(comment.content.indexOf("\n\n") + 2)
+          : comment.content
+        : (sourceTask?.trigger_summary ?? "");
+      const content = stripMentionMarkdown(rawContent).trim();
+      const attachments = comment?.attachments ?? [];
+      if (content) {
+        useChatStore.getState().setInputDraft(draftKey, content);
+      }
+      if (attachments.length > 0) {
+        useChatStore.getState().setInputDraftAttachments(
+          draftKey,
+          attachments.map(attachmentToDraftUpload),
+        );
+      }
+      await cancelQueuedFollowUp(taskId);
+    },
+    [agentTasks, cancelQueuedFollowUp, draftKey, timeline],
+  );
+
+  const handleClearQueuedFollowUps = useCallback(async () => {
+    for (const task of queuedFollowUps) {
+      const cancelled = await cancelQueuedFollowUp(task.task_id);
+      if (!cancelled) return;
+    }
+  }, [cancelQueuedFollowUp, queuedFollowUps]);
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -345,12 +485,34 @@ export function IssueAgentConversationDialog({
           )}
           <ChatInput
             onSend={handleSend}
+            onSteer={handleSteer}
             onStop={() => void handleStop()}
             isRunning={!!conversation.pendingTask?.task_id}
             allowSubmitWhileRunning
+            chooseFollowUp
+            queueSlot={
+              <ChatQueue
+                tasks={queuedFollowUps}
+                headStatus={conversation.pendingTask?.status}
+                onEdit={handleEditQueuedFollowUp}
+                onRemove={async (taskId) => {
+                  await cancelQueuedFollowUp(taskId);
+                }}
+                onClear={handleClearQueuedFollowUps}
+              />
+            }
             agentName={agentName}
-            draftKeyOverride={`issue-agent:${issueId}:${agentId}`}
-            editorKeyOverride={`issue-agent:${issueId}:${agentId}`}
+            leftAdornment={
+              <ActorAvatar
+                actorType="agent"
+                actorId={agentId}
+                size="lg"
+                profileLink={false}
+                enableHoverCard
+              />
+            }
+            draftKeyOverride={draftKey}
+            editorKeyOverride={draftKey}
           />
         </div>
       </DialogContent>

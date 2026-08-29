@@ -527,6 +527,7 @@
     "conversation_initial_prompt": "この課題に取り組んでください。",
     "conversation_not_triggered": "コメントは投稿されましたが、{{name}} は開始されませんでした。",
     "conversation_send_failed": "メッセージを送信できませんでした",
+    "conversation_steer_send_failed": "エージェントは停止しましたが、フォローアップは送信されませんでした。再送信すると新しい返信が始まります。",
     "cancel_failed": "作業をキャンセルできませんでした",
     "trigger_retry": "再試行",
     "trigger_retry_attempt": "再試行 #{{attempt}}",

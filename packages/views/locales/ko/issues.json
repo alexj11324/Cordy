@@ -527,6 +527,7 @@
     "conversation_initial_prompt": "이 이슈를 처리하세요.",
     "conversation_not_triggered": "댓글은 게시되었지만 {{name}}이(가) 시작되지 않았습니다.",
     "conversation_send_failed": "메시지를 보내지 못했습니다",
+    "conversation_steer_send_failed": "에이전트는 멈췄지만 후속 메시지는 전송되지 않았습니다. 다시 보내면 새 답변이 시작됩니다.",
     "cancel_failed": "작업을 취소하지 못했습니다",
     "trigger_retry": "다시 시도",
     "trigger_retry_attempt": "{{attempt}}번째 다시 시도",
