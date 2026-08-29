@@ -134,9 +134,7 @@ pub async fn list_messages(
     channel_id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<Vec<WorkspaceChannelMessage>> {
-    let query = message_select(Some(
-        "m.channel_id = $1 AND m.workspace_id = $2",
-    ));
+    let query = message_select(Some("m.channel_id = $1 AND m.workspace_id = $2"));
     let rows = sqlx::query(&query)
         .bind(channel_id)
         .bind(workspace_id)
