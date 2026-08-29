@@ -227,7 +227,7 @@ async function complete(
 
   const primaryEmail = clerkUser.primaryEmailAddress;
   const email = primaryEmail?.emailAddress?.trim().toLowerCase();
-  if (!email || primaryEmail.verification?.status !== "verified") {
+  if (!primaryEmail || !email || primaryEmail.verification?.status !== "verified") {
     return json({ error: "verified_email_required" }, 422);
   }
 
