@@ -137,8 +137,7 @@ pub async fn finalize(
         )
         .await
     };
-    let row = match upsert
-    {
+    let row = match upsert {
         Ok(Some(row)) => row,
         Ok(None) => anyhow::bail!("weixin: installation upsert returned no row"),
         Err(error) if is_unique_violation(&error) => {

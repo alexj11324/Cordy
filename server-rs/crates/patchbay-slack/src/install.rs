@@ -202,8 +202,7 @@ impl InstallService {
             )
             .await
         };
-        let inst = match upsert
-        {
+        let inst = match upsert {
             Ok(Some(row)) => row,
             Ok(None) => anyhow::bail!("upsert slack installation: no row returned"),
             Err(err) => {

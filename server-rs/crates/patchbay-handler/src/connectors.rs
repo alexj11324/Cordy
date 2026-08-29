@@ -520,7 +520,8 @@ async fn begin_weixin_install(
             Err(response) => return response,
         };
     if !agent_id.is_nil() {
-        let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await {
+        let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        {
             Ok(Some(value)) => value,
             _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
         };
@@ -1035,7 +1036,8 @@ async fn begin_lark_install(
     let preset = if agent_id.is_nil() {
         "Patchbay".to_string()
     } else {
-        let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await {
+        let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        {
             Ok(Some(value)) => value,
             _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
         };
@@ -1749,7 +1751,8 @@ async fn install_context(
         .agent_id
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty()) else {
+        .filter(|value| !value.is_empty())
+    else {
         if !matches!(context.member.role.as_str(), "owner" | "admin") {
             return Err(error_response(
                 StatusCode::FORBIDDEN,

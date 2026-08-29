@@ -273,9 +273,9 @@ pub fn new_telegram_resolver_set(
         audit: Some(Arc::new(AuditorImpl { pool: pool.clone() })),
         replier,
         typing,
-        hub: Some(Arc::new(patchbay_channel_engine::hub::PostgresHubRouter::new(
-            pool.clone(),
-        ))),
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         origin_type: ORIGIN_TELEGRAM_CHAT.to_string(),
     }
 }

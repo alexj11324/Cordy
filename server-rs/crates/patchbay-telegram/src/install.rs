@@ -82,7 +82,8 @@ impl InstallService {
             .await
             .map_err(|error| anyhow::anyhow!("begin Telegram install: {error:#}"))?;
         if params.agent_id.is_nil() {
-            lock_channel_installation_hub_slot(&mut *tx, TYPE_TELEGRAM, params.workspace_id).await?;
+            lock_channel_installation_hub_slot(&mut *tx, TYPE_TELEGRAM, params.workspace_id)
+                .await?;
         } else {
             lock_channel_installation_agent_slot(
                 &mut *tx,
@@ -141,8 +142,7 @@ impl InstallService {
             )
             .await
         };
-        let installation = match upsert
-        {
+        let installation = match upsert {
             Ok(Some(installation)) => installation,
             Ok(None) => anyhow::bail!("upsert Telegram installation: no row returned"),
             Err(error) if is_unique_violation(&error) => {

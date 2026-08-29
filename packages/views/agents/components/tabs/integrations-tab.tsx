@@ -162,7 +162,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           <div className="min-w-0 flex-1 space-y-1">
             <h3 className="text-body font-medium">{ts(($) => $.weixin.section_title)}</h3>
             <p className="text-caption text-muted-foreground">
-              {ts(($) => $.weixin.page_description)}
+              {ts(($) => $.weixin.agent_page_description)}
             </p>
           </div>
         </div>
@@ -189,7 +189,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           <div className="min-w-0 flex-1 space-y-1">
             <h3 className="text-body font-medium">{ts(($) => $.lark.section_title)}</h3>
             <p className="text-caption leading-relaxed text-muted-foreground">
-              {ts(($) => $.lark.page_description)}
+              {ts(($) => $.lark.agent_page_description)}
             </p>
           </div>
         </div>
@@ -236,7 +236,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           <div className="min-w-0 flex-1 space-y-1">
             <h3 className="text-body font-medium">{ts(($) => $.slack.section_title)}</h3>
             <p className="text-caption leading-relaxed text-muted-foreground">
-              {ts(($) => $.slack.page_description)}
+              {ts(($) => $.slack.agent_page_description)}
             </p>
           </div>
         </div>
@@ -276,7 +276,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           <div className="min-w-0 flex-1 space-y-1">
             <h3 className="text-body font-medium">{ts(($) => $.dingtalk.section_title)}</h3>
             <p className="text-caption leading-relaxed text-muted-foreground">
-              {ts(($) => $.dingtalk.page_description)}
+              {ts(($) => $.dingtalk.agent_page_description)}
             </p>
           </div>
         </div>
@@ -306,7 +306,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           <div className="min-w-0 flex-1 space-y-1">
             <h3 className="text-body font-medium">{ts(($) => $.wecom.section_title)}</h3>
             <p className="text-caption leading-relaxed text-muted-foreground">
-              {ts(($) => $.wecom.page_description)}
+              {ts(($) => $.wecom.agent_page_description)}
             </p>
           </div>
         </div>
@@ -340,7 +340,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           <div className="min-w-0 flex-1 space-y-1">
             <h3 className="text-body font-medium">{ts(($) => $.telegram.section_title)}</h3>
             <p className="text-caption leading-relaxed text-muted-foreground">
-              {ts(($) => $.telegram.page_description)}
+              {ts(($) => $.telegram.agent_page_description)}
             </p>
           </div>
         </div>

@@ -167,21 +167,22 @@ impl InstallService {
         .map_err(|e| anyhow::anyhow!("reclaim dead dingtalk installation: {e:#}"))?;
 
         if p.agent_id.is_nil() {
-            let current = list_channel_installations_by_workspace(
-                &mut *tx,
-                p.ws_id,
-                TYPE_DINGTALK,
-            )
-            .await?
-            .into_iter()
-            .find(|row| row.agent_id.is_none());
+            let current = list_channel_installations_by_workspace(&mut *tx, p.ws_id, TYPE_DINGTALK)
+                .await?
+                .into_iter()
+                .find(|row| row.agent_id.is_none());
             if let Some(current) = current {
-                if current.config.get("app_id").and_then(serde_json::Value::as_str)
+                if current
+                    .config
+                    .get("app_id")
+                    .and_then(serde_json::Value::as_str)
                     != Some(p.app_id_key.as_str())
                 {
                     delete_channel_installation_for_replacement(&mut *tx, current.id)
                         .await
-                        .map_err(|e| anyhow::anyhow!("retire replaced dingtalk installation: {e:#}"))?;
+                        .map_err(|e| {
+                            anyhow::anyhow!("retire replaced dingtalk installation: {e:#}")
+                        })?;
                 }
             }
         } else {
@@ -221,8 +222,7 @@ impl InstallService {
             )
             .await
         };
-        let inst = match upsert
-        {
+        let inst = match upsert {
             Ok(Some(row)) => row,
             Ok(None) => anyhow::bail!("upsert dingtalk installation: no row returned"),
             Err(err) => {
