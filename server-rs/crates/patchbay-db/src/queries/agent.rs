@@ -2161,6 +2161,26 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
     }))
 }
 
+pub async fn merge_agent_task_context(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+    context: &serde_json::Value,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let row = sqlx::query(
+        r#"UPDATE agent_task_queue
+SET context = COALESCE(context, '{}'::jsonb) || $2::jsonb
+WHERE id = $1
+RETURNING context"#,
+    )
+    .bind(task_id)
+    .bind(context)
+    .fetch_optional(executor)
+    .await?;
+    row.map(|value| value.try_get(0))
+        .transpose()
+        .map_err(Into::into)
+}
+
 pub async fn create_deferred_agent_task(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     p_agent_id: Uuid,

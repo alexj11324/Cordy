@@ -361,6 +361,12 @@ deleted_activity AS (
 deleted_inbox AS (
     DELETE FROM inbox_item WHERE workspace_id = $1
 ),
+deleted_workspace_channel_messages AS (
+    DELETE FROM workspace_channel_message WHERE workspace_id = $1
+),
+deleted_workspace_channels AS (
+    DELETE FROM workspace_channel WHERE workspace_id = $1
+),
 deleted_issue_dependencies AS (
     DELETE FROM issue_dependency
     WHERE issue_id IN (SELECT id FROM ws_issues)

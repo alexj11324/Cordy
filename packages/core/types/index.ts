@@ -160,6 +160,16 @@ export type {
   ChatDraftRestore,
   ChatDraftRestoresResponse,
 } from "./chat";
+export type {
+  Channel,
+  ChannelActorType,
+  ChannelMessageCursor,
+  ChannelMessagesPage,
+  ChannelMessage,
+  ChannelQuotedMessage,
+  CreateChannelRequest,
+  SendChannelMessageRequest,
+} from "./channel";
 export type { StorageAdapter } from "./storage";
 export type {
   Project,

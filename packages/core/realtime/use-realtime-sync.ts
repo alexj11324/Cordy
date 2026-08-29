@@ -47,6 +47,7 @@ import {
 } from "../issues/cache-coordinator";
 import { onInboxNew, onInboxInvalidate, onInboxIssueStatusChanged, onInboxIssueDeleted, onInboxSummaryInvalidate } from "../inbox/ws-updaters";
 import { inboxKeys } from "../inbox/queries";
+import { channelKeys } from "../channels/queries";
 import {
   notificationPreferenceOptions,
   notificationPreferenceKeys,
@@ -118,6 +119,7 @@ import type {
   ChatMessagesPage,
   ChatSession,
   InvitationCreatedPayload,
+  ChannelMessageCreatedPayload,
 } from "../types";
 
 const chatWsLogger = createLogger("chat.ws");
@@ -657,6 +659,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: agentActivityKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentRunCountsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: chatKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: channelKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: labelKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: propertyKeys.all(wsId) });
     // A catalog edit missed while disconnected would otherwise sit behind the
@@ -688,6 +691,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
   qc.invalidateQueries({ queryKey: chatKeys.messagesPageAll() });
   qc.invalidateQueries({ queryKey: chatKeys.pendingTaskAll() });
   qc.invalidateQueries({ queryKey: chatKeys.taskMessagesAll() });
+  qc.invalidateQueries({ queryKey: channelKeys.messagesAll() });
   // A chat:cancel_finalized broadcast missed while disconnected is exactly
   // what the durable draft-restore rows exist for (#5219) — re-pull them so
   // a mounted composer recovers the prompt without a remount.
@@ -974,6 +978,7 @@ export function useRealtimeSync(
       // Chat events are handled explicitly below; do not double-invalidate.
       "chat:message", "chat:done", "chat:quick_actions", "chat:cancel_finalized", "chat:session_read",
       "chat:session_deleted", "chat:session_updated",
+      "channel:created", "channel:message",
       // task:message stays out of the prefix path because it fires per
       // streamed message during a long run — invalidating the snapshot on
       // every message would flood the network. Specific chat handlers below
@@ -1687,6 +1692,17 @@ export function useRealtimeSync(
       }
     });
 
+    const unsubChannelCreated = ws.on("channel:created", () => {
+      const id = getCurrentWsId();
+      if (id) qc.invalidateQueries({ queryKey: channelKeys.list(id) });
+    });
+
+    const unsubChannelMessage = ws.on("channel:message", (p) => {
+      const payload = p as ChannelMessageCreatedPayload;
+      if (!payload.channel_id) return;
+      qc.invalidateQueries({ queryKey: channelKeys.messages(payload.channel_id) });
+    });
+
     return () => {
       unsubAny();
       unsubIssueUpdated();
@@ -1733,6 +1749,8 @@ export function useRealtimeSync(
       unsubChatSessionRead();
       unsubChatSessionDeleted();
       unsubChatSessionUpdated();
+      unsubChannelCreated();
+      unsubChannelMessage();
       if (taskMessageFlushTimer) clearTimeout(taskMessageFlushTimer);
       if (aggregateRefreshTimer) clearTimeout(aggregateRefreshTimer);
       timers.forEach(clearTimeout);

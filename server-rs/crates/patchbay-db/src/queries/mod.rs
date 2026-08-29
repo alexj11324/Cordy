@@ -52,5 +52,6 @@ pub mod vcs;
 pub mod verification_code;
 pub mod webhook_delivery;
 pub mod workspace;
+pub mod workspace_channel;
 pub mod workspace_delete;
 pub mod workspace_mcp;
