@@ -3,7 +3,8 @@ use patchbay_db::queries::channel::{
     create_channel_user_binding, delete_channel_installation_for_replacement,
     get_channel_installation_owner_by_app_id, list_channel_installations_by_workspace,
     lock_channel_installation_agent_slot, lock_channel_installation_app_id_slot,
-    reclaim_dead_channel_installation_by_app_id, upsert_channel_installation,
+    lock_channel_installation_hub_slot, reclaim_dead_channel_installation_by_app_id,
+    upsert_channel_installation, upsert_channel_installation_hub,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -44,28 +45,48 @@ pub async fn finalize(
         anyhow::bail!("weixin: bot id does not match installation routing key");
     }
     let mut tx = pool.begin().await?;
-    lock_channel_installation_agent_slot(
-        &mut *tx,
-        crate::TYPE_WEIXIN,
-        params.workspace_id,
-        params.agent_id,
-    )
-    .await?;
+    if params.agent_id.is_nil() {
+        lock_channel_installation_hub_slot(&mut *tx, crate::TYPE_WEIXIN, params.workspace_id)
+            .await?;
+    } else {
+        lock_channel_installation_agent_slot(
+            &mut *tx,
+            crate::TYPE_WEIXIN,
+            params.workspace_id,
+            params.agent_id,
+        )
+        .await?;
+    }
     lock_channel_installation_app_id_slot(&mut *tx, crate::TYPE_WEIXIN, &params.bot_id).await?;
-    let authorized = sqlx::query_scalar::<_, bool>(
-        r#"SELECT EXISTS (
-            SELECT 1 FROM member m
-            JOIN agent a ON a.id = $3 AND a.workspace_id = m.workspace_id
-            WHERE m.workspace_id = $1 AND m.user_id = $2
-              AND (m.role IN ('owner', 'admin') OR a.owner_id = $2)
-              AND a.archived_at IS NULL
-        )"#,
-    )
-    .bind(params.workspace_id)
-    .bind(params.installer_id)
-    .bind(params.agent_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let authorized = if params.agent_id.is_nil() {
+        sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS (
+                SELECT 1 FROM member
+                WHERE workspace_id = $1
+                  AND user_id = $2
+                  AND role IN ('owner', 'admin')
+            )"#,
+        )
+        .bind(params.workspace_id)
+        .bind(params.installer_id)
+        .fetch_one(&mut *tx)
+        .await?
+    } else {
+        sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS (
+                SELECT 1 FROM member m
+                JOIN agent a ON a.id = $3 AND a.workspace_id = m.workspace_id
+                WHERE m.workspace_id = $1 AND m.user_id = $2
+                  AND (m.role IN ('owner', 'admin') OR a.owner_id = $2)
+                  AND a.archived_at IS NULL
+            )"#,
+        )
+        .bind(params.workspace_id)
+        .bind(params.installer_id)
+        .bind(params.agent_id)
+        .fetch_one(&mut *tx)
+        .await?
+    };
     if !authorized {
         anyhow::bail!("weixin: authorization changed during install");
     }
@@ -84,21 +105,39 @@ pub async fn finalize(
         list_channel_installations_by_workspace(&mut *tx, params.workspace_id, crate::TYPE_WEIXIN)
             .await?
             .into_iter()
-            .find(|row| row.agent_id == params.agent_id);
+            .find(|row| {
+                if params.agent_id.is_nil() {
+                    row.agent_id.is_none()
+                } else {
+                    row.agent_id == Some(params.agent_id)
+                }
+            });
     if let Some(current) = current.filter(|row| {
         row.config.get("app_id").and_then(serde_json::Value::as_str) != Some(params.bot_id.as_str())
     }) {
         delete_channel_installation_for_replacement(&mut *tx, current.id).await?;
     }
-    let row = match upsert_channel_installation(
-        &mut *tx,
-        params.workspace_id,
-        params.agent_id,
-        crate::TYPE_WEIXIN,
-        &params.config,
-        params.installer_id,
-    )
-    .await
+    let upsert = if params.agent_id.is_nil() {
+        upsert_channel_installation_hub(
+            &mut *tx,
+            params.workspace_id,
+            crate::TYPE_WEIXIN,
+            &params.config,
+            params.installer_id,
+        )
+        .await
+    } else {
+        upsert_channel_installation(
+            &mut *tx,
+            params.workspace_id,
+            params.agent_id,
+            crate::TYPE_WEIXIN,
+            &params.config,
+            params.installer_id,
+        )
+        .await
+    };
+    let row = match upsert
     {
         Ok(Some(row)) => row,
         Ok(None) => anyhow::bail!("weixin: installation upsert returned no row"),

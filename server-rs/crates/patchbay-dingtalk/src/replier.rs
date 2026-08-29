@@ -176,6 +176,12 @@ impl ReplierSeam for OutboundReplier {
         msg: &InboundMessage,
         res: &EngineResult,
     ) {
+        if let Some(text) = res.reply_text.as_deref() {
+            if let Err(error) = self.post(inst, msg, text).await {
+                tracing::warn!(installation_id = %inst.id, %error, "dingtalk hub reply failed");
+            }
+            return;
+        }
         let Some(outcome) = res.outcome.clone() else {
             return;
         };

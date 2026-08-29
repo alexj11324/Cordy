@@ -96,9 +96,12 @@ pub fn new_feishu_resolver_set(
         identity: Some(Arc::new(FeishuIdentityResolver {
             store: store.clone(),
         })),
-        dedup: Some(Arc::new(FeishuDeduper(store))),
+        dedup: Some(Arc::new(FeishuDeduper(store.clone()))),
         session: Some(Arc::new(FeishuSessionBinder { session })),
         audit: Some(Arc::new(FeishuAuditor { audit })),
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(store.pool().clone()),
+        )),
         origin_type: ORIGIN_FEISHU_CHAT.to_string(),
         ..Default::default()
     };
@@ -207,7 +210,7 @@ impl InstallationResolver for FeishuInstallationResolver {
         Ok(ResolvedInstallation {
             id: inst.id,
             workspace_id: inst.workspace_id,
-            agent_id: inst.agent_id,
+            agent_id: inst.agent_id.unwrap_or_default(),
             installer_user_id: inst.installer_user_id,
             active: crate::types::InstallationStatus(inst.status.clone()).is_active(),
             platform: Arc::new(inst),
@@ -315,6 +318,10 @@ struct FeishuSessionBinder {
 
 #[async_trait]
 impl SessionBinder for FeishuSessionBinder {
+    fn binding_key(&self, msg: &InboundMessage) -> String {
+        lark_session_routing(msg).0
+    }
+
     async fn ensure_session(&self, p: EnsureSessionParams) -> anyhow::Result<Uuid> {
         let (binding_key, config) = lark_session_routing(&p.message);
         self.session
@@ -432,6 +439,7 @@ pub fn dispatch_result_from_engine(res: &EngineResult) -> DispatchResultLike {
         installation_id: res.installation_id,
         chat_session_id: res.chat_session_id,
         sender_open_id: OpenId(res.sender.clone()),
+        reply_text: res.reply_text.clone(),
         task_id: None,
         issue_id: res.issue_id,
         issue_number: res.issue_number,
@@ -615,6 +623,7 @@ mod tests {
             installation_id: Some(Uuid::nil()),
             chat_session_id: None,
             sender: "ou_x".to_string(),
+            reply_text: None,
             issue_id: Some(Uuid::nil()),
             issue_number: 7,
             issue_identifier: "PB-7".to_string(),

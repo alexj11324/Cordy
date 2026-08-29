@@ -109,7 +109,10 @@ export function WeixinTab() {
   );
 }
 
-export function WeixinAgentBindButton({ agentId }: { agentId: string }) {
+// The settings Integrations card omits agentId so this action creates a
+// workspace Hub. Agent-detail pages may still pass an id for legacy,
+// explicitly bound installations.
+export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -123,7 +126,9 @@ export function WeixinAgentBindButton({ agentId }: { agentId: string }) {
   const [status, setStatus] = useState("pending");
   const [verifyCode, setVerifyCode] = useState("");
   const existing = data?.installations.find(
-    (item) => item.agent_id === agentId && item.status === "active",
+    (item) =>
+      (agentId ? item.agent_id === agentId : item.agent_id === null) &&
+      item.status === "active",
   );
 
   useEffect(() => {

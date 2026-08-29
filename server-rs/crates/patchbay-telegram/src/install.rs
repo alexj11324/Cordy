@@ -7,8 +7,9 @@ use patchbay_db::models::ChannelInstallation;
 use patchbay_db::queries::channel::{
     delete_channel_installation_for_replacement, get_channel_installation_owner_by_app_id,
     list_channel_installations_by_workspace, lock_channel_installation_agent_slot,
-    lock_channel_installation_app_id_slot, reclaim_dead_channel_installation_by_app_id,
-    upsert_channel_installation,
+    lock_channel_installation_app_id_slot, lock_channel_installation_hub_slot,
+    reclaim_dead_channel_installation_by_app_id, upsert_channel_installation,
+    upsert_channel_installation_hub,
 };
 
 use crate::TYPE_TELEGRAM;
@@ -80,13 +81,17 @@ impl InstallService {
             .begin()
             .await
             .map_err(|error| anyhow::anyhow!("begin Telegram install: {error:#}"))?;
-        lock_channel_installation_agent_slot(
-            &mut *tx,
-            TYPE_TELEGRAM,
-            params.workspace_id,
-            params.agent_id,
-        )
-        .await?;
+        if params.agent_id.is_nil() {
+            lock_channel_installation_hub_slot(&mut *tx, TYPE_TELEGRAM, params.workspace_id).await?;
+        } else {
+            lock_channel_installation_agent_slot(
+                &mut *tx,
+                TYPE_TELEGRAM,
+                params.workspace_id,
+                params.agent_id,
+            )
+            .await?;
+        }
         lock_channel_installation_app_id_slot(&mut *tx, TYPE_TELEGRAM, &params.bot_id).await?;
         reclaim_dead_channel_installation_by_app_id(
             &mut *tx,
@@ -102,7 +107,13 @@ impl InstallService {
             list_channel_installations_by_workspace(&mut *tx, params.workspace_id, TYPE_TELEGRAM)
                 .await?
                 .into_iter()
-                .find(|row| row.agent_id == params.agent_id);
+                .find(|row| {
+                    if params.agent_id.is_nil() {
+                        row.agent_id.is_none()
+                    } else {
+                        row.agent_id == Some(params.agent_id)
+                    }
+                });
         if let Some(current) = current.filter(|row| {
             row.config.get("app_id").and_then(serde_json::Value::as_str)
                 != Some(params.bot_id.as_str())
@@ -110,15 +121,27 @@ impl InstallService {
             delete_channel_installation_for_replacement(&mut *tx, current.id).await?;
         }
 
-        let installation = match upsert_channel_installation(
-            &mut *tx,
-            params.workspace_id,
-            params.agent_id,
-            TYPE_TELEGRAM,
-            &params.config,
-            params.installer_id,
-        )
-        .await
+        let upsert = if params.agent_id.is_nil() {
+            upsert_channel_installation_hub(
+                &mut *tx,
+                params.workspace_id,
+                TYPE_TELEGRAM,
+                &params.config,
+                params.installer_id,
+            )
+            .await
+        } else {
+            upsert_channel_installation(
+                &mut *tx,
+                params.workspace_id,
+                params.agent_id,
+                TYPE_TELEGRAM,
+                &params.config,
+                params.installer_id,
+            )
+            .await
+        };
+        let installation = match upsert
         {
             Ok(Some(installation)) => installation,
             Ok(None) => anyhow::bail!("upsert Telegram installation: no row returned"),

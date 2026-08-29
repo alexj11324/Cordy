@@ -57,7 +57,12 @@ impl OutcomeReplier for NoopOutcomeReplier {
         let outcome = res.outcome_str();
         if matches!(
             outcome,
-            "needs_binding" | "agent_offline" | "agent_archived" | "fresh_pending" | "issue_usage"
+            "needs_binding"
+                | "agent_offline"
+                | "agent_archived"
+                | "fresh_pending"
+                | "issue_usage"
+                | "hub_command"
         ) {
             tracing::warn!(
                 outcome = %outcome,
@@ -170,6 +175,21 @@ impl OutcomeReplier for LarkOutcomeReplier {
         msg: &InboundMessage,
         res: &DispatchResult,
     ) {
+        if res.outcome_is("hub_command") {
+            let result = match res.reply_text.as_deref() {
+                Some(text) => self.send_chat_notice(_ctx.clone(), inst, msg, text).await,
+                None => Ok(()),
+            };
+            if let Err(err) = result {
+                tracing::warn!(
+                    installation_id = %inst.id,
+                    chat_id = %msg.chat_id.0,
+                    error = %err,
+                    "lark hub reply failed"
+                );
+            }
+            return;
+        }
         let result = match res.outcome_str() {
             "needs_binding" => self.send_binding_prompt(_ctx.clone(), inst, res).await,
             "agent_offline" => {

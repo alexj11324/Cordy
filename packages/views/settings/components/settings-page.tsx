@@ -264,7 +264,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
 
       {/* Right content */}
       <div className="min-w-0 flex-1 md:overflow-y-auto">
-        <div className={`mx-auto w-full p-4 sm:p-6 md:p-8 ${activeTab === "labels" || activeTab === "issue-statuses" || activeTab === "properties" || activeTab === "quick-actions"
+        <div className={`mx-auto w-full p-4 sm:p-6 md:p-8 ${activeTab === "integrations" || activeTab === "labels" || activeTab === "issue-statuses" || activeTab === "properties" || activeTab === "quick-actions"
               ? "max-w-5xl"
               : "max-w-3xl"}`}>
           <TabsContent value="profile"><AccountTab /></TabsContent>

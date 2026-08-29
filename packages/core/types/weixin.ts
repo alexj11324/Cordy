@@ -1,7 +1,8 @@
 export type WeixinInstallation = {
   id: string;
   workspace_id: string;
-  agent_id: string;
+  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
+  agent_id: string | null;
   bot_id: string;
   ilink_user_id: string;
   installer_user_id: string;

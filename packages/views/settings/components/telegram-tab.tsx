@@ -40,10 +40,9 @@ import { useT } from "../../i18n";
 
 // TelegramTab is the workspace settings panel for Telegram bot installations,
 // mirroring SlackTab: listing is member-visible; the disconnect action is
-// admin-only (backend-enforced; the UI hides the button to match). Adding a
-// new installation flows through the Agent detail page — the install path is
-// per-agent (one bot per agent, the (workspace_id, agent_id, channel_type)
-// UNIQUE in channel_installation).
+// admin-only (backend-enforced; the UI hides the button to match). The settings
+// page connects a workspace Hub, and the channel selects the active Agent with
+// `/agents`; the optional per-Agent form remains available for legacy links.
 export function TelegramTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
@@ -188,17 +187,25 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_hub);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />
+        {installation.agent_id ? (
+          <ActorAvatar
+            actorType="agent"
+            actorId={installation.agent_id}
+            size="lg"
+            enableHoverCard
+            profileLink
+          />
+        ) : (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#2AABEE]/10">
+            <TelegramMark className="h-5 w-5" />
+          </span>
+        )}
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
@@ -253,7 +260,7 @@ export function TelegramAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   className?: string;
   /** Compact read-only connected row that invokes this instead of the full
@@ -287,7 +294,9 @@ export function TelegramAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
+      inst.status === "active",
   );
   if (existing) {
     return onShowConnectedDetails ? (
@@ -310,7 +319,7 @@ export function TelegramAgentBindButton({
 
   async function handleSubmit() {
     const bot_token = botToken.trim();
-    if (submitting || !agentId || !bot_token) return;
+    if (submitting || !bot_token) return;
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
@@ -343,7 +352,6 @@ export function TelegramAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
         title={
           agentName
             ? t(($) => $.telegram.bind_button_title, { agent: agentName })

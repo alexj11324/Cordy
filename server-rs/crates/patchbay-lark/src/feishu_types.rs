@@ -39,6 +39,8 @@ pub struct InboundMessage {
     pub chat_type: ChatType,
     pub message_id: String,
     pub sender_open_id: OpenId,
+    /// A direct control-plane response such as `/agents` output.
+    pub reply_text: Option<String>,
     pub body: String,
     /// Content is the raw msg_type-specific JSON string Lark sends in
     /// event.message.content. Text/post decoding consumes it immediately;
@@ -93,6 +95,8 @@ pub struct DispatchResult {
     pub installation_id: Option<Uuid>,
     pub chat_session_id: Option<Uuid>,
     pub sender_open_id: OpenId,
+    /// Direct control-plane text such as the `/agents` list or switch reply.
+    pub reply_text: Option<String>,
     pub task_id: Option<Uuid>,
     pub issue_id: Option<Uuid>,
     pub issue_number: i32,

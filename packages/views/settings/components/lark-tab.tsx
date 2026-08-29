@@ -12,6 +12,7 @@ import { ChevronRight, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 // was fine. The named export maps straight to `exports.QRCode` and
 // resolves correctly under both bundlers.
 import { QRCode } from "react-qr-code";
+import { LarkMark } from "./lark-mark";
 import { cn } from "@patchbay/ui/lib/utils";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
@@ -56,12 +57,9 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // Listing is member-visible; the disconnect action is admin-only (the
 // backend enforces it; the UI hides the button for non-admins to match).
 //
-// Adding a new installation flows through the Agent detail page: the
-// install path is per-agent (each Patchbay Agent gets exactly one Bot —
-// see the (workspace_id, agent_id) UNIQUE in lark_installation), so
-// asking the user to pick an agent here would re-create that page's
-// picker. The "Bind your first agent" copy in the empty state hints
-// users at the right entry point.
+// The settings page connects one workspace-scoped Hub. The channel selects
+// the active Agent with `/agents`; the optional per-Agent form remains
+// available for legacy links and existing installations.
 export function LarkTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
@@ -214,25 +212,30 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
-  // The bot is bound 1:1 to a Patchbay Agent (per the (workspace_id,
-  // agent_id) UNIQUE in lark_installation). Render the Patchbay agent's
-  // identity here rather than the raw Lark app_id / bot_open_id — those
-  // mean nothing to product users. getAgentName falls back to
-  // "Unknown Agent" when the agent has been deleted; the Disconnect
-  // affordance below is the recovery path for that orphan row.
+  // Render the Patchbay agent's identity for legacy Agent-scoped rows. A
+  // workspace Hub has no Agent until a chat uses `/agents`, so it gets the
+  // platform mark instead of being sent through the Agent avatar lookup.
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_hub);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />
+        {installation.agent_id ? (
+          <ActorAvatar
+            actorType="agent"
+            actorId={installation.agent_id}
+            size="lg"
+            enableHoverCard
+            profileLink
+          />
+        ) : (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#3370FF]/10">
+            <LarkMark className="h-5 w-5" />
+          </span>
+        )}
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
@@ -293,8 +296,9 @@ export function LarkAgentBindButton({
   agentOwnerId,
   className,
   onShowConnectedDetails,
+  workspaceScoped = false,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   /**
    * The bound agent's owner (`agent.owner_id`). When it matches the
@@ -312,8 +316,10 @@ export function LarkAgentBindButton({
    * "jump to the Integrations tab" handler so the left column stays a
    * glanceable summary and the management actions live in one place (the
    * tab). The tab itself omits this prop and gets the full badge.
-   */
+  */
   onShowConnectedDetails?: () => void;
+  /** The workspace Integrations card connects the platform Hub, not an Agent. */
+  workspaceScoped?: boolean;
 }) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
@@ -357,7 +363,9 @@ export function LarkAgentBindButton({
   // close the install entry point and link to the Bot's Lark app page where
   // scopes / display name / additional permissions are actually managed.
   const existing = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
+      inst.status === "active",
   );
   if (existing) {
     return onShowConnectedDetails ? (
@@ -396,7 +404,6 @@ export function LarkAgentBindButton({
           variant="outline"
           size="sm"
           onClick={() => setDialogRegion("feishu")}
-          disabled={!agentId}
           title={
             agentName
               ? t(($) => $.lark.bind_button_feishu_title, { agent: agentName })
@@ -405,7 +412,9 @@ export function LarkAgentBindButton({
           data-testid="lark-agent-bind-feishu"
         >
           <ExternalLink className="h-3 w-3" />
-          {t(($) => $.lark.bind_button_feishu)}
+          {workspaceScoped
+            ? t(($) => $.lark.workspace_connect_feishu)
+            : t(($) => $.lark.bind_button_feishu)}
         </Button>
         {/* PB-3083: Lark (international) bind entry is temporarily hidden —
             see LARK_INTL_CONNECT_ENABLED. Mainland Feishu (above) is
@@ -415,7 +424,6 @@ export function LarkAgentBindButton({
             variant="outline"
             size="sm"
             onClick={() => setDialogRegion("lark")}
-            disabled={!agentId}
             title={
               agentName
                 ? t(($) => $.lark.bind_button_lark_title, { agent: agentName })
@@ -660,7 +668,7 @@ function LarkInstallDialog({
   onClose,
 }: {
   wsId: string;
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   region: "feishu" | "lark";
   onClose: () => void;

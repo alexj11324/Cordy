@@ -483,7 +483,7 @@ describe("ApiClient schema fallback", () => {
       expect(res.installations[0]).toMatchObject({
         id: "tg-1",
         workspace_id: "",
-        agent_id: "",
+        agent_id: null,
         bot_id: "",
         bot_username: "",
       });

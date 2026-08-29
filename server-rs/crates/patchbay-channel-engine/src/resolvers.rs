@@ -39,6 +39,9 @@ impl Outcome {
     pub fn agent_archived() -> Self {
         Self("agent_archived".to_string())
     }
+    pub fn hub_command() -> Self {
+        Self("hub_command".to_string())
+    }
 }
 
 /// Enumerates the drop-audit categories. Values match the legacy lark
@@ -79,6 +82,10 @@ pub struct Result {
     /// The platform-native sender id (e.g. Lark open_id), so the replier
     /// can target a binding prompt back to the sender.
     pub sender: String,
+    /// A synchronous control-plane response, such as the Agent list or a
+    /// confirmation after `/agents 2`. Adapters deliver this before matching
+    /// the normal outcome-specific notices.
+    pub reply_text: Option<String>,
     pub issue_id: Option<Uuid>,
     pub issue_number: i32,
     pub issue_identifier: String,
@@ -311,6 +318,11 @@ pub trait Deduper: Send + Sync {
 /// token was rotated mid-flight.
 #[async_trait]
 pub trait SessionBinder: Send + Sync {
+    /// Returns the stable per-platform conversation key used by the session
+    /// binding table. Hub routing stores the selected Agent beside this key.
+    fn binding_key(&self, msg: &InboundMessage) -> String {
+        msg.source.chat_id.clone()
+    }
     async fn ensure_session(&self, p: EnsureSessionParams) -> anyhow::Result<Uuid>;
     async fn mark_pending_fresh(&self, session_id: Uuid) -> anyhow::Result<()>;
     async fn append_message(&self, p: AppendParams) -> anyhow::Result<AppendResult>;
@@ -452,6 +464,7 @@ pub struct ResolverSet {
     pub audit: Option<std::sync::Arc<dyn Auditor>>,
     pub replier: Option<std::sync::Arc<dyn OutboundReplier>>,
     pub typing: Option<std::sync::Arc<dyn TypingNotifier>>,
+    pub hub: Option<std::sync::Arc<dyn crate::hub::HubRouter>>,
     pub origin_type: String,
 }
 

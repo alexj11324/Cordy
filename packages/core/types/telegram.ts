@@ -1,4 +1,4 @@
-/** A Telegram bot installation bound to a single Patchbay agent.
+/** A Telegram bot installation, optionally bound to a Patchbay agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
  * the Rust Telegram handler. New fields the backend adds in the
@@ -7,7 +7,8 @@
 export interface TelegramInstallation {
   id: string;
   workspace_id: string;
-  agent_id: string;
+  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
+  agent_id: string | null;
   /** The bot's numeric Telegram id (the token prefix), as a string. */
   bot_id: string;
   /** The bot's Telegram username (without the @). */
