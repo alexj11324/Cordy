@@ -250,6 +250,17 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
             }
         };
 
+        let issue_prefix = if plan.publish_issue_update || plan.publish_reviewer_update {
+            patchbay_db::queries::workspace::get_workspace(&self.pool, plan.issue.workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .map(|workspace| workspace.issue_prefix)
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
         if !self
             .revalidate_before_publication(&event, &plan, task_id)
             .await?
@@ -258,10 +269,10 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
         }
 
         if plan.publish_issue_update {
-            self.publish_review_handoff(&plan).await;
+            self.publish_review_handoff(&plan, &issue_prefix);
         }
         if plan.publish_reviewer_update {
-            self.publish_reviewer_update(&plan).await;
+            self.publish_reviewer_update(&plan, &issue_prefix);
         }
         if plan.publish_issue_update || plan.publish_reviewer_update {
             self.mark_issue_update_published(&event, &plan).await?;
@@ -1183,11 +1194,23 @@ LIMIT 1"#,
     ) -> anyhow::Result<bool> {
         let mut tx = self.pool.begin().await?;
         let assignment = sqlx::query(
-            "SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision FROM agent_coordination_assignment WHERE id = $1 FOR UPDATE",
+            r#"SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision
+FROM agent_coordination_assignment
+WHERE id = $1
+  AND EXISTS (
+      SELECT 1 FROM agent_coordination_outbox
+      WHERE id = $2 AND status = 'processing' AND lease_owner = $3
+  )
+FOR UPDATE"#,
         )
         .bind(plan.assignment_id)
-        .fetch_one(&mut *tx)
+        .bind(event.id)
+        .bind(&event.lease_owner)
+        .fetch_optional(&mut *tx)
         .await?;
+        let Some(assignment) = assignment else {
+            return Ok(false);
+        };
         let assignment = Assignment {
             id: assignment.try_get(0)?,
             role: assignment.try_get(1)?,
@@ -1519,21 +1542,14 @@ WHERE id = $1
         });
     }
 
-    async fn publish_review_handoff(&self, plan: &DispatchPlan) {
-        let prefix =
-            patchbay_db::queries::workspace::get_workspace(&self.pool, plan.issue.workspace_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|workspace| workspace.issue_prefix)
-                .unwrap_or_default();
+    fn publish_review_handoff(&self, plan: &DispatchPlan, prefix: &str) {
         self.bus.publish(&Event {
             event_type: patchbay_protocol::EVENT_ISSUE_UPDATED.to_string(),
             workspace_id: plan.issue.workspace_id.to_string(),
             actor_type: "system".to_string(),
             actor_id: String::new(),
             payload: json!({
-                "issue": issue_to_map_with_category(&plan.issue, &prefix, issue_status::IN_REVIEW),
+                "issue": issue_to_map_with_category(&plan.issue, prefix, issue_status::IN_REVIEW),
                 // On the current issue contract the implementation owner stays
                 // in assignee_* while the reviewer is recorded separately.
                 "assignee_changed": false,
@@ -1555,21 +1571,14 @@ WHERE id = $1
         });
     }
 
-    async fn publish_reviewer_update(&self, plan: &DispatchPlan) {
-        let prefix =
-            patchbay_db::queries::workspace::get_workspace(&self.pool, plan.issue.workspace_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|workspace| workspace.issue_prefix)
-                .unwrap_or_default();
+    fn publish_reviewer_update(&self, plan: &DispatchPlan, prefix: &str) {
         self.bus.publish(&Event {
             event_type: patchbay_protocol::EVENT_ISSUE_UPDATED.to_string(),
             workspace_id: plan.issue.workspace_id.to_string(),
             actor_type: "system".to_string(),
             actor_id: String::new(),
             payload: json!({
-                "issue": issue_to_map_with_category(&plan.issue, &prefix, issue_status::IN_REVIEW),
+                "issue": issue_to_map_with_category(&plan.issue, prefix, issue_status::IN_REVIEW),
                 "assignee_changed": false,
                 "status_changed": false,
                 "review_handoff": false,
@@ -1599,7 +1608,8 @@ async fn issue_matches_dispatch_plan(
     plan: &DispatchPlan,
 ) -> bool {
     let category = issue_status::effective(executor, issue.workspace_id, &issue.status).await;
-    category == plan.expected_issue_category
+    issue.revision == plan.issue.revision
+        && category == plan.expected_issue_category
         && if plan.expected_issue_category == issue_status::IN_REVIEW {
             plan.owner_type == "agent"
                 && issue.reviewer_type.as_deref() == Some("agent")
