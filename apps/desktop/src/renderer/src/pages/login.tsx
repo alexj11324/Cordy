@@ -1,6 +1,7 @@
 import { LoginPage } from "@patchbay/views/auth";
 import { DragStrip } from "@patchbay/views/platform";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { buildDesktopLoginUrl } from "./login-url";
 
 function requireRuntimeAppUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -17,9 +18,7 @@ export function DesktopLoginPage() {
   const handleGoogleLogin = () => {
     // Open web login page in the default browser with platform=desktop flag.
     // The web callback will redirect back via patchbay:// deep link with the token.
-    window.desktopAPI.openExternal(
-      `${webUrl}/login?platform=desktop`,
-    );
+    window.desktopAPI.openExternal(buildDesktopLoginUrl(webUrl));
   };
 
   return (
