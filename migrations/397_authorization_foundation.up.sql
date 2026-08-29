@@ -91,12 +91,21 @@ UPDATE task_token token
 SET claim_dispatched_at = task.dispatched_at,
     on_behalf_of_user_id = task.originator_user_id,
     user_id = COALESCE(task.originator_user_id, token.user_id),
+    device_id = task.runtime_id,
     revoked_at = CASE
-        WHEN task.originator_user_id IS NULL THEN now()
+        WHEN task.originator_user_id IS NULL
+          OR task.runtime_id IS NULL
+          OR task.delegated_from_task_id IS NOT NULL THEN now()
         ELSE token.revoked_at
     END,
     revoked_reason = CASE
         WHEN task.originator_user_id IS NULL THEN 'migration_missing_on_behalf_identity'
+        WHEN task.runtime_id IS NULL THEN 'migration_missing_device_binding'
+        -- Historical child tokens did not record the exact parent token/fence.
+        -- Treating them as roots would silently discard ancestor revocation and
+        -- scope, so deployment settles them explicitly instead of guessing a
+        -- delegation chain that cannot be proven from current-main data.
+        WHEN task.delegated_from_task_id IS NOT NULL THEN 'migration_unfenced_delegation'
         ELSE token.revoked_reason
     END
 FROM agent_task_queue task
