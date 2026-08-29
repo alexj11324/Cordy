@@ -48,12 +48,10 @@ const HTML = `<!doctype html>
 
       const app = document.getElementById("app");
       const path = location.pathname.replace(/\\/$/, "") || "/";
-      const APP_ORIGIN = "https://aspectlylabs.com";
-      const APP_HOME = APP_ORIGIN + "/";
-      const ALLOWED_APP_ORIGINS = new Set([
-        APP_ORIGIN,
-        "https://www.aspectlylabs.com",
-      ]);
+      const APP_ORIGIN = "https://www.aspectlylabs.com";
+      const APP_BASE_PATH = "/patchbay";
+      const APP_HOME = APP_ORIGIN + APP_BASE_PATH + "/";
+      const ALLOWED_APP_ORIGINS = new Set([APP_ORIGIN]);
       const isSsoCallback =
         path === "/sso-callback" ||
         path === "/login/sso-callback" ||
@@ -78,7 +76,9 @@ const HTML = `<!doctype html>
           if (
             target.username ||
             target.password ||
-            !ALLOWED_APP_ORIGINS.has(target.origin)
+            !ALLOWED_APP_ORIGINS.has(target.origin) ||
+            (target.pathname !== APP_BASE_PATH &&
+              !target.pathname.startsWith(APP_BASE_PATH + "/"))
           ) {
             return APP_HOME;
           }
@@ -130,7 +130,7 @@ const HTML = `<!doctype html>
 
       const redirectTarget = resolveRedirectTarget();
       const desktopRedirectTarget =
-        APP_ORIGIN + "/login?platform=desktop";
+        APP_ORIGIN + APP_BASE_PATH + "/login?platform=desktop";
       const postAuthTarget = isDesktopHandoff
         ? desktopRedirectTarget
         : redirectTarget;
