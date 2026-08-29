@@ -16,12 +16,31 @@ const composioErrorRef = vi.hoisted(() => ({
 const queryCallsRef = vi.hoisted(() => ({
   current: [] as { queryKey: unknown[]; enabled?: boolean }[],
 }));
+const authUserRef = vi.hoisted(() => ({
+  current: null as { id: string; is_guest?: boolean } | null,
+}));
+const membersRef = vi.hoisted(() => ({
+  current: [] as { user_id: string; role: string }[],
+}));
+const dingtalkInstallationsRef = vi.hoisted(() => ({
+  current: undefined as
+    | { installations: { agent_id: string | null }[] }
+    | undefined,
+}));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     queryCallsRef.current.push(opts);
+    const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
+    const isDingTalkInstallationsQuery =
+      opts.queryKey[0] === "dingtalk" &&
+      opts.queryKey[opts.queryKey.length - 1] === "installations";
     return {
-      data: undefined,
+      data: isMemberQuery
+        ? membersRef.current
+        : isDingTalkInstallationsQuery
+          ? dingtalkInstallationsRef.current
+          : undefined,
       error: opts.enabled === false ? null : composioErrorRef.current,
       isError: opts.enabled !== false && composioErrorRef.current != null,
       isLoading: false,
@@ -39,8 +58,8 @@ vi.mock("@patchbay/core/hooks", () => ({
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: (selector: (state: { user: null }) => unknown) =>
-    selector({ user: null }),
+  useAuthStore: (selector: (state: { user: typeof authUserRef.current }) => unknown) =>
+    selector({ user: authUserRef.current }),
 }));
 
 vi.mock("./lark-tab", () => ({
@@ -97,6 +116,9 @@ describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
     composioErrorRef.current = null;
+    authUserRef.current = null;
+    membersRef.current = [];
+    dingtalkInstallationsRef.current = undefined;
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
@@ -153,6 +175,16 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getAllByText("Workspace admin only")).toHaveLength(6);
   });
 
+  it("shows a login gate for guests instead of an external connection action", () => {
+    authUserRef.current = { id: "guest-user", is_guest: true };
+    membersRef.current = [{ user_id: "guest-user", role: "owner" }];
+
+    renderTab();
+
+    expect(screen.getAllByText("Log in to connect")).toHaveLength(6);
+    expect(screen.queryByText("Workspace admin only")).toBeNull();
+  });
+
   // Reaching for a generic lucide glyph is how Slack and WeCom ended up sharing
   // one speech bubble, with nothing on the row saying which platform it was
   // (#6585). Requiring distinct shapes is the cheap guard against a
@@ -165,6 +197,17 @@ describe("Settings IntegrationsTab", () => {
     );
 
     expect(new Set(shapes).size).toBe(shapes.length);
+  });
+
+  it("keeps legacy DingTalk route management available", () => {
+    dingtalkInstallationsRef.current = {
+      installations: [{ agent_id: "legacy-agent" }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Legacy DingTalk routing")).toBeInTheDocument();
+    expect(screen.getByTestId("dingtalk-tab")).toBeInTheDocument();
   });
 
   it("hides Composio when the feature flag is on but the server reports 503", () => {

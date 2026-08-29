@@ -195,6 +195,25 @@ fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
         .ok_or_else(|| error_response(StatusCode::UNAUTHORIZED, "user not authenticated"))
 }
 
+/// External platform authorization is a formal-account operation. The guest
+/// auth middleware marks the authenticated request with this server-owned
+/// header; reject it at the backend boundary rather than relying on the
+/// integrations page to hide its button.
+fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
+    if headers
+        .get("x-guest-user")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+    {
+        return Err(error_code_response(
+            StatusCode::FORBIDDEN,
+            "login_required",
+            "log in before connecting an external platform",
+        ));
+    }
+    Ok(())
+}
+
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
     Uuid::parse_str(&context.workspace_id)
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid workspace id"))
@@ -612,6 +631,9 @@ async fn weixin_install_status(
     Path((_workspace, session_id)): Path<(String, String)>,
     Query(query): Query<WeixinStatusQuery>,
 ) -> Response {
+    if let Err(response) = require_formal_user(&headers) {
+        return response;
+    }
     let actor = match user_id(&headers) {
         Ok(value) => value,
         Err(response) => return response,
@@ -1488,6 +1510,9 @@ async fn lark_install_status(
     headers: HeaderMap,
     Path((_workspace, session_id)): Path<(String, String)>,
 ) -> Response {
+    if let Err(response) = require_formal_user(&headers) {
+        return response;
+    }
     let workspace_id = match workspace_id(&context) {
         Ok(value) => value,
         Err(response) => return response,
@@ -1557,6 +1582,9 @@ async fn update_dingtalk_group_route(
     Path((_workspace, raw_route)): Path<(String, String)>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if let Err(response) = require_formal_user(&headers) {
+        return response;
+    }
     if secret_box(Provider::DingTalk).is_none() {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1645,6 +1673,9 @@ async fn revoke(
     raw_id: String,
     provider: Provider,
 ) -> Response {
+    if let Err(response) = require_formal_user(&headers) {
+        return response;
+    }
     if secret_box(provider).is_none() {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1745,6 +1776,7 @@ async fn install_context(
     headers: &HeaderMap,
     query: &AgentQuery,
 ) -> Result<(Uuid, Uuid, Uuid), Response> {
+    require_formal_user(headers)?;
     let workspace_id = workspace_id(context)?;
     let actor = user_id(headers)?;
     let Some(raw) = query
@@ -2768,6 +2800,14 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn guest_installation_requests_are_rejected_at_the_handler_boundary() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-guest-user", "true".parse().expect("header value"));
+        let response = require_formal_user(&headers).expect_err("guest must be rejected");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]

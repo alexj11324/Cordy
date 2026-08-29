@@ -11,10 +11,10 @@ use patchbay_db::models::Agent;
 use patchbay_db::queries::agent::list_agents;
 use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
 use patchbay_db::queries::channel::{
-    get_channel_chat_session_binding, merge_channel_chat_session_binding_config,
+    get_channel_chat_session_binding, get_channel_chat_session_binding_for_channel,
+    merge_channel_chat_session_binding_config,
 };
 use patchbay_db::queries::chat::switch_chat_session_agent;
-use patchbay_db::queries::member::get_member_by_user_and_workspace;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -89,13 +89,6 @@ impl PostgresHubRouter {
         user_id: Uuid,
     ) -> anyhow::Result<Vec<Agent>> {
         let agents = list_agents(&self.pool, workspace_id).await?;
-        let is_workspace_admin =
-            get_member_by_user_and_workspace(&self.pool, user_id, workspace_id)
-                .await?
-                .is_some_and(|member| matches!(member.role.as_str(), "owner" | "admin"));
-        if is_workspace_admin {
-            return Ok(agents);
-        }
         let mut available = Vec::with_capacity(agents.len());
         for agent in agents {
             if agent.owner_id == Some(user_id) {
@@ -121,9 +114,28 @@ impl PostgresHubRouter {
         installation_id: Uuid,
         binding_key: &str,
     ) -> anyhow::Result<Option<Uuid>> {
-        let Some(binding) =
-            get_channel_chat_session_binding(&self.pool, installation_id, binding_key).await?
-        else {
+        let binding =
+            match get_channel_chat_session_binding(&self.pool, installation_id, binding_key).await?
+            {
+                Some(binding) => Some(binding),
+                None => {
+                    // Slack slash commands only carry the channel id. A normal
+                    // hub conversation may be stored as `channel:thread`, so
+                    // fall back to the newest binding in that channel for
+                    // channel-addressable commands such as `/issue`.
+                    let channel_id = binding_key
+                        .split_once(':')
+                        .map(|(channel, _)| channel)
+                        .unwrap_or(binding_key);
+                    get_channel_chat_session_binding_for_channel(
+                        &self.pool,
+                        installation_id,
+                        channel_id,
+                    )
+                    .await?
+                }
+            };
+        let Some(binding) = binding else {
             return Ok(None);
         };
         Ok(binding

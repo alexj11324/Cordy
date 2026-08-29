@@ -845,6 +845,46 @@ WHERE installation_id = $1 AND channel_chat_id = $2"#
     }))
 }
 
+/// Finds a channel hub binding when the caller knows the platform channel but
+/// not the thread root. Slack slash commands have this shape: ordinary hub
+/// messages use `channel:thread` as their isolation key, while `/issue` only
+/// supplies `channel`. Prefer an exact channel binding and otherwise return
+/// the newest thread binding in that channel.
+pub async fn get_channel_chat_session_binding_for_channel(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    channel_id: &str,
+) -> anyhow::Result<Option<ChannelChatSessionBinding>> {
+    let row = sqlx::query(
+        r#"SELECT id, chat_session_id, installation_id, channel_type, channel_chat_id, chat_type, last_message_id, last_thread_id, config, created_at, pending_fresh FROM channel_chat_session_binding
+WHERE installation_id = $1
+  AND (
+      channel_chat_id = $2
+      OR left(channel_chat_id, length($2) + 1) = $2 || ':'
+  )
+ORDER BY (channel_chat_id = $2) DESC, created_at DESC
+LIMIT 1"#,
+    )
+    .bind(installation_id)
+    .bind(channel_id)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(ChannelChatSessionBinding {
+        id: row.try_get(0)?,
+        chat_session_id: row.try_get(1)?,
+        installation_id: row.try_get(2)?,
+        channel_type: row.try_get(3)?,
+        channel_chat_id: row.try_get(4)?,
+        chat_type: row.try_get(5)?,
+        last_message_id: row.try_get(6)?,
+        last_thread_id: row.try_get(7)?,
+        config: row.try_get(8)?,
+        created_at: row.try_get(9)?,
+        pending_fresh: row.try_get(10)?,
+    }))
+}
+
 pub async fn get_channel_chat_session_binding_by_session(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     chat_session_id: Uuid,
