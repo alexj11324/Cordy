@@ -2056,7 +2056,10 @@ async fn finalize_claim_enriched_full(
     runtime: Option<&AgentRuntime>,
 ) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
     let token_str = patchbay_auth::jwt::generate_agent_task_token().map_err(|_| false)?;
-    let expires = chrono::Utc::now() + chrono::Duration::hours(24);
+    // Capability leases are deliberately much shorter than the historical
+    // Two-hour capability lease. Terminal-state revocation normally closes it
+    // earlier; a re-dispatch mints a new claim-fenced lease.
+    let expires = chrono::Utc::now() + chrono::Duration::hours(2);
     let workspace_id = built
         .payload
         .get("workspace_id")
@@ -2111,6 +2114,12 @@ async fn finalize_claim_enriched_full(
                 workspace_id,
                 user_id: owner_id,
                 expires_at: Some(expires),
+                scope: patchbay_service::task_service::root_task_capability_scope(task),
+                parent_task_id: task.delegated_from_task_id,
+                claim_dispatched_at: task.dispatched_at,
+                delegation_fence: patchbay_service::task_service::task_claim_fence(task),
+                on_behalf_of_user_id: task.originator_user_id,
+                device_id: task.runtime_id,
             },
             daemon_token,
             built.delivered_comment_ids.clone(),
