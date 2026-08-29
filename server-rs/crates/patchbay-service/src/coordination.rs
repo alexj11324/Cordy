@@ -264,7 +264,7 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
         let Some(current_issue) = self
             .revalidate_before_publication(&event, &plan, task_id)
             .await?
-        {
+        else {
             return Ok(());
         };
         // Carry unrelated edits observed by the revalidation into the event
