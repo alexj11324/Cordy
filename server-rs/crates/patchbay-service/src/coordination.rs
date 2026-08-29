@@ -213,7 +213,7 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
     }
 
     async fn process_claimed(&self, event: CoordinationEvent) -> anyhow::Result<()> {
-        let Some(plan) = self.prepare_dispatch(&event).await? else {
+        let Some(mut plan) = self.prepare_dispatch(&event).await? else {
             return Ok(());
         };
 
@@ -261,12 +261,16 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
             String::new()
         };
 
-        if !self
+        let Some(current_issue) = self
             .revalidate_before_publication(&event, &plan, task_id)
             .await?
         {
             return Ok(());
-        }
+        };
+        // Carry unrelated edits observed by the revalidation into the event
+        // snapshot, so a valid handoff cannot publish an older title or
+        // description after the user's update has already committed.
+        plan.issue = current_issue;
 
         if plan.publish_issue_update {
             self.publish_review_handoff(&plan, &issue_prefix);
@@ -1192,7 +1196,7 @@ LIMIT 1"#,
         event: &CoordinationEvent,
         plan: &DispatchPlan,
         task_id: Uuid,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<Issue>> {
         let mut tx = self.pool.begin().await?;
         let assignment = sqlx::query(
             r#"SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision
@@ -1210,7 +1214,7 @@ FOR UPDATE"#,
         .fetch_optional(&mut *tx)
         .await?;
         let Some(assignment) = assignment else {
-            return Ok(false);
+            return Ok(None);
         };
         let assignment = Assignment {
             id: assignment.try_get(0)?,
@@ -1247,7 +1251,7 @@ FOR UPDATE"#,
         };
         if issue_is_current {
             tx.commit().await?;
-            return Ok(true);
+            return Ok(issue);
         }
 
         let reason = "coordinator handoff became stale before publication";
@@ -1285,7 +1289,7 @@ WHERE id = $1
         )
         .await?;
         tx.commit().await?;
-        Ok(false)
+        Ok(None)
     }
 
     async fn mark_dispatched(
