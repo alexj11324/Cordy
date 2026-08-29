@@ -19,7 +19,6 @@ import {
   Settings,
   SlidersHorizontal,
   SquarePen,
-  Users,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -252,7 +251,6 @@ export function PreviewIssuesBoard() {
     { icon: FolderKanban, label: layoutT(($) => $.nav.projects) },
     { icon: Zap, label: layoutT(($) => $.nav.autopilots) },
     { icon: Bot, label: layoutT(($) => $.nav.agents) },
-    { icon: Users, label: layoutT(($) => $.nav.squads) },
     { icon: BarChart3, label: layoutT(($) => $.nav.usage) },
   ];
   const configureNav: NavItem[] = [
