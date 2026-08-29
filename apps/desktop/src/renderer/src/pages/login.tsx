@@ -1,9 +1,20 @@
 import { useState } from "react";
+import { Mail } from "lucide-react";
 import { useAuthStore } from "@patchbay/core/auth";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@patchbay/ui/components/ui/card";
+import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { LoginPage } from "@patchbay/views/auth";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { buildDesktopLoginUrl } from "./login-url";
+import { GoogleIcon } from "@patchbay/views/onboarding/components/brand-icons";
+import { LoginPage } from "@patchbay/views/auth";
+import { buildDesktopGoogleLoginUrl } from "./login-url";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 
@@ -55,31 +66,122 @@ function GuestSessionEntry() {
           ? t(($) => $.desktop.entry.skipping)
           : t(($) => $.desktop.entry.skip)}
       </Button>
-      {error && <p className="text-body text-destructive" role="alert">{error}</p>}
+      {error && (
+        <Alert variant="destructive" aria-live="polite">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
     </div>
   );
 }
 
 export function DesktopLoginPage() {
   const webUrl = requireRuntimeAppUrl();
-  const handleGoogleLogin = () => {
-    // Open web login page in the default browser with platform=desktop flag.
-    // The web callback will redirect back via patchbay:// deep link with the token.
-    window.desktopAPI.openExternal(buildDesktopLoginUrl(webUrl));
+  const { t } = useT("auth");
+  const [showEmailFlow, setShowEmailFlow] = useState(false);
+  const [openingMethod, setOpeningMethod] = useState<"google" | "email" | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  if (showEmailFlow) {
+    return (
+      <div className="flex h-screen flex-col bg-background">
+        <DragStrip />
+        <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
+          <LoginPage
+            logo={<PatchbayIcon bordered size="lg" />}
+            onSuccess={() => undefined}
+            extra={
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => setShowEmailFlow(false)}
+              >
+                {t(($) => $.common.back)}
+              </Button>
+            }
+          />
+        </main>
+      </div>
+    );
+  }
+
+  const handleLogin = async (method: "google" | "email") => {
+    if (method === "email") {
+      setShowEmailFlow(true);
+      return;
+    }
+    if (openingMethod) return;
+    setOpeningMethod(method);
+    setError(null);
+    try {
+      // Keep Clerk's hosted sign-in in the system browser. The browser-side
+      // callback returns through the allowlisted patchbay:// handoff, where
+      // the desktop renderer exchanges the short-lived credential server-side.
+      await window.desktopAPI.openExternal(buildDesktopGoogleLoginUrl(webUrl));
+    } catch {
+      setError(t(($) => $.desktop.entry.login_error));
+    } finally {
+      setOpeningMethod(null);
+    }
   };
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen flex-col bg-background">
       <DragStrip />
-      <LoginPage
-        logo={<PatchbayIcon bordered size="lg" />}
-        onSuccess={() => {
-          // Auth store update triggers AppContent re-render → shows DesktopShell.
-          // Initial workspace navigation happens in routes.tsx via IndexRedirect.
-        }}
-        onGoogleLogin={handleGoogleLogin}
-        extra={<GuestSessionEntry />}
-      />
+      <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="items-center text-center">
+            <PatchbayIcon bordered size="lg" />
+            <CardTitle className="text-display-sm">
+              {t(($) => $.desktop.entry.title)}
+            </CardTitle>
+            <CardDescription className="max-w-sm text-pretty">
+              {t(($) => $.desktop.entry.description)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {error && (
+              <Alert variant="destructive" aria-live="polite">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                className="w-full"
+                size="lg"
+                onClick={() => void handleLogin("google")}
+                disabled={openingMethod !== null}
+                aria-busy={openingMethod === "google"}
+              >
+                <GoogleIcon className="size-4" />
+                {openingMethod === "google"
+                  ? t(($) => $.desktop.entry.opening_google)
+                  : t(($) => $.desktop.entry.login_google)}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => void handleLogin("email")}
+                disabled={openingMethod !== null}
+                aria-busy={openingMethod === "email"}
+              >
+                <Mail className="size-4" aria-hidden="true" />
+                {openingMethod === "email"
+                  ? t(($) => $.desktop.entry.opening_email)
+                  : t(($) => $.desktop.entry.login_email)}
+              </Button>
+            </div>
+          </CardContent>
+          <CardFooter className="flex-col gap-3">
+            <GuestSessionEntry />
+          </CardFooter>
+        </Card>
+      </main>
     </div>
   );
 }

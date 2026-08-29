@@ -1,3 +1,3 @@
-export function buildDesktopLoginUrl(appUrl: string): string {
-  return `${appUrl}/login?platform=desktop`;
+export function buildDesktopGoogleLoginUrl(appUrl: string): string {
+  return `${appUrl}/oauth/google?platform=desktop`;
 }
