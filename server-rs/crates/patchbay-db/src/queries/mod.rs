@@ -17,6 +17,7 @@ pub mod contact_sales;
 pub mod daemon_token;
 pub mod dingtalk;
 pub mod feedback;
+pub mod guest;
 pub mod github;
 pub mod github_snapshot;
 pub mod inbox;

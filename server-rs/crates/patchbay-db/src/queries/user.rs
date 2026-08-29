@@ -18,7 +18,7 @@ pub async fn create_user(
     let row = sqlx::query(
         r#"INSERT INTO "user" (name, email, avatar_url)
 VALUES ($1, $2, $3)
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(name)
         .bind(email)
@@ -41,6 +41,47 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
+    }))
+}
+
+/// Creates the durable identity used by the Desktop guest flow. The caller
+/// supplies the UUID so the guest-session row can be written in the same
+/// transaction; the email is a unique, non-deliverable address and is never
+/// used as a login credential.
+pub async fn create_guest_user(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    name: &str,
+    email: &str,
+) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query(
+        r#"INSERT INTO "user" (id, name, email, is_guest)
+VALUES ($1, $2, $3, TRUE)
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(email)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(User {
+        id: row.try_get(0)?,
+        name: row.try_get(1)?,
+        email: row.try_get(2)?,
+        avatar_url: row.try_get(3)?,
+        created_at: row.try_get(4)?,
+        updated_at: row.try_get(5)?,
+        onboarded_at: row.try_get(6)?,
+        onboarding_questionnaire: row.try_get(7)?,
+        cloud_waitlist_email: row.try_get(8)?,
+        cloud_waitlist_reason: row.try_get(9)?,
+        starter_content_state: row.try_get(10)?,
+        language: row.try_get(11)?,
+        profile_description: row.try_get(12)?,
+        timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -49,7 +90,7 @@ pub async fn get_user(
     id: Uuid,
 ) -> anyhow::Result<Option<User>> {
     let row = sqlx::query(
-        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone FROM "user"
+        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest FROM "user"
 WHERE id = $1"#
     )
         .bind(id)
@@ -71,6 +112,7 @@ WHERE id = $1"#
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -79,7 +121,7 @@ pub async fn get_user_by_email(
     email: &str,
 ) -> anyhow::Result<Option<User>> {
     let row = sqlx::query(
-        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone FROM "user"
+        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest FROM "user"
 WHERE email = $1"#
     )
         .bind(email)
@@ -101,6 +143,7 @@ WHERE email = $1"#
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -147,7 +190,7 @@ pub async fn join_cloud_waitlist(
     cloud_waitlist_reason = $3,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(id)
         .bind(cloud_waitlist_email)
@@ -170,6 +213,7 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -182,7 +226,7 @@ pub async fn mark_user_onboarded(
     onboarded_at = COALESCE(onboarded_at, now()),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -203,6 +247,7 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -215,7 +260,7 @@ pub async fn claim_first_onboarding(
     onboarded_at = now(),
     updated_at = now()
 WHERE id = $1 AND onboarded_at IS NULL
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -236,6 +281,7 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -244,7 +290,7 @@ pub async fn get_user_for_update(
     id: Uuid,
 ) -> anyhow::Result<Option<User>> {
     let row = sqlx::query(
-        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone FROM "user"
+        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest FROM "user"
 WHERE id = $1
 FOR UPDATE"#
     )
@@ -267,6 +313,7 @@ FOR UPDATE"#
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -280,7 +327,7 @@ pub async fn patch_user_onboarding(
     onboarding_questionnaire = COALESCE($1, onboarding_questionnaire),
     updated_at = now()
 WHERE id = $2
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(questionnaire)
         .bind(id)
@@ -302,6 +349,7 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -315,7 +363,7 @@ pub async fn set_starter_content_state(
     starter_content_state = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(id)
         .bind(starter_content_state)
@@ -337,6 +385,7 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }
 
@@ -362,7 +411,7 @@ pub async fn update_user(
     END,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest"#
     )
         .bind(id)
         .bind(name)
@@ -388,5 +437,6 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
         language: row.try_get(11)?,
         profile_description: row.try_get(12)?,
         timezone: row.try_get(13)?,
+        is_guest: row.try_get(14)?,
     }))
 }

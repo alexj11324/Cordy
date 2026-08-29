@@ -1383,6 +1383,10 @@ pub struct User {
     pub created_at: DateTime<Utc>,
     pub email: String,
     pub id: Uuid,
+    /// True for a server-backed guest account. Guest users retain a normal
+    /// UUID and real API permissions, but cannot perform formal-account-only
+    /// operations such as external authorization or billing.
+    pub is_guest: bool,
     pub language: Option<String>,
     pub name: String,
     pub onboarded_at: Option<DateTime<Utc>>,

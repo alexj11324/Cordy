@@ -756,6 +756,23 @@ export class ApiClient {
     });
   }
 
+  async createGuestSession(): Promise<LoginResponse> {
+    return this.fetch("/auth/guest", { method: "POST" });
+  }
+
+  async createGuestTransfer(): Promise<{ transfer_token: string }> {
+    return this.fetch("/auth/guest/transfer", { method: "POST" });
+  }
+
+  async claimGuestSession(transferToken: string): Promise<{
+    migrated_workspace_ids: string[];
+  }> {
+    return this.fetch("/auth/guest/claim", {
+      method: "POST",
+      body: JSON.stringify({ transfer_token: transferToken }),
+    });
+  }
+
   async clerkLogin(sessionToken: string): Promise<LoginResponse> {
     return this.fetch("/auth/clerk", {
       method: "POST",

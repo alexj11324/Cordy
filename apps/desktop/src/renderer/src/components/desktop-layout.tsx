@@ -1,8 +1,10 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { ChevronLeft, ChevronRight, LogIn } from "lucide-react";
 import { motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@patchbay/ui/lib/utils";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import {
   useNavigationInputBindings,
   useTabHistory,
@@ -26,6 +28,7 @@ import {
   useNavigation,
   type LinkClickIntent,
 } from "@patchbay/views/navigation";
+import { useT } from "@patchbay/views/i18n";
 import { getCurrentSlug, subscribeToCurrentSlug } from "@patchbay/core/platform";
 import { useDesktopUnreadBadge } from "@patchbay/views/platform";
 import {
@@ -97,6 +100,59 @@ function WindowToolbar() {
 
 function SidebarTopSpacer() {
   return <div className={cn("shrink-0", TOP_BAR_HEIGHT_CLASS)} />;
+}
+
+function GuestAccountEntry() {
+  const { t } = useT("auth");
+  const user = useAuthStore((state) => state.user);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (user?.is_guest !== true) return <SidebarTopSpacer />;
+
+  const handleLogin = async () => {
+    if (isPreparing) return;
+    setError(null);
+    setIsPreparing(true);
+    try {
+      const { transfer_token } = await api.createGuestTransfer();
+      if (!transfer_token) throw new Error("Guest transfer token unavailable");
+      const runtimeConfig = window.desktopAPI.runtimeConfig;
+      if (!runtimeConfig.ok) throw new Error("Desktop runtime config unavailable");
+      const loginUrl = new URL(`${runtimeConfig.config.appUrl}/login`);
+      loginUrl.searchParams.set("platform", "desktop");
+      loginUrl.searchParams.set("guest_transfer", transfer_token);
+      await window.desktopAPI.openExternal(loginUrl.toString());
+    } catch {
+      setError(t(($) => $.desktop.guest.transfer_error));
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 px-2 pb-2">
+      <button
+        type="button"
+        onClick={() => void handleLogin()}
+        disabled={isPreparing}
+        aria-busy={isPreparing}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-wait disabled:opacity-60"
+      >
+        <LogIn className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">
+          {isPreparing
+            ? t(($) => $.desktop.guest.opening)
+            : t(($) => $.desktop.guest.login)}
+        </span>
+      </button>
+      {error && (
+        <p className="px-2 pt-1 text-[11px] leading-4 text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function useNativeNavigationGestures() {
@@ -287,7 +343,7 @@ export function DesktopShell() {
           >
             {slug && <GlobalShortcuts />}
             {slug && <WindowToolbar />}
-            {slug && <AppSidebar topSlot={<SidebarTopSpacer />} searchSlot={<SearchTrigger />} />}
+            {slug && <AppSidebar topSlot={<GuestAccountEntry />} searchSlot={<SearchTrigger />} />}
             {/* Right side: header + content container */}
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />

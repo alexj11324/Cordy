@@ -70,6 +70,19 @@ pub fn generate_agent_task_token() -> anyhow::Result<String> {
     Ok(format!("mat_{}", random_hex20()?))
 }
 
+/// Server-backed Desktop guest session token. It is deliberately distinct
+/// from JWT/PAT prefixes so auth middleware can require a live guest-session
+/// row for every request.
+pub fn generate_guest_token() -> anyhow::Result<String> {
+    Ok(format!("pbg_{}", random_hex20()?))
+}
+
+/// Short-lived one-time token used only to hand a guest session to the formal
+/// web login flow. The raw value is returned once and only its hash is stored.
+pub fn generate_guest_transfer_token() -> anyhow::Result<String> {
+    Ok(format!("pgt_{}", random_hex20()?))
+}
+
 /// Hex-encoded SHA-256 of a token string — the DB stores this, never the raw token.
 pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
@@ -154,6 +167,16 @@ mod tests {
         assert!(d.starts_with("mdt_") && d.len() == 44);
         let a = generate_agent_task_token().unwrap();
         assert!(a.starts_with("mat_") && a.len() == 44);
+    }
+
+    #[test]
+    fn guest_and_transfer_token_shapes() {
+        let guest = generate_guest_token().unwrap();
+        assert!(guest.starts_with("pbg_") && guest.len() == 44);
+        assert!(guest[4..].chars().all(|c| c.is_ascii_hexdigit()));
+        let transfer = generate_guest_transfer_token().unwrap();
+        assert!(transfer.starts_with("pgt_") && transfer.len() == 44);
+        assert!(transfer[4..].chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

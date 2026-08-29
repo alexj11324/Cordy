@@ -2066,6 +2066,7 @@ export const EMPTY_WEBHOOK_DELIVERY: WebhookDelivery = {
 
 export const UserSchema = z.object({
   id: z.string(),
+  is_guest: z.boolean().default(false),
   name: z.string().default(""),
   email: z.string().default(""),
   avatar_url: z.string().nullable().default(null),
@@ -2081,6 +2082,7 @@ export const UserSchema = z.object({
 
 export const EMPTY_USER: User = {
   id: "",
+  is_guest: false,
   name: "",
   email: "",
   avatar_url: null,

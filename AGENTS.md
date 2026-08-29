@@ -69,6 +69,35 @@ make check            # Product-wide local helper; not an agent/default migratio
 - Use kebab-case filenames, PascalCase components, camelCase functions, and
   `use-*.ts` for hooks.
 
+### Product identity and integration contract
+
+These rules are product invariants, not implementation suggestions:
+
+- The Desktop app owns its entry screen. It must not render Clerk, Connect, or
+  any web login form/visual. It exposes only the app-owned `登录`/`Log in` and
+  `跳过`/`Skip` actions. Log in opens `/login?platform=desktop` in the browser;
+  Skip never opens a browser.
+- `backendFree` is an explicit `ui-preview` fixture mode only. It is forbidden
+  in production onboarding, Desktop flows, or any real product path.
+- Guest mode is a real server session: the server creates a guest user, stores
+  only a hash of the bearer token, and grants the real API permissions listed
+  below. Do not use a fake User, local-only workspace, placeholder response, or
+  pretend screen in place of an API call.
+- A guest may use real workspace, issue, agent, runtime, and chat APIs. Team
+  administration, billing, external-platform authorization, and other
+  formal-account-only operations must require a formal login and return an
+  explicit login-required response.
+- Guest data is retained until a one-time migration claim completes. The claim
+  moves the guest workspace and account-scoped ownership to the formal account
+  without overwriting existing workspaces or rewriting historical audit
+  authors. The guest bearer token is invalid after a successful claim.
+- Integrations belong to a workspace, not to a selected Agent in Settings. The
+  integrations UI must not ask users to choose an Agent. Channel conversations
+  use `/agents` to list and switch the current Agent, and ordinary messages use
+  the selected session Agent.
+- Integration cards use the real platform colors and accessible controls. New
+  user-facing copy must be updated together in `en`, `zh-Hans`, `ja`, and `ko`.
+
 ### Worktrees and Local Services
 
 - Worktrees share PostgreSQL infrastructure but use isolated databases and

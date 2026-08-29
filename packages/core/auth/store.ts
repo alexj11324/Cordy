@@ -29,6 +29,7 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
+  createGuestSession: () => Promise<User>;
   loginWithClerk: (sessionToken: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
@@ -76,6 +77,18 @@ export function createAuthStore(options: AuthStoreOptions) {
         storage.setItem("patchbay_token", token);
         api.setToken(token);
       }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
+    createGuestSession: async () => {
+      const { token, user } = await api.createGuestSession();
+      // Guest auth is still token auth: the user is real and the bearer is
+      // required for every subsequent workspace/onboarding API call.
+      storage.setItem("patchbay_token", token);
+      api.setToken(token);
       onLogin?.();
       identifyAnalytics(user.id, { email: user.email, name: user.name });
       set({ user, isLoading: false, status: "authenticated" });
