@@ -2379,7 +2379,14 @@ async fn quick_create_issue(
         }
     };
     if let Err(message) =
-        validate_assignee(&state, &context, requested_assignee.0, requested_id).await
+        validate_assignee(
+            &state,
+            &context,
+            requested_assignee.0,
+            requested_id,
+            None,
+        )
+        .await
     {
         return error_response(StatusCode::FORBIDDEN, &message);
     }
@@ -4891,6 +4898,20 @@ async fn get_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow reading this issue",
+        );
+    }
     let issue_id = issue.id;
     let workspace_id = issue.workspace_id;
     let mut responses = enrich_issue_list(&state, &context, vec![issue]).await;
@@ -5505,6 +5526,20 @@ async fn update_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        previous.workspace_id,
+        Some(previous.id),
+        true,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow updating this issue",
+        );
+    }
     let fields = match update_object(&body) {
         Ok(fields) => fields,
         Err(response) => return response,
@@ -5611,7 +5646,13 @@ async fn apply_issue_update(
     if assignee_touched {
         match (next.assignee_type.as_deref(), next.assignee_id) {
             (None, None) => {}
-            (Some(kind), Some(id)) => validate_assignee(state, context, kind, id)
+            (Some(kind), Some(id)) => validate_assignee(
+                state,
+                context,
+                kind,
+                id,
+                TaskAuthorizationContext::from_headers(headers),
+            )
                 .await
                 .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
             _ => {
@@ -5644,7 +5685,13 @@ async fn apply_issue_update(
     if reviewer_in_request {
         match (next.reviewer_type.as_deref(), next.reviewer_id) {
             (None, None) => {}
-            (Some(kind), Some(id)) => validate_assignee(state, context, kind, id)
+            (Some(kind), Some(id)) => validate_assignee(
+                state,
+                context,
+                kind,
+                id,
+                TaskAuthorizationContext::from_headers(headers),
+            )
                 .await
                 .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
             _ => {
@@ -5765,6 +5812,18 @@ async fn apply_issue_update(
                 issue_reviewer(&previous),
                 issue_reviewer(&next),
             );
+
+    let task_authorization = TaskAuthorizationContext::from_headers(headers);
+    if task_authorization.is_some()
+        && !suppress_run
+        && (assignee_touched || fields.contains_key("status"))
+    {
+        if let (Some(kind), Some(id)) = (next.assignee_type.as_deref(), next.assignee_id) {
+            validate_assignee(state, context, kind, id, task_authorization)
+                .await
+                .map_err(|message| error_response(StatusCode::FORBIDDEN, &message))?;
+        }
+    }
 
     let mut tx = state.pool.begin().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue update");
@@ -5921,7 +5980,13 @@ async fn apply_issue_update(
     }
     if remapped {
         if let (Some(kind), Some(id)) = (next.reviewer_type.as_deref(), next.reviewer_id) {
-            validate_assignee(state, context, kind, id)
+            validate_assignee(
+                state,
+                context,
+                kind,
+                id,
+                TaskAuthorizationContext::from_headers(headers),
+            )
                 .await
                 .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
         }
@@ -6140,7 +6205,9 @@ RETURNING *"#,
             )
             .await;
         if let Some(trigger) = trigger {
-            let actor_user_id = (actor_type == "member").then_some(actor_id);
+            let actor_user_id = task_authorization
+                .and_then(|authorization| authorization.on_behalf_of_user_id)
+                .or_else(|| (actor_type == "member").then_some(actor_id));
             let result = if trigger.assignee_type == "team" {
                 state
                     .tasks
@@ -7024,6 +7091,12 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "title is required");
     }
     let workspace_id = context.member.workspace_id;
+    if !task_project_resource_allows(&state, &headers, workspace_id, None, false).await {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow creating an issue",
+        );
+    }
     let status = if request.status.is_empty() {
         "todo".to_string()
     } else {
@@ -7070,7 +7143,15 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "invalid assignee_type");
     }
     if let (Some(kind), Some(id)) = (request.assignee_type.as_deref(), assignee_id) {
-        if let Err(message) = validate_assignee(&state, &context, kind, id).await {
+        if let Err(message) = validate_assignee(
+            &state,
+            &context,
+            kind,
+            id,
+            TaskAuthorizationContext::from_headers(&headers),
+        )
+        .await
+        {
             return error_response(StatusCode::BAD_REQUEST, &message);
         }
     }
@@ -7223,6 +7304,55 @@ async fn create_issue(
     }
 }
 
+pub(crate) async fn task_project_resource_allows(
+    state: &HandlerState,
+    headers: &HeaderMap,
+    workspace_id: Uuid,
+    resource_id: Option<Uuid>,
+    require_bound_issue: bool,
+) -> bool {
+    let Some(authorization) = TaskAuthorizationContext::from_headers(headers) else {
+        return true;
+    };
+    if require_bound_issue {
+        let bound = agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|task| task.issue_id);
+        if bound != resource_id {
+            return false;
+        }
+    }
+    state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type: PrincipalType::TaskRun,
+                id: Some(authorization.task_id),
+            },
+            action: Action::new(Action::RESOURCE_USE),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::PROJECT_RESOURCE),
+                id: resource_id,
+                workspace_id,
+                owner_id: authorization.on_behalf_of_user_id,
+                attributes: json!({"private": true}),
+            },
+            context: AuthorizationContext {
+                on_behalf_of_user_id: authorization.on_behalf_of_user_id,
+                via_agent_id: authorization.via_agent_id,
+                device_id: authorization.device_id,
+                task_id: Some(authorization.task_id),
+                lease_id: Some(authorization.lease_id),
+                ..Default::default()
+            },
+            delegation_chain: Vec::new(),
+        })
+        .await
+        .is_ok_and(|decision| decision.is_allowed())
+}
+
 async fn trusted_agent_task(
     state: &HandlerState,
     context: &WorkspaceContext,
@@ -7278,6 +7408,7 @@ async fn validate_assignee(
     context: &WorkspaceContext,
     kind: &str,
     id: Uuid,
+    task_authorization: Option<TaskAuthorizationContext>,
 ) -> Result<(), String> {
     let workspace_id = context.member.workspace_id;
     match kind {
@@ -7298,7 +7429,22 @@ async fn validate_assignee(
                 .flatten()
                 .filter(|agent| agent.archived_at.is_none())
                 .ok_or_else(|| "assignee agent not found in this workspace".to_string())?;
-            if !can_member_invoke_agent(state, context.member.user_id, workspace_id, &target).await
+            if !can_invoke_agent(
+                state,
+                if task_authorization.is_some() {
+                    "agent"
+                } else {
+                    "member"
+                },
+                match task_authorization {
+                    Some(authorization) => authorization.on_behalf_of_user_id,
+                    None => Some(context.member.user_id),
+                },
+                workspace_id,
+                &target,
+                task_authorization,
+            )
+            .await
             {
                 return Err("you do not have permission to invoke this agent".to_string());
             }
@@ -7316,7 +7462,22 @@ async fn validate_assignee(
                 .flatten()
                 .filter(|agent| agent.archived_at.is_none())
                 .ok_or_else(|| "team leader is unavailable".to_string())?;
-            if !can_member_invoke_agent(state, context.member.user_id, workspace_id, &leader).await
+            if !can_invoke_agent(
+                state,
+                if task_authorization.is_some() {
+                    "agent"
+                } else {
+                    "member"
+                },
+                match task_authorization {
+                    Some(authorization) => authorization.on_behalf_of_user_id,
+                    None => Some(context.member.user_id),
+                },
+                workspace_id,
+                &leader,
+                task_authorization,
+            )
+            .await
             {
                 return Err("you do not have permission to invoke this team".to_string());
             }
@@ -7415,17 +7576,35 @@ pub(crate) async fn can_invoke_agent(
         match actor_type {
         "agent" => PrincipalType::AgentDefinition,
         "system" => PrincipalType::System,
-        _ => PrincipalType::User,
+            _ => PrincipalType::User,
         }
     };
-    state
+    let principal_id = task_authorization
+        .map(|context| context.task_id)
+        .or_else(|| {
+            (principal_type == PrincipalType::User)
+                .then_some(originator_user_id)
+                .flatten()
+        });
+    let on_behalf_of_user_id = match task_authorization {
+        Some(context) => context.on_behalf_of_user_id,
+        None => originator_user_id,
+    };
+    let authorization_context = AuthorizationContext {
+        workspace_role: role,
+        on_behalf_of_user_id,
+        via_agent_id: task_authorization.and_then(|context| context.via_agent_id),
+        device_id: task_authorization.and_then(|context| context.device_id),
+        task_id: task_authorization.map(|context| context.task_id),
+        lease_id: task_authorization.map(|context| context.lease_id),
+        ..Default::default()
+    };
+    let invocation_allowed = state
         .authorization
         .authorize(AuthorizationRequest {
             principal: Principal {
                 principal_type,
-                id: task_authorization
-                    .map(|context| context.task_id)
-                    .or_else(|| (principal_type == PrincipalType::User).then_some(originator_user_id).flatten()),
+                id: principal_id,
             },
             action: Action::new(Action::AGENT_INVOKE),
             resource: Resource {
@@ -7435,17 +7614,44 @@ pub(crate) async fn can_invoke_agent(
                 owner_id: target.owner_id,
                 attributes: json!({"invocation_allowed": acl_allowed, "private": target.permission_mode != "public_to"}),
             },
-            context: AuthorizationContext {
-                workspace_role: role,
-                on_behalf_of_user_id: task_authorization
-                    .and_then(|context| context.on_behalf_of_user_id)
-                    .or(originator_user_id),
-                via_agent_id: task_authorization.and_then(|context| context.via_agent_id),
-                device_id: task_authorization.and_then(|context| context.device_id),
-                task_id: task_authorization.map(|context| context.task_id),
-                lease_id: task_authorization.map(|context| context.lease_id),
-                ..Default::default()
+            context: authorization_context.clone(),
+            delegation_chain: Vec::new(),
+        })
+        .await
+        .is_ok_and(|decision| decision.is_allowed());
+    if !invocation_allowed {
+        return false;
+    }
+    let Some(runtime_id) = target.runtime_id else {
+        return true;
+    };
+    let Some(target_runtime) = runtime::get_agent_runtime_for_workspace(
+        &state.pool,
+        runtime_id,
+        workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    else {
+        return false;
+    };
+    state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type,
+                id: principal_id,
             },
+            action: Action::new(Action::RUNTIME_USE),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::RUNTIME),
+                id: Some(target_runtime.id),
+                workspace_id,
+                owner_id: target_runtime.owner_id,
+                attributes: json!({"private": target_runtime.visibility != "public"}),
+            },
+            context: authorization_context,
             delegation_chain: Vec::new(),
         })
         .await

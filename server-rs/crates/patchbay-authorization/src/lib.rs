@@ -305,6 +305,7 @@ impl PostgresAuthorizer {
     async fn matching_grants(
         &self,
         request: &AuthorizationRequest,
+        delegated_agent_ids: &[Uuid],
     ) -> Result<Vec<Grant>, sqlx::Error> {
         let rows = sqlx::query(
             r#"SELECT id, effect, conditions
@@ -318,6 +319,17 @@ WHERE workspace_id = $1
   AND (
       (principal_type = $5 AND (principal_id IS NULL OR principal_id = $6))
       OR (principal_type = 'team' AND principal_id = ANY($7::uuid[]))
+      OR (principal_type = 'user' AND $8::uuid IS NOT NULL
+          AND (principal_id IS NULL OR principal_id = $8))
+      OR (principal_type = 'agent_definition' AND (
+          ($9::uuid IS NOT NULL
+              AND (principal_id IS NULL OR principal_id = $9))
+          OR (effect IN ('deny', 'require_approval')
+              AND cardinality($11::uuid[]) > 0
+              AND (principal_id IS NULL OR principal_id = ANY($11::uuid[])))
+      ))
+      OR (principal_type = 'device_runtime' AND $10::uuid IS NOT NULL
+          AND (principal_id IS NULL OR principal_id = $10))
   )
 ORDER BY created_at, id"#,
         )
@@ -328,6 +340,10 @@ ORDER BY created_at, id"#,
         .bind(request.principal.principal_type.as_str())
         .bind(request.principal.id)
         .bind(&request.context.team_ids)
+        .bind(request.context.on_behalf_of_user_id)
+        .bind(request.context.via_agent_id)
+        .bind(request.context.device_id)
+        .bind(delegated_agent_ids)
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter()
@@ -513,13 +529,26 @@ WHERE id = $1 AND revoked_at IS NULL"#,
     }
 }
 
+fn delegated_agent_ids(request: &AuthorizationRequest) -> Vec<Uuid> {
+    let mut ids: Vec<Uuid> = request
+        .delegation_chain
+        .iter()
+        .filter_map(|hop| hop.principal_id)
+        .collect();
+    if let Some(via_agent_id) = request.context.via_agent_id {
+        ids.push(via_agent_id);
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 #[async_trait]
 impl Authorizer for PostgresAuthorizer {
     async fn authorize(
         &self,
         mut request: AuthorizationRequest,
     ) -> Result<Decision, AuthorizationError> {
-        let grants = self.matching_grants(&request).await?;
         let lease_chain = match request.context.lease_id {
             Some(lease_id) => self.load_lease_chain(lease_id).await?,
             None => Vec::new(),
@@ -527,6 +556,10 @@ impl Authorizer for PostgresAuthorizer {
         if !lease_chain.is_empty() {
             request.delegation_chain = lease_chain.iter().map(DelegationHop::from).collect();
         }
+        let delegated_agent_ids = delegated_agent_ids(&request);
+        let grants = self
+            .matching_grants(&request, &delegated_agent_ids)
+            .await?;
         let mut decision = evaluate(&request, &grants, &lease_chain);
         decision.audit_id = Some(self.record_audit(&request, &decision).await?);
         Ok(decision)
@@ -551,7 +584,7 @@ WHERE id = $1 AND workspace_id = $2"#,
         .fetch_optional(&self.pool)
         .await?;
         row.map(|row| {
-            Ok(AuditEvent {
+            Ok::<AuditEvent, sqlx::Error>(AuditEvent {
                 id: row.try_get("id")?,
                 workspace_id: row.try_get("workspace_id")?,
                 principal_type: row.try_get("principal_type")?,
@@ -714,7 +747,10 @@ fn evaluate(
     // needs the on-behalf owner relationship.
     let allowed = if lease_authorized {
         match request.action.as_str() {
-            Action::AGENT_INVOKE | Action::CREDENTIAL_USE => relationship_allow,
+            Action::AGENT_INVOKE
+            | Action::CREDENTIAL_USE
+            | Action::RUNTIME_USE
+            | Action::RESOURCE_USE => relationship_allow || explicit_allow,
             _ => relationship_allow || explicit_allow || lease_authorized,
         }
     } else {
@@ -766,10 +802,13 @@ fn relationship_allows(request: &AuthorizationRequest) -> bool {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         Action::CREDENTIAL_USE | Action::CREDENTIAL_READ_SECRET => is_owner,
-        Action::RUNTIME_READ => {
+        Action::RUNTIME_READ | Action::RUNTIME_USE => {
             is_owner
                 || (!is_private
-                    && !matches!(request.context.workspace_role, Some(WorkspaceRole::Guest)))
+                    && matches!(
+                        request.context.workspace_role,
+                        Some(WorkspaceRole::Owner | WorkspaceRole::Admin | WorkspaceRole::Member)
+                    ))
         }
         Action::RUNTIME_UPDATE => is_owner,
         Action::WORKSPACE_MANAGE => matches!(
@@ -832,10 +871,10 @@ fn validate_lease(
     if request.context.on_behalf_of_user_id != leaf.on_behalf_of_user_id {
         return Err("capability lease on-behalf identity mismatch");
     }
-    if request.context.device_id.is_some()
-        && leaf.device_id.is_some()
-        && request.context.device_id != leaf.device_id
-    {
+    if request.context.via_agent_id != Some(leaf.agent_id) {
+        return Err("capability lease agent identity mismatch");
+    }
+    if request.context.device_id != leaf.device_id {
         return Err("capability lease is bound to another device");
     }
     let mut seen = HashSet::new();
@@ -865,6 +904,12 @@ fn validate_lease(
             };
             if lease.depth != parent.depth + 1 || lease.parent_fence != Some(parent.fence) {
                 return Err("capability lease parent fence or depth mismatch");
+            }
+            if lease.workspace_id != parent.workspace_id
+                || lease.on_behalf_of_user_id != parent.on_behalf_of_user_id
+                || lease.device_id != parent.device_id
+            {
+                return Err("child capability lease changes its delegated identity boundary");
             }
             if !scope_is_subset(&lease.scope, &parent.scope) {
                 return Err("child capability lease widens parent scope");
@@ -922,6 +967,36 @@ mod tests {
         }
     }
 
+    fn active_lease(
+        lease_id: Uuid,
+        task_id: Uuid,
+        agent_id: Uuid,
+        workspace_id: Uuid,
+        on_behalf_of_user_id: Uuid,
+        device_id: Uuid,
+        capability: Capability,
+    ) -> LeaseRow {
+        let dispatched_at = Utc::now();
+        LeaseRow {
+            id: lease_id,
+            task_id,
+            agent_id,
+            workspace_id,
+            scope: vec![capability],
+            parent_token_id: None,
+            parent_fence: None,
+            depth: 0,
+            fence: 1,
+            claim_dispatched_at: Some(dispatched_at),
+            on_behalf_of_user_id: Some(on_behalf_of_user_id),
+            device_id: Some(device_id),
+            revoked_at: None,
+            expires_at: Utc::now() + chrono::Duration::minutes(5),
+            task_status: "running".to_string(),
+            current_dispatched_at: Some(dispatched_at),
+        }
+    }
+
     #[test]
     fn admin_does_not_automatically_read_private_runtime() {
         let owner = Uuid::now_v7();
@@ -932,6 +1007,191 @@ mod tests {
             &[],
         );
         assert_eq!(decision.effect, DecisionEffect::Deny);
+    }
+
+    #[test]
+    fn shared_agent_invocation_does_not_grant_owner_private_runtime() {
+        let runtime_owner = Uuid::now_v7();
+        let caller = Uuid::now_v7();
+        let mut req = request(
+            Action::RUNTIME_USE,
+            ResourceType::RUNTIME,
+            runtime_owner,
+            caller,
+        );
+        let private = evaluate(&req, &[], &[]);
+        assert_eq!(private.effect, DecisionEffect::Deny);
+
+        req.resource.attributes["private"] = Value::Bool(false);
+        let public = evaluate(&req, &[], &[]);
+        assert_eq!(public.effect, DecisionEffect::Allow);
+
+        req.resource.attributes["private"] = Value::Bool(true);
+        let explicit = evaluate(
+            &req,
+            &[Grant {
+                id: Uuid::now_v7(),
+                effect: "allow".to_string(),
+                conditions: json!({}),
+            }],
+            &[],
+        );
+        assert_eq!(explicit.effect, DecisionEffect::Allow);
+    }
+
+    #[test]
+    fn runtime_lease_cannot_bypass_private_runtime_boundary() {
+        let runtime_owner = Uuid::now_v7();
+        let originator = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let lease_id = Uuid::now_v7();
+        let workspace_id = Uuid::now_v7();
+        let lease = active_lease(
+            lease_id,
+            task_id,
+            agent_id,
+            workspace_id,
+            originator,
+            runtime_id,
+            Capability::exact(Action::RUNTIME_USE, ResourceType::RUNTIME, runtime_id),
+        );
+        let mut req = request(
+            Action::RUNTIME_USE,
+            ResourceType::RUNTIME,
+            runtime_owner,
+            originator,
+        );
+        req.principal = Principal {
+            principal_type: PrincipalType::TaskRun,
+            id: Some(task_id),
+        };
+        req.resource.id = Some(runtime_id);
+        req.resource.workspace_id = workspace_id;
+        req.context = AuthorizationContext {
+            on_behalf_of_user_id: Some(originator),
+            via_agent_id: Some(agent_id),
+            device_id: Some(runtime_id),
+            task_id: Some(task_id),
+            lease_id: Some(lease_id),
+            ..Default::default()
+        };
+
+        let denied = evaluate(&req, &[], std::slice::from_ref(&lease));
+        assert_eq!(denied.effect, DecisionEffect::Deny);
+
+        req.resource.attributes["private"] = Value::Bool(false);
+        let public = evaluate(&req, &[], std::slice::from_ref(&lease));
+        assert_eq!(public.effect, DecisionEffect::Allow);
+
+        req.resource.attributes["private"] = Value::Bool(true);
+        let granted = evaluate(
+            &req,
+            &[Grant {
+                id: Uuid::now_v7(),
+                effect: "allow".to_string(),
+                conditions: json!({}),
+            }],
+            &[lease],
+        );
+        assert_eq!(granted.effect, DecisionEffect::Allow);
+    }
+
+    #[test]
+    fn lease_requires_exact_agent_and_device_binding() {
+        let originator = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let lease_id = Uuid::now_v7();
+        let workspace_id = Uuid::now_v7();
+        let lease = active_lease(
+            lease_id,
+            task_id,
+            agent_id,
+            workspace_id,
+            originator,
+            runtime_id,
+            Capability::task(Action::TASK_READ),
+        );
+        let mut req = request(Action::TASK_READ, ResourceType::TASK_RUN, originator, originator);
+        req.principal = Principal {
+            principal_type: PrincipalType::TaskRun,
+            id: Some(task_id),
+        };
+        req.resource.id = Some(task_id);
+        req.resource.workspace_id = workspace_id;
+        req.context = AuthorizationContext {
+            on_behalf_of_user_id: Some(originator),
+            via_agent_id: Some(agent_id),
+            device_id: Some(runtime_id),
+            task_id: Some(task_id),
+            lease_id: Some(lease_id),
+            ..Default::default()
+        };
+        assert_eq!(
+            evaluate(&req, &[], std::slice::from_ref(&lease)).effect,
+            DecisionEffect::Allow
+        );
+
+        req.context.via_agent_id = None;
+        assert_eq!(
+            evaluate(&req, &[], std::slice::from_ref(&lease)).effect,
+            DecisionEffect::Deny
+        );
+        req.context.via_agent_id = Some(agent_id);
+        req.context.device_id = None;
+        assert_eq!(evaluate(&req, &[], &[lease]).effect, DecisionEffect::Deny);
+    }
+
+    #[test]
+    fn child_lease_cannot_change_delegated_identity_boundary() {
+        let originator = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let lease_id = Uuid::now_v7();
+        let workspace_id = Uuid::now_v7();
+        let mut parent = active_lease(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            workspace_id,
+            originator,
+            runtime_id,
+            Capability::task(Action::TASK_READ),
+        );
+        let mut child = active_lease(
+            lease_id,
+            task_id,
+            agent_id,
+            workspace_id,
+            originator,
+            runtime_id,
+            Capability::task(Action::TASK_READ),
+        );
+        child.parent_token_id = Some(parent.id);
+        child.parent_fence = Some(parent.fence);
+        child.depth = 1;
+        parent.device_id = Some(Uuid::now_v7());
+
+        let mut req = request(Action::TASK_READ, ResourceType::TASK_RUN, originator, originator);
+        req.principal = Principal {
+            principal_type: PrincipalType::TaskRun,
+            id: Some(task_id),
+        };
+        req.resource.id = Some(task_id);
+        req.resource.workspace_id = workspace_id;
+        req.context = AuthorizationContext {
+            on_behalf_of_user_id: Some(originator),
+            via_agent_id: Some(agent_id),
+            device_id: Some(runtime_id),
+            task_id: Some(task_id),
+            lease_id: Some(lease_id),
+            ..Default::default()
+        };
+        assert_eq!(evaluate(&req, &[], &[child, parent]).effect, DecisionEffect::Deny);
     }
 
     #[test]
@@ -962,6 +1222,38 @@ mod tests {
         )];
         assert!(!scope_is_subset(&child, &parent));
         assert!(scope_is_subset(&parent, &parent));
+    }
+
+    #[test]
+    fn parent_agent_ceiling_remains_in_delegated_grant_subjects() {
+        let originator = Uuid::now_v7();
+        let parent_agent = Uuid::now_v7();
+        let child_agent = Uuid::now_v7();
+        let mut req = request(Action::TASK_READ, ResourceType::TASK_RUN, originator, originator);
+        req.context.via_agent_id = Some(child_agent);
+        req.delegation_chain = vec![
+            DelegationHop {
+                lease_id: Uuid::now_v7(),
+                task_id: Uuid::now_v7(),
+                principal_id: Some(child_agent),
+                depth: 1,
+                fence: 2,
+                scope: vec![Capability::task(Action::TASK_READ)],
+            },
+            DelegationHop {
+                lease_id: Uuid::now_v7(),
+                task_id: Uuid::now_v7(),
+                principal_id: Some(parent_agent),
+                depth: 0,
+                fence: 1,
+                scope: vec![Capability::task(Action::TASK_READ)],
+            },
+        ];
+        assert_eq!(delegated_agent_ids(&req), {
+            let mut expected = vec![parent_agent, child_agent];
+            expected.sort_unstable();
+            expected
+        });
     }
 
     #[test]

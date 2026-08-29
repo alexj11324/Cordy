@@ -27,7 +27,7 @@ use crate::claim_comments::{
 };
 use crate::daemon::DaemonClaimServices;
 use crate::error::error_response;
-use crate::mcp_merge::{merge_mcp_overlay, resolve_agent_mcp_config, WorkspaceMcpBinding};
+use crate::mcp_merge::{resolve_agent_mcp_config, WorkspaceMcpBinding};
 use crate::team_briefing::build_team_leader_briefing;
 use crate::timefmt::rfc3339;
 
@@ -174,21 +174,6 @@ fn trailing_user_messages(
         }
     }
     msgs
-}
-
-fn parse_runtime_connected_apps_for_claim(raw: Option<&Value>) -> Option<Value> {
-    let raw = raw?;
-    if raw.is_null() {
-        return None;
-    }
-    // Shape-checked passthrough: ConnectedApp serializes verbatim from the row.
-    match raw.as_array() {
-        Some(_) => Some(raw.clone()),
-        None => {
-            tracing::warn!("daemon claim: unmarshal runtime_connected_apps failed");
-            None
-        }
-    }
 }
 
 fn disabled_runtime_skills_for(raw: &Value, runtime_id: &str, provider: &str) -> Vec<Value> {
@@ -353,43 +338,11 @@ pub(crate) async fn build_claimed_task_response(
     // delivered_comment_ids array.
     let mut delivered_comments: Vec<CoalescedCommentData> = Vec::new();
 
-    // Agent-trigger plugin hooks ride the claim as tools. Failures degrade to
-    // no tools rather than failing the claim.
-    if let Ok(workspace_uuid) = Uuid::parse_str(runtime_workspace_id) {
-        if let Ok(tools) =
-            patchbay_service::plugin_agent_tools::agent_hook_tools(&state.plugins, workspace_uuid)
-                .await
-        {
-            if let Ok(t) = serde_json::to_value(&tools) {
-                obj.insert("plugin_hook_tools".into(), t);
-            }
-        }
-        if let Ok(connections) = patchbay_service::plugin_mcp_transport::agent_mcp_connections(
-            &state.plugins.pool,
-            workspace_uuid,
-        )
-        .await
-        {
-            if !connections.is_empty() {
-                if let Ok(conns) = serde_json::to_value(&connections) {
-                    let existing = obj
-                        .entry("remote_mcp_connections")
-                        .or_insert_with(|| Value::Array(Vec::new()));
-                    if let Value::Array(arr) = existing {
-                        if let Value::Array(mut incoming) = conns {
-                            arr.append(&mut incoming);
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(apps) =
-            parse_runtime_connected_apps_for_claim(task.runtime_connected_apps.as_ref())
-        {
-            obj.insert("connected_apps".into(), apps);
-        }
-    }
+    // Phase 1 never projects workspace plugin tools, plugin MCP credentials,
+    // or connected-app bindings into task claims. Those stores are
+    // workspace/owner scoped and have no lease-bound credential broker yet;
+    // advertising them here would turn agent.invoke into implicit tool and
+    // credential authority.
 
     // Load the task agent with fresh data (name + skills + env/args/mcp).
     let agent = match agent_q::get_agent(&state.pool, task.agent_id).await {
@@ -428,62 +381,72 @@ pub(crate) async fn build_claimed_task_response(
         }
     };
 
-    let custom_env: Value = agent.custom_env.clone();
-    let custom_args: Vec<String> = agent
-        .custom_args
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
+    let owner_execution_config_allowed = task_claim_may_receive_long_lived_config();
+    let custom_env: Value = if owner_execution_config_allowed {
+        agent.custom_env.clone()
+    } else {
+        Value::Null
+    };
+    let custom_args: Vec<String> = if owner_execution_config_allowed {
+        agent
+            .custom_args
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     // mcp_config: agent column → bound enabled workspace servers → per-task overlay.
-    let mut mcp_config = agent.mcp_config.clone();
-    match ws_mcp_q::list_enabled_agent_mcp_servers(&state.pool, agent.id).await {
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                task_id = %task.id,
-                agent_id = %agent.id,
-                "daemon claim: load agent mcp servers failed; using agent mcp_config"
-            );
-        }
-        Ok(bound) if !bound.is_empty() => {
-            let bindings: Vec<WorkspaceMcpBinding> = bound
-                .into_iter()
-                .map(|server| WorkspaceMcpBinding {
-                    name: server.name,
-                    config: server.config.unwrap_or(Value::Null),
-                })
-                .collect();
-            match resolve_agent_mcp_config(&bindings, mcp_config.as_ref()) {
-                Ok(resolved) => mcp_config = resolved,
-                Err(_) => {
-                    tracing::warn!(
-                        task_id = %task.id,
-                        "daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config"
-                    );
-                }
-            }
-        }
-        Ok(_) => {}
-    }
-    if let Some(overlay) = task.runtime_mcp_overlay.as_ref().filter(|o| !o.is_null()) {
-        match merge_mcp_overlay(mcp_config.as_ref(), Some(overlay)) {
-            Ok(merged) => mcp_config = merged,
-            Err(_) => {
+    let mut mcp_config = owner_execution_config_allowed
+        .then(|| agent.mcp_config.clone())
+        .flatten();
+    if owner_execution_config_allowed {
+        match ws_mcp_q::list_enabled_agent_mcp_servers(&state.pool, agent.id).await {
+            Err(e) => {
                 tracing::warn!(
+                    error = %e,
                     task_id = %task.id,
-                    "daemon claim: merge runtime_mcp_overlay failed; falling back to agent mcp_config"
+                    agent_id = %agent.id,
+                    "daemon claim: load agent mcp servers failed; using agent mcp_config"
                 );
             }
+            Ok(bound) if !bound.is_empty() => {
+                let bindings: Vec<WorkspaceMcpBinding> = bound
+                    .into_iter()
+                    .map(|server| WorkspaceMcpBinding {
+                        name: server.name,
+                        config: server.config.unwrap_or(Value::Null),
+                    })
+                    .collect();
+                match resolve_agent_mcp_config(&bindings, mcp_config.as_ref()) {
+                    Ok(resolved) => mcp_config = resolved,
+                    Err(_) => {
+                        tracing::warn!(
+                            task_id = %task.id,
+                            "daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config"
+                        );
+                    }
+                }
+            }
+            Ok(_) => {}
         }
     }
+    // Phase 1 intentionally ignores persisted per-task overlays, including
+    // rows queued before this deployment. The legacy Composio overlay embeds
+    // a server-wide long-lived API key and was computed before capability
+    // lease issuance, so forwarding it would bypass credential.use and lease
+    // revocation. A later broker may restore overlays only with a short-lived,
+    // lease-bound credential.
+    let _ = capability_scoped_task_overlay(task.runtime_mcp_overlay.as_ref());
 
     // runtime_config: forward only non-empty payloads.
-    let runtime_config = (!agent.runtime_config.is_null()
+    let runtime_config = (owner_execution_config_allowed
+        && !agent.runtime_config.is_null()
         && agent
             .runtime_config
             .as_object()
@@ -599,14 +562,16 @@ pub(crate) async fn build_claimed_task_response(
         .await);
     }
 
-    // Runtime owner profile description for "## Requesting User" injection.
-    if let Some(owner_id) = runtime.owner_id {
-        if let Ok(Some(owner)) = user_q::get_user(&state.pool, owner_id).await {
-            set_if_not_empty(obj, "requesting_user_name", &owner.name);
-            if !owner.profile_description.is_empty() {
+    // The requesting user is the task's on-behalf originator, never the
+    // Runtime or Agent owner. Owner profile text here would be both private
+    // data disclosure and an instruction-confusion path for shared Agents.
+    if let Some(requesting_user_id) = task.originator_user_id {
+        if let Ok(Some(requesting_user)) = user_q::get_user(&state.pool, requesting_user_id).await {
+            set_if_not_empty(obj, "requesting_user_name", &requesting_user.name);
+            if !requesting_user.profile_description.is_empty() {
                 obj.insert(
                     "requesting_user_profile_description".into(),
-                    Value::String(owner.profile_description.clone()),
+                    Value::String(requesting_user.profile_description.clone()),
                 );
             }
         }
@@ -1522,6 +1487,18 @@ pub(crate) async fn build_claimed_task_response(
     })
 }
 
+fn capability_scoped_task_overlay(_persisted: Option<&Value>) -> Option<&Value> {
+    None
+}
+
+fn task_claim_may_receive_long_lived_config() -> bool {
+    // A task lease may eventually carry brokered, short-lived tool and
+    // credential grants. Phase 1 has no such broker, so stored Agent env, MCP,
+    // args, and Runtime config remain unavailable even to an owner-originated
+    // task. agent.invoke is never credential.read_secret.
+    false
+}
+
 fn chat_session_resume_fallback_needed(prior_session_id: &str, prior_work_dir: &str) -> bool {
     prior_session_id.is_empty() || prior_work_dir.is_empty()
 }
@@ -1602,7 +1579,11 @@ async fn fail_claimed_task_before_launch(
 
 #[cfg(test)]
 mod tests {
-    use super::explicit_goal_objective;
+    use super::{
+        capability_scoped_task_overlay, explicit_goal_objective,
+        task_claim_may_receive_long_lived_config,
+    };
+    use serde_json::json;
 
     #[test]
     fn goal_directive_is_explicit_and_line_oriented() {
@@ -1618,5 +1599,24 @@ mod tests {
         let objective = explicit_goal_objective("/GOAL").expect("goal objective");
         assert!(objective.contains("every remaining requirement"));
         assert!(objective.contains("genuinely blocked"));
+    }
+
+    #[test]
+    fn legacy_owner_composio_overlay_is_not_delivered_to_a_task() {
+        let legacy = json!({
+            "mcpServers": {
+                "composio": {
+                    "type": "http",
+                    "url": "https://mcp.example/session",
+                    "headers": {"x-api-key": "owner-platform-secret"}
+                }
+            }
+        });
+        assert!(capability_scoped_task_overlay(Some(&legacy)).is_none());
+    }
+
+    #[test]
+    fn task_claim_cannot_receive_long_lived_agent_execution_config() {
+        assert!(!task_claim_may_receive_long_lived_config());
     }
 }

@@ -594,16 +594,13 @@ impl HandlerState {
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         task_service.quick_actions = Some(llm.clone());
         task_service.feature_flags = feature_flags.clone();
-        task_service.set_composio_overlay(
-            composio
-                .as_ref()
-                .map(|service| {
-                    crate::composio::task_overlay_builder(
-                        service.clone(),
-                        authorization.clone(),
-                    )
-                }),
-        );
+        // Phase 1 fails closed for Agent credential delegation. The current
+        // Composio overlay embeds the platform's long-lived API key in runtime
+        // configuration and is built before a task lease exists, so it cannot
+        // satisfy credential.use intersection. Human connection management
+        // remains available; task overlays stay off until a short-lived
+        // broker consumes the capability lease at dispatch.
+        task_service.set_composio_overlay(None);
         let tasks = Arc::new(task_service);
         let coordinator = patchbay_service::coordination::CoordinatorService::new(
             pool.clone(),
@@ -805,7 +802,9 @@ impl HandlerState {
         self
     }
 
-    /// Rebuilds the Composio HTTP service and task overlay from loaded config.
+    /// Rebuilds the human Composio HTTP service from loaded config. Task
+    /// overlays remain fail-closed until lease-bound credential brokering is
+    /// available.
     /// TOML-only deployments no longer depend on process environment after
     /// `Config::load` has already merged env overrides into `config`.
     pub fn with_composio_from_config(mut self, config: &patchbay_config::Config) -> Self {
@@ -822,12 +821,8 @@ impl HandlerState {
         match crate::composio::build_service_from_config(self.pool.clone(), config) {
             Ok(service) => {
                 let service = Arc::new(service);
-                self.composio = Some(service.clone());
-                self.tasks
-                    .set_composio_overlay(Some(crate::composio::task_overlay_builder(
-                        service,
-                        self.authorization.clone(),
-                    )));
+                self.composio = Some(service);
+                self.tasks.set_composio_overlay(None);
             }
             Err(error) => {
                 tracing::warn!(%error, "composio disabled by incomplete configuration");

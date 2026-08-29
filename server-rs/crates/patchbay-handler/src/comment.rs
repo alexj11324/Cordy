@@ -86,6 +86,20 @@ async fn preview_triggers(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !crate::issue::task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow commenting on this issue",
+        );
+    }
     let content = clean_content(&request.content);
     if content.is_empty() {
         return Json(json!({ "agents": [], "blocked": [] })).into_response();
@@ -176,6 +190,20 @@ async fn create(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !crate::issue::task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow commenting on this issue",
+        );
+    }
     let content = clean_content(&request.content);
     if content.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "content is required");

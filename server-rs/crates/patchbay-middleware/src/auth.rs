@@ -330,6 +330,62 @@ fn stamp_task_identity(
     set_header(req, "x-actor-source", "task_token");
 }
 
+/// Phase 1 task leases are accepted only by data-plane routes whose handlers
+/// either bind mutations to the current task or consume the shared
+/// authorizer. This default-deny boundary prevents the compatibility
+/// `x-user-id` projection from turning a short-lived task lease into a JWT,
+/// PAT, credential-management session, Agent secret read, or another durable
+/// human control-plane authority.
+fn task_token_route_allowed(method: &Method, path: &str, workspace_id: Uuid) -> bool {
+    if path.starts_with("/api/issues") {
+        if method == Method::GET {
+            let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
+            return !suffix.is_empty() && !suffix.contains('/');
+        }
+        if method == Method::POST {
+            return path.ends_with("/comments");
+        }
+        if method == Method::PUT {
+            let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
+            return !suffix.is_empty() && !suffix.contains('/');
+        }
+        return false;
+    }
+    if path.starts_with("/api/comments") {
+        return false;
+    }
+    if path.starts_with("/api/tasks/") {
+        return (method == Method::GET && path.ends_with("/messages"))
+            || (method == Method::POST
+                && (path.ends_with("/message-bus") || path.ends_with("/cancel")));
+    }
+    if path.starts_with("/api/authorization/decisions/") {
+        return method == Method::GET;
+    }
+    if path == "/api/runtimes" || path == "/api/runtimes/" {
+        return method == Method::GET;
+    }
+    if let Some(suffix) = path.strip_prefix("/api/runtimes/") {
+        return !suffix.is_empty()
+            && !suffix.contains('/')
+            && (method == Method::PATCH || method == Method::DELETE);
+    }
+    let bound_workspace = format!("/api/workspaces/{workspace_id}");
+    if method == Method::GET
+        && (path == bound_workspace || path == format!("{bound_workspace}/"))
+    {
+        return true;
+    }
+    if method == Method::GET
+        && ["/api/properties", "/api/labels"]
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+    {
+        return true;
+    }
+    false
+}
+
 /// Auth middleware entrypoint — use via
 /// `axum::middleware::from_fn_with_state(state, auth_middleware)`.
 pub async fn auth_middleware(
@@ -445,6 +501,18 @@ pub async fn auth_middleware(
             return Err(err_response(
                 StatusCode::FORBIDDEN,
                 TEMPORARILY_DISABLED_USER_ERROR,
+            ));
+        }
+        if !task_token_route_allowed(req.method(), req.uri().path(), tt.workspace_id) {
+            tracing::warn!(
+                task_id = %tt.task_id,
+                path = %req.uri().path(),
+                method = %req.method(),
+                "auth: capability lease rejected at human control-plane boundary"
+            );
+            return Err((
+                StatusCode::FORBIDDEN,
+                r#"{"error":"task capability is not valid for this route"}"#,
             ));
         }
         stamp_task_identity(
@@ -856,6 +924,68 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("task_token")
         );
+    }
+
+    #[test]
+    fn task_lease_cannot_mint_durable_or_human_control_plane_authority() {
+        let workspace_id = test_uuid(14);
+        for (method, path) in [
+            (Method::POST, "/api/cli-token"),
+            (Method::POST, "/api/tokens"),
+            (Method::GET, "/api/integrations/composio/connections"),
+            (Method::GET, "/api/agents/private-agent/env"),
+            (Method::POST, "/api/issues/quick-create"),
+            (Method::POST, "/api/issues/issue-id/rerun"),
+            (Method::DELETE, "/api/issues/issue-id"),
+            (Method::POST, "/api/issues/batch-delete"),
+            (Method::DELETE, "/api/comments/comment-id"),
+            (Method::POST, "/api/runtimes/runtime-id/unbind-agents-and-delete"),
+            (Method::POST, "/api/cloud-runtime/nodes"),
+            (Method::GET, "/api/workspaces"),
+            (Method::GET, "/api/agent-task-snapshot"),
+            (Method::GET, "/api/attachments/private-chat-file"),
+            (Method::GET, "/api/chat/history"),
+            (Method::GET, "/api/issues"),
+            (Method::GET, "/api/issues/other/timeline"),
+            (Method::POST, "/api/issues"),
+            (Method::POST, "/api/issues/query"),
+            (Method::POST, "/api/issues/table/rows"),
+            (Method::POST, "/api/issues/table/groups"),
+            (Method::POST, "/api/issues/table/facets"),
+            (Method::POST, "/api/upload-file"),
+        ] {
+            assert!(
+                !task_token_route_allowed(&method, path, workspace_id),
+                "{method} {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn task_lease_allowlist_is_limited_to_scoped_data_plane_routes() {
+        let workspace_id = test_uuid(15);
+        for (method, path) in [
+            (Method::GET, "/api/issues/issue-id"),
+            (Method::PUT, "/api/issues/issue-id"),
+            (Method::POST, "/api/issues/issue-id/comments"),
+            (Method::POST, "/api/tasks/task-id/message-bus"),
+            (Method::PATCH, "/api/runtimes/runtime-id"),
+        ] {
+            assert!(
+                task_token_route_allowed(&method, path, workspace_id),
+                "{method} {path}"
+            );
+        }
+        assert!(task_token_route_allowed(
+            &Method::GET,
+            &format!("/api/workspaces/{workspace_id}"),
+            workspace_id,
+        ));
+        assert!(!task_token_route_allowed(
+            &Method::GET,
+            &format!("/api/workspaces/{}", test_uuid(16)),
+            workspace_id,
+        ));
     }
 
     #[test]

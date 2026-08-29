@@ -103,6 +103,10 @@ async fn runtime_allowed(
         .get("x-device-id")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| Uuid::parse_str(value).ok());
+    let via_agent_id = headers
+        .get("x-agent-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok());
     let decision = state
         .authorization
         .authorize(AuthorizationRequest {
@@ -125,6 +129,7 @@ async fn runtime_allowed(
             context: AuthorizationContext {
                 workspace_role: workspace_role(member),
                 on_behalf_of_user_id: task_principal.then_some(on_behalf_of_user_id).flatten(),
+                via_agent_id: task_principal.then_some(via_agent_id).flatten(),
                 device_id,
                 task_id: task_principal.then_some(task_id).flatten(),
                 lease_id: task_principal.then_some(lease_id).flatten(),

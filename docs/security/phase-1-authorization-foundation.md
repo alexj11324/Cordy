@@ -27,10 +27,14 @@ code and in CI:
 5. Permanent grants are persisted separately from resources. Explicit deny
    wins; grants can require approval; task/run decisions still require a valid
    lease, so a standing grant cannot widen a task scope.
-6. A shared agent invoked by another user does not mount the agent owner's
-   private Composio connection. `credential.use` is checked separately and the
-   connection selected for a run belongs to the run originator. Long-lived
-   credential material is never returned to an agent.
+6. A task claim never receives stored Agent `custom_env`, custom arguments,
+   MCP configuration, Runtime configuration, workspace plugin tools, connected
+   apps, or Composio overlays. These paths can contain long-lived owner or
+   workspace credentials and there is no lease-bound broker in Phase 1. Human
+   connection management remains available; a later broker must consume
+   `credential.use` and return only a short-lived, lease-bound session.
+   Long-lived credential material is never returned to an agent, including an
+   owner-originated run.
 7. Runtime read/update is enforced by the same authorizer. Workspace admins do
    not automatically read or mutate another user's private runtime. Public
    runtime metadata remains readable to workspace members; private runtime
@@ -49,16 +53,26 @@ fencing.
 ## Root cause and risk boundary
 
 The immediate confused-deputy root cause is earlier than daemon execution:
-the existing Composio dispatch code treats successful `agent.invoke` admission
-as permission to mint a session over the agent owner's connected accounts.
-The originator is carried only for attribution. A shared agent therefore turns
-its owner's private integration into ambient authority for callers.
+claim assembly treats successful `agent.invoke` admission as permission to
+copy Agent env/MCP/Runtime configuration and workspace plugin/connection
+credentials into the run. The originator is carried only for attribution. A
+shared agent therefore turns owner or workspace execution configuration into
+ambient authority for callers.
 
 The existing `mat_` token fixes actor-header forgery but is an identity token,
-not yet a complete lease: it carries no scope or parent chain, lasts up to 24
-hours, and authentication checks expiry only. Completed and failed tasks do not
-eagerly revoke it. Runtime handlers also contain role shortcuts that let an
-admin enumerate or edit private runtimes.
+not yet a complete lease: it carries no scope or parent chain, and
+authentication historically checked expiry only. Completed and failed tasks
+did not eagerly revoke it. Runtime handlers also contain role shortcuts that
+let an admin enumerate or edit private runtimes.
+
+The compatibility `task_token.user_id` projection also makes every ordinary
+user route a potential confused deputy. Phase 1 therefore admits task leases
+only to an explicit data-plane route set and rejects credential, account,
+Agent-definition, workspace-control, connector, billing, attachment, Chat,
+plugin/tool, and other human control-plane routes before their handlers run.
+Task read/update endpoints bind the requested task to the lease task; single
+Issue reads, comments, and mutations that remain available consume the
+project-resource lease and bind to the task's Issue.
 
 Phase 1 fixes those earliest boundaries. It intentionally does not rewrite all
 legacy resource handlers, introduce a universal resource registry, expose
@@ -92,23 +106,29 @@ The migration is additive and compatible with rows from current `main`:
 - add authorization grant and append-only decision-audit tables without
   foreign keys or cascades;
 - add lease columns to `task_token`, backfilling existing live tokens with a
-  conservative invocation scope and their current claim timestamp;
-- mark duplicate active claim tokens revoked before creating the partial unique
-  claim-fence index;
+  conservative invocation scope, current claim timestamp, and initiating-user
+  compatibility identity; historical tokens without an initiating user are
+  revoked;
+- remove duplicate historical claim rows before creating the unconditional
+  unique claim-fence index, so revocation cannot make a claim consumable again;
 - build every new index concurrently in its own migration;
 - keep raw bearer values out of the new tables and audit payloads.
 
-Rollback first removes concurrent indexes, then drops the two additive tables
-and the added `task_token` columns. Existing token hashes and task data remain
-unchanged, so rollback does not invalidate unrelated user data. Rollback is not
+Rollback first removes concurrent indexes, deletes revoked/expired/terminal or
+stale-claim bearer rows that the legacy schema cannot represent safely, then
+drops the two additive tables and the added `task_token` columns. Active,
+current token hashes and unrelated task/user data remain. Rollback is not
 permission-preserving: it removes the new enforcement and must be treated as a
 security rollback, not a normal operational toggle.
 
 ## Explicit follow-ups
 
-Later slices should move remaining private Agent, Directory, Chat,
-Integration/Connection, plugin/tool, and device-management handlers onto the
-same interface; add separate team security membership; add Guest membership
-storage and invitation rules; and replace remaining member-shaped task-token
-compatibility reads. Those are not prerequisites for this slice's three real
-enforcement consumers and must not weaken the Phase 1 boundaries while pending.
+Later slices should add a lease-bound short-lived credential/tool broker before
+re-enabling Agent execution configuration or plugin/connection tools; move
+remaining private Agent, Directory, Chat, Integration/Connection, plugin/tool,
+and device-management handlers onto the same interface; add separate team
+security membership; add Guest membership storage and invitation rules; add an
+explicit System-task workspace principal; and replace remaining member-shaped
+task-token compatibility reads. Those are not prerequisites for this slice's
+real enforcement consumers and must not weaken the Phase 1 boundaries while
+pending.
