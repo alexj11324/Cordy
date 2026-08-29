@@ -36,8 +36,6 @@ import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { UpdatesSettingsTab } from "./components/updates-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 import { DesktopRouteErrorPage } from "./components/route-error-page";
-import { DesktopWebPreviewIssuesPage } from "./components/desktop-web-preview-issues-page";
-import { isDesktopWebPreview } from "./platform/web-bridge";
 
 /**
  * Wraps `SettingsPage` so the desktop-only extra tabs can pull their labels
@@ -96,10 +94,6 @@ function PageShell() {
   );
 }
 
-function IssuesRoute() {
-  return isDesktopWebPreview() ? <DesktopWebPreviewIssuesPage /> : <IssuesPage />;
-}
-
 /**
  * Route definitions shared by all tabs.
  *
@@ -135,7 +129,10 @@ export const appRoutes: RouteObject[] = [
           { index: true, element: null },
           {
             path: "issues",
-            element: <IssuesRoute />,
+            // Browser preview and Electron deliberately mount the same
+            // production IssuesPage. The browser host supplies an explicit
+            // local API adapter in Vite; it does not switch to a fake shell.
+            element: <IssuesPage />,
             handle: { title: "Issues" },
           },
           {

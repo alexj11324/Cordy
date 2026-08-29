@@ -77,14 +77,19 @@ export function installWebDesktopBridge(): boolean {
   const existingWindow = window as unknown as { desktopAPI?: unknown };
   if (existingWindow.desktopAPI) return false;
 
+  const preview = import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
   const runtimeConfig = runtimeConfigFromDevEnv({
-    apiUrl: import.meta.env.VITE_API_URL,
+    // The browser preview owns a same-origin local API middleware by default.
+    // An explicit VITE_API_URL still opts into a real remote/local backend for
+    // full server-backed acceptance without changing the Vite host.
+    apiUrl:
+      import.meta.env.VITE_API_URL ||
+      (preview ? window.location.origin : undefined),
     wsUrl: import.meta.env.VITE_WS_URL,
     // A browser renderer should generate links back to the Vite origin, not
     // the historical Next.js port used by the web app.
     appUrl: import.meta.env.VITE_APP_URL || window.location.origin,
   });
-  const preview = import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 
   const desktopAPI = {

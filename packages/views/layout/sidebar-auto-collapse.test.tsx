@@ -207,12 +207,27 @@ describe("sidebar auto-collapse between lg and xl", () => {
 
       const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
       const rail = container.querySelector<HTMLElement>("[data-slot='sidebar-rail']")!;
+      const inner = container.querySelector<HTMLElement>("[data-slot='sidebar-inner']")!;
 
       expect(root).toHaveAttribute("data-state", "collapsed");
       fireEvent.pointerEnter(rail);
       expect(root).toHaveAttribute("data-state", "expanded");
 
-      fireEvent.pointerLeave(rail);
+      // The rail moves to the expanded sidebar edge. A stationary pointer must
+      // not collapse/reveal the nav in a loop when the rail itself moves out
+      // from under it.
+      act(() => vi.advanceTimersByTime(500));
+      expect(root).toHaveAttribute("data-state", "expanded");
+
+      // Moving from the trigger into the revealed sidebar remains inside the
+      // combined hover region, so leaving the rail alone does not close it.
+      fireEvent.pointerLeave(rail, { relatedTarget: inner });
+      fireEvent.pointerEnter(inner, { relatedTarget: rail });
+      act(() => vi.advanceTimersByTime(180));
+      expect(root).toHaveAttribute("data-state", "expanded");
+
+      // Only leaving the outer region closes the temporary reveal.
+      fireEvent.pointerLeave(root, { relatedTarget: document.body });
       act(() => vi.advanceTimersByTime(180));
       expect(root).toHaveAttribute("data-state", "collapsed");
 

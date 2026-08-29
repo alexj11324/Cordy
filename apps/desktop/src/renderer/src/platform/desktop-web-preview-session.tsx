@@ -99,9 +99,10 @@ export function DesktopWebPreviewSession({ children }: { children: ReactNode }) 
       pinKeys.list(PREVIEW_WORKSPACE.id, PREVIEW_USER_ID),
       [],
     );
-    queryClient.setQueryData(workspaceKeys.members(PREVIEW_WORKSPACE.id), []);
-    queryClient.setQueryData(workspaceKeys.agents(PREVIEW_WORKSPACE.id), []);
-    queryClient.setQueryData(workspaceKeys.squads(PREVIEW_WORKSPACE.id), []);
+    // Directory queries are served by the Vite local API below. Do not seed
+    // empty arrays here: that would make React Query treat the directory as
+    // resolved and prevent the shared renderer from discovering preview
+    // members/agents.
     queryClient.setQueryData(workspaceKeys.skills(PREVIEW_WORKSPACE.id), []);
     queryClient.setQueryData(runtimeKeys.list(PREVIEW_WORKSPACE.id), []);
     queryClient.setQueryData(

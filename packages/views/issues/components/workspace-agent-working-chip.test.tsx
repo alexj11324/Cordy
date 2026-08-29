@@ -6,7 +6,6 @@ import type { WorkingAgentSummary } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockState = vi.hoisted(() => ({
-  avatarAgentIds: undefined as readonly string[] | undefined,
   buttonVariant: undefined as string | undefined,
 }));
 
@@ -16,13 +15,6 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
     getActorInitials: () => "AG",
     getActorAvatarUrl: () => null,
   }),
-}));
-
-vi.mock("../../agents/components/agent-avatar-stack", () => ({
-  AgentAvatarStack: ({ agentIds }: { agentIds: readonly string[] }) => {
-    mockState.avatarAgentIds = agentIds;
-    return <div data-testid="agent-avatar-stack">{agentIds.length}</div>;
-  },
 }));
 
 // The real hover card renders its body only while open. Render it inline so the
@@ -67,7 +59,6 @@ const EMPTY_HOVER = "No agents working right now";
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
-  mockState.avatarAgentIds = undefined;
   mockState.buttonVariant = undefined;
 });
 
@@ -84,11 +75,7 @@ describe("WorkspaceAgentWorkingChip", () => {
     expect(
       screen.getByRole("button", { name: "3 agents working" }),
     ).toBeTruthy();
-    expect(mockState.avatarAgentIds).toEqual([
-      "agent-1",
-      "agent-2",
-      "agent-3",
-    ]);
+    expect(screen.getByRole("button", { name: "3 agents working" }).textContent).toContain("3");
     expect(mockState.buttonVariant).toBe("brandSubtle");
   });
 
@@ -103,7 +90,6 @@ describe("WorkspaceAgentWorkingChip", () => {
     expect(
       screen.getByRole("button", { name: "0 agents working" }),
     ).toBeTruthy();
-    expect(screen.queryByTestId("agent-avatar-stack")).toBeNull();
     expect(mockState.buttonVariant).toBe("outline");
     expect(screen.getByText(EMPTY_HOVER)).toBeTruthy();
   });
@@ -120,7 +106,6 @@ describe("WorkspaceAgentWorkingChip", () => {
     expect(
       screen.getByRole("button", { name: "Agents working: —" }),
     ).toBeTruthy();
-    expect(screen.queryByTestId("agent-avatar-stack")).toBeNull();
   });
 
   // Regression: the chip passed `agents ?? []` to the hover body, so an

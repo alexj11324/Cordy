@@ -134,19 +134,20 @@ export function CoreProvider({
         {identity?.platform !== "desktop" && !isUiPreview && (
           <ClientUsageReporter storage={storage} identity={identity} />
         )}
-        {isUiPreview ? (
-          children
-        ) : (
-          <WSProvider
-            wsUrl={wsUrl}
-            authStore={authStore}
-            storage={storage}
-            cookieAuth={cookieAuth}
-            identity={identity}
-          >
-            {children}
-          </WSProvider>
-        )}
+        {/* Keep the realtime context mounted in the browser preview even when
+            no token is available. WSProvider becomes a no-op until a real
+            session exists, while shared detail/card components can still use
+            the same subscription hooks as Electron instead of crashing at a
+            route boundary. */}
+        <WSProvider
+          wsUrl={wsUrl}
+          authStore={authStore}
+          storage={storage}
+          cookieAuth={cookieAuth}
+          identity={identity}
+        >
+          {children}
+        </WSProvider>
       </AuthInitializer>
     </QueryProvider>
   );

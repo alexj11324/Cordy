@@ -624,7 +624,6 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       tabIndex={hoverReveal ? 0 : -1}
       onClick={handleClick}
       onPointerEnter={revealHoverSidebar}
-      onPointerLeave={hideHoverSidebar}
       onFocus={revealHoverSidebar}
       onBlur={(event) => {
         const relatedTarget = event.relatedTarget
