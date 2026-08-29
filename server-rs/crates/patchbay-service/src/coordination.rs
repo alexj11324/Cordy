@@ -423,7 +423,8 @@ FOR UPDATE"#,
         // The task captures the implementation owner when it is enqueued.
         // A still-running task must not promote a newer owner after an
         // explicit reassignment (A -> B); the current owner is authoritative
-        // for the issue, while the captured revision remains audit metadata.
+        // for the issue. The issue revision remains audit metadata only because
+        // unrelated edits (title, description, priority, etc.) also advance it.
         if is_task_completion {
             let captured_owner_type = event
                 .payload
@@ -1608,15 +1609,30 @@ async fn issue_matches_dispatch_plan(
     plan: &DispatchPlan,
 ) -> bool {
     let category = issue_status::effective(executor, issue.workspace_id, &issue.status).await;
-    issue.revision == plan.issue.revision
-        && category == plan.expected_issue_category
-        && if plan.expected_issue_category == issue_status::IN_REVIEW {
-            plan.owner_type == "agent"
+    issue_matches_dispatch_fields(
+        category.as_str(),
+        issue,
+        &plan.expected_issue_category,
+        &plan.owner_type,
+        plan.owner_id,
+    )
+}
+
+fn issue_matches_dispatch_fields(
+    category: &str,
+    issue: &Issue,
+    expected_category: &str,
+    owner_type: &str,
+    owner_id: Uuid,
+) -> bool {
+    category == expected_category
+        && if expected_category == issue_status::IN_REVIEW {
+            owner_type == "agent"
                 && issue.reviewer_type.as_deref() == Some("agent")
-                && issue.reviewer_id == Some(plan.owner_id)
-        } else if plan.expected_issue_category == issue_status::IN_PROGRESS {
-            issue.assignee_type.as_deref() == Some(plan.owner_type.as_str())
-                && issue.assignee_id == Some(plan.owner_id)
+                && issue.reviewer_id == Some(owner_id)
+        } else if expected_category == issue_status::IN_PROGRESS {
+            issue.assignee_type.as_deref() == Some(owner_type)
+                && issue.assignee_id == Some(owner_id)
         } else {
             false
         }
@@ -2123,19 +2139,17 @@ pub async fn record_task_completed(
         ));
     }
 
-    let issue = sqlx::query(
-        "SELECT workspace_id, assignee_type, assignee_id, revision FROM issue WHERE id = $1",
-    )
-    .bind(issue_id)
-    .fetch_optional(&mut *executor)
-    .await?;
+    let issue =
+        sqlx::query("SELECT workspace_id, assignee_type, assignee_id FROM issue WHERE id = $1")
+            .bind(issue_id)
+            .fetch_optional(&mut *executor)
+            .await?;
     let Some(issue) = issue else {
         return Ok(());
     };
     let workspace_id: Uuid = issue.try_get(0)?;
     let current_owner_type: Option<String> = issue.try_get(1)?;
     let current_owner_id: Option<Uuid> = issue.try_get(2)?;
-    let current_issue_revision: i64 = issue.try_get(3)?;
     if let (Some(captured_owner_type), Some(captured_owner_id)) =
         (captured_owner_type, captured_owner_id)
     {
@@ -2144,11 +2158,7 @@ pub async fn record_task_completed(
             current_owner_id,
             captured_owner_type,
             captured_owner_id,
-            captured_issue_revision,
-            current_issue_revision,
         ) {
-            let issue_changed_after_task_start = captured_issue_revision
-                .is_some_and(|captured_revision| current_issue_revision > captured_revision);
             tracing::info!(
                 task_id = %task.id,
                 issue_id = %issue_id,
@@ -2157,7 +2167,6 @@ pub async fn record_task_completed(
                 current_owner_type = ?current_owner_type,
                 current_owner_id = ?current_owner_id,
                 captured_issue_revision,
-                issue_changed_after_task_start,
                 "ignoring completion from a superseded implementation owner"
             );
             return Ok(());
@@ -2191,13 +2200,8 @@ fn implementation_completion_is_superseded(
     current_owner_id: Option<Uuid>,
     captured_owner_type: &str,
     captured_owner_id: Uuid,
-    captured_issue_revision: Option<i64>,
-    current_issue_revision: i64,
 ) -> bool {
-    current_owner_type != Some(captured_owner_type)
-        || current_owner_id != Some(captured_owner_id)
-        || captured_issue_revision
-            .is_some_and(|captured_revision| current_issue_revision > captured_revision)
+    current_owner_type != Some(captured_owner_type) || current_owner_id != Some(captured_owner_id)
 }
 
 /// Writes the review-return outbox event and its pending executor assignment
@@ -2320,31 +2324,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn implementation_completion_uses_revision_as_owner_change_fence() {
+    fn implementation_completion_uses_owner_snapshot_as_stale_fence() {
         let owner_id = Uuid::from_u128(1);
         assert!(!implementation_completion_is_superseded(
             Some("agent"),
             Some(owner_id),
             "agent",
             owner_id,
-            Some(7),
-            7,
-        ));
-        assert!(implementation_completion_is_superseded(
-            Some("agent"),
-            Some(owner_id),
-            "agent",
-            owner_id,
-            Some(7),
-            8,
         ));
         assert!(implementation_completion_is_superseded(
             Some("agent"),
             Some(Uuid::from_u128(2)),
             "agent",
             owner_id,
-            Some(7),
-            7,
+        ));
+    }
+
+    #[test]
+    fn dispatch_revalidation_ignores_unrelated_issue_revision_changes() {
+        let owner_id = Uuid::from_u128(1);
+        let mut issue = Issue {
+            acceptance_criteria: serde_json::json!([]),
+            assignee_id: Some(Uuid::from_u128(2)),
+            assignee_type: Some("agent".to_string()),
+            context_refs: serde_json::json!([]),
+            created_at: Utc::now(),
+            creator_id: Uuid::from_u128(3),
+            creator_type: "member".to_string(),
+            description: None,
+            due_date: None,
+            first_executed_at: None,
+            id: Uuid::from_u128(4),
+            last_activity_at: None,
+            metadata: serde_json::json!({}),
+            number: 1,
+            origin_id: None,
+            origin_type: None,
+            parent_issue_id: None,
+            position: 0.0,
+            priority: "none".to_string(),
+            project_id: None,
+            properties: serde_json::json!({}),
+            revision: 7,
+            reviewer_id: Some(owner_id),
+            reviewer_type: Some("agent".to_string()),
+            stage: None,
+            start_date: None,
+            status: issue_status::IN_REVIEW.to_string(),
+            title: "handoff".to_string(),
+            updated_at: Utc::now(),
+            workspace_id: Uuid::from_u128(5),
+        };
+        assert!(issue_matches_dispatch_fields(
+            issue_status::IN_REVIEW,
+            &issue,
+            issue_status::IN_REVIEW,
+            "agent",
+            owner_id,
+        ));
+
+        issue.revision = 8;
+        assert!(issue_matches_dispatch_fields(
+            issue_status::IN_REVIEW,
+            &issue,
+            issue_status::IN_REVIEW,
+            "agent",
+            owner_id,
         ));
     }
 }
