@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use patchbay_db::dbid::new_v7;
-use patchbay_db::models::{AgentTaskQueue, Issue};
+use patchbay_db::models::{ActivityLog, AgentTaskQueue, Issue};
 use patchbay_db::queries::{activity, team};
 use patchbay_events::{Bus, Event};
 use serde_json::{json, Value};
@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::issue_status;
-use crate::task_notify::issue_to_map_with_category;
+use crate::task_notify::{issue_to_map_with_category, rfc3339};
 use crate::task_service::{
     TaskService, TaskServiceError, COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY,
     COORDINATION_ISSUE_REVISION_CONTEXT_KEY, COORDINATION_OWNER_ID_CONTEXT_KEY,
@@ -77,6 +77,7 @@ struct DispatchPlan {
     previous_status: String,
     previous_assignee_type: Option<String>,
     previous_assignee_id: Option<Uuid>,
+    assignment_activity: Option<ActivityLog>,
 }
 
 /// The coordinator owns no in-memory queue. `Notify` only reduces latency;
@@ -211,6 +212,9 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
 
         if plan.publish_issue_update {
             self.publish_review_handoff(&plan).await;
+        }
+        if let Some(activity) = &plan.assignment_activity {
+            self.publish_assignment_activity(activity);
         }
 
         let task_id = match self.dispatch(&plan).await {
@@ -387,6 +391,50 @@ FOR UPDATE"#,
                     return Ok(None);
                 }
             }
+            if category == issue_status::IN_PROGRESS {
+                if let Some(source_task_id) = event.source_task_id {
+                    let has_newer_implementation = sqlx::query_scalar::<_, bool>(
+                        r#"SELECT EXISTS (
+    SELECT 1
+    FROM agent_task_queue newer
+    JOIN agent_task_queue source ON source.id = $2
+    WHERE newer.issue_id = $1
+      AND newer.id <> source.id
+      AND (
+        newer.created_at > source.created_at
+        OR (newer.created_at = source.created_at AND newer.id > source.id)
+      )
+      AND newer.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+      AND COALESCE(newer.context->>'side_chat_parent_task_id', '') = ''
+      AND COALESCE(newer.context->>'message_bus_parent_task_id', '') = ''
+      AND newer.context ? 'coordination_owner_type'
+      AND newer.context ? 'coordination_owner_id'
+)"#,
+                    )
+                    .bind(issue.id)
+                    .bind(source_task_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    if has_newer_implementation {
+                        complete_claimed_tx(
+                            &mut *tx,
+                            event,
+                            &assignment,
+                            "completed",
+                            None,
+                            json!({
+                                "outcome": "stale_completion",
+                                "reason": "newer implementation task exists",
+                                "source_task_id": source_task_id,
+                            }),
+                            Some("newer implementation task exists"),
+                        )
+                        .await?;
+                        tx.commit().await?;
+                        return Ok(None);
+                    }
+                }
+            }
         }
 
         // A crash after the issue/status transaction but before dispatch leaves
@@ -413,16 +461,109 @@ FOR UPDATE"#,
                     tx.commit().await?;
                     return Ok(None);
                 }
+                let team_id = if issue.assignee_type.as_deref() == Some("team") {
+                    issue.assignee_id
+                } else {
+                    None
+                };
+                let source_agent_id = event
+                    .payload
+                    .get("agent_id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| Uuid::parse_str(value).ok());
+                let (dispatch_owner_id, issue, assignment_activity) = if reviewer_is_dispatchable(
+                    &mut *tx,
+                    issue.workspace_id,
+                    team_id,
+                    source_agent_id,
+                    owner_id,
+                    assignment.id,
+                )
+                .await?
+                {
+                    (owner_id, issue, None)
+                } else if let Some(candidate) =
+                    select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id).await?
+                {
+                    let updated = sqlx::query_as::<_, Issue>(
+                        r#"UPDATE issue SET
+    reviewer_type = 'agent',
+    reviewer_id = $3,
+    revision = revision + 1,
+    updated_at = now(),
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now())
+WHERE id = $1 AND workspace_id = $2
+RETURNING *"#,
+                    )
+                    .bind(issue.id)
+                    .bind(issue.workspace_id)
+                    .bind(candidate.id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    let decision = json!({
+                        "policy": "reviewer_recovery_replacement",
+                        "role": ASSIGNMENT_REVIEWER,
+                        "candidate_agent_id": candidate.id,
+                        "candidate_agent_name": candidate.name,
+                        "previous_reviewer_id": owner_id,
+                        "source_agent_id": source_agent_id,
+                    });
+                    record_assignment_decision(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        ASSIGNMENT_REVIEWER,
+                        "agent",
+                        candidate.id,
+                        decision,
+                    )
+                    .await?;
+                    let audit = json!({
+                        "event_id": event.id,
+                        "assignment_id": assignment.id,
+                        "source_task_id": event.source_task_id,
+                        "role": ASSIGNMENT_REVIEWER,
+                        "owner_type": "agent",
+                        "owner_id": candidate.id,
+                        "previous_reviewer_id": owner_id,
+                        "reason": "persisted reviewer unavailable; selected replacement",
+                    });
+                    let activity = activity::create_activity(
+                        &mut *tx,
+                        issue.workspace_id,
+                        issue.id,
+                        Some("system"),
+                        None,
+                        "coordinator_assignment",
+                        &audit,
+                        new_v7(),
+                    )
+                    .await?;
+                    (candidate.id, updated, activity)
+                } else {
+                    defer_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "persisted reviewer unavailable and no replacement reviewer",
+                        NO_OWNER_RETRY,
+                        Some(("agent", owner_id)),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                };
                 let plan = DispatchPlan {
                     event_id: event.id,
                     assignment_id: assignment.id,
                     issue,
                     owner_type: "agent".to_string(),
-                    owner_id,
+                    owner_id: dispatch_owner_id,
                     publish_issue_update: false,
                     previous_status: String::new(),
                     previous_assignee_type: None,
                     previous_assignee_id: None,
+                    assignment_activity,
                 };
                 tx.commit().await?;
                 return Ok(Some(plan));
@@ -458,72 +599,73 @@ FOR UPDATE"#,
             return Ok(None);
         }
 
-        let (owner_type, owner_id, publish_issue_update) = if is_task_completion {
-            let Some(previous_owner_type) = issue.assignee_type.clone() else {
-                complete_claimed_tx(
-                    &mut *tx,
-                    event,
-                    &assignment,
-                    "blocked",
-                    None,
-                    json!({"outcome": "blocked", "reason": "implementation_owner_missing"}),
-                    Some("implementation issue has no owner"),
-                )
-                .await?;
-                tx.commit().await?;
-                return Ok(None);
-            };
-            let Some(previous_owner_id) = issue.assignee_id else {
-                complete_claimed_tx(
-                    &mut *tx,
-                    event,
-                    &assignment,
-                    "blocked",
-                    None,
-                    json!({"outcome": "blocked", "reason": "implementation_owner_missing"}),
-                    Some("implementation issue has no owner"),
-                )
-                .await?;
-                tx.commit().await?;
-                return Ok(None);
-            };
-            if !matches!(previous_owner_type.as_str(), "agent" | "team") {
-                complete_claimed_tx(
-                    &mut *tx,
-                    event,
-                    &assignment,
-                    "blocked",
-                    None,
-                    json!({"outcome": "blocked", "reason": "implementation_owner_not_agent"}),
-                    Some("implementation owner is not an agent or team"),
-                )
-                .await?;
-                tx.commit().await?;
-                return Ok(None);
-            }
-            let team_id = (previous_owner_type == "team").then_some(previous_owner_id);
-            let source_agent_id = event
-                .payload
-                .get("agent_id")
-                .and_then(Value::as_str)
-                .and_then(|value| Uuid::parse_str(value).ok());
-            let Some(candidate) =
-                select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id).await?
-            else {
-                defer_claimed_tx(
-                    &mut *tx,
-                    event,
-                    &assignment,
-                    "no reviewer with role=reviewer and a bound runtime",
-                    NO_OWNER_RETRY,
-                    None,
-                )
-                .await?;
-                tx.commit().await?;
-                return Ok(None);
-            };
-            let updated = sqlx::query_as::<_, Issue>(
-                r#"UPDATE issue SET
+        let (owner_type, owner_id, publish_issue_update, assignment_activity) =
+            if is_task_completion {
+                let Some(previous_owner_type) = issue.assignee_type.clone() else {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "blocked",
+                        None,
+                        json!({"outcome": "blocked", "reason": "implementation_owner_missing"}),
+                        Some("implementation issue has no owner"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                };
+                let Some(previous_owner_id) = issue.assignee_id else {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "blocked",
+                        None,
+                        json!({"outcome": "blocked", "reason": "implementation_owner_missing"}),
+                        Some("implementation issue has no owner"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                };
+                if !matches!(previous_owner_type.as_str(), "agent" | "team") {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "blocked",
+                        None,
+                        json!({"outcome": "blocked", "reason": "implementation_owner_not_agent"}),
+                        Some("implementation owner is not an agent or team"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+                let team_id = (previous_owner_type == "team").then_some(previous_owner_id);
+                let source_agent_id = event
+                    .payload
+                    .get("agent_id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| Uuid::parse_str(value).ok());
+                let Some(candidate) =
+                    select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id).await?
+                else {
+                    defer_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "no reviewer with role=reviewer and a bound runtime",
+                        NO_OWNER_RETRY,
+                        None,
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                };
+                let updated = sqlx::query_as::<_, Issue>(
+                    r#"UPDATE issue SET
     status = 'in_review',
     reviewer_type = 'agent',
     reviewer_id = $3,
@@ -532,175 +674,193 @@ FOR UPDATE"#,
     last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now())
 WHERE id = $1 AND workspace_id = $2
 RETURNING *"#,
-            )
-            .bind(issue.id)
-            .bind(issue.workspace_id)
-            .bind(candidate.id)
-            .fetch_one(&mut *tx)
-            .await?;
-            let decision = json!({
-                "policy": if team_id.is_some() { "team_reviewer_role" } else { "workspace_reviewer_role" },
-                "role": ASSIGNMENT_REVIEWER,
-                "candidate_agent_id": candidate.id,
-                "candidate_agent_name": candidate.name,
-                "source_agent_id": source_agent_id,
-            });
-            record_assignment_decision(
-                &mut *tx,
-                event,
-                &assignment,
-                ASSIGNMENT_REVIEWER,
-                "agent",
-                candidate.id,
-                decision,
-            )
-            .await?;
-            let audit = json!({
-                "event_id": event.id,
-                "assignment_id": assignment.id,
-                "source_task_id": event.source_task_id,
-                "role": ASSIGNMENT_REVIEWER,
-                "owner_type": "agent",
-                "owner_id": candidate.id,
-                "reason": "implementation task completed",
-            });
-            activity::create_activity(
-                &mut *tx,
-                issue.workspace_id,
-                issue.id,
-                Some("system"),
-                None,
-                "coordinator_assignment",
-                &audit,
-                new_v7(),
-            )
-            .await?;
-            ("agent".to_string(), candidate.id, (updated, issue))
-        } else {
-            let target_type = event
-                .payload
-                .get("owner_type")
-                .and_then(Value::as_str)
-                .or(assignment.owner_type.as_deref())
-                .unwrap_or_default()
-                .to_string();
-            let target_id = event
-                .payload
-                .get("owner_id")
-                .and_then(Value::as_str)
-                .and_then(|value| Uuid::parse_str(value).ok())
-                .or(assignment.owner_id);
-            let Some(target_id) = target_id else {
-                complete_claimed_tx(
+                )
+                .bind(issue.id)
+                .bind(issue.workspace_id)
+                .bind(candidate.id)
+                .fetch_one(&mut *tx)
+                .await?;
+                let decision = json!({
+                    "policy": if team_id.is_some() { "team_reviewer_role" } else { "workspace_reviewer_role" },
+                    "role": ASSIGNMENT_REVIEWER,
+                    "candidate_agent_id": candidate.id,
+                    "candidate_agent_name": candidate.name,
+                    "source_agent_id": source_agent_id,
+                });
+                record_assignment_decision(
                     &mut *tx,
                     event,
                     &assignment,
-                    "blocked",
-                    None,
-                    json!({"outcome": "blocked", "reason": "executor_owner_missing"}),
-                    Some("review return has no executor owner"),
+                    ASSIGNMENT_REVIEWER,
+                    "agent",
+                    candidate.id,
+                    decision,
                 )
                 .await?;
-                tx.commit().await?;
-                return Ok(None);
-            };
-            if issue.assignee_type.as_deref() != Some(target_type.as_str())
-                || issue.assignee_id != Some(target_id)
-            {
-                complete_claimed_tx(
+                let audit = json!({
+                    "event_id": event.id,
+                    "assignment_id": assignment.id,
+                    "source_task_id": event.source_task_id,
+                    "role": ASSIGNMENT_REVIEWER,
+                    "owner_type": "agent",
+                    "owner_id": candidate.id,
+                    "reason": "implementation task completed",
+                });
+                let assignment_activity = activity::create_activity(
                     &mut *tx,
-                    event,
-                    &assignment,
-                    "completed",
+                    issue.workspace_id,
+                    issue.id,
+                    Some("system"),
                     None,
-                    json!({"outcome": "stale_assignment"}),
-                    Some("issue owner changed after review returned work"),
+                    "coordinator_assignment",
+                    &audit,
+                    new_v7(),
                 )
                 .await?;
-                tx.commit().await?;
-                return Ok(None);
-            }
-            if !matches!(target_type.as_str(), "agent" | "team") {
-                complete_claimed_tx(
-                    &mut *tx,
-                    event,
-                    &assignment,
-                    "blocked",
-                    None,
-                    json!({"outcome": "blocked", "reason": "executor_not_agent_or_team"}),
-                    Some("review return owner is not an agent or team"),
+                (
+                    "agent".to_string(),
+                    candidate.id,
+                    (updated, issue),
+                    assignment_activity,
                 )
-                .await?;
-                tx.commit().await?;
-                return Ok(None);
-            }
-            match validate_target(&mut *tx, issue.workspace_id, &target_type, target_id).await? {
-                TargetVerdict::Ready => {}
-                TargetVerdict::Waitable(reason) => {
-                    defer_claimed_tx(
-                        &mut *tx,
-                        event,
-                        &assignment,
-                        &reason,
-                        NO_OWNER_RETRY,
-                        Some((target_type.as_str(), target_id)),
-                    )
-                    .await?;
-                    tx.commit().await?;
-                    return Ok(None);
-                }
-                TargetVerdict::Blocked(reason) => {
+            } else {
+                let target_type = event
+                    .payload
+                    .get("owner_type")
+                    .and_then(Value::as_str)
+                    .or(assignment.owner_type.as_deref())
+                    .unwrap_or_default()
+                    .to_string();
+                let target_id = event
+                    .payload
+                    .get("owner_id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                    .or(assignment.owner_id);
+                let Some(target_id) = target_id else {
                     complete_claimed_tx(
                         &mut *tx,
                         event,
                         &assignment,
                         "blocked",
                         None,
-                        json!({"outcome": "blocked", "reason": reason}),
-                        Some(&reason),
+                        json!({"outcome": "blocked", "reason": "executor_owner_missing"}),
+                        Some("review return has no executor owner"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                };
+                if issue.assignee_type.as_deref() != Some(target_type.as_str())
+                    || issue.assignee_id != Some(target_id)
+                {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "completed",
+                        None,
+                        json!({"outcome": "stale_assignment"}),
+                        Some("issue owner changed after review returned work"),
                     )
                     .await?;
                     tx.commit().await?;
                     return Ok(None);
                 }
-            }
-            let decision = json!({
-                "policy": "review_return_original_owner",
-                "role": ASSIGNMENT_EXECUTOR,
-                "owner_type": target_type,
-                "owner_id": target_id,
-            });
-            record_assignment_decision(
-                &mut *tx,
-                event,
-                &assignment,
-                ASSIGNMENT_EXECUTOR,
-                &target_type,
-                target_id,
-                decision.clone(),
-            )
-            .await?;
-            let audit = json!({
-                "event_id": event.id,
-                "assignment_id": assignment.id,
-                "role": ASSIGNMENT_EXECUTOR,
-                "owner_type": target_type,
-                "owner_id": target_id,
-                "reason": "review returned work to implementation",
-            });
-            activity::create_activity(
-                &mut *tx,
-                issue.workspace_id,
-                issue.id,
-                Some("system"),
-                None,
-                "coordinator_assignment",
-                &audit,
-                new_v7(),
-            )
-            .await?;
-            (target_type, target_id, (issue.clone(), issue))
-        };
+                if !matches!(target_type.as_str(), "agent" | "team") {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "blocked",
+                        None,
+                        json!({"outcome": "blocked", "reason": "executor_not_agent_or_team"}),
+                        Some("review return owner is not an agent or team"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+                match validate_target(&mut *tx, issue.workspace_id, &target_type, target_id).await?
+                {
+                    TargetVerdict::Ready => {}
+                    TargetVerdict::Waitable(reason) => {
+                        defer_claimed_tx(
+                            &mut *tx,
+                            event,
+                            &assignment,
+                            &reason,
+                            NO_OWNER_RETRY,
+                            Some((target_type.as_str(), target_id)),
+                        )
+                        .await?;
+                        tx.commit().await?;
+                        return Ok(None);
+                    }
+                    TargetVerdict::Blocked(reason) => {
+                        complete_claimed_tx(
+                            &mut *tx,
+                            event,
+                            &assignment,
+                            "blocked",
+                            None,
+                            json!({"outcome": "blocked", "reason": reason}),
+                            Some(&reason),
+                        )
+                        .await?;
+                        tx.commit().await?;
+                        return Ok(None);
+                    }
+                }
+                let assignment_is_reused = assignment.status == "assigned"
+                    && assignment.owner_type.as_deref() == Some(target_type.as_str())
+                    && assignment.owner_id == Some(target_id);
+                let assignment_activity = if assignment_is_reused {
+                    None
+                } else {
+                    let decision = json!({
+                        "policy": "review_return_original_owner",
+                        "role": ASSIGNMENT_EXECUTOR,
+                        "owner_type": target_type,
+                        "owner_id": target_id,
+                    });
+                    record_assignment_decision(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        ASSIGNMENT_EXECUTOR,
+                        &target_type,
+                        target_id,
+                        decision,
+                    )
+                    .await?;
+                    let audit = json!({
+                        "event_id": event.id,
+                        "assignment_id": assignment.id,
+                        "role": ASSIGNMENT_EXECUTOR,
+                        "owner_type": target_type,
+                        "owner_id": target_id,
+                        "reason": "review returned work to implementation",
+                    });
+                    activity::create_activity(
+                        &mut *tx,
+                        issue.workspace_id,
+                        issue.id,
+                        Some("system"),
+                        None,
+                        "coordinator_assignment",
+                        &audit,
+                        new_v7(),
+                    )
+                    .await?
+                };
+                (
+                    target_type,
+                    target_id,
+                    (issue.clone(), issue),
+                    assignment_activity,
+                )
+            };
 
         let (issue, previous_issue) = publish_issue_update;
         tx.commit().await?;
@@ -714,6 +874,7 @@ RETURNING *"#,
             previous_status: previous_issue.status,
             previous_assignee_type: previous_issue.assignee_type,
             previous_assignee_id: previous_issue.assignee_id,
+            assignment_activity,
         }))
     }
 
@@ -915,6 +1076,29 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $4"#,
         Ok(())
     }
 
+    fn publish_assignment_activity(&self, row: &ActivityLog) {
+        self.bus.publish(&Event {
+            event_type: patchbay_protocol::EVENT_ACTIVITY_CREATED.to_string(),
+            workspace_id: row.workspace_id.to_string(),
+            actor_type: row.actor_type.clone().unwrap_or_default(),
+            actor_id: row.actor_id.map(|id| id.to_string()).unwrap_or_default(),
+            payload: json!({
+                "issue_id": row.issue_id.map(|id| id.to_string()).unwrap_or_default(),
+                "entry": {
+                    "type": "activity",
+                    "id": row.id,
+                    "actor_type": row.actor_type.clone().unwrap_or_default(),
+                    "actor_id": row.actor_id.map(|id| id.to_string()).unwrap_or_default(),
+                    "action": row.action.clone(),
+                    "details": row.details.clone(),
+                    "created_at": rfc3339(row.created_at),
+                },
+            }),
+            task_id: String::new(),
+            chat_session_id: String::new(),
+        });
+    }
+
     async fn publish_review_handoff(&self, plan: &DispatchPlan) {
         let prefix =
             patchbay_db::queries::workspace::get_workspace(&self.pool, plan.issue.workspace_id)
@@ -1015,6 +1199,60 @@ FOR UPDATE SKIP LOCKED"#,
     .transpose()
 }
 
+async fn reviewer_is_dispatchable(
+    executor: &mut sqlx::PgConnection,
+    workspace_id: Uuid,
+    team_id: Option<Uuid>,
+    source_agent_id: Option<Uuid>,
+    reviewer_id: Uuid,
+    assignment_id: Uuid,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"SELECT a.id
+FROM agent a
+WHERE a.id = $4
+  AND a.workspace_id = $1
+  AND a.kind = 'user'
+  AND a.archived_at IS NULL
+  AND a.runtime_id IS NOT NULL
+  AND ($3::uuid IS NULL OR a.id <> $3)
+  AND EXISTS (
+      SELECT 1
+      FROM team_member tm
+      JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
+                  AND t.archived_at IS NULL
+      WHERE tm.member_type = 'agent'
+        AND tm.member_id = a.id
+        AND tm.role = 'reviewer'
+        AND ($2::uuid IS NULL OR tm.team_id = $2)
+  )
+  AND (
+      SELECT count(*)
+        FROM agent_task_queue q
+      WHERE q.agent_id = a.id
+        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+        AND COALESCE(q.context->>'coordination_assignment_id', '') <> $5::uuid::text
+  ) + (
+      SELECT count(*)
+      FROM agent_coordination_assignment reservation
+      WHERE reservation.owner_type = 'agent'
+        AND reservation.owner_id = a.id
+        AND reservation.status = 'assigned'
+        AND reservation.dispatched_task_id IS NULL
+        AND reservation.id <> $5
+  ) < a.max_concurrent_tasks
+FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .bind(team_id)
+    .bind(source_agent_id)
+    .bind(reviewer_id)
+    .bind(assignment_id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    Ok(row.is_some())
+}
+
 async fn validate_target(
     executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
@@ -1096,7 +1334,7 @@ async fn record_assignment_decision(
     owner_id: Uuid,
     decision: Value,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    let updated = sqlx::query(
         r#"UPDATE agent_coordination_assignment
 SET role = $2,
     status = 'assigned',
@@ -1124,6 +1362,11 @@ WHERE id = $1
     .bind(&event.lease_owner)
     .execute(&mut *executor)
     .await?;
+    if updated.rows_affected() != 1 {
+        return Err(anyhow::anyhow!(
+            "coordination assignment lease is no longer owned"
+        ));
+    }
     Ok(())
 }
 
