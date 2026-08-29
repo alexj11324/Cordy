@@ -215,7 +215,7 @@ impl TaskService {
         // the terminal status transition. A process crash after commit can
         // therefore only leave a claimable outbox row, never a completed task
         // without its next assignment event.
-        crate::coordination::record_task_completed(&mut *tx, &t)
+        crate::coordination::record_task_completed(&mut tx, &t)
             .await
             .map_err(|error| {
                 TaskServiceError::Internal(format!("record task completion handoff: {error}"))

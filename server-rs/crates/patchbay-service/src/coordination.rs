@@ -253,7 +253,7 @@ LIMIT 1
 FOR UPDATE"#,
         )
         .bind(event.id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut tx)
         .await?
         .ok_or_else(|| anyhow::anyhow!("coordination event has no assignment"))?;
         let assignment = Assignment {
@@ -268,7 +268,7 @@ FOR UPDATE"#,
             || matches!(assignment.status.as_str(), "completed" | "blocked")
         {
             complete_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 assignment.status.as_str(),
@@ -286,11 +286,11 @@ FOR UPDATE"#,
         )
         .bind(event.issue_id)
         .bind(event.workspace_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut tx)
         .await?;
         let Some(issue) = issue else {
             complete_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 "blocked",
@@ -307,7 +307,7 @@ FOR UPDATE"#,
             && event.payload.get("source_role").and_then(Value::as_str) == Some(ASSIGNMENT_REVIEWER)
         {
             complete_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 "completed",
@@ -320,13 +320,13 @@ FOR UPDATE"#,
             return Ok(None);
         }
 
-        let category = issue_status::effective(&mut *tx, issue.workspace_id, &issue.status).await;
+        let category = issue_status::effective(&mut tx, issue.workspace_id, &issue.status).await;
         let is_task_completion = event.event_type == EVENT_TASK_COMPLETED;
         let is_review_return = event.event_type == EVENT_REVIEW_RETURNED;
 
         if !is_task_completion && !is_review_return {
             complete_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 "blocked",
@@ -360,7 +360,7 @@ FOR UPDATE"#,
                     || issue.assignee_id != Some(captured_owner_id)
                 {
                     complete_claimed_tx(
-                        &mut *tx,
+                        &mut tx,
                         event,
                         &assignment,
                         "completed",
@@ -388,43 +388,43 @@ FOR UPDATE"#,
         if is_task_completion
             && category == issue_status::IN_REVIEW
             && assignment.owner_type.as_deref() == Some("agent")
-            && assignment.owner_id.is_some()
         {
-            let owner_id = assignment.owner_id.expect("checked above");
-            if issue.assignee_type.as_deref() != Some("agent")
-                || issue.assignee_id != Some(owner_id)
-            {
-                complete_claimed_tx(
-                    &mut *tx,
-                    event,
-                    &assignment,
-                    "completed",
-                    None,
-                    json!({"outcome": "stale_assignment"}),
-                    Some("issue changed after reviewer selection"),
-                )
-                .await?;
+            if let Some(owner_id) = assignment.owner_id {
+                if issue.assignee_type.as_deref() != Some("agent")
+                    || issue.assignee_id != Some(owner_id)
+                {
+                    complete_claimed_tx(
+                        &mut tx,
+                        event,
+                        &assignment,
+                        "completed",
+                        None,
+                        json!({"outcome": "stale_assignment"}),
+                        Some("issue changed after reviewer selection"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+                let plan = DispatchPlan {
+                    event_id: event.id,
+                    assignment_id: assignment.id,
+                    issue,
+                    owner_type: "agent".to_string(),
+                    owner_id,
+                    publish_issue_update: false,
+                    previous_status: String::new(),
+                    previous_assignee_type: None,
+                    previous_assignee_id: None,
+                };
                 tx.commit().await?;
-                return Ok(None);
+                return Ok(Some(plan));
             }
-            let plan = DispatchPlan {
-                event_id: event.id,
-                assignment_id: assignment.id,
-                issue,
-                owner_type: "agent".to_string(),
-                owner_id,
-                publish_issue_update: false,
-                previous_status: String::new(),
-                previous_assignee_type: None,
-                previous_assignee_id: None,
-            };
-            tx.commit().await?;
-            return Ok(Some(plan));
         }
 
         if is_task_completion && category != issue_status::IN_PROGRESS {
             complete_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 "completed",
@@ -438,7 +438,7 @@ FOR UPDATE"#,
         }
         if is_review_return && category != issue_status::IN_PROGRESS {
             complete_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 "completed",
@@ -454,7 +454,7 @@ FOR UPDATE"#,
         let (owner_type, owner_id, publish_issue_update) = if is_task_completion {
             let Some(previous_owner_type) = issue.assignee_type.clone() else {
                 complete_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "blocked",
@@ -468,7 +468,7 @@ FOR UPDATE"#,
             };
             let Some(previous_owner_id) = issue.assignee_id else {
                 complete_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "blocked",
@@ -482,7 +482,7 @@ FOR UPDATE"#,
             };
             if !matches!(previous_owner_type.as_str(), "agent" | "team") {
                 complete_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "blocked",
@@ -501,10 +501,10 @@ FOR UPDATE"#,
                 .and_then(Value::as_str)
                 .and_then(|value| Uuid::parse_str(value).ok());
             let Some(candidate) =
-                select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id).await?
+                select_reviewer(&mut tx, issue.workspace_id, team_id, source_agent_id).await?
             else {
                 defer_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "no reviewer with role=reviewer and a bound runtime",
@@ -536,7 +536,7 @@ RETURNING *"#,
             .bind(issue.workspace_id)
             .bind(candidate.id)
             .bind(metadata)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut tx)
             .await?;
             let decision = json!({
                 "policy": if team_id.is_some() { "team_reviewer_role" } else { "workspace_reviewer_role" },
@@ -546,7 +546,7 @@ RETURNING *"#,
                 "source_agent_id": source_agent_id,
             });
             record_assignment_decision(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 ASSIGNMENT_REVIEWER,
@@ -565,7 +565,7 @@ RETURNING *"#,
                 "reason": "implementation task completed",
             });
             activity::create_activity(
-                &mut *tx,
+                &mut tx,
                 issue.workspace_id,
                 issue.id,
                 Some("system"),
@@ -592,7 +592,7 @@ RETURNING *"#,
                 .or(assignment.owner_id);
             let Some(target_id) = target_id else {
                 complete_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "blocked",
@@ -608,7 +608,7 @@ RETURNING *"#,
                 || issue.assignee_id != Some(target_id)
             {
                 complete_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "completed",
@@ -622,7 +622,7 @@ RETURNING *"#,
             }
             if !matches!(target_type.as_str(), "agent" | "team") {
                 complete_claimed_tx(
-                    &mut *tx,
+                    &mut tx,
                     event,
                     &assignment,
                     "blocked",
@@ -634,11 +634,11 @@ RETURNING *"#,
                 tx.commit().await?;
                 return Ok(None);
             }
-            match validate_target(&mut *tx, issue.workspace_id, &target_type, target_id).await? {
+            match validate_target(&mut tx, issue.workspace_id, &target_type, target_id).await? {
                 TargetVerdict::Ready => {}
                 TargetVerdict::Waitable(reason) => {
                     defer_claimed_tx(
-                        &mut *tx,
+                        &mut tx,
                         event,
                         &assignment,
                         &reason,
@@ -651,7 +651,7 @@ RETURNING *"#,
                 }
                 TargetVerdict::Blocked(reason) => {
                     complete_claimed_tx(
-                        &mut *tx,
+                        &mut tx,
                         event,
                         &assignment,
                         "blocked",
@@ -671,7 +671,7 @@ RETURNING *"#,
                 "owner_id": target_id,
             });
             record_assignment_decision(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 ASSIGNMENT_EXECUTOR,
@@ -689,7 +689,7 @@ RETURNING *"#,
                 "reason": "review returned work to implementation",
             });
             activity::create_activity(
-                &mut *tx,
+                &mut tx,
                 issue.workspace_id,
                 issue.id,
                 Some("system"),
@@ -802,7 +802,7 @@ LIMIT 1"#,
             "SELECT id, status, owner_type, owner_id, dispatched_task_id FROM agent_coordination_assignment WHERE id = $1 FOR UPDATE",
         )
         .bind(plan.assignment_id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut tx)
         .await?;
         let assignment = Assignment {
             id: assignment.try_get(0)?,
@@ -821,10 +821,10 @@ FOR UPDATE"#,
         .bind(task_id)
         .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
         .bind(plan.assignment_id.to_string())
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut tx)
         .await?;
         complete_claimed_tx(
-            &mut *tx,
+            &mut tx,
             event,
             &assignment,
             "dispatched",
@@ -844,7 +844,7 @@ WHERE id = $1
             .bind(task_id)
             .bind(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY)
             .bind(plan.assignment_id.to_string())
-            .execute(&mut *tx)
+            .execute(&mut tx)
             .await?;
             if promoted.rows_affected() != 1 {
                 return Err(anyhow::anyhow!(
@@ -867,7 +867,7 @@ WHERE id = $1
             "SELECT id, status, owner_type, owner_id, dispatched_task_id FROM agent_coordination_assignment WHERE event_id = $1 FOR UPDATE",
         )
         .bind(event.id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut tx)
         .await?;
         if let Some(row) = assignment {
             let assignment = Assignment {
@@ -878,7 +878,7 @@ WHERE id = $1
                 dispatched_task_id: row.try_get(4)?,
             };
             defer_claimed_tx(
-                &mut *tx,
+                &mut tx,
                 event,
                 &assignment,
                 reason,
@@ -898,7 +898,7 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $4"#,
             .bind(format!("{} seconds", retry_after.as_secs()))
             .bind(reason)
             .bind(&event.lease_owner)
-            .execute(&mut *tx)
+            .execute(&mut tx)
             .await?;
         }
         tx.commit().await?;
@@ -1382,6 +1382,7 @@ pub async fn record_review_return(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn record_event_and_assignment(
     executor: &mut sqlx::PgConnection,
     event_key: &str,
