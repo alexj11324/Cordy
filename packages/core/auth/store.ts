@@ -29,6 +29,7 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
+  loginWithClerk: (sessionToken: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -72,6 +73,23 @@ export function createAuthStore(options: AuthStoreOptions) {
     loginWithGoogle: async (code: string, redirectUri: string) => {
       const { token, user } = await api.googleLogin(code, redirectUri);
       if (!cookieAuth) {
+        storage.setItem("patchbay_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
+    loginWithClerk: async (sessionToken: string) => {
+      const { token, user } = await api.clerkLogin(sessionToken);
+      // The Clerk token is only an input to the exchange. Every subsequent
+      // API and WebSocket request uses the HttpOnly Patchbay session cookie.
+      api.setTokenProvider(null);
+      if (cookieAuth) {
+        api.setToken(null);
+      } else {
         storage.setItem("patchbay_token", token);
         api.setToken(token);
       }

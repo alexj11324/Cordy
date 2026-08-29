@@ -7,9 +7,17 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
     await importOriginal<typeof import("@clerk/nextjs/server")>();
   return {
     ...actual,
-    getAuth: async (request: NextRequest) => ({
-      userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
-    }),
+    clerkMiddleware: (handler: Parameters<typeof actual.clerkMiddleware>[0]) =>
+      async (request: NextRequest) =>
+        handler(
+          async () => ({
+            userId: request.cookies.has("patchbay_logged_in")
+              ? "user-1"
+              : null,
+          }),
+          request,
+          undefined as never,
+        ),
   };
 });
 
@@ -97,7 +105,7 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("sends logged-out legacy URLs to login", async () => {
     expect(await redirectLocation("/usage?tab=billing")).toBe(
-      "https://app.patchbay.test/login?tab=billing&redirect_url=%2Fusage",
+      "https://app.patchbay.test/login?redirect_url=%2Fusage%3Ftab%3Dbilling",
     );
   });
 
@@ -243,5 +251,9 @@ describe("proxy root and locale handling", () => {
     expect(
       res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
     ).toBe("zh-Hans");
+  });
+
+  it("leaves the legacy frontend auth callback public", async () => {
+    expect(await redirectLocation("/auth/callback")).toBeNull();
   });
 });

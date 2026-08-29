@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAuth, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
   PATCHBAY_LOCALE_HEADER,
@@ -13,7 +13,10 @@ const clerkPublicRoutes = createRouteMatcher([
   "/",
   "/login(.*)",
   "/signup(.*)",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
   "/sso-callback(.*)",
+  "/auth/callback",
   "/api/webhooks(.*)",
   "/api/config",
   "/api/health",
@@ -21,6 +24,7 @@ const clerkPublicRoutes = createRouteMatcher([
   "/docs(.*)",
   "/legal(.*)",
   "/changelog",
+  "/ui-preview(.*)",
 ]);
 
 // Old workspace-scoped route segments that existed before the URL refactor
@@ -62,7 +66,7 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // NextResponse / cookies / matcher) is identical; the only behavioral
 // change is the runtime — proxy is forced to nodejs and cannot opt into
 // edge.
-export async function proxy(req: NextRequest) {
+export const proxy = clerkMiddleware(async (auth, req: NextRequest) => {
   const { pathname } = req.nextUrl;
 
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
@@ -73,11 +77,12 @@ export async function proxy(req: NextRequest) {
   }
 
   if (!clerkPublicRoutes(req)) {
-    const { userId } = await getAuth(req);
+    const { userId } = await auth();
     if (!userId) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
-      loginUrl.searchParams.set("redirect_url", pathname);
+      loginUrl.search = "";
+      loginUrl.searchParams.set("redirect_url", `${pathname}${req.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
     }
   }
@@ -138,7 +143,7 @@ export async function proxy(req: NextRequest) {
   // --- Default: forward locale header to RSC, no redirect/rewrite ---
   // Covers logged-out root path, /login, /:slug/*, and everything else.
   return nextWithLocale(req);
-}
+});
 
 export const config = {
   // i18n header must land on every page request, so we use the standard
@@ -151,6 +156,6 @@ export const config = {
     "/uploads/:path*",
     "/docs/:path*",
     "/ws",
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|ui-preview|.*\\.).*)",
   ],
 };

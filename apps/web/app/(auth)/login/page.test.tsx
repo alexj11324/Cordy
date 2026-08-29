@@ -72,6 +72,25 @@ describe("LoginPage", () => {
     );
   });
 
+  it("preserves the requested app path and query through Clerk sign-in", () => {
+    search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current.forceRedirectUrl).toBe(
+      "/usage?tab=billing#summary",
+    );
+  });
+
+  it("rejects an external post-login redirect", () => {
+    search.current =
+      "redirect_url=https%3A%2F%2Fevil.example%2Ftakeover";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current.forceRedirectUrl).toBe("/");
+  });
+
   it("offers CLI authorization after Clerk has established the session", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";

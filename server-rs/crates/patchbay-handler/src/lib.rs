@@ -25,6 +25,7 @@ pub mod chat_api;
 mod chat_title;
 pub mod claim_comments;
 pub mod claim_response;
+pub mod clerk_auth;
 pub mod cli_token;
 pub mod client_usage;
 pub mod cloud_billing;

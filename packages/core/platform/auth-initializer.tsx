@@ -108,6 +108,15 @@ export function AuthInitializer({
   }, [identity?.version]);
 
   useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/ui-preview")
+    ) {
+      // Local `/ui-preview` pages are deliberately backend-free. Do not even
+      // start the optional config request from the shared root provider.
+      return;
+    }
+
     // Stamp attribution before anything else — the signup event (server-side)
     // reads this cookie, so it has to be present before the user hits submit.
     captureSignupSource();
@@ -315,7 +324,21 @@ export function AuthInitializer({
       void attempt();
     };
 
-    if (cookieAuth || clerkAuth) {
+    if (
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/ui-preview")
+    ) {
+      // Local `/ui-preview` pages seed their own session so onboarding and
+      // the app shell can be designed without Clerk or the API.
+    } else if (clerkAuth) {
+      // ClerkAuthAdapter owns the one-time Clerk -> Patchbay session exchange.
+      // Starting /api/me here races that exchange and produces a false 401.
+      useAuthStore.setState({
+        user: null,
+        isLoading: true,
+        status: "authenticating",
+      });
+    } else if (cookieAuth) {
       window.addEventListener("online", retryNow);
       void attempt();
     } else {

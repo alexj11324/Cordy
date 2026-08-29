@@ -48,6 +48,7 @@ hex = { workspace = true }
 hmac = { workspace = true }
 http-body-util = { workspace = true }
 ipnetwork = { workspace = true }
+jsonwebtoken = { workspace = true }
 percent-encoding = { workspace = true }
 rand = { workspace = true }
 redis = { workspace = true }

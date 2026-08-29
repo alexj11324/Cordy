@@ -10,6 +10,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
     header: {
       github: "GitHub",
       cta: "시작하기",
+      signIn: "로그인",
       dashboard: "대시보드",
       docs: "문서",
       changelog: "변경 로그",

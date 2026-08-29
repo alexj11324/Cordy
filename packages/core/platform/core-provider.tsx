@@ -67,14 +67,6 @@ function initCore(
     if (token) api.setToken(token);
   }
 
-  if (clerkAuth) {
-    api.setTokenProvider(async () => {
-      const w = globalThis as unknown as Record<string, unknown>;
-      const provider = w["__CLERK_GET_TOKEN__"] as (() => Promise<string | null>) | undefined;
-      return provider ? provider() : null;
-    });
-  }
-
   authStore = createAuthStore({ api, storage, onLogin, onLogout, cookieAuth });
   registerAuthStore(authStore);
 
@@ -124,6 +116,9 @@ export function CoreProvider({
   // I18nProvider wraps everything else: server and client must use the same
   // (locale, resources) to avoid hydration mismatch. Language switching goes
   // through window.location.reload(), never client-side changeLanguage.
+  const isUiPreview =
+    typeof window !== "undefined" &&
+    window.location.pathname.startsWith("/ui-preview");
   const tree = (
     <QueryProvider>
       <AuthInitializer
@@ -136,18 +131,22 @@ export function CoreProvider({
       >
         {/* Desktop's reporter owns both activity and runtime state so it must
             be the only writer for that installation. */}
-        {identity?.platform !== "desktop" && (
+        {identity?.platform !== "desktop" && !isUiPreview && (
           <ClientUsageReporter storage={storage} identity={identity} />
         )}
-        <WSProvider
-          wsUrl={wsUrl}
-          authStore={authStore}
-          storage={storage}
-          cookieAuth={cookieAuth}
-          identity={identity}
-        >
-          {children}
-        </WSProvider>
+        {isUiPreview ? (
+          children
+        ) : (
+          <WSProvider
+            wsUrl={wsUrl}
+            authStore={authStore}
+            storage={storage}
+            cookieAuth={cookieAuth}
+            identity={identity}
+          >
+            {children}
+          </WSProvider>
+        )}
       </AuthInitializer>
     </QueryProvider>
   );

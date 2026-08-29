@@ -756,6 +756,13 @@ export class ApiClient {
     });
   }
 
+  async clerkLogin(sessionToken: string): Promise<LoginResponse> {
+    return this.fetch("/auth/clerk", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+  }
+
   async logout(): Promise<void> {
     await this.fetch("/auth/logout", { method: "POST" });
   }
