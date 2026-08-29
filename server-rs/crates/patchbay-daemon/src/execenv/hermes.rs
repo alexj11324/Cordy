@@ -3,8 +3,8 @@
 //! This is the Rust capability port of Go's `hermes_home.go`,
 //! `hermes_memory.go`, and `hermes_sessions.go`.  Hermes only discovers
 //! skills from `HERMES_HOME`, so a task with bound skills receives a private
-//! overlay which mirrors the user's home, derives a config/.env, and mounts
-//! only the task's skills.  Memory and ACP session stores are keyed outside
+//! overlay which derives a credential-free config/.env and mounts only the
+//! task's skills. Memory and ACP session stores are keyed outside
 //! the task root and linked into the overlay when the daemon resolved a
 //! persistent store for the agent/conversation.
 //!
@@ -12,7 +12,7 @@
 //! file can contain credentials, and a failed mount never destroys the
 //! task-local source before a replacement link has been proven possible.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -315,9 +315,8 @@ pub(crate) fn prepare_hermes_home(
     } else {
         mount_memories(hermes_home, memory_store)?;
     }
-    mirror_shared_home(&shared_home, hermes_home)?;
     write_derived_config(&shared_home, hermes_home, env)?;
-    write_derived_env(&shared_home, hermes_home)?;
+    write_derived_env(hermes_home)?;
     write_bound_skills(hermes_home, skills)?;
     Ok(sessions)
 }
@@ -357,68 +356,6 @@ fn is_state_entry(name: &str) -> bool {
     name == SESSION_DB || name.starts_with("state.db-")
 }
 
-fn overlay_owned(name: &str) -> bool {
-    matches!(
-        name,
-        "skills"
-            | "config.yaml"
-            | "memories"
-            | "active_profile"
-            | "profiles"
-            | ".env"
-            | TASK_LOCAL_STATE_MARKER
-    ) || is_state_entry(name)
-}
-
-fn mirror_shared_home(shared: &str, overlay: &str) -> anyhow::Result<()> {
-    let mut mirrored = HashSet::new();
-    match fs::read_dir(shared) {
-        Ok(entries) => {
-            for entry in entries {
-                let entry = entry?;
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if overlay_owned(&name) {
-                    continue;
-                }
-                let source = entry.path();
-                let target = Path::new(overlay).join(&name);
-                link_shared_entry(&source, &target)?;
-                mirrored.insert(name);
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
-    for entry in fs::read_dir(overlay)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !overlay_owned(&name) && !mirrored.contains(&name) {
-            remove_path(&entry.path())?;
-        }
-    }
-    Ok(())
-}
-
-fn link_shared_entry(source: &Path, target: &Path) -> anyhow::Result<()> {
-    if let Ok(existing) = fs::symlink_metadata(target) {
-        if existing.file_type().is_symlink()
-            && fs::read_link(target).ok().as_deref() == Some(source)
-        {
-            return Ok(());
-        }
-        remove_path(target)?;
-    }
-    if fs::metadata(source).is_err() {
-        return Ok(()); // dangling source links are ignored, like Go.
-    }
-    if fs::metadata(source)?.is_dir() {
-        create_dir_link(source, target)?;
-    } else {
-        create_file_link(source, target)?;
-    }
-    Ok(())
-}
-
 fn create_dir_link(source: &Path, target: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
@@ -428,20 +365,6 @@ fn create_dir_link(source: &Path, target: &Path) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
         junction::create(source, target).map_err(anyhow::Error::new)
-    }
-}
-
-fn create_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(source, target)?;
-        Ok(())
-    }
-    #[cfg(windows)]
-    {
-        fs::copy(source, target)
-            .map(|_| ())
-            .map_err(anyhow::Error::new)
     }
 }
 
@@ -461,94 +384,18 @@ fn create_session_file_link(source: &Path, target: &Path) -> anyhow::Result<()> 
 }
 
 fn write_derived_config(
-    shared: &str,
+    _shared: &str,
     overlay: &str,
-    env: &HashMap<String, String>,
+    _env: &HashMap<String, String>,
 ) -> anyhow::Result<()> {
-    let source = Path::new(shared).join("config.yaml");
     let target = Path::new(overlay).join("config.yaml");
-    let mut doc = match fs::read_to_string(&source) {
-        Ok(raw) => match serde_yaml::from_str::<Value>(&raw) {
-            Ok(doc) => doc,
-            Err(error) => {
-                tracing::warn!(error = %error, "execenv: Hermes config parse failed; preserving source config");
-                return atomic_write(&target, raw.as_bytes(), 0o600);
-            }
-        },
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Value::Mapping(Mapping::new()),
-        Err(error) => return Err(error.into()),
-    };
-    let dirs = existing_external_dirs(&doc)
-        .into_iter()
-        .map(|value| normalize_external_dir(shared, &value, env))
-        .filter(|value| !value.is_empty())
-        .chain(std::iter::once(
-            Path::new(shared).join("skills").display().to_string(),
-        ))
-        .collect::<Vec<_>>();
-    set_external_dirs(&mut doc, dirs);
+    // Source profiles can contain API keys, external host directories and
+    // provider plugins. They are host configuration, not task configuration.
+    let mut doc = Value::Mapping(Mapping::new());
+    set_external_dirs(&mut doc, Vec::new());
     disable_memory_provider(&mut doc);
     let data = serde_yaml::to_string(&doc)?;
     atomic_write(&target, data.as_bytes(), 0o600)
-}
-
-fn existing_external_dirs(doc: &Value) -> Vec<String> {
-    let Some(skills) = doc.get("skills") else {
-        return Vec::new();
-    };
-    match skills.get("external_dirs") {
-        Some(Value::String(value)) => vec![value.clone()],
-        Some(Value::Sequence(values)) => values
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn normalize_external_dir(shared: &str, raw: &str, env: &HashMap<String, String>) -> String {
-    let mut value = expand_vars(raw.trim(), env);
-    if value.is_empty() {
-        return value;
-    }
-    if value == "~" || value.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            value = format!("{}{}", home, value.trim_start_matches('~'));
-        }
-    }
-    let path = PathBuf::from(&value);
-    if path.is_absolute() {
-        path.display().to_string()
-    } else {
-        Path::new(shared).join(path).display().to_string()
-    }
-}
-
-fn expand_vars(value: &str, env: &HashMap<String, String>) -> String {
-    let mut out = String::with_capacity(value.len());
-    let bytes = value.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            if let Some(end) = value[i + 2..].find('}') {
-                let end = i + 2 + end;
-                let key = &value[i + 2..end];
-                if let Some(replacement) = env.get(key) {
-                    out.push_str(replacement);
-                } else if let Ok(replacement) = std::env::var(key) {
-                    out.push_str(&replacement);
-                } else {
-                    out.push_str(&value[i..=end]);
-                }
-                i = end + 1;
-                continue;
-            }
-        }
-        out.push(bytes[i] as char);
-        i += 1;
-    }
-    out
 }
 
 fn set_external_dirs(doc: &mut Value, dirs: Vec<String>) {
@@ -585,30 +432,9 @@ fn ensure_mapping(value: &mut Value) -> &mut Mapping {
     }
 }
 
-fn write_derived_env(shared: &str, overlay: &str) -> anyhow::Result<()> {
-    let source = Path::new(shared).join(".env");
-    let mut body = fs::read_to_string(&source).unwrap_or_default();
-    body = body
-        .lines()
-        .filter(|line| dotenv_key(line) != Some("HERMES_HOME"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    if !body.is_empty() && !body.ends_with('\n') {
-        body.push('\n');
-    }
-    body.push_str(&format!("HERMES_HOME='{}'\n", Path::new(overlay).display()));
+fn write_derived_env(overlay: &str) -> anyhow::Result<()> {
+    let body = format!("HERMES_HOME='{}'\n", Path::new(overlay).display());
     atomic_write(&Path::new(overlay).join(".env"), body.as_bytes(), 0o600)
-}
-
-fn dotenv_key(line: &str) -> Option<&str> {
-    let line = line.trim();
-    if line.is_empty() || line.starts_with('#') {
-        return None;
-    }
-    let line = line.strip_prefix("export ").unwrap_or(line).trim();
-    let (key, _) = line.split_once('=')?;
-    let key = key.trim();
-    (!key.is_empty()).then_some(key)
 }
 
 fn write_bound_skills(overlay: &str, skills: &[SkillContextForEnv]) -> anyhow::Result<()> {
@@ -849,10 +675,11 @@ mod tests {
         )
         .unwrap();
         let cfg = fs::read_to_string(overlay.join("config.yaml")).unwrap();
-        assert!(cfg.contains("/srv/skills"));
-        assert!(cfg.contains("provider:"));
+        assert!(!cfg.contains("/srv/skills"));
+        assert!(cfg.contains("provider: none"));
         let dotenv = fs::read_to_string(overlay.join(".env")).unwrap();
         assert!(!dotenv.contains("HERMES_HOME=/wrong"));
+        assert!(!dotenv.contains("API_KEY=secret"));
         assert!(dotenv.contains("HERMES_HOME='"));
         assert!(overlay.join("skills/review/SKILL.md").exists());
         assert_eq!(

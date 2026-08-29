@@ -39,8 +39,6 @@
 //!   writeCodexModelsCacheBinding    → read/write_codex_models_cache_binding
 //! - resolveCodexConfigPath         → resolve_codex_config_path
 //! - exposeSharedCodexPluginCache   → expose_shared_codex_plugin_cache
-//! - ensureSymlink                  → ensure_symlink
-//! - logCodexAuthState              → log_codex_auth_state
 //! - syncCopiedFile / seedCopiedFile → sync_copied_file / seed_copied_file
 //! - sharedConfigPresence /
 //!   statSharedCodexConfig           → SharedConfigPresence / stat_shared_codex_config
@@ -69,10 +67,6 @@ use super::execenv::user_home_dir;
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/// Files to symlink from the shared ~/.codex/ into the per-task CODEX_HOME.
-/// Symlinks share state (e.g. auth tokens) so changes propagate automatically.
-pub(crate) const CODEX_SYMLINKED_FILES: [&str; 1] = ["auth.json"];
 
 /// Files to copy from the shared ~/.codex/ into the per-task CODEX_HOME.
 /// Copies are isolated — task-local config and cache refreshes don't mutate
@@ -151,8 +145,9 @@ impl CodexHomeOptions {
 // ---------------------------------------------------------------------------
 
 /// prepare_codex_home_with_opts creates a per-task CODEX_HOME directory and
-/// seeds it with config from the shared ~/.codex/ home. Auth is symlinked
-/// (shared), config files are copied (isolated). The per-task config.toml gets
+/// seeds it with non-credential config from the shared ~/.codex/ home. Provider
+/// authentication remains daemon-owned and is delivered only through the
+/// short-lived broker. The per-task config.toml gets
 /// a daemon-managed sandbox block picked by codex_sandbox_policy_for_config.
 pub fn prepare_codex_home_with_opts(
     codex_home: &str,
@@ -170,20 +165,10 @@ pub fn prepare_codex_home_with_opts(
         tracing::warn!(error = %format!("{err:#}"), "execenv: codex-home sessions dir prepare failed");
     }
 
-    // Symlink shared files (auth).
-    for name in CODEX_SYMLINKED_FILES {
-        let src = join_path(&[&shared_home, name]);
-        let dst = join_path(&[codex_home, name]);
-        if let Err(err) = ensure_symlink(&src, &dst) {
-            tracing::warn!(file = %name, error = %format!("{err:#}"), "execenv: codex-home symlink failed");
-        }
-    }
-
-    // Surface the resulting auth.json state (file kind only, never contents)
-    // so operators diagnosing token-refresh failures can tell whether the
-    // per-task home is tracking the shared ~/.codex/auth.json or has drifted
-    // into a stale local copy.
-    log_codex_auth_state(&join_path(&[codex_home, "auth.json"]));
+    // A pre-upgrade task home may still contain a symlink or copied credential.
+    // Remove it before any provider process is allowed to start.
+    remove_any(&join_path(&[codex_home, "auth.json"]))
+        .context("remove legacy task Codex credential")?;
 
     // Sync isolated files from the shared source. Track the config.toml sync
     // outcome specifically: on Windows a failed sync makes the per-task config
@@ -1317,62 +1302,6 @@ fn expose_shared_codex_plugin_cache(codex_home: &str, shared_home: &str) -> anyh
 
     create_dir_link(&src, &dst).context("expose shared plugin cache")?;
     Ok(())
-}
-
-/// ensure_symlink ensures dst tracks src. If src doesn't exist, it's a no-op.
-/// Otherwise a wrong-target symlink, broken symlink, or regular file left over
-/// from a prior create-file-link copy fallback is removed and recreated so the
-/// per-task home doesn't drift from the shared source (issue #2081).
-fn ensure_symlink(src: &str, dst: &str) -> anyhow::Result<()> {
-    if Path::new(src).symlink_metadata().is_err() {
-        return Ok(()); // source doesn't exist — skip
-    }
-
-    if let Ok(md) = Path::new(dst).symlink_metadata() {
-        if md.file_type().is_symlink() {
-            if let Ok(target) = std::fs::read_link(dst) {
-                if target.to_string_lossy() == src {
-                    return Ok(()); // symlink already points to src
-                }
-            }
-        }
-        // Wrong-target symlink, broken symlink, or stale regular file — drop
-        // it so create_file_link can re-link/re-copy from the current src.
-        std::fs::remove_file(dst).map_err(|e| anyhow!("remove stale dst {dst}: {e}"))?;
-    }
-
-    create_file_link(src, dst)
-}
-
-/// logCodexAuthState records the kind of auth.json the per-task CODEX_HOME
-/// ended up with — symlink (with target), regular file (with size + mtime),
-/// or missing — without ever logging contents.
-fn log_codex_auth_state(auth_path: &str) {
-    match Path::new(auth_path).symlink_metadata() {
-        Err(err) => {
-            tracing::info!(path = %auth_path, error = %err, "execenv: codex auth.json absent");
-        }
-        Ok(md) if md.file_type().is_symlink() => {
-            let target = std::fs::read_link(auth_path)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            tracing::info!(path = %auth_path, target = %target, "execenv: codex auth.json is symlink");
-        }
-        Ok(md) => {
-            let mtime = md
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            tracing::info!(
-                path = %auth_path,
-                size = md.len(),
-                mtime_unix_secs = mtime,
-                "execenv: codex auth.json is regular file"
-            );
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

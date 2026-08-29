@@ -20,6 +20,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::model::{
     Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
 };
@@ -304,10 +305,8 @@ impl PiBackend {
         let prefix = filter_launch_prefix(&self.config.command.prefix, &pi_blocked_args());
         let mut args = prefix.args;
         args.extend(invocation);
-        command
-            .args(args)
-            .envs(&self.config.env)
-            .kill_on_drop(false);
+        command.args(args).kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         command
     }
 }
@@ -343,8 +342,8 @@ impl Backend for PiBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }

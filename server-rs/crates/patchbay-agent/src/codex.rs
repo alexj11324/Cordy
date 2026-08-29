@@ -27,6 +27,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::model::{
     Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelServiceTier, ModelThinking,
     ThinkingLevel,
@@ -161,8 +162,8 @@ impl CodexBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         let mut tree = OwnedProcessTree::spawn(&mut command).await.ok()?;
         let Some(stdout) = tree.child_mut().stdout.take() else {
             let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
@@ -996,8 +997,8 @@ impl CodexBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -2808,8 +2809,8 @@ async fn detect_codex_version_for_diagnostics(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .envs(env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, env);
     let mut tree = match OwnedProcessTree::spawn(&mut command).await {
         Ok(tree) => tree,
         Err(_) => return "unknown".to_string(),
