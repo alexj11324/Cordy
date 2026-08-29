@@ -29,9 +29,12 @@ export default function AuthCallbackPage() {
   const { t } = useT("auth");
 
   useEffect(() => {
-    const redirectUrl = new URLSearchParams(window.location.search).get(
-      "redirect_url",
-    );
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get("platform") === "desktop") {
+      router.replace("/login?platform=desktop");
+      return;
+    }
+    const redirectUrl = searchParams.get("redirect_url");
     router.replace(resolveSafeRedirectUrl(redirectUrl));
   }, [router]);
 

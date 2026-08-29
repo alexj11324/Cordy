@@ -1,11 +1,26 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { SignIn, useAuth } from "@clerk/nextjs";
+import { useAuthStore } from "@patchbay/core/auth";
 import { api } from "@patchbay/core/api";
 import { useSearchParams } from "next/navigation";
-import { redirectToCliCallback, validateCliCallback } from "@patchbay/views/auth";
+import {
+  redirectToCliCallback,
+  redirectToDesktopApp,
+  validateCliCallback,
+} from "@patchbay/views/auth";
+import { useT } from "@patchbay/views/i18n";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+
+const DESKTOP_LOGIN_RETURN_URL = "/login?platform=desktop";
 
 function resolveSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
@@ -42,16 +57,18 @@ function LoginContent() {
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
+  const desktopHandoff = searchParams.get("platform") === "desktop";
   const requestedRedirectUrl = searchParams.get("redirect_url");
   const validCliCallback = cliCallback !== "" && validateCliCallback(cliCallback);
   const returnUrl = useMemo(() => {
+    if (desktopHandoff) return DESKTOP_LOGIN_RETURN_URL;
     if (!validCliCallback) return resolveSafeRedirectUrl(requestedRedirectUrl);
     const params = new URLSearchParams({
       cli_callback: cliCallback,
       cli_state: cliState,
     });
     return `/login?${params.toString()}`;
-  }, [cliCallback, cliState, requestedRedirectUrl, validCliCallback]);
+  }, [cliCallback, cliState, desktopHandoff, requestedRedirectUrl, validCliCallback]);
 
   if (cliCallback && !validCliCallback) {
     return (
@@ -93,14 +110,77 @@ function LoginContent() {
     );
   }
 
+  if (desktopHandoff && isLoaded && isSignedIn) {
+    return <DesktopHandoff />;
+  }
+
   return (
     <ClerkAuthShell>
       <SignIn
         routing="path"
         path="/login"
-        signUpUrl="/signup"
+        signUpUrl={desktopHandoff ? "/signup?platform=desktop" : "/signup"}
         forceRedirectUrl={returnUrl}
       />
+    </ClerkAuthShell>
+  );
+}
+
+function DesktopHandoff() {
+  const { t } = useT("auth");
+  const authStatus = useAuthStore((state) => state.status);
+  const backendSessionReady = authStatus === "authenticated";
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const automaticAttempted = useRef(false);
+
+  const openDesktopApp = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { token } = await api.issueCliToken();
+      if (!token) throw new Error("Patchbay desktop token unavailable");
+      redirectToDesktopApp(token);
+      setLoading(false);
+    } catch {
+      setError(t(($) => $.web.desktop_handoff.prepare_failed));
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (!backendSessionReady || automaticAttempted.current) return;
+    automaticAttempted.current = true;
+    void openDesktopApp();
+  }, [backendSessionReady, openDesktopApp]);
+
+  return (
+    <ClerkAuthShell>
+      <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+        <h1 className="text-xl font-semibold">
+          {t(($) => $.web.desktop_handoff.opening_title)}
+        </h1>
+        <p aria-live="polite" className="text-sm text-muted-foreground">
+          {!backendSessionReady || loading
+            ? t(($) => $.web.desktop_handoff.preparing)
+            : t(($) => $.web.desktop_handoff.opening_description)}
+        </p>
+        <button
+          type="button"
+          onClick={openDesktopApp}
+          disabled={loading || !backendSessionReady}
+          className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+        >
+          {loading || !backendSessionReady
+            ? t(($) => $.web.desktop_handoff.preparing)
+            : t(($) => $.web.desktop_handoff.open_button)}
+        </button>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
     </ClerkAuthShell>
   );
 }

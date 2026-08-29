@@ -5,16 +5,25 @@ const {
   signInProps,
   authState,
   search,
+  authStoreState,
   issueCliToken,
   redirectToCliCallback,
+  redirectToDesktopApp,
 } = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
     current: { isLoaded: true, isSignedIn: false, getToken: vi.fn() },
   },
   search: { current: "" },
+  authStoreState: { current: { status: "unauthenticated" } },
   issueCliToken: vi.fn(),
   redirectToCliCallback: vi.fn(),
+  redirectToDesktopApp: vi.fn(),
+}));
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: (selector: (state: { status: string }) => unknown) =>
+    selector(authStoreState.current),
 }));
 
 vi.mock("@clerk/nextjs", () => ({
@@ -35,8 +44,12 @@ vi.mock("@patchbay/core/api", () => ({
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("@patchbay/views/auth")>();
-  return { ...original, redirectToCliCallback };
+  return { ...original, redirectToCliCallback, redirectToDesktopApp };
 });
+
+vi.mock("@patchbay/views/i18n", () => ({
+  useT: () => ({ t: () => "Open Patchbay Desktop" }),
+}));
 
 import LoginPage from "./page";
 
@@ -44,9 +57,11 @@ describe("LoginPage", () => {
   beforeEach(() => {
     signInProps.current = {};
     search.current = "";
+    authStoreState.current = { status: "unauthenticated" };
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
     issueCliToken.mockReset();
     redirectToCliCallback.mockReset();
+    redirectToDesktopApp.mockReset();
   });
 
   it("renders the Clerk sign-in flow at the canonical login route", () => {
@@ -91,6 +106,17 @@ describe("LoginPage", () => {
     expect(signInProps.current.forceRedirectUrl).toBe("/");
   });
 
+  it("preserves the desktop handoff through Clerk sign-in", () => {
+    search.current = "platform=desktop";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current).toMatchObject({
+      signUpUrl: "/signup?platform=desktop",
+      forceRedirectUrl: "/login?platform=desktop",
+    });
+  });
+
   it("offers CLI authorization after Clerk has established the session", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
@@ -120,5 +146,17 @@ describe("LoginPage", () => {
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();
+  });
+
+  it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
+    search.current = "platform=desktop";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    issueCliToken.mockResolvedValue({ token: "desktop-native-token" });
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
+    expect(redirectToDesktopApp).toHaveBeenCalledWith("desktop-native-token");
   });
 });

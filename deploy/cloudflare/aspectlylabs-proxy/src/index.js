@@ -61,6 +61,8 @@ const HTML = `<!doctype html>
         path === "/sign-in/sso-callback" ||
         path === "/sign-up/sso-callback";
       const isLegacyCallback = path === "/auth/callback";
+      const isDesktopHandoff =
+        new URL(location.href).searchParams.get("platform") === "desktop";
       const appearance = {
         elements: {
           rootBox: { width: "fit-content", height: "auto", margin: "0 auto" },
@@ -92,6 +94,9 @@ const HTML = `<!doctype html>
 
       function redirectToSignIn(target) {
         const signInUrl = new URL("/sign-in", location.origin);
+        if (isDesktopHandoff) {
+          signInUrl.searchParams.set("platform", "desktop");
+        }
         if (target !== APP_HOME) {
           signInUrl.searchParams.set("redirect_url", target);
         }
@@ -114,6 +119,9 @@ const HTML = `<!doctype html>
           '<a id="retry-sign-in" href="/sign-in" style="color:#2563eb;text-decoration:underline">Return to sign in</a>' +
           "</div>";
         const retryUrl = new URL("/sign-in", location.origin);
+        if (isDesktopHandoff) {
+          retryUrl.searchParams.set("platform", "desktop");
+        }
         if (target !== APP_HOME) {
           retryUrl.searchParams.set("redirect_url", target);
         }
@@ -121,15 +129,20 @@ const HTML = `<!doctype html>
       }
 
       const redirectTarget = resolveRedirectTarget();
+      const desktopRedirectTarget =
+        APP_ORIGIN + "/login?platform=desktop";
+      const postAuthTarget = isDesktopHandoff
+        ? desktopRedirectTarget
+        : redirectTarget;
 
       if (isLegacyCallback) {
-        redirectToApp(redirectTarget);
+        redirectToApp(postAuthTarget);
         return;
       }
 
       if (isSsoCallback) {
         if (Clerk.isSignedIn) {
-          redirectToApp(redirectTarget);
+          redirectToApp(postAuthTarget);
           return;
         }
         if (!hasOAuthCallbackParams()) {
@@ -142,10 +155,14 @@ const HTML = `<!doctype html>
         try {
           await Clerk.handleRedirectCallback(
             {
-              signInUrl: "/sign-in",
-              signUpUrl: "/sign-up",
-              signInFallbackRedirectUrl: redirectTarget,
-              signUpFallbackRedirectUrl: redirectTarget,
+              signInUrl: isDesktopHandoff
+                ? "/sign-in?platform=desktop"
+                : "/sign-in",
+              signUpUrl: isDesktopHandoff
+                ? "/sign-up?platform=desktop"
+                : "/sign-up",
+              signInFallbackRedirectUrl: postAuthTarget,
+              signUpFallbackRedirectUrl: postAuthTarget,
             },
             async (to) => {
               window.location.assign(to);
@@ -159,7 +176,7 @@ const HTML = `<!doctype html>
       }
 
       if (Clerk.isSignedIn) {
-        redirectToApp(redirectTarget);
+        redirectToApp(postAuthTarget);
         return;
       }
 
@@ -168,8 +185,10 @@ const HTML = `<!doctype html>
         Clerk.mountSignUp(document.getElementById("sign-up"), {
           routing: "path",
           path: path,
-          signInUrl: "/sign-in",
-          fallbackRedirectUrl: redirectTarget,
+          signInUrl: isDesktopHandoff
+            ? "/sign-in?platform=desktop"
+            : "/sign-in",
+          fallbackRedirectUrl: postAuthTarget,
           appearance: appearance,
         });
         return;
@@ -180,8 +199,10 @@ const HTML = `<!doctype html>
       Clerk.mountSignIn(document.getElementById("sign-in"), {
         routing: "path",
         path: signInPath,
-        signUpUrl: "/sign-up",
-        fallbackRedirectUrl: redirectTarget,
+        signUpUrl: isDesktopHandoff
+          ? "/sign-up?platform=desktop"
+          : "/sign-up",
+        fallbackRedirectUrl: postAuthTarget,
         appearance: appearance,
       });
     });
