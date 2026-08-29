@@ -7098,6 +7098,59 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "title is required");
     }
     let workspace_id = context.member.workspace_id;
+    if let Some(authorization) = TaskAuthorizationContext::from_headers(&headers) {
+        let task = agent::get_agent_task_in_workspace(
+            &state.pool,
+            authorization.task_id,
+            workspace_id,
+        )
+        .await
+        .ok()
+        .flatten();
+        let quick_create_allowed = task.as_ref().is_some_and(|task| {
+            let context = patchbay_service::task_service::TaskService::parse_quick_create_context(task);
+            context.is_some_and(|quick_create| {
+                let mut requested_attachments = request.attachment_ids.clone();
+                requested_attachments.sort_unstable();
+                requested_attachments.dedup();
+                let mut allowed_attachments = quick_create.attachment_ids.clone();
+                allowed_attachments.sort_unstable();
+                allowed_attachments.dedup();
+                let team_matches = if quick_create.team_id.is_empty() {
+                    request.assignee_type.as_deref() != Some("team")
+                } else {
+                    request.assignee_type.as_deref() == Some("team")
+                        && request.assignee_id.as_deref() == Some(quick_create.team_id.as_str())
+                };
+                authorization.via_agent_id == Some(task.agent_id)
+                    && quick_create.workspace_id == workspace_id.to_string()
+                    && authorization.on_behalf_of_user_id.is_some_and(|user_id| {
+                        quick_create.requester_id == user_id.to_string()
+                    })
+                    && request.priority.trim() == quick_create.priority
+                    && request.due_date.as_deref().unwrap_or("").trim() == quick_create.due_date
+                    && request.project_id.as_deref().unwrap_or("").trim()
+                        == quick_create.project_id
+                    && request.parent_issue_id.as_deref().unwrap_or("").trim()
+                        == quick_create.parent_issue_id
+                    && requested_attachments == allowed_attachments
+                    && request.label_ids.is_empty()
+                    && team_matches
+                    && request.origin_type.as_deref() == Some("quick_create")
+                    && request
+                        .origin_id
+                        .as_deref()
+                        .and_then(|raw| Uuid::parse_str(raw).ok())
+                        == Some(authorization.task_id)
+            })
+        });
+        if !quick_create_allowed {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "task capability does not allow creating an issue",
+            );
+        }
+    }
     if !task_project_resource_allows(
         &state,
         &headers,
@@ -7663,7 +7716,10 @@ pub(crate) async fn can_invoke_agent(
                 id: Some(target_runtime.id),
                 workspace_id,
                 owner_id: target_runtime.owner_id,
-                attributes: json!({"private": target_runtime.visibility != "public"}),
+                attributes: json!({
+                    "private": target_runtime.visibility != "public",
+                    "local_device": target_runtime.runtime_mode == "local",
+                }),
             },
             context: authorization_context,
             delegation_chain: Vec::new(),
@@ -9195,6 +9251,23 @@ mod tests {
             (status, body)
         }
 
+        async fn post(app: &Router, headers: &HeaderMap, body: Value) -> StatusCode {
+            let mut request = axum::http::Request::builder()
+                .method(axum::http::Method::POST)
+                .uri("/api/issues")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(axum::body::Body::from(body.to_string()))
+                .expect("issue create request");
+            for (name, value) in headers {
+                request.headers_mut().insert(name, value.clone());
+            }
+            app.clone()
+                .oneshot(request)
+                .await
+                .expect("issue create response")
+                .status()
+        }
+
         let mut headers = HeaderMap::new();
         for (name, value) in [
             ("x-actor-source", "task_token".to_string()),
@@ -9215,6 +9288,102 @@ mod tests {
         let (denied_status, _) =
             get(&app, format!("/api/issues/{denied_issue_id}"), &headers).await;
         assert_eq!(denied_status, StatusCode::FORBIDDEN);
+        assert_eq!(
+            post(
+                &app,
+                &headers,
+                json!({
+                    "title": "ordinary task cannot create",
+                    "status": "todo",
+                    "origin_type": "quick_create",
+                    "origin_id": task_id,
+                }),
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+
+        let quick_task_id = Uuid::now_v7();
+        let quick_dispatched_at = Utc::now();
+        sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, runtime_id, context) \
+             VALUES ($1, $2, 'dispatched', 0, $3, $4, $5, $6)",
+        )
+        .bind(quick_task_id)
+        .bind(agent_id)
+        .bind(quick_dispatched_at)
+        .bind(user_id)
+        .bind(runtime_id)
+        .bind(json!({
+            "type": "quick_create",
+            "prompt": "create a scoped issue",
+            "requester_id": user_id,
+            "workspace_id": workspace_id,
+        }))
+        .execute(&pool)
+        .await
+        .expect("create quick task");
+        let quick_lease = patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("issue-auth-quick-lease-{quick_task_id}"),
+            quick_task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + chrono::Duration::minutes(10)),
+            &json!([{
+                "action": Action::RESOURCE_USE,
+                "resource_type": ResourceType::PROJECT_RESOURCE,
+                "resource_id": "*",
+            }]),
+            None,
+            Some(quick_dispatched_at),
+            2,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("create quick lease")
+        .expect("quick lease inserted");
+        let mut quick_headers = headers.clone();
+        quick_headers.insert(
+            "x-task-id",
+            quick_task_id.to_string().parse().expect("task header"),
+        );
+        quick_headers.insert(
+            "x-capability-lease-id",
+            quick_lease.id.to_string().parse().expect("lease header"),
+        );
+        assert_eq!(
+            post(
+                &app,
+                &quick_headers,
+                json!({
+                    "title": "quick task creates scoped issue",
+                    "status": "todo",
+                    "origin_type": "quick_create",
+                    "origin_id": quick_task_id,
+                }),
+            )
+            .await,
+            StatusCode::CREATED
+        );
+        assert_eq!(
+            post(
+                &app,
+                &quick_headers,
+                json!({
+                    "title": "quick task cannot replace resources",
+                    "status": "todo",
+                    "attachment_ids": [Uuid::now_v7()],
+                    "origin_type": "quick_create",
+                    "origin_id": quick_task_id,
+                }),
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
 
         sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
             .bind(workspace_id)

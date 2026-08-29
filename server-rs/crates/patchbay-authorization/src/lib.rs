@@ -729,6 +729,33 @@ fn evaluate(
         );
     }
 
+    // Current local runtimes execute provider shells with the daemon account's
+    // filesystem/HOME and credential helpers. Until a Directory/credential
+    // broker and enforced sandbox exist, neither public visibility nor a grant
+    // may turn another user's device into shared ambient authority.
+    if request.action.as_str() == Action::RUNTIME_USE
+        && request
+            .resource
+            .attributes
+            .get("local_device")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        let effective_user = match request.principal.principal_type {
+            PrincipalType::User => request.principal.id,
+            PrincipalType::TaskRun | PrincipalType::AgentDefinition => {
+                request.context.on_behalf_of_user_id
+            }
+            _ => None,
+        };
+        if effective_user.is_none() || effective_user != request.resource.owner_id {
+            return Decision::new(
+                DecisionEffect::Deny,
+                "local runtime use requires the runtime owner",
+            );
+        }
+    }
+
     let lease_authorized = if request.principal.principal_type == PrincipalType::TaskRun
         || request.context.lease_id.is_some()
     {

@@ -343,7 +343,7 @@ fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) ->
             return !suffix.is_empty() && !suffix.contains('/');
         }
         if method == Method::POST {
-            return path.ends_with("/comments");
+            return path == "/api/issues" || path.ends_with("/comments");
         }
         if method == Method::PUT {
             let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
@@ -931,7 +931,6 @@ mod tests {
             (Method::GET, "/api/chat/history"),
             (Method::GET, "/api/issues"),
             (Method::GET, "/api/issues/other/timeline"),
-            (Method::POST, "/api/issues"),
             (Method::POST, "/api/issues/query"),
             (Method::POST, "/api/issues/table/rows"),
             (Method::POST, "/api/issues/table/groups"),
@@ -956,6 +955,7 @@ mod tests {
             (Method::GET, "/api/issues/issue-id"),
             (Method::PUT, "/api/issues/issue-id"),
             (Method::POST, "/api/issues/issue-id/comments"),
+            (Method::POST, "/api/issues"),
             (Method::POST, "/api/tasks/task-id/message-bus"),
         ] {
             assert!(

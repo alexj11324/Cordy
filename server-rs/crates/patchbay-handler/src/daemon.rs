@@ -2136,7 +2136,10 @@ async fn finalize_claim_enriched_full(
                     id: Some(runtime.id),
                     workspace_id,
                     owner_id: runtime.owner_id,
-                    attributes: json!({"private": runtime.visibility != "public"}),
+                    attributes: json!({
+                        "private": runtime.visibility != "public",
+                        "local_device": runtime.runtime_mode == "local",
+                    }),
                 },
                 context: AuthorizationContext {
                     workspace_role: Some(workspace_role),

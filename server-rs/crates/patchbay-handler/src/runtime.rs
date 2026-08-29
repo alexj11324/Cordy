@@ -124,7 +124,10 @@ async fn runtime_allowed(
                 id: Some(runtime.id),
                 workspace_id: runtime.workspace_id,
                 owner_id: runtime.owner_id,
-                attributes: json!({"private": runtime.visibility != "public"}),
+                attributes: json!({
+                    "private": runtime.visibility != "public",
+                    "local_device": runtime.runtime_mode == "local",
+                }),
             },
             context: AuthorizationContext {
                 workspace_role: workspace_role(member),
@@ -759,7 +762,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn task_runtime_use_requires_current_acl_or_exact_grant() {
+    async fn foreign_task_cannot_use_public_local_runtime_even_with_grants() {
         let url = std::env::var("DATABASE_URL")
             .expect("DATABASE_URL is required for runtime authorization contract");
         let pool = sqlx::PgPool::connect(&url)
@@ -799,7 +802,7 @@ mod tests {
         .expect("create membership");
         sqlx::query(
             "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
-             VALUES ($1, $2, 'runtime-auth-daemon', 'private runtime', 'local', 'codex', 'online', $3, 'private')",
+             VALUES ($1, $2, 'runtime-auth-daemon', 'public local runtime', 'local', 'codex', 'online', $3, 'public')",
         )
         .bind(runtime_id)
         .bind(workspace_id)
@@ -881,14 +884,14 @@ mod tests {
             last_seen_at: None,
             legacy_daemon_id: None,
             metadata: json!({}),
-            name: "private runtime".into(),
+            name: "public local runtime".into(),
             owner_id: Some(runtime_owner),
             profile_id: None,
             provider: "codex".into(),
             runtime_mode: "local".into(),
             status: "online".into(),
             updated_at: chrono::Utc::now(),
-            visibility: "private".into(),
+            visibility: "public".into(),
             workspace_id,
         };
         let mut headers = HeaderMap::new();
@@ -939,9 +942,9 @@ mod tests {
         .execute(&pool)
         .await
         .expect("grant runtime use");
-        assert!(runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
+        assert!(!runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
             .await
-            .expect("allow exact granted runtime"));
+            .expect("a grant cannot expose another owner's local device"));
 
         sqlx::query(
             "INSERT INTO authorization_grant (workspace_id, principal_type, principal_id, action, resource_type, resource_id, effect, created_by) \

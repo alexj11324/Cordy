@@ -35,15 +35,18 @@ code and in CI:
    for them in Phase 1. Human
    connection management remains available; a later broker must consume
    `credential.use` and return only a short-lived, lease-bound session.
-   Long-lived credential material is never returned to an agent, including an
-   owner-originated run. Stored current/prior work directories, branch names,
+   The server claim payload never returns long-lived credential material,
+   including for an owner-originated run. Stored current/prior work directories, branch names,
    durable directories, and provider session IDs are also stripped so reruns
    and chat continuity cannot recover another caller's local execution state.
 7. Runtime read/update is enforced by the same authorizer. Workspace admins do
    not automatically read or mutate another user's private runtime. Public
-   runtime metadata and use remain available to workspace members for current
-   shared-compute compatibility; private runtime read/use remains owner- or
-   explicit-grant-only.
+   runtime metadata remains available to workspace members. Local runtime use
+   is owner-only even when the runtime is public or a foreign-user grant
+   exists, because the current daemon sandbox exposes its account HOME and
+   credential helpers. Non-local public compute may retain workspace sharing;
+   private runtime read/use remains owner- or explicit-grant-only where the
+   local-device guardrail does not apply.
 8. Every authorizer result appends an explain record that can answer: who,
    on whose behalf, via which agent, on which device, action, resource,
    decision, why, matched grants, policy version, obligations, and delegation
@@ -54,6 +57,21 @@ Required negative tests cover cross-user shared-agent credential isolation,
 child-scope narrowing, expiry/revocation/task completion, private-resource admin
 denial, `require_approval` fail-closed behavior, and concurrent/replayed claim
 fencing.
+
+## Known release blocker
+
+The current local daemon still materializes provider login state (for example,
+the Codex `auth.json`) inside task-visible runtime state, while its provider
+shell can execute as the daemon OS user with full filesystem access. The server
+boundary in this phase prevents a foreign caller from receiving another
+user's local runtime, but it cannot truthfully enforce `credential.read_secret`
+against an owner-originated local process that can read the file directly.
+
+This slice must not be released as satisfying the acceptance above until the
+product chooses one safe boundary: disable task claims for local providers that
+materialize long-lived login state, or add enforced process/filesystem
+isolation plus a short-lived credential broker. This is a release decision, not
+a policy-engine follow-up that can be hidden behind the server interface.
 
 ## Root cause and risk boundary
 
