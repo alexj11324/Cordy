@@ -405,7 +405,7 @@ function BoardViewImpl({
   }, [emptyStatusIds, groups, hiddenStatuses, revealedEmptyStatuses]);
   const dropGroups = useMemo(() => {
     if (grouping !== "status") return groups;
-    const result = [...groups];
+    const result: BoardColumnGroup[] = [...groups];
     const seen = new Set(result.map((group) => group.id));
     for (const status of hiddenBoardStatuses) {
       const group = makeStatusGroup(status);

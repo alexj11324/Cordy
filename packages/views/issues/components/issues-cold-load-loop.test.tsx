@@ -155,12 +155,10 @@ vi.mock("@dnd-kit/core", () => ({
     onDragStart,
     onDragOver,
     onDragEnd,
-    onDragCancel,
   }: any) => {
     lastOnDragStart = onDragStart;
     lastOnDragOver = onDragOver;
     lastOnDragEnd = onDragEnd;
-    lastOnDragCancel = onDragCancel;
     return children;
   },
   DragOverlay: () => null,
@@ -197,7 +195,6 @@ const pending = () => new Promise<never>(() => {});
 let lastOnDragStart: ((event: any) => void) | undefined;
 let lastOnDragOver: ((event: any) => void) | undefined;
 let lastOnDragEnd: ((event: any) => void) | undefined;
-let lastOnDragCancel: (() => void) | undefined;
 
 function page(total: number) {
   return {
@@ -258,7 +255,6 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     lastOnDragStart = undefined;
     lastOnDragOver = undefined;
     lastOnDragEnd = undefined;
-    lastOnDragCancel = undefined;
     mockViewState.grouping = "status";
     mockViewState.swimlaneGrouping = "assignee";
     setApiInstance({
@@ -368,10 +364,14 @@ describe("Issues cold-load render loop (PB-4985)", () => {
 
     act(() => {
       lastOnDragStart?.({ active: { id: "todo-1" } });
+    });
+    act(() => {
       lastOnDragOver?.({
         active: { id: "todo-1" },
         over: { id: "status:in_progress" },
       });
+    });
+    act(() => {
       lastOnDragEnd?.({
         active: { id: "todo-1" },
         over: { id: "status:in_progress" },
@@ -412,10 +412,14 @@ describe("Issues cold-load render loop (PB-4985)", () => {
 
     act(() => {
       lastOnDragStart?.({ active: { id: "todo-1" } });
+    });
+    act(() => {
       lastOnDragOver?.({
         active: { id: "todo-1" },
         over: { id: "status:in_progress" },
       });
+    });
+    act(() => {
       lastOnDragEnd?.({
         active: { id: "todo-1" },
         over: { id: "status:in_progress" },

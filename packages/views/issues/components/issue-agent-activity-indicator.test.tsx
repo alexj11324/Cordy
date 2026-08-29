@@ -145,7 +145,11 @@ describe("IssueAgentActivityIndicator", () => {
 
     mockState.snapshot = [makeTask({ status: "queued" })];
     rerender(
-      <IssueAgentActivityIndicator issueId="issue-1" hoverCard={false} />,
+      <IssueAgentActivityIndicator
+        key="queued"
+        issueId="issue-1"
+        hoverCard={false}
+      />,
     );
 
     expect(container.firstElementChild).toHaveAttribute(
