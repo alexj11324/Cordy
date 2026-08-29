@@ -370,11 +370,21 @@ function startPageScript(publishableKey: string): string {
       const status = document.getElementById("status");
       try {
         const clerk = new window.Clerk(${JSON.stringify(publishableKey)});
-        await clerk.load();
+        const completeUrl = new URL(
+          ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
+          location.origin,
+        ).toString();
+        await clerk.load({
+          taskUrls: {
+            "choose-organization": completeUrl,
+            "reset-password": completeUrl,
+            "setup-mfa": completeUrl,
+          },
+        });
         await clerk.client.signIn.authenticateWithRedirect({
           strategy: "oauth_google",
           redirectUrl: new URL(${JSON.stringify(CALLBACK_PATH)}, location.origin).toString(),
-          redirectUrlComplete: new URL(${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)}, location.origin).toString(),
+          redirectUrlComplete: completeUrl,
           continueSignIn: true,
           continueSignUp: true,
         });
@@ -391,11 +401,17 @@ function callbackPageScript(publishableKey: string): string {
       const status = document.getElementById("status");
       try {
         const clerk = new window.Clerk(${JSON.stringify(publishableKey)});
-        await clerk.load();
         const completeUrl = new URL(
           ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
           location.origin,
         ).toString();
+        await clerk.load({
+          taskUrls: {
+            "choose-organization": completeUrl,
+            "reset-password": completeUrl,
+            "setup-mfa": completeUrl,
+          },
+        });
         const signInUrl = new URL(
           ${JSON.stringify(`${SIGN_IN_PATH}?platform=desktop`)},
           location.origin,
@@ -445,7 +461,17 @@ function signInPageScript(publishableKey: string): string {
       const status = document.getElementById("status");
       try {
         const clerk = new window.Clerk(${JSON.stringify(publishableKey)});
-        await clerk.load();
+        const completeUrl = new URL(
+          ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
+          location.origin,
+        ).toString();
+        await clerk.load({
+          taskUrls: {
+            "choose-organization": completeUrl,
+            "reset-password": completeUrl,
+            "setup-mfa": completeUrl,
+          },
+        });
         clerk.mountSignIn(status, {
           routing: "path",
           path: ${JSON.stringify(SIGN_IN_PATH)},
@@ -453,10 +479,7 @@ function signInPageScript(publishableKey: string): string {
             ${JSON.stringify(`${SIGN_UP_PATH}?platform=desktop`)},
             location.origin,
           ).toString(),
-          fallbackRedirectUrl: new URL(
-            ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
-            location.origin,
-          ).toString(),
+          fallbackRedirectUrl: completeUrl,
         });
       } catch {
         if (status) status.textContent = "Additional sign-in verification could not be loaded.";
@@ -471,7 +494,17 @@ function signUpPageScript(publishableKey: string): string {
       const status = document.getElementById("status");
       try {
         const clerk = new window.Clerk(${JSON.stringify(publishableKey)});
-        await clerk.load();
+        const completeUrl = new URL(
+          ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
+          location.origin,
+        ).toString();
+        await clerk.load({
+          taskUrls: {
+            "choose-organization": completeUrl,
+            "reset-password": completeUrl,
+            "setup-mfa": completeUrl,
+          },
+        });
         clerk.mountSignUp(status, {
           routing: "path",
           path: ${JSON.stringify(SIGN_UP_PATH)},
@@ -479,10 +512,7 @@ function signUpPageScript(publishableKey: string): string {
             ${JSON.stringify(`${SIGN_IN_PATH}?platform=desktop`)},
             location.origin,
           ).toString(),
-          fallbackRedirectUrl: new URL(
-            ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
-            location.origin,
-          ).toString(),
+          fallbackRedirectUrl: completeUrl,
         });
       } catch {
         if (status) status.textContent = "Additional sign-up verification could not be loaded.";
@@ -497,11 +527,17 @@ function completePageScript(publishableKey: string): string {
       const status = document.getElementById("status");
       try {
         const clerk = new window.Clerk(${JSON.stringify(publishableKey)});
-        await clerk.load();
         const completeUrl = new URL(
           ${JSON.stringify(`${COMPLETE_PATH}?platform=desktop`)},
           location.origin,
         ).toString();
+        await clerk.load({
+          taskUrls: {
+            "choose-organization": completeUrl,
+            "reset-password": completeUrl,
+            "setup-mfa": completeUrl,
+          },
+        });
         const task = clerk.session?.currentTask;
         if (task) {
           if (!(status instanceof HTMLDivElement)) throw new Error("missing task mount");

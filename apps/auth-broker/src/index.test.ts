@@ -31,4 +31,17 @@ describe("desktop OAuth handoff contract", () => {
     expect(ready.status).toBe(503);
     expect(await ready.json()).toEqual({ service: "auth-broker", status: "not_ready" });
   });
+
+  it("keeps Clerk session tasks inside the broker flow", async () => {
+    const response = await broker.fetch(
+      new Request("https://accounts.aspectlylabs.com/oauth/google?platform=desktop"),
+      { CLERK_PUBLISHABLE_KEY: "pk_test_patchbay" },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('"choose-organization": completeUrl');
+    expect(body).toContain('"reset-password": completeUrl');
+    expect(body).toContain('"setup-mfa": completeUrl');
+  });
 });
