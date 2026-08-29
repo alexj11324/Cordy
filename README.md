@@ -6,7 +6,7 @@
   <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
 </picture>
 
-**End to End Multi agent system Control panel for long-Horizon tasks**
+**End to End Multi-Agent Harness for long-Horizon tasks**
 
 [![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
 
@@ -14,16 +14,16 @@
 
 </div>
 
-Patchbay is an open-source control panel for orchestrating multi-agent systems on long-horizon tasks. It automatically decomposes your ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
+Patchbay is an open-source Harness for orchestrating multi-agents on long-horizon tasks. It automatically decomposes your ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
 
 ## What Patchbay Can Do
 
 - **Auto Decompose Tasks** Your goals will be decomposed into actionable tasks depending on the dependency by an agent with well organized prompt.
-- **Kanban** Each task will be available on the Kanban, so you and your team could track the progress of the project on one plane.
+- **Kanban** Each task will be visible on tasks Kanban, so you and your team could track the progress of the project on one plane.
 - **End to end tasks orchestration** A live agent orchestrator monitors the progress of each tasks and schedules the execution.
 - **Bring your own subscriptions** All tasks running on your local agents via Agent client protocol(ACP)
 - **Makes tasks interactive.** All actions logs on the tasks page as a thread. You can assign any task to any Agent and team member at any time.
-- **Human in the loop** Steer agent when drifting.
+- **Human in the loop** Your threads are always under control, steer agent when drifting.
 - **Work on your preferred platform** Web, desktop, Mobile, CLI and API.
 - **Self-host** running the program on your own infrastructure.
 
