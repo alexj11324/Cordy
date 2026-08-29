@@ -1013,8 +1013,10 @@ impl IssueService {
                 {
                     return None;
                 }
-                if matches!(source, RunEnqueueSource::Status | RunEnqueueSource::ReviewReturn)
-                    && self.has_pending_run(issue.id, assignee_id).await
+                if matches!(
+                    source,
+                    RunEnqueueSource::Status | RunEnqueueSource::ReviewReturn
+                ) && self.has_pending_run(issue.id, assignee_id).await
                 {
                     return None;
                 }
@@ -1042,8 +1044,10 @@ impl IssueService {
                 if !can_access(&leader) {
                     return None;
                 }
-                if matches!(source, RunEnqueueSource::Status | RunEnqueueSource::ReviewReturn)
-                    && self.has_pending_run(issue.id, team.leader_id).await
+                if matches!(
+                    source,
+                    RunEnqueueSource::Status | RunEnqueueSource::ReviewReturn
+                ) && self.has_pending_run(issue.id, team.leader_id).await
                 {
                     return None;
                 }
