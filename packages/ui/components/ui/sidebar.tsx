@@ -611,7 +611,14 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   )
 
   const handleClick = React.useCallback(() => {
-    if (!didDragRef.current) toggleSidebar()
+    if (didDragRef.current) {
+      // The click immediately following a completed pointer drag is the one
+      // gesture we intentionally suppress. Clear the marker here so a later
+      // keyboard-generated click can still toggle the rail.
+      didDragRef.current = false
+      return
+    }
+    toggleSidebar()
   }, [toggleSidebar])
 
   return (
