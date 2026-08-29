@@ -92,6 +92,26 @@ impl Rows {
     }
 
     async fn cleanup(self) {
+        let _ = sqlx::query("DELETE FROM task_token WHERE workspace_id = $1")
+            .bind(self.workspace_id)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM agent_task_queue WHERE agent_id = $1")
+            .bind(self.agent_id)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(self.workspace_id)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM agent WHERE workspace_id = $1")
+            .bind(self.workspace_id)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(self.workspace_id)
+            .execute(&self.pool)
+            .await;
         let _ = sqlx::query("DELETE FROM workspace WHERE id = $1")
             .bind(self.workspace_id)
             .execute(&self.pool)
