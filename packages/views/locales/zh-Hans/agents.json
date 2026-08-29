@@ -722,7 +722,6 @@
     "loading": "正在加载运行详情…",
     "load_failed": "无法加载此次运行的执行消息。",
     "empty": "此次运行没有记录执行消息。",
-    "events_one": "{{count}} 个事件",
     "events_other": "{{count}} 个事件",
     "text": "消息",
     "thinking": "思考",

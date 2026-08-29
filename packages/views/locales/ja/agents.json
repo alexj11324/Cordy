@@ -615,7 +615,6 @@
     "loading": "実行詳細を読み込んでいます…",
     "load_failed": "この実行のメッセージを読み込めませんでした。",
     "empty": "この実行には実行メッセージが記録されていません。",
-    "events_one": "イベント {{count}} 件",
     "events_other": "イベント {{count}} 件",
     "text": "メッセージ",
     "thinking": "思考",
