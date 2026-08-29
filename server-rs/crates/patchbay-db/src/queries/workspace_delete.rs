@@ -255,6 +255,12 @@ pub async fn delete_workspace_issue_roots(
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"WITH
+deleted_coordination_assignments AS (
+    DELETE FROM agent_coordination_assignment WHERE workspace_id = $1
+),
+deleted_coordination_outbox AS (
+    DELETE FROM agent_coordination_outbox WHERE workspace_id = $1
+),
 deleted_issues AS (
     DELETE FROM issue WHERE issue.workspace_id = $1
 ),

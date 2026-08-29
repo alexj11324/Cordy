@@ -5816,6 +5816,9 @@ async fn apply_issue_update(
             .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
+    let returning_from_review = previous_category == patchbay_service::issue_status::IN_REVIEW
+        && next_category == patchbay_service::issue_status::IN_PROGRESS
+        && !assignee_touched;
     let remapped = remap_legacy_review_assignee(LegacyReviewRemap {
         previous_category: &previous_category,
         next_category: &next_category,
@@ -5934,10 +5937,31 @@ RETURNING *"#,
             }
         }
     }
+    // `suppress_run` is an explicit request to leave returned work idle. The
+    // owner restoration still belongs to the atomic issue update, but it must
+    // not create a durable coordinator handoff or wake the worker.
+    let should_record_review_return = returning_from_review && !suppress_run;
+    if should_record_review_return {
+        // Persist the executor handoff in the same transaction as the review
+        // return. The coordinator's PostgreSQL outbox is authoritative; the
+        // in-memory notification below is only a latency hint.
+        patchbay_service::coordination::record_review_return(&mut tx, &updated, None)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, issue_id = %previous.id, "failed to record review return handoff");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update issue",
+                )
+            })?;
+    }
     tx.commit().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
     })?;
+    if should_record_review_return {
+        state.coordinator.notify();
+    }
     let (actor_type, actor_id, task_id) = mutation_actor(state, context, headers).await;
     publish_issue_updated(state, &previous, &updated, &actor_type, actor_id, task_id).await;
     if attachments_changed {
@@ -5946,7 +5970,7 @@ RETURNING *"#,
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
-    if !suppress_run {
+    if !suppress_run && !returning_from_review {
         let is_self_loop = if let Some(task_id) = task_id {
             agent::get_agent_task(&state.pool, task_id)
                 .await

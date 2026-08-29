@@ -654,6 +654,7 @@ impl TaskService {
                 target.failed.id,
                 new_v7(),
                 &serde_json::Value::Null,
+                "queued",
             )
             .await;
             match created {

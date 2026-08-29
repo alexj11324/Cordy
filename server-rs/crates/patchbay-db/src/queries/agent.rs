@@ -2036,6 +2036,7 @@ pub async fn create_agent_task(
     trigger_evidence_ref_id: Uuid,
     id: Uuid,
     initial_context: &serde_json::Value,
+    initial_status: &str,
 ) -> anyhow::Result<Option<AgentTaskQueue>> {
     let row = sqlx::query(
         r#"INSERT INTO agent_task_queue (
@@ -2046,7 +2047,7 @@ pub async fn create_agent_task(
     id
 )
 SELECT
-    $1, $2, $3, 'queued', $4,
+    $1, $2, $3, CASE WHEN $25::text = 'deferred' THEN 'deferred' ELSE 'queued' END, $4,
     NULLIF($5::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     COALESCE($6::uuid[], '{}'),
     $7,
@@ -2101,6 +2102,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         .bind(trigger_evidence_ref_id)
         .bind(id)
         .bind(initial_context)
+        .bind(initial_status)
         .fetch_optional(executor)
         .await?;
     let Some(row) = row else { return Ok(None) };
@@ -2336,6 +2338,7 @@ pub async fn create_deferred_channel_issue_task(
     trigger_evidence_ref_id: Uuid,
     fire_at: Option<DateTime<Utc>>,
     id: Uuid,
+    initial_context: &serde_json::Value,
 ) -> anyhow::Result<Option<AgentTaskQueue>> {
     let row = sqlx::query(
         r#"INSERT INTO agent_task_queue (
@@ -2355,10 +2358,13 @@ SELECT
     COALESCE($9::boolean, FALSE),
     $10,
     NULLIF($11::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
-    jsonb_strip_nulls(jsonb_build_object(
-        'head_sha', NULLIF(COALESCE($12::text, ''), ''),
-        'channel_issue_media_pending', TRUE
-    )),
+    jsonb_strip_nulls(
+        COALESCE(NULLIF($25::jsonb, 'null'::jsonb), '{}'::jsonb) ||
+        jsonb_build_object(
+            'head_sha', NULLIF(COALESCE($12::text, ''), ''),
+            'channel_issue_media_pending', TRUE
+        )
+    ),
     NULLIF($13::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     NULLIF($14::uuid, '00000000-0000-0000-0000-000000000000'::uuid),
     $15,
@@ -2398,6 +2404,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         .bind(trigger_evidence_ref_id)
         .bind(fire_at)
         .bind(id)
+        .bind(initial_context)
         .fetch_optional(executor)
         .await?;
     let Some(row) = row else { return Ok(None) };
@@ -5738,7 +5745,10 @@ pub async fn promote_deferred_channel_issue_task(
     let row = sqlx::query(
         r#"UPDATE agent_task_queue
 SET status = 'queued', fire_at = NULL
-WHERE id = $1 AND issue_id IS NOT NULL AND status = 'deferred'
+WHERE id = $1
+  AND issue_id IS NOT NULL
+  AND status = 'deferred'
+  AND context->>'coordination_assignment_id' IS NULL
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
     )
         .bind(id)
