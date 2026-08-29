@@ -65,13 +65,8 @@ async fn create_guest(State(state): State<HandlerState>) -> Response {
             );
         }
     };
-    if let Err(error) = guest_queries::create_guest_session(
-        &mut *tx,
-        session_id,
-        user_id,
-        &token_hash,
-    )
-    .await
+    if let Err(error) =
+        guest_queries::create_guest_session(&mut *tx, session_id, user_id, &token_hash).await
     {
         tracing::error!(%error, "guest auth: failed to persist session");
         return error_code_response(

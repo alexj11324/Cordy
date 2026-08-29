@@ -283,25 +283,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 patchbay_middleware::workspace::require_workspace,
             )),
         )
-        .merge(formal_guard(
-            workspace::admin_router().route_layer(middleware::from_fn_with_state(
+        .merge(formal_guard(workspace::admin_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
                     "id",
                     vec!["owner".into(), "admin".into()],
                 ),
                 patchbay_middleware::workspace::require_workspace,
-            )),
-        ))
+            ),
+        )))
         .merge(formal_guard(
             composio::authenticated_router().with_state::<HandlerState>(composio_state.clone()),
         ))
-        .merge(
-            formal_guard(
-                binding_redeem::router()
-                    .with_state(binding_redeem::BindingRedeemState::from_handler(&state)),
-            ),
-        )
+        .merge(formal_guard(binding_redeem::router().with_state(
+            binding_redeem::BindingRedeemState::from_handler(&state),
+        )))
         .merge(
             runtime_profile::member_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
@@ -334,54 +331,54 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 patchbay_middleware::workspace::require_workspace,
             )),
         )
-        .merge(
-            formal_guard(vcs::member_router().route_layer(middleware::from_fn_with_state(
+        .merge(formal_guard(vcs::member_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
                 patchbay_middleware::workspace::require_workspace,
-            ))),
-        )
-        .merge(
-            formal_guard(vcs::admin_router().route_layer(middleware::from_fn_with_state(
+            ),
+        )))
+        .merge(formal_guard(vcs::admin_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
                     "id",
                     vec!["owner".into(), "admin".into()],
                 ),
                 patchbay_middleware::workspace::require_workspace,
-            ))),
-        )
-        .merge(
-            formal_guard(github::member_router().route_layer(middleware::from_fn_with_state(
+            ),
+        )))
+        .merge(formal_guard(github::member_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
                 patchbay_middleware::workspace::require_workspace,
-            ))),
-        )
-        .merge(
-            formal_guard(github::admin_router().route_layer(middleware::from_fn_with_state(
+            ),
+        )))
+        .merge(formal_guard(github::admin_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
                     "id",
                     vec!["owner".into(), "admin".into()],
                 ),
                 patchbay_middleware::workspace::require_workspace,
-            ))),
-        )
-        .merge(
-            formal_guard(connectors::member_router().route_layer(middleware::from_fn_with_state(
+            ),
+        )))
+        .merge(formal_guard(connectors::member_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
                 patchbay_middleware::workspace::require_workspace,
-            ))),
-        )
-        .merge(
-            formal_guard(connectors::admin_router().route_layer(middleware::from_fn_with_state(
+            ),
+        )))
+        .merge(formal_guard(connectors::admin_router().route_layer(
+            middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
                     "id",
                     vec!["owner".into(), "admin".into()],
                 ),
                 patchbay_middleware::workspace::require_workspace,
-            ))),
-        )
+            ),
+        )))
         .merge(attachment::authenticated_router())
         .merge(
             agent_aggregation::router().route_layer(middleware::from_fn_with_state(
@@ -429,26 +426,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(client_usage::router())
         .merge(feedback::router())
         .merge(formal_guard(invitation::router()))
-        .merge(
-            formal_guard(invitation::workspace_member_router().route_layer(
-                middleware::from_fn_with_state(
-                    WorkspaceGuardState::from_url(state.pool.clone(), "id"),
-                    patchbay_middleware::workspace::require_workspace,
-                ),
+        .merge(formal_guard(
+            invitation::workspace_member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                patchbay_middleware::workspace::require_workspace,
             )),
-        )
-        .merge(
-            formal_guard(invitation::workspace_admin_router().route_layer(
-                middleware::from_fn_with_state(
-                    WorkspaceGuardState::from_url_with_roles(
-                        state.pool.clone(),
-                        "id",
-                        vec!["owner".into(), "admin".into()],
-                    ),
-                    patchbay_middleware::workspace::require_workspace,
+        ))
+        .merge(formal_guard(
+            invitation::workspace_admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
                 ),
+                patchbay_middleware::workspace::require_workspace,
             )),
-        )
+        ))
         .merge(me::router())
         .merge(onboarding_shim::router())
         .merge(
@@ -478,29 +471,25 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(formal_guard(cloud_billing::billing_router(
             cloud_runtime_proxy.clone(),
         )))
-        .merge(
-            formal_guard(
-                cloud_billing::subscription_member_router(cloud_runtime_proxy.clone()).route_layer(
-                    middleware::from_fn_with_state(
-                        WorkspaceGuardState::member_only(state.pool.clone()),
-                        patchbay_middleware::workspace::require_workspace,
-                    ),
+        .merge(formal_guard(
+            cloud_billing::subscription_member_router(cloud_runtime_proxy.clone()).route_layer(
+                middleware::from_fn_with_state(
+                    WorkspaceGuardState::member_only(state.pool.clone()),
+                    patchbay_middleware::workspace::require_workspace,
                 ),
             ),
-        )
-        .merge(
-            formal_guard(
-                cloud_billing::subscription_admin_router(cloud_runtime_proxy.clone()).route_layer(
-                    middleware::from_fn_with_state(
-                        WorkspaceGuardState::with_roles(
-                            state.pool.clone(),
-                            vec!["owner".into(), "admin".into()],
-                        ),
-                        patchbay_middleware::workspace::require_workspace,
+        ))
+        .merge(formal_guard(
+            cloud_billing::subscription_admin_router(cloud_runtime_proxy.clone()).route_layer(
+                middleware::from_fn_with_state(
+                    WorkspaceGuardState::with_roles(
+                        state.pool.clone(),
+                        vec!["owner".into(), "admin".into()],
                     ),
+                    patchbay_middleware::workspace::require_workspace,
                 ),
             ),
-        )
+        ))
         .merge(
             runtime_requests::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),

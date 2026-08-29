@@ -46,5 +46,5 @@ pub async fn find_active_by_token_hash(
             user_id: row.try_get(0)?,
         })
     })
-        .transpose()
+    .transpose()
 }
