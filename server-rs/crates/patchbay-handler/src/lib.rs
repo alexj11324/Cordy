@@ -244,7 +244,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         state.auth_verify_rate_limit.clone(),
     );
     let public_guest_auth = guest::public_router(state.auth_rate_limit.clone());
-    let formal_guard = |router| {
+    let formal_guard = |router: Router<HandlerState>| {
         router.route_layer(middleware::from_fn_with_state(
             state.pool.clone(),
             patchbay_middleware::auth::require_formal_user,
@@ -276,7 +276,6 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     };
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
-        .merge(guest::authenticated_router())
         .merge(
             workspace::member_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
