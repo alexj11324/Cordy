@@ -175,39 +175,17 @@ pub(crate) async fn can_invoke_agent(
     actor_type: &str,
     effective_user: Option<Uuid>,
     workspace_id: Uuid,
+    headers: Option<&HeaderMap>,
 ) -> bool {
-    if effective_user.is_some() && target.owner_id == effective_user {
-        return true;
-    }
-    if target.permission_mode != "public_to" {
-        return false;
-    }
-    let targets =
-        match patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets(
-            &state.pool,
-            target.id,
-        )
-        .await
-        {
-            Ok(targets) => targets,
-            Err(_) => return false,
-        };
-    let workspace_principal = matches!(actor_type, "agent" | "system");
-    let workspace_member = if let Some(user_id) = effective_user {
-        member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
-            .await
-            .is_ok_and(|row| row.is_some())
-    } else {
-        false
-    };
-    targets
-        .iter()
-        .any(|entry| match entry.target_type.as_str() {
-            "workspace" => workspace_principal || workspace_member,
-            "member" => effective_user == Some(entry.target_id),
-            "team" => false,
-            _ => false,
-        })
+    crate::issue::can_invoke_agent(
+        state,
+        actor_type,
+        effective_user,
+        workspace_id,
+        target,
+        headers.and_then(crate::issue::TaskAuthorizationContext::from_headers),
+    )
+    .await
 }
 
 async fn invoke_originator(
@@ -480,7 +458,16 @@ async fn create_session(
     }
     let (actor_type, actor_id) = actor(&headers, user_id);
     let effective_user = invoke_originator(&state, &headers, actor_type, actor_id).await;
-    if !can_invoke_agent(&state, &target, actor_type, effective_user, workspace_id).await {
+    if !can_invoke_agent(
+        &state,
+        &target,
+        actor_type,
+        effective_user,
+        workspace_id,
+        Some(&headers),
+    )
+    .await
+    {
         return dispatch_blocked(
             StatusCode::FORBIDDEN,
             patchbay_service::dispatch_reason::ReasonCode::InvocationNotAllowed,
@@ -1020,6 +1007,7 @@ async fn send_message(
         actor_type,
         effective_user,
         session.workspace_id,
+        Some(&headers),
     )
     .await
     {
@@ -1655,6 +1643,7 @@ async fn regenerate_quick_actions(
         actor_type,
         effective_user,
         session.workspace_id,
+        Some(&headers),
     )
     .await
     {
@@ -1765,6 +1754,7 @@ async fn start_onboarding(
         actor_type,
         effective_user,
         session.workspace_id,
+        Some(&headers),
     )
     .await
     {

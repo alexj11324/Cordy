@@ -394,6 +394,9 @@ impl patchbay_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
 #[derive(Clone)]
 pub struct HandlerState {
     pub pool: sqlx::PgPool,
+    /// Shared enforcement interface. Consumers must fail closed on store or
+    /// audit errors; UI checks are never an authorization boundary.
+    pub authorization: Arc<dyn patchbay_authorization::Authorizer>,
     pub pat_cache: PatCache,
     pub daemon_token_cache: DaemonTokenCache,
     pub membership_cache: MembershipCache,
@@ -569,6 +572,9 @@ impl HandlerState {
         composio: Option<Arc<patchbay_composio::Service>>,
         business_metrics: Option<Arc<patchbay_metrics::BusinessMetrics>>,
     ) -> Self {
+        let authorization: Arc<dyn patchbay_authorization::Authorizer> = Arc::new(
+            patchbay_authorization::PostgresAuthorizer::new(pool.clone()),
+        );
         let bus = Arc::new(patchbay_events::Bus::new());
         let daemon_hub = Arc::new(patchbay_daemon::hub::DaemonHub::new());
         let daemon_notifier = Arc::new(patchbay_daemon::notifier::RelayNotifier::new(
@@ -591,7 +597,12 @@ impl HandlerState {
         task_service.set_composio_overlay(
             composio
                 .as_ref()
-                .map(|service| crate::composio::task_overlay_builder(service.clone())),
+                .map(|service| {
+                    crate::composio::task_overlay_builder(
+                        service.clone(),
+                        authorization.clone(),
+                    )
+                }),
         );
         let tasks = Arc::new(task_service);
         let coordinator = patchbay_service::coordination::CoordinatorService::new(
@@ -626,6 +637,7 @@ impl HandlerState {
         auth_verify_rate_limit.trusted_proxies = trusted_proxies;
         Self {
             pool,
+            authorization,
             pat_cache,
             daemon_token_cache: DaemonTokenCache::disabled(),
             membership_cache: MembershipCache::disabled(),
@@ -812,7 +824,10 @@ impl HandlerState {
                 let service = Arc::new(service);
                 self.composio = Some(service.clone());
                 self.tasks
-                    .set_composio_overlay(Some(crate::composio::task_overlay_builder(service)));
+                    .set_composio_overlay(Some(crate::composio::task_overlay_builder(
+                        service,
+                        self.authorization.clone(),
+                    )));
             }
             Err(error) => {
                 tracing::warn!(%error, "composio disabled by incomplete configuration");

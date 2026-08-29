@@ -247,6 +247,7 @@ async fn dispatch_agent_mentions(
             "member",
             Some(context.member.user_id),
             context.member.workspace_id,
+            None,
         )
         .await
         {

@@ -124,31 +124,28 @@ pub fn lower_trim(s: &str) -> Option<String> {
 /// result when ANY gate trips — meaning no Composio session is created and
 /// no token is provisioned.
 ///
-/// PB-3963: Composio MCP now FOLLOWS the agent invocation permission
-/// instead of requiring originator == owner. The security boundary is
-/// upstream — canInvokeAgent decides who may enqueue a run for this agent —
-/// so any task that reaches dispatch has already been authorised to use the
-/// Composio apps the OWNER attached to it. `originator_user_id` is retained
-/// only for audit logging (who triggered); it does not gate the overlay.
+/// Invocation and credential authority are deliberately separate. The caller
+/// selects `capability_user_id` at an enforcement boundary; this function can
+/// only mount that user's active connections. A shared agent therefore never
+/// inherits its definition owner's private connection merely by being invoked.
 ///
 /// Gates, in order:
-///  1. agent has no owner (`owner_user_id` None) — cannot resolve a
+///  1. no capability user — cannot resolve a
 ///     connected-apps view. No overlay.
-///  2. allowlist empty — the agent owner never opted into any toolkit.
+///  2. allowlist empty — the agent definition never opted into any toolkit.
 ///     Default OFF: no overlay.
-///  3. After intersecting with the OWNER's active connections, no toolkit
+///  3. After intersecting with the capability user's active connections, no toolkit
 ///     has an active connection. Nothing to mount.
 ///  4. Composio returns a session with no URL — defensive.
 pub async fn build_task_overlay<S: SessionSpawner>(
     spawner: &S,
-    _originator_user_id: Option<Uuid>,
-    owner_user_id: Option<Uuid>,
+    capability_user_id: Option<Uuid>,
     composio_toolkit_allowlist: &[String],
     active_connections: &[crate::service::ComposioConnectionRow],
     display_name_for_slug: impl Fn(&str) -> String,
 ) -> anyhow::Result<OverlayResult> {
-    // Gate 1: the overlay is the agent OWNER's connected-apps view.
-    let Some(owner_user_id) = owner_user_id else {
+    // Gate 1: the overlay is the capability user's connected-apps view.
+    let Some(capability_user_id) = capability_user_id else {
         return Ok(OverlayResult::default());
     };
     // Gate 2: NULL and empty `{}` are treated identically — "no overlay".
@@ -161,7 +158,7 @@ pub async fn build_task_overlay<S: SessionSpawner>(
     // CreateSession call AND for the early bail-out below.
     let pinned = pin_connected_accounts(active_connections, &allow_set);
     if pinned.is_empty() {
-        // Gate 3: owner allowlisted toolkits they have not connected (or
+        // Gate 3: the capability user has not connected an allowlisted toolkit (or
         // have revoked since).
         return Ok(OverlayResult::default());
     }
@@ -171,7 +168,7 @@ pub async fn build_task_overlay<S: SessionSpawner>(
     // the connected-account pin so the session can never surface an account
     // outside the (allowlist ∩ active connections) set.
     let Some((url, headers)) = spawner
-        .create_session(owner_user_id.to_string(), &slugs, &pinned)
+        .create_session(capability_user_id.to_string(), &slugs, &pinned)
         .await?
     else {
         return Ok(OverlayResult::default());
@@ -266,6 +263,7 @@ mod tests {
 
     struct FakeSpawner {
         url: &'static str,
+        expected_user: Option<Uuid>,
     }
 
     impl SessionSpawner for FakeSpawner {
@@ -275,7 +273,11 @@ mod tests {
             toolkits_enable: &[String],
             pinned: &BTreeMap<String, Vec<String>>,
         ) -> anyhow::Result<Option<(String, Vec<(String, String)>)>> {
-            assert!(!user_id.is_empty());
+            if let Some(expected) = self.expected_user {
+                assert_eq!(user_id, expected.to_string());
+            } else {
+                assert!(!user_id.is_empty());
+            }
             assert!(!toolkits_enable.is_empty());
             assert!(!pinned.is_empty());
             if self.url.is_empty() {
@@ -288,29 +290,31 @@ mod tests {
         }
     }
 
-    const OWNER: uuid::Uuid = uuid::uuid!("0198c0de-0000-7000-8000-000000000001");
+    const CALLER: uuid::Uuid = uuid::uuid!("0198c0de-0000-7000-8000-000000000002");
 
     #[tokio::test]
     async fn gates_short_circuit_to_no_overlay() {
-        let spawner = FakeSpawner { url: "https://mcp" };
+        let spawner = FakeSpawner {
+            url: "https://mcp",
+            expected_user: None,
+        };
         let conns = vec![conn("github", "ca_1")];
         // Gate 1: no owner.
-        let r = build_task_overlay(&spawner, None, None, &["github".into()], &conns, |s| {
+        let r = build_task_overlay(&spawner, None, &["github".into()], &conns, |s| {
             s.into()
         })
         .await
         .unwrap();
         assert!(r.mcp_overlay.is_empty());
         // Gate 2: empty allowlist.
-        let r = build_task_overlay(&spawner, None, Some(OWNER), &[], &conns, |s| s.into())
+        let r = build_task_overlay(&spawner, Some(CALLER), &[], &conns, |s| s.into())
             .await
             .unwrap();
         assert!(r.mcp_overlay.is_empty());
         // Gate 3: allowlist misses all connections.
         let r = build_task_overlay(
             &spawner,
-            None,
-            Some(OWNER),
+            Some(CALLER),
             &["notion".into()],
             &conns,
             |s| s.into(),
@@ -319,8 +323,11 @@ mod tests {
         .unwrap();
         assert!(r.mcp_overlay.is_empty());
         // Gate 4: session without URL.
-        let empty = FakeSpawner { url: "" };
-        let r = build_task_overlay(&empty, None, Some(OWNER), &["github".into()], &conns, |s| {
+        let empty = FakeSpawner {
+            url: "",
+            expected_user: None,
+        };
+        let r = build_task_overlay(&empty, Some(CALLER), &["github".into()], &conns, |s| {
             s.into()
         })
         .await
@@ -332,6 +339,7 @@ mod tests {
     async fn happy_path_builds_overlay_with_sorted_apps() {
         let spawner = FakeSpawner {
             url: "https://mcp/sess",
+            expected_user: Some(CALLER),
         };
         let conns = vec![
             conn("github", "ca_g"),
@@ -340,8 +348,7 @@ mod tests {
         ];
         let r = build_task_overlay(
             &spawner,
-            Some(uuid::Uuid::now_v7()), // originator only for audit
-            Some(OWNER),
+            Some(CALLER),
             &["Notion".into(), "github".into()],
             &conns,
             |s| s.to_uppercase(),
@@ -360,6 +367,27 @@ mod tests {
         assert_eq!(r.connected_apps[0].toolkit_slug, "github");
         assert_eq!(r.connected_apps[1].toolkit_name, "NOTION");
         assert_eq!(r.connected_apps[1].provider, "composio");
+    }
+
+    #[tokio::test]
+    async fn shared_agent_session_is_minted_for_caller_not_definition_owner() {
+        const DEFINITION_OWNER: Uuid =
+            uuid::uuid!("0198c0de-0000-7000-8000-000000000001");
+        assert_ne!(CALLER, DEFINITION_OWNER);
+        let spawner = FakeSpawner {
+            url: "https://mcp/sess",
+            expected_user: Some(CALLER),
+        };
+        let result = build_task_overlay(
+            &spawner,
+            Some(CALLER),
+            &["github".into()],
+            &[conn("github", "caller-account")],
+            str::to_string,
+        )
+        .await
+        .unwrap();
+        assert!(!result.mcp_overlay.is_empty());
     }
 
     #[test]

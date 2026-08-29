@@ -19,6 +19,7 @@ pub mod auth;
 pub mod autopilot;
 pub mod autopilot_listeners;
 pub mod autopilot_webhook;
+pub mod authorization;
 pub mod avatar;
 pub mod binding_redeem;
 pub mod chat_api;
@@ -463,6 +464,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         )))
         .merge(
             runtime::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            authorization::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 patchbay_middleware::workspace::require_workspace,
             )),

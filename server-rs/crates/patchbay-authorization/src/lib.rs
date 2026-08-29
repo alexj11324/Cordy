@@ -690,7 +690,10 @@ fn evaluate(
             .get("require_approval")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-    if requires_approval && request.context.approval_id.is_none() {
+    // Phase 1 has no approval-record verifier. Presence of an arbitrary UUID
+    // is not proof of approval, so this remains fail-closed until a verified
+    // approval adapter can turn the obligation into a distinct allow grant.
+    if requires_approval {
         let mut decision = Decision::new(
             DecisionEffect::RequireApproval,
             "approval is required before this action",
@@ -698,7 +701,7 @@ fn evaluate(
         decision.matched_grants = matched_ids;
         decision.obligations.push(Obligation {
             kind: "obtain_approval".to_string(),
-            detail: "present a valid approval id and re-authorize".to_string(),
+            detail: "obtain a verified approval grant and re-authorize".to_string(),
         });
         return decision;
     }
@@ -940,6 +943,11 @@ mod tests {
         assert_eq!(decision.effect, DecisionEffect::RequireApproval);
         assert!(!decision.is_allowed());
         assert_eq!(decision.obligations[0].kind, "obtain_approval");
+
+        req.context.approval_id = Some(Uuid::now_v7());
+        let forged = evaluate(&req, &[], &[]);
+        assert_eq!(forged.effect, DecisionEffect::RequireApproval);
+        assert!(!forged.is_allowed());
     }
 
     #[test]

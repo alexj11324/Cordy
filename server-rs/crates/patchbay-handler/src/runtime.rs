@@ -2,12 +2,16 @@
 
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use patchbay_db::models::{AgentRuntime, Member};
 use patchbay_db::queries::{agent, runtime, runtime_profile};
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
+    ResourceType, WorkspaceRole,
+};
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_protocol::EVENT_DAEMON_REGISTER;
 use serde::{Deserialize, Serialize};
@@ -61,6 +65,82 @@ fn redact_gateway_token(mut config: Value) -> Value {
         config["gateway"]["token"] = Value::String("***".into());
     }
     config
+}
+
+fn workspace_role(member: &Member) -> Option<WorkspaceRole> {
+    match member.role.as_str() {
+        "owner" => Some(WorkspaceRole::Owner),
+        "admin" => Some(WorkspaceRole::Admin),
+        "member" => Some(WorkspaceRole::Member),
+        _ => None,
+    }
+}
+
+async fn runtime_allowed(
+    state: &HandlerState,
+    member: &Member,
+    headers: &HeaderMap,
+    runtime: &AgentRuntime,
+    action: &'static str,
+) -> Result<bool, Response> {
+    let task_principal = headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        == Some("task_token");
+    let task_id = headers
+        .get("x-task-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let lease_id = headers
+        .get("x-capability-lease-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let on_behalf_of_user_id = headers
+        .get("x-on-behalf-of-user-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let device_id = headers
+        .get("x-device-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let decision = state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type: if task_principal {
+                    PrincipalType::TaskRun
+                } else {
+                    PrincipalType::User
+                },
+                id: if task_principal { task_id } else { Some(member.user_id) },
+            },
+            action: Action::new(action),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::RUNTIME),
+                id: Some(runtime.id),
+                workspace_id: runtime.workspace_id,
+                owner_id: runtime.owner_id,
+                attributes: json!({"private": runtime.visibility != "public"}),
+            },
+            context: AuthorizationContext {
+                workspace_role: workspace_role(member),
+                on_behalf_of_user_id: task_principal.then_some(on_behalf_of_user_id).flatten(),
+                device_id,
+                task_id: task_principal.then_some(task_id).flatten(),
+                lease_id: task_principal.then_some(lease_id).flatten(),
+                ..Default::default()
+            },
+            delegation_chain: Vec::new(),
+        })
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, runtime_id = %runtime.id, action, "runtime authorization failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to authorize runtime access",
+            )
+        })?;
+    Ok(decision.is_allowed())
 }
 
 fn safe_agent_response(state: &HandlerState, agent: &patchbay_db::models::Agent) -> Value {
@@ -136,6 +216,7 @@ fn active_agents_conflict(
 async fn load_deletable_runtime(
     state: &HandlerState,
     context: &WorkspaceContext,
+    headers: &HeaderMap,
     raw_id: &str,
 ) -> Result<AgentRuntime, Response> {
     let runtime_id = Uuid::parse_str(raw_id)
@@ -148,7 +229,15 @@ async fn load_deletable_runtime(
     if found.workspace_id != context.member.workspace_id {
         return Err(error_response(StatusCode::NOT_FOUND, "runtime not found"));
     }
-    if !can_edit(&context.member, &found) {
+    if !runtime_allowed(
+        state,
+        &context.member,
+        headers,
+        &found,
+        Action::RUNTIME_UPDATE,
+    )
+    .await?
+    {
         return Err(error_response(
             StatusCode::FORBIDDEN,
             "you can only delete your own runtimes",
@@ -271,9 +360,10 @@ async fn locked_delete(
 async fn delete_runtime(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     Path(raw_id): Path<String>,
 ) -> Response {
-    let found = match load_deletable_runtime(&state, &context, &raw_id).await {
+    let found = match load_deletable_runtime(&state, &context, &headers, &raw_id).await {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -298,6 +388,7 @@ struct ConfirmDeleteRequest {
 async fn delete_runtime_confirmed(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     Path(raw_id): Path<String>,
     Json(request): Json<ConfirmDeleteRequest>,
 ) -> Response {
@@ -315,7 +406,7 @@ async fn delete_runtime_confirmed(
     }
     expected.sort_unstable();
     expected.dedup();
-    let found = match load_deletable_runtime(&state, &context, &raw_id).await {
+    let found = match load_deletable_runtime(&state, &context, &headers, &raw_id).await {
         Ok(value) => value,
         Err(response) => return response,
     };
@@ -379,6 +470,7 @@ struct ListParams {
 async fn list(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     Query(params): Query<ListParams>,
 ) -> Response {
     let workspace_id = match Uuid::parse_str(&context.workspace_id) {
@@ -392,13 +484,25 @@ async fn list(
         runtime::list_agent_runtimes(&state.pool, workspace_id).await
     };
     match result {
-        Ok(runtimes) => Json(
-            runtimes
-                .into_iter()
-                .map(RuntimeResponse::from)
-                .collect::<Vec<_>>(),
-        )
-        .into_response(),
+        Ok(runtimes) => {
+            let mut visible = Vec::with_capacity(runtimes.len());
+            for runtime in runtimes {
+                match runtime_allowed(
+                    &state,
+                    &context.member,
+                    &headers,
+                    &runtime,
+                    Action::RUNTIME_READ,
+                )
+                .await
+                {
+                    Ok(true) => visible.push(RuntimeResponse::from(runtime)),
+                    Ok(false) => {}
+                    Err(response) => return response,
+                }
+            }
+            Json(visible).into_response()
+        }
         Err(error) => {
             tracing::error!(%error, "failed to list runtimes");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list runtimes")
@@ -431,10 +535,6 @@ where
     Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-fn can_edit(member: &Member, runtime: &AgentRuntime) -> bool {
-    matches!(member.role.as_str(), "owner" | "admin") || runtime.owner_id == Some(member.user_id)
-}
-
 fn can_set_visibility(member: &Member, runtime: &AgentRuntime) -> bool {
     runtime.owner_id == Some(member.user_id)
 }
@@ -442,6 +542,7 @@ fn can_set_visibility(member: &Member, runtime: &AgentRuntime) -> bool {
 async fn update(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     Path(raw_id): Path<String>,
     body: Bytes,
 ) -> Response {
@@ -456,8 +557,20 @@ async fn update(
     if found.workspace_id != context.member.workspace_id {
         return error_response(StatusCode::NOT_FOUND, "runtime not found");
     }
-    if !can_edit(&context.member, &found) {
-        return error_response(StatusCode::FORBIDDEN, "you can only edit your own runtimes");
+    match runtime_allowed(
+        &state,
+        &context.member,
+        &headers,
+        &found,
+        Action::RUNTIME_UPDATE,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => {
+            return error_response(StatusCode::FORBIDDEN, "you can only edit your own runtimes")
+        }
+        Err(response) => return response,
     }
 
     let request = match decode_update(&body) {
@@ -508,8 +621,10 @@ async fn update(
     if let Some(name) = custom_name {
         let stored = (!name.is_empty()).then_some(name);
         if request.apply_to_machine && found.daemon_id.is_some() {
-            let owner_filter = (!matches!(context.member.role.as_str(), "owner" | "admin"))
-                .then_some(context.member.user_id);
+            // Machine-wide rename remains actor-owned even when a standing
+            // grant authorizes one exact runtime. A single grant must not fan
+            // out across another user's runtimes on the same daemon.
+            let owner_filter = Some(context.member.user_id);
             let rows = match runtime::update_agent_runtime_custom_name_by_daemon(
                 &state.pool,
                 stored,

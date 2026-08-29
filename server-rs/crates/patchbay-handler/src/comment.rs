@@ -138,6 +138,7 @@ async fn preview_triggers(
         actor_type: &actor_type,
         actor_id,
         originator_user_id,
+        task_authorization: crate::issue::TaskAuthorizationContext::from_headers(&headers),
         exclude_trigger_comment_id,
     })
     .await;
@@ -337,6 +338,7 @@ async fn create(
         actor_type: &author_type,
         actor_id: author_id,
         originator_user_id,
+        task_authorization: crate::issue::TaskAuthorizationContext::from_headers(&headers),
         exclude_trigger_comment_id: Some(id),
     })
     .await;
@@ -539,6 +541,7 @@ async fn update(
             actor_type: &actor_type,
             actor_id,
             originator_user_id,
+            task_authorization: crate::issue::TaskAuthorizationContext::from_headers(&headers),
             exclude_trigger_comment_id: Some(current.id),
         })
         .await;

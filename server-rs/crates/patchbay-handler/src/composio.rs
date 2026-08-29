@@ -17,6 +17,10 @@ use patchbay_composio::service::ComposioConnectionRow;
 use patchbay_composio::{
     ClientBuilder, Service, ServiceConfig, ServiceError, Store, UpsertConnectionParams,
 };
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Authorizer, Principal, PrincipalType,
+    Resource, ResourceType,
+};
 use patchbay_service::feature_flags::{composio_mcp_apps_enabled, FlagSource};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -35,6 +39,7 @@ pub struct ComposioState {
 
 struct TaskOverlayBuilder {
     service: Arc<Service>,
+    authorization: Arc<dyn Authorizer>,
 }
 
 #[async_trait::async_trait]
@@ -45,11 +50,40 @@ impl patchbay_service::task_service::ComposioOverlayBuilder for TaskOverlayBuild
         originator_user_id: Uuid,
         agent: &patchbay_db::models::Agent,
     ) -> Result<patchbay_service::runtime_apps::McpOverlayResult> {
+        // A shared agent's invocation ACL is not authority to borrow the
+        // definition owner's credentials. Broker a session only from the
+        // initiating user's own connection set, and make that boundary
+        // independently auditable.
+        let decision = self
+            .authorization
+            .authorize(AuthorizationRequest {
+                principal: Principal {
+                    principal_type: PrincipalType::User,
+                    id: Some(originator_user_id),
+                },
+                action: Action::new(Action::CREDENTIAL_USE),
+                resource: Resource {
+                    resource_type: ResourceType::new(ResourceType::CREDENTIAL),
+                    id: None,
+                    workspace_id: agent.workspace_id,
+                    owner_id: Some(originator_user_id),
+                    attributes: json!({"private": true}),
+                },
+                context: AuthorizationContext {
+                    on_behalf_of_user_id: Some(originator_user_id),
+                    via_agent_id: Some(agent.id),
+                    ..Default::default()
+                },
+                delegation_chain: Vec::new(),
+            })
+            .await?;
+        if !decision.is_allowed() {
+            return Ok(patchbay_service::runtime_apps::McpOverlayResult::default());
+        }
         let result = self
             .service
             .build_task_overlay(
                 Some(originator_user_id),
-                agent.owner_id,
                 agent
                     .composio_toolkit_allowlist
                     .as_deref()
@@ -80,8 +114,12 @@ impl patchbay_service::task_service::ComposioOverlayBuilder for TaskOverlayBuild
 
 pub(crate) fn task_overlay_builder(
     service: Arc<Service>,
+    authorization: Arc<dyn Authorizer>,
 ) -> Arc<dyn patchbay_service::task_service::ComposioOverlayBuilder> {
-    Arc::new(TaskOverlayBuilder { service })
+    Arc::new(TaskOverlayBuilder {
+        service,
+        authorization,
+    })
 }
 
 impl ComposioState {

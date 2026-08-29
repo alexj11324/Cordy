@@ -410,27 +410,25 @@ impl Service {
         Ok(rows.iter().map(row_to_connection).collect())
     }
 
-    /// Builds the owner-scoped task MCP overlay from the same service and
+    /// Builds an originator-scoped task MCP overlay from the same service and
     /// connection store used by the HTTP integration routes.
     pub async fn build_task_overlay(
         &self,
-        originator_user_id: Option<Uuid>,
-        owner_user_id: Option<Uuid>,
+        capability_user_id: Option<Uuid>,
         toolkit_allowlist: &[String],
         display_name_for_slug: impl Fn(&str) -> String,
     ) -> Result<crate::dispatch::OverlayResult> {
-        let rows = match owner_user_id {
-            Some(owner_id) => {
+        let rows = match capability_user_id {
+            Some(user_id) => {
                 self.store
-                    .list_active_user_composio_connections(owner_id)
+                    .list_active_user_composio_connections(user_id)
                     .await?
             }
             None => Vec::new(),
         };
         crate::dispatch::build_task_overlay(
             self,
-            originator_user_id,
-            owner_user_id,
+            capability_user_id,
             toolkit_allowlist,
             &rows,
             display_name_for_slug,
@@ -1033,6 +1031,7 @@ mod tests {
     #[derive(Default)]
     struct FakeStore {
         rows: Mutex<Vec<ComposioConnectionRow>>,
+        listed_users: Mutex<Vec<Uuid>>,
     }
 
     const USER: Uuid = uuid::uuid!("0198c0de-0000-7000-8000-000000000001");
@@ -1060,8 +1059,9 @@ mod tests {
         }
         async fn list_active_user_composio_connections(
             &self,
-            _user_id: Uuid,
+            user_id: Uuid,
         ) -> Result<Vec<ComposioConnectionRow>> {
+            self.listed_users.lock().unwrap().push(user_id);
             Ok(self
                 .rows
                 .lock()
@@ -1297,6 +1297,30 @@ mod tests {
         let accounts = sent.connected_accounts.unwrap();
         // Newest-wins: only ca_new is pinned under github.
         assert_eq!(accounts["github"], serde_json::json!(["ca_new"]));
+    }
+
+    #[tokio::test]
+    async fn task_overlay_loads_only_the_capability_users_connections() {
+        const SHARED_AGENT_OWNER: Uuid =
+            uuid::uuid!("0198c0de-0000-7000-8000-000000000099");
+        assert_ne!(USER, SHARED_AGENT_OWNER);
+        let (svc, sdk, store) = service();
+        store.rows.lock().unwrap().push(ComposioConnectionRow {
+            id: Uuid::now_v7(),
+            toolkit_slug: "github".into(),
+            status: "active".into(),
+            connected_account_id: "callers-account".into(),
+            connected_at_unix: 2,
+        });
+
+        let result = svc
+            .build_task_overlay(Some(USER), &["github".into()], str::to_string)
+            .await
+            .unwrap();
+
+        assert!(!result.mcp_overlay.is_empty());
+        assert_eq!(store.listed_users.lock().unwrap().last(), Some(&USER));
+        assert_eq!(sdk.sessions.lock().unwrap().last().unwrap().user_id, USER.to_string());
     }
 
     #[tokio::test]

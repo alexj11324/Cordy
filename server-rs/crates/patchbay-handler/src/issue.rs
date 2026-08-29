@@ -28,6 +28,10 @@ use patchbay_db::queries::{
     subscriber, task_usage, team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
+    ResourceType, WorkspaceRole,
+};
 use patchbay_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
@@ -7328,7 +7332,41 @@ pub(crate) async fn can_member_invoke_agent(
     workspace_id: Uuid,
     target: &patchbay_db::models::Agent,
 ) -> bool {
-    can_invoke_agent(state, "member", Some(user_id), workspace_id, target).await
+    can_invoke_agent(state, "member", Some(user_id), workspace_id, target, None).await
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TaskAuthorizationContext {
+    task_id: Uuid,
+    lease_id: Uuid,
+    on_behalf_of_user_id: Option<Uuid>,
+    via_agent_id: Option<Uuid>,
+    device_id: Option<Uuid>,
+}
+
+impl TaskAuthorizationContext {
+    pub(crate) fn from_headers(headers: &HeaderMap) -> Option<Self> {
+        if headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok())
+            != Some("task_token")
+        {
+            return None;
+        }
+        let id = |name: &'static str| {
+            headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| Uuid::parse_str(value).ok())
+        };
+        Some(Self {
+            task_id: id("x-task-id")?,
+            lease_id: id("x-capability-lease-id")?,
+            on_behalf_of_user_id: id("x-on-behalf-of-user-id"),
+            via_agent_id: id("x-agent-id"),
+            device_id: id("x-device-id"),
+        })
+    }
 }
 
 /// Invoke gate keyed on the human originator, not the speaking agent owner.
@@ -7340,33 +7378,78 @@ pub(crate) async fn can_invoke_agent(
     originator_user_id: Option<Uuid>,
     workspace_id: Uuid,
     target: &patchbay_db::models::Agent,
+    task_authorization: Option<TaskAuthorizationContext>,
 ) -> bool {
-    if originator_user_id.is_some_and(|user_id| target.owner_id == Some(user_id)) {
-        return true;
-    }
-    if target.permission_mode != "public_to" {
+    let owner = originator_user_id.is_some_and(|user_id| target.owner_id == Some(user_id));
+    let workspace_broad = matches!(actor_type, "agent" | "system");
+    let membership = match originator_user_id {
+        Some(user_id) => member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+    let acl_allowed = owner
+        || (target.permission_mode == "public_to"
+            && agent_invocation_target::list_agent_invocation_targets(&state.pool, target.id)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .any(|entry| match entry.target_type.as_str() {
+                    "workspace" => membership.is_some() || workspace_broad,
+                    "member" => originator_user_id == Some(entry.target_id),
+                    _ => false,
+                }));
+    if !acl_allowed {
         return false;
     }
-    let workspace_broad = matches!(actor_type, "agent" | "system");
-    let is_member = match originator_user_id {
-        Some(user_id) => {
-            member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
-                .await
-                .ok()
-                .flatten()
-                .is_some()
+    let role = membership.as_ref().and_then(|member| match member.role.as_str() {
+        "owner" => Some(WorkspaceRole::Owner),
+        "admin" => Some(WorkspaceRole::Admin),
+        "member" => Some(WorkspaceRole::Member),
+        _ => None,
+    });
+    let principal_type = if task_authorization.is_some() {
+        PrincipalType::TaskRun
+    } else {
+        match actor_type {
+        "agent" => PrincipalType::AgentDefinition,
+        "system" => PrincipalType::System,
+        _ => PrincipalType::User,
         }
-        None => false,
     };
-    agent_invocation_target::list_agent_invocation_targets(&state.pool, target.id)
-        .await
-        .unwrap_or_default()
-        .iter()
-        .any(|entry| match entry.target_type.as_str() {
-            "workspace" => is_member || workspace_broad,
-            "member" => originator_user_id == Some(entry.target_id),
-            _ => false,
+    state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type,
+                id: task_authorization
+                    .map(|context| context.task_id)
+                    .or_else(|| (principal_type == PrincipalType::User).then_some(originator_user_id).flatten()),
+            },
+            action: Action::new(Action::AGENT_INVOKE),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::AGENT_DEFINITION),
+                id: Some(target.id),
+                workspace_id,
+                owner_id: target.owner_id,
+                attributes: json!({"invocation_allowed": acl_allowed, "private": target.permission_mode != "public_to"}),
+            },
+            context: AuthorizationContext {
+                workspace_role: role,
+                on_behalf_of_user_id: task_authorization
+                    .and_then(|context| context.on_behalf_of_user_id)
+                    .or(originator_user_id),
+                via_agent_id: task_authorization.and_then(|context| context.via_agent_id),
+                device_id: task_authorization.and_then(|context| context.device_id),
+                task_id: task_authorization.map(|context| context.task_id),
+                lease_id: task_authorization.map(|context| context.lease_id),
+                ..Default::default()
+            },
+            delegation_chain: Vec::new(),
         })
+        .await
+        .is_ok_and(|decision| decision.is_allowed())
 }
 
 pub(crate) async fn resolve_issue(

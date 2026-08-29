@@ -79,6 +79,7 @@ pub(crate) struct CommentTriggerInput<'a> {
     pub actor_type: &'a str,
     pub actor_id: Uuid,
     pub originator_user_id: Option<Uuid>,
+    pub task_authorization: Option<crate::issue::TaskAuthorizationContext>,
     pub exclude_trigger_comment_id: Option<Uuid>,
 }
 
@@ -269,6 +270,7 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
                     input.originator_user_id,
                     input.issue.workspace_id,
                     &agent,
+                    input.task_authorization,
                 )
                 .await
                 {
@@ -311,6 +313,7 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
                             input.originator_user_id,
                             input.issue.workspace_id,
                             &agent,
+                            input.task_authorization,
                         )
                         .await
                         {
@@ -369,6 +372,7 @@ async fn agent_allowed(input: &CommentTriggerInput<'_>, agent: &Agent) -> bool {
         input.originator_user_id,
         input.issue.workspace_id,
         agent,
+        input.task_authorization,
     )
     .await
 }
@@ -752,6 +756,7 @@ pub(crate) async fn retrigger_cancelled_task_survivors(
             actor_type: &row.author_type,
             actor_id: row.author_id,
             originator_user_id,
+            task_authorization: None,
             exclude_trigger_comment_id: Some(row.id),
         })
         .await;
