@@ -186,8 +186,10 @@ describe("LoginPage", () => {
     await waitFor(() => expect(redirectToDesktopApp).toHaveBeenCalledOnce());
     expect(claimGuestSession).toHaveBeenCalledWith("pgt_one-time-token");
     expect(issueCliToken).toHaveBeenCalledOnce();
-    expect(
-      claimGuestSession.mock.invocationCallOrder[0],
-    ).toBeLessThan(issueCliToken.mock.invocationCallOrder[0]);
+    const claimCall = claimGuestSession.mock.invocationCallOrder[0];
+    const issueCall = issueCliToken.mock.invocationCallOrder[0];
+    expect(claimCall).toBeDefined();
+    expect(issueCall).toBeDefined();
+    expect(claimCall!).toBeLessThan(issueCall!);
   });
 });
