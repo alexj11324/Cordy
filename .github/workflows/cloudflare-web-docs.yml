@@ -101,6 +101,7 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
 
       - name: Deploy docs Worker
         run: pnpm --filter @patchbay/docs run deploy:cloudflare
