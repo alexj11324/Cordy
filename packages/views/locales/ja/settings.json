@@ -925,6 +925,8 @@
     "section_title": "DingTalk",
     "page_description": "DingTalk ロボットを Patchbay に接続します。DM はデフォルトのエージェントを使用し、同じロボットでもグループごとに別のエージェントへルーティングできます。",
     "workspace_description": "DingTalk ロボットをワークスペースに一度接続します。各チャットで /agents を使ってエージェントを選択・切り替えます。",
+    "legacy_management_title": "従来の DingTalk ルーティング",
+    "legacy_management_description": "以前のエージェント単位の接続で作成されたグループルートを管理します。新しい接続ではワークスペース Hub と /agents を使用します。",
     "group_routes_title": "グループルーティング",
     "group_routes_description": "同じロボットを複数の DingTalk グループに追加し、各グループで一度 @メンションしてください。Patchbay がグループを自動検出し、以後のメッセージをここで選んだエージェントに送ります。",
     "group_routes_empty_title": "まだグループが検出されていません",

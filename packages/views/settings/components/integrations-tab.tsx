@@ -27,7 +27,7 @@ import { ComposioTab } from "./composio-tab";
 import { VCSTab } from "./vcs-tab";
 import { LarkAgentBindButton } from "./lark-tab";
 import { SlackAgentBindButton } from "./slack-tab";
-import { DingTalkAgentBindButton } from "./dingtalk-tab";
+import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
 import { WecomAgentBindButton } from "./wecom-tab";
 import { TelegramAgentBindButton } from "./telegram-tab";
 import { WeixinAgentBindButton } from "./weixin-tab";
@@ -209,6 +209,10 @@ export function IntegrationsTab() {
     ...weixinInstallationsOptions(wsId),
     enabled: !!wsId,
   });
+  const hasLegacyDingTalkInstallation =
+    dingtalk.data?.installations.some(
+      (installation) => installation.agent_id !== null,
+    ) ?? false;
 
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const composioToolkits = useQuery({
@@ -303,6 +307,15 @@ export function IntegrationsTab() {
           />
         </div>
       </section>
+
+      {hasLegacyDingTalkInstallation ? (
+        <SettingsSection
+          title={t(($) => $.dingtalk.legacy_management_title)}
+          description={t(($) => $.dingtalk.legacy_management_description)}
+        >
+          <DingTalkTab />
+        </SettingsSection>
+      ) : null}
 
       {composioEnabled && !composioUnconfigured ? (
         <SettingsSection title={t(($) => $.composio.section_title)}>

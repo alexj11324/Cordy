@@ -22,13 +22,25 @@ const authUserRef = vi.hoisted(() => ({
 const membersRef = vi.hoisted(() => ({
   current: [] as { user_id: string; role: string }[],
 }));
+const dingtalkInstallationsRef = vi.hoisted(() => ({
+  current: undefined as
+    | { installations: { agent_id: string | null }[] }
+    | undefined,
+}));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     queryCallsRef.current.push(opts);
     const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
+    const isDingTalkInstallationsQuery =
+      opts.queryKey[0] === "dingtalk" &&
+      opts.queryKey[opts.queryKey.length - 1] === "installations";
     return {
-      data: isMemberQuery ? membersRef.current : undefined,
+      data: isMemberQuery
+        ? membersRef.current
+        : isDingTalkInstallationsQuery
+          ? dingtalkInstallationsRef.current
+          : undefined,
       error: opts.enabled === false ? null : composioErrorRef.current,
       isError: opts.enabled !== false && composioErrorRef.current != null,
       isLoading: false,
@@ -106,6 +118,7 @@ describe("Settings IntegrationsTab", () => {
     composioErrorRef.current = null;
     authUserRef.current = null;
     membersRef.current = [];
+    dingtalkInstallationsRef.current = undefined;
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
@@ -184,6 +197,17 @@ describe("Settings IntegrationsTab", () => {
     );
 
     expect(new Set(shapes).size).toBe(shapes.length);
+  });
+
+  it("keeps legacy DingTalk route management available", () => {
+    dingtalkInstallationsRef.current = {
+      installations: [{ agent_id: "legacy-agent" }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Legacy DingTalk routing")).toBeInTheDocument();
+    expect(screen.getByTestId("dingtalk-tab")).toBeInTheDocument();
   });
 
   it("hides Composio when the feature flag is on but the server reports 503", () => {

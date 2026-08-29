@@ -256,6 +256,22 @@ impl PendingBatcher {
         }
     }
 
+    /// Removes and starts the pending flush for one key immediately. The
+    /// caller uses this as a route-switch fence: a pending run must be
+    /// started before the session is retargeted to another Agent.
+    pub fn flush_now(&self, key: &str) -> bool {
+        let flush = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(entry) = inner.pending.remove(key) else {
+                return false;
+            };
+            entry.cancel.cancel();
+            entry.flush
+        };
+        flush();
+        true
+    }
+
     /// Reports how many sessions currently have an armed window.
     pub fn pending_count(&self) -> usize {
         self.inner
@@ -303,6 +319,21 @@ mod tests {
             "a debounced burst flushes exactly once"
         );
         assert_eq!(b.pending_count(), 0, "entry cleaned up after flush");
+    }
+
+    #[test]
+    fn flush_now_removes_one_pending_entry() {
+        let b = PendingBatcher::new(Duration::from_secs(60));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls2 = calls.clone();
+        b.schedule("session", move || {
+            calls2.fetch_add(1, Ordering::SeqCst);
+        });
+
+        assert!(b.flush_now("session"));
+        assert!(!b.flush_now("session"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(b.pending_count(), 0);
     }
 
     #[tokio::test]

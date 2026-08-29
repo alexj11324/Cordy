@@ -926,6 +926,8 @@
     "section_title": "DingTalk",
     "page_description": "Connect a DingTalk robot to Patchbay. Direct messages use its default Agent; each group can route the same robot to a different Agent.",
     "workspace_description": "Connect a DingTalk robot to this workspace once. Use /agents in each chat to choose or switch the Agent.",
+    "legacy_management_title": "Legacy DingTalk routing",
+    "legacy_management_description": "Manage group routes created by an earlier Agent-specific connection. New connections use the workspace hub and /agents.",
     "group_routes_title": "Group routing",
     "group_routes_description": "Add this robot to multiple DingTalk groups, then @mention it once in each group. Patchbay discovers the group automatically and routes future messages to the Agent selected here.",
     "group_routes_empty_title": "No groups discovered yet",

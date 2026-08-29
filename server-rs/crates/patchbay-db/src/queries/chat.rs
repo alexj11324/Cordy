@@ -295,6 +295,17 @@ SET agent_id = $3,
         FROM agent
         WHERE id = $3 AND workspace_id = $2
     ),
+    -- A session/work directory belongs to the previously selected Agent's
+    -- execution context. Never let `/agents` hand that resume pointer to a
+    -- different Agent. Keep it when this is an idempotent re-selection.
+    session_id = CASE
+        WHEN chat_session.agent_id IS DISTINCT FROM $3 THEN NULL
+        ELSE chat_session.session_id
+    END,
+    work_dir = CASE
+        WHEN chat_session.agent_id IS DISTINCT FROM $3 THEN NULL
+        ELSE chat_session.work_dir
+    END,
     updated_at = now()
 WHERE id = $1
   AND workspace_id = $2
