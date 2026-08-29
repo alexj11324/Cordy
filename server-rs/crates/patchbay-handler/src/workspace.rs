@@ -534,9 +534,7 @@ async fn create_workspace(
     if is_guest {
         match user::get_user_for_update(&mut *transaction, user_id).await {
             Ok(Some(guest_user)) if guest_user.is_guest => {}
-            Ok(Some(_)) => {
-                return error_response(StatusCode::FORBIDDEN, "formal login required")
-            }
+            Ok(Some(_)) => return error_response(StatusCode::FORBIDDEN, "formal login required"),
             Ok(None) => return error_response(StatusCode::UNAUTHORIZED, "user not found"),
             Err(error) => {
                 tracing::warn!(%error, %user_id, "failed to lock guest workspace quota");
