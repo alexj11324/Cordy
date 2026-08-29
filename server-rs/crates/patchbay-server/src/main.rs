@@ -694,6 +694,7 @@ async fn main() -> anyhow::Result<()> {
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
+        coordinator,
         scheduler,
         heartbeat_scheduler,
         runtime_sweeper,
