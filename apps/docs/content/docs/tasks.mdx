@@ -55,24 +55,20 @@ A runtime with a healthy heartbeat can execute long tasks; the server never forc
 
 ## Viewing run history
 
-Every task an issue produces is listed in the **Execution log** section of the issue's right sidebar — not on a separate page or tab. The section is expanded by default: active runs stay pinned at the top, and finished ones sit behind **Show past runs (N)**. Each row shows the trigger source, the executing agent, the state, and timing. If you don't see the section, open the sidebar with the panel button in the issue header; on narrow screens it starts collapsed.
+When an agent is working on an issue, a **Working** card appears in the activity thread — the same place as comments. It shows who is working, a live status, and a nested reply so you can keep talking while the run continues. Open the **agent conversation** from the card (or from the agent's activity row) to see the full thread. If the agent is still working, your message opens a Side Chat.
 
-The log updates over the realtime connection while the page stays open — new runs, status changes, and the agent's comments appear without a manual reload.
-
-While an agent is working, the issue header also carries a live chip such as "Engineer is working". Hovering it shows the same active runs, so you can check progress without leaving the page.
+The timeline updates over the realtime connection while the page stays open — new comments, status changes, and Working cards appear without a manual reload.
 
 From here you can:
 
-- Click **View transcript** on a row to see the agent's messages, tool calls, and error output. For a run still in progress the transcript keeps streaming while the dialog stays open, and a **Newest first** toggle flips the event order.
+- Open the **agent conversation** from an activity row to keep chatting on that issue. If the agent is still working, your message opens a Side Chat.
 - Stop tasks that are deferred, queued, starting, waiting for a local directory, or running.
 - Retry a failed or cancelled task.
 
-![Execution log in the issue sidebar: active runs above past runs](/images/docs/quickstart-run-result.webp)
-
-![Run record: status timeline, agent summary, and individual tool calls](/images/docs/task-transcript.webp)
+![Working agent card in the issue timeline](/images/docs/quickstart-run-result.webp)
 
 <Callout type="warning">
-Changing an issue's assignee or status does not stop a run that has already started. To interrupt one, stop the corresponding task in the execution log. Active tasks are cancelled along with an issue only when the issue is deleted.
+Changing an issue's assignee or status does not stop a run that has already started. To interrupt one, cancel the corresponding task from the agent's activity tab. Active tasks are cancelled along with an issue only when the issue is deleted.
 </Callout>
 
 ## Failures and automatic retries
@@ -87,7 +83,7 @@ When an issue has no other active task and no new retry waiting to run, a failur
 
 ## Failure reason reference
 
-The failure reasons shown in the execution log and usage stats fall into two groups: unprefixed reason codes are recorded by the platform; `agent_error.*` codes are classified from the AI coding tool's own errors.
+The failure reasons shown in agent activity and usage stats fall into two groups: unprefixed reason codes are recorded by the platform; `agent_error.*` codes are classified from the AI coding tool's own errors.
 
 **Platform side**
 
@@ -124,7 +120,7 @@ The failure reasons shown in the execution log and usage stats fall into two gro
 
 ## Manual retry
 
-Clicking the retry button on a row in the execution log invokes **the agent that ran that task at the time**. Even if the issue has since been reassigned, the retry does not switch to the new assignee.
+Clicking retry on a failed or cancelled task invokes **the agent that ran that task at the time**. Even if the issue has since been reassigned, the retry does not switch to the new assignee.
 
 A retry keeps the files the previous run already wrote to the local directory whenever possible. If the original session is still safe and the same runtime claims the retry, it also continues the previous session. Errors that poison the session, such as context overflow or invalid requests, start a new session on top of the original working directory instead. When the original directory no longer exists, a fresh working directory is used.
 

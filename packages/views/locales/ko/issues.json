@@ -505,10 +505,10 @@
     "queued_elapsed_prefix": "{{elapsed}} 동안 대기 중",
     "fallback_name": "에이전트",
     "tool_count_other": "도구 {{count}}개",
-    "transcript_button": "트랜스크립트 보기",
     "stop_button": "중지",
     "stop_tooltip": "에이전트 중지",
-    "cancel_failed": "작업을 취소하지 못했습니다"
+    "cancel_failed": "작업을 취소하지 못했습니다",
+    "working": "작업 중…"
   },
   "execution_log": {
     "section": "실행 로그",
