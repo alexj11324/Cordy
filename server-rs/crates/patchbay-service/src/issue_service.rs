@@ -878,6 +878,8 @@ pub enum RunEnqueueSource {
     Assign,
     /// Promoting an already-assigned issue out of backlog.
     Status,
+    /// Returning a reviewed issue to its implementation owner.
+    ReviewReturn,
 }
 
 impl RunEnqueueSource {
@@ -885,6 +887,7 @@ impl RunEnqueueSource {
         match self {
             Self::Assign => "assign",
             Self::Status => "status",
+            Self::ReviewReturn => "review_return",
         }
     }
 }
@@ -936,11 +939,11 @@ impl IssueService {
     /// Intentionally distinct from the comment trigger: issue writes park on
     /// backlog while comments fire in any status; they share only leaf
     /// readiness checks. The decision must equal the real enqueue conditions
-    /// — the status source mirrors the pending-task unique index so preview
-    /// never promises a run the write coalesces away, while the assign source
-    /// skips that check (creates target fresh issues; reassignment no longer
-    /// cancels existing tasks #4963/PB-4113, and the insert simply no-ops on
-    /// the shared slot in the rare collision).
+    /// — the status and review-return sources mirror the pending-task unique
+    /// index so preview never promises a run the write coalesces away, while
+    /// the assign source skips that check (creates target fresh issues;
+    /// reassignment no longer cancels existing tasks #4963/PB-4113, and the
+    /// insert simply no-ops on the shared slot in the rare collision).
     pub async fn will_enqueue_run(
         &self,
         input: IssueTriggerInput,
@@ -967,7 +970,12 @@ impl IssueService {
         let prev_status =
             issue_status::effective(&self.pool, issue.workspace_id, &input.prev_status).await;
 
-        let source = if input.is_create || input.assignee_changed {
+        let returning_from_review = input.status_changed
+            && prev_status == issue_status::IN_REVIEW
+            && current_status == issue_status::IN_PROGRESS;
+        let source = if returning_from_review {
+            RunEnqueueSource::ReviewReturn
+        } else if input.is_create || input.assignee_changed {
             // Backlog is the parking lot: assigning into it never starts a run.
             if current_status == issue_status::BACKLOG {
                 return None;
@@ -1005,7 +1013,7 @@ impl IssueService {
                 {
                     return None;
                 }
-                if source == RunEnqueueSource::Status
+                if matches!(source, RunEnqueueSource::Status | RunEnqueueSource::ReviewReturn)
                     && self.has_pending_run(issue.id, assignee_id).await
                 {
                     return None;
@@ -1034,7 +1042,7 @@ impl IssueService {
                 if !can_access(&leader) {
                     return None;
                 }
-                if source == RunEnqueueSource::Status
+                if matches!(source, RunEnqueueSource::Status | RunEnqueueSource::ReviewReturn)
                     && self.has_pending_run(issue.id, team.leader_id).await
                 {
                     return None;

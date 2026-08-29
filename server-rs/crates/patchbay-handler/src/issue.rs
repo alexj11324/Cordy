@@ -41,6 +41,11 @@ use crate::state::HandlerState;
 
 const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
 
+/// Internal issue metadata used to make a review handoff reversible. The
+/// public metadata API only accepts primitive values, so this structured
+/// value can only be written by the workflow transition below.
+const REVIEW_RETURN_OWNER_METADATA_KEY: &str = "_patchbay_review_return_owner";
+
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/assignee-frequency", get(get_assignee_frequency))
@@ -3693,7 +3698,8 @@ async fn remove_issue_reaction(
 
 fn valid_metadata_key(key: &str) -> bool {
     let mut chars = key.chars();
-    matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+    key != REVIEW_RETURN_OWNER_METADATA_KEY
+        && matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
         && key.len() <= 64
         && chars.all(|character| {
             character == '_'
@@ -5255,6 +5261,34 @@ fn issue_owner(issue: &Issue) -> Option<(&str, Uuid)> {
     issue.assignee_type.as_deref().zip(issue.assignee_id)
 }
 
+fn review_return_owner(metadata: &Value) -> Option<(String, Uuid)> {
+    let value = metadata.get(REVIEW_RETURN_OWNER_METADATA_KEY)?;
+    let object = value.as_object()?;
+    let kind = object.get("assignee_type")?.as_str()?.to_string();
+    let id = Uuid::parse_str(object.get("assignee_id")?.as_str()?).ok()?;
+    Some((kind, id))
+}
+
+fn set_review_return_owner(metadata: &mut Value, owner: Option<(&str, Uuid)>) {
+    if !metadata.is_object() {
+        *metadata = json!({});
+    }
+    let Some(object) = metadata.as_object_mut() else {
+        return;
+    };
+    match owner {
+        Some((kind, id)) => {
+            object.insert(
+                REVIEW_RETURN_OWNER_METADATA_KEY.to_string(),
+                json!({"assignee_type": kind, "assignee_id": id}),
+            );
+        }
+        None => {
+            object.remove(REVIEW_RETURN_OWNER_METADATA_KEY);
+        }
+    }
+}
+
 fn issue_workflow_violation(
     previous_category: &str,
     next_category: &str,
@@ -5677,6 +5711,36 @@ async fn apply_issue_update(
             .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
+
+    // A reviewer returning work to progress must wake the implementation
+    // owner that handed the issue over. The old owner is stored when review
+    // begins; restoring it here keeps the transition atomic with the status
+    // change and lets the normal enqueue path create the next task.
+    let returning_from_review = previous_category == patchbay_service::issue_status::IN_REVIEW
+        && next_category == patchbay_service::issue_status::IN_PROGRESS
+        && !assignee_touched;
+    if returning_from_review {
+        if let Some((kind, id)) = review_return_owner(&locked.metadata) {
+            validate_assignee(state, context, &kind, id)
+                .await
+                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
+            next.assignee_type = Some(kind);
+            next.assignee_id = Some(id);
+        }
+    }
+
+    if previous_category != patchbay_service::issue_status::IN_REVIEW
+        && next_category == patchbay_service::issue_status::IN_REVIEW
+    {
+        if let Some(owner) = issue_owner(&locked) {
+            set_review_return_owner(&mut next.metadata, Some(owner));
+        }
+    } else if previous_category == patchbay_service::issue_status::IN_REVIEW
+        && next_category != patchbay_service::issue_status::IN_REVIEW
+    {
+        set_review_return_owner(&mut next.metadata, None);
+    }
+
     if let Some(violation) = issue_workflow_violation(
         &previous_category,
         &next_category,
@@ -5698,10 +5762,10 @@ async fn apply_issue_update(
 title = $3, description = $4, status = $5, priority = $6,
 assignee_type = $7, assignee_id = $8, position = $9, start_date = $10,
 due_date = $11, parent_issue_id = $12, project_id = $13, stage = $14,
-revision = revision + 1, updated_at = now(),
-last_activity_at = CASE WHEN $15 THEN GREATEST(COALESCE(last_activity_at, updated_at), now()) ELSE last_activity_at END
+metadata = $15, revision = revision + 1, updated_at = now(),
+last_activity_at = CASE WHEN $16 THEN GREATEST(COALESCE(last_activity_at, updated_at), now()) ELSE last_activity_at END
 WHERE id = $1 AND workspace_id = $2
-  AND ($16::bigint IS NULL OR revision = $16)
+  AND ($17::bigint IS NULL OR revision = $17)
 RETURNING *"#,
     )
         .bind(previous.id)
@@ -5718,6 +5782,7 @@ RETURNING *"#,
         .bind(next.parent_issue_id)
         .bind(next.project_id)
         .bind(next.stage)
+        .bind(&next.metadata)
         .bind(did_activity)
         .bind(expected_revision)
         .fetch_optional(&mut *tx)
@@ -5880,6 +5945,7 @@ fn issue_mutable_fields_differ(left: &Issue, right: &Issue) -> bool {
         || left.parent_issue_id != right.parent_issue_id
         || left.project_id != right.project_id
         || left.stage != right.stage
+        || left.metadata != right.metadata
 }
 
 fn issue_activity_fields_differ(left: &Issue, right: &Issue) -> bool {
@@ -5935,6 +6001,7 @@ fn refresh_untouched_fields(
     if !fields.contains_key("stage") {
         next.stage = current.stage;
     }
+    next.metadata = current.metadata.clone();
 }
 
 fn edit_conflict(issue: &Issue) -> Response {
@@ -7886,6 +7953,23 @@ mod tests {
         updated.status = "in_review".into();
         assert!(issue_mutable_fields_differ(&issue, &updated));
         assert!(issue_activity_fields_differ(&issue, &updated));
+    }
+
+    #[test]
+    fn review_return_owner_round_trips_without_clobbering_metadata() {
+        let owner = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f21").unwrap();
+        let mut metadata = json!({"pipeline": "ci"});
+
+        set_review_return_owner(&mut metadata, Some(("agent", owner)));
+        assert_eq!(
+            review_return_owner(&metadata),
+            Some(("agent".to_string(), owner))
+        );
+        assert_eq!(metadata["pipeline"], "ci");
+
+        set_review_return_owner(&mut metadata, None);
+        assert_eq!(review_return_owner(&metadata), None);
+        assert_eq!(metadata, json!({"pipeline": "ci"}));
     }
 
     #[test]
