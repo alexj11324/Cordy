@@ -438,6 +438,9 @@ pub struct HandlerState {
     pub composio: Option<Arc<patchbay_composio::Service>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
+    /// Durable task-completion/review-return coordinator. Its PostgreSQL
+    /// outbox is authoritative; the worker is started only by production.
+    pub coordinator: Arc<patchbay_service::coordination::CoordinatorService>,
     /// Shared Autopilot service. It must be reused by HTTP paths and durable
     /// workers so entitlement/quota configuration cannot disappear per request.
     pub autopilots: Arc<AutopilotService>,
@@ -585,6 +588,11 @@ impl HandlerState {
                 .map(|service| crate::composio::task_overlay_builder(service.clone())),
         );
         let tasks = Arc::new(task_service);
+        let coordinator = patchbay_service::coordination::CoordinatorService::new(
+            pool.clone(),
+            tasks.clone(),
+            bus.clone(),
+        );
         let autopilots = Arc::new(AutopilotService::new(
             pool.clone(),
             bus.clone(),
@@ -637,6 +645,7 @@ impl HandlerState {
             feature_flags,
             composio,
             tasks,
+            coordinator,
             autopilots,
             issues,
             plugins,
@@ -993,6 +1002,17 @@ impl HandlerState {
         );
         self.webhook_delivery_notify = Some(notify);
         (self, worker)
+    }
+
+    /// Starts the durable coordinator after production dependencies have been
+    /// finalized. The database outbox remains the source of truth across
+    /// missed notifications and process restarts.
+    pub fn start_coordinator(
+        self,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> (Self, patchbay_service::coordination::CoordinatorRuntime) {
+        let runtime = self.coordinator.start(cancel);
+        (self, runtime)
     }
 
     pub fn notify_webhook_delivery(&self) {

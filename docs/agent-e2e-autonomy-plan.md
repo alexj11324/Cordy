@@ -56,14 +56,24 @@ Persist the owner that handed an issue to review. On a status-only return to
 source. Keep the existing different-reviewer guard and fail closed if the
 stored owner is no longer valid.
 
-### Phase 2 — reviewer policy and availability
+### Phase 2 — durable coordinator handoff (implemented in this follow-up)
+
+Write a task-completed or review-returned event and its pending assignment to
+the PostgreSQL outbox in the same transaction as the business transition. A
+leased Coordinator consumes the outbox, selects an eligible reviewer or
+restores the implementation owner, records the decision and audit activity,
+and dispatches exactly one follow-up task. Missed notifications and process
+restarts recover through polling and lease expiry; the outbox remains the
+source of truth. This phase does not merge PRs automatically.
+
+### Phase 3 — reviewer policy and availability
 
 Add an explicit workspace/issue reviewer policy. It must choose a different,
 authorized Agent (or deliberately route to a human), record the decision, and
 surface a blocked handoff when no eligible reviewer exists. Do not choose an
 arbitrary Agent as an implicit fallback.
 
-### Phase 3 — durable PR remediation supervisor
+### Phase 4 — durable PR remediation supervisor
 
 Consume PR, review, check-suite, check-run, and workflow-run events. Correlate
 them to the linked issue and current head SHA, then transition/requeue through
@@ -71,7 +81,7 @@ the same issue workflow used by HTTP writes. Store a durable per-head attempt
 and lease record so retries survive process restarts, are bounded, and are
 idempotent.
 
-### Phase 4 — provider write actions and guarded merge
+### Phase 5 — provider write actions and guarded merge
 
 Extend the provider boundary with least-privilege operations for requesting a
 review, posting a remediation handoff, and merging. Require an explicit
@@ -79,7 +89,7 @@ auto-merge policy, current-head compare-and-swap, passing required checks,
 approved review, and a clean merge state. Never merge an unrelated or stale
 head.
 
-### Phase 5 — canary and operational proof
+### Phase 6 — canary and operational proof
 
 Run a disposable repository canary covering review return, requested changes,
 failed CI, duplicate delivery, agent disconnect/reconnect, stale head, merge
@@ -89,7 +99,10 @@ human escalations before widening rollout.
 
 ## Current boundary
 
-This branch implements Phase 1 only. Phases 2–4 require product policy and a
-new provider write/merge authority; they must not be inferred from the current
-read-only GitHub snapshot integration. The audit evidence and acceptance gates
-above remain the source of truth for the next implementation increments.
+The earlier Phase 1 PR persists the review-return owner. This follow-up adds
+the durable coordinator handoff and reviewer selection for local issue-task
+transitions. Phases 3–5 still require an explicit reviewer-policy surface,
+durable PR remediation events, provider write/merge authority, and a guarded
+merge policy; they must not be inferred from the current read-only GitHub
+snapshot integration. The audit evidence and acceptance gates above remain
+the source of truth for the next implementation increments.

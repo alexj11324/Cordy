@@ -5835,10 +5835,27 @@ RETURNING *"#,
             }
         }
     }
+    if returning_from_review {
+        // Persist the executor handoff in the same transaction as the review
+        // return. The coordinator's PostgreSQL outbox is authoritative; the
+        // in-memory notification below is only a latency hint.
+        patchbay_service::coordination::record_review_return(&mut *tx, &updated, None)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, issue_id = %previous.id, "failed to record review return handoff");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update issue",
+                )
+            })?;
+    }
     tx.commit().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
     })?;
+    if returning_from_review {
+        state.coordinator.notify();
+    }
     let (actor_type, actor_id, task_id) = mutation_actor(state, context, headers).await;
     publish_issue_updated(state, &previous, &updated, &actor_type, actor_id, task_id).await;
     if attachments_changed {
@@ -5847,7 +5864,7 @@ RETURNING *"#,
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
-    if !suppress_run {
+    if !suppress_run && !returning_from_review {
         let is_self_loop = if let Some(task_id) = task_id {
             agent::get_agent_task(&state.pool, task_id)
                 .await

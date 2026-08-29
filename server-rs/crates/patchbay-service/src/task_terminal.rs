@@ -211,6 +211,15 @@ impl TaskService {
             chat_assistant_msg = assistant_message;
             workspace_channel_reply = channel_reply;
         }
+        // The durable coordinator handoff is part of the same transaction as
+        // the terminal status transition. A process crash after commit can
+        // therefore only leave a claimable outbox row, never a completed task
+        // without its next assignment event.
+        crate::coordination::record_task_completed(&mut *tx, &t)
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("record task completion handoff: {error}"))
+            })?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
 
