@@ -1160,6 +1160,7 @@ mod tests {
             device_id: Some(runtime_id),
             task_id: Some(task_id),
             lease_id: Some(lease_id),
+            workspace_role: Some(WorkspaceRole::Member),
             ..Default::default()
         };
 
