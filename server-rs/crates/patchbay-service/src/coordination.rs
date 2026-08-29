@@ -397,8 +397,8 @@ FOR UPDATE"#,
             && assignment.owner_type.as_deref() == Some("agent")
         {
             if let Some(owner_id) = assignment.owner_id {
-                if issue.assignee_type.as_deref() != Some("agent")
-                    || issue.assignee_id != Some(owner_id)
+                if issue.reviewer_type.as_deref() != Some("agent")
+                    || issue.reviewer_id != Some(owner_id)
                 {
                     complete_claimed_tx(
                         &mut *tx,
@@ -987,11 +987,19 @@ WHERE a.workspace_id = $1
       FROM agent_task_queue q
       WHERE q.agent_id = a.id
         AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+  ) + (
+      SELECT count(*)
+      FROM agent_coordination_assignment reservation
+      WHERE reservation.owner_type = 'agent'
+        AND reservation.owner_id = a.id
+        AND reservation.status = 'assigned'
+        AND reservation.dispatched_task_id IS NULL
   ) < a.max_concurrent_tasks
 ORDER BY CASE WHEN a.status = 'idle' THEN 0 ELSE 1 END,
          a.updated_at ASC,
          a.id ASC
-LIMIT 1"#,
+LIMIT 1
+FOR UPDATE SKIP LOCKED"#,
     )
     .bind(workspace_id)
     .bind(team_id)
@@ -1253,22 +1261,11 @@ pub async fn record_task_completed(
         return Ok(());
     }
 
-    let source_role: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM agent_coordination_assignment WHERE dispatched_task_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
-    )
-    .bind(task.id)
-    .fetch_optional(&mut *executor)
-    .await?;
     let context = task.context.as_ref().and_then(Value::as_object);
     let coordination_assignment_id = context
         .and_then(|context| context.get(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY))
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
-    if coordination_assignment_id.is_some() && source_role.is_none() {
-        return Err(anyhow::anyhow!(
-            "coordinator task completed before its assignment was correlated"
-        ));
-    }
     let captured_owner_type = context
         .and_then(|context| context.get(COORDINATION_OWNER_TYPE_CONTEXT_KEY))
         .and_then(Value::as_str);
@@ -1279,6 +1276,26 @@ pub async fn record_task_completed(
     let captured_issue_revision = context
         .and_then(|context| context.get(COORDINATION_ISSUE_REVISION_CONTEXT_KEY))
         .and_then(Value::as_i64);
+    if coordination_assignment_id.is_none()
+        && (captured_owner_type.is_none() || captured_owner_id.is_none())
+    {
+        // A plain @mention task is a separate conversation, not the issue's
+        // implementation task. Its completion must never move the issue into
+        // review or create a reviewer assignment.
+        return Ok(());
+    }
+
+    let source_role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM agent_coordination_assignment WHERE dispatched_task_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    .bind(task.id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    if coordination_assignment_id.is_some() && source_role.is_none() {
+        return Err(anyhow::anyhow!(
+            "coordinator task completed before its assignment was correlated"
+        ));
+    }
 
     let issue =
         sqlx::query("SELECT workspace_id, assignee_type, assignee_id FROM issue WHERE id = $1")

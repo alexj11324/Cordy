@@ -462,6 +462,14 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "395_team_no_action_activity_index",
         "idx_activity_log_team_no_action_task",
     ),
+    (
+        "401_agent_coordination_outbox_id_index",
+        "agent_coordination_outbox_pkey_uidx",
+    ),
+    (
+        "402_agent_coordination_assignment_id_index",
+        "agent_coordination_assignment_pkey_uidx",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[

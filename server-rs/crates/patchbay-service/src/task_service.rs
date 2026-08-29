@@ -5175,6 +5175,11 @@ mod tests {
             mention[COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY],
             assignment_id.to_string()
         );
+
+        let plain_mention = mention_task_context(&issue, None, None);
+        assert!(plain_mention
+            .as_object()
+            .is_some_and(|object| object.is_empty()));
     }
 
     #[test]

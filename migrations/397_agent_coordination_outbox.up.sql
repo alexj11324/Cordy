@@ -1,7 +1,12 @@
 -- Durable internal handoffs. These rows are the source of truth for
 -- coordinator work; the in-memory event bus is only a latency/UI hint.
+--
+-- IDs are attached as primary keys in migration 403 after their backing
+-- indexes are built concurrently in migrations 401 and 402. Inline PRIMARY
+-- KEY declarations build their indexes non-concurrently, which violates the
+-- repository migration policy even for newly-created tables.
 CREATE TABLE agent_coordination_outbox (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     event_key TEXT NOT NULL,
     workspace_id UUID NOT NULL,
     issue_id UUID NOT NULL,
@@ -21,7 +26,7 @@ CREATE TABLE agent_coordination_outbox (
 );
 
 CREATE TABLE agent_coordination_assignment (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     event_id UUID NOT NULL,
     workspace_id UUID NOT NULL,
     issue_id UUID NOT NULL,

@@ -336,28 +336,21 @@ pub async fn delete_issue(
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"WITH RECURSIVE target AS (
+        r#"WITH target AS (
     SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
 ),
-all_target_issues AS (
-    SELECT id FROM target
-    UNION ALL
-    SELECT child.id
-    FROM issue AS child
-    JOIN all_target_issues AS parent ON parent.id = child.parent_issue_id
-),
 cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT id FROM all_target_issues)
+    DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT target.id FROM target)
 ),
 cleared_coordination_assignments AS (
     DELETE FROM agent_coordination_assignment
-    WHERE issue_id IN (SELECT id FROM all_target_issues)
+    WHERE issue_id IN (SELECT target.id FROM target)
 ),
 cleared_coordination_outbox AS (
     DELETE FROM agent_coordination_outbox
-    WHERE issue_id IN (SELECT id FROM all_target_issues)
+    WHERE issue_id IN (SELECT target.id FROM target)
 )
-DELETE FROM issue WHERE issue.id IN (SELECT id FROM all_target_issues)"#,
+DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target)"#,
     )
     .bind(id)
     .bind(workspace_id)
