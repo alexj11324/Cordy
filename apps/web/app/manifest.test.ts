@@ -4,9 +4,15 @@ import { NextRequest } from "next/server";
 vi.mock("@clerk/nextjs/server", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@clerk/nextjs/server")>();
+  type TestClerkMiddlewareHandler = (
+    auth: () => Promise<{ userId: string | null }>,
+    request: NextRequest,
+    event: unknown,
+  ) => Response | null | undefined | Promise<Response | null | undefined>;
+
   return {
     ...actual,
-    clerkMiddleware: (handler: Parameters<typeof actual.clerkMiddleware>[0]) =>
+    clerkMiddleware: (handler: TestClerkMiddlewareHandler) =>
       async (request: NextRequest) =>
         handler(
           async () => ({
@@ -26,6 +32,12 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
 import { proxy } from "../proxy";
 import manifest, { PWA_START_URL } from "./manifest";
 
+async function runProxy(request: NextRequest) {
+  const response = await proxy(request, undefined as never);
+  if (!response) throw new Error("proxy returned no response");
+  return response;
+}
+
 async function launch(
   cookies: Record<string, string>,
   host = "www.patchbay.ai",
@@ -34,7 +46,7 @@ async function launch(
     .map(([key, value]) => `${key}=${value}`)
     .join("; ");
 
-  const response = await proxy(
+  const response = await runProxy(
     new NextRequest(`https://${host}${PWA_START_URL}`, {
       headers: cookieHeader ? { cookie: cookieHeader } : undefined,
     }),
@@ -93,7 +105,7 @@ describe("web app manifest", () => {
     expect(shortcuts.length).toBeGreaterThan(0);
     for (const shortcut of shortcuts) {
       const resolve = async (cookie: string) => {
-        const response = await proxy(
+        const response = await runProxy(
           new NextRequest(`https://www.patchbay.ai${shortcut.url}`, {
             headers: { cookie },
           }),
