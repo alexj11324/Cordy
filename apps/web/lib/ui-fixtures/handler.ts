@@ -412,11 +412,12 @@ export function handleFixtureRequest(request: FixtureHttpRequest): FixtureHttpRe
   const issueSubMatch = path.match(/^\/api\/issues\/([^/]+)\/([^/]+)$/);
   if (issueSubMatch && method === "GET") {
     const issueKey = issueSubMatch[1];
+    const sub = issueSubMatch[2];
+    if (!issueKey || !sub) return notFound();
     const found = store.issues.find(
       (item) => item.id === issueKey || item.identifier === issueKey,
     );
     const issueId = found?.id ?? issueKey;
-    const sub = issueSubMatch[2];
     if (sub === "children") return json({ issues: [] });
     if (sub === "labels") return json({ labels: [] });
     if (sub === "pull-requests") return json({ pull_requests: [] });
