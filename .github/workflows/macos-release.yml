@@ -126,7 +126,7 @@ jobs:
             exit 1
           fi
 
-      - name: Create or reuse draft macOS release
+      - name: Create or reuse macOS release
         if: steps.meta.outputs.should_publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -148,9 +148,14 @@ jobs:
             if [ "$IS_STABLE" != "true" ]; then
               expected_prerelease=true
             fi
-            if [ "$is_draft" != "true" ] || [ "$is_prerelease" != "$expected_prerelease" ]; then
-              echo "::error::Release $TAG_NAME already exists with incompatible draft/channel state."
+            if [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with an incompatible channel state."
               exit 1
+            fi
+            if [ "$is_draft" = "true" ]; then
+              echo "Reusing the draft release for $TAG_NAME"
+            else
+              echo "Appending verified assets to the already-public release for $TAG_NAME"
             fi
           else
             gh release create "$TAG_NAME" \

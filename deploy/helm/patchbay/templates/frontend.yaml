@@ -15,6 +15,12 @@ spec:
       app.kubernetes.io/component: frontend
   template:
     metadata:
+      annotations:
+        # existingSecret is created out-of-band (not a chart template), so
+        # checksum the live object to roll frontend pods when the Clerk secret
+        # rotates. lookup is empty during helm template/dry-run and resolves
+        # the actual Secret during a real install/upgrade.
+        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace (include "patchbay.existingSecret" .)).data | toYaml | sha256sum }}
       labels:
         {{- include "patchbay.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend

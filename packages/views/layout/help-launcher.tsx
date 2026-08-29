@@ -31,7 +31,11 @@ const CHANGELOG_URL = "https://patchbay.ai/changelog";
 // only serve a copy of this page that still has to reach our release assets.
 const DOWNLOAD_URL = "https://patchbay.ai/download";
 
-export function HelpLauncher() {
+export function HelpLauncher({
+  onOpenChange,
+}: {
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const { t } = useT("layout");
   const serverVersion = useConfigStore((state) => state.serverVersion);
   // Web-only: offering "download the desktop app" inside the desktop app is
@@ -45,7 +49,7 @@ export function HelpLauncher() {
   // of popping in a frame late.
   const desktop = isDesktopShell();
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         aria-label={t(($) => $.help.trigger)}
         title={t(($) => $.help.trigger)}

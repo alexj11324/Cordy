@@ -46,9 +46,10 @@ export function WebProviders({
   wsUrl?: string;
   uiFixtures?: boolean;
 }) {
-  // Clerk handles authentication on web unless local UI fixtures are serving
-  // the product screens without a session.
-  const clerkAuth = true;
+  // Normal web sessions are initialized by ClerkAuthAdapter. UI fixtures omit
+  // ClerkProvider, so they must use the cookie-auth initializer to reach the
+  // fixture /api/me endpoint instead of remaining in "authenticating" forever.
+  const clerkAuth = !uiFixtures;
 
   // Stable identity reference so downstream effects keyed on it don't see a
   // new object on every parent render.

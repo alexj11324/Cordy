@@ -448,7 +448,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   // pinned items, the workspace switcher's programmatic push, and anything
   // added later. `setOpenMobile` is a no-op on desktop, where the sheet is not
   // the sidebar's rendering at all.
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
@@ -605,7 +605,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
             <SidebarMenuItem>
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setHoverRevealSuspended}>
                 <DropdownMenuTrigger
                   render={
                     <SidebarMenuButton>
@@ -863,7 +863,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           <SidebarMenu>
             <SidebarMenuItem>
               <div className="flex min-w-0 items-center gap-1">
-                <DropdownMenu>
+                <DropdownMenu onOpenChange={setHoverRevealSuspended}>
                   <DropdownMenuTrigger
                     render={
                       <SidebarMenuButton
@@ -919,7 +919,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <HelpLauncher />
+                <HelpLauncher onOpenChange={setHoverRevealSuspended} />
               </div>
             </SidebarMenuItem>
           </SidebarMenu>

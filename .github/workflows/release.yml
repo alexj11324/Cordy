@@ -423,7 +423,7 @@ jobs:
   # arm64 build run for 30+ minutes. These self-hosted artifacts are manual
   # so desktop releases never wait for container publication.
   docker-backend-build:
-    needs: self-hosted-prepare
+    needs: [self-hosted-prepare, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -494,7 +494,7 @@ jobs:
           retention-days: 1
 
   docker-backend-merge:
-    needs: [self-hosted-prepare, docker-backend-build]
+    needs: [self-hosted-prepare, verify, docker-backend-build]
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-docker-backend-${{ needs.self-hosted-prepare.outputs.tag_name }}
@@ -554,7 +554,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/patchbay-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
-    needs: self-hosted-prepare
+    needs: [self-hosted-prepare, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -626,7 +626,7 @@ jobs:
           retention-days: 1
 
   docker-web-merge:
-    needs: [self-hosted-prepare, docker-web-build]
+    needs: [self-hosted-prepare, verify, docker-web-build]
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-docker-web-${{ needs.self-hosted-prepare.outputs.tag_name }}
@@ -686,7 +686,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.meta.outputs.version }}
 
   helm-chart:
-    needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
+    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge]
     if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     concurrency:
@@ -729,7 +729,7 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
   promote-self-hosted-latest:
-    needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
+    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge]
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&

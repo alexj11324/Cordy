@@ -50,6 +50,28 @@ function Probe() {
   );
 }
 
+function HoverPortalProbe() {
+  const { setHoverRevealSuspended } = useSidebar();
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="open-portal"
+        onClick={() => setHoverRevealSuspended(true)}
+      >
+        Open menu
+      </button>
+      <button
+        type="button"
+        data-testid="close-portal"
+        onClick={() => setHoverRevealSuspended(false)}
+      >
+        Close menu
+      </button>
+    </>
+  );
+}
+
 function state() {
   return screen.getByTestId("state").textContent;
 }
@@ -238,6 +260,39 @@ describe("sidebar auto-collapse between lg and xl", () => {
       fireEvent.pointerLeave(rail);
       act(() => vi.advanceTimersByTime(180));
       expect(root).toHaveAttribute("data-state", "expanded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a hover reveal open while an owned portalled menu is open", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = renderWithI18n(
+        <SidebarProvider defaultOpen={false} hoverReveal>
+          <Sidebar>
+            <SidebarRail />
+            <HoverPortalProbe />
+          </Sidebar>
+        </SidebarProvider>,
+      );
+
+      const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
+      const rail = container.querySelector<HTMLElement>("[data-slot='sidebar-rail']")!;
+      const portal = document.createElement("div");
+      document.body.appendChild(portal);
+
+      fireEvent.pointerEnter(rail);
+      fireEvent.click(screen.getByTestId("open-portal"));
+      fireEvent.pointerLeave(root, { relatedTarget: portal });
+      act(() => vi.advanceTimersByTime(500));
+      expect(root).toHaveAttribute("data-state", "expanded");
+
+      fireEvent.click(screen.getByTestId("close-portal"));
+      act(() => vi.advanceTimersByTime(180));
+      expect(root).toHaveAttribute("data-state", "collapsed");
+
+      portal.remove();
     } finally {
       vi.useRealTimers();
     }

@@ -91,6 +91,8 @@ type SidebarContextProps = {
   hoverReveal: boolean
   revealHoverSidebar: () => void
   hideHoverSidebar: () => void
+  /** Keep a temporary hover reveal open while an owned portalled menu is open. */
+  setHoverRevealSuspended: (suspended: boolean) => void
 }
 
 type SidebarResizeContextProps = {
@@ -171,6 +173,7 @@ function SidebarProvider({
 
   const [hoverRevealed, setHoverRevealed] = React.useState(false)
   const hoverCloseTimeoutRef = React.useRef<number | null>(null)
+  const hoverRevealSuspendedRef = React.useRef(false)
 
   const clearHoverClose = React.useCallback(() => {
     if (hoverCloseTimeoutRef.current === null) return
@@ -186,7 +189,7 @@ function SidebarProvider({
   }, [clearHoverClose, hoverReveal, isCompact, open])
 
   const hideHoverSidebar = React.useCallback(() => {
-    if (!hoverReveal || isCompact || open) return
+    if (!hoverReveal || isCompact || open || hoverRevealSuspendedRef.current) return
     clearHoverClose()
     hoverCloseTimeoutRef.current = window.setTimeout(() => {
       hoverCloseTimeoutRef.current = null
@@ -194,8 +197,23 @@ function SidebarProvider({
     }, SIDEBAR_HOVER_CLOSE_DELAY)
   }, [clearHoverClose, hoverReveal, isCompact, open])
 
+  const setHoverRevealSuspended = React.useCallback(
+    (suspended: boolean) => {
+      hoverRevealSuspendedRef.current = suspended
+      if (suspended) {
+        clearHoverClose()
+      } else {
+        // If the popup closed after focus/pointer moved outside the sidebar,
+        // resume the same boundary-based close path used by the sidebar root.
+        hideHoverSidebar()
+      }
+    },
+    [clearHoverClose, hideHoverSidebar]
+  )
+
   React.useEffect(() => {
     if (hoverReveal && !isCompact && !open) return
+    hoverRevealSuspendedRef.current = false
     clearHoverClose()
     setHoverRevealed(false)
   }, [clearHoverClose, hoverReveal, isCompact, open])
@@ -272,6 +290,7 @@ function SidebarProvider({
       hoverReveal,
       revealHoverSidebar,
       hideHoverSidebar,
+      setHoverRevealSuspended,
     }),
     [
       state,
@@ -285,6 +304,7 @@ function SidebarProvider({
       hoverReveal,
       revealHoverSidebar,
       hideHoverSidebar,
+      setHoverRevealSuspended,
     ]
   )
   const resizeContextValue = React.useMemo<SidebarResizeContextProps>(

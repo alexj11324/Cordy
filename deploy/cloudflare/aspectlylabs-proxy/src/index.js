@@ -80,6 +80,29 @@ const HTML = `<!doctype html>
         },
       };
 
+      // Desktop login is bound to the renderer that initiated it by the
+      // PKCE challenge and state. Clerk may navigate through several hosted
+      // routes before the callback, so keep all three handoff parameters on
+      // every URL the accounts page owns. The values are copied from the
+      // current URL only; no new auth state is created by this worker.
+      function desktopHandoffUrl(path, origin = location.origin) {
+        const url = new URL(path, origin);
+        if (!isDesktopHandoff) return url;
+
+        const source = new URL(location.href).searchParams;
+        url.searchParams.set("platform", "desktop");
+        for (const name of ["code_challenge", "state"]) {
+          const value = source.get(name);
+          if (value) url.searchParams.set(name, value);
+        }
+        return url;
+      }
+
+      function desktopHandoffPath(path) {
+        const url = desktopHandoffUrl(path);
+        return url.pathname + url.search;
+      }
+
       function resolveRedirectTarget() {
         const requested = new URL(location.href).searchParams.get("redirect_url");
         if (!requested) return APP_HOME;
@@ -106,10 +129,7 @@ const HTML = `<!doctype html>
       }
 
       function redirectToSignIn(target) {
-        const signInUrl = new URL("/sign-in", location.origin);
-        if (isDesktopHandoff) {
-          signInUrl.searchParams.set("platform", "desktop");
-        }
+        const signInUrl = desktopHandoffUrl("/sign-in");
         if (target !== APP_HOME) {
           signInUrl.searchParams.set("redirect_url", target);
         }
@@ -174,10 +194,7 @@ const HTML = `<!doctype html>
           escapeHtml(messages.retry) +
           "</a>" +
           "</div>";
-        const retryUrl = new URL("/sign-in", location.origin);
-        if (isDesktopHandoff) {
-          retryUrl.searchParams.set("platform", "desktop");
-        }
+        const retryUrl = desktopHandoffUrl("/sign-in");
         if (target !== APP_HOME) {
           retryUrl.searchParams.set("redirect_url", target);
         }
@@ -186,7 +203,7 @@ const HTML = `<!doctype html>
 
       const redirectTarget = resolveRedirectTarget();
       const desktopRedirectTarget =
-        APP_ORIGIN + APP_BASE_PATH + "/login?platform=desktop";
+        desktopHandoffUrl(APP_ORIGIN + APP_BASE_PATH + "/login").href;
       const postAuthTarget = isDesktopHandoff
         ? desktopRedirectTarget
         : redirectTarget;
@@ -215,10 +232,10 @@ const HTML = `<!doctype html>
           await Clerk.handleRedirectCallback(
             {
               signInUrl: isDesktopHandoff
-                ? "/sign-in?platform=desktop"
+                ? desktopHandoffPath("/sign-in")
                 : "/sign-in",
               signUpUrl: isDesktopHandoff
-                ? "/sign-up?platform=desktop"
+                ? desktopHandoffPath("/sign-up")
                 : "/sign-up",
               signInFallbackRedirectUrl: postAuthTarget,
               signUpFallbackRedirectUrl: postAuthTarget,
@@ -251,7 +268,7 @@ const HTML = `<!doctype html>
           routing: "path",
           path: signUpPath,
           signInUrl: isDesktopHandoff
-            ? "/sign-in?platform=desktop"
+            ? desktopHandoffPath("/sign-in")
             : "/sign-in",
           fallbackRedirectUrl: postAuthTarget,
           appearance: appearance,
@@ -267,7 +284,7 @@ const HTML = `<!doctype html>
         routing: "path",
         path: signInPath,
         signUpUrl: isDesktopHandoff
-          ? "/sign-up?platform=desktop"
+          ? desktopHandoffPath("/sign-up")
           : "/sign-up",
         fallbackRedirectUrl: postAuthTarget,
         appearance: appearance,
