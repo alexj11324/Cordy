@@ -5265,45 +5265,47 @@ fn issue_reviewer(issue: &Issue) -> Option<(&str, Uuid)> {
     issue.reviewer_type.as_deref().zip(issue.reviewer_id)
 }
 
+struct LegacyReviewRemap<'a> {
+    previous_category: &'a str,
+    next_category: &'a str,
+    previous_owner: Option<(&'a str, Uuid)>,
+    reviewer_in_request: bool,
+    assignee_touched: bool,
+    next_owner_type: &'a mut Option<String>,
+    next_owner_id: &'a mut Option<Uuid>,
+    next_reviewer_type: &'a mut Option<String>,
+    next_reviewer_id: &'a mut Option<Uuid>,
+}
+
 /// Older clients entered `in_review` by swapping the assignee to the
 /// reviewer. The worker stays on `assignee_*`; the incoming assignee
 /// becomes `reviewer_*` when the request did not set a reviewer.
-fn remap_legacy_review_assignee(
-    previous_category: &str,
-    next_category: &str,
-    previous_owner: Option<(&str, Uuid)>,
-    reviewer_in_request: bool,
-    assignee_touched: bool,
-    next_owner_type: &mut Option<String>,
-    next_owner_id: &mut Option<Uuid>,
-    next_reviewer_type: &mut Option<String>,
-    next_reviewer_id: &mut Option<Uuid>,
-) -> bool {
-    if reviewer_in_request
-        || next_reviewer_type.is_some()
-        || next_reviewer_id.is_some()
-        || !assignee_touched
-        || previous_category == patchbay_service::issue_status::IN_REVIEW
-        || next_category != patchbay_service::issue_status::IN_REVIEW
+fn remap_legacy_review_assignee(args: LegacyReviewRemap<'_>) -> bool {
+    if args.reviewer_in_request
+        || args.next_reviewer_type.is_some()
+        || args.next_reviewer_id.is_some()
+        || !args.assignee_touched
+        || args.previous_category == patchbay_service::issue_status::IN_REVIEW
+        || args.next_category != patchbay_service::issue_status::IN_REVIEW
     {
         return false;
     }
-    let Some((prev_type, prev_id)) = previous_owner else {
+    let Some((prev_type, prev_id)) = args.previous_owner else {
         return false;
     };
-    let Some(new_type) = next_owner_type.as_deref() else {
+    let Some(new_type) = args.next_owner_type.as_deref() else {
         return false;
     };
-    let Some(new_id) = *next_owner_id else {
+    let Some(new_id) = *args.next_owner_id else {
         return false;
     };
     if new_type == prev_type && new_id == prev_id {
         return false;
     }
-    *next_reviewer_type = Some(new_type.to_string());
-    *next_reviewer_id = Some(new_id);
-    *next_owner_type = Some(prev_type.to_string());
-    *next_owner_id = Some(prev_id);
+    *args.next_reviewer_type = Some(new_type.to_string());
+    *args.next_reviewer_id = Some(new_id);
+    *args.next_owner_type = Some(prev_type.to_string());
+    *args.next_owner_id = Some(prev_id);
     true
 }
 
@@ -5432,17 +5434,17 @@ async fn prevalidate_issue_workflow_update(
     let next_category =
         patchbay_service::issue_status::effective(&state.pool, previous.workspace_id, &next_status)
             .await;
-    remap_legacy_review_assignee(
-        &previous_category,
-        &next_category,
-        issue_owner(previous),
+    remap_legacy_review_assignee(LegacyReviewRemap {
+        previous_category: &previous_category,
+        next_category: &next_category,
+        previous_owner: issue_owner(previous),
         reviewer_in_request,
         assignee_touched,
-        &mut next_type,
-        &mut next_id,
-        &mut next_reviewer_type,
-        &mut next_reviewer_id,
-    );
+        next_owner_type: &mut next_type,
+        next_owner_id: &mut next_id,
+        next_reviewer_type: &mut next_reviewer_type,
+        next_reviewer_id: &mut next_reviewer_id,
+    });
     if let Some(violation) = issue_workflow_violation(
         &previous_category,
         &next_category,
@@ -5814,17 +5816,17 @@ async fn apply_issue_update(
             .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
-    let remapped = remap_legacy_review_assignee(
-        &previous_category,
-        &next_category,
-        issue_owner(&locked),
+    let remapped = remap_legacy_review_assignee(LegacyReviewRemap {
+        previous_category: &previous_category,
+        next_category: &next_category,
+        previous_owner: issue_owner(&locked),
         reviewer_in_request,
         assignee_touched,
-        &mut next.assignee_type,
-        &mut next.assignee_id,
-        &mut next.reviewer_type,
-        &mut next.reviewer_id,
-    );
+        next_owner_type: &mut next.assignee_type,
+        next_owner_id: &mut next.assignee_id,
+        next_reviewer_type: &mut next.reviewer_type,
+        next_reviewer_id: &mut next.reviewer_id,
+    });
     if issue_reviewer(&locked).is_some() && next.reviewer_type.is_none() {
         return Err(reviewer_cannot_clear_response());
     }
@@ -8133,17 +8135,17 @@ mod tests {
         let mut next_id = Some(owner_b);
         let mut reviewer_type = None;
         let mut reviewer_id = None;
-        assert!(remap_legacy_review_assignee(
-            "in_progress",
-            "in_review",
-            Some(("agent", owner_a)),
-            false,
-            true,
-            &mut next_type,
-            &mut next_id,
-            &mut reviewer_type,
-            &mut reviewer_id,
-        ));
+        assert!(remap_legacy_review_assignee(LegacyReviewRemap {
+            previous_category: "in_progress",
+            next_category: "in_review",
+            previous_owner: Some(("agent", owner_a)),
+            reviewer_in_request: false,
+            assignee_touched: true,
+            next_owner_type: &mut next_type,
+            next_owner_id: &mut next_id,
+            next_reviewer_type: &mut reviewer_type,
+            next_reviewer_id: &mut reviewer_id,
+        }));
         assert_eq!(next_type.as_deref(), Some("agent"));
         assert_eq!(next_id, Some(owner_a));
         assert_eq!(reviewer_type.as_deref(), Some("agent"));

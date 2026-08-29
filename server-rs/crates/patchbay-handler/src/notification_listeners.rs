@@ -215,11 +215,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 if is_assignment_recipient(recipient_type) {
                     let reviewer_id = recipient_id.to_string();
                     let mut details = Map::new();
-                    insert_str(
-                        &mut details,
-                        "new_assignee_type",
-                        Some(recipient_type),
-                    );
+                    insert_str(&mut details, "new_assignee_type", Some(recipient_type));
                     insert_str(&mut details, "new_assignee_id", Some(reviewer_id.as_str()));
                     let details = Value::Object(details);
                     notify_direct(
