@@ -15,6 +15,7 @@ struct Rows {
     user_id: Uuid,
     agent_id: Uuid,
     issue_id: Uuid,
+    runtime_id: Uuid,
 }
 
 impl Rows {
@@ -28,6 +29,7 @@ impl Rows {
         let user_id = Uuid::now_v7();
         let agent_id = Uuid::now_v7();
         let issue_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
         sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
             .bind(workspace_id)
             .bind("Capability lease contract")
@@ -46,13 +48,23 @@ impl Rows {
             .execute(&pool)
             .await?;
         sqlx::query(
-            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id) \
-             VALUES ($1, $2, $3, 'local', 'idle', 1, $4)",
+            "INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider, status, owner_id) \
+             VALUES ($1, $2, 'Capability lease runtime', 'local', 'test', 'online', $3)",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) \
+             VALUES ($1, $2, $3, 'local', 'idle', 1, $4, $5)",
         )
         .bind(agent_id)
         .bind(workspace_id)
         .bind("Capability lease agent")
         .bind(user_id)
+        .bind(runtime_id)
         .execute(&pool)
         .await?;
         sqlx::query(
@@ -72,20 +84,22 @@ impl Rows {
             user_id,
             agent_id,
             issue_id,
+            runtime_id,
         }))
     }
 
     async fn task(&self, dispatched_at: chrono::DateTime<Utc>) -> anyhow::Result<Uuid> {
         let task_id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id) \
-             VALUES ($1, $2, $3, 'dispatched', 0, $4, $5)",
+            "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id, runtime_id) \
+             VALUES ($1, $2, $3, 'dispatched', 0, $4, $5, $6)",
         )
         .bind(task_id)
         .bind(self.agent_id)
         .bind(self.issue_id)
         .bind(dispatched_at)
         .bind(self.user_id)
+        .bind(self.runtime_id)
         .execute(&self.pool)
         .await?;
         Ok(task_id)
@@ -105,6 +119,10 @@ impl Rows {
             .execute(&self.pool)
             .await;
         let _ = sqlx::query("DELETE FROM agent WHERE workspace_id = $1")
+            .bind(self.workspace_id)
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM agent_runtime WHERE workspace_id = $1")
             .bind(self.workspace_id)
             .execute(&self.pool)
             .await;
@@ -141,6 +159,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     let expires_at = Some(Utc::now() + Duration::hours(1));
     let first_hash = format!("lease-first-{task_id}");
     let second_hash = format!("lease-second-{task_id}");
+    let concurrent_scope = task_scope();
     let first = create_task_token(
         &rows.pool,
         &first_hash,
@@ -149,12 +168,12 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         rows.workspace_id,
         rows.user_id,
         expires_at,
-        &task_scope(),
+        &concurrent_scope,
         None,
         Some(dispatched_at),
         1,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     );
     let second = create_task_token(
@@ -165,12 +184,12 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         rows.workspace_id,
         rows.user_id,
         expires_at,
-        &task_scope(),
+        &concurrent_scope,
         None,
         Some(dispatched_at),
         1,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     );
     let (first, second) = tokio::join!(first, second);
@@ -183,6 +202,28 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         (&second_hash, second.expect("one insert must win"))
     };
     assert!(get_task_token_by_hash(&rows.pool, winner_hash).await?.is_some());
+
+    sqlx::query("UPDATE agent_task_queue SET runtime_id = NULL WHERE id = $1")
+        .bind(task_id)
+        .execute(&rows.pool)
+        .await?;
+    assert!(
+        get_task_token_by_hash(&rows.pool, winner_hash)
+            .await?
+            .is_none(),
+        "runtime reassignment invalidates the old device-bound lease"
+    );
+    sqlx::query("UPDATE agent_task_queue SET runtime_id = $2 WHERE id = $1")
+        .bind(task_id)
+        .bind(rows.runtime_id)
+        .execute(&rows.pool)
+        .await?;
+    assert!(
+        get_task_token_by_hash(&rows.pool, winner_hash)
+            .await?
+            .is_none(),
+        "restoring task identity cannot revive a revoked lease"
+    );
 
     sqlx::query("UPDATE agent_task_queue SET status = 'completed' WHERE id = $1")
         .bind(task_id)
@@ -216,7 +257,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(dispatched_at),
         9,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?
@@ -238,7 +279,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(expired_dispatched_at),
         2,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?;
@@ -260,7 +301,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(revoked_dispatched_at),
         3,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?
@@ -281,7 +322,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(revoked_dispatched_at),
         30,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?
@@ -302,7 +343,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(parent_dispatched_at),
         4,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?
@@ -331,7 +372,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(child_dispatched_at),
         5,
         Some(rows.user_id),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?
@@ -359,7 +400,7 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Some(rejected_dispatched_at),
         6,
         Some(Uuid::now_v7()),
-        None,
+        Some(rows.runtime_id),
         Uuid::now_v7(),
     )
     .await?

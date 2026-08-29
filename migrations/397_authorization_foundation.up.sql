@@ -150,10 +150,18 @@ CREATE TRIGGER trg_task_capability_lease_immutable
     FOR EACH ROW
     EXECUTE FUNCTION enforce_task_capability_lease_immutability();
 
-CREATE OR REPLACE FUNCTION revoke_task_capability_leases_on_terminal_state()
+CREATE OR REPLACE FUNCTION revoke_task_capability_leases_on_task_change()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.status IN ('completed', 'failed', 'cancelled')
+    IF NEW.agent_id IS DISTINCT FROM OLD.agent_id
+       OR NEW.runtime_id IS DISTINCT FROM OLD.runtime_id
+       OR NEW.originator_user_id IS DISTINCT FROM OLD.originator_user_id
+       OR NEW.dispatched_at IS DISTINCT FROM OLD.dispatched_at THEN
+        UPDATE task_token
+        SET revoked_at = COALESCE(revoked_at, now()),
+            revoked_reason = COALESCE(revoked_reason, 'task_identity_changed')
+        WHERE task_id = NEW.id AND revoked_at IS NULL;
+    ELSIF NEW.status IN ('completed', 'failed', 'cancelled')
        AND OLD.status IS DISTINCT FROM NEW.status THEN
         UPDATE task_token
         SET revoked_at = COALESCE(revoked_at, now()),
@@ -165,6 +173,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_revoke_task_capability_leases
-    AFTER UPDATE OF status ON agent_task_queue
+    AFTER UPDATE OF status, dispatched_at, agent_id, runtime_id, originator_user_id
+    ON agent_task_queue
     FOR EACH ROW
-    EXECUTE FUNCTION revoke_task_capability_leases_on_terminal_state();
+    EXECUTE FUNCTION revoke_task_capability_leases_on_task_change();

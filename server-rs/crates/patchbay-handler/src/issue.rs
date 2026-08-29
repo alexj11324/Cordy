@@ -4904,6 +4904,7 @@ async fn get_issue(
         issue.workspace_id,
         Some(issue.id),
         true,
+        Action::RESOURCE_READ,
     )
     .await
     {
@@ -4922,13 +4923,18 @@ async fn get_issue(
         .iter()
         .map(IssueReactionResponse::from)
         .collect();
-    response.attachments =
-        attachment::list_attachments_by_issue(&state.pool, issue_id, workspace_id)
-            .await
-            .unwrap_or_default()
-            .iter()
-            .map(|item| AttachmentResponse::for_request(&state, item, &headers))
-            .collect();
+    // Phase 1 has no attachment capability or short-lived object broker. A
+    // task lease may read issue metadata, but must not receive the human
+    // attachment URL (or a freshly signed CloudFront URL) through enrichment.
+    if TaskAuthorizationContext::from_headers(&headers).is_none() {
+        response.attachments =
+            attachment::list_attachments_by_issue(&state.pool, issue_id, workspace_id)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .map(|item| AttachmentResponse::for_request(&state, item, &headers))
+                .collect();
+    }
     Json(response).into_response()
 }
 
@@ -5532,6 +5538,7 @@ async fn update_issue(
         previous.workspace_id,
         Some(previous.id),
         true,
+        Action::RESOURCE_USE,
     )
     .await
     {
@@ -7091,7 +7098,16 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "title is required");
     }
     let workspace_id = context.member.workspace_id;
-    if !task_project_resource_allows(&state, &headers, workspace_id, None, false).await {
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        workspace_id,
+        None,
+        false,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
         return error_response(
             StatusCode::FORBIDDEN,
             "task capability does not allow creating an issue",
@@ -7310,6 +7326,7 @@ pub(crate) async fn task_project_resource_allows(
     workspace_id: Uuid,
     resource_id: Option<Uuid>,
     require_bound_issue: bool,
+    action: &str,
 ) -> bool {
     let Some(authorization) = TaskAuthorizationContext::from_headers(headers) else {
         return true;
@@ -7331,7 +7348,7 @@ pub(crate) async fn task_project_resource_allows(
                 principal_type: PrincipalType::TaskRun,
                 id: Some(authorization.task_id),
             },
-            action: Action::new(Action::RESOURCE_USE),
+            action: Action::new(action),
             resource: Resource {
                 resource_type: ResourceType::new(ResourceType::PROJECT_RESOURCE),
                 id: resource_id,
@@ -7561,9 +7578,6 @@ pub(crate) async fn can_invoke_agent(
                     "member" => originator_user_id == Some(entry.target_id),
                     _ => false,
                 }));
-    if !acl_allowed {
-        return false;
-    }
     let role = membership.as_ref().and_then(|member| match member.role.as_str() {
         "owner" => Some(WorkspaceRole::Owner),
         "admin" => Some(WorkspaceRole::Admin),
@@ -9015,6 +9029,243 @@ mod tests {
             .execute(&pool)
             .await
             .expect("delete workspace");
+    }
+
+    #[tokio::test]
+    async fn task_issue_detail_is_fenced_to_the_lease_resource() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue authorization contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let allowed_issue_id = Uuid::now_v7();
+        let denied_issue_id = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let dispatched_at = Utc::now();
+
+        sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, 'issue auth', $2)")
+            .bind(workspace_id)
+            .bind(format!("issue-auth-{workspace_id}"))
+            .execute(&pool)
+            .await
+            .expect("create workspace");
+        sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, 'originator', $2)")
+            .bind(user_id)
+            .bind(format!("issue-auth-{user_id}@example.test"))
+            .execute(&pool)
+            .await
+            .expect("create user");
+        sqlx::query(
+            "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("create member");
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
+             VALUES ($1, $2, 'issue-auth-daemon', 'issue auth runtime', 'local', 'codex', 'online', $3, 'private')",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("create runtime");
+        sqlx::query(
+            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) \
+             VALUES ($1, $2, 'issue auth agent', 'local', 'idle', 1, $3, $4)",
+        )
+        .bind(agent_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create agent");
+        for (issue_id, number, title) in [
+            (allowed_issue_id, 1, "allowed issue"),
+            (denied_issue_id, 2, "denied issue"),
+        ] {
+            sqlx::query(
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                 VALUES ($1, $2, $3, 'in_progress', 'medium', 'member', $4, 'agent', $5, $6, 0)",
+            )
+            .bind(issue_id)
+            .bind(workspace_id)
+            .bind(title)
+            .bind(user_id)
+            .bind(agent_id)
+            .bind(number)
+            .execute(&pool)
+            .await
+            .expect("create issue");
+        }
+        sqlx::query(
+            "INSERT INTO attachment (workspace_id, issue_id, uploader_type, uploader_id, filename, url, content_type, size_bytes) \
+             VALUES ($1, $2, 'member', $3, 'owner-secret.txt', 'https://private.example/owner-secret', 'text/plain', 12)",
+        )
+        .bind(workspace_id)
+        .bind(allowed_issue_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("create attachment");
+        sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id, runtime_id) \
+             VALUES ($1, $2, $3, 'dispatched', 0, $4, $5, $6)",
+        )
+        .bind(task_id)
+        .bind(agent_id)
+        .bind(allowed_issue_id)
+        .bind(dispatched_at)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create task");
+        let lease = patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("issue-auth-lease-{task_id}"),
+            task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + chrono::Duration::minutes(10)),
+            &json!([{
+                "action": Action::RESOURCE_READ,
+                "resource_type": ResourceType::PROJECT_RESOURCE,
+                "resource_id": allowed_issue_id,
+            }]),
+            None,
+            Some(dispatched_at),
+            1,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("create lease")
+        .expect("lease inserted");
+        let context = WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: patchbay_db::models::Member {
+                created_at: Utc::now(),
+                id: Uuid::now_v7(),
+                role: "member".into(),
+                user_id,
+                workspace_id,
+            },
+        };
+        let app = router()
+            .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
+            .layer(Extension(context));
+
+        async fn get(
+            app: &Router,
+            uri: String,
+            headers: &HeaderMap,
+        ) -> (StatusCode, Option<Value>) {
+            let mut request = axum::http::Request::builder()
+                .method(axum::http::Method::GET)
+                .uri(uri)
+                .body(axum::body::Body::empty())
+                .expect("issue request");
+            *request.headers_mut() = headers.clone();
+            let response = app
+                .clone()
+                .oneshot(request)
+                .await
+                .expect("issue response");
+            let status = response.status();
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("response body")
+                .to_bytes();
+            let body = serde_json::from_slice(&bytes).ok();
+            (status, body)
+        }
+
+        let mut headers = HeaderMap::new();
+        for (name, value) in [
+            ("x-actor-source", "task_token".to_string()),
+            ("x-task-id", task_id.to_string()),
+            ("x-capability-lease-id", lease.id.to_string()),
+            ("x-on-behalf-of-user-id", user_id.to_string()),
+            ("x-agent-id", agent_id.to_string()),
+            ("x-device-id", runtime_id.to_string()),
+        ] {
+            headers.insert(name, value.parse().expect("header value"));
+        }
+        let (allowed_status, allowed_body) =
+            get(&app, format!("/api/issues/{allowed_issue_id}"), &headers).await;
+        assert_eq!(allowed_status, StatusCode::OK);
+        let allowed_body = allowed_body.expect("allowed issue JSON");
+        assert!(allowed_body.get("attachments").is_none());
+        assert!(!allowed_body.to_string().contains("owner-secret"));
+        let (denied_status, _) =
+            get(&app, format!("/api/issues/{denied_issue_id}"), &headers).await;
+        assert_eq!(denied_status, StatusCode::FORBIDDEN);
+
+        sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete audit");
+        sqlx::query("DELETE FROM task_token WHERE task_id = $1")
+            .bind(task_id)
+            .execute(&pool)
+            .await
+            .expect("delete lease");
+        sqlx::query("DELETE FROM agent_task_queue WHERE id = $1")
+            .bind(task_id)
+            .execute(&pool)
+            .await
+            .expect("delete task");
+        sqlx::query("DELETE FROM attachment WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete attachment");
+        sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete issues");
+        sqlx::query("DELETE FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete agent");
+        sqlx::query("DELETE FROM agent_runtime WHERE id = $1")
+            .bind(runtime_id)
+            .execute(&pool)
+            .await
+            .expect("delete runtime");
+        sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete member");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("delete user");
     }
 
     #[test]

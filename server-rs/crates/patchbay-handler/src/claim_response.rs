@@ -14,7 +14,7 @@ use patchbay_db::models::{AgentRuntime, AgentTaskQueue};
 use patchbay_db::queries::{
     agent as agent_q, agent as agent_queries, autopilot as autopilot_q, chat as chat_q,
     comment as comment_q, issue as issue_q, project as project_q, team as team_q, user as user_q,
-    workspace as workspace_q, workspace_mcp as ws_mcp_q,
+    workspace as workspace_q,
 };
 use patchbay_protocol::{
     DAEMON_CAPABILITY_COALESCED_COMMENTS_V1, DAEMON_CAPABILITY_LOCAL_WORKTREE_V1,
@@ -27,7 +27,6 @@ use crate::claim_comments::{
 };
 use crate::daemon::DaemonClaimServices;
 use crate::error::error_response;
-use crate::mcp_merge::{resolve_agent_mcp_config, WorkspaceMcpBinding};
 use crate::team_briefing::build_team_leader_briefing;
 use crate::timefmt::rfc3339;
 
@@ -151,6 +150,24 @@ fn rerun_source_matches_task_scope(task: &AgentTaskQueue, source: &AgentTaskQueu
     false
 }
 
+fn strip_unleased_execution_resume(payload: &mut Map<String, Value>) {
+    // A path or provider session is an execution capability, not harmless
+    // continuity metadata. Until Directory/session leases exist, a task claim
+    // must start fresh even when a stored task, rerun, chat, or Message Bus
+    // anchor contains an owner/caller worktree or provider session.
+    for key in [
+        "work_dir",
+        "relative_work_dir",
+        "durable_work_dir",
+        "relative_durable_work_dir",
+        "branch_name",
+        "prior_work_dir",
+        "prior_session_id",
+    ] {
+        payload.remove(key);
+    }
+}
+
 /// Go trailingUserMessages: the run of user messages after the last assistant
 /// message — the set the agent has NOT yet replied to. Legacy channel tasks stop
 /// at the first unexpired media marker.
@@ -188,53 +205,6 @@ fn disabled_runtime_skills_for(raw: &Value, runtime_id: &str, provider: &str) ->
         .collect()
 }
 
-fn github_repo_refs(resources: &[Value]) -> Vec<Value> {
-    let mut out = Vec::new();
-    for row in resources {
-        if row.get("resource_type").and_then(|v| v.as_str()) != Some("github_repo") {
-            continue;
-        }
-        let r#ref = row.get("resource_ref").cloned().unwrap_or(Value::Null);
-        let url = r#ref.get("url").and_then(|v| v.as_str()).unwrap_or("");
-        if url.is_empty() {
-            continue;
-        }
-        let mut repo = json!({ "url": url });
-        if let Some(r) = r#ref
-            .get("ref")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            repo["ref"] = Value::String(r.to_string());
-        }
-        out.push(repo);
-    }
-    out
-}
-
-async fn list_project_resources(state: &DaemonClaimServices, project_id: Uuid) -> Vec<Value> {
-    match patchbay_db::queries::project_resource::list_project_resources(&state.pool, project_id)
-        .await
-    {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row| {
-                json!({
-                    "id": row.id.to_string(),
-                    "resource_type": row.resource_type,
-                    "resource_ref": row.resource_ref,
-                    "label": row.label.unwrap_or_default(),
-                })
-            })
-            .collect(),
-        Err(e) => {
-            tracing::warn!(error = %e, project_id = %project_id, "claim: load project resources failed");
-            Vec::new()
-        }
-    }
-}
-
 /// Applies project title/description/resources to the payload and returns any
 /// github_repo lifts (Go's inline project-resources block).
 async fn apply_project_context(
@@ -242,50 +212,25 @@ async fn apply_project_context(
     payload: &mut Map<String, Value>,
     project_id: Uuid,
 ) -> Vec<Value> {
-    let mut project_repos = Vec::new();
     if let Ok(Some(proj)) = project_q::get_project(&state.pool, project_id).await {
         payload.insert("project_title".into(), Value::String(proj.title.clone()));
         if let Some(desc) = &proj.description {
             payload.insert("project_description".into(), Value::String(desc.clone()));
         }
     }
-    let rows = list_project_resources(state, project_id).await;
-    if !rows.is_empty() {
-        let mut resources = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let mut entry = json!({
-                "id": row["id"],
-                "resource_type": row["resource_type"],
-                "resource_ref": if row["resource_ref"].as_str().is_some() || row["resource_ref"].is_object() { row["resource_ref"].clone() } else { json!({}) },
-            });
-            if let Some(label) = row
-                .get("label")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-            {
-                entry["label"] = Value::String(label.to_string());
-            }
-            resources.push(entry);
-        }
-        payload.insert("project_resources".into(), Value::Array(resources));
-        project_repos = github_repo_refs(&rows);
-    }
-    project_repos
+    // Local directories and repository URLs are execution capabilities, not
+    // project metadata. Phase 1 has no lease-bound Directory/Git credential
+    // broker, so a task claim never receives them. This prevents a shared
+    // Agent from turning its owner's daemon HOME, checkout, or credential
+    // helper into ambient caller authority.
+    Vec::new()
 }
 
 async fn workspace_repos_or(
-    state: &DaemonClaimServices,
-    workspace_id: Uuid,
+    _state: &DaemonClaimServices,
+    _workspace_id: Uuid,
     fallback: Value,
 ) -> Value {
-    if let Ok(Some(ws)) = workspace_q::get_workspace(&state.pool, workspace_id).await {
-        let repos = ws.repos;
-        if let Some(list) = repos.as_array() {
-            if !list.is_empty() {
-                return repos.clone();
-            }
-        }
-    }
     fallback
 }
 
@@ -381,61 +326,6 @@ pub(crate) async fn build_claimed_task_response(
         }
     };
 
-    let owner_execution_config_allowed = task_claim_may_receive_long_lived_config();
-    let custom_env: Value = if owner_execution_config_allowed {
-        agent.custom_env.clone()
-    } else {
-        Value::Null
-    };
-    let custom_args: Vec<String> = if owner_execution_config_allowed {
-        agent
-            .custom_args
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    // mcp_config: agent column → bound enabled workspace servers → per-task overlay.
-    let mut mcp_config = owner_execution_config_allowed
-        .then(|| agent.mcp_config.clone())
-        .flatten();
-    if owner_execution_config_allowed {
-        match ws_mcp_q::list_enabled_agent_mcp_servers(&state.pool, agent.id).await {
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    task_id = %task.id,
-                    agent_id = %agent.id,
-                    "daemon claim: load agent mcp servers failed; using agent mcp_config"
-                );
-            }
-            Ok(bound) if !bound.is_empty() => {
-                let bindings: Vec<WorkspaceMcpBinding> = bound
-                    .into_iter()
-                    .map(|server| WorkspaceMcpBinding {
-                        name: server.name,
-                        config: server.config.unwrap_or(Value::Null),
-                    })
-                    .collect();
-                match resolve_agent_mcp_config(&bindings, mcp_config.as_ref()) {
-                    Ok(resolved) => mcp_config = resolved,
-                    Err(_) => {
-                        tracing::warn!(
-                            task_id = %task.id,
-                            "daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config"
-                        );
-                    }
-                }
-            }
-            Ok(_) => {}
-        }
-    }
     // Phase 1 intentionally ignores persisted per-task overlays, including
     // rows queued before this deployment. The legacy Composio overlay embeds
     // a server-wide long-lived API key and was computed before capability
@@ -443,16 +333,6 @@ pub(crate) async fn build_claimed_task_response(
     // revocation. A later broker may restore overlays only with a short-lived,
     // lease-bound credential.
     let _ = capability_scoped_task_overlay(task.runtime_mcp_overlay.as_ref());
-
-    // runtime_config: forward only non-empty payloads.
-    let runtime_config = (owner_execution_config_allowed
-        && !agent.runtime_config.is_null()
-        && agent
-            .runtime_config
-            .as_object()
-            .map(|m| !m.is_empty())
-            .unwrap_or(false))
-    .then(|| agent.runtime_config.clone());
 
     let disabled_skills = disabled_runtime_skills_for(
         &agent.disabled_runtime_skills,
@@ -467,18 +347,6 @@ pub(crate) async fn build_claimed_task_response(
         "instructions".into(),
         Value::String(agent.instructions.clone()),
     );
-    match custom_env {
-        Value::Object(env_map) if !env_map.is_empty() => {
-            agent_obj.insert("custom_env".into(), Value::Object(env_map));
-        }
-        _ => {}
-    }
-    if !custom_args.is_empty() {
-        agent_obj.insert("custom_args".into(), json!(custom_args));
-    }
-    if let Some(cfg) = &mcp_config {
-        agent_obj.insert("mcp_config".into(), cfg.clone());
-    }
     set_if_not_empty(
         &mut agent_obj,
         "model",
@@ -494,9 +362,6 @@ pub(crate) async fn build_claimed_task_response(
         "service_tier",
         agent.service_tier.as_deref().unwrap_or(""),
     );
-    if let Some(rc) = &runtime_config {
-        agent_obj.insert("runtime_config".into(), rc.clone());
-    }
     if !disabled_skills.is_empty() {
         agent_obj.insert(
             "disabled_runtime_skills".into(),
@@ -1478,6 +1343,8 @@ pub(crate) async fn build_claimed_task_response(
         );
     }
 
+    strip_unleased_execution_resume(obj);
+
     let _ = header::CACHE_CONTROL; // keep import surface minimal
 
     Ok(BuiltClaim {
@@ -1489,14 +1356,6 @@ pub(crate) async fn build_claimed_task_response(
 
 fn capability_scoped_task_overlay(_persisted: Option<&Value>) -> Option<&Value> {
     None
-}
-
-fn task_claim_may_receive_long_lived_config() -> bool {
-    // A task lease may eventually carry brokered, short-lived tool and
-    // credential grants. Phase 1 has no such broker, so stored Agent env, MCP,
-    // args, and Runtime config remain unavailable even to an owner-originated
-    // task. agent.invoke is never credential.read_secret.
-    false
 }
 
 fn chat_session_resume_fallback_needed(prior_session_id: &str, prior_work_dir: &str) -> bool {
@@ -1581,7 +1440,7 @@ async fn fail_claimed_task_before_launch(
 mod tests {
     use super::{
         capability_scoped_task_overlay, explicit_goal_objective,
-        task_claim_may_receive_long_lived_config,
+        strip_unleased_execution_resume,
     };
     use serde_json::json;
 
@@ -1616,7 +1475,33 @@ mod tests {
     }
 
     #[test]
-    fn task_claim_cannot_receive_long_lived_agent_execution_config() {
-        assert!(!task_claim_may_receive_long_lived_config());
+    fn stored_worktree_and_provider_session_are_not_delivered_to_a_task() {
+        let mut payload = json!({
+            "work_dir": "/owner/checkout",
+            "relative_work_dir": "task/worktree",
+            "durable_work_dir": "/owner/durable",
+            "relative_durable_work_dir": "durable",
+            "branch_name": "owner/private",
+            "prior_work_dir": "/owner/prior",
+            "prior_session_id": "owner-provider-session",
+            "title": "safe metadata"
+        })
+        .as_object()
+        .cloned()
+        .expect("object");
+        strip_unleased_execution_resume(&mut payload);
+        for denied in [
+            "work_dir",
+            "relative_work_dir",
+            "durable_work_dir",
+            "relative_durable_work_dir",
+            "branch_name",
+            "prior_work_dir",
+            "prior_session_id",
+        ] {
+            assert!(!payload.contains_key(denied));
+        }
+        assert_eq!(payload.get("title"), Some(&json!("safe metadata")));
     }
+
 }

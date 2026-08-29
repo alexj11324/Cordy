@@ -306,6 +306,7 @@ impl PostgresAuthorizer {
         &self,
         request: &AuthorizationRequest,
         delegated_agent_ids: &[Uuid],
+        delegated_task_ids: &[Uuid],
     ) -> Result<Vec<Grant>, sqlx::Error> {
         let rows = sqlx::query(
             r#"SELECT id, effect, conditions
@@ -317,19 +318,28 @@ WHERE workspace_id = $1
   AND resource_type = $3
   AND (resource_id IS NULL OR resource_id = $4)
   AND (
-      (principal_type = $5 AND (principal_id IS NULL OR principal_id = $6))
+      (principal_type = $5 AND (principal_id IS NULL OR principal_id = $6)
+          AND ($5 <> 'task_run' OR effect IN ('deny', 'require_approval')))
       OR (principal_type = 'team' AND principal_id = ANY($7::uuid[]))
       OR (principal_type = 'user' AND $8::uuid IS NOT NULL
           AND (principal_id IS NULL OR principal_id = $8))
       OR (principal_type = 'agent_definition' AND (
           ($9::uuid IS NOT NULL
+              AND ($5 IN ('agent_definition', 'device_runtime', 'service', 'system')
+                  OR effect IN ('deny', 'require_approval'))
               AND (principal_id IS NULL OR principal_id = $9))
           OR (effect IN ('deny', 'require_approval')
               AND cardinality($11::uuid[]) > 0
               AND (principal_id IS NULL OR principal_id = ANY($11::uuid[])))
       ))
       OR (principal_type = 'device_runtime' AND $10::uuid IS NOT NULL
+          AND ($5 IN ('agent_definition', 'device_runtime', 'service', 'system')
+              OR effect IN ('deny', 'require_approval'))
           AND (principal_id IS NULL OR principal_id = $10))
+      OR (principal_type = 'task_run'
+          AND effect IN ('deny', 'require_approval')
+          AND cardinality($12::uuid[]) > 0
+          AND (principal_id IS NULL OR principal_id = ANY($12::uuid[])))
   )
 ORDER BY created_at, id"#,
         )
@@ -344,6 +354,7 @@ ORDER BY created_at, id"#,
         .bind(request.context.via_agent_id)
         .bind(request.context.device_id)
         .bind(delegated_agent_ids)
+        .bind(delegated_task_ids)
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter()
@@ -369,9 +380,13 @@ ORDER BY created_at, id"#,
            token.claim_dispatched_at, token.on_behalf_of_user_id,
            token.device_id, token.revoked_at, token.expires_at,
            task.status AS task_status, task.dispatched_at AS current_dispatched_at,
+           task.agent_id AS current_agent_id, task.runtime_id AS current_device_id,
+           task.originator_user_id AS current_on_behalf_of_user_id,
+           current_agent.workspace_id AS current_workspace_id,
            ARRAY[token.id] AS path
     FROM task_token token
     JOIN agent_task_queue task ON task.id = token.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
     WHERE token.id = $1
   UNION ALL
     SELECT parent.id, parent.task_id, parent.agent_id, parent.workspace_id,
@@ -380,10 +395,13 @@ ORDER BY created_at, id"#,
            parent.claim_dispatched_at, parent.on_behalf_of_user_id,
            parent.device_id, parent.revoked_at, parent.expires_at,
            task.status, task.dispatched_at,
+           task.agent_id, task.runtime_id, task.originator_user_id,
+           current_agent.workspace_id,
            child.path || parent.id
     FROM task_token parent
     JOIN lease_chain child ON child.parent_token_id = parent.id
     JOIN agent_task_queue task ON task.id = parent.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
     WHERE NOT parent.id = ANY(child.path)
       AND cardinality(child.path) <= 9
 )
@@ -415,6 +433,11 @@ SELECT * FROM lease_chain ORDER BY delegation_depth DESC"#,
                     expires_at: row.try_get("expires_at")?,
                     task_status: row.try_get("task_status")?,
                     current_dispatched_at: row.try_get("current_dispatched_at")?,
+                    current_agent_id: row.try_get("current_agent_id")?,
+                    current_device_id: row.try_get("current_device_id")?,
+                    current_on_behalf_of_user_id: row
+                        .try_get("current_on_behalf_of_user_id")?,
+                    current_workspace_id: row.try_get("current_workspace_id")?,
                 })
             })
             .collect()
@@ -543,6 +566,17 @@ fn delegated_agent_ids(request: &AuthorizationRequest) -> Vec<Uuid> {
     ids
 }
 
+fn delegated_task_ids(request: &AuthorizationRequest) -> Vec<Uuid> {
+    let mut ids: Vec<Uuid> = request
+        .delegation_chain
+        .iter()
+        .map(|hop| hop.task_id)
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 #[async_trait]
 impl Authorizer for PostgresAuthorizer {
     async fn authorize(
@@ -557,8 +591,9 @@ impl Authorizer for PostgresAuthorizer {
             request.delegation_chain = lease_chain.iter().map(DelegationHop::from).collect();
         }
         let delegated_agent_ids = delegated_agent_ids(&request);
+        let delegated_task_ids = delegated_task_ids(&request);
         let grants = self
-            .matching_grants(&request, &delegated_agent_ids)
+            .matching_grants(&request, &delegated_agent_ids, &delegated_task_ids)
             .await?;
         let mut decision = evaluate(&request, &grants, &lease_chain);
         decision.audit_id = Some(self.record_audit(&request, &decision).await?);
@@ -635,6 +670,10 @@ struct LeaseRow {
     expires_at: DateTime<Utc>,
     task_status: String,
     current_dispatched_at: Option<DateTime<Utc>>,
+    current_agent_id: Uuid,
+    current_device_id: Option<Uuid>,
+    current_on_behalf_of_user_id: Option<Uuid>,
+    current_workspace_id: Uuid,
 }
 
 impl From<&LeaseRow> for DelegationHop {
@@ -802,7 +841,15 @@ fn relationship_allows(request: &AuthorizationRequest) -> bool {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         Action::CREDENTIAL_USE | Action::CREDENTIAL_READ_SECRET => is_owner,
-        Action::RUNTIME_READ | Action::RUNTIME_USE => {
+        Action::RUNTIME_READ => {
+            is_owner
+                || (!is_private
+                    && matches!(
+                        request.context.workspace_role,
+                        Some(WorkspaceRole::Owner | WorkspaceRole::Admin | WorkspaceRole::Member)
+                    ))
+        }
+        Action::RUNTIME_USE => {
             is_owner
                 || (!is_private
                     && matches!(
@@ -897,6 +944,13 @@ fn validate_lease(
         }
         if lease.claim_dispatched_at != lease.current_dispatched_at {
             return Err("capability lease claim fence is stale");
+        }
+        if lease.agent_id != lease.current_agent_id
+            || lease.device_id != lease.current_device_id
+            || lease.on_behalf_of_user_id != lease.current_on_behalf_of_user_id
+            || lease.workspace_id != lease.current_workspace_id
+        {
+            return Err("capability lease task identity changed");
         }
         if let Some(parent_id) = lease.parent_token_id {
             let Some(parent) = by_id.get(&parent_id).copied() else {
@@ -994,6 +1048,10 @@ mod tests {
             expires_at: Utc::now() + chrono::Duration::minutes(5),
             task_status: "running".to_string(),
             current_dispatched_at: Some(dispatched_at),
+            current_agent_id: agent_id,
+            current_device_id: Some(device_id),
+            current_on_behalf_of_user_id: Some(on_behalf_of_user_id),
+            current_workspace_id: workspace_id,
         }
     }
 

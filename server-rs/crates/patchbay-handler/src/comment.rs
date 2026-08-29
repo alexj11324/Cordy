@@ -6,6 +6,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use patchbay_authorization::Action;
 use patchbay_db::models::{Comment, CommentReaction};
 use patchbay_db::queries::{activity, agent, attachment, comment, issue as issue_q, reaction};
 use patchbay_middleware::workspace::WorkspaceContext;
@@ -92,6 +93,7 @@ async fn preview_triggers(
         issue.workspace_id,
         Some(issue.id),
         true,
+        Action::RESOURCE_USE,
     )
     .await
     {
@@ -196,6 +198,7 @@ async fn create(
         issue.workspace_id,
         Some(issue.id),
         true,
+        Action::RESOURCE_USE,
     )
     .await
     {

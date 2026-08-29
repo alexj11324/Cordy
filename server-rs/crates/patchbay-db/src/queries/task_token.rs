@@ -27,21 +27,31 @@ pub async fn create_task_token(
 ) -> anyhow::Result<Option<TaskToken>> {
     let row = sqlx::query(
         r#"WITH claim AS (
-    SELECT id, delegated_from_task_id, dispatched_at
-    FROM agent_task_queue
-    WHERE id = $2
-      AND status IN ('dispatched', 'running', 'waiting_local_directory', 'deferred')
-      AND dispatched_at IS NOT DISTINCT FROM $9::timestamptz
+    SELECT task.id, task.delegated_from_task_id, task.dispatched_at
+    FROM agent_task_queue task
+    JOIN agent current_agent ON current_agent.id = task.agent_id
+    WHERE task.id = $2
+      AND task.status IN ('dispatched', 'running', 'waiting_local_directory', 'deferred')
+      AND task.dispatched_at IS NOT DISTINCT FROM $9::timestamptz
+      AND task.agent_id = $3
+      AND current_agent.workspace_id = $4
+      AND task.originator_user_id IS NOT DISTINCT FROM $11::uuid
+      AND task.runtime_id IS NOT DISTINCT FROM $12::uuid
     FOR SHARE
 ), parent AS (
     SELECT token.id, token.scope, token.delegation_depth, token.delegation_fence,
            token.workspace_id, token.on_behalf_of_user_id, token.device_id
     FROM task_token token
     JOIN agent_task_queue task ON task.id = token.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
     WHERE token.task_id = $8
       AND token.revoked_at IS NULL
       AND token.expires_at > now()
       AND token.claim_dispatched_at = task.dispatched_at
+      AND token.agent_id = task.agent_id
+      AND token.device_id IS NOT DISTINCT FROM task.runtime_id
+      AND token.on_behalf_of_user_id IS NOT DISTINCT FROM task.originator_user_id
+      AND token.workspace_id = current_agent.workspace_id
       AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
     ORDER BY token.created_at DESC, token.id DESC
     LIMIT 1
@@ -172,9 +182,13 @@ pub async fn get_task_token_by_hash(
            token.device_id, token.revoked_at, token.revoked_reason,
            token.expires_at, token.created_at, token.token_hash, token.user_id,
            task.status AS task_status, task.dispatched_at AS current_dispatched_at,
+           task.agent_id AS current_agent_id, task.runtime_id AS current_device_id,
+           task.originator_user_id AS current_on_behalf_of_user_id,
+           current_agent.workspace_id AS current_workspace_id,
            ARRAY[token.id] AS path
     FROM task_token token
     JOIN agent_task_queue task ON task.id = token.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
     WHERE token.token_hash = $1
   UNION ALL
     SELECT parent.id, parent.task_id, parent.agent_id, parent.workspace_id,
@@ -183,10 +197,13 @@ pub async fn get_task_token_by_hash(
            parent.claim_dispatched_at, parent.on_behalf_of_user_id,
            parent.device_id, parent.revoked_at, parent.revoked_reason,
            parent.expires_at, parent.created_at, parent.token_hash, parent.user_id,
-           task.status, task.dispatched_at, child.path || parent.id
+           task.status, task.dispatched_at,
+           task.agent_id, task.runtime_id, task.originator_user_id,
+           current_agent.workspace_id, child.path || parent.id
     FROM task_token parent
     JOIN lease_chain child ON child.parent_token_id = parent.id
     JOIN agent_task_queue task ON task.id = parent.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
     WHERE NOT parent.id = ANY(child.path)
       AND cardinality(child.path) <= 9
 ), leaf AS (
@@ -199,6 +216,10 @@ pub async fn get_task_token_by_hash(
        OR lease.expires_at <= now()
        OR lease.task_status NOT IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
        OR lease.claim_dispatched_at IS DISTINCT FROM lease.current_dispatched_at
+       OR lease.agent_id <> lease.current_agent_id
+       OR lease.device_id IS DISTINCT FROM lease.current_device_id
+       OR lease.on_behalf_of_user_id IS DISTINCT FROM lease.current_on_behalf_of_user_id
+       OR lease.workspace_id <> lease.current_workspace_id
        OR lease.delegation_depth > 8
        OR (lease.parent_token_id IS NULL AND lease.delegation_depth <> 0)
        OR (lease.parent_token_id IS NOT NULL AND (

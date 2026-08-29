@@ -38,7 +38,6 @@ use patchbay_protocol::{
     HEARTBEAT_STATUS_RUNTIME_GONE,
 };
 use patchbay_service::issue_status as issue_status_svc;
-use patchbay_service::plugin::PluginService;
 use patchbay_service::task_service::TaskService;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -1570,7 +1569,6 @@ const CLAIM_BATCH_MAX_TASKS_CAP: usize = 32;
 pub(crate) struct DaemonClaimServices {
     pub(crate) pool: sqlx::PgPool,
     pub(crate) tasks: Arc<TaskService>,
-    pub(crate) plugins: Arc<PluginService>,
     pub(crate) authorization: Arc<dyn Authorizer>,
 }
 
@@ -1579,7 +1577,6 @@ impl DaemonClaimServices {
         Self {
             pool: state.pool.clone(),
             tasks: state.tasks.clone(),
-            plugins: state.plugins.clone(),
             authorization: state.authorization.clone(),
         }
     }

@@ -336,7 +336,7 @@ fn stamp_task_identity(
 /// `x-user-id` projection from turning a short-lived task lease into a JWT,
 /// PAT, credential-management session, Agent secret read, or another durable
 /// human control-plane authority.
-fn task_token_route_allowed(method: &Method, path: &str, workspace_id: Uuid) -> bool {
+fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) -> bool {
     if path.starts_with("/api/issues") {
         if method == Method::GET {
             let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
@@ -358,23 +358,6 @@ fn task_token_route_allowed(method: &Method, path: &str, workspace_id: Uuid) -> 
         return (method == Method::GET && path.ends_with("/messages"))
             || (method == Method::POST
                 && (path.ends_with("/message-bus") || path.ends_with("/cancel")));
-    }
-    if path.starts_with("/api/authorization/decisions/") {
-        return method == Method::GET;
-    }
-    if path == "/api/runtimes" || path == "/api/runtimes/" {
-        return method == Method::GET;
-    }
-    if let Some(suffix) = path.strip_prefix("/api/runtimes/") {
-        return !suffix.is_empty()
-            && !suffix.contains('/')
-            && (method == Method::PATCH || method == Method::DELETE);
-    }
-    let bound_workspace = format!("/api/workspaces/{workspace_id}");
-    if method == Method::GET
-        && (path == bound_workspace || path == format!("{bound_workspace}/"))
-    {
-        return true;
     }
     if method == Method::GET
         && ["/api/properties", "/api/labels"]
@@ -929,6 +912,7 @@ mod tests {
     #[test]
     fn task_lease_cannot_mint_durable_or_human_control_plane_authority() {
         let workspace_id = test_uuid(14);
+        let bound_workspace = format!("/api/workspaces/{workspace_id}");
         for (method, path) in [
             (Method::POST, "/api/cli-token"),
             (Method::POST, "/api/tokens"),
@@ -953,6 +937,10 @@ mod tests {
             (Method::POST, "/api/issues/table/groups"),
             (Method::POST, "/api/issues/table/facets"),
             (Method::POST, "/api/upload-file"),
+            (Method::GET, "/api/runtimes"),
+            (Method::PATCH, "/api/runtimes/runtime-id"),
+            (Method::GET, "/api/authorization/decisions/decision-id"),
+            (Method::GET, bound_workspace.as_str()),
         ] {
             assert!(
                 !task_token_route_allowed(&method, path, workspace_id),
@@ -969,18 +957,12 @@ mod tests {
             (Method::PUT, "/api/issues/issue-id"),
             (Method::POST, "/api/issues/issue-id/comments"),
             (Method::POST, "/api/tasks/task-id/message-bus"),
-            (Method::PATCH, "/api/runtimes/runtime-id"),
         ] {
             assert!(
                 task_token_route_allowed(&method, path, workspace_id),
                 "{method} {path}"
             );
         }
-        assert!(task_token_route_allowed(
-            &Method::GET,
-            &format!("/api/workspaces/{workspace_id}"),
-            workspace_id,
-        ));
         assert!(!task_token_route_allowed(
             &Method::GET,
             &format!("/api/workspaces/{}", test_uuid(16)),

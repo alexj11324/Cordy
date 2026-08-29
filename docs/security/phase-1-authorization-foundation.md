@@ -29,16 +29,21 @@ code and in CI:
    lease, so a standing grant cannot widen a task scope.
 6. A task claim never receives stored Agent `custom_env`, custom arguments,
    MCP configuration, Runtime configuration, workspace plugin tools, connected
-   apps, or Composio overlays. These paths can contain long-lived owner or
-   workspace credentials and there is no lease-bound broker in Phase 1. Human
+   apps, Composio overlays, local directory paths, or repository URLs. These
+   paths can expose long-lived owner/workspace credentials or the runtime
+   owner's checkout and credential helper, and there is no lease-bound broker
+   for them in Phase 1. Human
    connection management remains available; a later broker must consume
    `credential.use` and return only a short-lived, lease-bound session.
    Long-lived credential material is never returned to an agent, including an
-   owner-originated run.
+   owner-originated run. Stored current/prior work directories, branch names,
+   durable directories, and provider session IDs are also stripped so reruns
+   and chat continuity cannot recover another caller's local execution state.
 7. Runtime read/update is enforced by the same authorizer. Workspace admins do
    not automatically read or mutate another user's private runtime. Public
-   runtime metadata remains readable to workspace members; private runtime
-   access remains owner- or explicit-grant-only.
+   runtime metadata and use remain available to workspace members for current
+   shared-compute compatibility; private runtime read/use remains owner- or
+   explicit-grant-only.
 8. Every authorizer result appends an explain record that can answer: who,
    on whose behalf, via which agent, on which device, action, resource,
    decision, why, matched grants, policy version, obligations, and delegation
@@ -114,21 +119,25 @@ The migration is additive and compatible with rows from current `main`:
 - build every new index concurrently in its own migration;
 - keep raw bearer values out of the new tables and audit payloads.
 
-Rollback first removes concurrent indexes, deletes revoked/expired/terminal or
-stale-claim bearer rows that the legacy schema cannot represent safely, then
-drops the two additive tables and the added `task_token` columns. Active,
-current token hashes and unrelated task/user data remain. Rollback is not
-permission-preserving: it removes the new enforcement and must be treated as a
+Rollback first removes concurrent indexes and deletes every task bearer before
+dropping the two additive tables and the added `task_token` columns. The legacy
+schema cannot represent scope, delegation, identity, revocation, or claim
+fences, so retaining even an active Phase 1 token would widen it. Unrelated
+task/user data remains, but running tasks must claim a new token after rollback.
+Rollback is not availability- or permission-preserving: it must be treated as a
 security rollback, not a normal operational toggle.
 
 ## Explicit follow-ups
 
-Later slices should add a lease-bound short-lived credential/tool broker before
-re-enabling Agent execution configuration or plugin/connection tools; move
-remaining private Agent, Directory, Chat, Integration/Connection, plugin/tool,
-and device-management handlers onto the same interface; add separate team
+Later slices should add lease-bound short-lived credential/tool and
+Directory/repository brokers before re-enabling Agent execution configuration,
+plugin/connection tools, or local checkout projection; move remaining private
+Agent, Chat, Integration/Connection, plugin/tool, and device-management
+handlers onto the same interface; add separate team
 security membership; add Guest membership storage and invitation rules; add an
 explicit System-task workspace principal; and replace remaining member-shaped
-task-token compatibility reads. Those are not prerequisites for this slice's
-real enforcement consumers and must not weaken the Phase 1 boundaries while
-pending.
+task-token compatibility reads. Runtime listing should also batch relationship
+and grant evaluation before it becomes a large-workspace path; Phase 1 keeps the
+per-resource audit writes for explainability. Those are not prerequisites for
+this slice's real enforcement consumers and must not weaken the Phase 1
+boundaries while pending.

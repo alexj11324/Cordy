@@ -1,27 +1,13 @@
 DROP TRIGGER IF EXISTS trg_revoke_task_capability_leases ON agent_task_queue;
-DROP FUNCTION IF EXISTS revoke_task_capability_leases_on_terminal_state();
+DROP FUNCTION IF EXISTS revoke_task_capability_leases_on_task_change();
 DROP TRIGGER IF EXISTS trg_task_capability_lease_immutable ON task_token;
 DROP FUNCTION IF EXISTS enforce_task_capability_lease_immutability();
 
--- The legacy schema cannot represent revocation or terminal claim fencing.
--- Remove those bearer rows before dropping the columns so rollback cannot
--- silently revive authority that Phase 1 already invalidated.
-DELETE FROM task_token token
-USING agent_task_queue task
-WHERE task.id = token.task_id
-  AND (
-      token.revoked_at IS NOT NULL
-      OR token.expires_at <= now()
-      OR task.status NOT IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
-      OR token.claim_dispatched_at IS DISTINCT FROM task.dispatched_at
-  );
-
--- An orphan bearer cannot be validated once the Phase 1 task/claim columns
--- are gone. Delete it explicitly before restoring the legacy lookup shape.
-DELETE FROM task_token token
-WHERE NOT EXISTS (
-    SELECT 1 FROM agent_task_queue task WHERE task.id = token.task_id
-);
+-- The legacy schema cannot represent scope, delegation, revocation, identity,
+-- or claim fencing. There is no safe way to retain even an active Phase 1
+-- bearer without widening it when these columns and the new binary boundary
+-- disappear, so a security rollback deliberately interrupts every task lease.
+DELETE FROM task_token;
 
 ALTER TABLE task_token
     DROP COLUMN IF EXISTS revoked_reason,
