@@ -20,8 +20,6 @@ import {
 import { useT } from "@patchbay/views/i18n";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 
-const DESKTOP_LOGIN_RETURN_URL = "/login?platform=desktop";
-
 function resolveSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
 
@@ -58,17 +56,30 @@ function LoginContent() {
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
   const desktopHandoff = searchParams.get("platform") === "desktop";
+  const guestTransfer = searchParams.get("guest_transfer") ?? "";
   const requestedRedirectUrl = searchParams.get("redirect_url");
   const validCliCallback = cliCallback !== "" && validateCliCallback(cliCallback);
+  const desktopReturnUrl = useMemo(() => {
+    const params = new URLSearchParams({ platform: "desktop" });
+    if (guestTransfer) params.set("guest_transfer", guestTransfer);
+    return `/login?${params.toString()}`;
+  }, [guestTransfer]);
   const returnUrl = useMemo(() => {
-    if (desktopHandoff) return DESKTOP_LOGIN_RETURN_URL;
+    if (desktopHandoff) return desktopReturnUrl;
     if (!validCliCallback) return resolveSafeRedirectUrl(requestedRedirectUrl);
     const params = new URLSearchParams({
       cli_callback: cliCallback,
       cli_state: cliState,
     });
     return `/login?${params.toString()}`;
-  }, [cliCallback, cliState, desktopHandoff, requestedRedirectUrl, validCliCallback]);
+  }, [
+    cliCallback,
+    cliState,
+    desktopHandoff,
+    desktopReturnUrl,
+    requestedRedirectUrl,
+    validCliCallback,
+  ]);
 
   if (cliCallback && !validCliCallback) {
     return (
@@ -111,7 +122,7 @@ function LoginContent() {
   }
 
   if (desktopHandoff && isLoaded && isSignedIn) {
-    return <DesktopHandoff />;
+    return <DesktopHandoff guestTransfer={guestTransfer} />;
   }
 
   return (
@@ -119,25 +130,37 @@ function LoginContent() {
       <SignIn
         routing="path"
         path="/login"
-        signUpUrl={desktopHandoff ? "/signup?platform=desktop" : "/signup"}
+        signUpUrl={
+          desktopHandoff
+            ? `/signup?${new URLSearchParams({
+                platform: "desktop",
+                ...(guestTransfer ? { guest_transfer: guestTransfer } : {}),
+              }).toString()}`
+            : "/signup"
+        }
         forceRedirectUrl={returnUrl}
       />
     </ClerkAuthShell>
   );
 }
 
-function DesktopHandoff() {
+function DesktopHandoff({ guestTransfer }: { guestTransfer: string }) {
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
   const backendSessionReady = authStatus === "authenticated";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const automaticAttempted = useRef(false);
+  const guestClaimed = useRef(false);
 
   const openDesktopApp = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
+      if (guestTransfer && !guestClaimed.current) {
+        await api.claimGuestSession(guestTransfer);
+        guestClaimed.current = true;
+      }
       const { token } = await api.issueCliToken();
       if (!token) throw new Error("Patchbay desktop token unavailable");
       redirectToDesktopApp(token);
@@ -146,7 +169,7 @@ function DesktopHandoff() {
       setError(t(($) => $.web.desktop_handoff.prepare_failed));
       setLoading(false);
     }
-  }, [t]);
+  }, [guestTransfer, t]);
 
   useEffect(() => {
     if (!backendSessionReady || automaticAttempted.current) return;

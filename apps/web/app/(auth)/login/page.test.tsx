@@ -6,6 +6,7 @@ const {
   authState,
   search,
   authStoreState,
+  claimGuestSession,
   issueCliToken,
   redirectToCliCallback,
   redirectToDesktopApp,
@@ -16,6 +17,7 @@ const {
   },
   search: { current: "" },
   authStoreState: { current: { status: "unauthenticated" } },
+  claimGuestSession: vi.fn(),
   issueCliToken: vi.fn(),
   redirectToCliCallback: vi.fn(),
   redirectToDesktopApp: vi.fn(),
@@ -39,7 +41,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@patchbay/core/api", () => ({
-  api: { issueCliToken },
+  api: { claimGuestSession, issueCliToken },
 }));
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
@@ -58,6 +60,7 @@ describe("LoginPage", () => {
     signInProps.current = {};
     search.current = "";
     authStoreState.current = { status: "unauthenticated" };
+    claimGuestSession.mockReset();
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
     issueCliToken.mockReset();
     redirectToCliCallback.mockReset();
@@ -117,6 +120,17 @@ describe("LoginPage", () => {
     });
   });
 
+  it("preserves a guest transfer through the desktop handoff", () => {
+    search.current = "platform=desktop&guest_transfer=pgt_one-time-token";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current).toMatchObject({
+      signUpUrl: "/signup?platform=desktop&guest_transfer=pgt_one-time-token",
+      forceRedirectUrl: "/login?platform=desktop&guest_transfer=pgt_one-time-token",
+    });
+  });
+
   it("offers CLI authorization after Clerk has established the session", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
@@ -158,5 +172,22 @@ describe("LoginPage", () => {
 
     await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
     expect(redirectToDesktopApp).toHaveBeenCalledWith("desktop-native-token");
+  });
+
+  it("claims the guest session before issuing the formal desktop token", async () => {
+    search.current = "platform=desktop&guest_transfer=pgt_one-time-token";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    claimGuestSession.mockResolvedValue({ migrated_workspace_ids: ["ws-1"] });
+    issueCliToken.mockResolvedValue({ token: "desktop-native-token" });
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(redirectToDesktopApp).toHaveBeenCalledOnce());
+    expect(claimGuestSession).toHaveBeenCalledWith("pgt_one-time-token");
+    expect(issueCliToken).toHaveBeenCalledOnce();
+    expect(
+      claimGuestSession.mock.invocationCallOrder[0],
+    ).toBeLessThan(issueCliToken.mock.invocationCallOrder[0]);
   });
 });

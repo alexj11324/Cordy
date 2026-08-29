@@ -85,6 +85,9 @@ export function createAuthStore(options: AuthStoreOptions) {
 
     createGuestSession: async () => {
       const { token, user } = await api.createGuestSession();
+      if (user.is_guest !== true) {
+        throw new Error("The server did not return a guest session");
+      }
       // Guest auth is still token auth: the user is real and the bearer is
       // required for every subsequent workspace/onboarding API call.
       storage.setItem("patchbay_token", token);

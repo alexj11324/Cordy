@@ -40,6 +40,67 @@ describe("ApiClient edit guards", () => {
     );
   });
 
+  it("uses dedicated endpoints for guest creation and one-time transfer", async () => {
+    const user = {
+      id: "guest-user",
+      is_guest: true,
+      name: "Guest",
+      email: "guest@example.invalid",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: "pbg_guest-token", user }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ transfer_token: "pgt_transfer-token" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ migrated_workspace_ids: ["ws-1"] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.createGuestSession()).resolves.toMatchObject({
+      token: "pbg_guest-token",
+      user,
+    });
+    await expect(client.createGuestTransfer()).resolves.toEqual({
+      transfer_token: "pgt_transfer-token",
+    });
+    await expect(client.claimGuestSession("pgt_transfer-token")).resolves.toEqual({
+      migrated_workspace_ids: ["ws-1"],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.test/auth/guest",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.example.test/auth/guest/transfer",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.example.test/auth/guest/claim",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ transfer_token: "pgt_transfer-token" }),
+      }),
+    );
+  });
+
   it("serializes field baselines for issue and comment writes", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response("{}", {

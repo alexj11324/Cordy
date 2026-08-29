@@ -102,13 +102,15 @@ function SidebarTopSpacer() {
   return <div className={cn("shrink-0", TOP_BAR_HEIGHT_CLASS)} />;
 }
 
-function GuestAccountEntry() {
+function GuestAccountEntry({ inSidebar = false }: { inSidebar?: boolean }) {
   const { t } = useT("auth");
   const user = useAuthStore((state) => state.user);
   const [isPreparing, setIsPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (user?.is_guest !== true) return <SidebarTopSpacer />;
+  if (user?.is_guest !== true) {
+    return inSidebar ? <SidebarTopSpacer /> : null;
+  }
 
   const handleLogin = async () => {
     if (isPreparing) return;
@@ -131,13 +133,24 @@ function GuestAccountEntry() {
   };
 
   return (
-    <div className="shrink-0 px-2 pb-2">
+    <div
+      className={cn(
+        inSidebar
+          ? "shrink-0 px-2 pb-2"
+          : "fixed right-5 top-3 z-[60] rounded-md bg-background/90 p-1 shadow-sm ring-1 ring-border",
+      )}
+    >
       <button
         type="button"
         onClick={() => void handleLogin()}
         disabled={isPreparing}
         aria-busy={isPreparing}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:cursor-wait disabled:opacity-60"
+        className={cn(
+          "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors disabled:cursor-wait disabled:opacity-60",
+          inSidebar
+            ? "w-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            : "text-foreground hover:bg-muted",
+        )}
       >
         <LogIn className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">
@@ -343,7 +356,7 @@ export function DesktopShell() {
           >
             {slug && <GlobalShortcuts />}
             {slug && <WindowToolbar />}
-            {slug && <AppSidebar topSlot={<GuestAccountEntry />} searchSlot={<SearchTrigger />} />}
+            {slug && <AppSidebar topSlot={<GuestAccountEntry inSidebar />} searchSlot={<SearchTrigger />} />}
             {/* Right side: header + content container */}
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />
@@ -363,6 +376,7 @@ export function DesktopShell() {
         {slug && <ModalRegistry />}
         {slug && <SearchCommand />}
         <WindowOverlay />
+        {!slug && <GuestAccountEntry />}
       </WorkspaceSlugProvider>
     </DesktopNavigationProvider>
   );
