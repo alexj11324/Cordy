@@ -25,6 +25,13 @@ const PREVIEW_WORKSPACE: Workspace = {
 
 const PREVIEW_USER_ID = "user-preview";
 
+export function shouldRenderPreviewSessionChildren(
+  preview: boolean,
+  userId: string | null | undefined,
+): boolean {
+  return !preview || userId === PREVIEW_USER_ID;
+}
+
 function previewUser(onboarded: boolean): User {
   return {
     id: PREVIEW_USER_ID,
@@ -111,6 +118,6 @@ export function DesktopWebPreviewSession({ children }: { children: ReactNode }) 
     });
   }, [onboarded, preview, queryClient]);
 
-  if (!preview || user?.id !== PREVIEW_USER_ID) return null;
+  if (!shouldRenderPreviewSessionChildren(preview, user?.id)) return null;
   return <>{children}</>;
 }
