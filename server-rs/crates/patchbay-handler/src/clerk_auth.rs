@@ -81,12 +81,7 @@ impl ClerkAuthClient {
             .claims;
         if claims.sub.trim().is_empty()
             || claims.sts.as_deref() == Some("pending")
-            || claims.azp.as_deref().is_some_and(|party| {
-                !self
-                    .authorized_parties
-                    .iter()
-                    .any(|allowed| allowed == party.trim_end_matches('/'))
-            })
+            || !is_authorized_party(&self.authorized_parties, claims.azp.as_deref())
         {
             return Err(ClerkAuthError::Invalid);
         }
@@ -240,6 +235,14 @@ fn split_origins(value: Option<&str>) -> anyhow::Result<Vec<String>> {
         .collect()
 }
 
+fn is_authorized_party(authorized_parties: &[String], party: Option<&str>) -> bool {
+    party.is_some_and(|party| {
+        authorized_parties
+            .iter()
+            .any(|allowed| allowed == party.trim_end_matches('/'))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +263,19 @@ mod tests {
             split_origins(Some("https://aspectlylabs.com, http://localhost:3000")).unwrap(),
             vec!["https://aspectlylabs.com", "http://localhost:3000"]
         );
+    }
+
+    #[test]
+    fn missing_or_unknown_authorized_party_is_rejected() {
+        let allowed = vec!["https://accounts.aspectlylabs.com".to_string()];
+        assert!(!is_authorized_party(&allowed, None));
+        assert!(!is_authorized_party(
+            &allowed,
+            Some("https://evil.example")
+        ));
+        assert!(is_authorized_party(
+            &allowed,
+            Some("https://accounts.aspectlylabs.com/")
+        ));
     }
 }

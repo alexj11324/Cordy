@@ -768,10 +768,14 @@ export class ApiClient {
     });
   }
 
-  async clerkLogin(sessionToken: string): Promise<LoginResponse> {
+  async clerkLogin(
+    sessionToken: string,
+    signal?: AbortSignal,
+  ): Promise<LoginResponse> {
     return this.fetch("/auth/clerk", {
       method: "POST",
       headers: { Authorization: `Bearer ${sessionToken}` },
+      signal,
     });
   }
 

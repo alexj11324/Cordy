@@ -29,7 +29,7 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
-  loginWithClerk: (sessionToken: string) => Promise<User>;
+  loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -82,8 +82,13 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    loginWithClerk: async (sessionToken: string) => {
-      const { token, user } = await api.clerkLogin(sessionToken);
+    loginWithClerk: async (sessionToken: string, signal?: AbortSignal) => {
+      const { token, user } = await api.clerkLogin(sessionToken, signal);
+      if (signal?.aborted) {
+        const error = new Error("Clerk session exchange aborted");
+        error.name = "AbortError";
+        throw error;
+      }
       // The Clerk token is only an input to the exchange. Every subsequent
       // API and WebSocket request uses the HttpOnly Patchbay session cookie.
       api.setTokenProvider(null);

@@ -78,12 +78,13 @@ describe("authStore", () => {
       cookieAuth: true,
       onLogin,
     });
+    const signal = new AbortController().signal;
 
-    await expect(store.getState().loginWithClerk("clerk-session")).resolves.toEqual(
-      fakeUser,
-    );
+    await expect(
+      store.getState().loginWithClerk("clerk-session", signal),
+    ).resolves.toEqual(fakeUser);
 
-    expect(api.clerkLogin).toHaveBeenCalledWith("clerk-session");
+    expect(api.clerkLogin).toHaveBeenCalledWith("clerk-session", signal);
     expect(api.setTokenProvider).toHaveBeenCalledWith(null);
     expect(api.setToken).toHaveBeenCalledWith(null);
     expect(storage.snapshot()).toEqual({});
@@ -93,5 +94,29 @@ describe("authStore", () => {
       isLoading: false,
       status: "authenticated",
     });
+  });
+
+  it("does not publish a stale Clerk exchange after cancellation", async () => {
+    const storage = makeStorage();
+    const onLogin = vi.fn();
+    const api = {
+      clerkLogin: vi.fn().mockResolvedValue({
+        token: "patchbay-token",
+        user: fakeUser,
+      }),
+      setToken: vi.fn(),
+      setTokenProvider: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage, cookieAuth: true, onLogin });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      store.getState().loginWithClerk("clerk-session", controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(api.setTokenProvider).not.toHaveBeenCalled();
+    expect(api.setToken).not.toHaveBeenCalled();
+    expect(onLogin).not.toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
   });
 });

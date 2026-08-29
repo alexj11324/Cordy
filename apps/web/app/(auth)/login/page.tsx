@@ -54,6 +54,7 @@ export default function LoginPage() {
 function LoginContent() {
   const searchParams = useSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
+  const patchbayAuthStatus = useAuthStore((state) => state.status);
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
@@ -78,7 +79,12 @@ function LoginContent() {
     );
   }
 
-  if (validCliCallback && isLoaded && isSignedIn) {
+  if (
+    validCliCallback &&
+    isLoaded &&
+    isSignedIn &&
+    patchbayAuthStatus === "authenticated"
+  ) {
     const authorize = async () => {
       setError("");
       try {

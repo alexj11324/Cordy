@@ -22,8 +22,9 @@ describe("ApiClient edit guards", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const client = new ApiClient("https://api.example.test");
+    const signal = new AbortController().signal;
 
-    await expect(client.clerkLogin("clerk-session")).resolves.toEqual({
+    await expect(client.clerkLogin("clerk-session", signal)).resolves.toEqual({
       token: "patchbay-token",
       user,
     });
@@ -36,6 +37,7 @@ describe("ApiClient edit guards", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer clerk-session",
         }),
+        signal,
       }),
     );
   });

@@ -38,7 +38,10 @@ export function ClerkAuthAdapter({
     let cancelled = false;
     let retryIndex = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let abortController: AbortController | undefined;
     const exchange = async () => {
+      const controller = new AbortController();
+      abortController = controller;
       useAuthStore.setState({
         user: null,
         isLoading: true,
@@ -47,9 +50,11 @@ export function ClerkAuthAdapter({
       try {
         const sessionToken = await getToken();
         if (!sessionToken) throw new Error("Clerk session token unavailable");
-        await useAuthStore.getState().loginWithClerk(sessionToken);
+        await useAuthStore
+          .getState()
+          .loginWithClerk(sessionToken, controller.signal);
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled || controller.signal.aborted) return;
         const status = error instanceof ApiError ? error.status : undefined;
         const isPermanentRejection =
           status !== undefined &&
@@ -81,6 +86,7 @@ export function ClerkAuthAdapter({
     void exchange();
     return () => {
       cancelled = true;
+      abortController?.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [isPreviewRoute, clerkLoaded, clerkUser?.id, getToken, isSignedIn, signOut]);

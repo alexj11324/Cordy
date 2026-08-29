@@ -121,6 +121,7 @@ describe("LoginPage", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
 
     render(<LoginPage />);
 
@@ -134,6 +135,7 @@ describe("LoginPage", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
     issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
 
     render(<LoginPage />);
@@ -146,6 +148,19 @@ describe("LoginPage", () => {
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();
+  });
+
+  it("does not authorize CLI before the Patchbay session exchange completes", () => {
+    search.current =
+      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticating" };
+
+    render(<LoginPage />);
+
+    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Authorize CLI" })).not.toBeInTheDocument();
+    expect(issueCliToken).not.toHaveBeenCalled();
   });
 
   it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
