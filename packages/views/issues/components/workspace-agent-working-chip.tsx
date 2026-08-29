@@ -169,7 +169,7 @@ export function WorkspaceAgentWorkingChip({
       <Bot aria-hidden="true" className="size-4" />
       <span
         aria-hidden="true"
-        className="inline-flex min-w-4 items-center justify-center rounded-full bg-current/10 px-1 text-[11px] font-medium leading-4 tabular-nums"
+        className="inline-flex min-w-4 items-center justify-center rounded-full bg-current/10 px-1 text-micro font-medium leading-4 tabular-nums"
       >
         {activity === "unknown" ? "—" : agentIds.length}
       </span>
