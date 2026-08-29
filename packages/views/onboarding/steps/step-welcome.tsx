@@ -65,7 +65,7 @@ export function StepWelcome({
         <div className="mx-auto flex w-full max-w-[540px] flex-col items-center gap-8 text-center">
           <div className="flex items-center justify-center gap-3">
             <PatchbayIcon className="size-8 text-foreground" noSpin />
-            <span className="text-3xl font-medium tracking-tight sm:text-4xl">
+            <span className="text-display font-medium tracking-tight sm:text-4xl">
               {t(($) => $.welcome.wordmark)}
             </span>
           </div>

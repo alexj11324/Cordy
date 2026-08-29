@@ -310,7 +310,7 @@ describe("RunConfirmModal", () => {
     expect(container.textContent).toContain("move to Todo, Walt starts");
   });
 
-  it("requires a different reviewer and submits status plus assignee atomically", async () => {
+  it("requires a different reviewer and submits status plus reviewer atomically", async () => {
     render(<RunConfirmModal onClose={vi.fn()} data={review} />);
     const submit = screen.getByRole("button", { name: "Hand off for review" });
     expect(submit).toBeDisabled();
@@ -327,8 +327,8 @@ describe("RunConfirmModal", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       id: "issue-1",
       status: "in_review",
-      assignee_type: "agent",
-      assignee_id: "agent-2",
+      reviewer_type: "agent",
+      reviewer_id: "agent-2",
       expected_revision: 7,
     });
   });

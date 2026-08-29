@@ -150,8 +150,7 @@ function OnboardingStepFlow({
   // question steps on re-entry. That's the only piece of onboarding
   // state persisted across sessions — which step the user is on is
   // deliberately not saved, so every entry starts at Welcome.
-  const storedQuestionnaire = mergeQuestionnaire(user.onboarding_questionnaire);
-  const [answers, setAnswers] = useState<QuestionnaireAnswers>(storedQuestionnaire);
+  const answers = mergeQuestionnaire(user.onboarding_questionnaire);
 
   const isNewWorkspace = mode === "new_workspace";
   const [step, setStep] = useState<OnboardingStep>(
@@ -208,23 +207,6 @@ function OnboardingStepFlow({
     // step is hard-coded as the entry point.
     setStep(ONBOARDING_STEP_ORDER[0]!);
   }, []);
-
-  // Apply an in-memory patch and fire-and-forget a PATCH to persist
-  // it. We never block UI on the request — the next step's render is
-  // what matters; a transient save failure surfaces as a toast but
-  // does not roll the user back.
-  const applyAnswers = useCallback(
-    (patch: Partial<QuestionnaireAnswers>) => {
-      setAnswers((a) => {
-        const next = { ...a, ...patch };
-        void saveQuestionnaire(next).catch((err) => {
-          if (err instanceof Error) toast.error(err.message);
-        });
-        return next;
-      });
-    },
-    [],
-  );
 
   // "I've done this before" path — returning user who already has a
   // workspace and just wants to land there. Marks onboarding complete

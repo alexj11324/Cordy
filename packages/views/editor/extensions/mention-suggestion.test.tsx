@@ -249,7 +249,7 @@ describe("createMentionSuggestion", () => {
     );
 
     const row = screen.getByRole("button", {
-      name: "Aegis: This target has no runtime — bind one to run it",
+      name: "Aegis: This target has no device — bind one to run it",
     });
     expect(row).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(row);

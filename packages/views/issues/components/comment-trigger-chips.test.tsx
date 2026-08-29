@@ -186,6 +186,6 @@ describe("CommentTriggerChips", () => {
     expect(screen.getByText("Go")).toBeInTheDocument();
     expect(screen.getByText("Not found or no permission")).toBeInTheDocument();
     expect(screen.getByText("Ops")).toBeInTheDocument();
-    expect(screen.getByText("Runtime offline")).toBeInTheDocument();
+    expect(screen.getByText("Device offline")).toBeInTheDocument();
   });
 });

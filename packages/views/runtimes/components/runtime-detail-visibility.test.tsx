@@ -295,7 +295,7 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
     const btn = screen.getByRole("button", {
-      name: /Delete runtime/i,
+      name: /Delete device/i,
     }) as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
   });
@@ -309,7 +309,7 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
     expect(
-      screen.queryByRole("button", { name: /Delete runtime/i }),
+      screen.queryByRole("button", { name: /Delete device/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -327,13 +327,13 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Delete runtime/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Delete device/i }));
     expect(
-      screen.getByText("Delete custom runtime from workspace?"),
+      screen.getByText("Delete custom device from workspace?"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("alertdialog", {
-        name: "Delete custom runtime from workspace?",
+        name: "Delete custom device from workspace?",
       }),
     ).toBeInTheDocument();
 
@@ -357,7 +357,7 @@ describe("RuntimeDetail visibility section", () => {
     );
 
     expect(
-      screen.queryByRole("button", { name: /Delete runtime/i }),
+      screen.queryByRole("button", { name: /Delete device/i }),
     ).not.toBeInTheDocument();
   });
 });
