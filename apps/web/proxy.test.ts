@@ -5,25 +5,11 @@ import { PATCHBAY_LOCALE_HEADER } from "./lib/locale-routing";
 vi.mock("@clerk/nextjs/server", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@clerk/nextjs/server")>();
-  type TestClerkMiddlewareHandler = (
-    auth: () => Promise<{ userId: string | null }>,
-    request: NextRequest,
-    event: unknown,
-  ) => Response | null | undefined | Promise<Response | null | undefined>;
-
   return {
     ...actual,
-    clerkMiddleware: (handler: TestClerkMiddlewareHandler) =>
-      async (request: NextRequest) =>
-        handler(
-          async () => ({
-            userId: request.cookies.has("patchbay_logged_in")
-              ? "user-1"
-              : null,
-          }),
-          request,
-          undefined as never,
-        ),
+    getAuth: async (request: NextRequest) => ({
+      userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
+    }),
   };
 });
 
