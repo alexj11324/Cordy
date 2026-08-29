@@ -28,6 +28,7 @@ pub mod process_control;
 pub mod production_services;
 pub mod production_stack;
 pub mod provider_adapter;
+mod provider_isolation;
 pub mod provider_registration;
 pub mod reconcile;
 pub mod registration;

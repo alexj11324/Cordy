@@ -916,6 +916,15 @@ impl ProductionProviderAdapter {
                 backend_config.command.prefix =
                     strip_hermes_profile_selectors(&backend_config.command.prefix);
             }
+            crate::provider_isolation::isolate_provider_command(
+                &mut backend_config.command,
+                crate::provider_isolation::ProviderIsolation {
+                    task_root: &environment.root_dir,
+                    work_dir: &environment.work_dir,
+                    temp_dir: task_temp_dir_path,
+                },
+            )
+            .context("isolate provider process")?;
             let backend = patchbay_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
             let token = task.auth_token.trim().to_string();
