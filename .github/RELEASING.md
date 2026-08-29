@@ -46,6 +46,13 @@ run. In **Actions → Release → Run workflow**, enter an existing semantic
 version tag. The workflow checks out that exact tag and runs the full manually
 requested release path; it does not run from a tag push automatically.
 
+The manual Web image path also requires the repository Actions secret
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. It is a public browser key, but it must be
+passed into `Dockerfile.web` at build time because Next.js embeds
+`NEXT_PUBLIC_*` values in the client bundle. The Helm
+`frontend.config.clerkPublishableKey` value must match that build-time key; the
+runtime environment variable alone cannot change an already-built bundle.
+
 The manual **Release** workflow first applies migrations with
 `patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,
 migration runner, and all three backfill binaries, and runs RustSec before any
