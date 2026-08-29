@@ -41,7 +41,7 @@ function notFound(): FixtureHttpResult {
 
 function meForMode(mode: UiFixtureMode) {
   const { user } = getUiFixtureStore();
-  if (mode === "onboarding" && user.onboarded_at === "2026-01-01T00:00:00Z") {
+  if (mode === "onboarding") {
     return { ...user, onboarded_at: null };
   }
   return user;

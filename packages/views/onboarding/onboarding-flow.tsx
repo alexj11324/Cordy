@@ -341,15 +341,17 @@ function OnboardingStepFlow({
   // only the step body swapping.
   if (step === "welcome") {
     // Welcome has no rail, so the escape hatch stays pinned there.
+    // `dark` forces readable light tokens on the unconditional black
+    // welcome surface even when the app theme is light.
     return (
-      <>
+      <div className="dark h-full">
         <OnboardingLogoutButton />
         <StepWelcome
           onNext={handleWelcomeNext}
           onSkip={canSkipWelcome ? handleWelcomeSkip : undefined}
           isWeb={isWeb}
         />
-      </>
+      </div>
     );
   }
 

@@ -71,6 +71,21 @@ describe("handleFixtureRequest", () => {
     expect(workspaces.body).toEqual([]);
   });
 
+  it("keeps onboarding fixture users un-onboarded after a previous complete", () => {
+    request({
+      method: "POST",
+      pathname: "/api/me/onboarding/complete",
+      cookieHeader: `${UI_FIXTURE_COOKIE}=onboarding`,
+      body: { outcome: "skip_existing" },
+    });
+    const me = request({
+      method: "GET",
+      pathname: "/api/me",
+      cookieHeader: `${UI_FIXTURE_COOKIE}=onboarding`,
+    });
+    expect(me.body).toMatchObject({ onboarded_at: null });
+  });
+
   it("lists fixture issues on the real issues endpoints", () => {
     const listed = request({
       method: "GET",
