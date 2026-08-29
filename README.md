@@ -14,7 +14,7 @@
 
 </div>
 
-Patchbay is an open-source control panel for orchestrating multi-agent systems on long-horizon tasks. It automatically decomposes your ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
+Patchbay is an open-source Harness for orchestrating multi-agents on long-horizon tasks. It automatically decomposes your ambitious goals into actionable tasks, builds their dependency graph, and schedules execution until the work is complete.
 
 ## What Patchbay Can Do
 
