@@ -1,3 +1,15 @@
+import enAuth from "../../../../packages/views/locales/en/auth.json";
+import jaAuth from "../../../../packages/views/locales/ja/auth.json";
+import koAuth from "../../../../packages/views/locales/ko/auth.json";
+import zhAuth from "../../../../packages/views/locales/zh-Hans/auth.json";
+
+const CALLBACK_MESSAGES = JSON.stringify({
+  en: enAuth.callback,
+  ja: jaAuth.callback,
+  ko: koAuth.callback,
+  "zh-Hans": zhAuth.callback,
+}).replace(/</g, "\\u003c");
+
 const HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -61,6 +73,7 @@ const HTML = `<!doctype html>
       const isLegacyCallback = path === "/auth/callback";
       const isDesktopHandoff =
         new URL(location.href).searchParams.get("platform") === "desktop";
+      const callbackMessages = ${CALLBACK_MESSAGES};
       const appearance = {
         elements: {
           rootBox: { width: "fit-content", height: "auto", margin: "0 auto" },
@@ -112,11 +125,52 @@ const HTML = `<!doctype html>
         );
       }
 
+      function callbackLocale() {
+        const languages = [
+          ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+          navigator.language,
+          "en",
+        ];
+        for (const language of languages) {
+          const normalized = (language || "").toLowerCase();
+          if (normalized.startsWith("zh")) return "zh-Hans";
+          if (normalized.startsWith("ja")) return "ja";
+          if (normalized.startsWith("ko")) return "ko";
+          if (normalized.startsWith("en")) return "en";
+        }
+        return "en";
+      }
+
+      function escapeHtml(value) {
+        return value.replace(
+          /[&<>"']/g,
+          (character) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[character],
+        );
+      }
+
+      function localizedCallbackMessages() {
+        const locale = callbackLocale();
+        document.documentElement.lang = locale;
+        return callbackMessages[locale] || callbackMessages.en;
+      }
+
       function showCallbackError(target) {
+        const messages = localizedCallbackMessages();
         app.innerHTML =
           '<div role="alert" style="display:grid;gap:.75rem;max-width:22rem;padding:1.25rem;border:1px solid rgba(15,23,42,.12);border-radius:1rem;background:#fff;color:#1e293b;text-align:center;box-shadow:0 12px 36px rgba(15,23,42,.12)">' +
-          "<p>We could not complete sign-in.</p>" +
-          '<a id="retry-sign-in" href="/sign-in" style="color:#2563eb;text-decoration:underline">Return to sign in</a>' +
+          "<p>" +
+          escapeHtml(messages.error) +
+          "</p>" +
+          '<a id="retry-sign-in" href="/sign-in" style="color:#2563eb;text-decoration:underline">' +
+          escapeHtml(messages.retry) +
+          "</a>" +
           "</div>";
         const retryUrl = new URL("/sign-in", location.origin);
         if (isDesktopHandoff) {
@@ -150,8 +204,11 @@ const HTML = `<!doctype html>
           return;
         }
 
+        const messages = localizedCallbackMessages();
         app.innerHTML =
-          '<p role="status" style="padding:1rem;color:#475569">Completing sign-in…</p>';
+          '<p role="status" style="padding:1rem;color:#475569">' +
+          escapeHtml(messages.completing) +
+          "</p>";
         try {
           await Clerk.handleRedirectCallback(
             {
@@ -180,11 +237,17 @@ const HTML = `<!doctype html>
         return;
       }
 
-      if (path === "/sign-up" || path === "/signup") {
+      const isSignUpPath =
+        path === "/sign-up" ||
+        path === "/signup" ||
+        path.startsWith("/sign-up/") ||
+        path.startsWith("/signup/");
+      if (isSignUpPath) {
         app.innerHTML = '<div id="sign-up"></div>';
+        const signUpPath = path.startsWith("/signup") ? "/signup" : "/sign-up";
         Clerk.mountSignUp(document.getElementById("sign-up"), {
           routing: "path",
-          path: path,
+          path: signUpPath,
           signInUrl: isDesktopHandoff
             ? "/sign-in?platform=desktop"
             : "/sign-in",
@@ -194,7 +257,9 @@ const HTML = `<!doctype html>
         return;
       }
 
-      const signInPath = path === "/sign-in" ? "/sign-in" : "/";
+      const isSignInPath =
+        path === "/sign-in" || path.startsWith("/sign-in/");
+      const signInPath = isSignInPath ? "/sign-in" : "/";
       app.innerHTML = '<div id="sign-in"></div>';
       Clerk.mountSignIn(document.getElementById("sign-in"), {
         routing: "path",

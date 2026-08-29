@@ -449,6 +449,7 @@ function OnboardingStepFlow({
             wsSlug={workspace.slug}
             onNext={handleRuntimeNext}
             cliInstructions={runtimeInstructions}
+            backendFree={backendFree}
           />
         ))}
     </StepShell>

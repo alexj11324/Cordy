@@ -62,9 +62,12 @@ impl ClerkAuthClient {
         validation.validate_nbf = true;
         validation.set_required_spec_claims(&["exp", "nbf", "iss", "sub"]);
         validation.set_issuer(&[issuer.trim_end_matches('/')]);
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()?;
 
         Ok(Some(Self {
-            http: reqwest::Client::new(),
+            http,
             secret_key,
             decoding_key,
             validation,

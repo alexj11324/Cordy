@@ -21,7 +21,11 @@ import type { AgentRuntime } from "@patchbay/core/types";
  *     Only runs when the user hasn't picked anything, so a manual
  *     selection survives subsequent refetches.
  */
-export function useRuntimePicker(wsId: string, wsSlug?: string): {
+export function useRuntimePicker(
+  wsId: string,
+  wsSlug?: string,
+  options: { enabled?: boolean } = {},
+): {
   runtimes: AgentRuntime[];
   selected: AgentRuntime | null;
   selectedId: string | null;
@@ -29,25 +33,30 @@ export function useRuntimePicker(wsId: string, wsSlug?: string): {
   hasRuntimes: boolean;
 } {
   const qc = useQueryClient();
+  const enabled = options.enabled ?? true;
 
   const { data: runtimes = [] } = useQuery({
     ...runtimeListOptions(wsId, "me", wsSlug),
-    refetchInterval: (q) => (q.state.data?.length ? false : 2000),
+    enabled,
+    refetchInterval: enabled
+      ? (q) => (q.state.data?.length ? false : 2000)
+      : false,
   });
 
   const handleDaemonEvent = useCallback(() => {
+    if (!enabled) return;
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
-  }, [qc, wsId]);
+  }, [enabled, qc, wsId]);
   useWSEvent("daemon:register", handleDaemonEvent);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectedId) return;
+    if (!enabled || selectedId) return;
     const preferred =
       runtimes.find((r) => r.status === "online") ?? runtimes[0];
     if (preferred) setSelectedId(preferred.id);
-  }, [runtimes, selectedId]);
+  }, [enabled, runtimes, selectedId]);
 
   const selected = runtimes.find((r) => r.id === selectedId) ?? null;
 
