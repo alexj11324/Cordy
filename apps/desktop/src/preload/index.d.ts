@@ -40,8 +40,8 @@ interface DesktopAPI {
   ackFreeze: (ts: number) => void;
   /** Report the resolved account identity so stale issue windows can close. */
   reportAuthSession: (userId: string | null) => void;
-  /** Listen for auth token delivered via deep link. Returns an unsubscribe function. */
-  onAuthToken: (callback: (token: string) => void) => () => void;
+  /** Listen for a short-lived one-time auth code delivered via deep link. */
+  onAuthCode: (callback: (code: string) => void) => () => void;
   /** Listen for invitation IDs delivered via deep link. Returns an unsubscribe function. */
   onInviteOpen: (callback: (invitationId: string) => void) => () => void;
   /** Open a URL in the default browser. */

@@ -69,7 +69,7 @@ export const baseOptions: BaseLayoutProps = {
     {
       icon: <PatchbayMark />,
       text: externalLinkText("Patchbay"),
-      url: "https://patchbay.ai",
+      url: "https://patchbay.aspectlylabs.com",
       external: true,
     },
   ],

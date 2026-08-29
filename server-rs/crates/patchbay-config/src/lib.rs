@@ -106,6 +106,10 @@ pub struct AuthConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub google_redirect_uri: Option<String>,
+    /// `AUTH_BROKER_ORIGIN` / `AUTH_BROKER_SHARED_SECRET` — the fixed
+    /// accounts-origin broker used by the desktop one-time-code handoff.
+    pub auth_broker_origin: Option<String>,
+    pub auth_broker_shared_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -297,6 +301,11 @@ impl Config {
         env_str(&mut self.auth.google_client_id, "GOOGLE_CLIENT_ID");
         env_str(&mut self.auth.google_client_secret, "GOOGLE_CLIENT_SECRET");
         env_str(&mut self.auth.google_redirect_uri, "GOOGLE_REDIRECT_URI");
+        env_str(&mut self.auth.auth_broker_origin, "AUTH_BROKER_ORIGIN");
+        env_str(
+            &mut self.auth.auth_broker_shared_secret,
+            "AUTH_BROKER_SHARED_SECRET",
+        );
 
         // urls
         env_str(&mut self.urls.public_url, "PATCHBAY_PUBLIC_URL");
@@ -437,6 +446,8 @@ mod tests {
             "REDIS_URL",
             "APP_ENV",
             "JWT_SECRET",
+            "AUTH_BROKER_ORIGIN",
+            "AUTH_BROKER_SHARED_SECRET",
             "PATCHBAY_LLM_MAX_RETRIES",
         ] {
             std::env::remove_var(var);
@@ -476,6 +487,24 @@ mod tests {
         assert_eq!(cfg.database.max_connections, 5);
         assert_eq!(cfg.urls.public_url.as_deref(), Some("https://x.example"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn desktop_auth_broker_env_overrides_are_loaded() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_ambient_env();
+        std::env::set_var("AUTH_BROKER_ORIGIN", " https://accounts.aspectlylabs.com ");
+        std::env::set_var("AUTH_BROKER_SHARED_SECRET", " configured-for-test ");
+        let cfg = Config::load(None).unwrap();
+        assert_eq!(
+            cfg.auth.auth_broker_origin.as_deref(),
+            Some("https://accounts.aspectlylabs.com")
+        );
+        assert_eq!(
+            cfg.auth.auth_broker_shared_secret.as_deref(),
+            Some("configured-for-test")
+        );
+        clear_ambient_env();
     }
 
     #[test]

@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "patchbay-auth-broker",
+  "compatibility_date": "2026-08-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "main": "src/index.ts",
+  // The existing accounts custom domain belongs to the Account Portal Worker.
+  // This narrower route wins by specificity and leaves every other Portal
+  // path on that Worker. It is installed only when this Worker is explicitly
+  // deployed after the broker/API acceptance gate passes.
+  "routes": [
+    {
+      "pattern": "https://accounts.aspectlylabs.com/oauth/google*",
+      "zone_name": "aspectlylabs.com"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "AUTH_CODE_STORE", "class_name": "AuthCodeStore" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_classes": ["AuthCodeStore"] }
+  ],
+  "observability": { "enabled": true },
+  "keep_vars": true
+}

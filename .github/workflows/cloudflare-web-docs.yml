@@ -1,0 +1,114 @@
+name: Cloudflare Web and Docs
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/docs/**"
+      - "apps/auth-broker/**"
+      - "packages/core/**"
+      - "packages/ui/**"
+      - "packages/views/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/cloudflare-web-docs.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy versioned Workers without attaching a custom domain"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-web-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: ${{ github.event_name == 'pull_request' || inputs.deploy == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check vinext compatibility
+        run: |
+          pnpm --filter @patchbay/docs exec vinext check
+          pnpm --filter @patchbay/web exec vinext check
+
+      - name: Check auth broker artifact
+        run: |
+          pnpm --filter @patchbay/auth-broker run check
+          pnpm --filter @patchbay/auth-broker run test
+          pnpm --filter @patchbay/auth-broker run dry-run:cloudflare
+
+      - name: Build Fumadocs and Web artifacts
+        env:
+          NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
+        run: |
+          pnpm --filter @patchbay/docs run build:cloudflare
+          pnpm --filter @patchbay/web run build:cloudflare
+
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
+      # Keep this empty until the standalone docs Worker has a verified custom
+      # domain and health response. An empty value deliberately disables the
+      # Web rewrite rather than sending traffic to a guessed origin.
+      DOCS_URL: ${{ vars.PATCHBAY_DOCS_ORIGIN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require deployment credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Deploy docs Worker
+        run: pnpm --filter @patchbay/docs run deploy:cloudflare
+
+      - name: Deploy Web Worker
+        run: pnpm --filter @patchbay/web run deploy:cloudflare
+
+      - name: Record deployed Worker versions
+        run: |
+          pnpm --filter @patchbay/docs exec wrangler deployments status --name patchbay-docs --json
+          pnpm --filter @patchbay/web exec wrangler deployments status --name patchbay-web --json

@@ -60,4 +60,24 @@ describe("authStore", () => {
     expect(store.getState().user).toBeNull();
     expect(store.getState().status).toBe("unauthenticated");
   });
+
+  it("exchanges the desktop one-time code before persisting the app token", async () => {
+    const storage = makeStorage();
+    const exchangeDesktopAuthCode = vi.fn().mockResolvedValue({
+      token: "patchbay-session",
+      user: fakeUser,
+    });
+    const api = {
+      setToken: vi.fn(),
+      exchangeDesktopAuthCode,
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage });
+
+    await store.getState().exchangeDesktopAuthCode("opaque-code");
+
+    expect(exchangeDesktopAuthCode).toHaveBeenCalledWith("opaque-code");
+    expect(storage.snapshot().patchbay_token).toBe("patchbay-session");
+    expect(api.setToken).toHaveBeenCalledWith("patchbay-session");
+    expect(store.getState().user).toEqual(fakeUser);
+  });
 });

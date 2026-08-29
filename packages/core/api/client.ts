@@ -768,6 +768,13 @@ export class ApiClient {
     });
   }
 
+  async exchangeDesktopAuthCode(code: string): Promise<LoginResponse> {
+    return this.fetch("/auth/desktop/exchange", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
   async logout(): Promise<void> {
     await this.fetch("/auth/logout", { method: "POST" });
   }

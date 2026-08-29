@@ -28,6 +28,8 @@ pub struct AuthSettings {
     google_client_id: String,
     google_client_secret: String,
     google_redirect_uri: String,
+    auth_broker_origin: String,
+    auth_broker_shared_secret: String,
     pub(crate) cookie_domain: String,
     pub(crate) frontend_origin: String,
 }
@@ -43,6 +45,8 @@ impl AuthSettings {
             google_client_id: env_trimmed("GOOGLE_CLIENT_ID"),
             google_client_secret: env_trimmed("GOOGLE_CLIENT_SECRET"),
             google_redirect_uri: env_trimmed("GOOGLE_REDIRECT_URI"),
+            auth_broker_origin: env_trimmed("AUTH_BROKER_ORIGIN"),
+            auth_broker_shared_secret: env_trimmed("AUTH_BROKER_SHARED_SECRET"),
             cookie_domain: env_trimmed("COOKIE_DOMAIN"),
             frontend_origin: env_trimmed("FRONTEND_ORIGIN"),
         }
@@ -58,6 +62,10 @@ impl AuthSettings {
             google_client_id: option_trimmed(config.auth.google_client_id.as_deref()),
             google_client_secret: option_trimmed(config.auth.google_client_secret.as_deref()),
             google_redirect_uri: option_trimmed(config.auth.google_redirect_uri.as_deref()),
+            auth_broker_origin: option_trimmed(config.auth.auth_broker_origin.as_deref()),
+            auth_broker_shared_secret: option_trimmed(
+                config.auth.auth_broker_shared_secret.as_deref(),
+            ),
             cookie_domain: option_trimmed(config.auth.cookie_domain.as_deref()),
             frontend_origin: option_trimmed(config.urls.frontend_origin.as_deref()),
         }
@@ -98,6 +106,7 @@ pub fn public_router(
     let general = Router::new()
         .route("/auth/send-code", post(send_code))
         .route("/auth/google", post(google_login))
+        .route("/auth/desktop/exchange", post(desktop_auth_exchange))
         .route_layer(axum::middleware::from_fn_with_state(
             auth_limit,
             patchbay_middleware::ratelimit::rate_limit,
@@ -133,6 +142,12 @@ struct GoogleLoginRequest {
     redirect_uri: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct DesktopAuthExchangeRequest {
+    #[serde(default, deserialize_with = "null_string_default")]
+    code: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct GoogleTokenResponse {
     access_token: String,
@@ -140,6 +155,17 @@ struct GoogleTokenResponse {
 
 #[derive(Debug, Deserialize)]
 struct GoogleUserInfo {
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    picture: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BrokerUserInfo {
+    clerk_user_id: String,
     #[serde(default)]
     email: String,
     #[serde(default)]
@@ -454,6 +480,90 @@ async fn google_login(
     complete_login(&state, &headers, &email, Some(google_user)).await
 }
 
+async fn desktop_auth_exchange(
+    State(state): State<HandlerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let request: DesktopAuthExchangeRequest = match decode_first_json(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let code = request.code.trim();
+    if !is_opaque_auth_code(code) {
+        return error_response(StatusCode::BAD_REQUEST, "code is required");
+    }
+    if state.auth_settings.auth_broker_origin.is_empty()
+        || state.auth_settings.auth_broker_shared_secret.is_empty()
+    {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "desktop Google login is not configured",
+        );
+    }
+    let Some(exchange_url) = auth_broker_exchange_url(&state.auth_settings.auth_broker_origin)
+    else {
+        tracing::error!("auth: desktop broker origin is invalid");
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "desktop Google login is not configured",
+        );
+    };
+
+    let client = match reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::error!(%error, "auth: failed to create desktop broker client");
+            return error_response(StatusCode::BAD_GATEWAY, "desktop Google login failed");
+        }
+    };
+    let response = match client
+        .post(exchange_url)
+        .header("X-Patchbay-Broker-Secret", &state.auth_settings.auth_broker_shared_secret)
+        .json(&serde_json::json!({ "code": code }))
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(%error, "auth: desktop broker exchange failed");
+            return error_response(StatusCode::BAD_GATEWAY, "desktop Google login failed");
+        }
+    };
+    let upstream_status = response.status();
+    if upstream_status == reqwest::StatusCode::BAD_REQUEST
+        || upstream_status == reqwest::StatusCode::GONE
+    {
+        return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
+    }
+    if !upstream_status.is_success() {
+        tracing::warn!(%upstream_status, "auth: desktop broker rejected exchange");
+        return error_response(StatusCode::BAD_GATEWAY, "desktop Google login failed");
+    }
+    let profile: BrokerUserInfo = match response.json().await {
+        Ok(profile) => profile,
+        Err(error) => {
+            tracing::warn!(%error, "auth: desktop broker returned invalid profile");
+            return error_response(StatusCode::BAD_GATEWAY, "desktop Google login failed");
+        }
+    };
+    if !is_valid_broker_user_info(&profile) {
+        tracing::warn!("auth: desktop broker returned incomplete profile");
+        return error_response(StatusCode::BAD_GATEWAY, "desktop Google login failed");
+    }
+    let email = profile.email.trim().to_lowercase();
+    let google_profile = GoogleUserInfo {
+        email: email.clone(),
+        name: profile.name,
+        picture: profile.picture,
+    };
+    complete_login(&state, &headers, &email, Some(google_profile)).await
+}
+
 async fn complete_login(
     state: &HandlerState,
     headers: &HeaderMap,
@@ -609,6 +719,38 @@ fn option_trimmed(value: Option<&str>) -> String {
     value.unwrap_or_default().trim().to_string()
 }
 
+fn auth_broker_exchange_url(origin: &str) -> Option<String> {
+    let mut url = url::Url::parse(origin.trim()).ok()?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || url.username() != ""
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+    {
+        return None;
+    }
+    url.set_path("/oauth/google/exchange");
+    Some(url.to_string())
+}
+
+fn is_opaque_auth_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= 128
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+fn is_valid_broker_user_info(profile: &BrokerUserInfo) -> bool {
+    !profile.clerk_user_id.is_empty()
+        && !profile.email.is_empty()
+        && profile.email.len() <= 320
+        && !profile.email.contains(['\r', '\n'])
+}
+
 fn contains_case_insensitive(values: &[String], expected: &str) -> bool {
     values
         .iter()
@@ -735,6 +877,18 @@ mod tests {
                 StatusCode::BAD_REQUEST,
                 "code is required",
             ),
+            (
+                "/auth/desktop/exchange",
+                r#"{"code":""}"#,
+                StatusCode::BAD_REQUEST,
+                "code is required",
+            ),
+            (
+                "/auth/desktop/exchange",
+                r#"{"code":"not a code"}"#,
+                StatusCode::BAD_REQUEST,
+                "code is required",
+            ),
         ] {
             let response = app
                 .clone()
@@ -783,5 +937,41 @@ mod tests {
             ),
         );
         assert_eq!(signup_source(&headers), r#"{"utm_source":"docs"}"#);
+    }
+
+    #[test]
+    fn desktop_broker_url_requires_an_https_origin_without_extra_components() {
+        assert_eq!(
+            auth_broker_exchange_url("https://accounts.aspectlylabs.com"),
+            Some("https://accounts.aspectlylabs.com/oauth/google/exchange".into())
+        );
+        assert_eq!(
+            auth_broker_exchange_url("https://accounts.aspectlylabs.com/"),
+            Some("https://accounts.aspectlylabs.com/oauth/google/exchange".into())
+        );
+        for origin in [
+            "http://accounts.aspectlylabs.com",
+            "https://accounts.aspectlylabs.com/base",
+            "https://accounts.aspectlylabs.com?redirect=https://evil.example",
+            "https://user:password@accounts.aspectlylabs.com",
+            "https://accounts.aspectlylabs.com:8443",
+        ] {
+            assert_eq!(auth_broker_exchange_url(origin), None, "{origin}");
+        }
+    }
+
+    #[test]
+    fn desktop_broker_profile_requires_a_verified_identity_shape() {
+        let valid = BrokerUserInfo {
+            clerk_user_id: "user_123".into(),
+            email: "person@example.com".into(),
+            name: "Person".into(),
+            picture: String::new(),
+        };
+        assert!(is_valid_broker_user_info(&valid));
+        assert!(!is_valid_broker_user_info(&BrokerUserInfo {
+            email: "person@example.com\r\nBcc: attacker@example.com".into(),
+            ..valid
+        }));
     }
 }

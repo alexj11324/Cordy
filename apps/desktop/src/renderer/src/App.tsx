@@ -103,8 +103,9 @@ function AppContent() {
   const authStatus = useAuthStore((s) => s.status);
   const qc = useQueryClient();
 
-  // Deep-link login runs loginWithToken → syncToken → listWorkspaces →
-  // setQueryData sequentially. loginWithToken sets user+isLoading=false
+  // Deep-link login exchanges a short-lived one-time code with the API, then
+  // runs syncToken → listWorkspaces → setQueryData sequentially. The exchange
+  // sets user+isLoading=false
   // as soon as getMe resolves, which would cause DesktopShell to mount
   // before the workspace list is hydrated and briefly see `!workspace`.
   // This local flag keeps the loading screen up until the whole chain
@@ -134,14 +135,16 @@ function AppContent() {
     });
   }, []);
 
-  // Listen for auth token delivered via deep link (patchbay://auth/callback?token=...).
+  // Listen for an opaque one-time auth code delivered via deep link
+  // (patchbay://auth/callback?code=...). The deep link never carries a bearer
+  // token; the API exchange returns the normal Patchbay session contract.
   // daemonAPI.syncToken is handled separately by the [user] effect below, which
   // fires whenever a user logs in (deep link, session restore, account switch).
   useEffect(() => {
-    return window.desktopAPI.onAuthToken(async (token) => {
+    return window.desktopAPI.onAuthCode(async (code) => {
       setBootstrapping(true);
       try {
-        await useAuthStore.getState().loginWithToken(token);
+        await useAuthStore.getState().exchangeDesktopAuthCode(code);
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects

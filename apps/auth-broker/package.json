@@ -1,0 +1,20 @@
+{
+  "name": "@patchbay/auth-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy:cloudflare": "wrangler deploy --config wrangler.jsonc",
+    "dry-run:cloudflare": "wrangler deploy --dry-run --config wrangler.jsonc"
+  },
+  "dependencies": {
+    "@clerk/backend": "3.16.9"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

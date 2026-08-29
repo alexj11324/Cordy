@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import { config } from "dotenv";
-import { resolve } from "path";
+import { fileURLToPath } from "node:url";
 import {
   resolveDevDocsUrl,
   resolveDevRemoteApiUrl,
@@ -12,7 +12,7 @@ import { createMDX } from "fumadocs-mdx/next";
 // Load root .env so local next.config.ts rewrites see REMOTE_API_URL / DOCS_URL.
 // Production requests use proxy.ts runtime rewrites, which read process.env
 // when the Next.js server runs instead of baking these URLs at build time.
-config({ path: resolve(__dirname, "../../.env") });
+config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
 
 // `next dev` falls back to the conventional localhost upstreams; builds use
 // the strict resolvers so prebuilt images keep unset upstreams unproxied.

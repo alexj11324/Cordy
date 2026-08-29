@@ -3,6 +3,11 @@ packages:
   - packages/*
 
 catalog:
+
+  # Cloudflare Workers deployment toolchain. Keep these versions in the
+  # workspace catalog so the web and docs artifacts are built by the same
+  # adapter/runtime and the lockfile remains the single version source.
+  '@cloudflare/vite-plugin': ^1.54.2
   '@formatjs/intl-localematcher': ^0.8.4
   '@tailwindcss/postcss': ^4
   '@tailwindcss/vite': ^4
@@ -16,6 +21,8 @@ catalog:
   '@types/react': ^19.2.0
   '@types/react-dom': ^19.2.0
   '@vitejs/plugin-react': ^6.0.1
+  '@vitejs/plugin-rsc': ^0.5.34
+  '@vinext/cloudflare': 1.0.0-beta.6
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   eslint-plugin-i18next: ^6.1.4
@@ -38,6 +45,11 @@ catalog:
   typescript: ^5.9.3
   unicode-animations: ^1.0.3
   vitest: ^4.1.0
+  # Vinext requires Vite 8; keep the repository's already-resolved Vite 8
+  # patch line instead of upgrading the unrelated Electron/Fumadocs graph.
+  vite: 8.0.1
+  vinext: 1.0.0-beta.8
+  wrangler: ^4.127.1
   yaml: ^2.6.0
   zod: ^4.1.5
   zustand: ^5.0.0

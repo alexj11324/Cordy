@@ -56,6 +56,7 @@ import {
   parseMainRendererChannelState,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
+import { parseAuthDeepLinkCode } from "../shared/auth-deep-link";
 import { AuthSessionCoordinator } from "./auth-session-coordinator";
 import {
   NotificationGate,
@@ -205,10 +206,10 @@ function handleDeepLink(url: string): void {
       return;
     }
 
-    // patchbay://auth/callback?token=<jwt>
-    if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
-      const token = parsed.searchParams.get("token");
-      if (token) dispatchToMainRenderer("auth:token", token);
+    // patchbay://auth/callback?code=<short-lived-one-time-code>
+    const code = parseAuthDeepLinkCode(url, [PROTOCOL, LEGACY_PROTOCOL]);
+    if (code) {
+      dispatchToMainRenderer("auth:code", code);
       return;
     }
 
