@@ -250,7 +250,7 @@ export function useTabPresentation(
           kind: "icon",
           icon:
             visual.actorType === "squad"
-              ? "Users"
+              ? "PeopleGroup"
               : visual.actorType === "member"
                 ? "CircleUser"
                 : "Bot",

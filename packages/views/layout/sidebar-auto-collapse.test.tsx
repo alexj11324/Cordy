@@ -1,9 +1,10 @@
 import { act, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   Sidebar,
   SidebarProvider,
+  SidebarRail,
   useSidebar,
 } from "@patchbay/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
@@ -191,5 +192,39 @@ describe("sidebar auto-collapse between lg and xl", () => {
     setWidth(1100);
     expect(state()).toBe("collapsed");
     expect(document.cookie).not.toContain("sidebar_state");
+  });
+
+  it("temporarily reveals a collapsed sidebar from its edge rail", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = renderWithI18n(
+        <SidebarProvider defaultOpen={false} hoverReveal>
+          <Sidebar>
+            <SidebarRail />
+          </Sidebar>
+        </SidebarProvider>,
+      );
+
+      const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
+      const rail = container.querySelector<HTMLElement>("[data-slot='sidebar-rail']")!;
+
+      expect(root).toHaveAttribute("data-state", "collapsed");
+      fireEvent.pointerEnter(rail);
+      expect(root).toHaveAttribute("data-state", "expanded");
+
+      fireEvent.pointerLeave(rail);
+      act(() => vi.advanceTimersByTime(180));
+      expect(root).toHaveAttribute("data-state", "collapsed");
+
+      // Hover reveal is temporary; an explicit click still changes the real
+      // preference so the sidebar stays open after the pointer leaves.
+      fireEvent.pointerEnter(rail);
+      fireEvent.click(rail);
+      fireEvent.pointerLeave(rail);
+      act(() => vi.advanceTimersByTime(180));
+      expect(root).toHaveAttribute("data-state", "expanded");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

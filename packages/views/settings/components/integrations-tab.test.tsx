@@ -24,6 +24,7 @@ vi.mock("@tanstack/react-query", () => ({
       data: undefined,
       error: opts.enabled === false ? null : composioErrorRef.current,
       isError: opts.enabled !== false && composioErrorRef.current != null,
+      isLoading: false,
     };
   },
   queryOptions: <T,>(opts: T) => opts,
@@ -33,8 +34,18 @@ vi.mock("@patchbay/core/composio", () => ({
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
 }));
 
+vi.mock("@patchbay/core/hooks", () => ({
+  useWorkspaceId: () => "workspace-id",
+}));
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: (selector: (state: { user: null }) => unknown) =>
+    selector({ user: null }),
+}));
+
 vi.mock("./lark-tab", () => ({
   LarkTab: () => <div data-testid="lark-tab" />,
+  LarkAgentBindButton: () => <button>Connect Lark</button>,
 }));
 
 vi.mock("./composio-tab", () => ({
@@ -43,10 +54,12 @@ vi.mock("./composio-tab", () => ({
 
 vi.mock("./slack-tab", () => ({
   SlackTab: () => <div data-testid="slack-tab" />,
+  SlackAgentBindButton: () => <button>Connect Slack</button>,
 }));
 
 vi.mock("./dingtalk-tab", () => ({
   DingTalkTab: () => <div data-testid="dingtalk-tab" />,
+  DingTalkAgentBindButton: () => <button>Connect DingTalk</button>,
 }));
 
 vi.mock("./vcs-tab", () => ({
@@ -55,14 +68,17 @@ vi.mock("./vcs-tab", () => ({
 
 vi.mock("./wecom-tab", () => ({
   WecomTab: () => <div data-testid="wecom-tab" />,
+  WecomAgentBindButton: () => <button>Connect WeCom</button>,
 }));
 
 vi.mock("./telegram-tab", () => ({
   TelegramTab: () => <div data-testid="telegram-tab" />,
+  TelegramAgentBindButton: () => <button>Connect Telegram</button>,
 }));
 
 vi.mock("./weixin-tab", () => ({
   WeixinTab: () => <div data-testid="weixin-tab" />,
+  WeixinAgentBindButton: () => <button>Connect WeChat</button>,
 }));
 
 import { IntegrationsTab } from "./integrations-tab";
@@ -93,30 +109,48 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.queryByTestId("composio-tab")).toBeNull();
-    expect(queryCallsRef.current).toHaveLength(1);
-    expect(queryCallsRef.current[0]?.enabled).toBe(false);
+    const composioQuery = queryCallsRef.current.find(
+      (query) => query.queryKey[0] === "composio",
+    );
+    expect(composioQuery?.enabled).toBe(false);
   });
 
   it("shows Composio when the feature flag is on and the integration is configured", () => {
     renderTab();
 
     expect(screen.getByTestId("composio-tab")).toBeInTheDocument();
-    expect(queryCallsRef.current[0]?.enabled).toBe(true);
+    const composioQuery = queryCallsRef.current.find(
+      (query) => query.queryKey[0] === "composio",
+    );
+    expect(composioQuery?.enabled).toBe(true);
   });
 
   it("shows each channel description below its icon and title", () => {
     renderTab();
 
     for (const channel of ["weixin", "lark", "slack", "dingtalk", "wecom", "telegram"]) {
+      const card = screen.getByTestId(`integration-channel-card-${channel}`);
       const icon = screen.getByTestId(`integration-channel-icon-${channel}`);
-      const title = icon.closest("h3");
+      const title = card.querySelector("h3");
       const description = title?.nextElementSibling;
       expect(title).not.toBeNull();
       expect(description?.tagName).toBe("P");
       expect(description).toHaveClass("text-caption", "text-muted-foreground");
+      expect(card.parentElement).toHaveClass("grid", "sm:grid-cols-2");
       expect(icon).not.toHaveClass("border");
-      expect(icon).not.toHaveClass("bg-muted/40");
+      expect(icon).toHaveClass("size-12");
     }
+  });
+
+  it("explains that Agent selection happens in the connected chat", () => {
+    renderTab();
+
+    expect(
+      screen.getByText(
+        "Connect a platform once, then use /agents in the chat to choose which Agent handles each conversation.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Workspace admin only")).toHaveLength(6);
   });
 
   // Reaching for a generic lucide glyph is how Slack and WeCom ended up sharing

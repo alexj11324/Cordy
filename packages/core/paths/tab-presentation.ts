@@ -173,7 +173,7 @@ export function resolveTabPresentation(
       };
     case "autopilot":
       return {
-        visual: { kind: "icon", icon: "Zap" },
+        visual: { kind: "icon", icon: "AlarmClockCheck" },
         title: textOr(data.autopilot?.title, "autopilot"),
       };
     case "actor":

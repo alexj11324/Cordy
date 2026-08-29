@@ -306,6 +306,16 @@
     "title": "설정",
     "my_account": "내 계정",
     "workspace_fallback": "워크스페이스",
+    "integrations_description": "메시징 플랫폼을 워크스페이스에 한 번 연결하고, 대화에서 /agents를 사용해 각 채팅의 에이전트를 선택하거나 전환하세요.",
+    "integrations_channels_title": "메시징 플랫폼",
+    "integrations_channels_description": "플랫폼은 한 번만 연결하면 됩니다. 채팅에서 /agents를 사용해 이 대화를 처리할 에이전트를 선택하세요.",
+    "integrations_loading": "연결 확인 중…",
+    "integrations_connected": "연결됨",
+    "integrations_workspace_hub": "워크스페이스 Hub",
+    "integrations_admin_only": "워크스페이스 관리자만 가능",
+    "integrations_unavailable": "사용할 수 없음",
+    "integrations_setup_required": "구성되지 않음",
+    "integrations_coming_soon": "곧 지원",
     "tabs": {
       "profile": "프로필",
       "preferences": "환경설정",
@@ -762,6 +772,7 @@
   "telegram": {
     "section_title": "Telegram",
     "page_description": "각 Patchbay 에이전트를 전용 Telegram 봇에 연결하세요. 멤버는 봇에게 DM을 보내거나 그룹에서 @멘션하고, /issue를 입력해 Patchbay 태스크를 만들고, 에이전트의 답변을 실시간 스트리밍으로 볼 수 있습니다.",
+    "workspace_description": "Telegram을 워크스페이스에 한 번 연결하세요. Telegram 채팅에서 /agents를 사용해 각 대화에 사용할 에이전트를 선택하거나 전환할 수 있습니다.",
     "not_enabled_title": "Telegram 연동이 활성화되지 않았습니다",
     "not_enabled_description_prefix": "서버에서",
     "not_enabled_description_suffix": "를 설정하면 Telegram 봇 설치가 활성화됩니다.",
@@ -803,6 +814,7 @@
   "weixin": {
     "section_title": "WeChat",
     "page_description": "Tencent 공식 iLink QR 코드를 스캔해 개인 WeChat을 연결하고 DM을 선택한 Patchbay Agent로 전달합니다.",
+    "workspace_description": "Tencent 공식 iLink QR 코드를 스캔해 개인 WeChat을 워크스페이스에 한 번 연결하세요. WeChat 채팅에서 /agents를 사용해 대화에 사용할 에이전트를 선택하거나 전환할 수 있습니다.",
     "loading": "불러오는 중…",
     "load_failed": "WeChat 연결을 불러오지 못했습니다",
     "not_enabled": "이 배포에서는 WeChat 연동이 활성화되지 않았습니다.",
@@ -951,6 +963,7 @@
   "lark": {
     "section_title": "Lark",
     "page_description": "각 Patchbay 에이전트를 Lark(飞书) PersonalAgent 봇에 연결하세요. 멤버는 봇과 1:1로 대화하거나, 그룹에서 @ 멘션하거나, /issue 를 입력해 새 Patchbay 태스크를 만들 수 있습니다.",
+    "workspace_description": "Lark(飞书)를 워크스페이스에 한 번 연결하세요. Lark 채팅에서 /agents를 사용해 각 대화에 사용할 에이전트를 선택하거나 전환할 수 있습니다.",
     "not_enabled_title": "Lark 연동이 비활성화되어 있어요",
     "not_enabled_description_prefix": "Lark 봇 설치를 활성화하려면 서버에",
     "not_enabled_description_suffix": "을(를) 설정하세요.",
@@ -977,6 +990,7 @@
     "bind_button": "Lark에 연결",
     "bind_button_title": "{{agent}}을(를) Lark 봇에 연결",
     "bind_button_feishu": "Feishu에 연결",
+    "workspace_connect_feishu": "Feishu에 연결",
     "bind_button_lark": "Lark에 연결",
     "bind_button_feishu_title": "{{agent}}을(를) Feishu(중국 본토판) 봇에 연결",
     "bind_button_lark_title": "{{agent}}을(를) Lark(글로벌판) 봇에 연결",
@@ -1056,6 +1070,7 @@
   "slack": {
     "section_title": "Slack",
     "page_description": "각 Patchbay 에이전트를 전용 Slack 봇에 연결하세요. 멤버는 봇과 1:1로 대화하거나, 채널에서 @ 멘션하거나, /issue 를 입력해 새 Patchbay 태스크를 만들 수 있습니다.",
+    "workspace_description": "Slack을 워크스페이스에 한 번 연결하세요. Slack 채팅에서 /agents를 사용해 각 대화에 사용할 에이전트를 선택하거나 전환할 수 있습니다.",
     "not_enabled_title": "Slack 연동이 활성화되지 않았어요",
     "not_enabled_description_prefix": "서버에서",
     "not_enabled_description_suffix": "를 설정하면 Slack 봇 설치가 활성화됩니다.",
@@ -1099,6 +1114,7 @@
   "dingtalk": {
     "section_title": "DingTalk",
     "page_description": "DingTalk 로봇을 Patchbay에 연결하세요. DM은 기본 에이전트를 사용하고, 같은 로봇이라도 그룹마다 다른 에이전트로 라우팅할 수 있습니다.",
+    "workspace_description": "DingTalk 로봇을 워크스페이스에 한 번 연결하세요. 각 채팅에서 /agents를 사용해 에이전트를 선택하거나 전환하세요.",
     "group_routes_title": "그룹 라우팅",
     "group_routes_description": "같은 로봇을 여러 DingTalk 그룹에 추가하고 각 그룹에서 한 번 @ 멘션하세요. Patchbay가 그룹을 자동으로 찾고 이후 메시지를 여기에서 선택한 에이전트로 보냅니다.",
     "group_routes_empty_title": "아직 발견된 그룹이 없어요",
@@ -1153,6 +1169,7 @@
   "wecom": {
     "section_title": "WeCom",
     "page_description": "각 Patchbay 에이전트를 전용 WeCom(企业微信) 스마트봇에 연결합니다. 멤버는 봇에게 DM을 보내고, 그룹에서 @ 멘션하고, /issue를 입력해 Patchbay 태스크를 만들 수 있어요. WebSocket 롱 커넥션으로 응답하므로 공개 콜백 URL이 필요 없어요.",
+    "workspace_description": "WeCom을 워크스페이스에 한 번 연결하세요. 채팅에서 /agents를 사용해 각 대화에 사용할 에이전트를 선택하거나 전환할 수 있습니다. 봇은 WebSocket 롱 커넥션으로 응답하므로 공개 콜백 URL이 필요하지 않습니다.",
     "not_enabled_title": "WeCom 통합이 활성화되지 않았어요",
     "not_enabled_description_prefix": "서버에서",
     "not_enabled_description_suffix": "를 설정하면 WeCom 스마트봇 설치가 활성화돼요.",

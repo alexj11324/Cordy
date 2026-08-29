@@ -4,9 +4,8 @@ import {
   CircleUser,
   ListTodo,
   FolderKanban,
-  Zap,
+  AlarmClockCheck,
   Bot,
-  Users,
   BarChart3,
   Monitor,
   Server,
@@ -23,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { resolveRouteIconName, type RouteIconName } from "@patchbay/core/paths";
+import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 
 /**
  * Icon name → component registry: the rendering half of the route icon
@@ -37,9 +37,9 @@ export const ROUTE_ICON_COMPONENTS: Record<RouteIconName, LucideIcon> = {
   CircleUser,
   ListTodo,
   FolderKanban,
-  Zap,
+  AlarmClockCheck,
   Bot,
-  Users,
+  PeopleGroup: PeopleGroupIcon,
   BarChart3,
   Monitor,
   Server,

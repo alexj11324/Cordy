@@ -137,7 +137,9 @@ function MainTopBar() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
       <div className="relative z-10 flex h-full min-w-0 max-w-full items-center">
-        <TabBar />
+        <div className="relative -top-2 flex h-full min-w-0 max-w-full items-center">
+          <TabBar />
+        </div>
       </div>
     </motion.header>
   );
@@ -283,6 +285,7 @@ export function DesktopShell() {
               50px under this one (PB-6218). */}
           <SidebarProvider
             hasExternalTrigger
+            hoverReveal
             className="flex-1 bg-app-shell [--sidebar-wrapper-fill:var(--app-shell)]"
           >
             {slug && <GlobalShortcuts />}

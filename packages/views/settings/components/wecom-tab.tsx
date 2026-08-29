@@ -191,17 +191,25 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_hub);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />
+        {installation.agent_id ? (
+          <ActorAvatar
+            actorType="agent"
+            actorId={installation.agent_id}
+            size="lg"
+            enableHoverCard
+            profileLink
+          />
+        ) : (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#07C160]/10">
+            <WecomMark className="h-5 w-5" />
+          </span>
+        )}
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
@@ -241,7 +249,7 @@ export function WecomAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   className?: string;
   onShowConnectedDetails?: () => void;
@@ -274,7 +282,9 @@ export function WecomAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
+      inst.status === "active",
   );
   if (existing) {
     return onShowConnectedDetails ? (
@@ -300,7 +310,7 @@ export function WecomAgentBindButton({
   async function handleSubmit() {
     const bot_id = botId.trim();
     const secretTrimmed = secret.trim();
-    if (submitting || !agentId || !bot_id || !secretTrimmed) return;
+    if (submitting || !bot_id || !secretTrimmed) return;
     setSubmitting(true);
     try {
       await api.registerWecomBYO(wsId, agentId, {
@@ -367,7 +377,6 @@ export function WecomAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
         title={
           agentName
             ? t(($) => $.wecom.bind_button_title, { agent: agentName })

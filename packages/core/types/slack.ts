@@ -1,4 +1,4 @@
-/** A Slack bot installation bound to a single Patchbay agent (PB-3666).
+/** A Slack bot installation, optionally bound to a Patchbay agent (PB-3666).
  *
  * Wire shape mirrors `SlackInstallationResponse` in
  * the Rust Slack handler. New fields the backend adds in the
@@ -7,7 +7,8 @@
 export interface SlackInstallation {
   id: string;
   workspace_id: string;
-  agent_id: string;
+  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
+  agent_id: string | null;
   /** The Slack workspace (team) id this bot is installed in. */
   team_id: string;
   /** The installed bot's Slack user id. */

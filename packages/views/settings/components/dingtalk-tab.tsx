@@ -413,20 +413,28 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_hub);
   const linkedIdentityIDs = canManage
     ? (installation.bound_dingtalk_user_ids ?? [])
     : [];
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex min-w-0 items-start gap-3">
-        <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />
+        {installation.agent_id ? (
+          <ActorAvatar
+            actorType="agent"
+            actorId={installation.agent_id}
+            size="lg"
+            enableHoverCard
+            profileLink
+          />
+        ) : (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#1677FF]/10">
+            <DingTalkMark className="h-5 w-5" />
+          </span>
+        )}
         <div className="min-w-0 space-y-1">
           <p className="text-body font-medium">
             {agentName}
@@ -493,7 +501,7 @@ export function DingTalkAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   className?: string;
   /**
@@ -530,7 +538,9 @@ export function DingTalkAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations?.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
+      inst.status === "active",
   );
   if (existing) {
     return onShowConnectedDetails ? (
@@ -555,7 +565,7 @@ export function DingTalkAgentBindButton({
   async function handleSubmit() {
     const client_id = clientId.trim();
     const client_secret = clientSecret.trim();
-    if (submitting || !agentId || !client_id || !client_secret) return;
+    if (submitting || !client_id || !client_secret) return;
     setSubmitting(true);
     try {
       await api.registerDingTalkBYO(wsId, agentId, { client_id, client_secret });
@@ -587,7 +597,6 @@ export function DingTalkAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
         title={
           agentName
             ? t(($) => $.dingtalk.bind_button_title, { agent: agentName })
