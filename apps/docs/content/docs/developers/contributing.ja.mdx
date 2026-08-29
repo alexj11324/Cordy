@@ -81,8 +81,10 @@ make build            # server、CLI、migrate バイナリをビルド
 
 ```bash
 pnpm install
-pnpm dev:web
-pnpm dev:desktop
+pnpm dev:web          # Vite 経由でブラウザ上の Desktop renderer を起動
+pnpm dev:web:next     # Next.js Web クライアント
+pnpm dev:desktop      # 同じ Vite renderer を使う Electron シェル
+# 実際の API セッションを使う場合は VITE_DESKTOP_PREVIEW=false を設定します。
 pnpm build
 pnpm typecheck
 pnpm lint

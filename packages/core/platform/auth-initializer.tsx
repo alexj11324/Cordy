@@ -112,7 +112,7 @@ export function AuthInitializer({
       typeof window !== "undefined" &&
       window.location.pathname.startsWith("/ui-preview")
     ) {
-      // Local `/ui-preview` pages are deliberately backend-free. Do not even
+      // The Vite Desktop `/ui-preview` surface is deliberately backend-free. Do not even
       // start the optional config request from the shared root provider.
       return;
     }
@@ -328,7 +328,7 @@ export function AuthInitializer({
       typeof window !== "undefined" &&
       window.location.pathname.startsWith("/ui-preview")
     ) {
-      // Local `/ui-preview` pages seed their own session so onboarding and
+      // The Vite Desktop `/ui-preview` surface seeds its own session so onboarding and
       // the app shell can be designed without Clerk or the API.
     } else if (clerkAuth) {
       // ClerkAuthAdapter owns the one-time Clerk -> Patchbay session exchange.
