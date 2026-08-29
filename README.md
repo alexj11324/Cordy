@@ -6,7 +6,7 @@
   <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
 </picture>
 
-**End to End Multi agent Harness for long-Horizon tasks**
+**End to End Multi-Agent Harness for long-Horizon tasks**
 
 [![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
 
