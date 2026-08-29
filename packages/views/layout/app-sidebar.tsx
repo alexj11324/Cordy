@@ -407,7 +407,7 @@ function PinRow({
 function PinSkeleton() {
   return (
     <SidebarMenuItem>
-      <div className="flex h-7 w-full items-center gap-2 px-2">
+      <div className="flex h-8 w-full items-center gap-2 px-1">
         <div className="size-3.5 shrink-0 rounded-sm bg-sidebar-accent/40" />
         <div className="h-3 w-24 rounded bg-sidebar-accent/40" />
       </div>
@@ -856,7 +856,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-2">
+        <SidebarFooter className="p-1">
           <SidebarMenu>
             <SidebarMenuItem>
               <div className="flex min-w-0 items-center gap-1">

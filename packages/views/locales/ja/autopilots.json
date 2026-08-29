@@ -141,7 +141,6 @@
   },
   "run": {
     "issue_linked": "タスクをリンク済み",
-    "view_log": "実行ログを表示",
     "skipped_group": {
       "label": "スキップ済み",
       "summary": "スキップされた実行 {{count}} 件"

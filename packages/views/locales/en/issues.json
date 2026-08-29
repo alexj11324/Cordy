@@ -528,10 +528,10 @@
     "fallback_name": "Agent",
     "tool_count_one": "{{count}} tool",
     "tool_count_other": "{{count}} tools",
-    "transcript_button": "View transcript",
     "stop_button": "Stop",
     "stop_tooltip": "Stop agent",
-    "cancel_failed": "Failed to cancel task"
+    "cancel_failed": "Failed to cancel task",
+    "working": "Working..."
   },
   "execution_log": {
     "section": "Execution log",

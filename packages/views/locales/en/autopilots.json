@@ -141,7 +141,6 @@
   },
   "run": {
     "issue_linked": "Issue linked",
-    "view_log": "View execution log",
     "skipped_group": {
       "label": "Skipped",
       "summary": "{{count}} skipped runs"

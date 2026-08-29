@@ -505,10 +505,10 @@
     "queued_elapsed_prefix": "已排队 {{elapsed}}",
     "fallback_name": "智能体",
     "tool_count_other": "{{count}} 次工具调用",
-    "transcript_button": "查看记录",
     "stop_button": "停止",
     "stop_tooltip": "停止智能体",
-    "cancel_failed": "取消 task 失败"
+    "cancel_failed": "取消 task 失败",
+    "working": "正在工作…"
   },
   "execution_log": {
     "section": "执行日志",

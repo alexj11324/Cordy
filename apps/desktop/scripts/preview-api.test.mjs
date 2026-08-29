@@ -88,6 +88,24 @@ describe("local Vite preview API", () => {
     ).toEqual([{ key: "agent-preview", count: 1 }]);
   });
 
+  it("serves the running task through both shared activity endpoints", async () => {
+    const snapshot = await call("GET", "/api/agent-task-snapshot");
+    const issueTasks = await call(
+      "GET",
+      "/api/issues/00000000-0000-4000-8000-000000000104/task-runs",
+    );
+
+    expect(snapshot.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          issue_id: "00000000-0000-4000-8000-000000000104",
+          status: "running",
+        }),
+      ]),
+    );
+    expect(issueTasks.body).toEqual(snapshot.body);
+  });
+
   it("returns issue detail data and does not claim unsupported writes succeeded", async () => {
     const detail = await call("GET", "/api/issues/PRE-102");
     const comments = await call("GET", "/api/issues/PRE-102/comments");

@@ -22,7 +22,7 @@ import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
 
 interface ReplyInputProps {
   issueId: string;
-  parentId: string;
+  parentId?: string;
   placeholder?: string;
   avatarType: string;
   avatarId: string;

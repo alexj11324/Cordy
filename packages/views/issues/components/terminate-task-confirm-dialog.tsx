@@ -12,12 +12,8 @@ import {
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { useT } from "../../i18n";
 
-// Reusable confirm step for the two issue-detail surfaces that terminate
-// a single agent task — the header live chip popover (IssueAgentHeaderChip)
-// and the row action inside ExecutionLogSection. Task cancellation is irreversible
-// and a misclick on a long-running run is costly, so both entry points
-// route through this dialog instead of firing the cancel request on the
-// first click.
+// Confirm before cancelling an in-flight agent task. Cancellation is
+// irreversible, and a misclick on a long-running run is costly.
 //
 // The dialog is fully controlled by the caller (which already owns the
 // confirmCancel state alongside the in-flight cancelling state). When the

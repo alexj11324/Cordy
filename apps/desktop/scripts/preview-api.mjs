@@ -57,6 +57,21 @@ const PREVIEW_AGENT = {
   issue_ids: [issueId("104")],
 };
 
+const PREVIEW_AGENT_TASK = {
+  id: "00000000-0000-4000-8000-000000000201",
+  agent_id: PREVIEW_AGENT_ID,
+  runtime_id: "runtime-preview",
+  issue_id: issueId("104"),
+  status: "running",
+  priority: 0,
+  dispatched_at: NOW,
+  started_at: NOW,
+  completed_at: null,
+  result: null,
+  error: null,
+  created_at: NOW,
+};
+
 const PREVIEW_DIRECTORY_AGENT = {
   id: PREVIEW_AGENT_ID,
   workspace_id: WORKSPACE_ID,
@@ -399,6 +414,7 @@ export async function handlePreviewRequest(req, res) {
     });
   }
   if (method === "GET" && path === "/api/working-agents") return json(res, [PREVIEW_AGENT]);
+  if (method === "GET" && path === "/api/agent-task-snapshot") return json(res, [PREVIEW_AGENT_TASK]);
   if (method === "GET" && path === "/api/issues/child-progress") return json(res, { progress: [] });
   const commentsResource = /^\/api\/issues\/([^/]+)\/comments$/.exec(path);
   if (method === "GET" && commentsResource) {
@@ -415,8 +431,9 @@ export async function handlePreviewRequest(req, res) {
       case "timeline":
       case "subscribers":
       case "attachments":
-      case "task-runs":
         return json(res, []);
+      case "task-runs":
+        return json(res, issueResource[1] === PREVIEW_AGENT_TASK.issue_id ? [PREVIEW_AGENT_TASK] : []);
       case "labels":
         return json(res, { labels: [] });
       case "pull-requests":

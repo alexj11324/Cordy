@@ -1,6 +1,5 @@
 import { useLayoutEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { agentTaskSnapshotKeys } from "@patchbay/core/agents";
 import { useAuthStore } from "@patchbay/core/auth";
 import { chatKeys } from "@patchbay/core/chat/queries";
 import { inboxKeys } from "@patchbay/core/inbox";
@@ -105,11 +104,6 @@ export function DesktopWebPreviewSession({ children }: { children: ReactNode }) 
     // members/agents.
     queryClient.setQueryData(workspaceKeys.skills(PREVIEW_WORKSPACE.id), []);
     queryClient.setQueryData(runtimeKeys.list(PREVIEW_WORKSPACE.id), []);
-    queryClient.setQueryData(
-      agentTaskSnapshotKeys.list(PREVIEW_WORKSPACE.id),
-      [],
-    );
-
     useAuthStore.setState({
       user: previewUser(onboarded),
       isLoading: false,

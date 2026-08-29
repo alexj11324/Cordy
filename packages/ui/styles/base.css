@@ -240,6 +240,13 @@
   }
 }
 
+/* Board cards share the border-beam primitive, but only an issue with an
+ * actually running agent task should animate. Queued tasks still show their
+ * quiet activity badge without turning an entire column into motion. */
+.running-task-card:not(:has([data-issue-agent-activity="running"]))::before {
+  display: none;
+}
+
 /* Sidebar: open triggers (dropdown/popover) get active background */
 [data-sidebar="menu-button"][data-popup-open] {
   background-color: var(--sidebar-item-active);

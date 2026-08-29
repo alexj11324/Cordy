@@ -588,6 +588,12 @@ const mockTimeline: TimelineEntry[] = [
   },
 ];
 
+// Canvas animation belongs to thinking-orbs; issue-detail only cares that
+// the Working row and Agent button mount.
+vi.mock("thinking-orbs", () => ({
+  ThinkingOrb: () => <span data-testid="thinking-orb" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Import component under test (after mocks)
 // ---------------------------------------------------------------------------
@@ -1087,9 +1093,7 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Updated")).toBeInTheDocument();
   });
 
-  // Details is creator + immutable timestamps, so it ranks below the
-  // execution log, which is what people actually open the sidebar for.
-  it("orders the Details section after the execution log", async () => {
+  it("does not render the execution log or a sidebar agent conversation button", async () => {
     mockApiObj.listTasksByIssue.mockResolvedValue([
       {
         id: "task-past",
@@ -1101,7 +1105,7 @@ describe("IssueDetail (shared)", () => {
         dispatched_at: null,
         started_at: "2026-06-08T08:00:00Z",
         completed_at: "2026-06-08T08:05:00Z",
-        result: null,
+        result: { output: "Auth is in place." },
         error: null,
         created_at: "2026-06-08T08:00:00Z",
         trigger_summary: "Started from comment",
@@ -1110,13 +1114,17 @@ describe("IssueDetail (shared)", () => {
 
     renderIssueDetail();
 
-    const executionLog = await screen.findByText("Execution log");
-    const details = screen.getByText("Details");
+    await waitFor(() => {
+      expect(screen.getByText("Details")).toBeInTheDocument();
+    });
 
-    // DOCUMENT_POSITION_FOLLOWING: Details comes after the execution log.
+    expect(screen.queryByText("Execution log")).not.toBeInTheDocument();
     expect(
-      executionLog.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: "Open Claude Agent conversation" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open conversation" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows 'not found' message when issue does not exist", async () => {
