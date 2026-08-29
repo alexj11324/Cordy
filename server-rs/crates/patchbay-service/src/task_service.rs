@@ -24,7 +24,7 @@ use patchbay_db::queries::agent::{
     create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
     get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
     list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
-    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred,
+    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
     reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
@@ -2788,6 +2788,7 @@ impl TaskService {
         attachment_ids: Vec<Uuid>,
         uploader_type: &str,
         uploader_id: Option<Uuid>,
+        workspace_channel: Option<WorkspaceChannelDispatch>,
     ) -> Result<DirectChatSendResult, TaskServiceError> {
         // Overlay before the transaction — network I/O must not hold locks.
         let overlay = match initiator_user_id {
@@ -2870,10 +2871,31 @@ impl TaskService {
         .map_err(|e| TaskServiceError::Internal(format!("create direct chat task: {e}")))?
         .ok_or(TaskServiceError::AgentNoRuntime)?;
         // Claim this task's own input batch before the user message is written.
-        let task = set_chat_task_input_owner_self(&mut *tx, created.id)
+        let mut task = set_chat_task_input_owner_self(&mut *tx, created.id)
             .await
             .map_err(|e| TaskServiceError::Internal(format!("stamp direct chat input owner: {e}")))?
             .ok_or(TaskServiceError::AgentNoRuntime)?;
+
+        let is_workspace_channel = workspace_channel.is_some();
+        if let Some(dispatch) = workspace_channel {
+            let context = serde_json::json!({
+                "workspace_channel": {
+                    "workspace_id": dispatch.workspace_id,
+                    "channel_id": dispatch.channel_id,
+                    "source_message_id": dispatch.source_message_id,
+                }
+            });
+            task.context = Some(
+                merge_agent_task_context(&mut *tx, task.id, &context)
+                    .await
+                    .map_err(|e| {
+                        TaskServiceError::Internal(format!(
+                            "set workspace channel task context: {e}"
+                        ))
+                    })?
+                    .ok_or(TaskServiceError::AgentNoRuntime)?,
+            );
+        }
         out.task = Some(task.clone());
 
         // Adopt the onboarding kickoff if this session still has an unowned one
@@ -2895,7 +2917,7 @@ impl TaskService {
             Some(patchbay_protocol::CHAT_MESSAGE_KIND_MESSAGE),
             &serde_json::Value::Array(vec![]),
             None,
-            None,
+            Some(is_workspace_channel),
             new_v7(),
         )
         .await
@@ -3094,6 +3116,25 @@ pub struct DirectChatSendResult {
     pub message: Option<ChatMessage>,
     pub bound_attachment_ids: Vec<Option<Uuid>>,
     pub queued: bool,
+}
+
+/// Identifies the channel message that caused a chat task so the terminal
+/// path can publish the agent's final response back into that channel.
+#[derive(Debug, Clone, Copy)]
+pub struct WorkspaceChannelDispatch {
+    pub workspace_id: Uuid,
+    pub channel_id: Uuid,
+    pub source_message_id: Uuid,
+}
+
+/// Reads the optional workspace-channel bridge metadata from a task context.
+pub fn workspace_channel_dispatch(task: &AgentTaskQueue) -> Option<WorkspaceChannelDispatch> {
+    let value = task.context.as_ref()?.get("workspace_channel")?;
+    Some(WorkspaceChannelDispatch {
+        workspace_id: Uuid::parse_str(value.get("workspace_id")?.as_str()?).ok()?,
+        channel_id: Uuid::parse_str(value.get("channel_id")?.as_str()?).ok()?,
+        source_message_id: Uuid::parse_str(value.get("source_message_id")?.as_str()?).ok()?,
+    })
 }
 
 /// The two rows that open a Mika conversation (PB-5827).

@@ -145,7 +145,12 @@ export const IssueAgentActivityIndicator = memo(function IssueAgentActivityIndic
 
   if (!hoverCard) {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1">{badge}</span>
+      <span
+        className="inline-flex shrink-0 items-center gap-1"
+        data-issue-agent-activity={isRunning ? "running" : "queued"}
+      >
+        {badge}
+      </span>
     );
   }
 
@@ -157,7 +162,10 @@ export const IssueAgentActivityIndicator = memo(function IssueAgentActivityIndic
         delay={OPEN_DELAY_MS}
         closeDelay={CLOSE_DELAY_MS}
         render={
-          <span className="inline-flex shrink-0 items-center gap-1" />
+          <span
+            className="inline-flex shrink-0 items-center gap-1"
+            data-issue-agent-activity={isRunning ? "running" : "queued"}
+          />
         }
       >
         {badge}

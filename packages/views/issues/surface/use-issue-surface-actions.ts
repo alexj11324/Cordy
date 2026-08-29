@@ -30,13 +30,19 @@ export type MoveIssueUpdates = Pick<
   after_id: string | null;
 };
 
+export type MoveIssueCallbacks = {
+  onSettled?: () => void;
+  onSuccess?: () => void;
+  onError?: () => void;
+};
+
 export interface IssueSurfaceActionController {
   actions: IssueSurfaceActions;
   openCreateIssue: (defaults?: IssueCreateDefaults) => void;
   moveIssue: (
     issueId: string,
     updates: MoveIssueUpdates,
-    onSettled?: () => void,
+    callbacks?: MoveIssueCallbacks,
   ) => void;
 }
 
@@ -83,7 +89,7 @@ export function useIssueSurfaceActions({
     (
       issueId: string,
       updates: MoveIssueUpdates,
-      onSettled?: () => void,
+      callbacks?: MoveIssueCallbacks,
     ) => {
       const { before_id, after_id, ...optimisticUpdates } = updates;
       updateIssueMutation.mutate(
@@ -101,8 +107,10 @@ export function useIssueSurfaceActions({
                 ? err.message
                 : t(($) => $.detail.toast_move_issue_failed),
             );
+            callbacks?.onError?.();
           },
-          onSettled,
+          onSuccess: () => callbacks?.onSuccess?.(),
+          onSettled: callbacks?.onSettled,
         },
       );
     },

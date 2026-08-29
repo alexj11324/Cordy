@@ -443,7 +443,23 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_one_pending_task_per_issue_agent_v3",
     ),
     (
-        "387_team_no_action_activity_index",
+        "387_workspace_channel_id_index",
+        "workspace_channel_id_uidx",
+    ),
+    (
+        "389_workspace_channel_slug_index",
+        "workspace_channel_workspace_slug_uidx",
+    ),
+    (
+        "391_workspace_channel_message_id_index",
+        "workspace_channel_message_id_uidx",
+    ),
+    (
+        "393_workspace_channel_message_channel_index",
+        "workspace_channel_message_channel_created_idx",
+    ),
+    (
+        "395_team_no_action_activity_index",
         "idx_activity_log_team_no_action_task",
     ),
 ];

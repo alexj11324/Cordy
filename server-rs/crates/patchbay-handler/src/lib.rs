@@ -91,6 +91,7 @@ pub mod vcs_webhook;
 pub mod webhook_delivery_worker;
 pub mod webhook_rate_limit;
 pub mod workspace;
+pub mod workspace_channel;
 pub mod workspace_mcp;
 pub mod ws;
 
@@ -395,6 +396,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         )
         .merge(
             chat_api::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            workspace_channel::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 patchbay_middleware::workspace::require_workspace,
             )),

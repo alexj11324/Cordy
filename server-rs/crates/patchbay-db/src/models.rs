@@ -496,6 +496,50 @@ pub struct ChatSession {
     pub workspace_id: Uuid,
 }
 
+/// Row of `workspace_channel`.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct WorkspaceChannel {
+    pub archived_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub created_by: Uuid,
+    pub description: String,
+    pub id: Uuid,
+    pub name: String,
+    pub slug: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+/// A quoted channel message with the author snapshot needed by the client.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceChannelQuotedMessage {
+    pub author_id: Uuid,
+    pub author_name: String,
+    pub author_type: String,
+    pub content: String,
+    pub id: Uuid,
+}
+
+/// A channel message enriched with its member/agent display identity.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceChannelMessage {
+    pub author_avatar_url: Option<String>,
+    pub author_id: Uuid,
+    pub author_name: String,
+    pub author_status: Option<String>,
+    pub author_type: String,
+    pub channel_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub parent_message: Option<WorkspaceChannelQuotedMessage>,
+    pub parent_id: Option<Uuid>,
+    pub quoted_message: Option<WorkspaceChannelQuotedMessage>,
+    pub quoted_message_id: Option<Uuid>,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
 /// Row of `client_usage_daily`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ClientUsageDaily {

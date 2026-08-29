@@ -118,6 +118,12 @@ cleared_issue_properties AS (
 cleared_quick_actions AS (
     DELETE FROM quick_action WHERE workspace_id = $1
 ),
+cleared_workspace_channel_messages AS (
+    DELETE FROM workspace_channel_message WHERE workspace_id = $1
+),
+cleared_workspace_channels AS (
+    DELETE FROM workspace_channel WHERE workspace_id = $1
+),
 ws_mcp_servers AS (
     SELECT id FROM workspace_mcp_server WHERE workspace_id = $1
 ),

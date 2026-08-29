@@ -21,6 +21,7 @@
 export type RouteIconName =
   | "Inbox"
   | "MessageSquare"
+  | "Hash"
   | "CircleUser"
   | "ListTodo"
   | "FolderKanban"
@@ -45,6 +46,7 @@ export type RouteIconName =
 export type NavLabelKey =
   | "inbox"
   | "chat"
+  | "channels"
   | "my_issues"
   | "issues"
   | "projects"
@@ -60,6 +62,7 @@ export type NavLabelKey =
 export type WorkspacePageKey =
   | "inbox"
   | "chat"
+  | "channels"
   | "myIssues"
   | "issues"
   | "projects"
@@ -87,6 +90,7 @@ export interface WorkspacePage {
 export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   inbox: { segment: "inbox", icon: "Inbox", navKey: "inbox" },
   chat: { segment: "chat", icon: "MessageSquare", navKey: "chat" },
+  channels: { segment: "channels", icon: "Hash", navKey: "channels" },
   myIssues: { segment: "my-issues", icon: "CircleUser", navKey: "my_issues" },
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },

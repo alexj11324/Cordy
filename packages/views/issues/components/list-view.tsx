@@ -43,6 +43,7 @@ import type {
   IssueStatusPageState,
   IssueStatusPagination,
 } from "../surface/use-issue-status-branches";
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 import { VirtuosoSeed, VIRTUOSO_SEED_COUNT } from "../../common/virtuoso-seed";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { useRestoredScrollRef } from "../../platform";
@@ -82,7 +83,11 @@ function ListViewImpl({
   projectMap?: Map<string, Project>;
   statusPagination: IssueStatusPagination;
   projectId?: string;
-  onMoveIssue?: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => boolean | void;
+  onMoveIssue?: (
+    issueId: string,
+    updates: DragMoveUpdates,
+    callbacks?: MoveIssueCallbacks,
+  ) => boolean | void;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
 }) {
   const listCollapsedStatuses = useViewStore(
@@ -282,7 +287,7 @@ function ListViewImpl({
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          settle,
+          { onSettled: settle },
         );
         if (committed === false) {
           settle();
@@ -314,7 +319,7 @@ function ListViewImpl({
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        settle,
+        { onSettled: settle },
       );
       if (committed === false) {
         settle();

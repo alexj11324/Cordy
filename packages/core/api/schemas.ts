@@ -12,6 +12,8 @@ import type {
   BillingTopupsPage,
   BillingTransactionsPage,
   CancelTaskResponse,
+  Channel,
+  ChannelMessage,
   ChatMessage,
   ChatDraftRestoresResponse,
   ChatPendingTask,
@@ -754,6 +756,67 @@ export const ChatMessagesPageSchema = z.object({
     created_at: z.string(),
     id: z.string(),
   }).loose().nullable().optional(),
+}).loose();
+
+const ChannelActorTypeSchema = z.preprocess(
+  (value) => (value === "member" || value === "agent" ? value : "unknown"),
+  z.enum(["member", "agent", "unknown"]),
+);
+
+const ChannelQuotedMessageSchema = z.object({
+  id: z.string(),
+  author_type: ChannelActorTypeSchema,
+  author_id: z.string(),
+  author_name: z.string().default("Unknown"),
+  content: z.string().default(""),
+}).loose();
+
+export const ChannelSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  name: z.string().default(""),
+  slug: z.string().default(""),
+  description: z.string().default(""),
+  created_by: z.string().default(""),
+  archived_at: z.string().nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ChannelListSchema = z.array(ChannelSchema).default([]);
+export const EMPTY_CHANNEL_LIST: Channel[] = [];
+
+export const ChannelMessageSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  channel_id: z.string(),
+  author_type: ChannelActorTypeSchema,
+  author_id: z.string(),
+  author_name: z.string().default("Unknown"),
+  author_avatar_url: z.string().nullable().optional(),
+  author_status: z.string().nullable().optional(),
+  content: z.string().default(""),
+  parent_message: ChannelQuotedMessageSchema.nullable().optional(),
+  parent_id: z.string().nullable().optional(),
+  quoted_message_id: z.string().nullable().optional(),
+  quoted_message: ChannelQuotedMessageSchema.nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ChannelMessageListSchema = z.array(ChannelMessageSchema).default([]);
+export const EMPTY_CHANNEL_MESSAGE_LIST: ChannelMessage[] = [];
+
+const ChannelMessageCursorSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+}).loose();
+
+export const ChannelMessagesPageSchema = z.object({
+  messages: z.array(ChannelMessageSchema).default([]),
+  limit: z.number().default(50),
+  has_more: z.boolean().default(false),
+  next_cursor: ChannelMessageCursorSchema.nullable().optional(),
 }).loose();
 
 // Standalone attachment lookup (`GET /api/attachments/{id}`) is the source of

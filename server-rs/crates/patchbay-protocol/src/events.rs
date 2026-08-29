@@ -89,6 +89,12 @@ pub const EVENT_CHAT_SESSION_READ: &str = "chat:session_read";
 pub const EVENT_CHAT_SESSION_DELETED: &str = "chat:session_deleted";
 pub const EVENT_CHAT_SESSION_UPDATED: &str = "chat:session_updated";
 
+// In-app workspace channel events. These are workspace-scoped broadcasts;
+// the payload contains the authoritative row so clients can invalidate or
+// reconcile without treating external IM integrations as the same feature.
+pub const EVENT_CHANNEL_CREATED: &str = "channel:created";
+pub const EVENT_CHANNEL_MESSAGE_CREATED: &str = "channel:message";
+
 // Project events
 pub const EVENT_PROJECT_CREATED: &str = "project:created";
 pub const EVENT_PROJECT_UPDATED: &str = "project:updated";
@@ -212,6 +218,8 @@ mod tests {
         );
         assert_eq!(EVENT_CHAT_QUICK_ACTIONS, "chat:quick_actions");
         assert_eq!(EVENT_CHAT_CANCEL_FINALIZED, "chat:cancel_finalized");
+        assert_eq!(EVENT_CHANNEL_CREATED, "channel:created");
+        assert_eq!(EVENT_CHANNEL_MESSAGE_CREATED, "channel:message");
         assert_eq!(EVENT_INBOX_BATCH_READ, "inbox:batch-read");
         assert_eq!(EVENT_DAEMON_PENDING_WORK, "daemon:pending_work");
         assert_eq!(EVENT_DAEMON_RPC_REQUEST, "daemon:rpc_request");
