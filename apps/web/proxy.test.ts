@@ -30,7 +30,7 @@ function makeRequest(
 }
 
 async function runProxy(request: NextRequest) {
-  const response = await proxy(request, undefined as never);
+  const response = await proxy(request);
   if (!response) throw new Error("proxy returned no response");
   return response;
 }
