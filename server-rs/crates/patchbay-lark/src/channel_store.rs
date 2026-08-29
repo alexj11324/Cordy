@@ -563,8 +563,7 @@ pub async fn upsert_lark_installation_with(
         )
         .await?
     };
-    let Some(row) = upsert
-    else {
+    let Some(row) = upsert else {
         return Err(ErrNoRows.into());
     };
     installation_from_row(row)

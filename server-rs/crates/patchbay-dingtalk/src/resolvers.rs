@@ -70,9 +70,9 @@ pub fn new_dingtalk_resolver_set(
         replier,
         typing: ack,
         media,
-        hub: Some(Arc::new(patchbay_channel_engine::hub::PostgresHubRouter::new(
-            pool.clone(),
-        ))),
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         origin_type: ORIGIN_DINGTALK_CHAT.to_string(),
     }
 }
@@ -168,7 +168,10 @@ impl InstallationResolver for InstallationResolverImpl {
         let Some(inst) = inst else {
             return Err(ResolverError::InstallationNotFound.into());
         };
-        Ok(resolved_installation(&inst, inst.agent_id.unwrap_or_default()))
+        Ok(resolved_installation(
+            &inst,
+            inst.agent_id.unwrap_or_default(),
+        ))
     }
 }
 
@@ -427,14 +430,13 @@ impl SessionBinder for SessionBinderImpl {
             force_fresh: p.message.force_fresh,
         };
 
-        let fence = (p.message.source.chat_type == ChatType::group()
-            && p.route_revision != 0)
+        let fence = (p.message.source.chat_type == ChatType::group() && p.route_revision != 0)
             .then(|| GroupRouteFence {
-            installation_id: p.installation_id,
-            chat_id: p.message.source.chat_id.clone(),
-            agent_id: p.agent_id,
-            route_revision: p.route_revision,
-        });
+                installation_id: p.installation_id,
+                chat_id: p.message.source.chat_id.clone(),
+                agent_id: p.agent_id,
+                route_revision: p.route_revision,
+            });
         self.session
             .append_user_message_fenced(&input, fence.as_ref().map(|f| f as &dyn AppendFence))
             .await

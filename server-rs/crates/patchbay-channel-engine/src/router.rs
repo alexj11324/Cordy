@@ -657,10 +657,7 @@ impl Router {
                 );
             };
             let binding_key = binder.binding_key(&msg);
-            let route = match hub
-                .resolve(&inst, &identity, &msg, &binding_key)
-                .await
-            {
+            let route = match hub.resolve(&inst, &identity, &msg, &binding_key).await {
                 Ok(route) => route,
                 Err(err) => {
                     return (

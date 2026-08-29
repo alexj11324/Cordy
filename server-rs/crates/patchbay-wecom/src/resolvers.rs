@@ -258,9 +258,9 @@ pub fn new_wecom_resolver_set(
         audit: Some(Arc::new(AuditorImpl { pool: pool.clone() })),
         replier,
         typing: None,
-        hub: Some(Arc::new(patchbay_channel_engine::hub::PostgresHubRouter::new(
-            pool.clone(),
-        ))),
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         origin_type: ORIGIN_WECOM_CHAT.to_string(),
     }
 }

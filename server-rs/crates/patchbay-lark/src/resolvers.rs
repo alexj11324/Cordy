@@ -210,7 +210,7 @@ impl InstallationResolver for FeishuInstallationResolver {
         Ok(ResolvedInstallation {
             id: inst.id,
             workspace_id: inst.workspace_id,
-            agent_id: inst.agent_id.unwrap_or_default(),
+            agent_id: inst.agent_id,
             installer_user_id: inst.installer_user_id,
             active: crate::types::InstallationStatus(inst.status.clone()).is_active(),
             platform: Arc::new(inst),
@@ -318,7 +318,7 @@ struct FeishuSessionBinder {
 
 #[async_trait]
 impl SessionBinder for FeishuSessionBinder {
-    fn binding_key(&self, msg: &InboundMessage) -> String {
+    fn binding_key(&self, msg: &ChannelMessage) -> String {
         lark_session_routing(msg).0
     }
 

@@ -63,9 +63,9 @@ pub fn new_slack_resolver_set(
         replier,
         typing: typing
             .map(|mgr| Arc::new(SlackTypingNotifier { mgr, decrypt }) as Arc<dyn TypingNotifier>),
-        hub: Some(Arc::new(patchbay_channel_engine::hub::PostgresHubRouter::new(
-            pool.clone(),
-        ))),
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         validated: None,
         origin_type: ORIGIN_SLACK_CHAT.to_string(),
     }

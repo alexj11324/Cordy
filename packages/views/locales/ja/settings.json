@@ -771,7 +771,8 @@
   },
   "lark": {
     "section_title": "Lark",
-    "page_description": "Lark (Feishu) をワークスペースに一度接続します。Lark のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
+    "page_description": "各 Patchbay エージェントを Lark (飞书) PersonalAgent ボットに接続します。メンバーはボットに DM したり、グループで @ メンションしたり、/issue と入力して新しい Patchbay タスクを起こすことができます。",
+    "workspace_description": "Lark (Feishu) をワークスペースに一度接続します。Lark のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
     "not_enabled_title": "Lark 連携が有効化されていません",
     "not_enabled_description_prefix": "Lark ボットの設置を有効化するにはサーバーに",
     "not_enabled_description_suffix": "を設定してください。",
@@ -877,7 +878,8 @@
   },
   "slack": {
     "section_title": "Slack",
-    "page_description": "Slack をワークスペースに一度接続します。Slack のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
+    "page_description": "各 Patchbay エージェントを専用の Slack ボットに接続します。メンバーはボットに DM したり、チャンネルで @メンションしたり、/issue と入力して新しい Patchbay タスクを起こすことができます。",
+    "workspace_description": "Slack をワークスペースに一度接続します。Slack のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
     "not_enabled_title": "Slack 連携が有効になっていません",
     "not_enabled_description_prefix": "サーバーで",
     "not_enabled_description_suffix": "を設定すると Slack ボットのインストールが有効になります。",
@@ -920,7 +922,8 @@
   },
   "dingtalk": {
     "section_title": "DingTalk",
-    "page_description": "DingTalk ロボットをワークスペースに一度接続します。各チャットで /agents を使ってエージェントを選択・切り替えます。",
+    "page_description": "DingTalk ロボットを Patchbay に接続します。DM はデフォルトのエージェントを使用し、同じロボットでもグループごとに別のエージェントへルーティングできます。",
+    "workspace_description": "DingTalk ロボットをワークスペースに一度接続します。各チャットで /agents を使ってエージェントを選択・切り替えます。",
     "group_routes_title": "グループルーティング",
     "group_routes_description": "同じロボットを複数の DingTalk グループに追加し、各グループで一度 @メンションしてください。Patchbay がグループを自動検出し、以後のメッセージをここで選んだエージェントに送ります。",
     "group_routes_empty_title": "まだグループが検出されていません",
@@ -974,7 +977,8 @@
   },
   "wecom": {
     "section_title": "WeCom",
-    "page_description": "WeCom をワークスペースに一度接続します。チャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。WebSocket ロングコネクションで応答するため、公開コールバック URL は不要です。",
+    "page_description": "各 Patchbay エージェントを専用の WeCom (企业微信) スマートボットに接続します。メンバーはボットに DM を送り、グループで @ メンションし、/issue と入力して Patchbay タスクを作成できます。WebSocket ロングコネクションで応答するため、公開コールバック URL は不要です。",
+    "workspace_description": "WeCom をワークスペースに一度接続します。チャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。WebSocket ロングコネクションで応答するため、公開コールバック URL は不要です。",
     "not_enabled_title": "WeCom 連携が有効化されていません",
     "not_enabled_description_prefix": "サーバー側で",
     "not_enabled_description_suffix": "を設定すると WeCom スマートボットのインストールが有効になります。",
@@ -1024,7 +1028,8 @@
   },
   "telegram": {
     "section_title": "Telegram",
-    "page_description": "Telegram をワークスペースに一度接続します。Telegram のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
+    "page_description": "各 Patchbay エージェントを専用の Telegram ボットに接続します。メンバーはボットに DM を送ったり、グループで @メンションしたり、/issue と入力して Patchbay タスクを作成したり、エージェントの返信をリアルタイムで確認できます。",
+    "workspace_description": "Telegram をワークスペースに一度接続します。Telegram のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
     "not_enabled_title": "Telegram 連携が有効になっていません",
     "not_enabled_description_prefix": "サーバーで",
     "not_enabled_description_suffix": "を設定すると Telegram ボットのインストールが有効になります。",
@@ -1065,7 +1070,8 @@
   },
   "weixin": {
     "section_title": "WeChat",
-    "page_description": "Tencent 公式 iLink QR コードをスキャンして個人 WeChat をワークスペースに一度接続します。WeChat のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
+    "page_description": "Tencent 公式 iLink QR コードをスキャンして個人 WeChat を接続し、DM を選択した Patchbay Agent に送ります。",
+    "workspace_description": "Tencent 公式 iLink QR コードをスキャンして個人 WeChat をワークスペースに一度接続します。WeChat のチャットで /agents を使って、各会話で使用するエージェントを選択・切り替えます。",
     "loading": "読み込み中…",
     "load_failed": "WeChat 接続を読み込めませんでした",
     "not_enabled": "この環境では WeChat 連携が有効ではありません。",

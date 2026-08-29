@@ -271,9 +271,9 @@ pub fn resolver_set(
         audit: Some(Arc::new(AuditorImpl { pool: pool.clone() })),
         replier,
         typing: None,
-        hub: Some(Arc::new(patchbay_channel_engine::hub::PostgresHubRouter::new(
-            pool.clone(),
-        ))),
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         origin_type: ORIGIN_WEIXIN_CHAT.to_string(),
     }
 }

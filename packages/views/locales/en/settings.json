@@ -772,7 +772,8 @@
   },
   "lark": {
     "section_title": "Lark",
-    "page_description": "Connect Lark (飞书) to this workspace once. Use /agents in Lark to choose or switch the Agent for each conversation.",
+    "page_description": "Connect each Patchbay Agent to a Lark (飞书) PersonalAgent Bot. Members can DM the Bot, @ it in groups, and type /issue to spin up a new Patchbay issue.",
+    "workspace_description": "Connect Lark (飞书) to this workspace once. Use /agents in Lark to choose or switch the Agent for each conversation.",
     "not_enabled_title": "Lark integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Lark Bot installations.",
@@ -878,7 +879,8 @@
   },
   "slack": {
     "section_title": "Slack",
-    "page_description": "Connect Slack to this workspace once. Use /agents in Slack to choose or switch the Agent for each conversation.",
+    "page_description": "Connect each Patchbay Agent to its own Slack bot. Members can DM the bot, @mention it in a channel, and type /issue to spin up a new Patchbay issue.",
+    "workspace_description": "Connect Slack to this workspace once. Use /agents in Slack to choose or switch the Agent for each conversation.",
     "not_enabled_title": "Slack integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Slack bot installations.",
@@ -921,7 +923,8 @@
   },
   "dingtalk": {
     "section_title": "DingTalk",
-    "page_description": "Connect a DingTalk robot to this workspace once. Use /agents in each chat to choose or switch the Agent.",
+    "page_description": "Connect a DingTalk robot to Patchbay. Direct messages use its default Agent; each group can route the same robot to a different Agent.",
+    "workspace_description": "Connect a DingTalk robot to this workspace once. Use /agents in each chat to choose or switch the Agent.",
     "group_routes_title": "Group routing",
     "group_routes_description": "Add this robot to multiple DingTalk groups, then @mention it once in each group. Patchbay discovers the group automatically and routes future messages to the Agent selected here.",
     "group_routes_empty_title": "No groups discovered yet",
@@ -975,7 +978,8 @@
   },
   "wecom": {
     "section_title": "WeCom",
-    "page_description": "Connect WeCom to this workspace once. Use /agents in chat to choose or switch the Agent for each conversation. The bot uses a long WebSocket connection, so no public callback URL is required.",
+    "page_description": "Connect each Patchbay Agent to its own WeCom (企业微信) smart bot. Members can DM the bot, @ it in groups, and type /issue to spin up a new Patchbay issue. The Agent replies over a long WebSocket connection, so no public callback URL is required.",
+    "workspace_description": "Connect WeCom to this workspace once. Use /agents in chat to choose or switch the Agent for each conversation. The bot uses a long WebSocket connection, so no public callback URL is required.",
     "not_enabled_title": "WeCom integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable WeCom smart-bot installations.",
@@ -1025,7 +1029,8 @@
   },
   "telegram": {
     "section_title": "Telegram",
-    "page_description": "Connect Telegram to this workspace once. Use /agents in Telegram to choose or switch the Agent for each conversation.",
+    "page_description": "Connect each Patchbay Agent to its own Telegram bot. Members can DM the bot, @mention it in a group, type /issue to spin up a new Patchbay issue, and watch the agent's reply stream live.",
+    "workspace_description": "Connect Telegram to this workspace once. Use /agents in Telegram to choose or switch the Agent for each conversation.",
     "not_enabled_title": "Telegram integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Telegram bot installations.",
@@ -1066,7 +1071,8 @@
   },
   "weixin": {
     "section_title": "WeChat",
-    "page_description": "Connect a personal WeChat account to this workspace once by scanning Tencent's official iLink QR code. Use /agents in WeChat to choose or switch the Agent for each conversation.",
+    "page_description": "Connect a personal WeChat account by scanning Tencent's official iLink QR code. Direct messages are delivered to the selected Patchbay Agent.",
+    "workspace_description": "Connect a personal WeChat account to this workspace once by scanning Tencent's official iLink QR code. Use /agents in WeChat to choose or switch the Agent for each conversation.",
     "loading": "Loading…",
     "load_failed": "Failed to load WeChat connections",
     "not_enabled": "WeChat integration is not enabled on this deployment.",

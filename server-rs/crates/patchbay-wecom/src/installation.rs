@@ -129,13 +129,9 @@ impl InstallationService {
         // The serialization boundary. Held until commit/rollback, so every
         // step below sees one consistent answer for who owns this bot.
         if p.agent_id.is_nil() {
-            lock_channel_installation_hub_slot(
-                &mut *tx,
-                crate::CHANNEL_TYPE_WECOM,
-                p.workspace_id,
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("wecom: lock hub routing slot: {e}"))?;
+            lock_channel_installation_hub_slot(&mut *tx, crate::CHANNEL_TYPE_WECOM, p.workspace_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("wecom: lock hub routing slot: {e}"))?;
         } else {
             lock_channel_installation_agent_slot(
                 &mut *tx,
@@ -234,8 +230,7 @@ impl InstallationService {
             )
             .await
         };
-        let row = match upsert
-        {
+        let row = match upsert {
             Ok(row) => row,
             Err(e) if is_unique_violation(&e) => {
                 // A LIVE owner still holds the slot. Read the owner on the
