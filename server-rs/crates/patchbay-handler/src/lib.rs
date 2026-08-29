@@ -514,9 +514,11 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 patchbay_middleware::workspace::require_workspace,
             )),
         )
-        .merge(squad::router().route_layer(middleware::from_fn_with_state(
-            WorkspaceGuardState::member_only(state.pool.clone()),
-            patchbay_middleware::workspace::require_workspace,
+        .merge(formal_guard(squad::router().route_layer(
+            middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
+            ),
         )))
         .merge(skill::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
