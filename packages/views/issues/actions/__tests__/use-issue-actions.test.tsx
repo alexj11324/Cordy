@@ -270,6 +270,30 @@ describe("useIssueActions", () => {
     expect(mockUpdateMutate).not.toHaveBeenCalled();
   });
 
+  it("returning from review opens the implementation handoff confirmation", () => {
+    const inReview = {
+      ...mockIssue,
+      status: "in_review",
+      assignee_type: "agent",
+      assignee_id: "agent-1",
+    } as Issue;
+    const { result } = renderHook(() => useIssueActions(inReview), { wrapper });
+
+    act(() => {
+      result.current.updateField({ status: "in_progress" });
+    });
+
+    expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
+      issueIds: ["issue-1"],
+      mode: "review-return",
+      status: "in_progress",
+      assigneeType: "agent",
+      assigneeId: "agent-1",
+      issueRevision: inReview.revision,
+    });
+    expect(mockUpdateMutate).not.toHaveBeenCalled();
+  });
+
   it("assigning a member applies directly without the run-confirm modal", () => {
     const { result } = renderHook(() => useIssueActions(mockIssue), { wrapper });
 

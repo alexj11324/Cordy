@@ -191,3 +191,44 @@ describe("runConfirmIntent — review handoff", () => {
     ).toBeNull();
   });
 });
+
+describe("runConfirmIntent — review return", () => {
+  it.each([
+    ["built-in review", "in_review"],
+    ["custom review", "qa"],
+  ])("confirms returning the implementation owner from %s", (_label, status) => {
+    expect(
+      runConfirmIntent(issue({ status }), { status: "in_progress" }, CATALOG),
+    ).toEqual({
+      issueIds: ["issue-1"],
+      mode: "review-return",
+      status: "in_progress",
+      assigneeType: "agent",
+      assigneeId: "agent-1",
+      issueRevision: 7,
+    });
+  });
+
+  it("confirms when a grouped surface repeats the current owner fields", () => {
+    expect(
+      runConfirmIntent(
+        issue({ status: "in_review" }),
+        {
+          status: "in_progress",
+          assignee_type: "agent",
+          assignee_id: "agent-1",
+        },
+        CATALOG,
+      ),
+    ).toMatchObject({ mode: "review-return" });
+  });
+
+  it.each([
+    ["member owner", { assignee_type: "member" as const, assignee_id: "user-1" }],
+    ["no owner", { assignee_type: null, assignee_id: null }],
+  ])("does not offer an agent handoff for a %s", (_label, owner) => {
+    expect(
+      runConfirmIntent(issue({ status: "in_review", ...owner }), { status: "in_progress" }, CATALOG),
+    ).toBeNull();
+  });
+});

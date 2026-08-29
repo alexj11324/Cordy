@@ -78,10 +78,11 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
     ) => {
       if (!issueId) return;
       // Writes that hand work to an agent — assigning, promoting out of the
-      // parking lot, and entering Review — confirm first through the shared
-      // Gate. Review also chooses a reviewer and sends status + reviewer in
-      // one update. The modal applies the change itself. If a reviewer is
-      // already set, entering Review applies directly.
+      // parking lot, entering Review, and returning from Review — confirm
+      // first through the shared Gate. Review also chooses a reviewer and
+      // sends status + reviewer in one update. The modal applies the change
+      // itself. If a reviewer is already set, entering Review applies
+      // directly.
       //
       // Not wired into drag-and-drop or the batch toolbar, which keep applying
       // directly. That is the existing split, not a new one: a drop is direct

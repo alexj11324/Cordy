@@ -5265,6 +5265,18 @@ fn issue_reviewer(issue: &Issue) -> Option<(&str, Uuid)> {
     issue.reviewer_type.as_deref().zip(issue.reviewer_id)
 }
 
+fn is_review_return(
+    previous_category: &str,
+    next_category: &str,
+    previous_owner: Option<(&str, Uuid)>,
+    next_owner: Option<(&str, Uuid)>,
+    assignee_touched: bool,
+) -> bool {
+    previous_category == patchbay_service::issue_status::IN_REVIEW
+        && next_category == patchbay_service::issue_status::IN_PROGRESS
+        && (!assignee_touched || previous_owner == next_owner)
+}
+
 struct LegacyReviewRemap<'a> {
     previous_category: &'a str,
     next_category: &'a str,
@@ -5816,9 +5828,13 @@ async fn apply_issue_update(
             .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
-    let returning_from_review = previous_category == patchbay_service::issue_status::IN_REVIEW
-        && next_category == patchbay_service::issue_status::IN_PROGRESS
-        && !assignee_touched;
+    let returning_from_review = is_review_return(
+        &previous_category,
+        &next_category,
+        issue_owner(&locked),
+        issue_owner(&next),
+        assignee_touched,
+    );
     let remapped = remap_legacy_review_assignee(LegacyReviewRemap {
         previous_category: &previous_category,
         next_category: &next_category,
@@ -8180,6 +8196,41 @@ mod tests {
         assert_eq!(next_id, Some(owner_a));
         assert_eq!(reviewer_type.as_deref(), Some("agent"));
         assert_eq!(reviewer_id, Some(owner_b));
+    }
+
+    #[test]
+    fn review_return_survives_redundant_assignee_fields() {
+        let owner_a = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f21").unwrap();
+        let owner_b = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f22").unwrap();
+
+        assert!(is_review_return(
+            "in_review",
+            "in_progress",
+            Some(("agent", owner_a)),
+            Some(("agent", owner_a)),
+            true,
+        ));
+        assert!(is_review_return(
+            "in_review",
+            "in_progress",
+            Some(("agent", owner_a)),
+            Some(("agent", owner_a)),
+            false,
+        ));
+        assert!(!is_review_return(
+            "in_review",
+            "in_progress",
+            Some(("agent", owner_a)),
+            Some(("agent", owner_b)),
+            true,
+        ));
+        assert!(!is_review_return(
+            "in_progress",
+            "in_review",
+            Some(("agent", owner_a)),
+            Some(("agent", owner_a)),
+            true,
+        ));
     }
 
     #[test]
