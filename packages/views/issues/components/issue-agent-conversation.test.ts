@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTask, TimelineEntry } from "@patchbay/core/types";
-import { buildIssueAgentConversation } from "./issue-agent-conversation";
+import { buildIssueAgentConversation, queuedIssueFollowUps } from "./issue-agent-conversation";
 
 function task(id: string, overrides: Partial<AgentTask> = {}): AgentTask {
   return {
@@ -202,5 +202,41 @@ describe("buildIssueAgentConversation", () => {
       actorType: "member",
       actorId: null,
     });
+  });
+
+  it("includes a queued head follow-up in the tray and skips the live main run", () => {
+    const tasks = [
+      task("task-main", {
+        status: "running",
+        trigger_comment_id: "comment-1",
+      }),
+      task("task-wait", {
+        status: "queued",
+        created_at: "2026-08-28T10:02:00Z",
+        side_chat_parent_task_id: "task-main",
+        trigger_comment_id: "comment-2",
+        trigger_summary: "Keep going on auth",
+      }),
+    ];
+    const conversation = buildIssueAgentConversation({
+      issueId: "issue-1",
+      agentId: "agent-1",
+      tasks,
+      timeline: [
+        comment("comment-1", "Start", "2026-08-28T10:00:00Z"),
+        comment("comment-2", "Keep going on auth", "2026-08-28T10:02:00Z"),
+      ],
+      initialRunPrompt: "Work on this issue.",
+    });
+
+    expect(conversation.pendingTask?.task_id).toBe("task-wait");
+    expect(queuedIssueFollowUps(conversation.pendingTask, tasks)).toEqual([
+      {
+        task_id: "task-wait",
+        status: "queued",
+        created_at: "2026-08-28T10:02:00Z",
+        content: "Keep going on auth",
+      },
+    ]);
   });
 });

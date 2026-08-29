@@ -12,6 +12,7 @@ import { unhandledCommentTriggerOutcomes } from "@patchbay/core/issues/comment-t
 import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { agentDetailOptions } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
+import { attachmentToDraftUpload } from "@patchbay/core/drafts";
 import { useChatStore } from "@patchbay/core/chat";
 import type { AgentTask } from "@patchbay/core/types";
 import {
@@ -35,7 +36,11 @@ import {
 } from "../../chat/components/chat-message-list";
 import { escapeMarkdownLabel } from "../../editor/utils/escape-markdown-label";
 import { useT } from "../../i18n";
-import { buildIssueAgentConversation } from "./issue-agent-conversation";
+import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
+import {
+  buildIssueAgentConversation,
+  queuedIssueFollowUps,
+} from "./issue-agent-conversation";
 
 const SIDE_CHAT_MAIN_STATUSES = new Set<AgentTask["status"]>([
   "dispatched",
@@ -43,10 +48,18 @@ const SIDE_CHAT_MAIN_STATUSES = new Set<AgentTask["status"]>([
   "waiting_local_directory",
 ]);
 
+const LIVE_FOLLOW_UP_STATUSES = new Set<AgentTask["status"]>([
+  "dispatched",
+  "running",
+  "waiting_local_directory",
+  "queued",
+]);
+
 /**
  * Posts a comment that mentions this agent. While a main run is live the
  * comment opens (or continues) a Side Chat; otherwise it starts a new run.
- * Steer cancels the live main task first, then posts a top-level comment.
+ * Steer cancels every live and queued run for this agent, then posts a
+ * top-level comment so a Side Chat reply cannot keep going in the background.
  */
 export function useIssueAgentMessageSend({
   issueId,
@@ -171,9 +184,12 @@ export function useIssueAgentMessageSend({
       attachmentIds?: string[],
     ): Promise<string | false> => {
       if (!content.trim() || isSending) return false;
-      if (activeMainTask) {
+      const liveTasks = agentTasks.filter((task) =>
+        LIVE_FOLLOW_UP_STATUSES.has(task.status),
+      );
+      for (const task of liveTasks) {
         try {
-          await api.cancelTask(issueId, activeMainTask.id);
+          await api.cancelTask(issueId, task.id);
         } catch (error) {
           toast.error(
             error instanceof Error && error.message
@@ -208,7 +224,7 @@ export function useIssueAgentMessageSend({
         return false;
       }
     },
-    [activeMainTask, agentId, agentName, createComment, isSending, issueId, t],
+    [agentId, agentName, agentTasks, createComment, isSending, issueId, t],
   );
 
   return { send, steer, isSending };
@@ -320,11 +336,8 @@ export function IssueAgentConversationDialog({
     : undefined;
   const draftKey = `issue-agent:${issueId}:${agentId}`;
   const queuedFollowUps = useMemo(
-    () =>
-      (conversation.pendingTask?.queued_tasks ?? []).filter(
-        (task) => task.status === "queued",
-      ),
-    [conversation.pendingTask?.queued_tasks],
+    () => queuedIssueFollowUps(conversation.pendingTask, agentTasks),
+    [agentTasks, conversation.pendingTask],
   );
 
   const handleSend = useCallback(
@@ -387,12 +400,33 @@ export function IssueAgentConversationDialog({
 
   const handleEditQueuedFollowUp = useCallback(
     async (taskId: string) => {
-      const queued = queuedFollowUps.find((task) => task.task_id === taskId);
-      const cancelled = await cancelQueuedFollowUp(taskId);
-      if (!cancelled || !queued?.content?.trim()) return;
-      useChatStore.getState().setInputDraft(draftKey, queued.content);
+      const sourceTask = agentTasks.find((candidate) => candidate.id === taskId);
+      const comment = sourceTask?.trigger_comment_id
+        ? timeline.find(
+            (entry) =>
+              entry.type === "comment" &&
+              entry.id === sourceTask.trigger_comment_id,
+          )
+        : undefined;
+      const rawContent = comment?.content?.trim()
+        ? comment.content.includes("\n\n")
+          ? comment.content.slice(comment.content.indexOf("\n\n") + 2)
+          : comment.content
+        : (sourceTask?.trigger_summary ?? "");
+      const content = stripMentionMarkdown(rawContent).trim();
+      const attachments = comment?.attachments ?? [];
+      if (content) {
+        useChatStore.getState().setInputDraft(draftKey, content);
+      }
+      if (attachments.length > 0) {
+        useChatStore.getState().setInputDraftAttachments(
+          draftKey,
+          attachments.map(attachmentToDraftUpload),
+        );
+      }
+      await cancelQueuedFollowUp(taskId);
     },
-    [cancelQueuedFollowUp, draftKey, queuedFollowUps],
+    [agentTasks, cancelQueuedFollowUp, draftKey, timeline],
   );
 
   const handleClearQueuedFollowUps = useCallback(async () => {
@@ -461,7 +495,7 @@ export function IssueAgentConversationDialog({
                 tasks={queuedFollowUps}
                 headStatus={conversation.pendingTask?.status}
                 onEdit={handleEditQueuedFollowUp}
-                onRemove={(taskId) => void cancelQueuedFollowUp(taskId)}
+                onRemove={cancelQueuedFollowUp}
                 onClear={handleClearQueuedFollowUps}
               />
             }

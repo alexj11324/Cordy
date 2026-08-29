@@ -627,7 +627,7 @@ export function ChatInput({
       busy={gate.uploading}
       tooltip={sendTooltip}
       ariaLabel={sendAriaLabel}
-      ariaHasPopup={chooseFollowUp && isRunning ? "menu" : undefined}
+      ariaHasPopup={chooseFollowUp && isRunning ? "dialog" : undefined}
       ariaExpanded={chooseFollowUp && isRunning ? followUpOpen : undefined}
       stopTooltip={t(($) => $.input.stop_tooltip)}
       stopAriaLabel={t(($) => $.input.stop_tooltip)}

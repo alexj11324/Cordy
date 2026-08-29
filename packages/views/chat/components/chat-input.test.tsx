@@ -674,7 +674,7 @@ describe("ChatInput project context", () => {
     });
 
     const followUpButton = screen.getByRole("button", { name: "Choose how to follow up" });
-    expect(followUpButton).toHaveAttribute("aria-haspopup", "menu");
+    expect(followUpButton).toHaveAttribute("aria-haspopup", "dialog");
     expect(followUpButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(followUpButton);
     expect(followUpButton).toHaveAttribute("aria-expanded", "true");
