@@ -1,6 +1,6 @@
 /**
- * A WeCom smart-bot ("智能机器人" / aibot) installation bound to a single
- * Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
+ * A WeCom smart-bot ("智能机器人" / aibot) installation, optionally bound to
+ * a Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
  * the Rust WeCom handler. Any new field the backend adds MUST
  * default to optional so older desktop builds keep parsing the response — see
  * AGENTS.md → API Compatibility.
@@ -8,7 +8,8 @@
 export interface WecomInstallation {
   id: string;
   workspace_id: string;
-  agent_id: string;
+  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
+  agent_id: string | null;
   /** The smart-bot identifier assigned by the WeCom admin console. */
   bot_id: string;
   installer_user_id: string;

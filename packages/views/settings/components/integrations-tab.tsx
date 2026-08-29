@@ -1,31 +1,214 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { LarkTab } from "./lark-tab";
-import { ComposioTab } from "./composio-tab";
-import { SlackTab } from "./slack-tab";
-import { DingTalkTab } from "./dingtalk-tab";
-import { VCSTab } from "./vcs-tab";
-import { WecomTab } from "./wecom-tab";
-import { TelegramTab } from "./telegram-tab";
-import { WeixinTab } from "./weixin-tab";
+import { Loader2 } from "lucide-react";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { ApiError } from "@patchbay/core/api";
-import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
 import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { larkInstallationsOptions } from "@patchbay/core/lark";
+import { slackInstallationsOptions } from "@patchbay/core/slack";
+import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
+import { wecomInstallationsOptions } from "@patchbay/core/wecom";
+import { telegramInstallationsOptions } from "@patchbay/core/telegram";
+import { weixinInstallationsOptions } from "@patchbay/core/weixin";
+import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useT } from "../../i18n";
 import { SettingsSection, SettingsTab } from "./settings-layout";
-import { IntegrationChannelIcon } from "./integration-channel-icon";
+import {
+  IntegrationChannelIcon,
+  type IntegrationChannel,
+} from "./integration-channel-icon";
+import { ComposioTab } from "./composio-tab";
+import { VCSTab } from "./vcs-tab";
+import { LarkAgentBindButton } from "./lark-tab";
+import { SlackAgentBindButton } from "./slack-tab";
+import { DingTalkAgentBindButton } from "./dingtalk-tab";
+import { WecomAgentBindButton } from "./wecom-tab";
+import { TelegramAgentBindButton } from "./telegram-tab";
+import { WeixinAgentBindButton } from "./weixin-tab";
 
-// Integrations is the umbrella tab for third-party platform connections.
-// GitHub has its own top-level tab (see github-tab.tsx); everything else
-// — currently Lark, Composio, Slack, Telegram, the self-hosted Git providers
-// (Forgejo / Gitea / GitLab), and WeCom smart-bot, with Linear etc. to follow —
-// lives in here under its own section heading so additional integrations slot
-// in without changing the IA. IntegrationsTab is just the host; each
-// integration owns its own description and install flow.
+type InstallationSummary = {
+  agent_id: string | null;
+  status: string;
+};
+
+type InstallationListing = {
+  configured: boolean;
+  install_supported?: boolean;
+  installations: readonly InstallationSummary[];
+};
+
+type IntegrationQuery = {
+  data?: InstallationListing;
+  isError: boolean;
+  isLoading: boolean;
+};
+
+type IntegrationCardProps = {
+  action: ReactNode;
+  channel: IntegrationChannel;
+  description: string;
+  iconClassName: string;
+  title: string;
+};
+
+type HubActionProps = {
+  canManage: boolean;
+  children: ReactNode;
+  isGuest: boolean;
+  query: IntegrationQuery;
+};
+
+function hasActiveHub(listing: InstallationListing | undefined) {
+  return (
+    listing?.installations.some(
+      (installation) =>
+        installation.agent_id === null && installation.status === "active",
+    ) ?? false
+  );
+}
+
+function HubAction({ canManage, children, isGuest, query }: HubActionProps) {
+  const { t } = useT("settings");
+  const hubConnected = hasActiveHub(query.data);
+
+  // A guest may own its temporary workspace, but external platform
+  // authorization is still a formal-account-only operation. Keep this gate
+  // ahead of the workspace role check so a guest owner cannot reach a real
+  // provider dialog by virtue of owning the guest workspace.
+  if (isGuest) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {t(($) => $.page.integrations_login_required)}
+      </span>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {hubConnected
+          ? t(($) => $.page.integrations_connected)
+          : t(($) => $.page.integrations_admin_only)}
+      </span>
+    );
+  }
+  if (query.isLoading) {
+    return (
+      <span className="inline-flex items-center gap-2 text-caption text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        {t(($) => $.page.integrations_loading)}
+      </span>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {t(($) => $.page.integrations_unavailable)}
+      </span>
+    );
+  }
+  if (!query.data.configured) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {t(($) => $.page.integrations_setup_required)}
+      </span>
+    );
+  }
+  if (!query.data.install_supported && !hubConnected) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {t(($) => $.page.integrations_coming_soon)}
+      </span>
+    );
+  }
+  return children;
+}
+
+function IntegrationCard({
+  action,
+  channel,
+  description,
+  iconClassName,
+  title,
+}: IntegrationCardProps) {
+  return (
+    <Card
+      className="h-full border-surface-border/80 shadow-none transition-colors hover:border-surface-border"
+      data-testid={`integration-channel-card-${channel}`}
+    >
+      <CardContent className="flex min-h-52 flex-col gap-5 p-5">
+        <div className="flex items-start gap-4">
+          <IntegrationChannelIcon
+            channel={channel}
+            size="lg"
+            className={iconClassName}
+          />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-body font-semibold">{title}</h3>
+            <p className="mt-1.5 text-caption leading-5 text-muted-foreground">
+              {description}
+            </p>
+          </div>
+        </div>
+        <div className="mt-auto flex min-h-9 items-center justify-end">
+          {action}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Integrations is the workspace-level connection surface. IM providers are
+// connected once as workspace Hubs; the active Agent is selected from the
+// conversation with `/agents`. Agent-specific installation controls remain
+// available only from legacy deep links and Agent detail pages.
 export function IntegrationsTab() {
   const { t } = useT("settings");
+  const wsId = useWorkspaceId();
+  const user = useAuthStore((state) => state.user);
+  const { data: members = [] } = useQuery({
+    ...memberListOptions(wsId),
+    enabled: !!wsId,
+  });
+  const currentMember = members.find((member) => member.user_id === user?.id);
+  const canManage =
+    currentMember?.role === "owner" || currentMember?.role === "admin";
+  const isGuest = Boolean(
+    user &&
+      "is_guest" in user &&
+      (user as { is_guest?: boolean }).is_guest === true,
+  );
+
+  const lark = useQuery({
+    ...larkInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
+  const slack = useQuery({
+    ...slackInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
+  const dingtalk = useQuery({
+    ...dingtalkInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
+  const wecom = useQuery({
+    ...wecomInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
+  const telegram = useQuery({
+    ...telegramInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
+  const weixin = useQuery({
+    ...weixinInstallationsOptions(wsId),
+    enabled: !!wsId,
+  });
 
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const composioToolkits = useQuery({
@@ -33,91 +216,104 @@ export function IntegrationsTab() {
     enabled: composioEnabled,
   });
   const composioUnconfigured =
-    composioToolkits.error instanceof ApiError && composioToolkits.error.status === 503;
-
-  // Self-host-only integration: the managed cloud reports this false (field
-  // omitted from /api/config), so the whole section — header included — is
-  // hidden there rather than showing an operator-only "missing key" message.
-  const vcsAvailable = useConfigStore((s) => s.vcsIntegrationAvailable);
+    composioToolkits.error instanceof ApiError &&
+    composioToolkits.error.status === 503;
+  const vcsAvailable = useConfigStore((state) => state.vcsIntegrationAvailable);
 
   return (
-    <SettingsTab title={t(($) => $.page.tabs.integrations)}>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="weixin" />
-            {t(($) => $.weixin.section_title)}
-          </span>
-        }
-        description={t(($) => $.weixin.page_description)}
-      >
-        <WeixinTab />
-      </SettingsSection>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="lark" />
-            {t(($) => $.lark.section_title)}
-          </span>
-        }
-        description={t(($) => $.lark.page_description)}
-      >
-        <LarkTab />
-      </SettingsSection>
-      {composioEnabled && !composioUnconfigured && (
+    <SettingsTab
+      title={t(($) => $.page.tabs.integrations)}
+      description={t(($) => $.page.integrations_description)}
+    >
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-body font-semibold">
+            {t(($) => $.page.integrations_channels_title)}
+          </h3>
+          <p className="mt-1 text-caption leading-5 text-muted-foreground">
+            {t(($) => $.page.integrations_channels_description)}
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <IntegrationCard
+            channel="lark"
+            title={t(($) => $.lark.section_title)}
+            description={t(($) => $.lark.page_description)}
+            iconClassName="bg-[#3370FF]/10"
+            action={
+              <HubAction canManage={canManage} isGuest={isGuest} query={lark}>
+                <LarkAgentBindButton workspaceScoped />
+              </HubAction>
+            }
+          />
+          <IntegrationCard
+            channel="slack"
+            title={t(($) => $.slack.section_title)}
+            description={t(($) => $.slack.page_description)}
+            iconClassName="bg-[#611f69]/10"
+            action={
+              <HubAction canManage={canManage} isGuest={isGuest} query={slack}>
+                <SlackAgentBindButton />
+              </HubAction>
+            }
+          />
+          <IntegrationCard
+            channel="dingtalk"
+            title={t(($) => $.dingtalk.section_title)}
+            description={t(($) => $.dingtalk.page_description)}
+            iconClassName="bg-[#1677FF]/10"
+            action={
+              <HubAction canManage={canManage} isGuest={isGuest} query={dingtalk}>
+                <DingTalkAgentBindButton />
+              </HubAction>
+            }
+          />
+          <IntegrationCard
+            channel="wecom"
+            title={t(($) => $.wecom.section_title)}
+            description={t(($) => $.wecom.page_description)}
+            iconClassName="bg-[#07C160]/10"
+            action={
+              <HubAction canManage={canManage} isGuest={isGuest} query={wecom}>
+                <WecomAgentBindButton />
+              </HubAction>
+            }
+          />
+          <IntegrationCard
+            channel="telegram"
+            title={t(($) => $.telegram.section_title)}
+            description={t(($) => $.telegram.page_description)}
+            iconClassName="bg-[#2AABEE]/10"
+            action={
+              <HubAction canManage={canManage} isGuest={isGuest} query={telegram}>
+                <TelegramAgentBindButton />
+              </HubAction>
+            }
+          />
+          <IntegrationCard
+            channel="weixin"
+            title={t(($) => $.weixin.section_title)}
+            description={t(($) => $.weixin.page_description)}
+            iconClassName="bg-[#07C160]/10"
+            action={
+              <HubAction canManage={canManage} isGuest={isGuest} query={weixin}>
+                <WeixinAgentBindButton />
+              </HubAction>
+            }
+          />
+        </div>
+      </section>
+
+      {composioEnabled && !composioUnconfigured ? (
         <SettingsSection title={t(($) => $.composio.section_title)}>
           <ComposioTab />
         </SettingsSection>
-      )}
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="slack" />
-            {t(($) => $.slack.section_title)}
-          </span>
-        }
-        description={t(($) => $.slack.page_description)}
-      >
-        <SlackTab />
-      </SettingsSection>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="dingtalk" />
-            {t(($) => $.dingtalk.section_title)}
-          </span>
-        }
-        description={t(($) => $.dingtalk.page_description)}
-      >
-        <DingTalkTab />
-      </SettingsSection>
-      {vcsAvailable && (
+      ) : null}
+      {vcsAvailable ? (
         <SettingsSection title={t(($) => $.vcs.section_title)}>
           <VCSTab />
         </SettingsSection>
-      )}
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="wecom" />
-            {t(($) => $.wecom.section_title)}
-          </span>
-        }
-        description={t(($) => $.wecom.page_description)}
-      >
-        <WecomTab />
-      </SettingsSection>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="telegram" />
-            {t(($) => $.telegram.section_title)}
-          </span>
-        }
-        description={t(($) => $.telegram.page_description)}
-      >
-        <TelegramTab />
-      </SettingsSection>
+      ) : null}
     </SettingsTab>
   );
 }

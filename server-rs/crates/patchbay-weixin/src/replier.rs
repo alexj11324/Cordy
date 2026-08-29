@@ -104,6 +104,12 @@ impl ReplierSeam for OutboundReplier {
         message: &InboundMessage,
         result: &EngineResult,
     ) {
+        if let Some(text) = result.reply_text.as_deref() {
+            if let Err(error) = self.post(ctx, installation, message, text).await {
+                tracing::warn!(installation_id = %installation.id, %error, "weixin hub reply failed");
+            }
+            return;
+        }
         let Some(outcome) = result.outcome.as_ref() else {
             return;
         };

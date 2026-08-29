@@ -126,6 +126,9 @@ impl OutboundReplier {
         msg: &InboundMessage,
         res: &EngineResult,
     ) -> anyhow::Result<()> {
+        if let Some(text) = res.reply_text.as_deref() {
+            return self.post(ctx, inst, msg, text).await;
+        }
         match res.outcome.as_ref() {
             Some(outcome) if *outcome == Outcome::needs_binding() => {
                 self.send_binding_prompt(ctx, inst, msg, res).await

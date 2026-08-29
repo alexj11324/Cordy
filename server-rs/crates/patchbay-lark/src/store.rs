@@ -186,7 +186,7 @@ pub fn installation_from_row(row: ChannelInstallation) -> anyhow::Result<Install
     Ok(Installation {
         id: row.id,
         workspace_id: row.workspace_id,
-        agent_id: row.agent_id,
+        agent_id: row.agent_id.unwrap_or_default(),
         app_id: cfg.app_id,
         app_secret_encrypted: secret,
         tenant_key: text_or_none(&cfg.tenant_key),

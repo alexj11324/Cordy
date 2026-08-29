@@ -1012,7 +1012,7 @@ pub async fn get_channel_installation_owner_by_app_id(
     let row = sqlx::query(
         r#"SELECT ci.workspace_id, ci.agent_id, a.archived_at AS agent_archived_at
 FROM channel_installation ci
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.channel_type = $1
   AND ci.config ->> 'app_id' = $2::text"#,
     )
@@ -1047,7 +1047,7 @@ pub async fn get_channel_installation_slot_owner_by_app_id(
     let row = sqlx::query(
         r#"SELECT ci.id, ci.workspace_id, ci.agent_id, ci.status,
        a.archived_at AS agent_archived_at,
-       (a.id IS NOT NULL)::boolean AS agent_exists,
+       (ci.agent_id IS NULL OR a.id IS NOT NULL)::boolean AS agent_exists,
        (w.id IS NOT NULL)::boolean AS workspace_exists
 FROM channel_installation ci
 LEFT JOIN agent a ON a.id = ci.agent_id
@@ -1132,9 +1132,10 @@ pub async fn list_active_channel_installations(
     let rows = sqlx::query(
         r#"SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
   AND ci.channel_type = $1
+  AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC"#
     )
         .bind(channel_type)
@@ -1174,9 +1175,10 @@ pub async fn list_active_channel_installations_missing_bot_union_id_after(
         r#"SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at
 FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
   AND ci.channel_type = $1
+  AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
   AND COALESCE(ci.config ->> 'bot_union_id', '') = ''
   AND ($2::timestamptz IS NULL OR (ci.created_at, ci.id) > ($2, $3))
 ORDER BY ci.created_at ASC, ci.id ASC
@@ -1214,8 +1216,9 @@ pub async fn list_all_active_channel_installations(
     let rows = sqlx::query(
         r#"SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC"#
     )
         .fetch_all(executor)
@@ -1359,6 +1362,24 @@ pub async fn lock_channel_installation_agent_slot(
     Ok(result.rows_affected())
 }
 
+/// Serializes the single workspace-scoped installation for a provider.
+/// Workspace-scoped installations have no Agent selected until a user sends
+/// `/agents` from the connected channel.
+pub async fn lock_channel_installation_hub_slot(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    channel_type: &str,
+    workspace_id: Uuid,
+) -> anyhow::Result<u64> {
+    let key = workspace_id.to_string();
+    let result =
+        sqlx::query(r#"SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))"#)
+            .bind(channel_type)
+            .bind(key)
+            .execute(executor)
+            .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn mark_channel_chat_session_pending_fresh(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     chat_session_id: Uuid,
@@ -1456,9 +1477,10 @@ pub async fn reclaim_dead_channel_installation_by_app_id(
       AND (
             (ci.status = 'revoked'
                 AND NOT (ci.workspace_id = $3
-                         AND ci.agent_id = $4))
+                         AND ci.agent_id IS NOT DISTINCT FROM NULLIF($4, '00000000-0000-0000-0000-000000000000'::uuid)))
          OR NOT EXISTS (SELECT 1 FROM workspace w WHERE w.id = ci.workspace_id)
-         OR NOT EXISTS (SELECT 1 FROM agent a WHERE a.id = ci.agent_id)
+         OR (ci.agent_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM agent a WHERE a.id = ci.agent_id))
       )
     RETURNING ci.id
 ),
@@ -1870,6 +1892,52 @@ RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_tok
         .bind(installer_user_id)
         .fetch_optional(executor)
         .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(ChannelInstallation {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        agent_id: row.try_get(2)?,
+        channel_type: row.try_get(3)?,
+        config: row.try_get(4)?,
+        status: row.try_get(5)?,
+        ws_lease_token: row.try_get(6)?,
+        ws_lease_expires_at: row.try_get(7)?,
+        installer_user_id: row.try_get(8)?,
+        installed_at: row.try_get(9)?,
+        created_at: row.try_get(10)?,
+        updated_at: row.try_get(11)?,
+    }))
+}
+
+/// Inserts or reactivates a workspace-scoped provider installation. The
+/// partial unique index guarantees one active hub slot per workspace/type.
+pub async fn upsert_channel_installation_hub(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    channel_type: &str,
+    config: &serde_json::Value,
+    installer_user_id: Uuid,
+) -> anyhow::Result<Option<ChannelInstallation>> {
+    let row = sqlx::query(
+        r#"INSERT INTO channel_installation (
+    workspace_id, agent_id, channel_type, config, installer_user_id
+) VALUES (
+    $1, NULL, $2, $3, $4
+)
+ON CONFLICT (workspace_id, channel_type) WHERE agent_id IS NULL DO UPDATE SET
+    config            = EXCLUDED.config,
+    installer_user_id = EXCLUDED.installer_user_id,
+    status            = 'active',
+    installed_at      = now(),
+    updated_at        = now()
+RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at"#,
+    )
+    .bind(workspace_id)
+    .bind(channel_type)
+    .bind(config)
+    .bind(installer_user_id)
+    .fetch_optional(executor)
+    .await?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(ChannelInstallation {
         id: row.try_get(0)?,

@@ -63,7 +63,7 @@ impl InstallationResolver for InstallationResolverImpl {
         Ok(ResolvedInstallation {
             id: inst.id,
             workspace_id: inst.workspace_id,
-            agent_id: inst.agent_id,
+            agent_id: inst.agent_id.unwrap_or_default(),
             route_revision: 0,
             installer_user_id: inst.installer_user_id,
             active: inst.status == crate::types::INSTALLATION_ACTIVE,
@@ -140,6 +140,10 @@ struct SessionBinderImpl {
 
 #[async_trait]
 impl SessionBinder for SessionBinderImpl {
+    fn binding_key(&self, msg: &InboundMessage) -> String {
+        wecom_session_routing(msg).0
+    }
+
     async fn ensure_session(&self, p: EnsureSessionParams) -> anyhow::Result<Uuid> {
         let (binding_key, config) = wecom_session_routing(&p.message);
         self.session
@@ -251,9 +255,12 @@ pub fn new_wecom_resolver_set(
         dedup: Some(Arc::new(DeduperImpl { pool: pool.clone() })),
         session: Some(Arc::new(SessionBinderImpl { session })),
         media,
-        audit: Some(Arc::new(AuditorImpl { pool })),
+        audit: Some(Arc::new(AuditorImpl { pool: pool.clone() })),
         replier,
         typing: None,
+        hub: Some(Arc::new(patchbay_channel_engine::hub::PostgresHubRouter::new(
+            pool.clone(),
+        ))),
         origin_type: ORIGIN_WECOM_CHAT.to_string(),
     }
 }

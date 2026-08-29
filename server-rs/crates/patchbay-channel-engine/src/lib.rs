@@ -24,6 +24,7 @@
 
 pub mod batcher;
 pub mod fresh_command;
+pub mod hub;
 pub mod ids;
 pub mod issue_command;
 pub mod lease;

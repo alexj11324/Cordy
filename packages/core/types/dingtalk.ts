@@ -1,5 +1,7 @@
-/** A DingTalk robot installation with one default Patchbay agent. Group routes
- * may target other agents without duplicating the installation.
+/** A DingTalk robot installation, optionally with a default Patchbay agent.
+ * Workspace Hub installations let each conversation select an Agent with
+ * `/agents`; group routes may target other agents without duplicating the
+ * installation.
  *
  * Wire shape mirrors `DingTalkInstallationResponse` in
  * the Rust DingTalk handler. New fields the backend adds in the
@@ -8,7 +10,8 @@
 export interface DingTalkInstallation {
   id: string;
   workspace_id: string;
-  agent_id: string;
+  /** Null for a workspace Hub; group route agent_id remains explicit below. */
+  agent_id: string | null;
   installer_user_id: string;
   status: "active" | "revoked" | string;
   installed_at: string;

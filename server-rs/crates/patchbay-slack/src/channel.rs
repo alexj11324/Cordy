@@ -152,6 +152,8 @@ pub struct SocketSlashCommand {
     pub team_id: String,
     #[serde(rename = "api_app_id", default)]
     pub api_app_id: String,
+    #[serde(rename = "channel_id", default)]
+    pub channel_id: String,
     #[serde(rename = "response_url", default)]
     pub response_url: String,
 }
@@ -164,6 +166,7 @@ impl From<&SocketSlashCommand> for SlashCommand {
             user_id: c.user_id.clone(),
             team_id: c.team_id.clone(),
             api_app_id: c.api_app_id.clone(),
+            channel_id: c.channel_id.clone(),
             response_url: c.response_url.clone(),
         }
     }

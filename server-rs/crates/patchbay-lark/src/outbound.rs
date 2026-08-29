@@ -506,7 +506,7 @@ impl LarkPatcher {
         }
         let creds = installation_credentials(self.credentials.as_ref(), &inst)?;
 
-        let agent_name = match get_agent(&self.pool, inst.agent_id).await {
+        let agent_name = match get_agent(&self.pool, task.agent_id).await {
             Ok(Some(agent)) => agent.name,
             _ => String::new(),
         };
