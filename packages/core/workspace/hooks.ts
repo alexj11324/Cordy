@@ -80,7 +80,7 @@ export function buildActorNameResolver(directories: {
   return (type: string, id: string) => {
     if (type === "member") return memberNames.get(id) ?? "Unknown";
     if (type === "agent") return agentNames.get(id) ?? "Unknown Agent";
-    if (type === "squad") return squadNames.get(id) ?? "Unknown Squad";
+    if (type === "squad") return squadNames.get(id) ?? "Unknown Team";
     // An event-triggered hook writes as the installation itself: there is no
     // person behind it, and borrowing the last member who touched the issue
     // would be a lie the audit trail cannot undo. An id that no longer
@@ -116,7 +116,7 @@ export function useActorName() {
 
   const getSquadName = useCallback((squadId: string) => {
     const s = squads.find((s) => s.id === squadId);
-    return s?.name ?? "Unknown Squad";
+    return s?.name ?? "Unknown Team";
   }, [squads]);
 
   const getActorName = useMemo(

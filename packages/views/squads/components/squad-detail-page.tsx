@@ -16,6 +16,7 @@ import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
 import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
+import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
@@ -172,9 +173,9 @@ export function SquadDetailPage() {
 
   const deleteMut = useMutation({
     mutationFn: () => api.deleteSquad(squadId),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) }); push(p.squads()); toast.success("Squad archived"); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) }); push(p.squads()); toast.success(t(($) => $.archive_dialog.success)); },
     onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : "Failed to archive squad"),
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.archive_dialog.error)),
   });
 
   const getEntityName = (type: string, id: string) => {
@@ -329,11 +330,11 @@ function SquadDetailSkeleton() {
 }
 
 // Compact 16px avatar shown next to the name in the page header. Falls back
-// to the Users icon when no custom avatar is set so the squad still has a
-// recognisable glyph in the breadcrumb strip.
+// to the shared PeopleGroup icon when no custom avatar is set so the team
+// still has a recognisable glyph in the breadcrumb strip.
 function SquadHeaderAvatar({ squad, initials }: { squad: Squad; initials: string }) {
   if (!squad.avatar_url) {
-    return <Users className="h-4 w-4 text-muted-foreground" />;
+    return <PeopleGroupIcon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />;
   }
   return (
     <ActorAvatarBase
@@ -361,7 +362,7 @@ function SquadStaticAvatar({ squad, initials }: { squad: Squad; initials: string
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-          <Users className="h-7 w-7" />
+          <PeopleGroupIcon aria-hidden="true" className="h-7 w-7" />
         </div>
       )}
     </div>
@@ -378,13 +379,14 @@ function SquadNameEditor({
   value: string;
   onSave: (next: string) => Promise<void>;
 }) {
+  const { t } = useT("squads");
   return (
     <InlineEditPopover
       value={value}
       onSave={onSave}
-      title="Rename squad"
-      placeholder="Squad name"
-      validate={(v) => (v.trim().length > 0 ? null : "Name is required")}
+      title={t(($) => $.name_editor.rename_title)}
+      placeholder={t(($) => $.name_editor.name_placeholder)}
+      validate={(v) => (v.trim().length > 0 ? null : t(($) => $.name_editor.name_required))}
     >
       {(triggerProps) => (
         <button
@@ -442,9 +444,9 @@ function InlineEditPopover({
     try {
       await onSave(draft);
       setOpen(false);
-      toast.success("Saved");
+      toast.success(t(($) => $.name_editor.saved));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t(($) => $.name_editor.save_failed));
     } finally {
       setSaving(false);
     }
@@ -485,7 +487,7 @@ function InlineEditPopover({
               {t(($) => $.name_editor.cancel)}
             </Button>
             <Button size="sm" onClick={() => void commit()} disabled={saving || draft === value}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t(($) => $.name_editor.save)}
             </Button>
           </div>
         </div>
@@ -904,7 +906,7 @@ function SquadDescriptionEditorBody({
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="What is this squad responsible for?"
+        placeholder={t(($) => $.description_dialog.placeholder_editor)}
         rows={6}
         onKeyDown={(e) => {
           if (e.key === "Escape") { onClose(); return; }
@@ -919,7 +921,7 @@ function SquadDescriptionEditorBody({
       <DialogFooter>
         <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>{t(($) => $.description_dialog.cancel)}</Button>
         <Button size="sm" onClick={() => void commit()} disabled={saving || !dirty}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t(($) => $.description_dialog.save)}
         </Button>
       </DialogFooter>
     </>

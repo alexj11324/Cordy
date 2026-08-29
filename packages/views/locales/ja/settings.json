@@ -228,8 +228,8 @@
         "description": "エージェント一覧を開きます。"
       },
       "goSquads": {
-        "label": "Squadsへ移動",
-        "description": "Squad一覧を開きます。"
+        "label": "チームへ移動",
+        "description": "チーム一覧を開きます。"
       },
       "goUsage": {
         "label": "使用量へ移動",

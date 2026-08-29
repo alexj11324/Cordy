@@ -528,6 +528,7 @@ function MentionRow({
 }) {
   const { t } = useT("editor");
   const { t: issuesT } = useT("issues");
+  const { t: layoutT } = useT("layout");
   if (item.type === "issue") {
     // Visually dim closed issues (done/cancelled) so they're distinguishable
     // from active ones in the suggestion list — they're still selectable.
@@ -629,9 +630,9 @@ function MentionRow({
         <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Agent</Badge>
       )}
       {item.type === "squad" && (
-        // "Squad" is a glossary-protected product term — kept un-translated.
-        // eslint-disable-next-line i18next/no-literal-string
-        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Squad</Badge>
+        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">
+          {layoutT(($) => $.tab.squad)}
+        </Badge>
       )}
     </button>
   );

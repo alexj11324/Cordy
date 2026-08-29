@@ -11,7 +11,6 @@ import {
   MoreHorizontal,
   Plus,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -37,6 +36,7 @@ import {
   type SquadSortField,
 } from "@patchbay/core/squads/stores";
 import type { Agent, MemberWithUser, Squad } from "@patchbay/core/types";
+import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
@@ -911,7 +911,7 @@ export function SquadsPage() {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <CollectionPageHeader
-        icon={Users}
+        icon={PeopleGroupIcon}
         title={t(($) => $.page.title)}
         count={squads.length}
         actions={
@@ -927,7 +927,7 @@ export function SquadsPage() {
         <LoadingSkeleton />
       ) : squads.length === 0 ? (
         <CollectionPageState
-          icon={Users}
+          icon={PeopleGroupIcon}
           title={t(($) => $.page.empty_no_squads)}
           actions={
             <Button

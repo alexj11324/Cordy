@@ -228,8 +228,8 @@
         "description": "Open the agent list."
       },
       "goSquads": {
-        "label": "Go to Squads",
-        "description": "Open the squad list."
+        "label": "Go to Teams",
+        "description": "Open the team list."
       },
       "goUsage": {
         "label": "Go to Usage",

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, lazy, useRef, useState } from "react";
-import { Bot, Camera, ImagePlus, Loader2, Users, X } from "lucide-react";
+import { Bot, Camera, ImagePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@patchbay/core/api";
 import { useFileUpload } from "@patchbay/core/hooks/use-file-upload";
@@ -20,6 +20,7 @@ import { Separator } from "@patchbay/ui/components/ui/separator";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../i18n";
 import { AvatarCropDialog } from "./avatar-crop-dialog";
+import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 
 // The full emoji-mart picker is ~1MB of emoji data. Only the handful of
 // suggestions render eagerly; the searchable set loads when asked for.
@@ -88,7 +89,12 @@ function AvatarFallback({
     return <Bot style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
   if (variant === "squad") {
-    return <Users style={{ width: size * 0.5, height: size * 0.5 }} />;
+    return (
+      <PeopleGroupIcon
+        aria-hidden="true"
+        style={{ width: size * 0.5, height: size * 0.5 }}
+      />
+    );
   }
   const text =
     variant === "workspace"

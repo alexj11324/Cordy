@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bot, Users } from "lucide-react";
+import { Bot } from "lucide-react";
 import { cn } from "@patchbay/ui/lib/utils";
 import {
   AVATAR_SIZE_PX,
@@ -10,6 +10,7 @@ import {
 } from "@patchbay/ui/lib/avatar-size";
 import { parseAvatarEmoji } from "@patchbay/ui/lib/avatar-emoji";
 import { PatchbayIcon } from "./patchbay-icon";
+import { PeopleGroupIcon } from "./people-group-icon";
 
 interface ActorAvatarProps {
   name: string;
@@ -77,7 +78,10 @@ function ActorAvatar({
       ) : isAgent ? (
         <Bot style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : isSquad ? (
-        <Users style={{ width: px * 0.55, height: px * 0.55 }} />
+        <PeopleGroupIcon
+          aria-hidden="true"
+          style={{ width: px * 0.55, height: px * 0.55 }}
+        />
       ) : (
         initials
       )}

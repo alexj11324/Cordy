@@ -228,8 +228,8 @@
         "description": "打开智能体列表。"
       },
       "goSquads": {
-        "label": "前往小队",
-        "description": "打开小队列表。"
+        "label": "前往团队",
+        "description": "打开团队列表。"
       },
       "goUsage": {
         "label": "前往用量",
