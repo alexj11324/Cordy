@@ -157,10 +157,10 @@ function DesktopHandoff() {
   return (
     <ClerkAuthShell>
       <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-xl font-semibold">
+        <h1 className="text-title-sm font-semibold">
           {t(($) => $.web.desktop_handoff.opening_title)}
         </h1>
-        <p aria-live="polite" className="text-sm text-muted-foreground">
+        <p aria-live="polite" className="text-body text-muted-foreground">
           {!backendSessionReady || loading
             ? t(($) => $.web.desktop_handoff.preparing)
             : t(($) => $.web.desktop_handoff.opening_description)}
@@ -169,14 +169,14 @@ function DesktopHandoff() {
           type="button"
           onClick={openDesktopApp}
           disabled={loading || !backendSessionReady}
-          className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
+          className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-body font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
         >
           {loading || !backendSessionReady
             ? t(($) => $.web.desktop_handoff.preparing)
             : t(($) => $.web.desktop_handoff.open_button)}
         </button>
         {error && (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-body text-destructive">
             {error}
           </p>
         )}
