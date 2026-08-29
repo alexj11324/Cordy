@@ -24,6 +24,7 @@ export default [
           "**/tests/**",
           "**/vitest.config.*",
           "**/vite.config.*",
+          "**/vite.*.config.*",
           "**/electron.vite.config.*",
           "**/eslint.config.*",
           "**/scripts/**",
