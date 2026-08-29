@@ -6,6 +6,17 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
     await importOriginal<typeof import("@clerk/nextjs/server")>();
   return {
     ...actual,
+    clerkMiddleware: (handler: Parameters<typeof actual.clerkMiddleware>[0]) =>
+      async (request: NextRequest) =>
+        handler(
+          async () => ({
+            userId: request.cookies.has("patchbay_logged_in")
+              ? "user-1"
+              : null,
+          }),
+          request,
+          undefined as never,
+        ),
     getAuth: async (request: NextRequest) => ({
       userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
     }),

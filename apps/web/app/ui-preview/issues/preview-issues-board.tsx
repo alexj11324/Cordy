@@ -298,7 +298,7 @@ export function PreviewIssuesBoard() {
             ))}
           </div>
           <div className="space-y-1">
-            <p className="px-2 text-micro font-medium uppercase tracking-wide text-muted-foreground/70">
+            <p className="px-2 text-micro font-medium uppercase tracking-wide text-muted-foreground">
               {layoutT(($) => $.sidebar.workspace_group)}
             </p>
             {workspaceNav.map((item) => (
@@ -306,7 +306,7 @@ export function PreviewIssuesBoard() {
             ))}
           </div>
           <div className="space-y-1">
-            <p className="px-2 text-micro font-medium uppercase tracking-wide text-muted-foreground/70">
+            <p className="px-2 text-micro font-medium uppercase tracking-wide text-muted-foreground">
               {layoutT(($) => $.sidebar.configure_group)}
             </p>
             {configureNav.map((item) => (
