@@ -32,6 +32,14 @@
     "no_projects": "プロジェクトがまだありません",
     "project_context_unsupported": "プロジェクトの説明は適用されません——このエージェントのデーモンのアップグレードが必要です"
   },
+  "follow_up": {
+    "title": "エージェントはまだ作業中です",
+    "wait": "待つ",
+    "wait_hint": "現在の返信が終わるまでキューに入れます",
+    "steer": "指示",
+    "steer_hint": "現在の返信を止めて、今すぐ送信します",
+    "choose_tooltip": "フォローアップ方法を選ぶ"
+  },
   "queue": {
     "title_other": "キュー内のメッセージ {{count}} 件",
     "clear": "すべて削除",

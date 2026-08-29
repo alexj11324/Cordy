@@ -551,6 +551,7 @@
     "conversation_initial_prompt": "Work on this issue.",
     "conversation_not_triggered": "Comment posted, but {{name}} was not started.",
     "conversation_send_failed": "Failed to send message",
+    "conversation_steer_send_failed": "Agent stopped, but the follow-up wasn't sent. Send again to start a new reply.",
     "cancel_failed": "Failed to cancel task",
     "trigger_retry": "Retry",
     "trigger_retry_attempt": "Retry #{{attempt}}",

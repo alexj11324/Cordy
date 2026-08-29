@@ -22,6 +22,7 @@ import type { Agent, ChatSession } from "@patchbay/core/types";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
+import { ActorAvatar } from "../common/actor-avatar";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
 import { ChatInput } from "./components/chat-input";
 import { ChatQueue } from "./components/chat-queue";
@@ -238,9 +239,9 @@ export function ChatPage() {
   // The conversation pane: message list / skeleton / empty above a persistent
   // banner + input. Identical composition to the floating window's body, so a
   // brand-new chat (no active session) shows the agent-aware empty state + input.
-  // No compose-box agent selector — the agent is fixed when the chat starts.
-  // `@container`: the conversation column's gutter (CHAT_GUTTER) widens with
-  // THIS pane, which the user resizes independently of the browser window.
+  // The composer shows the bound agent's avatar; switching agents still starts
+  // from ⊕. `@container`: the conversation column's gutter (CHAT_GUTTER) widens
+  // with THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
   const conversation = (
     <div className="flex flex-1 flex-col min-h-0 @container">
@@ -305,16 +306,6 @@ export function ChatPage() {
         <OfflineBanner agentName={c.activeAgent?.name} availability={c.availability} />
       )}
 
-      <ChatQueue
-        tasks={queuedTasks}
-        headStatus={c.pendingTask?.status}
-        onSendNow={c.handleSendQueuedTaskNow}
-        sendNowDisabled={c.isAgentAccessRevoked}
-        onEdit={c.handleEditQueuedTask}
-        onRemove={c.handleRemoveQueuedTask}
-        onClear={c.handleClearQueuedTasks}
-      />
-
       <ChatInput
         onSend={c.handleSend}
         restoreDraftRequest={c.restoreDraftRequest}
@@ -323,6 +314,17 @@ export function ChatPage() {
         onStop={c.handleStop}
         isRunning={!!c.pendingTaskId}
         allowSubmitWhileRunning={c.pendingTask?.supports_queue === true}
+        queueSlot={
+          <ChatQueue
+            tasks={queuedTasks}
+            headStatus={c.pendingTask?.status}
+            onSendNow={c.handleSendQueuedTaskNow}
+            sendNowDisabled={c.isAgentAccessRevoked}
+            onEdit={c.handleEditQueuedTask}
+            onRemove={c.handleRemoveQueuedTask}
+            onClear={c.handleClearQueuedTasks}
+          />
+        }
         disabled={
           c.isSessionArchived ||
           c.isAgentArchived ||
@@ -334,6 +336,17 @@ export function ChatPage() {
         agentAccessRevoked={c.isAgentAccessRevoked}
         agentRuntimeRequired={!c.isAgentRuntimeBound}
         agentName={c.activeAgent?.name}
+        leftAdornment={
+          c.activeAgent ? (
+            <ActorAvatar
+              actorType="agent"
+              actorId={c.activeAgent.id}
+              size="lg"
+              profileLink={false}
+              showStatusDot
+            />
+          ) : null
+        }
         projects={c.projects}
         projectId={c.activeProjectId}
         projectContextUnsupported={c.projectContextUnsupported}

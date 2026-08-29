@@ -33,6 +33,14 @@
     "no_projects": "No projects yet",
     "project_context_unsupported": "Project description won't apply — this agent's daemon needs an upgrade"
   },
+  "follow_up": {
+    "title": "The agent is still working",
+    "wait": "Wait",
+    "wait_hint": "Queue this until the current reply finishes",
+    "steer": "Steer",
+    "steer_hint": "Stop the current reply and send this now",
+    "choose_tooltip": "Choose how to follow up"
+  },
   "queue": {
     "title_one": "{{count}} queued message",
     "title_other": "{{count}} queued messages",

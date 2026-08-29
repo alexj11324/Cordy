@@ -593,7 +593,7 @@ describe("ChatInput project context", () => {
     expect(onProjectChange).toHaveBeenCalledWith(null);
   });
 
-  it("swaps Stop for Queue Send when the running composer has content", async () => {
+  it("keeps Stop and shows Queue Send when the running composer has content", async () => {
     const onSend = vi.fn<ChatInputOnSend>(async () => true);
     const onStop = vi.fn();
     renderInput({ isRunning: true, allowSubmitWhileRunning: true, onSend, onStop });
@@ -605,7 +605,7 @@ describe("ChatInput project context", () => {
       target: { value: "follow-up" },
     });
 
-    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
     const queueButton = screen.getByRole("button", { name: "Queue message" });
     expect(queueButton).not.toBeDisabled();
     fireEvent.click(queueButton);
@@ -629,6 +629,7 @@ describe("ChatInput project context", () => {
       target: { value: "follow-up with attachment" },
     });
     expect(screen.getByRole("button", { name: "Queue message" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
 
     await act(async () => {
       dropHandlers.onDrop?.([
@@ -656,6 +657,58 @@ describe("ChatInput project context", () => {
     expect(await screen.findByRole("button", { name: "Queue message" })).not.toBeDisabled();
   });
 
+  it("asks Wait vs Steer before sending from an issue conversation", async () => {
+    const onSend = vi.fn<ChatInputOnSend>(async () => true);
+    const onSteer = vi.fn<ChatInputOnSend>(async () => true);
+    renderInput({
+      isRunning: true,
+      allowSubmitWhileRunning: true,
+      chooseFollowUp: true,
+      onSend,
+      onSteer,
+      onStop: vi.fn(),
+    });
+
+    fireEvent.change(screen.getByTestId("editor"), {
+      target: { value: "keep going" },
+    });
+
+    const followUpButton = screen.getByRole("button", { name: "Choose how to follow up" });
+    expect(followUpButton).toHaveAttribute("aria-haspopup", "menu");
+    expect(followUpButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(followUpButton);
+    expect(followUpButton).toHaveAttribute("aria-expanded", "true");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onSteer).not.toHaveBeenCalled();
+    expect(await screen.findByText("The agent is still working")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Wait/ }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    expect(onSteer).not.toHaveBeenCalled();
+  });
+
+  it("steers an issue follow-up instead of queueing it", async () => {
+    const onSend = vi.fn<ChatInputOnSend>(async () => true);
+    const onSteer = vi.fn<ChatInputOnSend>(async () => true);
+    renderInput({
+      isRunning: true,
+      allowSubmitWhileRunning: true,
+      chooseFollowUp: true,
+      onSend,
+      onSteer,
+      onStop: vi.fn(),
+    });
+
+    fireEvent.change(screen.getByTestId("editor"), {
+      target: { value: "change course" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Choose how to follow up" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Steer/ }));
+
+    await waitFor(() => expect(onSteer).toHaveBeenCalledTimes(1));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("shows only Stop while an older server is running", () => {
     renderInput({ isRunning: true, onStop: vi.fn() });
 
@@ -664,18 +717,23 @@ describe("ChatInput project context", () => {
   });
 
   it("keeps the composer chrome independent of the queue", () => {
-    // The follow-up queue tucks its bottom edge under the composer, which
-    // therefore ALWAYS paints on top (static z-10) — but the queue's presence
-    // must never restyle the input surface itself.
     const { container } = renderInput();
     const surface = container.querySelector('[data-slot="chat-input-surface"]');
+    const actions = container.querySelector('[data-slot="chat-input-actions"]');
 
     expect(container.firstElementChild).toHaveClass("relative", "z-10");
-    expect(surface).toHaveClass("rounded-lg");
-    expect(surface).not.toHaveClass(
-      "rounded-4xl",
-      "shadow-[var(--menu-shadow)]",
-    );
+    expect(surface).toHaveClass("rounded-xl", "shadow-sm");
+    expect(actions).toBeInTheDocument();
+  });
+
+  it("renders the queue tray inside the composer card", () => {
+    const { container } = renderInput({
+      queueSlot: <div data-testid="queue-slot">queued</div>,
+    });
+    const surface = container.querySelector('[data-slot="chat-input-surface"]');
+
+    expect(surface?.contains(screen.getByTestId("queue-slot"))).toBe(true);
+    expect(surface).toHaveClass("rounded-xl");
   });
 
   it("locks the project control while a send is in flight so a mid-send switch cannot retarget the session", async () => {

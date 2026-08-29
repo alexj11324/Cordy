@@ -41,6 +41,7 @@ vi.mock("./issue-agent-conversation-dialog", () => ({
   ),
   useIssueAgentMessageSend: () => ({
     send: vi.fn(async () => false),
+    steer: vi.fn(async () => false),
     isSending: false,
   }),
   useIssueAgentTasks: () => mockState.tasks,

@@ -32,6 +32,14 @@
     "no_projects": "아직 프로젝트가 없습니다",
     "project_context_unsupported": "프로젝트 설명이 적용되지 않습니다 — 이 에이전트의 데몬 업그레이드가 필요합니다"
   },
+  "follow_up": {
+    "title": "에이전트가 아직 작업 중입니다",
+    "wait": "기다리기",
+    "wait_hint": "현재 답변이 끝날 때까지 대기열에 넣습니다",
+    "steer": "지시",
+    "steer_hint": "현재 답변을 멈추고 지금 보냅니다",
+    "choose_tooltip": "후속 방법 선택"
+  },
   "queue": {
     "title_other": "대기 중인 메시지 {{count}}개",
     "clear": "모두 지우기",

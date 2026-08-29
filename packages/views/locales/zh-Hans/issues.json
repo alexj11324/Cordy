@@ -527,6 +527,7 @@
     "conversation_initial_prompt": "处理这个任务。",
     "conversation_not_triggered": "评论已发布，但未能启动 {{name}}。",
     "conversation_send_failed": "消息发送失败",
+    "conversation_steer_send_failed": "智能体已停下，但跟进没有发出去。再发送会开始新的回复。",
     "cancel_failed": "取消 task 失败",
     "trigger_retry": "重试",
     "trigger_retry_attempt": "重试 #{{attempt}}",
