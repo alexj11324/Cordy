@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import { handlePreviewRequest } from "./preview-api.mjs";
 
-function request(method, url, body) {
+function request(method, url, body, headers = {}) {
   const stream = Readable.from(body === undefined ? [] : [JSON.stringify(body)]);
   stream.method = method;
   stream.url = url;
+  stream.headers = headers;
   return stream;
 }
 
@@ -29,9 +30,9 @@ function response() {
   };
 }
 
-async function call(method, url, body) {
+async function call(method, url, body, headers) {
   const res = response();
-  const handled = await handlePreviewRequest(request(method, url, body), res);
+  const handled = await handlePreviewRequest(request(method, url, body, headers), res);
   return { handled, status: res.statusCode, body: res.json() };
 }
 
@@ -233,6 +234,30 @@ describe("local Vite preview API", () => {
       handled: true,
       status: 200,
       body: { plugins: [] },
+    });
+  });
+
+  it("localizes preview-owned fixture copy from the browser language", async () => {
+    const issues = await call(
+      "GET",
+      "/api/issues?limit=1",
+      undefined,
+      { "accept-language": "zh-CN,zh;q=0.9" },
+    );
+    const autopilots = await call(
+      "GET",
+      "/api/autopilots",
+      undefined,
+      { "accept-language": "ja-JP,ja;q=0.9" },
+    );
+
+    expect(issues.body.issues[0]).toMatchObject({
+      title: "优化工作区引导",
+      description: "让首次使用流程更容易理解。",
+    });
+    expect(autopilots.body.autopilots[0]).toMatchObject({
+      title: "PR 確認の引き継ぎ",
+      description: "完了した実装作業を対応可能な確認担当者に渡します。",
     });
   });
 });

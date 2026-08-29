@@ -144,6 +144,105 @@
     "assignee": "负责人",
     "created": "创建时间",
     "updated": "更新时间",
-    "not_found": "找不到样例任务"
+    "not_found": "找不到样例任务",
+    "fixtures": {
+      "issues": {
+        "101": {
+          "title": "优化工作区引导",
+          "description": "让首次使用流程更容易理解。"
+        },
+        "102": {
+          "title": "完善任务看板空状态",
+          "description": "在真实工作到来前也保持看板有用。"
+        },
+        "103": {
+          "title": "添加键盘快捷键",
+          "description": "无需额外界面即可使用常见操作。"
+        },
+        "104": {
+          "title": "添加实时状态指示器",
+          "description": "显示智能体正在处理任务的状态。"
+        },
+        "105": {
+          "title": "检查响应式侧边栏",
+          "description": "让工作区导航在各种宽度下都保持平衡。"
+        },
+        "106": {
+          "title": "拆分 Web 与 API 开发命令",
+          "description": "无需启动完整本地服务即可开始视觉开发。"
+        }
+      },
+      "agents": {
+        "agent-preview": {
+          "name": "Atlas",
+          "description": "构建功能并准备实现交接。",
+          "instructions": "你是本地预览中的样例智能体 Atlas。"
+        },
+        "agent-mika": {
+          "name": "Mika",
+          "description": "复查已完成的工作并发送可执行反馈。",
+          "instructions": "你是本地预览中的样例智能体 Mika。"
+        },
+        "agent-nova": {
+          "name": "Nova",
+          "description": "运行 CI 检查并关闭已验证的任务。",
+          "instructions": "你是本地预览中的样例智能体 Nova。"
+        },
+        "agent-quill": {
+          "name": "Quill",
+          "description": "准备定期工作区摘要。",
+          "instructions": "你是本地预览中的样例智能体 Quill。"
+        }
+      },
+      "runtimes": {
+        "runtime-preview": "预览设备 · Atlas",
+        "runtime-mika": "预览设备 · Mika",
+        "runtime-nova": "预览设备 · Nova",
+        "runtime-quill": "预览设备 · Quill"
+      },
+      "tasks": {
+        "task-pre-102": {
+          "handoff_note": "接手下一个尚未复查的看板状态。"
+        },
+        "task-pre-103": {
+          "handoff_note": "在浏览器预览中验证键盘操作路径。"
+        },
+        "task-pre-104": {
+          "handoff_note": "持续关注 CI，并报告第一个可执行的失败。"
+        },
+        "task-pre-105-implementation": {
+          "handoff_note": "实现已完成；将任务交给复查者。",
+          "result_summary": "响应式侧边栏实现已准备好复查。"
+        },
+        "task-pre-105-review": {
+          "handoff_note": "复查实现交接，并在 PR 上留下发现。"
+        },
+        "task-pre-106": {
+          "result_summary": "Web 与 API 命令已拆分并完成文档说明。"
+        }
+      },
+      "autopilots": {
+        "autopilot-pr-review": {
+          "title": "PR 复查交接",
+          "description": "将已完成的实现工作交给可用的复查者。"
+        },
+        "autopilot-ci-watch": {
+          "title": "CI 监控",
+          "description": "持续关注当前实现分支的检查结果。"
+        },
+        "autopilot-weekly-summary": {
+          "title": "每周工作区摘要",
+          "description": "为最近完成的工作创建简短摘要。",
+          "issue_title_template": "每周自动化摘要"
+        }
+      },
+      "trigger_label": "预览计划",
+      "run_results": {
+        "run-pr-review-completed": "复查通过，任务已关闭。"
+      },
+      "run_failures": {
+        "run-weekly-skipped": "智能体设备处于离线状态。"
+      }
+    }
   }
 }

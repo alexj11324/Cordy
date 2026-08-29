@@ -144,6 +144,105 @@
     "assignee": "Assignee",
     "created": "Created",
     "updated": "Updated",
-    "not_found": "Sample issue not found"
+    "not_found": "Sample issue not found",
+    "fixtures": {
+      "issues": {
+        "101": {
+          "title": "Refine workspace onboarding",
+          "description": "Make the first-run path easier to understand."
+        },
+        "102": {
+          "title": "Polish issue board empty states",
+          "description": "Keep the board useful before real work arrives."
+        },
+        "103": {
+          "title": "Add keyboard shortcuts",
+          "description": "Expose the common actions without extra chrome."
+        },
+        "104": {
+          "title": "Add real-time status indicator",
+          "description": "Show when an agent is actively working on an issue."
+        },
+        "105": {
+          "title": "Check responsive sidebar",
+          "description": "Make the workspace navigation feel balanced at every width."
+        },
+        "106": {
+          "title": "Split web and API dev commands",
+          "description": "Let visual work start without the full local stack."
+        }
+      },
+      "agents": {
+        "agent-preview": {
+          "name": "Atlas",
+          "description": "Builds features and prepares implementation handoffs.",
+          "instructions": "You are Atlas, a sample agent in the local preview."
+        },
+        "agent-mika": {
+          "name": "Mika",
+          "description": "Reviews completed work and sends actionable feedback.",
+          "instructions": "You are Mika, a sample agent in the local preview."
+        },
+        "agent-nova": {
+          "name": "Nova",
+          "description": "Runs CI checks and closes validated tasks.",
+          "instructions": "You are Nova, a sample agent in the local preview."
+        },
+        "agent-quill": {
+          "name": "Quill",
+          "description": "Prepares scheduled workspace summaries.",
+          "instructions": "You are Quill, a sample agent in the local preview."
+        }
+      },
+      "runtimes": {
+        "runtime-preview": "Preview runtime · Atlas",
+        "runtime-mika": "Preview runtime · Mika",
+        "runtime-nova": "Preview runtime · Nova",
+        "runtime-quill": "Preview runtime · Quill"
+      },
+      "tasks": {
+        "task-pre-102": {
+          "handoff_note": "Pick up the next unreviewed board state."
+        },
+        "task-pre-103": {
+          "handoff_note": "Verify the keyboard path in the browser preview."
+        },
+        "task-pre-104": {
+          "handoff_note": "Keep watching CI and report the first actionable failure."
+        },
+        "task-pre-105-implementation": {
+          "handoff_note": "Implementation complete; route the task to a reviewer.",
+          "result_summary": "Responsive sidebar implementation is ready for review."
+        },
+        "task-pre-105-review": {
+          "handoff_note": "Review the implementation handoff and leave findings on the PR."
+        },
+        "task-pre-106": {
+          "result_summary": "The web and API commands are split and documented."
+        }
+      },
+      "autopilots": {
+        "autopilot-pr-review": {
+          "title": "PR review handoff",
+          "description": "Routes completed implementation work to an available reviewer."
+        },
+        "autopilot-ci-watch": {
+          "title": "CI watch",
+          "description": "Keeps an eye on checks for the active implementation branch."
+        },
+        "autopilot-weekly-summary": {
+          "title": "Weekly workspace summary",
+          "description": "Creates a short digest of recently completed work.",
+          "issue_title_template": "Weekly automation summary"
+        }
+      },
+      "trigger_label": "Preview schedule",
+      "run_results": {
+        "run-pr-review-completed": "Review passed and the issue was closed."
+      },
+      "run_failures": {
+        "run-weekly-skipped": "Agent runtime is offline."
+      }
+    }
   }
 }

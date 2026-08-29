@@ -1,3 +1,8 @@
+import enCommon from "../../../packages/views/locales/en/common.json" with { type: "json" };
+import jaCommon from "../../../packages/views/locales/ja/common.json" with { type: "json" };
+import koCommon from "../../../packages/views/locales/ko/common.json" with { type: "json" };
+import zhHansCommon from "../../../packages/views/locales/zh-Hans/common.json" with { type: "json" };
+
 const WORKSPACE_ID = "ws-preview";
 const PREVIEW_USER_ID = "user-preview";
 const PREVIEW_MEMBER_ID = "member-preview";
@@ -18,6 +23,22 @@ const STATUS_CATEGORIES = [
 // demo is revisited on another day.
 const PREVIEW_SESSION_STARTED_AT = Date.now();
 const NOW = new Date(PREVIEW_SESSION_STARTED_AT).toISOString();
+
+const PREVIEW_COPY_BY_LOCALE = {
+  en: enCommon.preview.fixtures,
+  ja: jaCommon.preview.fixtures,
+  ko: koCommon.preview.fixtures,
+  "zh-Hans": zhHansCommon.preview.fixtures,
+};
+const DEFAULT_PREVIEW_COPY = PREVIEW_COPY_BY_LOCALE.en;
+
+function previewCopyForRequest(req) {
+  const header = req.headers?.["accept-language"] ?? "";
+  if (/\bzh(?:-|,|;|$)/i.test(header)) return PREVIEW_COPY_BY_LOCALE["zh-Hans"];
+  if (/\bja(?:-|,|;|$)/i.test(header)) return PREVIEW_COPY_BY_LOCALE.ja;
+  if (/\bko(?:-|,|;|$)/i.test(header)) return PREVIEW_COPY_BY_LOCALE.ko;
+  return DEFAULT_PREVIEW_COPY;
+}
 
 function previewTime(minutesFromSessionStart) {
   return new Date(
@@ -551,11 +572,88 @@ const PREVIEW_RUNS = {
   ],
 };
 
+function localizePreviewIssue(issue, copy = DEFAULT_PREVIEW_COPY) {
+  const fixture = copy.issues?.[String(issue.number)];
+  if (!fixture) return issue;
+  return {
+    ...issue,
+    title: fixture.title ?? issue.title,
+    description: fixture.description ?? issue.description,
+  };
+}
+
+function localizedPreviewIssues(copy = DEFAULT_PREVIEW_COPY) {
+  return PREVIEW_ISSUES.map((issue) => localizePreviewIssue(issue, copy));
+}
+
+function localizePreviewAgent(agent, copy = DEFAULT_PREVIEW_COPY) {
+  const fixture = copy.agents?.[agent.id];
+  if (!fixture) return agent;
+  return {
+    ...agent,
+    name: fixture.name ?? agent.name,
+    description: fixture.description ?? agent.description,
+    instructions: fixture.instructions ?? agent.instructions,
+  };
+}
+
+function localizePreviewRuntime(runtime, copy = DEFAULT_PREVIEW_COPY) {
+  const name = copy.runtimes?.[runtime.id];
+  return name ? { ...runtime, name } : runtime;
+}
+
+function localizePreviewTask(task, copy = DEFAULT_PREVIEW_COPY) {
+  const fixture = copy.tasks?.[task.id];
+  if (!fixture) return task;
+  const result =
+    fixture.result_summary && task.result && typeof task.result === "object"
+      ? { ...task.result, summary: fixture.result_summary }
+      : task.result;
+  return {
+    ...task,
+    ...(fixture.handoff_note ? { handoff_note: fixture.handoff_note } : {}),
+    ...(result ? { result } : {}),
+  };
+}
+
+function localizePreviewAutopilot(autopilot, copy = DEFAULT_PREVIEW_COPY) {
+  const fixture = copy.autopilots?.[autopilot.id];
+  if (!fixture) return autopilot;
+  return {
+    ...autopilot,
+    title: fixture.title ?? autopilot.title,
+    description: fixture.description ?? autopilot.description,
+    ...(fixture.issue_title_template
+      ? { issue_title_template: fixture.issue_title_template }
+      : {}),
+  };
+}
+
+function localizePreviewTrigger(trigger, copy = DEFAULT_PREVIEW_COPY) {
+  return copy.trigger_label
+    ? { ...trigger, label: copy.trigger_label }
+    : trigger;
+}
+
+function localizePreviewRun(run, copy = DEFAULT_PREVIEW_COPY) {
+  const resultSummary = copy.run_results?.[run.id];
+  const failureReason = copy.run_failures?.[run.id];
+  const result =
+    resultSummary && run.result && typeof run.result === "object"
+      ? { ...run.result, summary: resultSummary }
+      : run.result;
+  return {
+    ...run,
+    ...(failureReason ? { failure_reason: failureReason } : {}),
+    ...(result ? { result } : {}),
+  };
+}
+
 function isActiveTask(task) {
   return task.status === "queued" || task.status === "dispatched" || task.status === "waiting_local_directory" || task.status === "running";
 }
 
-function previewWorkingAgents() {
+function previewWorkingAgents(copy = DEFAULT_PREVIEW_COPY) {
   const byAgent = new Map();
   for (const task of PREVIEW_TASKS) {
     if (!isActiveTask(task)) continue;
@@ -570,7 +668,7 @@ function previewWorkingAgents() {
       if (!current) return null;
       return {
         id: agent.id,
-        name: agent.name,
+        name: copy.agents?.[agent.id]?.name ?? agent.name,
         avatar_url: agent.avatar_url,
         running_task_count: current.running_task_count,
         issue_ids: [...current.issue_ids],
@@ -589,16 +687,18 @@ function findPreviewAutopilot(value) {
   return PREVIEW_AUTOPILOTS.find((autopilot) => autopilot.id === id) ?? null;
 }
 
-function previewAutopilotDetail(autopilot) {
+function previewAutopilotDetail(autopilot, copy = DEFAULT_PREVIEW_COPY) {
   return {
-    autopilot,
-    triggers: PREVIEW_TRIGGERS[autopilot.id] ?? [],
+    autopilot: localizePreviewAutopilot(autopilot, copy),
+    triggers: (PREVIEW_TRIGGERS[autopilot.id] ?? []).map((trigger) =>
+      localizePreviewTrigger(trigger, copy),
+    ),
     collaborators: [],
   };
 }
 
-function listPreviewIssues(url) {
-  let issues = [...PREVIEW_ISSUES];
+function listPreviewIssues(url, copy = DEFAULT_PREVIEW_COPY) {
+  let issues = localizedPreviewIssues(copy);
   const search = url.searchParams.get("q")?.trim().toLowerCase();
   const statuses = (url.searchParams.get("statuses") ?? "")
     .split(",")
@@ -775,8 +875,8 @@ function matchesIssue(issue, query = {}, { ignoreStatus = false, ignoreWorking =
   return true;
 }
 
-function filteredIssues(query, options) {
-  return PREVIEW_ISSUES.filter((issue) => matchesIssue(issue, query, options));
+function filteredIssues(query, options, copy = DEFAULT_PREVIEW_COPY) {
+  return localizedPreviewIssues(copy).filter((issue) => matchesIssue(issue, query, options));
 }
 
 function sortIssues(issues, query = {}) {
@@ -803,11 +903,11 @@ function facetValues(kind, issues) {
   return [...counts].map(([key, count]) => ({ key, count }));
 }
 
-function tableFacets(body) {
+function tableFacets(body, copy = DEFAULT_PREVIEW_COPY) {
   const requested = Array.isArray(body.facets) ? body.facets : [];
   const facets = requested.map((request) => {
     if (request.kind === "working_agents") {
-      const issues = filteredIssues(body.query, { ignoreWorking: true });
+      const issues = filteredIssues(body.query, { ignoreWorking: true }, copy);
       const runningIds = new Set(PREVIEW_AGENT.issue_ids);
       return {
         kind: request.kind,
@@ -817,8 +917,8 @@ function tableFacets(body) {
       };
     }
     const issues = request.kind === "status"
-      ? filteredIssues(body.query, { ignoreStatus: true })
-      : filteredIssues(body.query);
+      ? filteredIssues(body.query, { ignoreStatus: true }, copy)
+      : filteredIssues(body.query, undefined, copy);
     return {
       kind: request.kind,
       ...(request.kind === "property" ? { property_id: request.property_id } : {}),
@@ -827,7 +927,7 @@ function tableFacets(body) {
   });
   return {
     query_fingerprint: JSON.stringify(body.query ?? {}),
-    total: filteredIssues(body.query).length,
+    total: filteredIssues(body.query, undefined, copy).length,
     facets,
   };
 }
@@ -846,8 +946,8 @@ function groupValueForIssue(issue, group) {
   return { kind: "status", status: categoryOf(issue) };
 }
 
-function tableGroups(body) {
-  const issues = filteredIssues(body.query);
+function tableGroups(body, copy = DEFAULT_PREVIEW_COPY) {
+  const issues = filteredIssues(body.query, undefined, copy);
   const grouped = new Map();
   for (const issue of issues) {
     const key = groupKeyForIssue(issue, body.group);
@@ -863,8 +963,8 @@ function tableGroups(body) {
   };
 }
 
-function tableRows(body) {
-  let issues = filteredIssues(body.query);
+function tableRows(body, copy = DEFAULT_PREVIEW_COPY) {
+  let issues = filteredIssues(body.query, undefined, copy);
   const groupKey = body.group_key;
   if (groupKey?.startsWith("status:")) {
     const category = groupKey.slice("status:".length);
@@ -910,6 +1010,7 @@ export async function handlePreviewRequest(req, res) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const method = req.method ?? "GET";
   const path = url.pathname;
+  const copy = previewCopyForRequest(req);
 
   if (method === "GET" && path === "/api/workspaces") return json(res, [PREVIEW_WORKSPACE]);
   if (method === "GET" && path === `/api/workspaces/${WORKSPACE_ID}/members`) return json(res, PREVIEW_MEMBERS);
@@ -940,18 +1041,26 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && path === `/api/workspaces/${WORKSPACE_ID}/plugins`) {
     return json(res, PREVIEW_EMPTY_PLUGINS);
   }
-  if (method === "GET" && path === "/api/agents") return json(res, PREVIEW_DIRECTORY_AGENTS);
+  if (method === "GET" && path === "/api/agents") {
+    return json(res, PREVIEW_DIRECTORY_AGENTS.map((agent) => localizePreviewAgent(agent, copy)));
+  }
   const agentTasks = /^\/api\/agents\/([^/]+)\/tasks$/.exec(path);
   if (method === "GET" && agentTasks) {
     return findPreviewAgent(agentTasks[1])
-      ? json(res, PREVIEW_TASKS.filter((task) => task.agent_id === decodeURIComponent(agentTasks[1])))
+      ? json(res, PREVIEW_TASKS
+        .filter((task) => task.agent_id === decodeURIComponent(agentTasks[1]))
+        .map((task) => localizePreviewTask(task, copy)))
       : json(res, { error: "Preview agent not found" }, 404);
   }
   if (method === "GET" && path.startsWith("/api/agents/")) {
     const agent = findPreviewAgent(path.slice("/api/agents/".length));
-    return agent ? json(res, agent) : json(res, { error: "Preview agent not found" }, 404);
+    return agent
+      ? json(res, localizePreviewAgent(agent, copy))
+      : json(res, { error: "Preview agent not found" }, 404);
   }
-  if (method === "GET" && path === "/api/runtimes") return json(res, PREVIEW_RUNTIMES);
+  if (method === "GET" && path === "/api/runtimes") {
+    return json(res, PREVIEW_RUNTIMES.map((runtime) => localizePreviewRuntime(runtime, copy)));
+  }
   if (method === "GET" && path === "/api/squads") return json(res, []);
   if (method === "GET" && path === "/api/projects") return json(res, { projects: [], total: 0 });
   if (method === "GET" && path === "/api/properties") return json(res, { properties: [], total: 0 });
@@ -999,8 +1108,10 @@ export async function handlePreviewRequest(req, res) {
       total: STATUS_CATEGORIES.length,
     });
   }
-  if (method === "GET" && path === "/api/working-agents") return json(res, previewWorkingAgents());
-  if (method === "GET" && path === "/api/agent-task-snapshot") return json(res, PREVIEW_TASKS);
+  if (method === "GET" && path === "/api/working-agents") return json(res, previewWorkingAgents(copy));
+  if (method === "GET" && path === "/api/agent-task-snapshot") {
+    return json(res, PREVIEW_TASKS.map((task) => localizePreviewTask(task, copy)));
+  }
   if (method === "GET" && path === "/api/agent-activity-30d") return json(res, PREVIEW_ACTIVITY);
   if (method === "GET" && path === "/api/agent-run-counts") return json(res, PREVIEW_RUN_COUNTS);
   if (method === "GET" && path === "/api/assignee-frequency") return json(res, []);
@@ -1023,20 +1134,28 @@ export async function handlePreviewRequest(req, res) {
     return json(res, { next_runs: [previewTime(15), previewTime(30)] });
   }
   if (method === "GET" && path === "/api/autopilots") {
-    return json(res, { autopilots: PREVIEW_AUTOPILOTS, total: PREVIEW_AUTOPILOTS.length });
+    return json(res, {
+      autopilots: PREVIEW_AUTOPILOTS.map((autopilot) => localizePreviewAutopilot(autopilot, copy)),
+      total: PREVIEW_AUTOPILOTS.length,
+    });
   }
   const autopilotRunDetail = /^\/api\/autopilots\/([^/]+)\/runs\/([^/]+)$/.exec(path);
   if (method === "GET" && autopilotRunDetail) {
     const runs = PREVIEW_RUNS[decodeURIComponent(autopilotRunDetail[1])] ?? [];
     const run = runs.find((item) => item.id === decodeURIComponent(autopilotRunDetail[2]));
-    return run ? json(res, run) : json(res, { error: "Preview run not found" }, 404);
+    return run
+      ? json(res, localizePreviewRun(run, copy))
+      : json(res, { error: "Preview run not found" }, 404);
   }
   const autopilotRuns = /^\/api\/autopilots\/([^/]+)\/runs$/.exec(path);
   if (method === "GET" && autopilotRuns) {
     const autopilot = findPreviewAutopilot(autopilotRuns[1]);
     if (!autopilot) return json(res, { error: "Preview autopilot not found" }, 404);
     const runs = PREVIEW_RUNS[autopilot.id] ?? [];
-    return json(res, { runs, total: runs.length });
+    return json(res, {
+      runs: runs.map((run) => localizePreviewRun(run, copy)),
+      total: runs.length,
+    });
   }
   const autopilotDeliveries = /^\/api\/autopilots\/([^/]+)\/deliveries(?:\/([^/]+))?$/.exec(path);
   if (method === "GET" && autopilotDeliveries) {
@@ -1051,7 +1170,7 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && autopilotDetail) {
     const autopilot = findPreviewAutopilot(autopilotDetail[1]);
     return autopilot
-      ? json(res, previewAutopilotDetail(autopilot))
+      ? json(res, previewAutopilotDetail(autopilot, copy))
       : json(res, { error: "Preview autopilot not found" }, 404);
   }
   if (method === "GET" && path === "/api/issues/child-progress") return json(res, { progress: [] });
@@ -1062,7 +1181,7 @@ export async function handlePreviewRequest(req, res) {
       ? json(res, [])
       : json(res, { error: "Preview task not found" }, 404);
   }
-  if (method === "GET" && path === "/api/issues") return json(res, listPreviewIssues(url));
+  if (method === "GET" && path === "/api/issues") return json(res, listPreviewIssues(url, copy));
   if (method === "POST" && path === "/api/issues/query") {
     const body = await readBody(req);
     const query = new URL("http://127.0.0.1/api/issues");
@@ -1070,7 +1189,7 @@ export async function handlePreviewRequest(req, res) {
       if (value === undefined || value === null) continue;
       query.searchParams.set(key, Array.isArray(value) ? value.join(",") : String(value));
     }
-    return json(res, listPreviewIssues(query));
+    return json(res, listPreviewIssues(query, copy));
   }
   const commentsResource = /^\/api\/issues\/([^/]+)\/comments$/.exec(path);
   if (method === "GET" && commentsResource) {
@@ -1089,7 +1208,9 @@ export async function handlePreviewRequest(req, res) {
       case "attachments":
         return json(res, []);
       case "task-runs":
-        return json(res, PREVIEW_TASKS.filter((task) => task.issue_id === findPreviewIssue(issueResource[1])?.id));
+        return json(res, PREVIEW_TASKS
+          .filter((task) => task.issue_id === findPreviewIssue(issueResource[1])?.id)
+          .map((task) => localizePreviewTask(task, copy)));
       case "labels":
         return json(res, { labels: [] });
       case "pull-requests":
@@ -1102,7 +1223,11 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && activeTaskIssue) {
     const issue = findPreviewIssue(activeTaskIssue[1]);
     if (!issue) return json(res, { error: "Preview issue not found" }, 404);
-    return json(res, { tasks: PREVIEW_TASKS.filter((task) => task.issue_id === issue.id && isActiveTask(task)) });
+    return json(res, {
+      tasks: PREVIEW_TASKS
+        .filter((task) => task.issue_id === issue.id && isActiveTask(task))
+        .map((task) => localizePreviewTask(task, copy)),
+    });
   }
   const issueUsage = /^\/api\/issues\/([^/]+)\/usage$/.exec(path);
   if (method === "GET" && issueUsage) {
@@ -1119,11 +1244,19 @@ export async function handlePreviewRequest(req, res) {
   }
   if (method === "GET" && path.startsWith("/api/issues/")) {
     const issue = findPreviewIssue(path.slice("/api/issues/".length));
-    return issue ? json(res, issue) : json(res, { error: "Preview issue not found" }, 404);
+    return issue
+      ? json(res, localizePreviewIssue(issue, copy))
+      : json(res, { error: "Preview issue not found" }, 404);
   }
-  if (method === "POST" && path === "/api/issues/table/facets") return json(res, tableFacets(await readBody(req)));
-  if (method === "POST" && path === "/api/issues/table/groups") return json(res, tableGroups(await readBody(req)));
-  if (method === "POST" && path === "/api/issues/table/rows") return json(res, tableRows(await readBody(req)));
+  if (method === "POST" && path === "/api/issues/table/facets") {
+    return json(res, tableFacets(await readBody(req), copy));
+  }
+  if (method === "POST" && path === "/api/issues/table/groups") {
+    return json(res, tableGroups(await readBody(req), copy));
+  }
+  if (method === "POST" && path === "/api/issues/table/rows") {
+    return json(res, tableRows(await readBody(req), copy));
+  }
 
   return false;
 }

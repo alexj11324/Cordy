@@ -144,6 +144,105 @@
     "assignee": "担当者",
     "created": "作成日時",
     "updated": "更新日時",
-    "not_found": "サンプル課題が見つかりません"
+    "not_found": "サンプル課題が見つかりません",
+    "fixtures": {
+      "issues": {
+        "101": {
+          "title": "ワークスペースのオンボーディングを改善",
+          "description": "初回利用の流れを分かりやすくします。"
+        },
+        "102": {
+          "title": "課題ボードの空状態を改善",
+          "description": "実際の作業が始まる前でもボードを役立つ状態にします。"
+        },
+        "103": {
+          "title": "キーボードショートカットを追加",
+          "description": "余分な UI なしでよく使う操作を使えるようにします。"
+        },
+        "104": {
+          "title": "リアルタイム状態インジケーターを追加",
+          "description": "エージェントが課題を処理中か表示します。"
+        },
+        "105": {
+          "title": "レスポンシブなサイドバーを確認",
+          "description": "どの幅でもワークスペースのナビゲーションを整えます。"
+        },
+        "106": {
+          "title": "Web と API の開発コマンドを分離",
+          "description": "完全なローカル環境なしでビジュアル作業を始められます。"
+        }
+      },
+      "agents": {
+        "agent-preview": {
+          "name": "Atlas",
+          "description": "機能を構築し、実装の引き継ぎを準備します。",
+          "instructions": "あなたはローカルプレビューのサンプルエージェント Atlas です。"
+        },
+        "agent-mika": {
+          "name": "Mika",
+          "description": "完了した作業を確認し、実行可能なフィードバックを送ります。",
+          "instructions": "あなたはローカルプレビューのサンプルエージェント Mika です。"
+        },
+        "agent-nova": {
+          "name": "Nova",
+          "description": "CI チェックを実行し、検証済みの課題を完了します。",
+          "instructions": "あなたはローカルプレビューのサンプルエージェント Nova です。"
+        },
+        "agent-quill": {
+          "name": "Quill",
+          "description": "定期的なワークスペース概要を準備します。",
+          "instructions": "あなたはローカルプレビューのサンプルエージェント Quill です。"
+        }
+      },
+      "runtimes": {
+        "runtime-preview": "プレビューランタイム · Atlas",
+        "runtime-mika": "プレビューランタイム · Mika",
+        "runtime-nova": "プレビューランタイム · Nova",
+        "runtime-quill": "プレビューランタイム · Quill"
+      },
+      "tasks": {
+        "task-pre-102": {
+          "handoff_note": "次の未確認のボード状態を引き継ぎます。"
+        },
+        "task-pre-103": {
+          "handoff_note": "ブラウザプレビューでキーボード操作の流れを確認します。"
+        },
+        "task-pre-104": {
+          "handoff_note": "CI を監視し、最初に対応できる失敗を報告します。"
+        },
+        "task-pre-105-implementation": {
+          "handoff_note": "実装が完了しました。確認担当者にタスクを引き継ぎます。",
+          "result_summary": "レスポンシブなサイドバー実装を確認できる状態です。"
+        },
+        "task-pre-105-review": {
+          "handoff_note": "実装の引き継ぎを確認し、PR に発見事項を残します。"
+        },
+        "task-pre-106": {
+          "result_summary": "Web と API のコマンドを分離し、ドキュメント化しました。"
+        }
+      },
+      "autopilots": {
+        "autopilot-pr-review": {
+          "title": "PR 確認の引き継ぎ",
+          "description": "完了した実装作業を対応可能な確認担当者に渡します。"
+        },
+        "autopilot-ci-watch": {
+          "title": "CI 監視",
+          "description": "現在の実装ブランチのチェックを監視します。"
+        },
+        "autopilot-weekly-summary": {
+          "title": "週間ワークスペース概要",
+          "description": "最近完了した作業の短い概要を作成します。",
+          "issue_title_template": "週間自動化概要"
+        }
+      },
+      "trigger_label": "プレビュースケジュール",
+      "run_results": {
+        "run-pr-review-completed": "確認に合格し、課題を完了しました。"
+      },
+      "run_failures": {
+        "run-weekly-skipped": "エージェントのランタイムがオフラインです。"
+      }
+    }
   }
 }
