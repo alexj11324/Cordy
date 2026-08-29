@@ -7,6 +7,7 @@ const {
   search,
   authStoreState,
   issueCliToken,
+  issueDesktopHandoff,
   redirectToCliCallback,
   redirectToDesktopApp,
 } = vi.hoisted(() => ({
@@ -17,6 +18,7 @@ const {
   search: { current: "" },
   authStoreState: { current: { status: "unauthenticated" } },
   issueCliToken: vi.fn(),
+  issueDesktopHandoff: vi.fn(),
   redirectToCliCallback: vi.fn(),
   redirectToDesktopApp: vi.fn(),
 }));
@@ -39,7 +41,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@patchbay/core/api", () => ({
-  api: { issueCliToken },
+  api: { issueCliToken, issueDesktopHandoff },
 }));
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
@@ -60,6 +62,7 @@ describe("LoginPage", () => {
     authStoreState.current = { status: "unauthenticated" };
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
     issueCliToken.mockReset();
+    issueDesktopHandoff.mockReset();
     redirectToCliCallback.mockReset();
     redirectToDesktopApp.mockReset();
   });
@@ -107,13 +110,15 @@ describe("LoginPage", () => {
   });
 
   it("preserves the desktop handoff through Clerk sign-in", () => {
-    search.current = "platform=desktop";
+    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
 
     render(<LoginPage />);
 
     expect(signInProps.current).toMatchObject({
-      signUpUrl: "/signup?platform=desktop",
-      forceRedirectUrl: "/login?platform=desktop",
+      signUpUrl:
+        "/signup?platform=desktop&code_challenge=challenge-value&state=opaque-state",
+      forceRedirectUrl:
+        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
     });
   });
 
@@ -164,14 +169,30 @@ describe("LoginPage", () => {
   });
 
   it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
-    search.current = "platform=desktop";
+    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
     authStoreState.current = { status: "authenticated" };
-    issueCliToken.mockResolvedValue({ token: "desktop-native-token" });
+    issueDesktopHandoff.mockResolvedValue({ code: "desktop-handoff-code" });
 
     render(<LoginPage />);
 
-    await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
-    expect(redirectToDesktopApp).toHaveBeenCalledWith("desktop-native-token");
+    await waitFor(() => expect(issueDesktopHandoff).toHaveBeenCalledOnce());
+    expect(issueDesktopHandoff).toHaveBeenCalledWith("challenge-value");
+    expect(redirectToDesktopApp).toHaveBeenCalledWith(
+      "desktop-handoff-code",
+      "opaque-state",
+    );
+  });
+
+  it("does not mint a desktop handoff without a renderer binding", async () => {
+    search.current = "platform=desktop";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(issueDesktopHandoff).not.toHaveBeenCalled();
+    expect(redirectToDesktopApp).not.toHaveBeenCalled();
   });
 });

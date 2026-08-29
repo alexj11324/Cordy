@@ -787,6 +787,29 @@ export class ApiClient {
     return this.fetch("/api/cli-token", { method: "POST" });
   }
 
+  /**
+   * Create a short-lived desktop login code bound to a PKCE challenge. The
+   * code, unlike the resulting bearer, is safe to carry through a custom URL
+   * scheme and can be redeemed only once by the initiating renderer.
+   */
+  async issueDesktopHandoff(codeChallenge: string): Promise<{ code: string }> {
+    return this.fetch("/api/desktop-handoff", {
+      method: "POST",
+      body: JSON.stringify({ code_challenge: codeChallenge }),
+    });
+  }
+
+  /** Redeem a one-time desktop handoff code for the normal native session. */
+  async redeemDesktopHandoff(
+    code: string,
+    codeVerifier: string,
+  ): Promise<{ token: string }> {
+    return this.fetch("/api/desktop-handoff/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code, code_verifier: codeVerifier }),
+    });
+  }
+
   async getMe(): Promise<User> {
     const raw = await this.fetch<unknown>("/api/me");
     return parseWithFallback(raw, UserSchema, EMPTY_USER, {

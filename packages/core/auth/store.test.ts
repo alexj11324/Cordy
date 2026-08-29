@@ -119,4 +119,35 @@ describe("authStore", () => {
     expect(onLogin).not.toHaveBeenCalled();
     expect(store.getState().user).toBeNull();
   });
+
+  it("keeps cookie logout pending until the server revocation finishes", async () => {
+    let resolveLogout: (() => void) | undefined;
+    const logout = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLogout = resolve;
+        }),
+    );
+    const api = {
+      logout,
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({
+      api,
+      storage: makeStorage(),
+      cookieAuth: true,
+    });
+
+    let settled = false;
+    const pending = store.getState().logout().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(logout).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+
+    resolveLogout?.();
+    await pending;
+    expect(settled).toBe(true);
+  });
 });

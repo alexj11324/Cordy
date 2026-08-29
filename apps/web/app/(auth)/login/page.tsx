@@ -20,7 +20,12 @@ import {
 import { useT } from "@patchbay/views/i18n";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 
-const DESKTOP_LOGIN_RETURN_URL = "/login?platform=desktop";
+function desktopHandoffQuery(codeChallenge: string, state: string): string {
+  const params = new URLSearchParams({ platform: "desktop" });
+  if (codeChallenge) params.set("code_challenge", codeChallenge);
+  if (state) params.set("state", state);
+  return params.toString();
+}
 
 function resolveSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
@@ -59,17 +64,29 @@ function LoginContent() {
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
   const desktopHandoff = searchParams.get("platform") === "desktop";
+  const desktopCodeChallenge = searchParams.get("code_challenge") ?? "";
+  const desktopState = searchParams.get("state") ?? "";
   const requestedRedirectUrl = searchParams.get("redirect_url");
   const validCliCallback = cliCallback !== "" && validateCliCallback(cliCallback);
   const returnUrl = useMemo(() => {
-    if (desktopHandoff) return DESKTOP_LOGIN_RETURN_URL;
+    if (desktopHandoff) {
+      return `/login?${desktopHandoffQuery(desktopCodeChallenge, desktopState)}`;
+    }
     if (!validCliCallback) return resolveSafeRedirectUrl(requestedRedirectUrl);
     const params = new URLSearchParams({
       cli_callback: cliCallback,
       cli_state: cliState,
     });
     return `/login?${params.toString()}`;
-  }, [cliCallback, cliState, desktopHandoff, requestedRedirectUrl, validCliCallback]);
+  }, [
+    cliCallback,
+    cliState,
+    desktopCodeChallenge,
+    desktopHandoff,
+    desktopState,
+    requestedRedirectUrl,
+    validCliCallback,
+  ]);
 
   if (cliCallback && !validCliCallback) {
     return (
@@ -117,7 +134,12 @@ function LoginContent() {
   }
 
   if (desktopHandoff && isLoaded && isSignedIn) {
-    return <DesktopHandoff />;
+    return (
+      <DesktopHandoff
+        codeChallenge={desktopCodeChallenge}
+        state={desktopState}
+      />
+    );
   }
 
   return (
@@ -125,14 +147,24 @@ function LoginContent() {
       <SignIn
         routing="path"
         path="/login"
-        signUpUrl={desktopHandoff ? "/signup?platform=desktop" : "/signup"}
+        signUpUrl={
+          desktopHandoff
+            ? `/signup?${desktopHandoffQuery(desktopCodeChallenge, desktopState)}`
+            : "/signup"
+        }
         forceRedirectUrl={returnUrl}
       />
     </ClerkAuthShell>
   );
 }
 
-function DesktopHandoff() {
+function DesktopHandoff({
+  codeChallenge,
+  state,
+}: {
+  codeChallenge: string;
+  state: string;
+}) {
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
   const backendSessionReady = authStatus === "authenticated";
@@ -144,15 +176,18 @@ function DesktopHandoff() {
     setLoading(true);
     setError("");
     try {
-      const { token } = await api.issueCliToken();
-      if (!token) throw new Error("Patchbay desktop token unavailable");
-      redirectToDesktopApp(token);
+      if (!codeChallenge || !state) {
+        throw new Error("Patchbay desktop handoff is missing its binding");
+      }
+      const { code } = await api.issueDesktopHandoff(codeChallenge);
+      if (!code) throw new Error("Patchbay desktop handoff code unavailable");
+      redirectToDesktopApp(code, state);
       setLoading(false);
     } catch {
       setError(t(($) => $.web.desktop_handoff.prepare_failed));
       setLoading(false);
     }
-  }, [t]);
+  }, [codeChallenge, state, t]);
 
   useEffect(() => {
     if (!backendSessionReady || automaticAttempted.current) return;

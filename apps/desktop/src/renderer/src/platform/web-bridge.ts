@@ -86,9 +86,12 @@ export function installWebDesktopBridge(): boolean {
       import.meta.env.VITE_API_URL ||
       (preview ? window.location.origin : undefined),
     wsUrl: import.meta.env.VITE_WS_URL,
-    // A browser renderer should generate links back to the Vite origin, not
-    // the historical Next.js port used by the web app.
-    appUrl: import.meta.env.VITE_APP_URL || window.location.origin,
+    // The no-backend preview must stay on its Vite origin. A backend-enabled
+    // browser host instead derives the auth origin from VITE_API_URL (or the
+    // shared runtime-config convention), unless it is explicitly configured.
+    appUrl:
+      import.meta.env.VITE_APP_URL ||
+      (preview ? window.location.origin : undefined),
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 
@@ -108,7 +111,9 @@ export function installWebDesktopBridge(): boolean {
     getLastFreeze: () => null,
     ackFreeze: (_ts: number) => undefined,
     reportAuthSession: (_userId: string | null) => undefined,
-    onAuthToken: (_callback: (token: string) => void) => noopUnsubscribe(),
+    onAuthHandoff: (
+      _callback: (payload: { code: string; state: string }) => void,
+    ) => noopUnsubscribe(),
     onInviteOpen: (_callback: (invitationId: string) => void) =>
       noopUnsubscribe(),
     openExternal: async (url: string) => openBrowserUrl(url),

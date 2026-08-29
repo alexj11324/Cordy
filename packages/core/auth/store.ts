@@ -31,7 +31,8 @@ export interface AuthState {
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
-  logout: () => void;
+  /** Clears local auth state and resolves after a cookie session is revoked. */
+  logout: () => Promise<void>;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
 }
@@ -115,16 +116,18 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: () => {
-      if (cookieAuth) {
-        // Clear server-side HttpOnly cookie.
-        api.logout().catch(() => {});
-      }
+      // Keep the promise so callers that are about to start a new Clerk
+      // exchange can serialize it behind this server-side cookie revocation.
+      const serverLogout = cookieAuth
+        ? api.logout().catch(() => {})
+        : Promise.resolve();
       storage.removeItem("patchbay_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
       resetAnalytics();
       onLogout?.();
       set({ user: null, isLoading: false, status: "unauthenticated" });
+      return serverLogout;
     },
 
     setUser: (user: User) => {

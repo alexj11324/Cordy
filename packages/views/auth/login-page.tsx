@@ -75,11 +75,12 @@ export function redirectToCliCallback(url: string, token: string, state: string)
 /**
  * Hand a freshly issued native session to the installed desktop app. The
  * custom protocol lets the OS show its normal "Open Patchbay?" confirmation
- * before Electron receives the token through its deep-link handler.
+ * before Electron receives the one-time code through its deep-link handler.
  */
-export function redirectToDesktopApp(token: string) {
+export function redirectToDesktopApp(code: string, state: string) {
   const callback = new URL("patchbay://auth/callback");
-  callback.searchParams.set("token", token);
+  callback.searchParams.set("code", code);
+  callback.searchParams.set("state", state);
   window.location.href = callback.href;
 }
 

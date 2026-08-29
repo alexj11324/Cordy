@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { ApiError } from "@patchbay/core/api";
@@ -26,20 +26,26 @@ export function ClerkAuthAdapter({
   const isPreviewRoute = pathname.startsWith("/ui-preview");
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
   const { getToken, isSignedIn, signOut } = useAuth();
+  const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (isPreviewRoute) return;
     if (!clerkLoaded) return;
     if (!isSignedIn || !clerkUser) {
-      useAuthStore.getState().logout();
+      logoutBarrierRef.current = Promise.resolve(
+        useAuthStore.getState().logout(),
+      );
       return;
     }
 
+    const previousLogout = logoutBarrierRef.current;
     let cancelled = false;
     let retryIndex = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let abortController: AbortController | undefined;
     const exchange = async () => {
+      await previousLogout;
+      if (cancelled) return;
       const controller = new AbortController();
       abortController = controller;
       useAuthStore.setState({
@@ -67,7 +73,9 @@ export function ClerkAuthAdapter({
           // session. Clear the Patchbay session and Clerk identity so the
           // user can take an actionable sign-in path instead of seeing a
           // blank recovering shell forever.
-          useAuthStore.getState().logout();
+          logoutBarrierRef.current = useAuthStore.getState().logout();
+          await logoutBarrierRef.current;
+          if (cancelled) return;
           void signOut().catch(() => {});
           return;
         }

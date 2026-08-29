@@ -40,6 +40,7 @@ pub mod connectors;
 pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
+pub mod desktop_handoff;
 pub mod dashboard;
 pub mod error;
 pub mod feedback;
@@ -243,6 +244,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         state.auth_rate_limit.clone(),
         state.auth_verify_rate_limit.clone(),
     );
+    let desktop_handoff_public = desktop_handoff::public_router().route_layer(
+        middleware::from_fn_with_state(
+            state.auth_verify_rate_limit.clone(),
+            patchbay_middleware::ratelimit::rate_limit,
+        ),
+    );
 
     let issue_routes = issue::router().route_layer(middleware::from_fn_with_state(
         WorkspaceGuardState::member_only(state.pool.clone()),
@@ -414,6 +421,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(cli_token::router())
+        .merge(desktop_handoff::authenticated_router())
         .merge(client_usage::router())
         .merge(feedback::router())
         .merge(invitation::router())
@@ -631,6 +639,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let app = Router::new()
         .merge(health::router())
         .merge(public_auth)
+        .merge(desktop_handoff_public)
         .merge(session::public_router())
         .merge(workspace::public_router())
         .merge(attachment::public_router(&state))

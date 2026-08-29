@@ -1,7 +1,7 @@
 import { LoginPage } from "@patchbay/views/auth";
 import { DragStrip } from "@patchbay/views/platform";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { buildDesktopLoginUrl } from "./login-url";
+import { createDesktopLoginUrl } from "./login-handoff";
 
 function requireRuntimeAppUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -15,10 +15,11 @@ function requireRuntimeAppUrl(): string {
 
 export function DesktopLoginPage() {
   const webUrl = requireRuntimeAppUrl();
-  const handleGoogleLogin = () => {
-    // Open web login page in the default browser with platform=desktop flag.
-    // The web callback will redirect back via patchbay:// deep link with the token.
-    window.desktopAPI.openExternal(buildDesktopLoginUrl(webUrl));
+  const handleGoogleLogin = async () => {
+    // Open web login page in the default browser with a PKCE-bound desktop
+    // handoff. The web callback returns a one-time code, never the bearer.
+    const url = await createDesktopLoginUrl(webUrl);
+    await window.desktopAPI.openExternal(url);
   };
 
   return (
