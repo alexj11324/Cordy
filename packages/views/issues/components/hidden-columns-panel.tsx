@@ -56,11 +56,13 @@ export function HiddenColumnRow({
   status,
   total,
   droppable = false,
+  onShow,
 }: {
   status: IssueStatusCategory;
   total?: number;
   /** Board rows are drop targets; swimlane rows remain display-only. */
   droppable?: boolean;
+  onShow?: () => void;
 }) {
   const { t } = useT("issues");
   const viewStoreApi = useViewStoreApi();
@@ -103,7 +105,7 @@ export function HiddenColumnRow({
           />
           <DropdownMenuContent align="end">
             <DropdownMenuItem
-              onClick={() => viewStoreApi.getState().showStatus(status)}
+              onClick={onShow ?? (() => viewStoreApi.getState().showStatus(status))}
             >
               <Eye className="size-3.5" />
               {t(($) => $.board.show_column)}

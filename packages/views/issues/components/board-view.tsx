@@ -41,6 +41,7 @@ import type {
   IssueStatusPageState,
   IssueStatusPagination,
 } from "../surface/use-issue-status-branches";
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 import type {
   IssueGroupBranches,
   IssueGroupPageState,
@@ -166,6 +167,7 @@ function BoardViewImpl({
   issues,
   visibleStatuses,
   hiddenStatuses,
+  droppableHiddenStatuses,
   onMoveIssue,
   childProgressMap = EMPTY_PROGRESS_MAP,
   projectMap,
@@ -177,7 +179,13 @@ function BoardViewImpl({
   issues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
-  onMoveIssue: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => boolean | void;
+  /** Manual hidden statuses allowed as destinations; filter-only statuses are excluded. */
+  droppableHiddenStatuses?: IssueStatusCategory[];
+  onMoveIssue: (
+    issueId: string,
+    updates: DragMoveUpdates,
+    callbacks?: MoveIssueCallbacks,
+  ) => boolean | void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** When set, the per-column "+" pre-fills the project on the create form. */
@@ -403,18 +411,44 @@ function BoardViewImpl({
     }
     return statuses.filter((status) => !revealedEmptyStatuses.has(status));
   }, [emptyStatusIds, groups, hiddenStatuses, revealedEmptyStatuses]);
+  const hiddenDropStatusSet = useMemo(
+    () => new Set(droppableHiddenStatuses ?? hiddenStatuses),
+    [droppableHiddenStatuses, hiddenStatuses],
+  );
+  const hiddenDropStatuses = useMemo(() => {
+    const statuses = hiddenStatuses.filter((status) =>
+      hiddenDropStatusSet.has(status),
+    );
+    for (const group of groups) {
+      if (
+        group.status &&
+        emptyStatusIds.has(group.id) &&
+        !revealedEmptyStatuses.has(group.status) &&
+        !statuses.includes(group.status)
+      ) {
+        statuses.push(group.status);
+      }
+    }
+    return statuses.filter((status) => !revealedEmptyStatuses.has(status));
+  }, [
+    emptyStatusIds,
+    groups,
+    hiddenDropStatusSet,
+    hiddenStatuses,
+    revealedEmptyStatuses,
+  ]);
   const dropGroups = useMemo(() => {
     if (grouping !== "status") return groups;
     const result: BoardColumnGroup[] = [...groups];
     const seen = new Set(result.map((group) => group.id));
-    for (const status of hiddenBoardStatuses) {
+    for (const status of hiddenDropStatuses) {
       const group = makeStatusGroup(status);
       if (seen.has(group.id)) continue;
       result.push(group);
       seen.add(group.id);
     }
     return result;
-  }, [grouping, groups, hiddenBoardStatuses]);
+  }, [grouping, groups, hiddenDropStatuses]);
   const groupIds = useMemo(
     () => new Set(dropGroups.map((group) => group.id)),
     [dropGroups],
@@ -444,6 +478,19 @@ function BoardViewImpl({
       return changed ? next : previous;
     });
   }, [emptyStatusIds]);
+
+  const showHiddenStatus = useCallback(
+    (status: IssueStatusCategory) => {
+      if (emptyStatusIds.has(statusGroupId(status))) {
+        setRevealedEmptyStatuses((previous) => {
+          if (previous.has(status)) return previous;
+          return new Set(previous).add(status);
+        });
+      }
+      viewStoreApi.getState().showStatus(status);
+    },
+    [emptyStatusIds, viewStoreApi],
+  );
 
   // Shared drag/settle primitive: owns the local column mirror, the
   // dragging/settling locks, the post-move animation-frame throttle, and the
@@ -596,14 +643,22 @@ function BoardViewImpl({
       const map = issueMapRef.current;
       const revealDroppedStatus = () => {
         const targetStatus = finalGroup.status;
-        if (!targetStatus || !hiddenBoardStatuses.includes(targetStatus)) return;
+        if (!targetStatus || !hiddenDropStatuses.includes(targetStatus)) return;
+        showHiddenStatus(targetStatus);
+      };
+      const restoreDroppedStatus = () => {
+        const targetStatus = finalGroup.status;
+        if (!targetStatus || !hiddenDropStatuses.includes(targetStatus)) return;
         if (emptyStatusIds.has(finalGroup.id)) {
           setRevealedEmptyStatuses((previous) => {
-            if (previous.has(targetStatus)) return previous;
-            return new Set(previous).add(targetStatus);
+            if (!previous.has(targetStatus)) return previous;
+            const next = new Set(previous);
+            next.delete(targetStatus);
+            return next;
           });
+        } else {
+          viewStoreApi.getState().hideStatus(targetStatus);
         }
-        viewStoreApi.getState().showStatus(targetStatus);
       };
 
       if (sortBy !== "position") {
@@ -637,7 +692,11 @@ function BoardViewImpl({
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          settle,
+          {
+            onSettled: settle,
+            onSuccess: revealDroppedStatus,
+            onError: restoreDroppedStatus,
+          },
         );
         if (committed === false) {
           settle();
@@ -673,7 +732,11 @@ function BoardViewImpl({
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        settle,
+        {
+          onSettled: settle,
+          onSuccess: revealDroppedStatus,
+          onError: restoreDroppedStatus,
+        },
       );
       if (committed === false) {
         settle();
@@ -698,7 +761,8 @@ function BoardViewImpl({
       setColumns,
       applyPropertyGroupValue,
       emptyStatusIds,
-      hiddenBoardStatuses,
+      hiddenDropStatuses,
+      showHiddenStatus,
       viewStoreApi,
     ],
   );
@@ -806,7 +870,9 @@ function BoardViewImpl({
         {grouping === "status" && hiddenBoardStatuses.length > 0 && (
           <BoardHiddenColumnsPanel
             hiddenStatuses={hiddenBoardStatuses}
+            droppableStatuses={hiddenDropStatuses}
             statusPagination={statusPagination}
+            onShowStatus={showHiddenStatus}
           />
         )}
       </div>
@@ -881,10 +947,14 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
 
 function BoardHiddenColumnsPanel({
   hiddenStatuses,
+  droppableStatuses,
   statusPagination,
+  onShowStatus,
 }: {
   hiddenStatuses: IssueStatusCategory[];
+  droppableStatuses: IssueStatusCategory[];
   statusPagination?: IssueStatusPagination;
+  onShowStatus: (status: IssueStatusCategory) => void;
 }) {
   return (
     <HiddenColumnsPanel
@@ -894,7 +964,8 @@ function BoardHiddenColumnsPanel({
           key={status}
           status={status}
           total={statusPagination?.[status]?.total}
-          droppable
+          droppable={droppableStatuses.includes(status)}
+          onShow={() => onShowStatus(status)}
         />
       )}
     />

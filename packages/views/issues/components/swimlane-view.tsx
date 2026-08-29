@@ -70,6 +70,7 @@ import type {
   IssueGroupBranches,
   IssueGroupPageState,
 } from "../surface/use-issue-group-branches";
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 
 const COLUMN_WIDTH = 280;
 const COLUMN_GAP = 16;
@@ -632,7 +633,7 @@ function SwimLaneViewImpl({
   onMoveIssue: (
     issueId: string,
     updates: SwimLaneMoveUpdates,
-    onSettled?: () => void,
+    callbacks?: MoveIssueCallbacks,
   ) => boolean | void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
@@ -1297,9 +1298,11 @@ function SwimLaneViewImpl({
           position: newPosition,
           ...getMoveAnchors(finalIds, activeId),
         },
-        () => {
-          isSettlingRef.current = false;
-          setSettleVersion((v) => v + 1);
+        {
+          onSettled: () => {
+            isSettlingRef.current = false;
+            setSettleVersion((v) => v + 1);
+          },
         },
       );
       if (committed === false) {

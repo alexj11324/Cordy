@@ -340,6 +340,24 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     ).not.toBeNull();
   });
 
+  it("does not make filter-only hidden statuses drop targets", () => {
+    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
+
+    const { container } = renderWithProviders(
+      <BoardView
+        issues={issues}
+        visibleStatuses={["todo"]}
+        hiddenStatuses={["in_progress"]}
+        droppableHiddenStatuses={[]}
+        onMoveIssue={vi.fn()}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
+    ).toBeNull();
+  });
+
   it("reveals an auto-hidden empty status after a card is dropped there", () => {
     const onMoveIssue = vi.fn();
     const issues = [makeIssue({ id: "todo-1", status: "todo" })];
@@ -381,7 +399,11 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     expect(onMoveIssue).toHaveBeenCalledWith(
       "todo-1",
       expect.objectContaining({ status: "in_progress" }),
-      expect.any(Function),
+      expect.objectContaining({
+        onSettled: expect.any(Function),
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
     );
     expect(
       container.querySelector('[data-board-column="status:in_progress"]'),
@@ -429,7 +451,11 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     expect(onMoveIssue).toHaveBeenCalledWith(
       "todo-1",
       expect.objectContaining({ status: "in_progress" }),
-      expect.any(Function),
+      expect.objectContaining({
+        onSettled: expect.any(Function),
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
     );
     expect(showStatus).toHaveBeenCalledWith("in_progress");
   });
