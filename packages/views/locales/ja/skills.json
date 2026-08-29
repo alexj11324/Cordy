@@ -25,7 +25,7 @@
     },
     "empty": {
       "title": "まだスキルがありません",
-      "description": "最初のスキルを作成するか、URL からインポートするか、接続済みのランタイムからコピーしてください。ワークスペースのすべてのエージェントが使用できます。"
+      "description": "最初のスキルを作成するか、URL からインポートするか、接続済みのデバイスからコピーしてください。ワークスペースのすべてのエージェントが使用できます。"
     },
     "no_matches": {
       "title": "一致なし",
@@ -36,15 +36,15 @@
     },
     "intro_banner": {
       "title": "ワークスペースと共有されます。",
-      "body": "誰でもスキルを作成したり、URL からインポートしたり、ローカルランタイムからコピーしたりでき、すべてのエージェントが使用できます。",
-      "highlight": "ローカルランタイムのスキルは、ここにコピーするまで非公開のままです。"
+      "body": "誰でもスキルを作成したり、URL からインポートしたり、ローカルデバイスからコピーしたりでき、すべてのエージェントが使用できます。",
+      "highlight": "ローカルデバイスのスキルは、ここにコピーするまで非公開のままです。"
     },
     "list_error": {
       "title": "スキルを読み込めませんでした",
       "fallback": "スキル一覧の取得中に問題が発生しました。",
       "retry": "再試行"
     },
-    "supporting_data_warning": "一部のワークスペースデータを読み込めませんでした。作成者の表示、ランタイム名、編集権限が不完全に見える場合があります。"
+    "supporting_data_warning": "一部のワークスペースデータを読み込めませんでした。作成者の表示、デバイス名、編集権限が不完全に見える場合があります。"
   },
   "table": {
     "name": "名前",
@@ -58,8 +58,8 @@
     "by_creator": "{{name}}",
     "source_manual": "手動で作成",
     "source_runtime_named": "{{name}} から",
-    "source_runtime_provider": "{{provider}} ランタイムから",
-    "source_runtime_unknown": "ランタイムから",
+    "source_runtime_provider": "{{provider}} デバイスから",
+    "source_runtime_unknown": "デバイスから",
     "source_clawhub": "ClawHub から",
     "source_skills_sh": "Skills.sh から",
     "source_github": "GitHub から"
@@ -116,14 +116,14 @@
     "read_only": "読み取り専用",
     "delete_aria": "スキルを削除",
     "delete_tooltip": "スキルを削除",
-    "supporting_data_warning": "一部のワークスペースデータを読み込めませんでした。次回の更新まで、作成者の表示、ランタイム名、編集権限が不完全に見える場合があります。",
+    "supporting_data_warning": "一部のワークスペースデータを読み込めませんでした。次回の更新まで、作成者の表示、デバイス名、編集権限が不完全に見える場合があります。",
     "delete_file": "ファイルを削除",
     "name_placeholder": "skill-name",
     "description_placeholder": "エージェントがこのスキルをいつ使うべきかを 1 文で説明してください…",
     "subline": {
-      "origin_runtime_named": "ローカルランタイム · {{name}}",
-      "origin_runtime_provider": "ローカルランタイム · {{provider}}",
-      "origin_runtime_unknown": "ローカルランタイム",
+      "origin_runtime_named": "ローカルデバイス · {{name}}",
+      "origin_runtime_provider": "ローカルデバイス · {{provider}}",
+      "origin_runtime_unknown": "ローカルデバイス",
       "origin_clawhub": "インポート済み · ClawHub",
       "origin_skills_sh": "インポート済み · Skills.sh",
       "origin_github": "インポート済み · GitHub",
@@ -244,8 +244,8 @@
         "desc": "公開済みのスキルを URL で取得します。ファイルはサーバー側で取得されます。"
       },
       "runtime": {
-        "title": "ランタイムからコピー",
-        "desc": "ローカルランタイムをスキャンし、ディスク上のスキルの 1 つをこのワークスペースに昇格します。"
+        "title": "デバイスからコピー",
+        "desc": "ローカルデバイスをスキャンし、ディスク上のスキルの 1 つをこのワークスペースに昇格します。"
       }
     },
     "method_card": {
@@ -253,8 +253,8 @@
       "manual_desc": "空の SKILL.md から始めて、独自の指示を記述します。",
       "url_title": "URL からインポート",
       "url_desc": "ClawHub または Skills.sh の公開スキルを取得します。",
-      "runtime_title": "ランタイムからコピー",
-      "runtime_desc": "ローカルランタイムにすでにインストールされているスキルを昇格します。"
+      "runtime_title": "デバイスからコピー",
+      "runtime_desc": "ローカルデバイスにすでにインストールされているスキルを昇格します。"
     },
     "manual": {
       "name_label": "名前",
@@ -284,16 +284,16 @@
     }
   },
   "runtime_import": {
-    "runtime_label": "ランタイム",
-    "runtime_placeholder": "ローカルランタイムを選択",
-    "no_local_runtimes_title": "利用可能なローカルランタイムがありません",
-    "no_local_runtimes_hint": "ローカルスキルを参照してインポートするには、ローカルランタイムを接続してください。",
-    "choose_runtime": "続行するにはランタイムを選択してください",
-    "must_be_online": "ローカルスキルを参照するには、ランタイムがオンラインである必要があります。",
-    "load_failed": "ランタイムのローカルスキルを読み込めませんでした",
-    "not_supported": "このランタイムプロバイダーは、まだローカルスキル一覧の取得に対応していません。",
+    "runtime_label": "デバイス",
+    "runtime_placeholder": "ローカルデバイスを選択",
+    "no_local_runtimes_title": "利用可能なローカルデバイスがありません",
+    "no_local_runtimes_hint": "ローカルスキルを参照してインポートするには、ローカルデバイスを接続してください。",
+    "choose_runtime": "続行するにはデバイスを選択してください",
+    "must_be_online": "ローカルスキルを参照するには、デバイスがオンラインである必要があります。",
+    "load_failed": "デバイスのローカルスキルを読み込めませんでした",
+    "not_supported": "このデバイスプロバイダーは、まだローカルスキル一覧の取得に対応していません。",
     "no_skills_title": "ローカルスキルが見つかりません",
-    "no_skills_hint": "このランタイムには、まだ検出可能なローカルスキルがありません。",
+    "no_skills_hint": "このデバイスには、まだ検出可能なローカルスキルがありません。",
     "search_placeholder": "ローカルスキルを検索",
     "no_search_results_title": "一致するローカルスキルはありません",
     "no_search_results_hint": "\"{{query}}\" に一致するローカルスキルはありません。",

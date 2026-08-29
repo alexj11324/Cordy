@@ -87,6 +87,13 @@ vi.mock("mermaid", () => ({
   },
 }));
 
+// Live Chat rows mount thinking-orbs; jsdom's canvas cannot run that animation.
+vi.mock("thinking-orbs", () => ({
+  ThinkingOrb: ({ "aria-label": label }: { "aria-label"?: string }) => (
+    <span data-testid="thinking-orb" aria-label={label} />
+  ),
+}));
+
 // react-virtuoso does not virtualize under jsdom's zero-height viewport, so
 // render every row directly. computeItemKey is still exercised: it is what
 // gives the live row and the persisted row one identity.

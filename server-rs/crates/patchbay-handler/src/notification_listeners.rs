@@ -21,6 +21,8 @@ struct IssueFields {
     priority: String,
     assignee_type: Option<String>,
     assignee_id: Option<Uuid>,
+    reviewer_type: Option<String>,
+    reviewer_id: Option<Uuid>,
     start_date: Option<String>,
     due_date: Option<String>,
 }
@@ -205,6 +207,36 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 &details,
             )
             .await;
+        }
+        if flag(&event.payload, "review_handoff") {
+            if let (Some(recipient_type), Some(recipient_id)) =
+                (fields.reviewer_type.as_deref(), fields.reviewer_id)
+            {
+                if is_assignment_recipient(recipient_type) {
+                    let reviewer_id = recipient_id.to_string();
+                    let mut details = Map::new();
+                    insert_str(&mut details, "new_assignee_type", Some(recipient_type));
+                    insert_str(&mut details, "new_assignee_id", Some(reviewer_id.as_str()));
+                    let details = Value::Object(details);
+                    notify_direct(
+                        &pool,
+                        &bus,
+                        &event,
+                        InboxSpec {
+                            recipient_type,
+                            recipient_id,
+                            issue_id: fields.id,
+                            issue_status: &fields.status,
+                            notif_type: "issue_assigned",
+                            severity: "action_required",
+                            title: &fields.title,
+                            body: None,
+                            details: &details,
+                        },
+                    )
+                    .await;
+                }
+            }
         }
 
         if flag(&event.payload, "status_changed") {
@@ -835,6 +867,8 @@ fn handler_issue(event: &Event, created: bool) -> Option<IssueFields> {
         priority: string(value, "priority"),
         assignee_type: optional_string(value, "assignee_type"),
         assignee_id: uuid(value, "assignee_id"),
+        reviewer_type: optional_string(value, "reviewer_type"),
+        reviewer_id: uuid(value, "reviewer_id"),
         start_date: optional_string(value, "start_date"),
         due_date: optional_string(value, "due_date"),
     })
@@ -858,6 +892,8 @@ fn fields_from_issue(issue: Issue) -> IssueFields {
         priority: issue.priority,
         assignee_type: issue.assignee_type,
         assignee_id: issue.assignee_id,
+        reviewer_type: issue.reviewer_type,
+        reviewer_id: issue.reviewer_id,
         start_date: issue.start_date.map(|d| d.to_string()),
         due_date: issue.due_date.map(|d| d.to_string()),
     }

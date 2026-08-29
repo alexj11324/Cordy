@@ -1,5 +1,5 @@
 /**
- * Skip path: "Connect a runtime to start with Mika".
+ * Skip path: "Connect a device to start with Mika".
  *
  * Written to a new issue (assigned to the user themselves) by the welcome
  * hook when the user took the Skip exit on Step 3. Content is the
@@ -13,7 +13,7 @@
 
 /**
  * Localized so users see the title in their current supported locale on the
- * board. The Runtimes page owns the follow-up Mika bootstrap once a runtime
+ * board. The Devices page owns the follow-up Mika bootstrap once a device
  * appears, so this guide does not ask the member to copy an agent prompt.
  *
  * Note: the server's deprecated-title compatibility shim
@@ -22,28 +22,28 @@
  * the v3 frontend population, so the two title-spaces drifting is fine.
  */
 export const INSTALL_RUNTIME_ISSUE_TITLE = {
-  en: "Connect a runtime to start with Mika",
-  zh: "连接运行时，和 Mika 开始",
-  ko: "runtime을 연결하고 Mika와 시작하기",
-  ja: "runtime を接続して Mika と始める",
+  en: "Connect a device to start with Mika",
+  zh: "连接设备，和 Mika 开始",
+  ko: "기기를 연결하고 Mika와 시작하기",
+  ja: "デバイスを接続して Mika と始める",
 } as const;
 
 const en = `Welcome to Patchbay.
 
-Agents need a runtime before they can execute work. You can still use Patchbay as a lightweight project-management workspace while you install one.
+Agents need a device before they can execute work. You can still use Patchbay as a lightweight project-management workspace while you install one.
 
 ## Try Patchbay first
 
-Before the runtime is ready, you can:
+Before the device is ready, you can:
 
 1. Create a project for your current work.
 2. Create a few issues and move them across backlog, todo, in_progress, and done.
 3. Add priorities, labels, comments, and subscriptions.
 4. Use Inbox to track assignments and mentions.
 
-That gives you the project-management layer first. Once a runtime is connected, agents can start working from the same issues.
+That gives you the project-management layer first. Once a device is connected, agents can start working from the same issues.
 
-## Install your first agent runtime
+## Connect your first device
 
 Full guide: https://patchbay.ai/docs/install-agent-runtime
 
@@ -61,10 +61,10 @@ For English users, the fastest first path is Codex:
    installed CLIs every couple of minutes, so no restart is normally needed.
    To apply it immediately:
    patchbay daemon restart
-   In the desktop app, open any local runtime and click Restart. Quitting and
+   In the desktop app, open any local device and click Restart. Quitting and
    reopening the app is NOT enough — the daemon keeps running in the background.
-6. Return to Runtimes and refresh. You should see a Codex runtime online.
-7. Open Runtimes. The page will offer **Start with Mika**; use it to create Mika and open the guided first chat.
+6. Return to Devices and refresh. You should see Codex online.
+7. Open Devices. The page will offer **Start with Mika**; use it to create Mika and open the guided first chat.
 
 Codex reference: https://developers.openai.com/codex/cli
 
@@ -72,20 +72,20 @@ Mika will turn one real goal into an issue, start it with the right agent, and s
 
 const zh = `欢迎来到 Patchbay。
 
-智能体需要先连上运行时才能执行工作。运行时还没准备好时,你也可以先把 Patchbay 当作轻量项目管理工具体验起来。
+智能体需要先连上设备才能执行工作。设备还没准备好时,你也可以先把 Patchbay 当作轻量项目管理工具体验起来。
 
 ## 先体验项目管理功能
 
-运行时安装前,你可以先做这些事:
+设备安装前,你可以先做这些事:
 
 1. 为当前工作创建一个项目。
 2. 新建几个任务,并在 backlog、todo、in_progress、done 之间流转。
 3. 给任务加优先级、标签、评论和订阅。
 4. 用收件箱追踪分配给你的事项和 @mention。
 
-这样你先熟悉项目管理层。连上运行时后,智能体会直接在这些任务上开始工作。
+这样你先熟悉项目管理层。连上设备后,智能体会直接在这些任务上开始工作。
 
-## 安装第一个 Agent 运行时
+## 连接第一台设备
 
 完整文档:https://patchbay.ai/docs/install-agent-runtime
 
@@ -103,9 +103,9 @@ const zh = `欢迎来到 Patchbay。
 5. 等 Patchbay 识别到它。运行中的守护进程每隔几分钟会重新检查一次新装的 CLI,通常不需要重启。
    想立刻生效:
    patchbay daemon restart
-   桌面端请打开任意一个本机 runtime 并点 Restart。退出再打开 app 是不够的 —— 守护进程会继续在后台运行。
-6. 回到 Runtimes 页面刷新。你应该能看到一个在线的 Kimi 运行时。
-7. 打开"运行时"页面。页面会显示 **和 Mika 开始**；点击后会创建 Mika，并进入引导式的首次对话。
+   桌面端请打开任意一台本机设备并点 Restart。退出再打开 app 是不够的 —— 守护进程会继续在后台运行。
+6. 回到「设备」页面刷新。你应该能看到一台在线的 Kimi。
+7. 打开"设备"页面。页面会显示 **和 Mika 开始**；点击后会创建 Mika，并进入引导式的首次对话。
 
 Kimi CLI 官方文档:https://moonshotai.github.io/kimi-cli/zh/guides/getting-started.html
 
@@ -113,20 +113,20 @@ Mika 会把一个真实目标转化为任务，交给合适的智能体启动执
 
 const ko = `Patchbay에 오신 것을 환영합니다.
 
-agent가 작업을 실행하려면 먼저 runtime이 필요합니다. runtime을 설치하는 동안에도 Patchbay를 가벼운 프로젝트 관리 워크스페이스로 먼저 사용할 수 있습니다.
+agent가 작업을 실행하려면 먼저 기기가 필요합니다. 기기를 설치하는 동안에도 Patchbay를 가벼운 프로젝트 관리 워크스페이스로 먼저 사용할 수 있습니다.
 
 ## 먼저 Patchbay를 사용해 보기
 
-runtime이 준비되기 전에는 다음을 해볼 수 있습니다:
+기기가 준비되기 전에는 다음을 해볼 수 있습니다:
 
 1. 현재 작업을 위한 project를 만듭니다.
 2. 태스크 몇 개를 만들고 backlog, todo, in_progress, done 사이에서 이동해 봅니다.
 3. priority, label, comment, subscription을 추가합니다.
 4. Inbox에서 나에게 배정된 작업과 mention을 확인합니다.
 
-이렇게 프로젝트 관리 계층을 먼저 익힐 수 있습니다. runtime이 연결되면 agent가 같은 태스크에서 바로 작업을 시작합니다.
+이렇게 프로젝트 관리 계층을 먼저 익힐 수 있습니다. 기기가 연결되면 agent가 같은 태스크에서 바로 작업을 시작합니다.
 
-## 첫 agent runtime 설치하기
+## 첫 기기 연결하기
 
 전체 가이드: https://patchbay.ai/docs/install-agent-runtime
 
@@ -144,10 +144,10 @@ runtime이 준비되기 전에는 다음을 해볼 수 있습니다:
    다시 확인하므로 보통 재시작이 필요하지 않습니다.
    바로 적용하려면:
    patchbay daemon restart
-   데스크톱 앱에서는 아무 로컬 runtime을 열고 Restart를 누르세요. 앱을 종료하고 다시 여는
+   데스크톱 앱에서는 아무 로컬 기기를 열고 Restart를 누르세요. 앱을 종료하고 다시 여는
    것만으로는 충분하지 않습니다 — daemon은 백그라운드에서 계속 실행됩니다.
-6. Runtimes로 돌아가 새로고침합니다. Codex runtime이 online으로 보여야 합니다.
-7. Runtimes를 엽니다. **Mika와 시작**을 눌러 Mika를 만들고 안내되는 첫 채팅을 시작합니다.
+6. 「기기」로 돌아가 새로고침합니다. Codex가 online으로 보여야 합니다.
+7. 「기기」를 엽니다. **Mika와 시작**을 눌러 Mika를 만들고 안내되는 첫 채팅을 시작합니다.
 
 Codex 참고 문서: https://developers.openai.com/codex/cli
 
@@ -155,20 +155,20 @@ Mika가 실제 목표 하나를 태스크로 만들고 적합한 에이전트와
 
 const ja = `Patchbay へようこそ。
 
-agent が作業を実行するには、まず runtime が必要です。runtime をインストールしている間も、Patchbay を軽量なプロジェクト管理ワークスペースとして先に使うことができます。
+agent が作業を実行するには、まずデバイスが必要です。デバイスをインストールしている間も、Patchbay を軽量なプロジェクト管理ワークスペースとして先に使うことができます。
 
 ## まず Patchbay を使ってみる
 
-runtime が準備できる前に、次のことを試せます:
+デバイスが準備できる前に、次のことを試せます:
 
 1. いまの仕事のための project を作る。
 2. タスクをいくつか作り、backlog、todo、in_progress、done の間で動かしてみる。
 3. priority、label、comment、subscription を追加する。
 4. Inbox で自分への割り当てや mention を確認する。
 
-これでまずプロジェクト管理のレイヤーに慣れることができます。runtime を接続すると、agent が同じタスクから作業を始められます。
+これでまずプロジェクト管理のレイヤーに慣れることができます。デバイスを接続すると、agent が同じタスクから作業を始められます。
 
-## 最初の agent runtime をインストールする
+## 最初のデバイスを接続する
 
 詳しいガイド: https://patchbay.ai/docs/install-agent-runtime
 
@@ -186,10 +186,10 @@ runtime が準備できる前に、次のことを試せます:
    CLI を再チェックするため、通常は再起動は不要です。
    すぐに反映したい場合:
    patchbay daemon restart
-   デスクトップアプリではローカル runtime を開いて Restart を押してください。アプリを終了して
+   デスクトップアプリではローカルデバイスを開いて Restart を押してください。アプリを終了して
    開き直すだけでは不十分です — daemon はバックグラウンドで動き続けます。
-6. Runtimes に戻って再読み込みします。Codex runtime が online と表示されるはずです。
-7. Runtimes を開き、**Mika と始める**を選びます。Mika が作成され、案内付きの最初のチャットが開きます。
+6. 「デバイス」に戻って再読み込みします。Codex が online と表示されるはずです。
+7. 「デバイス」を開き、**Mika と始める**を選びます。Mika が作成され、案内付きの最初のチャットが開きます。
 
 Codex のリファレンス: https://developers.openai.com/codex/cli
 

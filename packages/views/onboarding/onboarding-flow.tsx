@@ -16,7 +16,6 @@ import { useWorkspaceList } from "@patchbay/core/workspace";
 import type { AgentRuntime, Workspace } from "@patchbay/core/types";
 import { StepWelcome } from "./steps/step-welcome";
 import { StepShell } from "./components/step-shell";
-import { StepAboutYou } from "./steps/step-about-you";
 import { StepWorkspace } from "./steps/step-workspace";
 import { StepRuntimeConnect } from "./steps/step-runtime-connect";
 import { StepPlatformFork } from "./steps/step-platform-fork";
@@ -61,17 +60,18 @@ function coerceToArray<T extends string>(value: unknown): T[] {
  * record of the prior skip stays in the DB.
  */
 function mergeQuestionnaire(
-  raw: Record<string, unknown>,
+  raw: Record<string, unknown> | null | undefined,
 ): QuestionnaireAnswers {
+  const stored = raw ?? {};
   const merged = {
     ...EMPTY_QUESTIONNAIRE,
-    ...(raw as Partial<QuestionnaireAnswers>),
+    ...(stored as Partial<QuestionnaireAnswers>),
   };
   return {
     ...merged,
-    source: coerceToArray<QuestionnaireAnswers["source"][number]>(raw.source),
+    source: coerceToArray<QuestionnaireAnswers["source"][number]>(stored.source),
     use_case: coerceToArray<QuestionnaireAnswers["use_case"][number]>(
-      raw.use_case,
+      stored.use_case,
     ),
     source_skipped: false,
     role_skipped: false,
@@ -122,6 +122,9 @@ interface OnboardingFlowProps {
    *  step doesn't flash "no runtime found" while the daemon is still booting
    *  or probing CLI versions (PB-5119). Web omits it. */
   runtimesPending?: boolean;
+  /** Render the post-welcome steps as one centred shadcn card. The Web app
+   *  enables this; Desktop keeps the progress rail until separately approved. */
+  singlePane?: boolean;
 }
 
 export function OnboardingFlow(props: OnboardingFlowProps) {
@@ -135,6 +138,7 @@ function OnboardingStepFlow({
   runtimeInstructions,
   onRuntimeRefresh,
   runtimesPending,
+  singlePane = false,
 }: OnboardingFlowProps) {
   const { t, i18n } = useT("onboarding");
   const user = useAuthStore((s) => s.user);
@@ -146,8 +150,7 @@ function OnboardingStepFlow({
   // question steps on re-entry. That's the only piece of onboarding
   // state persisted across sessions — which step the user is on is
   // deliberately not saved, so every entry starts at Welcome.
-  const storedQuestionnaire = mergeQuestionnaire(user.onboarding_questionnaire);
-  const [answers, setAnswers] = useState<QuestionnaireAnswers>(storedQuestionnaire);
+  const answers = mergeQuestionnaire(user.onboarding_questionnaire);
 
   const isNewWorkspace = mode === "new_workspace";
   const [step, setStep] = useState<OnboardingStep>(
@@ -204,23 +207,6 @@ function OnboardingStepFlow({
     // step is hard-coded as the entry point.
     setStep(ONBOARDING_STEP_ORDER[0]!);
   }, []);
-
-  // Apply an in-memory patch and fire-and-forget a PATCH to persist
-  // it. We never block UI on the request — the next step's render is
-  // what matters; a transient save failure surfaces as a toast but
-  // does not roll the user back.
-  const applyAnswers = useCallback(
-    (patch: Partial<QuestionnaireAnswers>) => {
-      setAnswers((a) => {
-        const next = { ...a, ...patch };
-        void saveQuestionnaire(next).catch((err) => {
-          if (err instanceof Error) toast.error(err.message);
-        });
-        return next;
-      });
-    },
-    [],
-  );
 
   // "I've done this before" path — returning user who already has a
   // workspace and just wants to land there. Marks onboarding complete
@@ -315,7 +301,7 @@ function OnboardingStepFlow({
     }
     const idx = ONBOARDING_STEP_ORDER.indexOf(from);
     if (idx <= 0) {
-      // About you (the first persisted step) returns to Welcome.
+      // Workspace is the first persisted step, so Back returns to Welcome.
       setStep("welcome");
       return;
     }
@@ -355,42 +341,33 @@ function OnboardingStepFlow({
   // only the step body swapping.
   if (step === "welcome") {
     // Welcome has no rail, so the escape hatch stays pinned there.
+    // `dark` forces readable light tokens on the unconditional black
+    // welcome surface even when the app theme is light.
     return (
-      <>
+      <div className="dark h-full">
         <OnboardingLogoutButton />
         <StepWelcome
           onNext={handleWelcomeNext}
           onSkip={canSkipWelcome ? handleWelcomeSkip : undefined}
           isWeb={isWeb}
         />
-      </>
+      </div>
     );
   }
 
   const stepBack =
-    step === "about_you"
-      ? () => handleBack("about_you")
-      : step === "workspace"
-        ? () => handleBack("workspace")
-        : runtimeStepBack;
+    step === "workspace" ? () => handleBack("workspace") : runtimeStepBack;
 
   return (
     <StepShell
       currentStep={step}
       onBack={stepBack}
+      backLabel={t(($) => $.common.back)}
       backDisabled={stepBusy}
       onStepChange={handleStepChange}
       chromeFooter={headerTrailing}
+      singlePane={singlePane}
     >
-      {step === "about_you" && (
-        <StepAboutYou
-          answers={answers}
-          onChange={applyAnswers}
-          onAdvance={() => advanceFrom("about_you")}
-          onSkip={() => advanceFrom("about_you")}
-        />
-      )}
-
       {step === "workspace" && (
         <StepWorkspace
           existing={existingWorkspace}

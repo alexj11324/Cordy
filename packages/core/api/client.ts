@@ -3361,9 +3361,16 @@ export class ApiClient {
     return this.fetch(`/api/projects/${id}`);
   }
 
-  async createProject(data: CreateProjectRequest): Promise<Project> {
+  // `workspaceSlug` overrides the ambient `X-Workspace-Slug` header. Onboarding
+  // creates projects in a workspace the app has not navigated to yet, so it
+  // must name the target the same way Mika bootstrap does.
+  async createProject(
+    data: CreateProjectRequest,
+    workspaceSlug?: string,
+  ): Promise<Project> {
     return this.fetch("/api/projects", {
       method: "POST",
+      headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),
     });
   }

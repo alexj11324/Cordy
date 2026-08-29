@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev web-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -266,6 +266,16 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 
 dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
 	@bash scripts/dev.sh
+
+web-dev: ## Run Next.js with a local fixture API so product UI works without Rust
+	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
+	@echo "Product UI: http://localhost:$(FRONTEND_PORT)/ui-preview"
+	@PATCHBAY_UI_FIXTURES=1 pnpm -C apps/web dev
+
+api-dev: ## Run only the API/WebSocket backend (PostgreSQL must already be running)
+	$(REQUIRE_ENV)
+	@echo "Backend: http://localhost:$(PORT)"
+	$(RUST_SERVER_CMD)
 
 daemon: PATCHBAY_ARGS := daemon restart --profile local
 daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session

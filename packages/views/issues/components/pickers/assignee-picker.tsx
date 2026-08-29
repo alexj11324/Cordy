@@ -56,6 +56,8 @@ interface AssigneePickerProps {
   open?: boolean;
   onOpenChange?: (v: boolean) => void;
   align?: "start" | "center" | "end";
+  /** Hide the Unassigned row. Reviewer cannot be cleared once chosen. */
+  allowUnassigned?: boolean;
 }
 
 /**
@@ -99,6 +101,7 @@ function AssigneePickerImpl({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   align,
+  allowUnassigned = true,
 }: AssigneePickerProps) {
   const { t } = useT("issues");
   const [internalOpen, setInternalOpen] = useState(false);
@@ -177,7 +180,8 @@ function AssigneePickerImpl({
     >
       {/* Unassigned — always the first row, search active or not. Every
           picker in the app puts the empty value there, so "clear this field"
-          never moves. */}
+          never moves. Reviewer pickers omit it: a reviewer cannot be cleared. */}
+      {allowUnassigned && (
       <PickerItem
         emptyValue
         selected={!mixed && !assigneeType && !assigneeId}
@@ -189,6 +193,7 @@ function AssigneePickerImpl({
         <UserMinus className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-muted-foreground">{t(($) => $.pickers.assignee.trigger_unassigned)}</span>
       </PickerItem>
+      )}
 
       {/* Members */}
       {filteredMembers.length > 0 && (

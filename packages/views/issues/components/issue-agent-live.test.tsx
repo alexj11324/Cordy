@@ -150,6 +150,23 @@ describe("pickIssueAgentLiveTask", () => {
   it("returns undefined when nothing is live", () => {
     expect(pickIssueAgentLiveTask([makeTask({})])).toBeUndefined();
   });
+
+  it("ignores a live side-chat task", () => {
+    const sideChat = makeTask({
+      id: RESEARCH_ID,
+      status: "running",
+      completed_at: null,
+      side_chat_parent_task_id: CODING_ID,
+    });
+    const main = makeTask({
+      id: CODING_ID,
+      agent_id: "agent-coding",
+      status: "queued",
+      completed_at: null,
+    });
+    expect(pickIssueAgentLiveTask([sideChat, main])?.id).toBe(CODING_ID);
+    expect(pickIssueAgentLiveTask([sideChat])).toBeUndefined();
+  });
 });
 
 describe("IssueAgentWorkingStatus", () => {
@@ -202,5 +219,48 @@ describe("IssueAgentWorkingStatus", () => {
     renderLive(<IssueAgentWorkingStatus issueId="issue-1" />);
     expect(screen.queryByTestId("thinking-orb")).not.toBeInTheDocument();
     expect(screen.queryByTestId("agent-working-reply")).not.toBeInTheDocument();
+  });
+
+  it("does not render a Working card for a side-chat task", () => {
+    mockState.tasks = [
+      makeTask({
+        id: RESEARCH_ID,
+        status: "running",
+        completed_at: null,
+        result: null,
+        side_chat_parent_task_id: CODING_ID,
+      }),
+    ];
+    renderLive(<IssueAgentWorkingStatus issueId="issue-1" />);
+    expect(screen.queryByTestId("thinking-orb")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("agent-working-reply")).not.toBeInTheDocument();
+  });
+
+  it("closes the conversation when the issue changes", () => {
+    mockState.tasks = [
+      makeTask({
+        id: CODING_ID,
+        agent_id: "agent-coding",
+        status: "running",
+        completed_at: null,
+        result: null,
+      }),
+    ];
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { rerender } = renderWithI18n(
+      <QueryClientProvider client={qc}>
+        <IssueAgentWorkingStatus issueId="issue-1" />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open conversation" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    rerender(
+      <QueryClientProvider client={qc}>
+        <IssueAgentWorkingStatus issueId="issue-2" />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

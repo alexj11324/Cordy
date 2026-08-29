@@ -469,15 +469,15 @@ describe("AgentDetailPage DM button", () => {
     renderPage();
 
     expect(
-      await screen.findByText(/needs a runtime before it can run/i),
+      await screen.findByText(/needs a device before it can run/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Bind runtime" }),
+      screen.getByRole("button", { name: "Bind device" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "DM" }));
     expect(mockToastError).toHaveBeenCalledWith(
-      "Bind a runtime before running this agent.",
+      "Bind a device before running this agent.",
     );
     expect(mockModalOpen).not.toHaveBeenCalled();
   });

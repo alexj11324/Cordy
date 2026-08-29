@@ -84,6 +84,20 @@ interface DesktopAPI {
     reason?: "cancelled" | "no_window" | "error";
     error?: string;
   }>;
+  /** Open the OS folder picker with multi-select. Used by onboarding
+   *  to bind several local git repos as projects at once. */
+  pickDirectories: (
+    defaultPath?: string,
+  ) => Promise<{
+    ok: boolean;
+    folders?: Array<{
+      path: string;
+      basename: string;
+      originUrl: string | null;
+    }>;
+    reason?: "cancelled" | "no_window" | "error";
+    error?: string;
+  }>;
   /** Validate that a path is an existing readable+writable directory.
    *  Mirrors the daemon's runtime check so the user sees errors before submit. */
   validateLocalDirectory: (

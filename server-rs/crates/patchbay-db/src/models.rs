@@ -813,6 +813,8 @@ pub struct Issue {
     pub project_id: Option<Uuid>,
     pub properties: serde_json::Value,
     pub revision: i64,
+    pub reviewer_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
     pub stage: Option<i32>,
     pub start_date: Option<chrono::NaiveDate>,
     pub status: String,

@@ -146,7 +146,7 @@ describe("WelcomeAfterOnboarding", () => {
 
     expect(mockCreateIssue).toHaveBeenCalledTimes(1);
     expect(mockCreateIssue.mock.calls[0]![0]).toMatchObject({
-      title: "Connect a runtime to start with Mika",
+      title: "Connect a device to start with Mika",
       status: "in_progress",
       assignee_type: "member",
       assignee_id: "user-1",

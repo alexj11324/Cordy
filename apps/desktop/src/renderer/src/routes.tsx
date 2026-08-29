@@ -166,7 +166,7 @@ export const appRoutes: RouteObject[] = [
           {
             path: "runtimes",
             element: <DesktopRuntimesPage />,
-            handle: { title: "Runtimes" },
+            handle: { title: "Devices" },
           },
           {
             path: "runtimes/:id",
@@ -176,7 +176,7 @@ export const appRoutes: RouteObject[] = [
           {
             path: "runtimes/:id/runtime/:runtimeId",
             element: <RuntimeSettingsPage />,
-            handle: { title: "Runtime" },
+            handle: { title: "Device" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {

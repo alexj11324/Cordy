@@ -10,7 +10,14 @@ import { isIssueStatusCategory, type IssueStatusCatalog } from "@patchbay/core/i
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<
   Issue,
-  "id" | "revision" | "status" | "status_category" | "assignee_type" | "assignee_id"
+  | "id"
+  | "revision"
+  | "status"
+  | "status_category"
+  | "assignee_type"
+  | "assignee_id"
+  | "reviewer_type"
+  | "reviewer_id"
 >;
 
 /** Payload for the `issue-run-confirm` modal, or null when nothing to confirm. */
@@ -82,7 +89,9 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  *   the same dialog — for built-in `todo` and every custom Todo-category
  *   status alike.
  * - **review**: entering the Review category. The dialog requires a reviewer
- *   different from the current owner and sends status + assignee atomically.
+ *   different from the current owner and sends status + reviewer atomically.
+ *   If a reviewer is already on the issue (or supplied in the same write),
+ *   the write applies directly.
  *
  * Unresolvable categories fail toward confirming: a dialog the user dismisses
  * costs a click, a silent start costs an unwanted agent run.
@@ -98,17 +107,37 @@ export function runConfirmIntent(
   if (updates.status && updates.status !== issue.status) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);
     if (target === "in_review" && issueCategory !== "in_review") {
-      const assigneeWasProvided =
-        Object.prototype.hasOwnProperty.call(updates, "assignee_type") ||
-        Object.prototype.hasOwnProperty.call(updates, "assignee_id");
+      const nextOwnerType = Object.prototype.hasOwnProperty.call(updates, "assignee_type")
+        ? updates.assignee_type ?? null
+        : issue.assignee_type;
+      const nextOwnerId = Object.prototype.hasOwnProperty.call(updates, "assignee_id")
+        ? updates.assignee_id ?? null
+        : issue.assignee_id;
+      const reviewerWasProvided =
+        Object.prototype.hasOwnProperty.call(updates, "reviewer_type") ||
+        Object.prototype.hasOwnProperty.call(updates, "reviewer_id");
+      const nextReviewerType = reviewerWasProvided
+        ? updates.reviewer_type ?? null
+        : issue.reviewer_type ?? null;
+      const nextReviewerId = reviewerWasProvided
+        ? updates.reviewer_id ?? null
+        : issue.reviewer_id ?? null;
+      const hasReviewer = !!(nextReviewerType && nextReviewerId);
+      const sameAsOwner =
+        hasReviewer &&
+        nextReviewerType === nextOwnerType &&
+        nextReviewerId === nextOwnerId;
+      if (hasReviewer && !sameAsOwner) {
+        return null;
+      }
       return {
         issueIds: [issue.id],
         mode: "review",
         status: updates.status,
         fromAssigneeType: issue.assignee_type,
         fromAssigneeId: issue.assignee_id,
-        assigneeType: assigneeWasProvided ? updates.assignee_type ?? null : null,
-        assigneeId: assigneeWasProvided ? updates.assignee_id ?? null : null,
+        assigneeType: nextReviewerType,
+        assigneeId: nextReviewerId,
         issueRevision: issue.revision,
       };
     }

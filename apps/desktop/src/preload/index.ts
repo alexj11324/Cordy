@@ -205,6 +205,9 @@ const desktopAPI = {
   /** Open the OS folder picker and return the chosen absolute path. */
   pickDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick", defaultPath),
+  /** Open the OS folder picker with multi-select and read each folder's origin. */
+  pickDirectories: (defaultPath?: string) =>
+    ipcRenderer.invoke("local-directory:pick-many", defaultPath),
   /** Validate that a path is an existing readable+writable directory. */
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),

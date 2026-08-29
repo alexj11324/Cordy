@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import { useAuthStore } from "@patchbay/core/auth";
 import type { AgentTask } from "@patchbay/core/types";
@@ -33,6 +33,10 @@ function isLiveTask(task: AgentTask): boolean {
   return LIVE_STATUS_RANK[task.status] !== undefined;
 }
 
+function isMainLiveTask(task: AgentTask): boolean {
+  return isLiveTask(task) && !task.side_chat_parent_task_id;
+}
+
 function taskRecency(task: AgentTask): number {
   return new Date(
     task.completed_at ?? task.started_at ?? task.created_at,
@@ -50,7 +54,7 @@ function sortByLiveRank(a: AgentTask, b: AgentTask): number {
 export function pickIssueAgentLiveTask(
   tasks: readonly AgentTask[],
 ): AgentTask | undefined {
-  return tasks.filter(isLiveTask).toSorted(sortByLiveRank)[0];
+  return tasks.filter(isMainLiveTask).toSorted(sortByLiveRank)[0];
 }
 
 function IssueAgentConversationHost({
@@ -164,7 +168,7 @@ function IssueAgentWorkingCard({
             placeholder={t(($) => $.reply.placeholder)}
             avatarType="member"
             avatarId={user?.id ?? ""}
-            draftKey={`reply:${issueId}:${task.id}`}
+            draftKey={`reply:${issueId}:agent-working`}
             onSubmit={(content, attachmentIds, suppressAgentIds) =>
               send(content, attachmentIds, suppressAgentIds)
             }
@@ -188,10 +192,13 @@ export const IssueAgentWorkingStatus = memo(function IssueAgentWorkingStatus({
 }) {
   const tasks = useIssueAgentTasks(issueId);
   const liveTasks = useMemo(
-    () => tasks.filter(isLiveTask).toSorted(sortByLiveRank),
+    () => tasks.filter(isMainLiveTask).toSorted(sortByLiveRank),
     [tasks],
   );
   const [opened, setOpened] = useState<AgentTask | null>(null);
+  useEffect(() => {
+    setOpened(null);
+  }, [issueId]);
   if (liveTasks.length === 0 && !opened) return null;
 
   return (

@@ -17,37 +17,14 @@
   },
   "welcome": {
     "wordmark": "Welcome to Patchbay",
-    "headline_line1": "Your AI teammates,",
-    "headline_line2": "in",
-    "headline_emphasis": "one workspace.",
-    "lede": "Assign them work like you'd assign a colleague — they pick it up, update status, and comment when done.",
-    "lede_web": "Desktop bundles the runtime — nothing to install. Continue on web to connect your own CLI.",
+    "headline": "A multi-agent system built for long-horizon tasks",
+    "lede": "Automatically split, orchestrate, and run work until the goal is done.",
+    "lede_web": "Use your own subscription through ACP.",
     "lede_desktop": "By the end, a real agent will be replying to your first issue.",
     "download_desktop": "Download Desktop",
     "continue_on_web": "Continue on web",
     "start_exploring": "Start exploring",
-    "skip_existing": "I've done this before",
-    "illustration_caption": "Every issue, every thread, every decision — shared by your team and agents.",
-    "illustration": {
-      "card1_actor_name": "You",
-      "card1_actor_initial": "N",
-      "card1_body_prefix": " can you draft a short launch post? Pull from ",
-      "card1_body_suffix": "'s interview findings.",
-      "card1_mention_content": "@Content Agent",
-      "card1_mention_research": "@Research Agent",
-      "card2_actor_name": "Content Agent",
-      "card2_body": "On it. Pulling Research's quotes, drafting around the \"time saved\" angle…",
-      "card3_actor_name": "Research Agent",
-      "card3_body": "This week's user interviews summarized — 12 calls, 4 recurring themes, 3 pull-quotes.",
-      "card3_timestamp": "15 min ago",
-      "card4_actor_name": "Review Agent",
-      "card4_body": "Reviewed Monday's draft — left 4 notes on tone. Standing by for the new one.",
-      "card5_actor_name": "Coding Agent",
-      "card5_body_prefix": "Shipped the export feature ",
-      "card5_body_suffix": " flagged. Preview link in the PR.",
-      "card5_mention_you": "@you",
-      "card5_timestamp": "just now"
-    }
+    "skip_existing": "I've done this before"
   },
   "common": {
     "back": "Back",
@@ -121,13 +98,13 @@
   },
   "cli_install": {
     "copy_aria": "Copy",
-    "intro": "You'll need an agent runtime on this computer (Claude Code, Codex, Cursor, …) for it to run your agent. Also works on servers and remote dev boxes.",
+    "intro": "You'll need Claude Code, Codex, Cursor, or similar on this computer for it to show up as a device and run your agent. Also works on servers and remote dev boxes.",
     "step1_label": "Install the Patchbay CLI",
     "step2_label": "Start the daemon"
   },
   "cloud_waitlist": {
-    "intro_main": "Cloud runtimes aren't live yet. Leave your email and we'll reach out when they are.",
-    "intro_warning": "Heads-up: agents can't execute tasks without a runtime — if you hit Skip now, nothing will run until you come back and install one.",
+    "intro_main": "Cloud devices aren't live yet. Leave your email and we'll reach out when they are.",
+    "intro_warning": "Heads-up: agents can't execute tasks without a device — if you hit Skip now, nothing will run until you come back and install one.",
     "email_label": "Email",
     "email_placeholder": "you@work.com",
     "reason_label": "Why cloud?",
@@ -135,24 +112,24 @@
     "reason_placeholder": "e.g. we want agents running 24/7, or my team works across different devices.",
     "join": "Join waitlist",
     "on_list": "You're on the list",
-    "success_toast": "You're on the list. We'll email when cloud runtimes are live.",
+    "success_toast": "You're on the list. We'll email when cloud devices are live.",
     "failed_toast": "Failed to join waitlist"
   },
   "welcome_after_onboarding": {
     "skip": {
       "loading": "Setting up your workspace…",
       "title": "Welcome to Patchbay!",
-      "subtitle": "We've added one issue to help you connect a runtime. When it's ready, start with Mika from Runtimes.",
+      "subtitle": "We've added one issue to help you connect a device. When it's ready, start with Mika from Devices.",
       "got_it": "Got it",
       "status_in_progress": "In progress",
       "error_title": "We couldn't set that up",
-      "error_body": "The runtime guide didn't get created. You can try again, or connect a runtime from the Runtimes page whenever you're ready.",
+      "error_body": "The device guide didn't get created. You can try again, or connect a device from the Devices page whenever you're ready.",
       "retry": "Try again",
       "dismiss": "Not now",
       "cards": {
         "install_runtime": {
-          "title": "Connect a runtime",
-          "subtitle": "Install Codex or Kimi, then start the guided Mika chat from Runtimes."
+          "title": "Connect a device",
+          "subtitle": "Install Codex or Kimi, then start the guided Mika chat from Devices."
         }
       }
     }
@@ -160,7 +137,7 @@
   "step_workspace": {
     "eyebrow_first": "Your first workspace",
     "eyebrow_resume": "Pick up or start fresh",
-    "headline_first": "Name your workspace.",
+    "headline_first": "Set up your first workspace",
     "headline_resume": "Continue with {{name}}, or start another.",
     "lede_first": "A workspace is where your issues, agents, and projects live. You can invite teammates or spin up more workspaces later.",
     "lede_resume": "Resume setup with the workspace you already have, or create a new one alongside it — you can belong to any number of workspaces.",
@@ -196,26 +173,34 @@
     "creation_disabled_logout": "Log out",
     "creation_disabled_eyebrow_resume": "Your workspace",
     "creation_disabled_headline_resume": "Continue with {{name}}.",
-    "creation_disabled_lede_resume": "Workspace creation is disabled on this instance, so you'll continue into your existing workspace."
+    "creation_disabled_lede_resume": "Workspace creation is disabled on this instance, so you'll continue into your existing workspace.",
+    "projects_label": "Projects (optional)",
+    "projects_placeholder": "https://github.com/org/repo",
+    "projects_add": "Add",
+    "projects_pick_folders": "Choose folders",
+    "projects_hint": "Attach more than one. You can add more later.",
+    "projects_invalid_url": "Enter a valid git repository URL",
+    "projects_attach_failed": "Workspace created, but some projects could not be attached",
+    "projects_remove": "Remove {{name}}"
   },
   "step_runtime": {
     "scanning_headline": "Connecting this computer…",
     "scanning_lede_prefix": "Your agent works through an AI coding tool you already have — like ",
     "scanning_lede_suffix": ", and others. We're checking this computer for ones you've installed.",
     "found_headline": "Where should Mika run?",
-    "found_lede": "These are the agent runtimes we found on this computer. You can switch it or add more later.",
-    "runtime_count_one": "{{count}} agent runtime",
-    "runtime_count_other": "{{count}} agent runtimes",
+    "found_lede": "These are the devices we found on this computer. You can switch it or add more later.",
+    "runtime_count_one": "{{count}} device",
+    "runtime_count_other": "{{count}} devices",
     "status_all_online": "all online",
     "status_none_online": "none online",
     "status_n_online": "{{count}} online",
     "online_label": "online",
     "offline_label": "offline",
-    "empty_headline": "No agent runtime found on this computer yet.",
-    "empty_lede_prefix": "An agent runtime is an AI coding tool we connect to — like ",
+    "empty_headline": "No device found on this computer yet.",
+    "empty_lede_prefix": "A device is an AI coding tool we connect to — like ",
     "empty_lede_suffix": ". Install one and refresh, or pick a path below.",
     "empty_skip_title": "Skip for now",
-    "empty_skip_subtitle": "Enter your workspace now. Your agent can't run tasks until an agent runtime is connected on this computer — but you can still browse, plan, and invite teammates.",
+    "empty_skip_subtitle": "Enter your workspace now. Your agent can't run tasks until a device is connected on this computer — but you can still browse, plan, and invite teammates.",
     "empty_skip_action": "Skip",
     "empty_waitlist_title": "Use a cloud computer",
     "empty_waitlist_subtitle": "We'll run a computer for you in the cloud. Not live yet.",
@@ -224,7 +209,7 @@
     "refresh": "Refresh",
     "refreshing": "Refreshing…",
     "hint_selected": "Selected: {{name}}",
-    "hint_pick": "Pick an agent runtime above to start with Mika.",
+    "hint_pick": "Pick a device above to start with Mika.",
     "hint_waiting": "Waiting for the first result…",
     "hint_skip_or_refresh": "Refresh after installing one, or skip to enter your workspace.",
     "continue": "Start with Mika"

@@ -27,7 +27,7 @@
   "status": {
     "active": "Active",
     "paused": "Paused",
-    "paused_runtime_required": "Paused — the assignee needs a runtime",
+    "paused_runtime_required": "Paused — the assignee needs a device",
     "archived": "Archived"
   },
   "execution_mode": {
@@ -70,16 +70,16 @@
     "not_found": "Autopilot not found",
     "pause_aria": "Pause autopilot",
     "activate_aria": "Activate autopilot",
-    "paused_runtime_required": "Paused because the assignee lost its runtime. Bind a runtime, then reactivate this autopilot.",
-    "bind_runtime": "Bind runtime",
+    "paused_runtime_required": "Paused because the assignee lost its device. Bind a device, then reactivate this autopilot.",
+    "bind_runtime": "Bind device",
     "edit": "Edit",
     "run_now": "Run now",
     "running": "Running...",
     "toast_triggered": "Autopilot triggered",
     "toast_trigger_failed": "Failed to trigger autopilot",
     "run_blocked_invocation_not_allowed": "Not triggered — you don't have permission to use this autopilot's agent",
-    "run_blocked_runtime_offline": "Not triggered — the agent's runtime is offline",
-    "run_blocked_agent_runtime_required": "Not triggered — the agent has no runtime; bind one to run it",
+    "run_blocked_runtime_offline": "Not triggered — the agent's device is offline",
+    "run_blocked_agent_runtime_required": "Not triggered — the agent has no device; bind one to run it",
     "run_blocked_target_unavailable": "Not triggered — the agent is unavailable",
     "run_blocked_attribution": "Not triggered — the run couldn't be attributed to a responsible member",
     "run_blocked_already_active": "Not triggered — a recent run already covers this",
@@ -419,8 +419,8 @@
     "select_assignee": "Select agent or team",
     "agents_group": "Agents",
     "teams_group": "Teams",
-    "agent_runtime_required": "Bind a runtime before selecting this agent",
-    "team_runtime_required": "Bind a runtime to this team's leader before selecting it"
+    "agent_runtime_required": "Bind a device before selecting this agent",
+    "team_runtime_required": "Bind a device to this team's leader before selecting it"
   },
   "timezone_picker": {
     "search_placeholder": "Search timezone..."

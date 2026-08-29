@@ -230,6 +230,8 @@ const issueActivityFields = [
   "priority",
   "assignee_type",
   "assignee_id",
+  "reviewer_type",
+  "reviewer_id",
   "start_date",
   "due_date",
   "parent_issue_id",

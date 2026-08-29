@@ -161,8 +161,8 @@ describe("SkillsTab", () => {
     expect(
       await screen.findByText("Assigned to agent"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Inherited from runtime")).toBeInTheDocument();
-    expect(screen.getByText(/Assign a local runtime/i)).toBeInTheDocument();
+    expect(screen.getByText("Inherited from device")).toBeInTheDocument();
+    expect(screen.getByText(/Assign a local device/i)).toBeInTheDocument();
   });
 
   it("disables an assigned skill without removing it", async () => {
@@ -296,7 +296,7 @@ describe("SkillsTab", () => {
 
     expect(
       await screen.findByText(
-        "You don't have permission to view this runtime's skills.",
+        "You don't have permission to view this device's skills.",
       ),
     ).toBeInTheDocument();
   });
@@ -309,7 +309,7 @@ describe("SkillsTab", () => {
     renderSkillsTab({}, onlineRuntime);
 
     expect(
-      await screen.findByText("Couldn't discover runtime skills. Try again."),
+      await screen.findByText("Couldn't discover device skills. Try again."),
     ).toBeInTheDocument();
   });
 });

@@ -98,7 +98,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   agents: ["agents", "bots", "ai", "智能体"],
   teams: ["teams", "team", "团队"],
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
-  runtimes: ["runtimes", "environments", "machines", "运行时"],
+  runtimes: ["runtimes", "environments", "machines", "devices", "device", "运行时", "设备"],
   skills: ["skills", "library", "技能"],
   settings: ["settings", "config", "preferences", "设置", "配置"],
 };

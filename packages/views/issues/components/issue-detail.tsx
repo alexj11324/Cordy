@@ -69,6 +69,7 @@ import { useUpdateIssue } from "@patchbay/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@patchbay/core/api";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
+import { AssigneeHandoffRow } from "./assignee-handoff-row";
 import { maxSiblingStage } from "./pickers/stage-picker";
 import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { Switch } from "@patchbay/ui/components/ui/switch";
@@ -2327,7 +2328,26 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_assignee)}>
-            <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />
+            <AssigneeHandoffRow
+              issue={issue}
+              timeline={timeline}
+              onUpdate={handleUpdateField}
+            />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_reviewer)}>
+            <AssigneePicker
+              assigneeType={issue.reviewer_type ?? null}
+              assigneeId={issue.reviewer_id ?? null}
+              allowUnassigned={!issue.reviewer_type || !issue.reviewer_id}
+              onUpdate={(updates) => {
+                if (!updates.assignee_type || !updates.assignee_id) return;
+                handleUpdateField({
+                  reviewer_type: updates.assignee_type,
+                  reviewer_id: updates.assignee_id,
+                });
+              }}
+              align="start"
+            />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>
             <ProjectPicker

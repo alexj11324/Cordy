@@ -87,7 +87,7 @@ describe("StepRuntimeConnect", () => {
     renderStep();
     act(() => vi.advanceTimersByTime(5000));
     expect(
-      screen.getByText(/no agent runtime found on this computer yet/i),
+      screen.getByText(/no device found on this computer yet/i),
     ).toBeInTheDocument();
   });
 
@@ -101,14 +101,14 @@ describe("StepRuntimeConnect", () => {
       screen.getByText(/connecting this computer/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText(/no agent runtime found/i),
+      screen.queryByText(/no device found/i),
     ).not.toBeInTheDocument();
 
     // The absolute ceiling still guarantees a fallback so a wedged probe
     // cannot hang the step on the skeleton forever.
     act(() => vi.advanceTimersByTime(15000));
     expect(
-      screen.getByText(/no agent runtime found/i),
+      screen.getByText(/no device found/i),
     ).toBeInTheDocument();
   });
 
@@ -124,9 +124,9 @@ describe("StepRuntimeConnect", () => {
     // Assert on the runtime count row rather than headline copy: the phase is
     // what this test is about, and keying on the headline made a copy edit
     // look like a behaviour regression.
-    expect(screen.getByText(/1 agent runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 device/i)).toBeInTheDocument();
     expect(
-      screen.queryByText(/no agent runtime found/i),
+      screen.queryByText(/no device found/i),
     ).not.toBeInTheDocument();
     // Starting with Mika is actionable in the found phase.
     expect(

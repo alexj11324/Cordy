@@ -115,7 +115,7 @@ function renderPicker(
 }
 
 function openPicker() {
-  fireEvent.click(screen.getByRole("button", { name: /^Runtime · / }));
+  fireEvent.click(screen.getByRole("button", { name: /^Device · / }));
 }
 
 describe("RuntimePicker (agent settings)", () => {
@@ -128,7 +128,7 @@ describe("RuntimePicker (agent settings)", () => {
     // trigger was just the machine name.
     expect(
       screen.getByRole("button", {
-        name: /Runtime · Claude · Jiayuan's MacBook Pro · online/,
+        name: /Device · Claude · Jiayuan's MacBook Pro · online/,
       }),
     ).toBeTruthy();
   });
@@ -223,7 +223,7 @@ describe("RuntimePicker (agent settings)", () => {
         }),
       ],
     });
-    fireEvent.click(screen.getByRole("button", { name: /^Runtime · none/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Device · none/ }));
 
     expect(
       screen.getByRole("button", { name: /^Jiayuan's MacBook Pro/ }),
@@ -237,7 +237,7 @@ describe("RuntimePicker (agent settings)", () => {
 
   it("skips the pointless single-machine list when nothing is selected", () => {
     renderPicker({ value: "", runtimes: [RT_CLAUDE, RT_CODEX] });
-    fireEvent.click(screen.getByRole("button", { name: /^Runtime · none/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Device · none/ }));
 
     expect(screen.getByRole("button", { name: /^Claude/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Codex/ })).toBeTruthy();

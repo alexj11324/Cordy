@@ -10,7 +10,7 @@
     "agents": "Agents",
     "teams": "Team",
     "usage": "Analytics",
-    "runtimes": "Runtimes",
+    "runtimes": "Devices",
     "skills": "Skills",
     "settings": "Settings"
   },
@@ -23,7 +23,7 @@
     "team": "Team",
     "skill": "Skill",
     "machine": "Machine",
-    "runtime": "Runtime",
+    "runtime": "Device",
     "attachment": "Attachment",
     "create_agent": "Create Agent",
     "unknown": "Unknown page"
