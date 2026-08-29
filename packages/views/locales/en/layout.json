@@ -2,6 +2,7 @@
   "nav": {
     "inbox": "Inbox",
     "chat": "Chat",
+    "channels": "Channels",
     "my_issues": "My Issues",
     "issues": "Issues",
     "projects": "Projects",

@@ -29,6 +29,7 @@ import {
 import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@patchbay/views/squads/components";
 import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
+import { ChannelsPage } from "@patchbay/views/channels";
 import { SettingsPage } from "@patchbay/views/settings";
 import { useT } from "@patchbay/views/i18n";
 import { Download, Server } from "lucide-react";
@@ -222,6 +223,7 @@ export const appRoutes: RouteObject[] = [
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
           { path: "chat", element: <ChatPage />, handle: { title: "Chat" } },
+          { path: "channels", element: <ChannelsPage />, handle: { title: "Channels" } },
           {
             path: "attachments/:id/preview",
             element: <AttachmentPreviewRoute />,

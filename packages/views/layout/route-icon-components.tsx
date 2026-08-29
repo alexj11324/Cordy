@@ -1,6 +1,7 @@
 import {
   Inbox,
   MessageSquare,
+  Hash,
   CircleUser,
   ListTodo,
   FolderKanban,
@@ -34,6 +35,7 @@ import { resolveRouteIconName, type RouteIconName } from "@patchbay/core/paths";
 export const ROUTE_ICON_COMPONENTS: Record<RouteIconName, LucideIcon> = {
   Inbox,
   MessageSquare,
+  Hash,
   CircleUser,
   ListTodo,
   FolderKanban,

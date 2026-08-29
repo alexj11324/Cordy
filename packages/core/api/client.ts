@@ -82,6 +82,10 @@ import type {
   AssigneeFrequencyEntry,
   TaskMessagePayload,
   Attachment,
+  Channel,
+  ChannelMessage,
+  CreateChannelRequest,
+  SendChannelMessageRequest,
   ChatSession,
   ChatPinnedAgent,
   ChatMessage,
@@ -236,6 +240,12 @@ import {
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
   ChatMessageListSchema,
+  ChannelListSchema,
+  ChannelMessageListSchema,
+  ChannelMessageSchema,
+  ChannelSchema,
+  EMPTY_CHANNEL_LIST,
+  EMPTY_CHANNEL_MESSAGE_LIST,
   ChatMessagesPageSchema,
   ChatPendingTaskSchema,
   PrioritizeQueuedChatTaskResponseSchema,
@@ -2905,6 +2915,60 @@ export class ApiClient {
     return parseWithFallback(raw, AttachmentResponseSchema, EMPTY_ATTACHMENT, {
       endpoint: "POST /api/upload-file",
     });
+  }
+
+  // Workspace Channels
+  async listChannels(): Promise<Channel[]> {
+    const raw: unknown = await this.fetch("/api/channels");
+    return parseWithFallback(raw, ChannelListSchema, EMPTY_CHANNEL_LIST, {
+      endpoint: "GET /api/channels",
+    });
+  }
+
+  async getChannel(channelId: string): Promise<Channel> {
+    const raw: unknown = await this.fetch(`/api/channels/${channelId}`);
+    const channel = parseWithFallback<Channel | null>(raw, ChannelSchema, null, {
+      endpoint: "GET /api/channels/:id",
+    });
+    if (!channel) throw new Error("invalid channel response");
+    return channel;
+  }
+
+  async createChannel(data: CreateChannelRequest): Promise<Channel> {
+    const raw: unknown = await this.fetch("/api/channels", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const channel = parseWithFallback<Channel | null>(raw, ChannelSchema, null, {
+      endpoint: "POST /api/channels",
+    });
+    if (!channel) throw new Error("invalid create channel response");
+    return channel;
+  }
+
+  async listChannelMessages(channelId: string): Promise<ChannelMessage[]> {
+    const raw: unknown = await this.fetch(`/api/channels/${channelId}/messages`);
+    return parseWithFallback(raw, ChannelMessageListSchema, EMPTY_CHANNEL_MESSAGE_LIST, {
+      endpoint: "GET /api/channels/:id/messages",
+    });
+  }
+
+  async sendChannelMessage(
+    channelId: string,
+    data: SendChannelMessageRequest,
+  ): Promise<ChannelMessage> {
+    const raw: unknown = await this.fetch(`/api/channels/${channelId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const message = parseWithFallback<ChannelMessage | null>(
+      raw,
+      ChannelMessageSchema,
+      null,
+      { endpoint: "POST /api/channels/:id/messages" },
+    );
+    if (!message) throw new Error("invalid channel message response");
+    return message;
   }
 
   // Chat Sessions

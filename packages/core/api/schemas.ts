@@ -12,6 +12,8 @@ import type {
   BillingTopupsPage,
   BillingTransactionsPage,
   CancelTaskResponse,
+  Channel,
+  ChannelMessage,
   ChatMessage,
   ChatDraftRestoresResponse,
   ChatPendingTask,
@@ -755,6 +757,49 @@ export const ChatMessagesPageSchema = z.object({
     id: z.string(),
   }).loose().nullable().optional(),
 }).loose();
+
+const ChannelQuotedMessageSchema = z.object({
+  id: z.string(),
+  author_type: z.string().catch("member"),
+  author_id: z.string(),
+  author_name: z.string().default("Unknown"),
+  content: z.string().default(""),
+}).loose();
+
+export const ChannelSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  name: z.string().default(""),
+  slug: z.string().default(""),
+  description: z.string().default(""),
+  created_by: z.string().default(""),
+  archived_at: z.string().nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ChannelListSchema = z.array(ChannelSchema).default([]);
+export const EMPTY_CHANNEL_LIST: Channel[] = [];
+
+export const ChannelMessageSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  channel_id: z.string(),
+  author_type: z.string().catch("member"),
+  author_id: z.string(),
+  author_name: z.string().default("Unknown"),
+  author_avatar_url: z.string().nullable().optional(),
+  author_status: z.string().nullable().optional(),
+  content: z.string().default(""),
+  parent_id: z.string().nullable().optional(),
+  quoted_message_id: z.string().nullable().optional(),
+  quoted_message: ChannelQuotedMessageSchema.nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ChannelMessageListSchema = z.array(ChannelMessageSchema).default([]);
+export const EMPTY_CHANNEL_MESSAGE_LIST: ChannelMessage[] = [];
 
 // Standalone attachment lookup (`GET /api/attachments/{id}`) is the source of
 // truth for click-time download URLs. The two fields the download flow opens
