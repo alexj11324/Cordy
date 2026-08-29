@@ -7,7 +7,7 @@ const OPAQUE_CODE_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
  */
 export function parseAuthDeepLinkCode(
   value: string,
-  protocols: readonly string[] = ["patchbay", "cordy"],
+  protocols: readonly string[] = ["patchbay"],
 ): string | null {
   try {
     const parsed = new URL(value);

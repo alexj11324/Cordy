@@ -6,9 +6,6 @@ describe("parseAuthDeepLinkCode", () => {
     expect(parseAuthDeepLinkCode("patchbay://auth/callback?code=opaque-code")).toBe(
       "opaque-code",
     );
-    expect(parseAuthDeepLinkCode("cordy://auth/callback?code=opaque-code")).toBe(
-      "opaque-code",
-    );
   });
 
   it("rejects bearer credentials and ambiguous callback parameters", () => {
