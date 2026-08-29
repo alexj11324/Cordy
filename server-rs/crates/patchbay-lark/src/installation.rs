@@ -71,12 +71,13 @@ impl InstallationService {
             .map_err(|e| anyhow::anyhow!("encrypt app_secret: {e}"))
     }
 
-    /// Creates a new installation or refreshes an existing one in place
-    /// (matching on the (workspace_id, agent_id) UNIQUE). Re-install resets
-    /// status to 'active' but does NOT touch the WS lease — that is the hub's
-    /// concern, not ours. The returned row is the post-write state; the
-    /// encrypted secret column is included for completeness but callers
-    /// SHOULD NOT log or persist it elsewhere.
+    /// Creates a new installation or refreshes an existing one in place.
+    /// Workspace-scoped installs use the Hub slot when `agent_id` is nil;
+    /// legacy Agent-scoped installs continue to match on `(workspace_id,
+    /// agent_id)`. Re-install resets status to 'active' but does NOT touch the
+    /// WS lease — that is the hub's concern, not ours. The returned row is the
+    /// post-write state; the encrypted secret column is included for
+    /// completeness but callers SHOULD NOT log or persist it elsewhere.
     pub async fn upsert(&self, p: InstallationParams) -> anyhow::Result<Installation> {
         validate_installation_params(&p)?;
         let sealed = self.seal_app_secret(&p.app_secret)?;
@@ -159,9 +160,6 @@ impl InstallationService {
 fn validate_installation_params(p: &InstallationParams) -> anyhow::Result<()> {
     if p.workspace_id.is_nil() {
         anyhow::bail!("workspace_id is required");
-    }
-    if p.agent_id.is_nil() {
-        anyhow::bail!("agent_id is required");
     }
     if p.installer_user_id.is_nil() {
         anyhow::bail!("installer_user_id is required");

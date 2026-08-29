@@ -176,6 +176,12 @@ impl patchbay_channel_engine::resolvers::OutboundReplier for OutboundReplier {
         msg: &InboundMessage,
         res: &EngineResult,
     ) {
+        if let Some(text) = res.reply_text.as_deref() {
+            if let Err(error) = self.post(ctx, inst, msg, text).await {
+                tracing::warn!(installation_id = %inst.id, %error, "slack hub reply failed");
+            }
+            return;
+        }
         let Some(outcome) = &res.outcome else {
             return;
         };

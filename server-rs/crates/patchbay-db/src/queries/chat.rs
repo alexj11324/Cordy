@@ -277,6 +277,41 @@ RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, s
     }))
 }
 
+/// Changes the Agent used by a channel chat session after a hub command such
+/// as `/agents 2`. The next task created from the session reads the selected
+/// Agent's runtime. The workspace predicate keeps a channel route from
+/// retargeting a session outside its installation workspace.
+pub async fn switch_chat_session_agent(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    chat_session_id: Uuid,
+    agent_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE chat_session
+SET agent_id = $3,
+    runtime_id = (
+        SELECT runtime_id
+        FROM agent
+        WHERE id = $3 AND workspace_id = $2
+    ),
+    updated_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND EXISTS (
+      SELECT 1
+      FROM agent
+      WHERE id = $3 AND workspace_id = $2 AND archived_at IS NULL
+  )"#,
+    )
+    .bind(chat_session_id)
+    .bind(workspace_id)
+    .bind(agent_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn create_chat_task(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     agent_id: Uuid,

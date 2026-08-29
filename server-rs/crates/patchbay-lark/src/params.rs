@@ -19,7 +19,9 @@ pub struct GetInstallationInWorkspaceParams {
     pub workspace_id: Uuid,
 }
 
-/// Carries the flat feishu installation fields for an install / re-install.
+/// Carries the flat Feishu installation fields for an install / re-install.
+/// A nil `agent_id` represents the workspace-scoped Hub created from Settings;
+/// the active Agent is selected later from the connected chat with `/agents`.
 #[derive(Debug, Clone)]
 pub struct UpsertInstallationParams {
     pub workspace_id: Uuid,

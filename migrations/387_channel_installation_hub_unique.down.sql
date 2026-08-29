@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_channel_installation_hub_workspace_type;

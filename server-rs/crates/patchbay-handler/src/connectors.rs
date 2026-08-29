@@ -519,13 +519,17 @@ async fn begin_weixin_install(
             Ok(value) => value,
             Err(response) => return response,
         };
-    let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await {
-        Ok(Some(value)) => value,
-        _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
-    };
-    if !matches!(context.member.role.as_str(), "owner" | "admin") && target.owner_id != Some(actor)
-    {
-        return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
+    if !agent_id.is_nil() {
+        let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        {
+            Ok(Some(value)) => value,
+            _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
+        };
+        if !matches!(context.member.role.as_str(), "owner" | "admin")
+            && target.owner_id != Some(actor)
+        {
+            return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
+        }
     }
     // Passing the target agent's currently stored local token lets iLink
     // recognize a reconnect instead of returning `binded_redirect` with no
@@ -549,7 +553,7 @@ async fn begin_weixin_install(
     let decrypt = move |sealed: &[u8]| box_.open(sealed).map_err(anyhow::Error::from);
     let local_tokens = installations
         .into_iter()
-        .filter(|row| row.agent_id == agent_id)
+        .filter(|row| agent_id.is_nil() || row.agent_id == Some(agent_id))
         .filter_map(|row| {
             patchbay_weixin::config::decode_credentials(&row.config, Some(&decrypt))
                 .ok()
@@ -970,6 +974,21 @@ async fn lark_finalize_authorized(
     agent_id: Uuid,
     actor: Uuid,
 ) -> anyhow::Result<bool> {
+    if agent_id.is_nil() {
+        return sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS (
+                SELECT 1 FROM member
+                WHERE workspace_id = $1
+                  AND user_id = $2
+                  AND role IN ('owner', 'admin')
+            )"#,
+        )
+        .bind(workspace_id)
+        .bind(actor)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(anyhow::Error::from);
+    }
     let current = sqlx::query_as::<_, (String, Option<Uuid>)>(
         r#"SELECT m.role, a.owner_id
 FROM member m
@@ -1014,18 +1033,24 @@ async fn begin_lark_install(
         "lark" => patchbay_lark::types::Region::Lark,
         _ => return error_response(StatusCode::BAD_REQUEST, "region must be 'feishu' or 'lark'"),
     };
-    let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await {
-        Ok(Some(value)) => value,
-        _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
-    };
-    if !matches!(context.member.role.as_str(), "owner" | "admin") && target.owner_id != Some(actor)
-    {
-        return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
-    }
-    let preset = if target.name.trim().is_empty() {
-        "Patchbay".into()
+    let preset = if agent_id.is_nil() {
+        "Patchbay".to_string()
     } else {
-        format!("{} - Patchbay", target.name.trim())
+        let target = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        {
+            Ok(Some(value)) => value,
+            _ => return error_response(StatusCode::NOT_FOUND, "agent not found in this workspace"),
+        };
+        if !matches!(context.member.role.as_str(), "owner" | "admin")
+            && target.owner_id != Some(actor)
+        {
+            return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
+        }
+        if target.name.trim().is_empty() {
+            "Patchbay".to_string()
+        } else {
+            format!("{} - Patchbay", target.name.trim())
+        }
     };
     let client = Arc::new(patchbay_lark::registration::RegistrationClient::new(
         patchbay_lark::registration::RegistrationConfig {
@@ -1658,11 +1683,14 @@ async fn revoke(
     if matches!(provider, Provider::Lark | Provider::Weixin)
         && !matches!(context.member.role.as_str(), "owner" | "admin")
     {
-        let owns_agent = matches!(
-            agent::get_agent_in_workspace(&state.pool, installation.agent_id, workspace_id).await,
-            Ok(Some(value)) if value.owner_id == Some(actor)
-        );
-        if !owns_agent {
+        let can_manage = match installation.agent_id {
+            None => false,
+            Some(agent_id) => matches!(
+                agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await,
+                Ok(Some(value)) if value.owner_id == Some(actor)
+            ),
+        };
+        if !can_manage {
             return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
         }
     }
@@ -1719,12 +1747,20 @@ async fn install_context(
 ) -> Result<(Uuid, Uuid, Uuid), Response> {
     let workspace_id = workspace_id(context)?;
     let actor = user_id(headers)?;
-    let raw = query
+    let Some(raw) = query
         .agent_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "agent_id is required"))?;
+    else {
+        if !matches!(context.member.role.as_str(), "owner" | "admin") {
+            return Err(error_response(
+                StatusCode::FORBIDDEN,
+                "only workspace admins can connect a platform without selecting an Agent",
+            ));
+        }
+        return Ok((workspace_id, Uuid::nil(), actor));
+    };
     let agent_id = Uuid::parse_str(raw)
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid agent_id"))?;
     if !matches!(

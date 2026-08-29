@@ -1,4 +1,4 @@
-/** A Lark Bot installation bound to a single Patchbay agent.
+/** A Lark Bot installation, optionally bound to a Patchbay agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
  * the Rust Lark handler. New fields the backend adds in the
@@ -7,7 +7,8 @@
 export interface LarkInstallation {
   id: string;
   workspace_id: string;
-  agent_id: string;
+  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
+  agent_id: string | null;
   app_id: string;
   tenant_key?: string | null;
   bot_open_id: string;

@@ -161,7 +161,7 @@ pub fn installation_from_row(
     Ok(Installation {
         id: row.id,
         workspace_id: row.workspace_id,
-        agent_id: row.agent_id,
+        agent_id: row.agent_id.unwrap_or_default(),
         installer_user_id: row.installer_user_id,
         status: row.status.clone(),
         secret_encrypted: cfg.secret_encrypted(),

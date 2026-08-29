@@ -43,7 +43,8 @@ use patchbay_db::queries::channel::{
     record_channel_inbound_drop, release_channel_inbound_dedup, release_channel_ws_lease,
     set_channel_installation_config, set_channel_installation_status,
     update_channel_chat_session_binding_reply_target, update_channel_outbound_card_status,
-    upsert_channel_installation, GetChannelInstallationOwnerByAppIDRow,
+    upsert_channel_installation, upsert_channel_installation_hub,
+    GetChannelInstallationOwnerByAppIDRow,
 };
 use patchbay_db::queries::member::get_member_by_user_and_workspace;
 
@@ -542,16 +543,27 @@ pub async fn upsert_lark_installation_with(
         region: arg.region.clone(),
         ..Installation::default()
     })?;
-    let Some(row) = upsert_channel_installation(
-        executor,
-        arg.workspace_id,
-        arg.agent_id,
-        CHANNEL_TYPE_FEISHU,
-        &cfg,
-        arg.installer_user_id,
-    )
-    .await?
-    else {
+    let upsert = if arg.agent_id.is_nil() {
+        upsert_channel_installation_hub(
+            executor,
+            arg.workspace_id,
+            CHANNEL_TYPE_FEISHU,
+            &cfg,
+            arg.installer_user_id,
+        )
+        .await?
+    } else {
+        upsert_channel_installation(
+            executor,
+            arg.workspace_id,
+            arg.agent_id,
+            CHANNEL_TYPE_FEISHU,
+            &cfg,
+            arg.installer_user_id,
+        )
+        .await?
+    };
+    let Some(row) = upsert else {
         return Err(ErrNoRows.into());
     };
     installation_from_row(row)

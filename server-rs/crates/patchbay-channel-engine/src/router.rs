@@ -640,6 +640,63 @@ impl Router {
             }
         }
 
+        // Workspace-scoped installations route inside the channel itself.
+        // The settings page only creates the platform connection; the first
+        // ordinary message uses the current/default Agent, while `/agents`
+        // lists or switches Agents without becoming an Agent turn.
+        let binder = set.session.as_ref().unwrap();
+        let mut hub_route = None;
+        if inst.agent_id.is_nil() {
+            let Some(hub) = &set.hub else {
+                return (
+                    none,
+                    DedupFinalize::Release,
+                    Some(anyhow::anyhow!(
+                        "workspace installation has no channel hub router"
+                    )),
+                );
+            };
+            let binding_key = binder.binding_key(&msg);
+            let route = match hub.resolve(&inst, &identity, &msg, &binding_key).await {
+                Ok(route) => route,
+                Err(err) => {
+                    return (
+                        none,
+                        DedupFinalize::Release,
+                        Some(anyhow::anyhow!("resolve channel hub route: {err:#}")),
+                    );
+                }
+            };
+            let Some(agent_id) = route.agent_id else {
+                return (
+                    Result {
+                        outcome: Some(Outcome::hub_command()),
+                        reply_text: route.reply_text,
+                        installation_id: Some(inst.id),
+                        sender: msg.source.sender_id.clone(),
+                        ..Default::default()
+                    },
+                    DedupFinalize::Mark,
+                    None,
+                );
+            };
+            if route.handled && !route.ensure_session {
+                return (
+                    Result {
+                        outcome: Some(Outcome::hub_command()),
+                        reply_text: route.reply_text,
+                        installation_id: Some(inst.id),
+                        sender: msg.source.sender_id.clone(),
+                        ..Default::default()
+                    },
+                    DedupFinalize::Mark,
+                    None,
+                );
+            }
+            inst.agent_id = agent_id;
+            hub_route = Some((route, binding_key));
+        }
+
         // 5-6. Resolve the chat_session, then append the message and dedup
         //      Mark as the durable transition point. A platform route
         //      fence may reject the append when a concurrent reassignment
@@ -671,7 +728,6 @@ impl Router {
             0.0
         };
 
-        let binder = set.session.as_ref().unwrap();
         let session_id: Uuid;
         #[allow(unused_variables)]
         let append_res: AppendResult;
@@ -712,6 +768,43 @@ impl Router {
                         Some(anyhow::anyhow!("ensure chat session: {err:#}")),
                     );
                 }
+            }
+        }
+
+        if let Some((route, binding_key)) = &hub_route {
+            if let Some(agent_id) = route.agent_id {
+                if let Some(hub) = &set.hub {
+                    if let Err(err) = hub
+                        .persist_route(
+                            inst.id,
+                            inst.workspace_id,
+                            binding_key,
+                            session_id,
+                            agent_id,
+                        )
+                        .await
+                    {
+                        return (
+                            none,
+                            DedupFinalize::Release,
+                            Some(anyhow::anyhow!("persist channel hub route: {err:#}")),
+                        );
+                    }
+                }
+            }
+            if route.handled {
+                return (
+                    Result {
+                        outcome: Some(Outcome::hub_command()),
+                        reply_text: route.reply_text.clone(),
+                        installation_id: Some(inst.id),
+                        chat_session_id: Some(session_id),
+                        sender: msg.source.sender_id.clone(),
+                        ..Default::default()
+                    },
+                    DedupFinalize::Mark,
+                    None,
+                );
             }
         }
 

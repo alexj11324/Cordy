@@ -15,8 +15,9 @@ use patchbay_db::queries::channel::{
     delete_channel_installation_for_replacement, get_channel_installation_in_workspace,
     get_channel_installation_owner_by_app_id, get_channel_installation_slot_owner_by_app_id,
     list_channel_installations_by_workspace, lock_channel_installation_agent_slot,
-    lock_channel_installation_app_id_slot, reclaim_dead_channel_installation_by_app_id,
-    set_channel_installation_status, upsert_channel_installation,
+    lock_channel_installation_app_id_slot, lock_channel_installation_hub_slot,
+    reclaim_dead_channel_installation_by_app_id, set_channel_installation_status,
+    upsert_channel_installation, upsert_channel_installation_hub,
 };
 use patchbay_util::secretbox::SecretBox;
 use tokio_util::sync::CancellationToken;
@@ -127,14 +128,20 @@ impl InstallationService {
 
         // The serialization boundary. Held until commit/rollback, so every
         // step below sees one consistent answer for who owns this bot.
-        lock_channel_installation_agent_slot(
-            &mut *tx,
-            crate::CHANNEL_TYPE_WECOM,
-            p.workspace_id,
-            p.agent_id,
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("wecom: lock agent routing slot: {e}"))?;
+        if p.agent_id.is_nil() {
+            lock_channel_installation_hub_slot(&mut *tx, crate::CHANNEL_TYPE_WECOM, p.workspace_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("wecom: lock hub routing slot: {e}"))?;
+        } else {
+            lock_channel_installation_agent_slot(
+                &mut *tx,
+                crate::CHANNEL_TYPE_WECOM,
+                p.workspace_id,
+                p.agent_id,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("wecom: lock agent routing slot: {e}"))?;
+        }
         lock_channel_installation_app_id_slot(&mut *tx, crate::CHANNEL_TYPE_WECOM, &p.bot_id)
             .await
             .map_err(|e| anyhow::anyhow!("wecom: lock bot routing slot: {e}"))?;
@@ -203,16 +210,27 @@ impl InstallationService {
             ..Default::default()
         })?;
 
-        let row = match upsert_channel_installation(
-            &mut *tx,
-            p.workspace_id,
-            p.agent_id,
-            crate::CHANNEL_TYPE_WECOM,
-            &cfg,
-            p.installer_user_id,
-        )
-        .await
-        {
+        let upsert = if p.agent_id.is_nil() {
+            upsert_channel_installation_hub(
+                &mut *tx,
+                p.workspace_id,
+                crate::CHANNEL_TYPE_WECOM,
+                &cfg,
+                p.installer_user_id,
+            )
+            .await
+        } else {
+            upsert_channel_installation(
+                &mut *tx,
+                p.workspace_id,
+                p.agent_id,
+                crate::CHANNEL_TYPE_WECOM,
+                &cfg,
+                p.installer_user_id,
+            )
+            .await
+        };
+        let row = match upsert {
             Ok(row) => row,
             Err(e) if is_unique_violation(&e) => {
                 // A LIVE owner still holds the slot. Read the owner on the
@@ -387,7 +405,17 @@ fn validate_installation_params(p: &InstallationParams) -> anyhow::Result<()> {
     let missing = if p.workspace_id == Uuid::nil() {
         "workspace_id"
     } else if p.agent_id == Uuid::nil() {
-        "agent_id"
+        // A nil Agent id is the workspace-scoped Hub installation. The
+        // connected channel selects an Agent later with `/agents`.
+        if p.installer_user_id == Uuid::nil() {
+            "installer_user_id"
+        } else if p.bot_id.is_empty() {
+            "bot_id"
+        } else if p.secret.is_empty() {
+            "secret"
+        } else {
+            return Ok(());
+        }
     } else if p.installer_user_id == Uuid::nil() {
         "installer_user_id"
     } else if p.bot_id.is_empty() {
@@ -420,7 +448,11 @@ where
             .await
             .map_err(|e| anyhow::anyhow!("wecom: read current installation: {e}"))?;
     for row in &rows {
-        if row.agent_id == agent_id {
+        if if agent_id.is_nil() {
+            row.agent_id.is_none()
+        } else {
+            row.agent_id == Some(agent_id)
+        } {
             return installation_from_row(row);
         }
     }
@@ -467,7 +499,12 @@ where
     let Some(owner) = owner else {
         return Ok(()); // no row → the slot is free
     };
-    let ours = owner.workspace_id == Some(p.workspace_id) && owner.agent_id == Some(p.agent_id);
+    let ours = owner.workspace_id == Some(p.workspace_id)
+        && if p.agent_id.is_nil() {
+            owner.agent_id.is_none()
+        } else {
+            owner.agent_id == Some(p.agent_id)
+        };
     if !owner.workspace_exists || !owner.agent_exists {
         return Ok(()); // orphan
     }
@@ -491,7 +528,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_requires_every_field() {
+    fn validate_requires_workspace_and_credentials() {
         let base = InstallationParams {
             workspace_id: Uuid::now_v7(),
             agent_id: Uuid::now_v7(),
@@ -511,7 +548,7 @@ mod tests {
 
         let mut p = base.clone();
         p.agent_id = Uuid::nil();
-        assert!(validate_installation_params(&p).is_err());
+        assert!(validate_installation_params(&p).is_ok());
 
         let mut p = base.clone();
         p.installer_user_id = Uuid::nil();

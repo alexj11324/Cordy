@@ -2622,7 +2622,7 @@ export const MALFORMED_RUNTIME_MODEL_LIST_REQUEST: RuntimeModelListRequest = {
 export const DingTalkInstallationSchema = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
-  agent_id: z.string().default(""),
+  agent_id: z.string().nullable().default(null),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
   installed_at: z.string().default(""),
@@ -2634,7 +2634,7 @@ export const DingTalkInstallationSchema = z.object({
 export const EMPTY_DINGTALK_INSTALLATION: DingTalkInstallation = {
   id: "",
   workspace_id: "",
-  agent_id: "",
+  agent_id: null,
   installer_user_id: "",
   status: "revoked",
   installed_at: "",
@@ -2707,7 +2707,7 @@ export const EMPTY_REDEEM_DINGTALK_BINDING_TOKEN_RESPONSE: RedeemDingTalkBinding
 export const WecomInstallationSchema = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
-  agent_id: z.string().default(""),
+  agent_id: z.string().nullable().default(null),
   bot_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
@@ -2716,7 +2716,7 @@ export const WecomInstallationSchema = z.object({
 export const EMPTY_WECOM_INSTALLATION: WecomInstallation = {
   id: "",
   workspace_id: "",
-  agent_id: "",
+  agent_id: null,
   bot_id: "",
   installer_user_id: "",
   status: "revoked",
@@ -2748,7 +2748,7 @@ export const EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE: RedeemWecomBindingTokenR
 export const TelegramInstallationSchema = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
-  agent_id: z.string().default(""),
+  agent_id: z.string().nullable().default(null),
   bot_id: z.string().default(""),
   bot_username: z.string().default(""),
   installer_user_id: z.string().default(""),
@@ -2761,7 +2761,7 @@ export const TelegramInstallationSchema = z.object({
 export const EMPTY_TELEGRAM_INSTALLATION: TelegramInstallation = {
   id: "",
   workspace_id: "",
-  agent_id: "",
+  agent_id: null,
   bot_id: "",
   bot_username: "",
   installer_user_id: "",
@@ -2797,7 +2797,7 @@ export const EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE: RedeemTelegramBinding
 export const WeixinInstallationSchema = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
-  agent_id: z.string().default(""),
+  agent_id: z.string().nullable().default(null),
   bot_id: z.string().default(""),
   ilink_user_id: z.string().default(""),
   installer_user_id: z.string().default(""),
@@ -2809,7 +2809,7 @@ export const WeixinInstallationSchema = z.object({
 export const EMPTY_WEIXIN_INSTALLATION: WeixinInstallation = {
   id: "",
   workspace_id: "",
-  agent_id: "",
+  agent_id: null,
   bot_id: "",
   ilink_user_id: "",
   installer_user_id: "",

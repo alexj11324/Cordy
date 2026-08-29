@@ -66,10 +66,13 @@ pub fn new_dingtalk_resolver_set(
             pool: pool.clone(),
             session,
         })),
-        audit: Some(Arc::new(AuditorImpl { pool })),
+        audit: Some(Arc::new(AuditorImpl { pool: pool.clone() })),
         replier,
         typing: ack,
         media,
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         origin_type: ORIGIN_DINGTALK_CHAT.to_string(),
     }
 }
@@ -165,7 +168,10 @@ impl InstallationResolver for InstallationResolverImpl {
         let Some(inst) = inst else {
             return Err(ResolverError::InstallationNotFound.into());
         };
-        Ok(resolved_installation(&inst, inst.agent_id))
+        Ok(resolved_installation(
+            &inst,
+            inst.agent_id.unwrap_or_default(),
+        ))
     }
 }
 
@@ -183,6 +189,9 @@ impl ValidatedInboundResolver for ValidatedInboundResolverImpl {
         _identity: &ResolvedIdentity,
         msg: &InboundMessage,
     ) -> anyhow::Result<ResolvedInstallation> {
+        if inst.agent_id.is_nil() {
+            return Ok(inst);
+        }
         if msg.source.chat_type != ChatType::group() {
             return Ok(inst);
         }
@@ -326,6 +335,10 @@ impl AppendFence for GroupRouteFence {
 
 #[async_trait]
 impl SessionBinder for SessionBinderImpl {
+    fn binding_key(&self, msg: &InboundMessage) -> String {
+        dingtalk_session_routing(msg, Uuid::nil()).0
+    }
+
     async fn ensure_session(&self, p: EnsureSessionParams) -> anyhow::Result<Uuid> {
         let (binding_key, config) = dingtalk_session_routing(&p.message, p.installation.agent_id);
         let input = EnsureSessionInput {
@@ -337,7 +350,7 @@ impl SessionBinder for SessionBinderImpl {
             binding_config: Some(config),
             chat_type: p.message.source.chat_type.clone(),
         };
-        if p.message.source.chat_type != ChatType::group() {
+        if p.message.source.chat_type != ChatType::group() || p.installation.route_revision == 0 {
             return self.session.ensure_session(&input).await;
         }
 
@@ -417,12 +430,13 @@ impl SessionBinder for SessionBinderImpl {
             force_fresh: p.message.force_fresh,
         };
 
-        let fence = (p.message.source.chat_type == ChatType::group()).then(|| GroupRouteFence {
-            installation_id: p.installation_id,
-            chat_id: p.message.source.chat_id.clone(),
-            agent_id: p.agent_id,
-            route_revision: p.route_revision,
-        });
+        let fence = (p.message.source.chat_type == ChatType::group() && p.route_revision != 0)
+            .then(|| GroupRouteFence {
+                installation_id: p.installation_id,
+                chat_id: p.message.source.chat_id.clone(),
+                agent_id: p.agent_id,
+                route_revision: p.route_revision,
+            });
         self.session
             .append_user_message_fenced(&input, fence.as_ref().map(|f| f as &dyn AppendFence))
             .await
