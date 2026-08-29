@@ -6,6 +6,12 @@ import { toast } from "sonner";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Input } from "@patchbay/ui/components/ui/input";
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@patchbay/ui/components/ui/input-group";
+import {
   Field,
   FieldDescription,
   FieldError,
@@ -295,6 +301,8 @@ export function StepWorkspace({
         <div className="flex items-center gap-2">
           <Input
             id="ws-name"
+            name="workspace-name"
+            autoComplete="off"
             autoFocus
             type="text"
             value={name}
@@ -313,7 +321,7 @@ export function StepWorkspace({
             disabled={isCreating}
             className="shrink-0"
           >
-            <Dices className="h-4 w-4" />
+            <Dices aria-hidden="true" className="h-4 w-4" />
             {t(($) => $.step_workspace.random_name)}
           </Button>
         </div>
@@ -322,23 +330,28 @@ export function StepWorkspace({
         <FieldLabel htmlFor="ws-slug">
           {t(($) => $.step_workspace.url_label)}
         </FieldLabel>
-        <div className="flex items-center rounded-md border bg-muted transition-colors focus-within:border-foreground aria-invalid:border-destructive">
-          <span className="select-none pl-3 font-mono text-body text-muted-foreground">
-            {`${urlHost}/`}
-          </span>
-          <Input
+        <InputGroup>
+          <InputGroupAddon>
+            <InputGroupText className="font-mono">{`${urlHost}/`}</InputGroupText>
+          </InputGroupAddon>
+          <InputGroupInput
             id="ws-slug"
+            name="workspace-slug"
             type="text"
             value={slug}
             onChange={(e) => handleSlugChange(e.target.value)}
             placeholder={t(($) => $.step_workspace.slug_placeholder)}
-            className="border-0 bg-transparent font-mono shadow-none focus-visible:ring-0"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-invalid={slugError ? true : undefined}
+            className="font-mono"
             onKeyDown={(e) => {
               if (isImeComposing(e)) return;
               if (e.key === "Enter") handleCreate();
             }}
           />
-        </div>
+        </InputGroup>
         {slugError ? <FieldError>{slugError}</FieldError> : null}
       </Field>
       {/* Editable, pre-filled from the slug. Narrow input — the value is
@@ -357,6 +370,7 @@ export function StepWorkspace({
         </FieldLabel>
         <Input
           id="ws-issue-prefix"
+          name="workspace-issue-prefix"
           type="text"
           value={prefix}
           onChange={(e) => handlePrefixChange(e.target.value)}

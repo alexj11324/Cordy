@@ -1,8 +1,11 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useRef, type CSSProperties, type ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { DragStrip } from "@patchbay/views/platform";
 import type { OnboardingStep } from "@patchbay/core/onboarding";
 import { StepProgressBar, StepSidebar } from "./step-sidebar";
@@ -96,13 +99,16 @@ export function StepFooter({
 export function StepShell({
   currentStep,
   onBack,
+  backLabel,
   backDisabled,
   onStepChange,
   chromeFooter,
+  singlePane = false,
   children,
 }: {
   currentStep: OnboardingStep;
   onBack?: () => void;
+  backLabel?: string;
   /** Workspace step disables Back while its create request is in flight. */
   backDisabled?: boolean;
   /** Return to an already-completed step from the rail. */
@@ -110,10 +116,53 @@ export function StepShell({
   /** Injected by the flow — the Log out escape hatch. Rendered in whichever
    *  chrome is visible: the rail at `md` and up, the compact bar below it. */
   chromeFooter?: ReactNode;
+  /** Web-only presentation: replace the desktop progress rail with one
+   *  centred shadcn card. Desktop keeps the persistent rail by default. */
+  singlePane?: boolean;
   children: ReactNode;
 }) {
   const mainRef = useRef<HTMLElement>(null);
   const fadeStyle = useScrollFade(mainRef);
+
+  if (singlePane) {
+    return (
+      <div className="animate-onboarding-enter flex h-full min-h-0 flex-col bg-muted/20">
+        <DragStrip />
+        <main
+          ref={mainRef}
+          style={fadeStyle}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-8 lg:py-10"
+        >
+          <Card className="mx-auto min-h-full w-full max-w-2xl gap-0 py-0 shadow-sm">
+            <CardContent className="flex min-h-full flex-1 flex-col px-6 py-6 sm:px-10 sm:py-8 lg:px-12 lg:py-10">
+              {onBack || chromeFooter ? (
+                <div className="mb-6 flex min-h-8 items-center justify-between gap-4">
+                  {onBack ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={onBack}
+                      disabled={backDisabled}
+                      aria-label={backLabel}
+                      className="-ml-2"
+                      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+                    >
+                      <ArrowLeft aria-hidden="true" />
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                  {chromeFooter ? <div className="shrink-0">{chromeFooter}</div> : null}
+                </div>
+              ) : null}
+              {children}
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-onboarding-enter flex h-full min-h-0 flex-col bg-background">

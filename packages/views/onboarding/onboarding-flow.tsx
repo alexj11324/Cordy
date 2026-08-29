@@ -61,17 +61,18 @@ function coerceToArray<T extends string>(value: unknown): T[] {
  * record of the prior skip stays in the DB.
  */
 function mergeQuestionnaire(
-  raw: Record<string, unknown>,
+  raw: Record<string, unknown> | null | undefined,
 ): QuestionnaireAnswers {
+  const stored = raw ?? {};
   const merged = {
     ...EMPTY_QUESTIONNAIRE,
-    ...(raw as Partial<QuestionnaireAnswers>),
+    ...(stored as Partial<QuestionnaireAnswers>),
   };
   return {
     ...merged,
-    source: coerceToArray<QuestionnaireAnswers["source"][number]>(raw.source),
+    source: coerceToArray<QuestionnaireAnswers["source"][number]>(stored.source),
     use_case: coerceToArray<QuestionnaireAnswers["use_case"][number]>(
-      raw.use_case,
+      stored.use_case,
     ),
     source_skipped: false,
     role_skipped: false,
@@ -122,6 +123,11 @@ interface OnboardingFlowProps {
    *  step doesn't flash "no runtime found" while the daemon is still booting
    *  or probing CLI versions (PB-5119). Web omits it. */
   runtimesPending?: boolean;
+  /** Render the post-welcome steps as one centred shadcn card. The Web app
+   *  enables this; Desktop keeps the progress rail until separately approved. */
+  singlePane?: boolean;
+  /** Keep the local preview usable without config, workspace, or auth APIs. */
+  backendFree?: boolean;
 }
 
 export function OnboardingFlow(props: OnboardingFlowProps) {
@@ -135,6 +141,8 @@ function OnboardingStepFlow({
   runtimeInstructions,
   onRuntimeRefresh,
   runtimesPending,
+  singlePane = false,
+  backendFree = false,
 }: OnboardingFlowProps) {
   const { t, i18n } = useT("onboarding");
   const user = useAuthStore((s) => s.user);
@@ -167,7 +175,8 @@ function OnboardingStepFlow({
   // shown when the user already has at least one workspace, otherwise
   // skipping would land them in limbo.
   const { workspaces, ready: workspacesReady } = useWorkspaceList({
-    enabled: step === "welcome" || step === "workspace",
+    enabled:
+      !backendFree && (step === "welcome" || step === "workspace"),
   });
   const existingWorkspace = isNewWorkspace
     ? workspace
@@ -213,13 +222,15 @@ function OnboardingStepFlow({
     (patch: Partial<QuestionnaireAnswers>) => {
       setAnswers((a) => {
         const next = { ...a, ...patch };
-        void saveQuestionnaire(next).catch((err) => {
-          if (err instanceof Error) toast.error(err.message);
-        });
+        if (!backendFree) {
+          void saveQuestionnaire(next).catch((err) => {
+            if (err instanceof Error) toast.error(err.message);
+          });
+        }
         return next;
       });
     },
-    [],
+    [backendFree],
   );
 
   // "I've done this before" path — returning user who already has a
@@ -227,6 +238,10 @@ function OnboardingStepFlow({
   // server-side (idempotent via COALESCE on onboarded_at) and navigates
   // without creating new workspace content.
   const handleWelcomeSkip = useCallback(async () => {
+    if (backendFree) {
+      onComplete(workspaces[0] ?? undefined);
+      return;
+    }
     try {
       await completeOnboarding("skip_existing", workspaces[0]?.id);
     } catch (err) {
@@ -236,7 +251,7 @@ function OnboardingStepFlow({
       return;
     }
     onComplete(workspaces[0] ?? undefined);
-  }, [workspaces, onComplete]);
+  }, [backendFree, workspaces, onComplete]);
 
   const handleWorkspaceCreated = useCallback(
     (ws: Workspace) => {
@@ -255,6 +270,10 @@ function OnboardingStepFlow({
   const handleRuntimeNext = useCallback(
     async (rt: AgentRuntime | null, model?: string) => {
       if (!workspace) return;
+      if (backendFree) {
+        onComplete(workspace, undefined);
+        return;
+      }
       // A connected runtime provisions only Mika and immediately opens the
       // real interactive onboarding conversation. Specialists are created
       // later, only when the member's actual workflow justifies them.
@@ -300,7 +319,15 @@ function OnboardingStepFlow({
       });
       onComplete(workspace, undefined);
     },
-    [answers, bootstrapMika, i18n.language, workspace, onComplete, t],
+    [
+      answers,
+      backendFree,
+      bootstrapMika,
+      i18n.language,
+      workspace,
+      onComplete,
+      t,
+    ],
   );
 
   const handleBack = useCallback((from: OnboardingStep) => {
@@ -378,9 +405,11 @@ function OnboardingStepFlow({
     <StepShell
       currentStep={step}
       onBack={stepBack}
+      backLabel={t(($) => $.common.back)}
       backDisabled={stepBusy}
       onStepChange={handleStepChange}
       chromeFooter={headerTrailing}
+      singlePane={singlePane}
     >
       {step === "about_you" && (
         <StepAboutYou
