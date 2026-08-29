@@ -4,7 +4,7 @@ use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
 use patchbay_db::models::{InboxItem, Issue};
-use patchbay_db::queries::{inbox, issue, member, notification_preference, team, subscriber};
+use patchbay_db::queries::{inbox, issue, member, notification_preference, subscriber, team};
 use patchbay_events::{Bus, Event};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -988,8 +988,8 @@ mod tests {
         let id = "11111111-1111-4111-8111-111111111111";
         assert_eq!(
             parse_mentions(&format!(
-            "[@A](mention://member/{id}) [@A](mention://member/{id}) [@S](mention://team/{id})"
-        ))
+                "[@A](mention://member/{id}) [@A](mention://member/{id}) [@S](mention://team/{id})"
+            ))
             .len(),
             2
         );

@@ -690,8 +690,7 @@ async fn update(
         }
     };
     let paused = if request.leader_id.is_some() && !new_leader_runtime_bound {
-        match autopilot::pause_autopilots_by_unrunnable_team(&mut *transaction, existing.id).await
-        {
+        match autopilot::pause_autopilots_by_unrunnable_team(&mut *transaction, existing.id).await {
             Ok(autopilots) => autopilots,
             Err(_) => {
                 return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update team")

@@ -128,11 +128,11 @@ mod skill_command_schema;
 #[cfg(test)]
 mod skill_command_tests;
 mod skill_commands;
+mod task_reference;
 mod team_command_schema;
 #[cfg(test)]
 mod team_command_tests;
 mod team_commands;
-mod task_reference;
 mod text_input;
 mod update_commands;
 mod url_helpers;
@@ -422,10 +422,10 @@ use skill_commands::{
     run_skill_files_upsert, run_skill_get, run_skill_import, run_skill_list, run_skill_refresh,
     run_skill_search, run_skill_update,
 };
+use task_reference::resolve_task_run_id;
 pub(crate) use team_command_schema::{
-    TeamActivityArgs, TeamArgs, TeamCommand, TeamCreateArgs, TeamMemberAddArgs,
-    TeamMemberArgs, TeamMemberCommand, TeamMemberRemoveArgs, TeamMemberSetRoleArgs,
-    TeamUpdateArgs,
+    TeamActivityArgs, TeamArgs, TeamCommand, TeamCreateArgs, TeamMemberAddArgs, TeamMemberArgs,
+    TeamMemberCommand, TeamMemberRemoveArgs, TeamMemberSetRoleArgs, TeamUpdateArgs,
 };
 #[cfg(test)]
 use team_commands::{
@@ -434,10 +434,9 @@ use team_commands::{
 };
 use team_commands::{
     run_team_activity, run_team_create, run_team_delete, run_team_get, run_team_list,
-    run_team_member_add, run_team_member_list, run_team_member_remove,
-    run_team_member_set_role, run_team_update,
+    run_team_member_add, run_team_member_list, run_team_member_remove, run_team_member_set_role,
+    run_team_update,
 };
-use task_reference::resolve_task_run_id;
 pub(crate) use text_input::{trim_one_trailing_newline, unescape_backslash_escapes};
 use update_commands::run_update;
 #[cfg(test)]

@@ -495,11 +495,10 @@ async fn route_assignee_fallback(input: &CommentTriggerInput<'_>) -> Option<Comm
 
 async fn route_assigned_team_leader(input: &CommentTriggerInput<'_>) -> Option<CommentTrigger> {
     let team_id = input.issue.assignee_id?;
-    let team =
-        team::get_team_in_workspace(&input.state.pool, team_id, input.issue.workspace_id)
-            .await
-            .ok()
-            .flatten()?;
+    let team = team::get_team_in_workspace(&input.state.pool, team_id, input.issue.workspace_id)
+        .await
+        .ok()
+        .flatten()?;
     if input.actor_type == "agent" && input.actor_id == team.leader_id {
         return None;
     }

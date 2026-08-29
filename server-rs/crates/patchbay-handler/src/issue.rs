@@ -25,7 +25,7 @@ use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
     issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
-    team, subscriber, task_usage, user, workspace,
+    subscriber, task_usage, team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -2858,8 +2858,7 @@ async fn rerun_issue(
         match (issue.assignee_type.as_deref(), issue.assignee_id) {
             (Some("agent"), Some(agent_id)) => agent_id,
             (Some("team"), Some(team_id)) => {
-                match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await
-                {
+                match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await {
                     Ok(Some(team)) => team.leader_id,
                     _ => {
                         return error_response(
@@ -3101,11 +3100,11 @@ async fn record_team_evaluated(
     else {
         return error_response(StatusCode::BAD_REQUEST, "issue is not assigned to a team");
     };
-    let selected =
-        match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await {
-            Ok(Some(value)) => value,
-            _ => return error_response(StatusCode::NOT_FOUND, "team not found"),
-        };
+    let selected = match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await
+    {
+        Ok(Some(value)) => value,
+        _ => return error_response(StatusCode::NOT_FOUND, "team not found"),
+    };
     let (actor_type, actor_id, task_id) = mutation_actor(&state, &context, &headers).await;
     if actor_type != "agent" || actor_id != selected.leader_id {
         return error_response(
@@ -6304,12 +6303,11 @@ async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, iss
                 None,
             ),
             (Some("team"), Some(team_id)) => {
-                let leader =
-                    team::get_team_in_workspace(&state.pool, team_id, parent.workspace_id)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|team| team.leader_id);
+                let leader = team::get_team_in_workspace(&state.pool, team_id, parent.workspace_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|team| team.leader_id);
                 (
                     format!("[@team](mention://team/{team_id}) "),
                     leader,

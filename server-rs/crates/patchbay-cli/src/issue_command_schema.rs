@@ -185,10 +185,7 @@ pub(super) struct IssueUpdateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "New priority")]
     pub(super) priority: Option<String>,
-    #[arg(
-        long,
-        help = "New assignee name (member, agent, or team; fuzzy match)"
-    )]
+    #[arg(long, help = "New assignee name (member, agent, or team; fuzzy match)")]
     pub(super) assignee: Option<String>,
     #[arg(long, help = "New assignee UUID — member, agent, or team")]
     pub(super) assignee_id: Option<String>,

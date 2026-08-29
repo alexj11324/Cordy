@@ -14,10 +14,7 @@ pub(super) async fn run_team_list(
     output: OutputFormat,
 ) -> Result<RunOutput> {
     let client = new_api_client(cli, environment)?;
-    let teams: Vec<Value> = client
-        .get_json("/api/teams")
-        .await
-        .context("list teams")?;
+    let teams: Vec<Value> = client.get_json("/api/teams").await.context("list teams")?;
     if output == OutputFormat::Json {
         return Ok(RunOutput {
             stdout: format!("{}\n", serde_json::to_string_pretty(&teams)?),
@@ -288,10 +285,7 @@ pub(super) async fn run_team_member_set_role(
     let client = new_api_client(cli, environment)?;
     let result: Value = client
         .patch_json(
-            &format!(
-                "/api/teams/{}/members/role",
-                encoded_path_segment(team_id)
-            ),
+            &format!("/api/teams/{}/members/role", encoded_path_segment(team_id)),
             &serde_json::json!({
                 "member_type": args.member_type.as_str(),
                 "member_id": member_id,

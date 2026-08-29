@@ -931,12 +931,7 @@ pub fn contact_sales_submitted(
 
 /// Fires when a workspace member or admin creates a new team.
 /// `member_count` is the seed size at creation time.
-pub fn team_created(
-    actor_id: &str,
-    workspace_id: &str,
-    team_id: &str,
-    member_count: i64,
-) -> Event {
+pub fn team_created(actor_id: &str, workspace_id: &str, team_id: &str, member_count: i64) -> Event {
     Event {
         name: EVENT_TEAM_CREATED.to_string(),
         distinct_id: actor_id.to_string(),

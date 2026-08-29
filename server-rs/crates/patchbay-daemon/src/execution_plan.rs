@@ -22,9 +22,7 @@ use crate::execenv::execenv::{
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
-use crate::prompt::{
-    backend_resume_continuity_notice, comment_reply_threads, task_is_team_leader,
-};
+use crate::prompt::{backend_resume_continuity_notice, comment_reply_threads, task_is_team_leader};
 use crate::thread_name::derive_task_thread_name_from_task;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
