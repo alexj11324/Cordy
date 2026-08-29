@@ -523,7 +523,10 @@ async fn desktop_auth_exchange(
     };
     let response = match client
         .post(exchange_url)
-        .header("X-Patchbay-Broker-Secret", &state.auth_settings.auth_broker_shared_secret)
+        .header(
+            "X-Patchbay-Broker-Secret",
+            &state.auth_settings.auth_broker_shared_secret,
+        )
         .json(&serde_json::json!({ "code": code }))
         .send()
         .await
