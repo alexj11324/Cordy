@@ -21,7 +21,6 @@ import { Separator } from "@patchbay/ui/components/ui/separator";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../i18n";
 import { AvatarCropDialog } from "./avatar-crop-dialog";
-import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 
 // The full emoji-mart picker is ~1MB of emoji data. Only the handful of
 // suggestions render eagerly; the searchable set loads when asked for.
