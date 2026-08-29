@@ -6,9 +6,9 @@ import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "..
 import { defaultStorage } from "../../platform/storage";
 import { registerDraftCleanup } from "../../drafts/cleanup-registry";
 
-export type QuickCreateActorType = "agent" | "squad";
+export type QuickCreateActorType = "agent" | "team";
 
-// Per-workspace memory of the last actor (agent or squad) the user picked in
+// Per-workspace memory of the last actor (agent or team) the user picked in
 // the Quick Create modal. Defaulted on next open so frequent users skip the
 // picker entirely. Persisted with the workspace-aware StateStorage so
 // switching workspaces shows the right default automatically. Per-user
@@ -25,7 +25,7 @@ export type QuickCreateActorType = "agent" | "squad";
 // page they opened the modal from, and their own unfinished draft.
 //
 // lastActorType + lastActorId replace the prior `lastAgentId` field once
-// squads became selectable. Users who had a persisted agent preference
+// teams became selectable. Users who had a persisted agent preference
 // land back on whatever the picker shows first; a one-time re-pick is
 // preferable to the type-tag ambiguity of overloading a single UUID.
 //

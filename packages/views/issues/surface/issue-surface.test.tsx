@@ -367,7 +367,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => never()),
       listMembers: vi.fn(() => never()),
       listAgents: vi.fn(() => never()),
-      listSquads: vi.fn(() => never()),
+      listTeams: vi.fn(() => never()),
     } as unknown as ApiClient);
 
     render(
@@ -448,7 +448,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listSquads: vi.fn(() => Promise.resolve([])),
+      listTeams: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     // Continuation is driven by the shared footer's sentinel, the same one
@@ -530,7 +530,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listSquads: vi.fn(() => Promise.resolve([])),
+      listTeams: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     const { container } = render(
@@ -592,7 +592,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listSquads: vi.fn(() => Promise.resolve([])),
+      listTeams: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     render(
@@ -688,7 +688,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listSquads: vi.fn(() => Promise.resolve([])),
+      listTeams: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     const { container } = render(

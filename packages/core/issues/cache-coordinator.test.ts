@@ -521,7 +521,7 @@ describe("applyIssueChange", () => {
     const agentsKey = issueKeys.myListSorted(
       WS_ID,
       "workspace:agents",
-      { assignee_types: ["agent", "squad"] },
+      { assignee_types: ["agent", "team"] },
       sort,
     );
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([issue()]));

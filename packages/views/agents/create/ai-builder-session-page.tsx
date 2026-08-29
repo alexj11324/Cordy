@@ -9,7 +9,7 @@ import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { BuilderWorkspace } from "./builder-workspace";
 import { AgentCreateChip, AgentCreateShell } from "./create-shell";
-import { withSquadParam } from "./squad-param";
+import { withTeamParam } from "./team-param";
 
 /**
  * One creation conversation, addressed by its own session id.
@@ -25,7 +25,7 @@ export function AiBuilderSessionPage({ sessionId }: { sessionId: string }) {
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
   const backOrReplace = useBackOrReplace();
-  const squadId = navigation.searchParams.get("squad");
+  const teamId = navigation.searchParams.get("team");
   // The runtime this conversation was just started on. It cannot be read back
   // for the first turn — a conversation joins the list only once it has a
   // message or a saved configuration — so the starting screen hands it over in
@@ -44,15 +44,15 @@ export function AiBuilderSessionPage({ sessionId }: { sessionId: string }) {
   // link that outlived it. Replace rather than push: the address no longer
   // resolves, so it must not stay on the stack for a back to land on.
   const leave = useCallback(
-    () => navigation.replace(withSquadParam(paths.newAgentAi(), squadId)),
-    [navigation, paths, squadId],
+    () => navigation.replace(withTeamParam(paths.newAgentAi(), teamId)),
+    [navigation, paths, teamId],
   );
 
   return (
     <AgentCreateShell
       title={
-        squadId
-          ? t(($) => $.creation_studio.squad_title)
+        teamId
+          ? t(($) => $.creation_studio.team_title)
           : t(($) => $.creation_studio.title)
       }
       step={t(($) => $.creation_studio.step_ai)}
@@ -75,7 +75,7 @@ export function AiBuilderSessionPage({ sessionId }: { sessionId: string }) {
         // field.
         key={sessionId}
         sessionId={sessionId}
-        squadId={squadId}
+        teamId={teamId}
         session={session}
         sessionSettled={sessionSettled}
         fallbackRuntimeId={startedRuntimeId}

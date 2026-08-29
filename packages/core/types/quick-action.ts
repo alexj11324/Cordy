@@ -21,7 +21,7 @@
  */
 export type QuickActionVisibility = "private" | "public";
 
-export type QuickActionAssigneeType = "agent" | "squad";
+export type QuickActionAssigneeType = "agent" | "team";
 
 export type QuickActionStatus = "active" | "archived";
 
@@ -41,7 +41,7 @@ export interface QuickAction {
   created_by_id: string;
   created_at: string;
   updated_at: string;
-  /** Display name of the bound agent or squad. Absent when it no longer resolves. */
+  /** Display name of the bound agent or team. Absent when it no longer resolves. */
   target_name?: string;
   /**
    * Whether the bound target is currently invocable by every workspace member.
@@ -49,7 +49,7 @@ export interface QuickAction {
    * `public` action pointing at a now-private agent reads as visibly wrong.
    */
   target_public: boolean;
-  /** The bound agent or squad was archived or deleted. */
+  /** The bound agent or team was archived or deleted. */
   target_missing: boolean;
 }
 

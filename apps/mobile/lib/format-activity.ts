@@ -100,9 +100,9 @@ export function formatActivity(
       const n = entry.coalesced_count ?? 1;
       return n > 1 ? `failed ${n} tasks` : "failed a task";
     }
-    case "squad_leader_evaluated": {
+    case "team_leader_evaluated": {
       // Copy mirrors packages/views/locales/en/issues.json
-      // (squad_leader_action / squad_leader_no_action / squad_leader_failed,
+      // (team_leader_action / team_leader_no_action / team_leader_failed,
       // each with an optional `_reason` variant).
       const reason = details.reason?.trim();
       switch (details.outcome) {
@@ -119,7 +119,7 @@ export function formatActivity(
             ? `evaluation failed: ${reason}`
             : "evaluation failed";
         default:
-          return "evaluated the squad trigger";
+          return "evaluated the team trigger";
       }
     }
     default:

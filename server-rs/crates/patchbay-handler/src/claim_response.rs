@@ -13,7 +13,7 @@ use uuid::Uuid;
 use patchbay_db::models::{AgentRuntime, AgentTaskQueue};
 use patchbay_db::queries::{
     agent as agent_q, agent as agent_queries, autopilot as autopilot_q, chat as chat_q,
-    comment as comment_q, issue as issue_q, project as project_q, squad as squad_q, user as user_q,
+    comment as comment_q, issue as issue_q, project as project_q, team as team_q, user as user_q,
     workspace as workspace_q, workspace_mcp as ws_mcp_q,
 };
 use patchbay_protocol::{
@@ -28,7 +28,7 @@ use crate::claim_comments::{
 use crate::daemon::DaemonClaimServices;
 use crate::error::error_response;
 use crate::mcp_merge::{merge_mcp_overlay, resolve_agent_mcp_config, WorkspaceMcpBinding};
-use crate::squad_briefing::build_squad_leader_briefing;
+use crate::team_briefing::build_team_leader_briefing;
 use crate::timefmt::rfc3339;
 
 /// Max local-skill import requests claimed in one heartbeat batch.
@@ -340,7 +340,7 @@ pub(crate) async fn build_claimed_task_response(
         }
     }
 
-    // Claim-only capability: this server resolves the squad-leader role on the
+    // Claim-only capability: this server resolves the team-leader role on the
     // wire so the daemon must not re-derive it from the briefing text
     // (PB-5811).
     obj.insert("leader_role_resolved".into(), Value::Bool(true));
@@ -638,21 +638,21 @@ pub(crate) async fn build_claimed_task_response(
             );
             obj.insert("thread_name".into(), Value::String(issue.title.clone()));
 
-            // Squad-leader briefing injection keyed off is_leader_task +
-            // squad_id, NOT off the issue assignee (PB-3724 covers the
+            // Team-leader briefing injection keyed off is_leader_task +
+            // team_id, NOT off the issue assignee (PB-3724 covers the
             // mention path).
             if task.is_leader_task {
                 let mut injected = false;
-                if let Some(squad_id) = task.squad_id {
-                    if let Ok(Some(squad)) =
-                        squad_q::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id)
+                if let Some(team_id) = task.team_id {
+                    if let Ok(Some(team)) =
+                        team_q::get_team_in_workspace(&state.pool, team_id, issue.workspace_id)
                             .await
                     {
-                        if squad.leader_id.to_string() == response_agent_id {
-                            let owns_issue_status = issue.assignee_type.as_deref() == Some("squad")
-                                && issue.assignee_id == Some(squad.id);
+                        if team.leader_id.to_string() == response_agent_id {
+                            let owns_issue_status = issue.assignee_type.as_deref() == Some("team")
+                                && issue.assignee_id == Some(team.id);
                             let briefing =
-                                build_squad_leader_briefing(&state.pool, &squad, owns_issue_status)
+                                build_team_leader_briefing(&state.pool, &team, owns_issue_status)
                                     .await;
                             let current = obj
                                 .get("agent")
@@ -679,9 +679,9 @@ pub(crate) async fn build_claimed_task_response(
                     obj.insert("is_leader_task".into(), Value::Bool(false));
                     tracing::warn!(
                         task_id = %task.id,
-                        squad_id = ?task.squad_id,
+                        team_id = ?task.team_id,
                         agent_id = %task.agent_id,
-                        "squad leader briefing not injected; claim delivered as a non-leader task"
+                        "team leader briefing not injected; claim delivered as a non-leader task"
                     );
                 }
             }
@@ -1337,19 +1337,19 @@ pub(crate) async fn build_claimed_task_response(
                 }
             }
 
-            // Squad-leader briefing for quick-create squads (no issue yet →
+            // Team-leader briefing for quick-create teams (no issue yet →
             // never owns parent status on this turn).
-            if !qc.squad_id.is_empty() {
-                if let (Ok(squad_uuid), Ok(ws_uuid)) = (
-                    Uuid::parse_str(&qc.squad_id),
+            if !qc.team_id.is_empty() {
+                if let (Ok(team_uuid), Ok(ws_uuid)) = (
+                    Uuid::parse_str(&qc.team_id),
                     Uuid::parse_str(&qc.workspace_id),
                 ) {
-                    if let Ok(Some(squad)) =
-                        squad_q::get_squad_in_workspace(&state.pool, squad_uuid, ws_uuid).await
+                    if let Ok(Some(team)) =
+                        team_q::get_team_in_workspace(&state.pool, team_uuid, ws_uuid).await
                     {
-                        if squad.leader_id.to_string() == response_agent_id {
+                        if team.leader_id.to_string() == response_agent_id {
                             let briefing =
-                                build_squad_leader_briefing(&state.pool, &squad, false).await;
+                                build_team_leader_briefing(&state.pool, &team, false).await;
                             let current = obj
                                 .get("agent")
                                 .and_then(|a| a.get("instructions"))
@@ -1364,8 +1364,8 @@ pub(crate) async fn build_claimed_task_response(
                             if let Some(a) = obj.get_mut("agent").and_then(|v| v.as_object_mut()) {
                                 a.insert("instructions".into(), Value::String(combined));
                             }
-                            obj.insert("squad_id".into(), Value::String(squad.id.to_string()));
-                            obj.insert("squad_name".into(), Value::String(squad.name.clone()));
+                            obj.insert("team_id".into(), Value::String(team.id.to_string()));
+                            obj.insert("team_name".into(), Value::String(team.name.clone()));
                         }
                     }
                 }

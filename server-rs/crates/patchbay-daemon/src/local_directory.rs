@@ -64,7 +64,7 @@ impl LocalDirectoryAssignment {
     }
 }
 
-/// `localDirectoryAssignmentForTask` (go:91–96): squad-leader tasks are
+/// `localDirectoryAssignmentForTask` (go:91–96): team-leader tasks are
 /// coordinators and never bind to the user's repo worktree.
 pub(crate) fn local_directory_assignment_for_task(
     task: &Task,
@@ -648,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn squad_leader_tasks_never_bind() {
+    fn team_leader_tasks_never_bind() {
         let task = Task {
             is_leader_task: true,
             project_resources: vec![resource("/tmp/leader-should-not-bind", "d-mine")],

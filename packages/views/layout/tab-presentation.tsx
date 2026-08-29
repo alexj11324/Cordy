@@ -19,7 +19,7 @@ import {
   skillDetailOptions,
   agentListOptions,
   memberListOptions,
-  squadListOptions,
+  teamListOptions,
 } from "@patchbay/core/workspace/queries";
 import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { runtimeDisplayName } from "@patchbay/core/runtimes";
@@ -50,7 +50,7 @@ import { ROUTE_ICON_COMPONENTS } from "./route-icon-components";
  *
  * The one exception is an actor tab's avatar: `ResourceLeadingVisual` renders
  * `ActorAvatar`, which loads the (workspace-global, sidebar-warmed) member /
- * agent / squad directories itself. That is intentional — it resolves the
+ * agent / team directories itself. That is intentional — it resolves the
  * avatar and, in turn, the name this hook reads from the same lists.
  */
 
@@ -66,7 +66,7 @@ const PENDING_RESOURCE_KEYS: ReadonlySet<TabLabelKey> = new Set<TabLabelKey>([
   "autopilot",
   "agent",
   "member",
-  "squad",
+  "team",
   "skill",
   "machine",
   "runtime",
@@ -131,7 +131,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
 
   const agents = useQuery({ ...agentListOptions(wsId), enabled: false }).data;
   const members = useQuery({ ...memberListOptions(wsId), enabled: false }).data;
-  const squads = useQuery({ ...squadListOptions(wsId), enabled: false }).data;
+  const teams = useQuery({ ...teamListOptions(wsId), enabled: false }).data;
   const runtimes = useQuery({ ...runtimeListOptions(wsId), enabled: false }).data;
   const sessions = useQuery({ ...chatSessionsOptions(wsId), enabled: false }).data;
 
@@ -161,7 +161,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
           ? agents?.find((a) => a.id === subject.id)?.name
           : subject.actorType === "member"
             ? members?.find((m) => m.user_id === subject.id)?.name
-            : squads?.find((s) => s.id === subject.id)?.name;
+            : teams?.find((s) => s.id === subject.id)?.name;
       if (name) data.actorName = name;
       break;
     }
@@ -249,8 +249,8 @@ export function useTabPresentation(
       ? {
           kind: "icon",
           icon:
-            visual.actorType === "squad"
-              ? "Users"
+            visual.actorType === "team"
+              ? "PeopleGroup"
               : visual.actorType === "member"
                 ? "CircleUser"
                 : "Bot",

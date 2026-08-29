@@ -29,12 +29,12 @@ import { THEME } from "@/lib/theme";
 
 // `system` actors are server-side automation (state changes triggered by the
 // platform itself, not a member or an agent). InboxItem.actor_type carries
-// this third value (packages/core/types/inbox.ts:28). `squad` is a third
+// this third value (packages/core/types/inbox.ts:28). `team` is a third
 // assignee polymorph (packages/core/types/issue.ts IssueAssigneeType) — when
-// a squad has an avatar_url we render it; otherwise fall back to a generic
-// group glyph so squad-assigned issues from web never render blank.
+// a team has an avatar_url we render it; otherwise fall back to a generic
+// group glyph so team-assigned issues from web never render blank.
 interface Props {
-  type: "member" | "agent" | "system" | "squad" | null | undefined;
+  type: "member" | "agent" | "system" | "team" | null | undefined;
   id: string | null | undefined;
   size?: number;
   /**
@@ -75,15 +75,15 @@ function BareAvatar({
       ? THEME.dark.mutedForeground
       : THEME.light.mutedForeground;
 
-  // Squad gets a soft-square tile (matches web actor-avatar.tsx:42 which uses
+  // Team gets a soft-square tile (matches web actor-avatar.tsx:42 which uses
   // rounded-md) so a group never reads as a single person at a glance.
   // Everyone else stays round.
-  const radius = type === "squad" ? Math.round(size * 0.22) : size / 2;
+  const radius = type === "team" ? Math.round(size * 0.22) : size / 2;
 
-  // URL lookup runs BEFORE the squad/system icon fallbacks so a squad with
+  // URL lookup runs BEFORE the team/system icon fallbacks so a team with
   // an avatar_url renders its image instead of the generic group glyph.
-  // Squad.avatar_url exists (packages/core/types/squad.ts) and useActorLookup
-  // already returns it — the previous early-return for type==="squad" meant
+  // Team.avatar_url exists (packages/core/types/team.ts) and useActorLookup
+  // already returns it — the previous early-return for type==="team" meant
   // that value was silently dropped.
   // Only treat a URL as renderable if it actually looks like one — RN <Image>
   // can crash native-side on malformed sources (empty string, plain "foo",
@@ -134,7 +134,7 @@ function BareAvatar({
     );
   }
 
-  if (type === "squad") {
+  if (type === "team") {
     return (
       <View
         style={{ width: size, height: size, borderRadius: radius }}

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use axum::http::HeaderMap;
 use patchbay_db::models::{Agent, AgentTaskQueue, Comment, Issue};
-use patchbay_db::queries::{agent, autopilot, comment, squad};
+use patchbay_db::queries::{agent, autopilot, comment, team};
 use patchbay_middleware::workspace::WorkspaceContext;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -24,7 +24,7 @@ const NOTE_COMMENT_PREFIX: &str = "/note";
 pub(crate) enum CommentTriggerSource {
     IssueAssignee,
     MentionAgent,
-    MentionSquadLeader,
+    MentionTeamLeader,
     ThreadParent,
     Conversation,
 }
@@ -34,7 +34,7 @@ impl CommentTriggerSource {
         match self {
             Self::IssueAssignee => "issue_assignee",
             Self::MentionAgent => "mention_agent",
-            Self::MentionSquadLeader => "mention_squad_leader",
+            Self::MentionTeamLeader => "mention_team_leader",
             Self::ThreadParent => "thread_parent",
             Self::Conversation => "conversation_continuation",
         }
@@ -44,7 +44,7 @@ impl CommentTriggerSource {
         match self {
             Self::IssueAssignee => "Current issue assignment will trigger this agent.",
             Self::MentionAgent => "This agent was mentioned in the comment.",
-            Self::MentionSquadLeader => "A mentioned squad will trigger its leader.",
+            Self::MentionTeamLeader => "A mentioned team will trigger its leader.",
             Self::ThreadParent => "This reply will trigger the parent comment's author.",
             Self::Conversation => "This follow-up will continue the recent agent conversation.",
         }
@@ -54,7 +54,7 @@ impl CommentTriggerSource {
 #[derive(Debug, Clone)]
 pub(crate) struct CommentTrigger {
     pub agent: Agent,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub source: CommentTriggerSource,
 }
 
@@ -197,7 +197,7 @@ pub(crate) async fn compute_comment_agent_triggers(
         return CommentTriggerPlan::default();
     }
     if !mention_ids(input.content, "agent").is_empty()
-        || !mention_ids(input.content, "squad").is_empty()
+        || !mention_ids(input.content, "team").is_empty()
     {
         return resolve_mentioned_triggers(input).await;
     }
@@ -205,8 +205,8 @@ pub(crate) async fn compute_comment_agent_triggers(
         return CommentTriggerPlan::default();
     }
     if input.actor_type != "member" {
-        if input.issue.assignee_type.as_deref() == Some("squad") {
-            if let Some(trigger) = route_assigned_squad_leader(&input).await {
+        if input.issue.assignee_type.as_deref() == Some("team") {
+            if let Some(trigger) = route_assigned_team_leader(&input).await {
                 return CommentTriggerPlan {
                     triggers: vec![trigger],
                     blocked: Vec::new(),
@@ -249,8 +249,8 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
     let mut seen = HashMap::<Uuid, usize>::new();
     let mut add = |plan: &mut CommentTriggerPlan, trigger: CommentTrigger| {
         if let Some(index) = seen.get(&trigger.agent.id).copied() {
-            if plan.triggers[index].source != CommentTriggerSource::MentionSquadLeader
-                && trigger.source == CommentTriggerSource::MentionSquadLeader
+            if plan.triggers[index].source != CommentTriggerSource::MentionTeamLeader
+                && trigger.source == CommentTriggerSource::MentionTeamLeader
             {
                 plan.triggers[index] = trigger;
             }
@@ -283,7 +283,7 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
                     &mut plan,
                     CommentTrigger {
                         agent,
-                        squad_id: None,
+                        team_id: None,
                         source: CommentTriggerSource::MentionAgent,
                     },
                 );
@@ -296,12 +296,12 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
         }
     }
 
-    for squad_id in mention_ids(input.content, "squad") {
-        match squad::get_squad_in_workspace(&input.state.pool, squad_id, input.issue.workspace_id)
+    for team_id in mention_ids(input.content, "team") {
+        match team::get_team_in_workspace(&input.state.pool, team_id, input.issue.workspace_id)
             .await
         {
-            Ok(Some(squad)) if squad.archived_at.is_none() => {
-                match load_runnable_agent(input.state, input.issue.workspace_id, squad.leader_id)
+            Ok(Some(team)) if team.archived_at.is_none() => {
+                match load_runnable_agent(input.state, input.issue.workspace_id, team.leader_id)
                     .await
                 {
                     Some(agent) => {
@@ -315,8 +315,8 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
                         .await
                         {
                             plan.blocked.push(BlockedMention {
-                                target_type: "squad",
-                                target_id: squad_id,
+                                target_type: "team",
+                                target_id: team_id,
                                 reason_code: "target_unavailable",
                             });
                             continue;
@@ -325,21 +325,21 @@ async fn resolve_mentioned_triggers(input: CommentTriggerInput<'_>) -> CommentTr
                             &mut plan,
                             CommentTrigger {
                                 agent,
-                                squad_id: Some(squad.id),
-                                source: CommentTriggerSource::MentionSquadLeader,
+                                team_id: Some(team.id),
+                                source: CommentTriggerSource::MentionTeamLeader,
                             },
                         );
                     }
                     None => plan.blocked.push(BlockedMention {
-                        target_type: "squad",
-                        target_id: squad_id,
+                        target_type: "team",
+                        target_id: team_id,
                         reason_code: "target_unavailable",
                     }),
                 }
             }
             _ => plan.blocked.push(BlockedMention {
-                target_type: "squad",
-                target_id: squad_id,
+                target_type: "team",
+                target_id: team_id,
                 reason_code: "target_unavailable",
             }),
         }
@@ -387,7 +387,7 @@ async fn route_reply_to_parent_author(
     }
     Some(CommentTrigger {
         agent,
-        squad_id: None,
+        team_id: None,
         source: CommentTriggerSource::ThreadParent,
     })
 }
@@ -423,14 +423,14 @@ async fn route_thread_root_owners(
         if trigger_comment_id != root.id {
             continue;
         }
-        routed.entry(task.agent_id).or_insert(task.squad_id);
+        routed.entry(task.agent_id).or_insert(task.team_id);
     }
     if routed.is_empty() {
         return None;
     }
     let mut triggers = Vec::new();
-    for (agent_id, squad_id) in routed {
-        if let Some(trigger) = route_conversation_agent(input, agent_id, squad_id).await {
+    for (agent_id, team_id) in routed {
+        if let Some(trigger) = route_conversation_agent(input, agent_id, team_id).await {
             triggers.push(trigger);
         }
     }
@@ -444,13 +444,13 @@ async fn route_first_explicit_root_mention(
     if let Some(agent_id) = mention_ids(&root.content, "agent").into_iter().next() {
         return route_conversation_agent(input, agent_id, None).await;
     }
-    if let Some(squad_id) = mention_ids(&root.content, "squad").into_iter().next() {
-        let squad =
-            squad::get_squad_in_workspace(&input.state.pool, squad_id, input.issue.workspace_id)
+    if let Some(team_id) = mention_ids(&root.content, "team").into_iter().next() {
+        let team =
+            team::get_team_in_workspace(&input.state.pool, team_id, input.issue.workspace_id)
                 .await
                 .ok()
                 .flatten()?;
-        return route_conversation_agent(input, squad.leader_id, Some(squad.id)).await;
+        return route_conversation_agent(input, team.leader_id, Some(team.id)).await;
     }
     None
 }
@@ -458,7 +458,7 @@ async fn route_first_explicit_root_mention(
 async fn route_conversation_agent(
     input: &CommentTriggerInput<'_>,
     agent_id: Uuid,
-    squad_id: Option<Uuid>,
+    team_id: Option<Uuid>,
 ) -> Option<CommentTrigger> {
     let agent = load_runnable_agent(input.state, input.issue.workspace_id, agent_id).await?;
     if !agent_allowed(input, &agent).await {
@@ -466,7 +466,7 @@ async fn route_conversation_agent(
     }
     Some(CommentTrigger {
         agent,
-        squad_id,
+        team_id,
         source: CommentTriggerSource::Conversation,
     })
 }
@@ -484,32 +484,32 @@ async fn route_assignee_fallback(input: &CommentTriggerInput<'_>) -> Option<Comm
             }
             Some(CommentTrigger {
                 agent,
-                squad_id: None,
+                team_id: None,
                 source: CommentTriggerSource::IssueAssignee,
             })
         }
-        (Some("squad"), Some(_)) => route_assigned_squad_leader(input).await,
+        (Some("team"), Some(_)) => route_assigned_team_leader(input).await,
         _ => None,
     }
 }
 
-async fn route_assigned_squad_leader(input: &CommentTriggerInput<'_>) -> Option<CommentTrigger> {
-    let squad_id = input.issue.assignee_id?;
-    let squad =
-        squad::get_squad_in_workspace(&input.state.pool, squad_id, input.issue.workspace_id)
+async fn route_assigned_team_leader(input: &CommentTriggerInput<'_>) -> Option<CommentTrigger> {
+    let team_id = input.issue.assignee_id?;
+    let team =
+        team::get_team_in_workspace(&input.state.pool, team_id, input.issue.workspace_id)
             .await
             .ok()
             .flatten()?;
-    if input.actor_type == "agent" && input.actor_id == squad.leader_id {
+    if input.actor_type == "agent" && input.actor_id == team.leader_id {
         return None;
     }
-    let agent = load_runnable_agent(input.state, input.issue.workspace_id, squad.leader_id).await?;
+    let agent = load_runnable_agent(input.state, input.issue.workspace_id, team.leader_id).await?;
     if !agent_allowed(input, &agent).await {
         return None;
     }
     Some(CommentTrigger {
         agent,
-        squad_id: Some(squad.id),
+        team_id: Some(team.id),
         source: CommentTriggerSource::IssueAssignee,
     })
 }
@@ -592,17 +592,17 @@ async fn enqueue_one(
             };
         }
     }
-    let result = match (trigger.source, trigger.squad_id) {
+    let result = match (trigger.source, trigger.team_id) {
         (
-            CommentTriggerSource::MentionSquadLeader | CommentTriggerSource::IssueAssignee,
-            Some(squad_id),
+            CommentTriggerSource::MentionTeamLeader | CommentTriggerSource::IssueAssignee,
+            Some(team_id),
         ) => {
             state
                 .tasks
-                .enqueue_task_for_squad_leader(
+                .enqueue_task_for_team_leader(
                     issue,
                     trigger.agent.id,
-                    squad_id,
+                    team_id,
                     Some(trigger_comment_id),
                 )
                 .await
@@ -816,7 +816,7 @@ mod tests {
             "a\0 [@one](mention://agent/{first}) duplicate mention://agent/{first} and mention://agent/{second})"
         );
         assert_eq!(mention_ids(&content, "agent"), vec![first, second]);
-        assert!(mention_ids(&content, "squad").is_empty());
+        assert!(mention_ids(&content, "team").is_empty());
         assert!(mention_ids(&content, "member").is_empty());
     }
 
@@ -841,8 +841,8 @@ mod tests {
         );
         assert_eq!(CommentTriggerSource::MentionAgent.as_str(), "mention_agent");
         assert_eq!(
-            CommentTriggerSource::MentionSquadLeader.as_str(),
-            "mention_squad_leader"
+            CommentTriggerSource::MentionTeamLeader.as_str(),
+            "mention_team_leader"
         );
         assert_eq!(CommentTriggerSource::ThreadParent.as_str(), "thread_parent");
         assert_eq!(

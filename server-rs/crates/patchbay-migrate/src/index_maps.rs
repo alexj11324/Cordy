@@ -442,6 +442,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "384_agent_task_queue_side_chat_pending_unique_v3",
         "idx_one_pending_task_per_issue_agent_v3",
     ),
+    (
+        "387_team_no_action_activity_index",
+        "idx_activity_log_team_no_action_task",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[

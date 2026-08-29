@@ -103,7 +103,7 @@ For file uploads and attachments, configure S3 and (optionally) CloudFront:
 
 #### Avatars on a private bucket
 
-User / agent / squad / workspace avatars are stored as the raw storage object
+User / agent / team / workspace avatars are stored as the raw storage object
 URL. When the bucket is public — a public `CLOUDFRONT_DOMAIN`, or the default
 local-disk backend — that URL is served to clients unchanged.
 

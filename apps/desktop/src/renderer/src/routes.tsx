@@ -26,7 +26,7 @@ import {
   ChooseCreateMethodPage,
   ManualCreateAgentPage,
 } from "@patchbay/views/agents";
-import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@patchbay/views/squads/components";
+import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@patchbay/views/teams/components";
 import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
 import { SettingsPage } from "@patchbay/views/settings";
@@ -214,11 +214,11 @@ export const appRoutes: RouteObject[] = [
             element: <MemberDetailPage />,
             handle: { title: "Member" },
           },
-          { path: "squads", element: <SquadsPage />, handle: { title: "Squads" } },
+          { path: "teams", element: <TeamsPage />, handle: { title: "Teams" } },
           {
-            path: "squads/:id",
-            element: <SquadDetailPageView />,
-            handle: { title: "Squad" },
+            path: "teams/:id",
+            element: <TeamDetailPageView />,
+            handle: { title: "Team" },
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
           { path: "chat", element: <ChatPage />, handle: { title: "Chat" } },

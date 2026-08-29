@@ -42,7 +42,7 @@ pub mod runtime_profile;
 pub mod runtime_usage;
 pub mod share_link;
 pub mod skill;
-pub mod squad;
+pub mod team;
 pub mod subscriber;
 pub mod task_message;
 pub mod task_token;

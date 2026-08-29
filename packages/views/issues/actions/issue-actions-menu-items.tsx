@@ -231,7 +231,7 @@ export function IssueActionsMenuItems({
       </P.Sub>
 
       {/* Assignee — closes this menu and hands off to the shared
-          AssigneePicker (members + agents + squads, with search and
+          AssigneePicker (members + agents + teams, with search and
           permission checks). Keeps a single source of truth for the
           assignee UX across detail sidebar, board cards, and right-click /
           3-dot menus. */}

@@ -11,7 +11,7 @@ import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { BuilderSetupPanel } from "./builder-setup-panel";
 import { AgentCreateChip, AgentCreateShell } from "./create-shell";
-import { createPathWithParams } from "./squad-param";
+import { createPathWithParams } from "./team-param";
 
 /**
  * Starting a conversational agent creation: pick where it will run.
@@ -34,7 +34,7 @@ export function AiCreateAgentPage() {
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
   const backOrReplace = useBackOrReplace();
-  const squadId = navigation.searchParams.get("squad");
+  const teamId = navigation.searchParams.get("team");
 
   const builderSessions = useQuery(agentBuilderSessionListOptions(wsId));
   const sessions = builderSessions.data ?? [];
@@ -51,18 +51,18 @@ export function AiCreateAgentPage() {
     (sessionId: string, runtimeId: string | null) =>
       navigation.replace(
         createPathWithParams(paths.newAgentAiSession(sessionId), {
-          squad: squadId,
+          team: teamId,
           runtime: runtimeId,
         }),
       ),
-    [navigation, paths, squadId],
+    [navigation, paths, teamId],
   );
 
   return (
     <AgentCreateShell
       title={
-        squadId
-          ? t(($) => $.creation_studio.squad_title)
+        teamId
+          ? t(($) => $.creation_studio.team_title)
           : t(($) => $.creation_studio.title)
       }
       step={t(($) => $.creation_studio.step_ai)}

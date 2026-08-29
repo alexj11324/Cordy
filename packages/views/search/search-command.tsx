@@ -76,7 +76,7 @@ import { useSearchStore } from "./search-store";
 // The palette's Pages group is generated from WORKSPACE_PAGES, the same
 // registry the sidebar nav and the desktop tab bar read. It used to be a
 // hand-written list, which silently went stale every time a page was added:
-// Chat, Autopilot, Squads and Analytics shipped in the sidebar but were
+// Chat, Autopilot, Teams and Analytics shipped in the sidebar but were
 // unreachable from the palette (PB-6272). Deriving the list means a new
 // workspace page is in the palette the moment it is in the registry.
 //
@@ -95,7 +95,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   projects: ["projects", "kanban", "项目"],
   autopilots: ["autopilot", "autopilots", "automation", "schedule", "cron", "webhook", "自动化", "定时"],
   agents: ["agents", "bots", "ai", "智能体"],
-  squads: ["squads", "teams", "小队", "团队"],
+  teams: ["teams", "team", "团队"],
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
   runtimes: ["runtimes", "environments", "machines", "运行时"],
   skills: ["skills", "library", "技能"],

@@ -34,7 +34,7 @@ const MAX_STACK_HEADS = 4;
 
 interface CommentTriggerChipsProps {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // Explicit @agent / @team mentions that will NOT trigger if posted as-is
   // (PB-4525 §2). Each renders as a named warning chip so the user sees WHICH
   // target won't run and why, not a silent no-op after sending.
   blocked?: CommentTriggerOutcome[];
@@ -54,8 +54,8 @@ function sourceLabel(source: string, t: IssuesT): string {
       return t(($) => $.comment.trigger_source_issue_assignee);
     case "mention_agent":
       return t(($) => $.comment.trigger_source_mention_agent);
-    case "mention_squad_leader":
-      return t(($) => $.comment.trigger_source_mention_squad_leader);
+    case "mention_team_leader":
+      return t(($) => $.comment.trigger_source_mention_team_leader);
     default:
       return t(($) => $.comment.trigger_source_unknown);
   }
@@ -63,15 +63,15 @@ function sourceLabel(source: string, t: IssuesT): string {
 
 // Assignee / @mention reasons are intentionally omitted: the header
 // (name · source) already says why they fire, so a reason line there would
-// just restate it. Only the squad-leader link (non-obvious) and the unknown
+// just restate it. Only the team-leader link (non-obvious) and the unknown
 // fallback carry information the header doesn't.
 function sourceReason(agent: CommentTriggerPreviewAgent, t: IssuesT): string | null {
   switch (agent.source) {
     case "issue_assignee":
     case "mention_agent":
       return null;
-    case "mention_squad_leader":
-      return t(($) => $.comment.trigger_reason_mention_squad_leader);
+    case "mention_team_leader":
+      return t(($) => $.comment.trigger_reason_mention_team_leader);
     default:
       return agent.reason || t(($) => $.comment.trigger_reason_unknown);
   }

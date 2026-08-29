@@ -24,7 +24,7 @@ import {
 import { errorCode } from "@patchbay/core/api";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
 import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@patchbay/core/runtimes";
 import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@patchbay/core/shortcuts";
 import { isImeComposing } from "@patchbay/core/utils";
@@ -68,7 +68,7 @@ function boldFenced(text: string): ReactNode {
 
 type RunConfirmData = {
   issueIds?: string[];
-  // `assign` gives the issue an agent/squad owner; `promote` moves an
+  // `assign` gives the issue an agent/team owner; `promote` moves an
   // already-owned issue out of the backlog category; `review` atomically
   // changes status and owner so review work cannot be left unclaimed.
   mode?: "assign" | "promote" | "review";
@@ -134,10 +134,10 @@ export function RunConfirmModal({
   const batchUpdate = useBatchUpdateIssues();
 
   // Handoff-support verdict, resolved entirely from warm client caches
-  // (useWorkspacePresencePrefetch keeps agents / squads / runtimes hot), so the
+  // (useWorkspacePresencePrefetch keeps agents / teams / runtimes hot), so the
   // note box settles on the first frame with no round-trip — the same shape as
   // the quick-create version gate. An agent assignee targets its own runtime; a
-  // squad targets its leader's, which the squad list gives us directly, so both
+  // team targets its leader's, which the team list gives us directly, so both
   // are knowable locally. `null` means "cannot tell" (assignee not in cache
   // yet, or no runtime bound) and leaves the box enabled: the note is a soft
   // gate, and a spurious warning is worse than a note an old daemon drops.
@@ -147,7 +147,7 @@ export function RunConfirmModal({
   const statusLabel = useStatusLabel(wsId);
   const { data: agents = [] } = useQuery({ ...agentListOptions(wsId), enabled: !!wsId });
   const { data: runtimes = [] } = useQuery({ ...runtimeListOptions(wsId), enabled: !!wsId });
-  const { data: squads = [] } = useQuery({ ...squadListOptions(wsId), enabled: !!wsId });
+  const { data: teams = [] } = useQuery({ ...teamListOptions(wsId), enabled: !!wsId });
   const isReview = d.mode === "review" && !!d.status;
   const targetAssigneeType = isReview ? reviewerType : d.assigneeType ?? null;
   const targetAssigneeId = isReview ? reviewerId : d.assigneeId ?? null;
@@ -156,10 +156,10 @@ export function RunConfirmModal({
     let agentId: string | undefined;
     if (targetAssigneeType === "agent") {
       agentId = targetAssigneeId;
-    } else if (targetAssigneeType === "squad") {
-      // A squad run is executed by its leader, so the leader's runtime is the
+    } else if (targetAssigneeType === "team") {
+      // A team run is executed by its leader, so the leader's runtime is the
       // one that has to render the note.
-      agentId = squads.find((s) => s.id === targetAssigneeId)?.leader_id;
+      agentId = teams.find((s) => s.id === targetAssigneeId)?.leader_id;
     }
     if (!agentId) return null;
     const agent = agents.find((a) => a.id === agentId);
@@ -167,7 +167,7 @@ export function RunConfirmModal({
     const runtime = runtimes.find((r) => r.id === agent.runtime_id);
     if (!runtime) return null;
     return handoffSupported(readRuntimeCliVersion(runtime.metadata));
-  }, [targetAssigneeType, targetAssigneeId, agents, runtimes, squads]);
+  }, [targetAssigneeType, targetAssigneeId, agents, runtimes, teams]);
 
   // Soft gate: an old runtime can't render the note. Disable the box but let
   // the assignment proceed (PB-3375 §6.3).
@@ -186,7 +186,7 @@ export function RunConfirmModal({
   const reviewReady =
     !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
   const noteApplies =
-    targetAssigneeType === "agent" || targetAssigneeType === "squad";
+    targetAssigneeType === "agent" || targetAssigneeType === "team";
 
   const applyTo = (extra: Partial<UpdateIssueRequest>) => {
     const base: UpdateIssueRequest = isReview
@@ -207,8 +207,8 @@ export function RunConfirmModal({
     return { ...d.additionalUpdates, ...base, ...extra };
   };
 
-  // The copy names whoever the issue is handed to; for a squad that is the
-  // squad itself, since its leader deciding who works is an internal detail.
+  // The copy names whoever the issue is handed to; for a team that is the
+  // team itself, since its leader deciding who works is an internal detail.
   const assigneeName =
     d.assigneeName ??
     (targetAssigneeType && targetAssigneeId

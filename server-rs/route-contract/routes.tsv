@@ -30,8 +30,8 @@ DELETE	/api/runtimes/{}
 DELETE	/api/skills/{}
 DELETE	/api/skills/{}/files/{}
 DELETE	/api/skills/{}/labels/{}
-DELETE	/api/squads/{}
-DELETE	/api/squads/{}/members
+DELETE	/api/teams/{}
+DELETE	/api/teams/{}/members
 DELETE	/api/tokens/{}
 DELETE	/api/v1/plugin/storage/{}/{}
 DELETE	/api/workspaces/{}
@@ -176,10 +176,10 @@ GET	/api/skills/search
 GET	/api/skills/{}
 GET	/api/skills/{}/files
 GET	/api/skills/{}/labels
-GET	/api/squads
-GET	/api/squads/{}
-GET	/api/squads/{}/members
-GET	/api/squads/{}/members/status
+GET	/api/teams
+GET	/api/teams/{}
+GET	/api/teams/{}/members
+GET	/api/teams/{}/members/status
 GET	/api/tasks/{}/messages
 GET	/api/tokens
 GET	/api/v1/plugin/context
@@ -233,7 +233,7 @@ PATCH	/api/notification-preferences
 PATCH	/api/properties/{}
 PATCH	/api/quick-actions/{}
 PATCH	/api/runtimes/{}
-PATCH	/api/squads/{}/members/role
+PATCH	/api/teams/{}/members/role
 PATCH	/api/v1/plugin/issues/{}
 PATCH	/api/workspaces/{}
 PATCH	/api/workspaces/{}/dingtalk/group-routes/{}
@@ -334,7 +334,7 @@ POST	/api/issues/{}/quick-actions/{}/render
 POST	/api/issues/{}/quick-actions/{}/run
 POST	/api/issues/{}/reactions
 POST	/api/issues/{}/rerun
-POST	/api/issues/{}/squad-evaluated
+POST	/api/issues/{}/team-evaluated
 POST	/api/issues/{}/subscribe
 POST	/api/issues/{}/tasks/{}/cancel
 POST	/api/issues/{}/unsubscribe
@@ -362,8 +362,8 @@ POST	/api/skills/import
 POST	/api/skills/{}/labels
 POST	/api/skills/{}/refresh
 POST	/api/slack/binding/redeem
-POST	/api/squads
-POST	/api/squads/{}/members
+POST	/api/teams
+POST	/api/teams/{}/members
 POST	/api/tasks/{}/cancel
 POST	/api/telegram/binding/redeem
 POST	/api/tokens
@@ -420,7 +420,7 @@ PUT	/api/projects/{}
 PUT	/api/projects/{}/resources/{}
 PUT	/api/skills/{}
 PUT	/api/skills/{}/files
-PUT	/api/squads/{}
+PUT	/api/teams/{}
 PUT	/api/v1/plugin/storage/{}/{}
 PUT	/api/workspaces/{}
 PUT	/api/workspaces/{}/mcp-servers/{}

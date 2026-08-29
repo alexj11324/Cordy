@@ -8,12 +8,12 @@
   "header": {
     "scope": {
       "all_label": "All",
-      "all_description": "Assigned to me, created by me, or involving my agents and squads",
+      "all_description": "Assigned to me, created by me, or involving my agents and teams",
       "assigned_label": "Assigned",
       "assigned_description": "Issues assigned to me",
       "created_label": "Created",
       "created_description": "Issues I created",
-      "agents_label": "My Agents and Squads",
+      "agents_label": "My Agents and Teams",
       "agents_description": "Issues assigned to my agents"
     },
     "filter_button": "Filter",

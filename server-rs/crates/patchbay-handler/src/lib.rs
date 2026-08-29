@@ -79,8 +79,8 @@ pub mod runtime_usage;
 pub mod session;
 pub mod skill;
 mod skill_import;
-pub mod squad;
-pub mod squad_briefing;
+pub mod team;
+pub mod team_briefing;
 pub mod state;
 mod subscriber_activity_listeners;
 pub mod task;
@@ -490,7 +490,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 patchbay_middleware::workspace::require_workspace,
             )),
         )
-        .merge(squad::router().route_layer(middleware::from_fn_with_state(
+        .merge(team::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             patchbay_middleware::workspace::require_workspace,
         )))
@@ -767,10 +767,10 @@ mod tests {
             "/api/projects/search?q=migration",
             "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources",
-            "/api/squads",
-            "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
-            "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members",
-            "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/status",
+            "/api/teams",
+            "/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members",
+            "/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/status",
             "/api/inbox",
             "/api/inbox/archived",
             "/api/inbox/unread-count",
@@ -879,7 +879,7 @@ mod tests {
             Request::post("/api/issues/CORD-14/quick-actions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/run")
                 .body(Body::empty())
                 .unwrap(),
-            Request::post("/api/issues/CORD-14/squad-evaluated")
+            Request::post("/api/issues/CORD-14/team-evaluated")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"outcome":"no_action"}"#))
                 .unwrap(),
@@ -932,26 +932,26 @@ mod tests {
             Request::delete("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
-            Request::delete("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members")
+            Request::delete("/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
                 .unwrap(),
-            Request::post("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members")
+            Request::post("/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12","role":"worker"}"#))
                 .unwrap(),
-            Request::post("/api/squads")
+            Request::post("/api/teams")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"name":"Migration","leader_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
                 .unwrap(),
-            Request::put("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+            Request::put("/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"name":"Migration Core"}"#))
                 .unwrap(),
-            Request::delete("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+            Request::delete("/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .body(Body::empty())
                 .unwrap(),
-            Request::patch("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/role")
+            Request::patch("/api/teams/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/role")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12","role":"reviewer"}"#))
                 .unwrap(),

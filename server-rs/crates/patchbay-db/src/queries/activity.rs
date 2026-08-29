@@ -112,7 +112,7 @@ WHERE id = $1"#
     }))
 }
 
-pub async fn has_squad_leader_no_action_evaluation_for_task(
+pub async fn has_team_leader_no_action_evaluation_for_task(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     issue_id: Uuid,
     agent_id: Uuid,
@@ -125,7 +125,7 @@ pub async fn has_squad_leader_no_action_evaluation_for_task(
   WHERE issue_id = $1
     AND actor_type = 'agent'
     AND actor_id = $2
-    AND action = 'squad_leader_evaluated'
+    AND action = 'team_leader_evaluated'
     AND details->>'outcome' = 'no_action'
     AND details->>'task_id' = $3::text
 ) AS exists"#,

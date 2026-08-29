@@ -227,9 +227,9 @@
         "label": "前往智能体",
         "description": "打开智能体列表。"
       },
-      "goSquads": {
-        "label": "前往小队",
-        "description": "打开小队列表。"
+      "goTeams": {
+        "label": "前往团队",
+        "description": "打开团队列表。"
       },
       "goUsage": {
         "label": "前往用量",
@@ -552,7 +552,7 @@
       },
       "mentions": {
         "label": "提及",
-        "description": "有人 @ 你时，包括 @all 和 @squad"
+        "description": "有人 @ 你时，包括 @all 和 @team"
       },
       "updates": {
         "label": "优先级与截止日期",

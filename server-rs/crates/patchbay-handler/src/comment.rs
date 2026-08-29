@@ -219,7 +219,7 @@ async fn create(
                         "parent_id is not a comment this task may reply under",
                     );
                 }
-                match activity::has_squad_leader_no_action_evaluation_for_task(
+                match activity::has_team_leader_no_action_evaluation_for_task(
                     &state.pool,
                     issue.id,
                     author_id,
@@ -230,15 +230,15 @@ async fn create(
                     Ok(Some(true)) => {
                         return error_response(
                             StatusCode::CONFLICT,
-                            "the squad leader has already recorded no_action for this task",
+                            "the team leader has already recorded no_action for this task",
                         )
                     }
                     Ok(Some(false)) | Ok(None) => {}
                     Err(error) => {
-                        tracing::warn!(%error, task_id = %task_id, "failed to check squad leader evaluation");
+                        tracing::warn!(%error, task_id = %task_id, "failed to check team leader evaluation");
                         return error_response(
                             StatusCode::INTERNAL_SERVER_ERROR,
-                            "failed to validate squad leader evaluation",
+                            "failed to validate team leader evaluation",
                         );
                     }
                 }
@@ -1064,7 +1064,7 @@ mod tests {
         );
         assert!(!clean_content(&content).contains('\0'));
         assert_eq!(mention_ids(&content, "agent"), vec![first, second]);
-        assert!(mention_ids(&content, "squad").is_empty());
+        assert!(mention_ids(&content, "team").is_empty());
     }
 
     #[test]

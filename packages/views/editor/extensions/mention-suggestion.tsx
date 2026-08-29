@@ -29,7 +29,7 @@ import type {
   ListIssuesCache,
   MemberWithUser,
   Agent,
-  Squad,
+  Team,
 } from "@patchbay/core/types";
 import { ListTodo } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -70,7 +70,7 @@ import { blockedReasonLabel } from "../../issues/blocked-trigger-copy";
 export interface MentionItem {
   id: string;
   label: string;
-  type: "member" | "agent" | "squad" | "issue" | "project" | "all";
+  type: "member" | "agent" | "team" | "issue" | "project" | "all";
   /** Optional grouping hint for injected context items. */
   group?: "current" | "recent" | "search";
   /** Secondary text shown beside the label (e.g. issue title) */
@@ -628,10 +628,10 @@ function MentionRow({
         // eslint-disable-next-line i18next/no-literal-string
         <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Agent</Badge>
       )}
-      {item.type === "squad" && (
-        // "Squad" is a glossary-protected product term — kept un-translated.
+      {item.type === "team" && (
+        // "Team" is a glossary-protected product term — kept un-translated.
         // eslint-disable-next-line i18next/no-literal-string
-        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Squad</Badge>
+        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Team</Badge>
       )}
     </button>
   );
@@ -712,7 +712,7 @@ export function createMentionSuggestion(
 
     const members: MemberWithUser[] = qc.getQueryData(workspaceKeys.members(wsId)) ?? [];
     const agents: Agent[] = qc.getQueryData(workspaceKeys.agents(wsId)) ?? [];
-    const squads: Squad[] = qc.getQueryData(workspaceKeys.squads(wsId)) ?? [];
+    const teams: Team[] = qc.getQueryData(workspaceKeys.teams(wsId)) ?? [];
     const listQueries = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
     const cachedResponse = listQueries[0]?.[1];
     const cachedIssues: Issue[] = cachedResponse ? flattenIssueBuckets(cachedResponse) : [];
@@ -762,7 +762,7 @@ export function createMentionSuggestion(
         .map((agent) => [agent.id, isAgentRuntimeBound(agent)]),
     );
 
-    const squadItems: MentionItem[] = squads
+    const teamItems: MentionItem[] = teams
       .filter(
         (s) =>
           !s.archived_at &&
@@ -771,7 +771,7 @@ export function createMentionSuggestion(
       .map((s) => ({
         id: s.id,
         label: s.name,
-        type: "squad" as const,
+        type: "team" as const,
         disabledReason:
           activeAgentRuntimeBinding.get(s.leader_id) === false
             ? ("agent_runtime_required" as const)
@@ -783,7 +783,7 @@ export function createMentionSuggestion(
     // for everyone the user hasn't mentioned yet on this device.
     const recency = getRecencyMap(wsId);
     const userItems = sortUserItemsByRecency(
-      [...memberItems, ...agentItems, ...squadItems],
+      [...memberItems, ...agentItems, ...teamItems],
       recency,
     );
 

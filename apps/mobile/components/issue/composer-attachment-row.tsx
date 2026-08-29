@@ -36,11 +36,11 @@ import { Text } from "@/components/ui/text";
 
 /** Mention chip data — composer-local state. No store, no cross-route
  *  sharing. The composer owns the array and passes it in. */
-export type MentionChipType = "member" | "agent" | "squad" | "all" | "issue";
+export type MentionChipType = "member" | "agent" | "team" | "all" | "issue";
 
 export interface MentionChip {
   type: MentionChipType;
-  /** UUID for member/agent/squad/issue; literal "all" for @all. */
+  /** UUID for member/agent/team/issue; literal "all" for @all. */
   id: string;
   /** Display name without leading `@`. For type "issue" this stores the
    *  human identifier (e.g. "PB-123"), which is what the chip + the

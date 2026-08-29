@@ -25,7 +25,7 @@ use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
     issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
-    squad, subscriber, task_usage, user, workspace,
+    team, subscriber, task_usage, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -83,8 +83,8 @@ pub fn router() -> Router<HandlerState> {
             post(run_quick_action),
         )
         .route(
-            "/api/issues/{id}/squad-evaluated",
-            post(record_squad_evaluated),
+            "/api/issues/{id}/team-evaluated",
+            post(record_team_evaluated),
         )
         .route(
             "/api/issues/{id}/pull-requests",
@@ -767,7 +767,7 @@ fn push_table_filters(
             let actor_type = actor
                 .get("type")
                 .and_then(Value::as_str)
-                .filter(|v| matches!(*v, "member" | "agent" | "squad"))
+                .filter(|v| matches!(*v, "member" | "agent" | "team"))
                 .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid scope.actor"))?;
             let id = parse_table_uuid(&actor["id"], "scope.actor")?;
             builder
@@ -796,10 +796,10 @@ fn push_table_filters(
                     .push_bind(user_id);
             }
             "involved" => {
-                builder.push(" AND ((i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='squad' AND i.assignee_id IN(SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id=sm.squad_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")))))");
+                builder.push(" AND ((i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='team' AND i.assignee_id IN(SELECT sm.team_id FROM team_member sm JOIN team s ON s.id=sm.team_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")))))");
             }
             "any" => {
-                builder.push(" AND ((i.assignee_type='member' AND i.assignee_id=").push_bind(user_id).push(") OR (i.creator_type='member' AND i.creator_id=").push_bind(user_id).push(") OR (i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='squad' AND i.assignee_id IN(SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id=sm.squad_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push("))))))");
+                builder.push(" AND ((i.assignee_type='member' AND i.assignee_id=").push_bind(user_id).push(") OR (i.creator_type='member' AND i.creator_id=").push_bind(user_id).push(") OR (i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='team' AND i.assignee_id IN(SELECT sm.team_id FROM team_member sm JOIN team s ON s.id=sm.team_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push("))))))");
             }
             _ => {
                 return Err(error_response(
@@ -823,7 +823,7 @@ fn push_table_filters(
             .collect::<Vec<_>>();
         if values
             .iter()
-            .any(|v| !matches!(v.as_str(), "member" | "agent" | "squad"))
+            .any(|v| !matches!(v.as_str(), "member" | "agent" | "team"))
         {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
@@ -873,7 +873,7 @@ fn push_table_filters(
                     let actor_type = actor
                         .get("type")
                         .and_then(Value::as_str)
-                        .filter(|v| matches!(*v, "member" | "agent" | "squad"))
+                        .filter(|v| matches!(*v, "member" | "agent" | "team"))
                         .ok_or_else(|| {
                             error_response(
                                 StatusCode::BAD_REQUEST,
@@ -2306,7 +2306,7 @@ struct QuickCreateRequest {
     #[serde(default)]
     agent_id: String,
     #[serde(default)]
-    squad_id: String,
+    team_id: String,
     prompt: String,
     #[serde(default)]
     priority: String,
@@ -2330,11 +2330,11 @@ async fn quick_create_issue(
         return error_response(StatusCode::BAD_REQUEST, "prompt is required");
     }
     let has_agent = !request.agent_id.trim().is_empty();
-    let has_squad = !request.squad_id.trim().is_empty();
-    if has_agent == has_squad {
+    let has_team = !request.team_id.trim().is_empty();
+    if has_agent == has_team {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "exactly one of agent_id or squad_id is required",
+            "exactly one of agent_id or team_id is required",
         );
     }
     let priority = request.priority.trim().to_lowercase();
@@ -2356,8 +2356,8 @@ async fn quick_create_issue(
         Ok(id) => id,
         Err(response) => return response,
     };
-    let requested_assignee = if has_squad {
-        ("squad", request.squad_id.trim())
+    let requested_assignee = if has_team {
+        ("team", request.team_id.trim())
     } else {
         ("agent", request.agent_id.trim())
     };
@@ -2366,8 +2366,8 @@ async fn quick_create_issue(
         Err(_) => {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                if has_squad {
-                    "invalid squad_id"
+                if has_team {
+                    "invalid team_id"
                 } else {
                     "invalid agent_id"
                 },
@@ -2379,20 +2379,20 @@ async fn quick_create_issue(
     {
         return error_response(StatusCode::FORBIDDEN, &message);
     }
-    let mut squad_id = None;
-    let agent_id = if has_squad {
-        let id = match Uuid::parse_str(request.squad_id.trim()) {
+    let mut team_id = None;
+    let agent_id = if has_team {
+        let id = match Uuid::parse_str(request.team_id.trim()) {
             Ok(id) => id,
-            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid squad_id"),
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid team_id"),
         };
-        let selected = match squad::get_squad_in_workspace(&state.pool, id, workspace_id).await {
+        let selected = match team::get_team_in_workspace(&state.pool, id, workspace_id).await {
             Ok(Some(value)) if value.archived_at.is_none() => value,
-            Ok(_) => return error_response(StatusCode::NOT_FOUND, "squad not found"),
+            Ok(_) => return error_response(StatusCode::NOT_FOUND, "team not found"),
             Err(_) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load squad");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load team");
             }
         };
-        squad_id = Some(id);
+        team_id = Some(id);
         selected.leader_id
     } else {
         match Uuid::parse_str(request.agent_id.trim()) {
@@ -2452,7 +2452,7 @@ async fn quick_create_issue(
             workspace_id,
             context.member.user_id,
             agent_id,
-            squad_id,
+            team_id,
             prompt,
             &priority,
             request.due_date.trim(),
@@ -2572,12 +2572,12 @@ async fn preview_trigger(
     for (issue, _, _) in &candidates {
         let target_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
             (Some("agent"), Some(agent_id)) => Some(agent_id),
-            (Some("squad"), Some(squad_id)) => {
-                squad::get_squad_in_workspace(&state.pool, squad_id, workspace_id)
+            (Some("team"), Some(team_id)) => {
+                team::get_team_in_workspace(&state.pool, team_id, workspace_id)
                     .await
                     .ok()
                     .flatten()
-                    .map(|squad| squad.leader_id)
+                    .map(|team| team.leader_id)
             }
             _ => None,
         };
@@ -2857,14 +2857,14 @@ async fn rerun_issue(
     } else {
         match (issue.assignee_type.as_deref(), issue.assignee_id) {
             (Some("agent"), Some(agent_id)) => agent_id,
-            (Some("squad"), Some(squad_id)) => {
-                match squad::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id).await
+            (Some("team"), Some(team_id)) => {
+                match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await
                 {
-                    Ok(Some(squad)) => squad.leader_id,
+                    Ok(Some(team)) => team.leader_id,
                     _ => {
                         return error_response(
                             StatusCode::BAD_REQUEST,
-                            "issue is assigned to a squad but squad not found",
+                            "issue is assigned to a team but team not found",
                         );
                     }
                 }
@@ -2872,7 +2872,7 @@ async fn rerun_issue(
             _ => {
                 return error_response(
                     StatusCode::BAD_REQUEST,
-                    "issue is not assigned to an agent or squad",
+                    "issue is not assigned to an agent or team",
                 );
             }
         }
@@ -3032,10 +3032,10 @@ async fn run_quick_action(
     .ok()
     .flatten()
     .expect("created comment");
-    let trigger = if action.assignee_type == "squad" {
+    let trigger = if action.assignee_type == "team" {
         state
             .tasks
-            .enqueue_task_for_squad_leader(
+            .enqueue_task_for_team_leader(
                 &issue,
                 target_agent.id,
                 action.assignee_id,
@@ -3073,17 +3073,17 @@ async fn run_quick_action(
 }
 
 #[derive(Debug, Deserialize)]
-struct SquadEvaluationRequest {
+struct TeamEvaluationRequest {
     outcome: String,
     #[serde(default)]
     reason: String,
 }
-async fn record_squad_evaluated(
+async fn record_team_evaluated(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
     headers: HeaderMap,
-    Json(request): Json<SquadEvaluationRequest>,
+    Json(request): Json<TeamEvaluationRequest>,
 ) -> Response {
     if !matches!(request.outcome.as_str(), "action" | "no_action" | "failed") {
         return error_response(
@@ -3095,22 +3095,22 @@ async fn record_squad_evaluated(
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    let Some(squad_id) = issue
+    let Some(team_id) = issue
         .assignee_id
-        .filter(|_| issue.assignee_type.as_deref() == Some("squad"))
+        .filter(|_| issue.assignee_type.as_deref() == Some("team"))
     else {
-        return error_response(StatusCode::BAD_REQUEST, "issue is not assigned to a squad");
+        return error_response(StatusCode::BAD_REQUEST, "issue is not assigned to a team");
     };
     let selected =
-        match squad::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id).await {
+        match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await {
             Ok(Some(value)) => value,
-            _ => return error_response(StatusCode::NOT_FOUND, "squad not found"),
+            _ => return error_response(StatusCode::NOT_FOUND, "team not found"),
         };
     let (actor_type, actor_id, task_id) = mutation_actor(&state, &context, &headers).await;
     if actor_type != "agent" || actor_id != selected.leader_id {
         return error_response(
             StatusCode::FORBIDDEN,
-            "only the squad leader agent can record evaluations",
+            "only the team leader agent can record evaluations",
         );
     }
     let Some(task_id) = task_id else {
@@ -3120,14 +3120,14 @@ async fn record_squad_evaluated(
         Ok(Some(task)) if task.issue_id == Some(issue.id) => task,
         _ => return error_response(StatusCode::BAD_REQUEST, "task does not belong to issue"),
     };
-    let details = json!({"squad_id":selected.id,"task_id":task.id,"outcome":request.outcome,"reason":request.reason});
+    let details = json!({"team_id":selected.id,"task_id":task.id,"outcome":request.outcome,"reason":request.reason});
     match activity::create_activity(
         &state.pool,
         issue.workspace_id,
         issue.id,
         Some("agent"),
         Some(actor_id),
-        "squad_leader_evaluated",
+        "team_leader_evaluated",
         &details,
         patchbay_db::dbid::new_v7(),
     )
@@ -4549,11 +4549,11 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
     if let Some(user_id) = filters.involves_user_id {
         query.push(" AND ((i.assignee_type = 'agent' AND i.assignee_id IN (SELECT a.id FROM agent a WHERE a.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND a.owner_id = ").push_bind(user_id)
-            .push(")) OR (i.assignee_type = 'squad' AND i.assignee_id IN (SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id WHERE s.workspace_id = ")
+            .push(")) OR (i.assignee_type = 'team' AND i.assignee_id IN (SELECT sm.team_id FROM team_member sm JOIN team s ON s.id = sm.team_id WHERE s.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND sm.member_type = 'member' AND sm.member_id = ").push_bind(user_id)
-            .push(" UNION SELECT s.id FROM squad s JOIN agent a ON a.id = s.leader_id WHERE s.workspace_id = ")
+            .push(" UNION SELECT s.id FROM team s JOIN agent a ON a.id = s.leader_id WHERE s.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND a.workspace_id = ").push_bind(filters.workspace_id).push(" AND a.owner_id = ").push_bind(user_id)
-            .push(" UNION SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id = sm.squad_id JOIN agent a ON a.id = sm.member_id WHERE s.workspace_id = ")
+            .push(" UNION SELECT sm.team_id FROM team_member sm JOIN team s ON s.id = sm.team_id JOIN agent a ON a.id = sm.member_id WHERE s.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND sm.member_type = 'agent' AND a.workspace_id = ").push_bind(filters.workspace_id).push(" AND a.owner_id = ").push_bind(user_id)
             .push(")))");
     }
@@ -4694,7 +4694,7 @@ async fn list_issues_with_params(
     let assignee_types = comma_list(params.assignee_types.as_deref());
     if assignee_types
         .iter()
-        .any(|kind| !matches!(kind.as_str(), "member" | "agent" | "squad"))
+        .any(|kind| !matches!(kind.as_str(), "member" | "agent" | "team"))
     {
         return error_response(StatusCode::BAD_REQUEST, "invalid assignee_types");
     }
@@ -5825,10 +5825,10 @@ RETURNING *"#,
             .await;
         if let Some(trigger) = trigger {
             let actor_user_id = (actor_type == "member").then_some(actor_id);
-            let result = if trigger.assignee_type == "squad" {
+            let result = if trigger.assignee_type == "team" {
                 state
                     .tasks
-                    .enqueue_task_for_squad_leader_with_handoff(
+                    .enqueue_task_for_team_leader_with_handoff(
                         &updated,
                         trigger.agent_id,
                         updated.assignee_id.unwrap_or_default(),
@@ -6296,24 +6296,24 @@ async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, iss
         }
     }
 
-    let (mention, target_agent, squad_id) =
+    let (mention, target_agent, team_id) =
         match (parent.assignee_type.as_deref(), parent.assignee_id) {
             (Some("agent"), Some(agent_id)) => (
                 format!("[@assignee](mention://agent/{agent_id}) "),
                 Some(agent_id),
                 None,
             ),
-            (Some("squad"), Some(squad_id)) => {
+            (Some("team"), Some(team_id)) => {
                 let leader =
-                    squad::get_squad_in_workspace(&state.pool, squad_id, parent.workspace_id)
+                    team::get_team_in_workspace(&state.pool, team_id, parent.workspace_id)
                         .await
                         .ok()
                         .flatten()
-                        .map(|squad| squad.leader_id);
+                        .map(|team| team.leader_id);
                 (
-                    format!("[@squad](mention://squad/{squad_id}) "),
+                    format!("[@team](mention://team/{team_id}) "),
                     leader,
-                    Some(squad_id),
+                    Some(team_id),
                 )
             }
             _ => (String::new(), None, None),
@@ -6379,10 +6379,10 @@ async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, iss
         chat_session_id: String::new(),
     });
     if let (Some(agent_id), Some(comment_id)) = (target_agent, comment_id) {
-        let result = if let Some(squad_id) = squad_id {
+        let result = if let Some(team_id) = team_id {
             state
                 .tasks
-                .enqueue_task_for_squad_leader(&parent, agent_id, squad_id, Some(comment_id))
+                .enqueue_task_for_team_leader(&parent, agent_id, team_id, Some(comment_id))
                 .await
         } else {
             state
@@ -6742,7 +6742,7 @@ async fn create_issue(
     if request
         .assignee_type
         .as_deref()
-        .is_some_and(|kind| !matches!(kind, "member" | "agent" | "squad"))
+        .is_some_and(|kind| !matches!(kind, "member" | "agent" | "team"))
     {
         return error_response(StatusCode::BAD_REQUEST, "invalid assignee_type");
     }
@@ -6980,22 +6980,22 @@ async fn validate_assignee(
                 return Err("you do not have permission to invoke this agent".to_string());
             }
         }
-        "squad" => {
-            let target = squad::get_squad_in_workspace(&state.pool, id, workspace_id)
+        "team" => {
+            let target = team::get_team_in_workspace(&state.pool, id, workspace_id)
                 .await
                 .ok()
                 .flatten()
-                .filter(|squad| squad.archived_at.is_none())
-                .ok_or_else(|| "assignee squad not found in this workspace".to_string())?;
+                .filter(|team| team.archived_at.is_none())
+                .ok_or_else(|| "assignee team not found in this workspace".to_string())?;
             let leader = agent::get_agent_in_workspace(&state.pool, target.leader_id, workspace_id)
                 .await
                 .ok()
                 .flatten()
                 .filter(|agent| agent.archived_at.is_none())
-                .ok_or_else(|| "squad leader is unavailable".to_string())?;
+                .ok_or_else(|| "team leader is unavailable".to_string())?;
             if !can_member_invoke_agent(state, context.member.user_id, workspace_id, &leader).await
             {
-                return Err("you do not have permission to invoke this squad".to_string());
+                return Err("you do not have permission to invoke this team".to_string());
             }
         }
         _ => return Err("invalid assignee_type".to_string()),
@@ -7246,7 +7246,7 @@ fn actor_filters(raw: Option<&str>, field: &str) -> Result<Vec<ActorFilter>, Str
             let (actor_type, id) = value
                 .split_once(':')
                 .ok_or_else(|| format!("invalid {field}"))?;
-            if !matches!(actor_type, "member" | "agent" | "squad") || id.trim().is_empty() {
+            if !matches!(actor_type, "member" | "agent" | "team") || id.trim().is_empty() {
                 return Err(format!("invalid {field}"));
             }
             Ok(ActorFilter {

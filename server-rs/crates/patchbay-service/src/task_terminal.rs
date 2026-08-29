@@ -216,7 +216,7 @@ impl TaskService {
         // comment, so synthesize a fallback from the final output when the
         // agent never posted one during execution.
         if let Some(issue_id) = task.issue_id {
-            let suppress_no_action = has_squad_leader_no_action_for_task(&self.pool, &task).await;
+            let suppress_no_action = has_team_leader_no_action_for_task(&self.pool, &task).await;
             let agent_commented = patchbay_db::queries::comment::has_agent_commented_since(
                 &self.pool,
                 issue_id,
@@ -711,7 +711,7 @@ impl TaskService {
     }
 
     /// Manual rerun endpoint core. Target resolution: source task's agent
-    /// (with leader/squad provenance + trigger inheritance) or the issue's
+    /// (with leader/team provenance + trigger inheritance) or the issue's
     /// current assignee. A block fails closed before anything mutates
     /// (PB-4525); the pending-slot clear/enqueue pair retries once against a
     /// concurrent system retry.
@@ -731,7 +731,7 @@ impl TaskService {
         let mut trigger_comment_id = trigger_comment_id_in;
         let agent_id: Uuid;
         let mut is_leader = false;
-        let mut squad_id: Option<Uuid> = None;
+        let mut team_id: Option<Uuid> = None;
         let mut coalesced_comment_ids: Vec<Uuid> = Vec::new();
         if let Some(source_task_id) = source_task_id {
             let source_task = get_agent_task(&self.pool, source_task_id)
@@ -745,7 +745,7 @@ impl TaskService {
             }
             agent_id = source_task.agent_id;
             is_leader = source_task.is_leader_task;
-            squad_id = source_task.squad_id;
+            team_id = source_task.team_id;
             // Carry trigger provenance so a per-row rerun stays comment-
             // triggered; only override when the caller passed none.
             if trigger_comment_id.is_none() {
@@ -766,26 +766,26 @@ impl TaskService {
         } else {
             match (issue.assignee_type.as_deref(), issue.assignee_id) {
                 (Some("agent"), Some(assignee)) => agent_id = assignee,
-                (Some("squad"), Some(squad_assignee)) => {
-                    let squad = patchbay_db::queries::squad::get_squad(&self.pool, squad_assignee)
+                (Some("team"), Some(team_assignee)) => {
+                    let team = patchbay_db::queries::team::get_team(&self.pool, team_assignee)
                         .await
                         .map_err(|_| {
                             TaskServiceError::Internal(
-                                "issue is assigned to a squad but squad not found".into(),
+                                "issue is assigned to a team but team not found".into(),
                             )
                         })?
                         .ok_or_else(|| {
                             TaskServiceError::Internal(
-                                "issue is assigned to a squad but squad not found".into(),
+                                "issue is assigned to a team but team not found".into(),
                             )
                         })?;
-                    agent_id = squad.leader_id;
+                    agent_id = team.leader_id;
                     is_leader = true;
-                    squad_id = Some(squad_assignee);
+                    team_id = Some(team_assignee);
                 }
                 _ => {
                     return Err(TaskServiceError::Internal(
-                        "issue is not assigned to an agent or squad".into(),
+                        "issue is not assigned to an agent or team".into(),
                     ));
                 }
             }
@@ -813,7 +813,7 @@ impl TaskService {
                 trigger_comment_id,
                 coalesced_comment_ids.clone(),
                 is_leader,
-                squad_id,
+                team_id,
                 actor_user_id,
                 source_task_id,
                 &mut cancelled_count,
@@ -835,7 +835,7 @@ impl TaskService {
                     trigger_comment_id,
                     coalesced_comment_ids,
                     is_leader,
-                    squad_id,
+                    team_id,
                     actor_user_id,
                     source_task_id,
                     &mut cancelled_count,
@@ -860,7 +860,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         coalesced_comment_ids: Vec<Uuid>,
         is_leader: bool,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         actor_user_id: Option<Uuid>,
         source_task_id: Option<Uuid>,
         cancelled_count: &mut usize,
@@ -895,7 +895,7 @@ impl TaskService {
             trigger_comment_id,
             coalesced_comment_ids,
             is_leader,
-            squad_id,
+            team_id,
             actor_user_id,
             source_task_id,
         )
@@ -962,7 +962,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         coalesced_comment_ids: Vec<Uuid>,
         is_leader: bool,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         actor_user_id: Option<Uuid>,
         rerun_of_task_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
@@ -989,7 +989,7 @@ impl TaskService {
             trigger_comment_id,
             coalesced_comment_ids,
             is_leader,
-            squad_id,
+            team_id,
             true,
             "",
             actor_user_id,
@@ -1313,11 +1313,11 @@ async fn lock_chat_session_for_task_write(
     Ok(())
 }
 
-async fn has_squad_leader_no_action_for_task(pool: &sqlx::PgPool, task: &AgentTaskQueue) -> bool {
+async fn has_team_leader_no_action_for_task(pool: &sqlx::PgPool, task: &AgentTaskQueue) -> bool {
     let Some(issue_id) = task.issue_id else {
         return false;
     };
-    match patchbay_db::queries::activity::has_squad_leader_no_action_evaluation_for_task(
+    match patchbay_db::queries::activity::has_team_leader_no_action_evaluation_for_task(
         pool,
         issue_id,
         task.agent_id,
@@ -1330,7 +1330,7 @@ async fn has_squad_leader_no_action_for_task(pool: &sqlx::PgPool, task: &AgentTa
             tracing::warn!(
                 task_id = %task.id,
                 error = %err,
-                "checking squad leader no_action evaluation failed"
+                "checking team leader no_action evaluation failed"
             );
             false
         }

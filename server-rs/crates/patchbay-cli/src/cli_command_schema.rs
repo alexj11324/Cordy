@@ -58,8 +58,8 @@ pub(super) enum Command {
     User(UserArgs),
     #[command(about = "Work with workspaces")]
     Workspace(WorkspaceArgs),
-    #[command(about = "Work with squads")]
-    Squad(SquadArgs),
+    #[command(about = "Work with teams")]
+    Team(TeamArgs),
     #[command(about = "Work with issue labels")]
     Label(LabelArgs),
     #[command(about = "Work with projects")]

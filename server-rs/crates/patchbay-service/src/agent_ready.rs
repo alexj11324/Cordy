@@ -82,7 +82,7 @@ const RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE: &str = "not_executable";
 ///
 /// The error case is DB lookup failure only. Callers that treat a transient
 /// error as "do not skip" (the autopilot admission gate) swallow it; callers
-/// needing a hard yes/no (squad-leader pre-enqueue checks) fail closed.
+/// needing a hard yes/no (team-leader pre-enqueue checks) fail closed.
 pub async fn agent_readiness<'e, E>(executor: E, agent: &Agent) -> anyhow::Result<AgentVerdict>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,

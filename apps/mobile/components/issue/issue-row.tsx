@@ -23,12 +23,12 @@
  *     (root AGENTS.md "Data identity must agree").
  *   - Mirrors web `packages/views/issues/components/list-row.tsx:52`:
  *     render the assignee whenever `assignee_type && assignee_id` are both
- *     truthy — `ActorAvatar` itself handles member / agent / squad rendering
- *     (rounded square + people glyph or `squad.avatar_url` for squads). A
+ *     truthy — `ActorAvatar` itself handles member / agent / team rendering
+ *     (rounded square + people glyph or `team.avatar_url` for teams). A
  *     future fourth enum value falls through to ActorAvatar's initials
  *     fallback, which is the real "enum drift downgrades, not crashes"
  *     behavior — earlier whitelist (member/agent only) silently dropped
- *     squad assignees instead.
+ *     team assignees instead.
  */
 import { Pressable, View } from "react-native";
 import type { Issue } from "@patchbay/core/types";

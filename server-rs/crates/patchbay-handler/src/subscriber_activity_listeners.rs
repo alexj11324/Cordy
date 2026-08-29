@@ -621,7 +621,7 @@ fn is_assignment_recipient(user_type: &str) -> bool {
 fn parse_mentions(content: &str) -> Vec<Mention> {
     static MENTION_RE: OnceLock<Regex> = OnceLock::new();
     let re = MENTION_RE.get_or_init(|| {
-        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)")
+        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|team|issue|all)/([0-9a-fA-F-]+|all)\)")
             .expect("mention regex is valid")
     });
     let mut seen = HashSet::new();
@@ -678,7 +678,7 @@ mod tests {
     fn only_direct_assignee_types_are_subscriber_recipients() {
         assert!(is_assignment_recipient("member"));
         assert!(is_assignment_recipient("agent"));
-        assert!(!is_assignment_recipient("squad"));
+        assert!(!is_assignment_recipient("team"));
         assert!(!is_assignment_recipient("system"));
     }
 }

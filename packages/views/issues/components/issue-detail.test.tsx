@@ -83,8 +83,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "agents"],
     queryFn: () => Promise.resolve([]),
   }),
-  squadListOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "squads"],
+  teamListOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "teams"],
     queryFn: () => Promise.resolve([]),
   }),
   assigneeFrequencyOptions: () => ({

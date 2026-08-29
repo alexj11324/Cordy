@@ -23,7 +23,7 @@ use crate::execenv::execenv::{
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
 use crate::prompt::{
-    backend_resume_continuity_notice, comment_reply_threads, task_is_squad_leader,
+    backend_resume_continuity_notice, comment_reply_threads, task_is_team_leader,
 };
 use crate::thread_name::derive_task_thread_name_from_task;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
@@ -728,7 +728,7 @@ fn task_context(task: &Task, agent: &AgentData, provider: &str) -> TaskContextFo
             .unwrap_or_default(),
         quick_create_prompt: task.quick_create_prompt.clone(),
         handoff_note: task.handoff_note.clone(),
-        is_squad_leader: task_is_squad_leader(task),
+        is_team_leader: task_is_team_leader(task),
         workspace_context: task.workspace_context.clone(),
         connected_apps: task
             .connected_apps

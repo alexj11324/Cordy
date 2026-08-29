@@ -1,9 +1,9 @@
 /**
  * "My Issues" tab. Three scopes — assigned / created / agents — mirroring
  * web's `packages/views/my-issues/components/my-issues-page.tsx:48-65`. The
- * `agents` scope label is "Agents and Squads" because the backend predicate
+ * `agents` scope label is "Agents and Teams" because the backend predicate
  * (`involves_user_id`, PB-2397) surfaces both the user's owned agents and
- * squads they're involved in (member / leader / has an owned agent inside).
+ * teams they're involved in (member / leader / has an owned agent inside).
  *
  * Issues are grouped by status CATEGORY using SectionList in
  * `BOARD_CATEGORIES` order; empty sections are filtered out so the screen
@@ -54,10 +54,10 @@ import { THEME } from "@/lib/theme";
 
 // Mobile pill row has tight width on SE3 (375pt). Three pills + Filter icon
 // must fit in 343pt usable space, so the agents scope renders "Agents" — the
-// full "Agents and Squads" label (~135pt) blows past safe limits and breaks
+// full "Agents and Teams" label (~135pt) blows past safe limits and breaks
 // under Dynamic Type. Semantics unchanged: same backend predicate
-// (`involves_user_id`, PB-2397) covers owned agents + related squads; the
-// empty state copy still says "agents or squads".
+// (`involves_user_id`, PB-2397) covers owned agents + related teams; the
+// empty state copy still says "agents or teams".
 const SCOPES: { value: MyIssuesScope; label: string }[] = [
   { value: "assigned", label: "Assigned" },
   { value: "created", label: "Created" },
@@ -369,6 +369,6 @@ function emptyMessageForScope(scope: MyIssuesScope): string {
     case "created":
       return "You haven't created any issues.";
     case "agents":
-      return "No issues assigned to your agents or squads yet.";
+      return "No issues assigned to your agents or teams yet.";
   }
 }

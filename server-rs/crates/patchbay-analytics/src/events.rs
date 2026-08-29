@@ -34,7 +34,7 @@ pub const EVENT_ONBOARDING_COMPLETED: &str = "onboarding_completed";
 pub const EVENT_CLOUD_WAITLIST_JOINED: &str = "cloud_waitlist_joined";
 pub const EVENT_FEEDBACK_SUBMITTED: &str = "feedback_submitted";
 pub const EVENT_CONTACT_SALES_SUBMITTED: &str = "contact_sales_submitted";
-pub const EVENT_SQUAD_CREATED: &str = "squad_created";
+pub const EVENT_TEAM_CREATED: &str = "team_created";
 pub const EVENT_AUTOPILOT_CREATED: &str = "autopilot_created";
 
 pub const EVENT_SCHEMA_VERSION: i64 = 2;
@@ -62,7 +62,7 @@ static METRICS_ONLY_EVENTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         EVENT_CLOUD_WAITLIST_JOINED,
         EVENT_FEEDBACK_SUBMITTED,
         EVENT_CONTACT_SALES_SUBMITTED,
-        EVENT_SQUAD_CREATED,
+        EVENT_TEAM_CREATED,
         EVENT_AUTOPILOT_CREATED,
         // High-volume runtime / autopilot execution-lifecycle telemetry.
         EVENT_RUNTIME_REGISTERED,
@@ -513,16 +513,16 @@ pub fn chat_message_sent(
 }
 
 /// Describes the autopilot's configured target. `agent_id` is always the agent
-/// that will actually execute the work (the squad leader for squad autopilots);
-/// `assignee_type`/`squad_id` record the original configuration so reports can
-/// tell a solo-agent autopilot apart from a squad one.
+/// that will actually execute the work (the team leader for team autopilots);
+/// `assignee_type`/`team_id` record the original configuration so reports can
+/// tell a solo-agent autopilot apart from a team one.
 #[derive(Debug, Clone, Default)]
 pub struct AutopilotAssignee {
     pub agent_id: String,
-    /// "agent" or "squad".
+    /// "agent" or "team".
     pub assignee_type: String,
-    /// Empty when assignee_type != "squad".
-    pub squad_id: String,
+    /// Empty when assignee_type != "team".
+    pub team_id: String,
 }
 
 pub fn autopilot_run_started(
@@ -929,21 +929,21 @@ pub fn contact_sales_submitted(
     }
 }
 
-/// Fires when a workspace member or admin creates a new squad.
+/// Fires when a workspace member or admin creates a new team.
 /// `member_count` is the seed size at creation time.
-pub fn squad_created(
+pub fn team_created(
     actor_id: &str,
     workspace_id: &str,
-    squad_id: &str,
+    team_id: &str,
     member_count: i64,
 ) -> Event {
     Event {
-        name: EVENT_SQUAD_CREATED.to_string(),
+        name: EVENT_TEAM_CREATED.to_string(),
         distinct_id: actor_id.to_string(),
         workspace_id: workspace_id.to_string(),
         properties: Some(with_core_properties(
             Props::from_iter([
-                ("squad_id".to_string(), s(squad_id)),
+                ("team_id".to_string(), s(team_id)),
                 ("member_count".to_string(), n(member_count)),
             ]),
             &CoreProperties {
@@ -1021,8 +1021,8 @@ fn autopilot_run_event(
     if !assignee.assignee_type.is_empty() {
         props.insert("assignee_type".to_string(), s(&assignee.assignee_type));
     }
-    if !assignee.squad_id.is_empty() {
-        props.insert("squad_id".to_string(), s(&assignee.squad_id));
+    if !assignee.team_id.is_empty() {
+        props.insert("team_id".to_string(), s(&assignee.team_id));
     }
     Event {
         name: name.to_string(),
@@ -1063,7 +1063,7 @@ mod tests {
             EVENT_CLOUD_WAITLIST_JOINED,
             EVENT_FEEDBACK_SUBMITTED,
             EVENT_CONTACT_SALES_SUBMITTED,
-            EVENT_SQUAD_CREATED,
+            EVENT_TEAM_CREATED,
             EVENT_AUTOPILOT_CREATED,
         ] {
             assert!(is_metrics_only(name), "{name}");
@@ -1187,8 +1187,8 @@ mod tests {
     fn autopilot_run_events_shape() {
         let assignee = AutopilotAssignee {
             agent_id: "ag".into(),
-            assignee_type: "squad".into(),
-            squad_id: "sq".into(),
+            assignee_type: "team".into(),
+            team_id: "team".into(),
         };
         let started = autopilot_run_started("u", "ws", "ap", "run", "daily", &assignee, "schedule");
         let p = started.properties.as_ref().unwrap();
@@ -1196,8 +1196,8 @@ mod tests {
         assert_eq!(p["trigger_kind"], json!("schedule"));
         assert_eq!(p["cadence"], json!("daily"));
         assert_eq!(p["autopilot_id"], json!("ap"));
-        assert_eq!(p["assignee_type"], json!("squad"));
-        assert_eq!(p["squad_id"], json!("sq"));
+        assert_eq!(p["assignee_type"], json!("team"));
+        assert_eq!(p["team_id"], json!("team"));
         assert_eq!(p["source"], json!("autopilot"));
         assert!(!p.contains_key("duration_ms"));
 

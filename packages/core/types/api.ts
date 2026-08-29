@@ -87,7 +87,7 @@ export interface IssueTriggerPreviewParams {
 }
 
 /** One issue that WILL start a run under the prospective write. `agent_id` is
- *  the runnable agent (squad leader for squads). `handoff_supported` is the
+ *  the runnable agent (team leader for teams). `handoff_supported` is the
  *  soft-gate signal: false when the target runtime is too old to render a
  *  handoff note (gray the note box; the assignment still works). */
 export interface IssueTriggerPreviewItem {
@@ -127,7 +127,7 @@ export interface ListIssuesParams {
   assignee_ids?: string[];
   /**
    * Narrow to issues assigned to the given actor kinds (member / agent /
-   * squad). Same semantics as `ListGroupedIssuesParams.assignee_types` —
+   * team). Same semantics as `ListGroupedIssuesParams.assignee_types` —
    * powers the workspace Members/Agents tabs server-side.
    */
   assignee_types?: IssueAssigneeType[];
@@ -151,7 +151,7 @@ export interface ListIssuesParams {
   ids?: string[];
   /**
    * Widen the assignee filter to issues where the user is the *indirect*
-   * assignee — assignee is one of the user's owned agents, or a squad that
+   * assignee — assignee is one of the user's owned agents, or a team that
    * involves the user (human member / leader-via-owned-agent / agent member
    * owned by the user). Direct member assignment is intentionally excluded:
    * `involves_user_id` and `assignee_id=<user>` (tab "Assigned to me") produce

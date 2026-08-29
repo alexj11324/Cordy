@@ -157,7 +157,7 @@ pub struct AgentTaskQueue {
     pub runtime_mcp_overlay: Option<serde_json::Value>,
     pub session_id: Option<String>,
     pub session_rollout_missing: bool,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub started_at: Option<DateTime<Utc>>,
     pub status: String,
     pub trigger_comment_id: Option<Uuid>,
@@ -281,7 +281,7 @@ pub struct AutopilotRun {
     pub reason_code: Option<String>,
     pub result: Option<serde_json::Value>,
     pub source: String,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub status: String,
     pub task_id: Option<Uuid>,
     pub trigger_id: Option<Uuid>,
@@ -1227,9 +1227,9 @@ pub struct SkillToLabel {
     pub skill_id: Uuid,
 }
 
-/// Row of `squad`.
+/// Row of `team`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct Squad {
+pub struct Team {
     pub archived_at: Option<DateTime<Utc>>,
     pub archived_by: Option<Uuid>,
     pub avatar_url: Option<String>,
@@ -1244,15 +1244,15 @@ pub struct Squad {
     pub workspace_id: Uuid,
 }
 
-/// Row of `squad_member`.
+/// Row of `team_member`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct SquadMember {
+pub struct TeamMember {
     pub created_at: DateTime<Utc>,
     pub id: Uuid,
     pub member_id: Uuid,
     pub member_type: String,
     pub role: String,
-    pub squad_id: Uuid,
+    pub team_id: Uuid,
 }
 
 /// Row of `sys_cron_executions`.

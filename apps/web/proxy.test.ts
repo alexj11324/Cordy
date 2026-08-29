@@ -72,7 +72,7 @@ describe("proxy legacy workspace route redirects", () => {
     ["issues", "/acme/issues"],
     ["projects", "/acme/projects"],
     ["agents", "/acme/agents"],
-    ["squads", "/acme/squads"],
+    ["teams", "/acme/teams"],
     ["inbox", "/acme/inbox"],
     ["my-issues", "/acme/my-issues"],
     ["autopilots", "/acme/autopilots"],
@@ -91,8 +91,8 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("preserves nested legacy paths and query strings", async () => {
     expect(
-      await redirectLocation("/squads/squad-123?view=members", sessionCookies),
-    ).toBe("https://app.patchbay.test/acme/squads/squad-123?view=members");
+      await redirectLocation("/teams/team-123?view=members", sessionCookies),
+    ).toBe("https://app.patchbay.test/acme/teams/team-123?view=members");
   });
 
   it("sends logged-out legacy URLs to login", async () => {
@@ -103,7 +103,7 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("sends logged-in legacy URLs without a last workspace cookie to login", async () => {
     expect(
-      await redirectLocation("/squads?view=members", { patchbay_logged_in: "1" }),
+      await redirectLocation("/teams?view=members", { patchbay_logged_in: "1" }),
     ).toBe("https://app.patchbay.test/login");
   });
 
@@ -117,7 +117,7 @@ describe("proxy legacy workspace route redirects", () => {
   );
 
   it("does not redirect workspace-scoped URLs whose first segment is already a slug", async () => {
-    expect(await redirectLocation("/acme/squads", sessionCookies)).toBeNull();
+    expect(await redirectLocation("/acme/teams", sessionCookies)).toBeNull();
   });
 
   it("redirects app-host root URLs to the last workspace", async () => {

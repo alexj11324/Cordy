@@ -39,7 +39,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
-  squadListOptions: () => ({ queryKey: ["squads"] }),
+  teamListOptions: () => ({ queryKey: ["teams"] }),
   assigneeFrequencyOptions: () => ({ queryKey: ["frequency"] }),
 }));
 vi.mock("../../../common/actor-avatar", () => ({

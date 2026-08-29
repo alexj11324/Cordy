@@ -18,7 +18,7 @@ use patchbay_db::models::{
     WebhookDelivery,
 };
 use patchbay_db::queries::{
-    agent, autopilot as autopilot_q, member, project, squad, webhook_delivery,
+    agent, autopilot as autopilot_q, member, project, team, webhook_delivery,
 };
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_protocol::{
@@ -602,8 +602,8 @@ async fn validate_assignee(
                 ));
             }
         }
-        "squad" => {
-            let value = squad::lock_squad_for_autopilot_assignment(&mut **tx, id, workspace_id)
+        "team" => {
+            let value = team::lock_team_for_autopilot_assignment(&mut **tx, id, workspace_id)
                 .await
                 .map_err(|_| {
                     error_response(
@@ -614,13 +614,13 @@ async fn validate_assignee(
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
-                        "assignee_id is not a squad in this workspace",
+                        "assignee_id is not a team in this workspace",
                     )
                 })?;
             if value.archived_at.is_some() {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
-                    "assignee squad is archived",
+                    "assignee team is archived",
                 ));
             }
             let leader = agent::lock_agent_for_autopilot_assignment(
@@ -632,29 +632,29 @@ async fn validate_assignee(
             .map_err(|_| {
                 error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to validate squad leader",
+                    "failed to validate team leader",
                 )
             })?
             .ok_or_else(|| {
-                error_response(StatusCode::BAD_REQUEST, "squad leader is not available")
+                error_response(StatusCode::BAD_REQUEST, "team leader is not available")
             })?;
             if leader.archived_at.is_some() || (active && leader.runtime_id.is_none()) {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
-                    "squad leader is not ready for autopilot execution",
+                    "team leader is not ready for autopilot execution",
                 ));
             }
             if !crate::task::can_member_invoke_agent(state, &leader, context.member.user_id).await {
                 return Err(error_response(
                     StatusCode::FORBIDDEN,
-                    "cannot assign autopilot to squad with private leader",
+                    "cannot assign autopilot to team with private leader",
                 ));
             }
         }
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
-                "assignee_type must be agent or squad",
+                "assignee_type must be agent or team",
             ))
         }
     }

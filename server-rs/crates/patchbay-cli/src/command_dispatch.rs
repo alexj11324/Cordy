@@ -446,48 +446,48 @@ pub(super) async fn run_with_input<R: Read>(
             run_workspace_mcp_remove(cli, environment, server_id, workspace.as_deref(), *output)
                 .await
         }
-        Command::Squad(SquadArgs {
-            command: SquadCommand::List { output },
-        }) => run_squad_list(cli, environment, *output).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Get { squad_id, output },
-        }) => run_squad_get(cli, environment, squad_id, *output).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Create(args),
-        }) => run_squad_create(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Update(args),
-        }) => run_squad_update(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Delete { squad_id, output },
-        }) => run_squad_delete(cli, environment, squad_id, *output).await,
-        Command::Squad(SquadArgs {
+        Command::Team(TeamArgs {
+            command: TeamCommand::List { output },
+        }) => run_team_list(cli, environment, *output).await,
+        Command::Team(TeamArgs {
+            command: TeamCommand::Get { team_id, output },
+        }) => run_team_get(cli, environment, team_id, *output).await,
+        Command::Team(TeamArgs {
+            command: TeamCommand::Create(args),
+        }) => run_team_create(cli, environment, args).await,
+        Command::Team(TeamArgs {
+            command: TeamCommand::Update(args),
+        }) => run_team_update(cli, environment, args).await,
+        Command::Team(TeamArgs {
+            command: TeamCommand::Delete { team_id, output },
+        }) => run_team_delete(cli, environment, team_id, *output).await,
+        Command::Team(TeamArgs {
             command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::List { squad_id, output },
+                TeamCommand::Member(TeamMemberArgs {
+                    command: TeamMemberCommand::List { team_id, output },
                 }),
-        }) => run_squad_member_list(cli, environment, squad_id, *output).await,
-        Command::Squad(SquadArgs {
+        }) => run_team_member_list(cli, environment, team_id, *output).await,
+        Command::Team(TeamArgs {
             command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::Add(args),
+                TeamCommand::Member(TeamMemberArgs {
+                    command: TeamMemberCommand::Add(args),
                 }),
-        }) => run_squad_member_add(cli, environment, args).await,
-        Command::Squad(SquadArgs {
+        }) => run_team_member_add(cli, environment, args).await,
+        Command::Team(TeamArgs {
             command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::SetRole(args),
+                TeamCommand::Member(TeamMemberArgs {
+                    command: TeamMemberCommand::SetRole(args),
                 }),
-        }) => run_squad_member_set_role(cli, environment, args).await,
-        Command::Squad(SquadArgs {
+        }) => run_team_member_set_role(cli, environment, args).await,
+        Command::Team(TeamArgs {
             command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::Remove(args),
+                TeamCommand::Member(TeamMemberArgs {
+                    command: TeamMemberCommand::Remove(args),
                 }),
-        }) => run_squad_member_remove(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Activity(args),
-        }) => run_squad_activity(cli, environment, args).await,
+        }) => run_team_member_remove(cli, environment, args).await,
+        Command::Team(TeamArgs {
+            command: TeamCommand::Activity(args),
+        }) => run_team_activity(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,

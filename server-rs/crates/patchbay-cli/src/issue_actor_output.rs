@@ -33,7 +33,7 @@ pub(super) async fn load_issue_actor_names(
             ),
             "id",
         ),
-        ("squad", "/api/squads".into(), "id"),
+        ("team", "/api/teams".into(), "id"),
     ];
     for (actor_type, path, id_field) in paths {
         if !needed.contains(&actor_type) {

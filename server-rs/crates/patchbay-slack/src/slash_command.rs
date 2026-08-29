@@ -65,7 +65,7 @@ pub struct QuickCreateRequest {
     pub requester_id: Uuid,
     pub agent_id: Uuid,
     /// None — dispatch straight to the installation agent.
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub prompt: String,
     /// Empty = no explicit priority.
     pub priority: String,
@@ -211,7 +211,7 @@ impl SlashCommandProcessor {
         // Hand the raw natural-language prompt to the installation's agent as a
         // quick-create task; the agent authors the well-formed issue in the
         // background and attributes it to the bound member. No project / parent
-        // / attachments and no squad routing — the slash command targets the
+        // / attachments and no team routing — the slash command targets the
         // installation's own agent directly.
         if let Err(err) = self
             .tasks
@@ -219,8 +219,8 @@ impl SlashCommandProcessor {
                 workspace_id: inst.workspace_id,
                 requester_id: user_id,
                 agent_id: inst.agent_id,
-                // No squad — dispatch straight to the installation agent.
-                squad_id: None,
+                // No team — dispatch straight to the installation agent.
+                team_id: None,
                 prompt: prompt.to_string(),
                 // No explicit priority / due date / project / parent /
                 // attachments.
