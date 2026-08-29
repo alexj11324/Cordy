@@ -134,7 +134,7 @@ vi.mock("../i18n", () => ({
         },
         // useStatusLabel resolves BUILT-IN keys through i18n and custom ones
         // through the catalog, so the promote headline needs both sources.
-        status: { todo: "Todo", in_review: "In Review" },
+        status: { todo: "Todo", in_progress: "In Progress", in_review: "In Review" },
       };
       return sel(labels).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(vars?.[k] ?? ""));
     },
