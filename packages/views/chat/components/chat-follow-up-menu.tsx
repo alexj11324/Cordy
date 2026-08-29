@@ -37,6 +37,7 @@ export function ChatFollowUpMenu({
       <div className="relative inline-flex">
         {children}
         <PopoverTrigger
+          nativeButton={false}
           tabIndex={-1}
           render={
             <span

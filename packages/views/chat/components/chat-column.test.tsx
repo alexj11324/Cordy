@@ -7,14 +7,14 @@ import { ChatMessageSkeleton } from "./chat-message-list";
 import { NoAgentBanner } from "./no-agent-banner";
 import { ArchivedAgentBanner } from "./archived-agent-banner";
 import { OfflineBanner } from "./offline-banner";
-import { ChatQueue } from "./chat-queue";
 
 // Every layer of the chat body has to land on the same left/right edges: the
 // message column, the status banner above the composer, and the composer card.
-// They drifted once already — the message list capped `max-w-4xl` with its
-// padding INSIDE the cap while the composer put the padding outside, so on any
-// surface wider than ~936px the text sat 20px narrower than the box below it.
-// These tests pin the shared two-layer contract that fixed it.
+// The follow-up queue sits inside the composer card, so it is not a sibling
+// layer. They drifted once already — the message list capped `max-w-4xl` with
+// its padding INSIDE the cap while the composer put the padding outside, so on
+// any surface wider than ~936px the text sat 20px narrower than the box below
+// it. These tests pin the shared two-layer contract that fixed it.
 
 const TEST_RESOURCES = { en: { chat: enChat } };
 
@@ -67,25 +67,6 @@ describe("chat column geometry", () => {
     ["offline banner", <OfflineBanner key="o" agentName="Lambda" availability="offline" />],
     ["unstable banner", <OfflineBanner key="u" agentName="Lambda" availability="unstable" />],
     ["message skeleton", <ChatMessageSkeleton key="s" />],
-    [
-      "follow-up queue",
-      <ChatQueue
-        key="q"
-        headStatus="running"
-        tasks={[
-          {
-            task_id: "task-queued",
-            status: "queued",
-            content: "Follow up",
-            created_at: "2026-07-30T00:00:00Z",
-          },
-        ]}
-        onSendNow={() => {}}
-        onEdit={() => {}}
-        onRemove={() => {}}
-        onClear={() => {}}
-      />,
-    ],
   ])("aligns the %s on the shared gutter + column", (_label, ui) => {
     const { container } = renderChat(ui);
     const outer = root(container);
