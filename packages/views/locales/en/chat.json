@@ -14,7 +14,7 @@
     "placeholder_no_agent": "Create an agent to start chatting",
     "placeholder_archived": "This session is archived",
     "placeholder_archived_agent": "This agent has been archived",
-    "placeholder_runtime_required": "Bind a runtime to continue",
+    "placeholder_runtime_required": "Bind a device to continue",
     "placeholder_access_revoked": "You no longer have permission to run this agent",
     "placeholder_named": "Message {{name}}…",
     "placeholder_default": "Start a message…",
@@ -23,7 +23,7 @@
     "stop_tooltip": "Stop",
     "send_failed_toast": "Failed to send message",
     "send_blocked_toast": "Message not sent — you no longer have permission to use this agent",
-    "runtime_required_toast": "Message not sent — bind a runtime to this agent first",
+    "runtime_required_toast": "Message not sent — bind a device to this agent first",
     "attachment_bind_failed_toast": "Message sent, but files were not attached. Please try again in a moment.",
     "add_tooltip": "Add",
     "upload_file": "Image or files",
@@ -32,6 +32,14 @@
     "remove_project_context": "Remove project context",
     "no_projects": "No projects yet",
     "project_context_unsupported": "Project description won't apply — this agent's daemon needs an upgrade"
+  },
+  "follow_up": {
+    "title": "The agent is still working",
+    "wait": "Wait",
+    "wait_hint": "Queue this until the current reply finishes",
+    "steer": "Steer",
+    "steer_hint": "Stop the current reply and send this now",
+    "choose_tooltip": "Choose how to follow up"
   },
   "queue": {
     "title_one": "{{count}} queued message",
@@ -70,7 +78,7 @@
       "provider_capacity_or_rate_limit": "The model provider is busy or rate-limiting this account. Please try again in a moment.",
       "context_overflow": "This conversation got too long for the model. Start a new session, or break your request into smaller steps.",
       "runtime_missing_executable": "The agent's CLI couldn't be run on this machine. Check that it's installed correctly and on PATH, then retry.",
-      "runtime_version_unsupported": "The agent's CLI is too old for this runtime. Upgrade it, then retry.",
+      "runtime_version_unsupported": "The agent's CLI is too old for this device. Upgrade it, then retry.",
       "fallback": "Something went wrong and the agent couldn't finish replying. Please try again."
     },
     "tools_one": "{{count}} tool",
@@ -138,8 +146,8 @@
     "no_agents": "No agents",
     "history_group": "Chat history",
     "agent_filter_placeholder": "Search agents...",
-    "agent_needs_runtime": "Needs runtime",
-    "agent_needs_runtime_hint": "Bind a runtime before starting a chat with this agent"
+    "agent_needs_runtime": "Needs device",
+    "agent_needs_runtime_hint": "Bind a device before starting a chat with this agent"
   },
   "empty_state": {
     "first_time_title": "Chat with your agents",
@@ -182,8 +190,8 @@
   "agent_access_revoked_banner": "You no longer have permission to run {{name}} — this conversation is read-only.",
   "runtime_required_banner": {
     "fallback_name": "The agent",
-    "message": "{{name}} needs a runtime before it can reply.",
-    "action": "Bind runtime"
+    "message": "{{name}} needs a device before it can reply.",
+    "action": "Bind device"
   },
   "offline_banner": {
     "fallback_name": "the agent",
@@ -235,5 +243,42 @@
     "archive": "Archive chat",
     "unarchive": "Unarchive chat",
     "delete": "Delete chat"
+  },
+  "channels": {
+    "title": "Channels",
+    "subtitle": "One room for your team and agents",
+    "new_channel": "New channel",
+    "create_title": "Create a channel",
+    "create_description": "Give your team and agents a shared place to talk.",
+    "name_label": "Name",
+    "name_placeholder": "e.g. product…",
+    "description_label": "Description (optional)",
+    "description_placeholder": "What belongs in this channel?…",
+    "create": "Create channel",
+    "cancel": "Cancel",
+    "empty_title": "Create your first channel",
+    "empty_description": "Bring people and agents into one focused conversation.",
+    "empty_message": "No messages yet. Say hello to the channel.",
+    "message_placeholder": "Message #{{name}}…",
+    "mention_hint": "Mention a teammate or agent with @",
+    "send": "Send",
+    "reply": "Reply",
+    "quote": "Quote",
+    "clear_reference": "Clear reference",
+    "quoted_prefix": "Quoted from {{name}}",
+    "replying_to": "Replying to {{name}}",
+    "agent_badge": "Agent",
+    "member_badge": "Member",
+    "participants": "{{count}} participants",
+    "no_channels": "No channels yet",
+    "create_failed": "Couldn't create channel",
+    "send_failed": "Couldn't send message",
+    "loading": "Loading channels…",
+    "load_older": "Load older messages",
+    "loading_older": "Loading older messages…",
+    "unknown_badge": "Unknown author",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copy_failed": "Copy failed"
   }
 }

@@ -24,7 +24,7 @@ use patchbay_db::queries::agent::{
     create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
     get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
     list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
-    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred,
+    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
     reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
@@ -233,7 +233,7 @@ pub struct QuickCreateContext {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub project_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub squad_id: String,
+    pub team_id: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachment_ids: Vec<String>,
     /// Optional parent issue UUID ("Add sub issue" flow); preserved across
@@ -1982,13 +1982,13 @@ impl TaskService {
         .await
     }
 
-    /// Leader-role variant; carries is_leader_task=true plus squad_id so the
-    /// daemon injects the squad briefing regardless of trigger path.
-    pub async fn enqueue_task_for_squad_leader(
+    /// Leader-role variant; carries is_leader_task=true plus team_id so the
+    /// daemon injects the team briefing regardless of trigger path.
+    pub async fn enqueue_task_for_team_leader(
         &self,
         issue: &Issue,
         leader_id: Uuid,
-        squad_id: Uuid,
+        team_id: Uuid,
         trigger_comment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         self.enqueue_mention_task(
@@ -1997,7 +1997,7 @@ impl TaskService {
             trigger_comment_id,
             vec![],
             true,
-            Some(squad_id),
+            Some(team_id),
             false,
             "",
             None,
@@ -2009,11 +2009,11 @@ impl TaskService {
 
     /// Assign/promote variant carrying a handoff note into the leader run
     /// (PB-3375).
-    pub async fn enqueue_task_for_squad_leader_with_handoff(
+    pub async fn enqueue_task_for_team_leader_with_handoff(
         &self,
         issue: &Issue,
         leader_id: Uuid,
-        squad_id: Uuid,
+        team_id: Uuid,
         handoff_note: &str,
         actor_user_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
@@ -2023,7 +2023,7 @@ impl TaskService {
             None,
             vec![],
             true,
-            Some(squad_id),
+            Some(team_id),
             false,
             handoff_note,
             actor_user_id,
@@ -2199,7 +2199,7 @@ impl TaskService {
     }
 
     /// Shared mention-family implementation. An explicit mention /
-    /// thread-parent / squad-leader hop from an agent-authored comment is a
+    /// thread-parent / team-leader hop from an agent-authored comment is a
     /// delegation; a member mention is direct_human.
     #[allow(clippy::too_many_arguments)]
     pub async fn enqueue_mention_task(
@@ -2209,7 +2209,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         coalesced_comment_ids: Vec<Uuid>,
         is_leader: bool,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         force_fresh_session: bool,
         handoff_note: &str,
         actor_user_id: Option<Uuid>,
@@ -2279,7 +2279,7 @@ impl TaskService {
             Some(force_fresh_session),
             Some(is_leader),
             opt_str(handoff_note),
-            squad_id.unwrap_or_else(Uuid::nil),
+            team_id.unwrap_or_else(Uuid::nil),
             opt_str(&head_sha),
             originator_user_id.unwrap_or_else(Uuid::nil),
             attr.accountable_user_id.unwrap_or_else(Uuid::nil),
@@ -2337,7 +2337,7 @@ impl TaskService {
         &self,
         issue: &Issue,
         agent_id: Uuid,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         escalation_for_task_id: Uuid,
         trigger_comment_id: Option<Uuid>,
         fire_at: chrono::DateTime<chrono::Utc>,
@@ -2372,7 +2372,7 @@ impl TaskService {
         })?;
         let (attr_source, attr_delegated_from, attr_evidence_kind, attr_evidence_ref) =
             attribution_create_params(&attr);
-        let is_leader = squad_id.is_some();
+        let is_leader = team_id.is_some();
         let trigger_summary = self
             .build_comment_trigger_summary(issue.workspace_id, trigger_comment_id)
             .await
@@ -2389,7 +2389,7 @@ impl TaskService {
             trigger_comment_id.unwrap_or_else(Uuid::nil),
             trigger_summary.as_deref(),
             Some(is_leader),
-            squad_id.unwrap_or_else(Uuid::nil),
+            team_id.unwrap_or_else(Uuid::nil),
             escalation_for_task_id,
             Some(fire_at),
             attr.user_id.unwrap_or_else(Uuid::nil),
@@ -2425,7 +2425,7 @@ impl TaskService {
         workspace_id: Uuid,
         requester_id: Uuid,
         agent_id: Uuid,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         prompt: &str,
         priority: &str,
         due_date: &str,
@@ -2456,8 +2456,8 @@ impl TaskService {
         if let Some(project_id) = project_id {
             payload.project_id = project_id.to_string();
         }
-        if let Some(squad_id) = squad_id {
-            payload.squad_id = squad_id.to_string();
+        if let Some(team_id) = team_id {
+            payload.team_id = team_id.to_string();
         }
         if let Some(parent_issue_id) = parent_issue_id {
             payload.parent_issue_id = parent_issue_id.to_string();
@@ -2501,7 +2501,7 @@ impl TaskService {
         tracing::info!(
             task_id = %task.id,
             agent_id = %agent_id,
-            squad_id = %payload.squad_id,
+            team_id = %payload.team_id,
             requester_id = %requester_id,
             workspace_id = %workspace_id,
             project_id = %payload.project_id,
@@ -2788,6 +2788,7 @@ impl TaskService {
         attachment_ids: Vec<Uuid>,
         uploader_type: &str,
         uploader_id: Option<Uuid>,
+        workspace_channel: Option<WorkspaceChannelDispatch>,
     ) -> Result<DirectChatSendResult, TaskServiceError> {
         // Overlay before the transaction — network I/O must not hold locks.
         let overlay = match initiator_user_id {
@@ -2870,10 +2871,31 @@ impl TaskService {
         .map_err(|e| TaskServiceError::Internal(format!("create direct chat task: {e}")))?
         .ok_or(TaskServiceError::AgentNoRuntime)?;
         // Claim this task's own input batch before the user message is written.
-        let task = set_chat_task_input_owner_self(&mut *tx, created.id)
+        let mut task = set_chat_task_input_owner_self(&mut *tx, created.id)
             .await
             .map_err(|e| TaskServiceError::Internal(format!("stamp direct chat input owner: {e}")))?
             .ok_or(TaskServiceError::AgentNoRuntime)?;
+
+        let is_workspace_channel = workspace_channel.is_some();
+        if let Some(dispatch) = workspace_channel {
+            let context = serde_json::json!({
+                "workspace_channel": {
+                    "workspace_id": dispatch.workspace_id,
+                    "channel_id": dispatch.channel_id,
+                    "source_message_id": dispatch.source_message_id,
+                }
+            });
+            task.context = Some(
+                merge_agent_task_context(&mut *tx, task.id, &context)
+                    .await
+                    .map_err(|e| {
+                        TaskServiceError::Internal(format!(
+                            "set workspace channel task context: {e}"
+                        ))
+                    })?
+                    .ok_or(TaskServiceError::AgentNoRuntime)?,
+            );
+        }
         out.task = Some(task.clone());
 
         // Adopt the onboarding kickoff if this session still has an unowned one
@@ -2895,7 +2917,7 @@ impl TaskService {
             Some(patchbay_protocol::CHAT_MESSAGE_KIND_MESSAGE),
             &serde_json::Value::Array(vec![]),
             None,
-            None,
+            Some(is_workspace_channel),
             new_v7(),
         )
         .await
@@ -3094,6 +3116,25 @@ pub struct DirectChatSendResult {
     pub message: Option<ChatMessage>,
     pub bound_attachment_ids: Vec<Option<Uuid>>,
     pub queued: bool,
+}
+
+/// Identifies the channel message that caused a chat task so the terminal
+/// path can publish the agent's final response back into that channel.
+#[derive(Debug, Clone, Copy)]
+pub struct WorkspaceChannelDispatch {
+    pub workspace_id: Uuid,
+    pub channel_id: Uuid,
+    pub source_message_id: Uuid,
+}
+
+/// Reads the optional workspace-channel bridge metadata from a task context.
+pub fn workspace_channel_dispatch(task: &AgentTaskQueue) -> Option<WorkspaceChannelDispatch> {
+    let value = task.context.as_ref()?.get("workspace_channel")?;
+    Some(WorkspaceChannelDispatch {
+        workspace_id: Uuid::parse_str(value.get("workspace_id")?.as_str()?).ok()?,
+        channel_id: Uuid::parse_str(value.get("channel_id")?.as_str()?).ok()?,
+        source_message_id: Uuid::parse_str(value.get("source_message_id")?.as_str()?).ok()?,
+    })
 }
 
 /// The two rows that open a Mika conversation (PB-5827).
@@ -4822,7 +4863,7 @@ mod tests {
             runtime_mcp_overlay: None,
             session_id: None,
             session_rollout_missing: false,
-            squad_id: None,
+            team_id: None,
             started_at: None,
             status: "queued".to_string(),
             trigger_comment_id: None,

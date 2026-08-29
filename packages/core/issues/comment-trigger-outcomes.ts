@@ -6,7 +6,7 @@ import type { CommentTriggerOutcome } from "../types/comment";
 // Kept as a string so every parse builds its OWN global RegExp — sharing one
 // global instance across `matchAll` calls leaks `lastIndex` and drops matches.
 const MENTION_MARKUP_SOURCE =
-  "\\[@?(.+?)\\]\\(mention:\\/\\/(member|agent|squad|issue|all)\\/([0-9a-fA-F-]+|all)\\)";
+  "\\[@?(.+?)\\]\\(mention:\\/\\/(member|agent|team|issue|all)\\/([0-9a-fA-F-]+|all)\\)";
 
 export interface ParsedMention {
   label: string;
@@ -75,7 +75,7 @@ export function parseCommentTriggerOutcomes(raw: unknown): CommentTriggerOutcome
 // as success (PB-4525; mirrors the Run now whitelist).
 const HANDLED_TRIGGER_STATUSES = new Set(["queued", "coalesced", "deferred", "side_chat"]);
 
-// The explicit @agent / @squad mentions that did NOT clearly trigger, so the
+// The explicit @agent / @team mentions that did NOT clearly trigger, so the
 // "posted, but N not triggered" warning must cover them: `blocked` plus any
 // unknown/future/empty status. Never assume an unrecognized status succeeded.
 export function unhandledCommentTriggerOutcomes(raw: unknown): CommentTriggerOutcome[] {

@@ -66,7 +66,7 @@ const { mockActorNameResult } = vi.hoisted(() => ({
     getActorAvatarUrl: () => null,
     getMemberName: () => "Mock Member",
     getAgentName: () => "Mock Agent",
-    getSquadName: () => "Mock Squad",
+    getTeamName: () => "Mock Team",
   },
 }));
 vi.mock("@patchbay/core/workspace/hooks", () => ({
@@ -892,7 +892,7 @@ describe("SwimLaneView", () => {
         before_id: null,
         after_id: null,
       },
-      expect.any(Function),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 
@@ -912,9 +912,10 @@ describe("SwimLaneView", () => {
 
     // The move carries a settle callback (held from drop until the mutation
     // settles); invoking it releases the lock and re-syncs from the cache.
-    const onSettled = mockOnMoveIssue.mock.calls[0]?.[2] as
-      | (() => void)
+    const callbacks = mockOnMoveIssue.mock.calls[0]?.[2] as
+      | { onSettled?: () => void }
       | undefined;
+    const onSettled = callbacks?.onSettled;
     expect(typeof onSettled).toBe("function");
     expect(() => act(() => onSettled?.())).not.toThrow();
   });
@@ -961,7 +962,7 @@ describe("SwimLaneView", () => {
         parent_issue_id: "parent-1",
         status: "todo",
       }),
-      expect.any(Function),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 
@@ -1368,7 +1369,7 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-c",
       expect.objectContaining({ project_id: "proj-1", status: "todo" }),
-      expect.any(Function),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 
@@ -1391,7 +1392,7 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-a",
       expect.objectContaining({ project_id: null, status: "in_review" }),
-      expect.any(Function),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 
@@ -1474,7 +1475,7 @@ describe("SwimLaneView", () => {
         assignee_id: "user-1",
         status: "in_review",
       }),
-      expect.any(Function),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 
@@ -1501,7 +1502,7 @@ describe("SwimLaneView", () => {
         assignee_id: null,
         status: "done",
       }),
-      expect.any(Function),
+      expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 

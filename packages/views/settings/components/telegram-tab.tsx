@@ -40,10 +40,9 @@ import { useT } from "../../i18n";
 
 // TelegramTab is the workspace settings panel for Telegram bot installations,
 // mirroring SlackTab: listing is member-visible; the disconnect action is
-// admin-only (backend-enforced; the UI hides the button to match). Adding a
-// new installation flows through the Agent detail page — the install path is
-// per-agent (one bot per agent, the (workspace_id, agent_id, channel_type)
-// UNIQUE in channel_installation).
+// admin-only (backend-enforced; the UI hides the button to match). The settings
+// page connects a workspace Hub, and the channel selects the active Agent with
+// `/agents`; the optional per-Agent form remains available for legacy links.
 export function TelegramTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();

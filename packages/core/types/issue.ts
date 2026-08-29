@@ -32,7 +32,7 @@ export type IssueStatus = IssueStatusCategory | (string & {});
 
 export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
 
-export type IssueAssigneeType = "member" | "agent" | "squad";
+export type IssueAssigneeType = "member" | "agent" | "team";
 
 export interface IssueReaction {
   id: string;
@@ -71,6 +71,13 @@ export interface Issue {
   priority: IssuePriority;
   assignee_type: IssueAssigneeType | null;
   assignee_id: string | null;
+  /**
+   * Persistent reviewer, independent of the current assignee. Optional so
+   * older backends that do not emit the columns still parse. Once set, the
+   * reviewer can be replaced but not cleared.
+   */
+  reviewer_type?: IssueAssigneeType | null;
+  reviewer_id?: string | null;
   creator_type: IssueAssigneeType;
   creator_id: string;
   parent_issue_id: string | null;

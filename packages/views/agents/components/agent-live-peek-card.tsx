@@ -23,7 +23,7 @@ interface AgentLivePeekCardProps {
 }
 
 // Live "peek" card for an agent avatar — shows the three live signals the
-// squad members tab cares about (workload, current issue, last activity).
+// team members tab cares about (workload, current issue, last activity).
 // Companion to AgentProfileCard, which surfaces static identity (description,
 // runtime, skills, owner). Keeping them separate avoids polluting the 23+
 // existing AgentProfileCard call sites with live-only concerns.

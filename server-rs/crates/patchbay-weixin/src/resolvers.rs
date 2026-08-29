@@ -57,7 +57,7 @@ impl InstallationResolver for InstallationResolverImpl {
         Ok(ResolvedInstallation {
             id: installation.id,
             workspace_id: installation.workspace_id,
-            agent_id: installation.agent_id,
+            agent_id: installation.agent_id.unwrap_or_default(),
             route_revision: 0,
             installer_user_id: installation.installer_user_id,
             active: installation.status == "active",
@@ -139,6 +139,10 @@ struct SessionBinderImpl {
 
 #[async_trait::async_trait]
 impl SessionBinder for SessionBinderImpl {
+    fn binding_key(&self, msg: &InboundMessage) -> String {
+        msg.source.chat_id.clone()
+    }
+
     async fn ensure_session(&self, params: EnsureSessionParams) -> anyhow::Result<Uuid> {
         let raw = raw(&params.message)?;
         let binding_key = params.message.source.chat_id.clone();
@@ -264,9 +268,12 @@ pub fn resolver_set(
             seal,
         })),
         media: None,
-        audit: Some(Arc::new(AuditorImpl { pool })),
+        audit: Some(Arc::new(AuditorImpl { pool: pool.clone() })),
         replier,
         typing: None,
+        hub: Some(Arc::new(
+            patchbay_channel_engine::hub::PostgresHubRouter::new(pool.clone()),
+        )),
         origin_type: ORIGIN_WEIXIN_CHAT.to_string(),
     }
 }

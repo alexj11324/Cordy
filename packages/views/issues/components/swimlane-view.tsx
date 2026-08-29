@@ -70,6 +70,7 @@ import type {
   IssueGroupBranches,
   IssueGroupPageState,
 } from "../surface/use-issue-group-branches";
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 
 const COLUMN_WIDTH = 280;
 const COLUMN_GAP = 16;
@@ -436,8 +437,8 @@ function buildAssigneeLanes(
     });
   }
 
-  // Sort by actor type (members before agents before squads) then by name.
-  const typeOrder: Record<string, number> = { member: 0, agent: 1, squad: 2 };
+  // Sort by actor type (members before agents before teams) then by name.
+  const typeOrder: Record<string, number> = { member: 0, agent: 1, team: 2 };
   const orderIndex = new Map<string, number>();
   storedOrder.forEach((id, idx) => orderIndex.set(`assignee:${id}`, idx));
   const ordered = Array.from(seen.values()).sort((a, b) => {
@@ -510,7 +511,7 @@ function buildServerLanes(
         actorRef &&
         (actorRef.type === "member" ||
           actorRef.type === "agent" ||
-          actorRef.type === "squad")
+          actorRef.type === "team")
           ? { type: actorRef.type, id: actorRef.id }
           : null;
       const rawId = actor ? `${actor.type}:${actor.id}` : NONE_LANE_ID;
@@ -632,7 +633,7 @@ function SwimLaneViewImpl({
   onMoveIssue: (
     issueId: string,
     updates: SwimLaneMoveUpdates,
-    onSettled?: () => void,
+    callbacks?: MoveIssueCallbacks,
   ) => boolean | void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
@@ -1297,9 +1298,11 @@ function SwimLaneViewImpl({
           position: newPosition,
           ...getMoveAnchors(finalIds, activeId),
         },
-        () => {
-          isSettlingRef.current = false;
-          setSettleVersion((v) => v + 1);
+        {
+          onSettled: () => {
+            isSettlingRef.current = false;
+            setSettleVersion((v) => v + 1);
+          },
         },
       );
       if (committed === false) {

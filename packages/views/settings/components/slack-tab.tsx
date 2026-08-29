@@ -42,10 +42,9 @@ import { useT } from "../../i18n";
 // Listing is member-visible; the disconnect action is admin-only (the backend
 // enforces it; the UI hides the button for non-admins to match).
 //
-// Adding a new installation flows through the Agent detail page: the install
-// path is per-agent (each Patchbay agent gets exactly one bot — the
-// (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
-// asking the user to pick an agent here would re-create that page's picker.
+// The settings page connects one workspace-scoped Slack Hub. The channel
+// chooses the active Agent with `/agents`; the optional per-Agent form below
+// remains available for legacy deep links and existing installations.
 export function SlackTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();

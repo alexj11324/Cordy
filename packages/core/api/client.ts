@@ -82,6 +82,11 @@ import type {
   AssigneeFrequencyEntry,
   TaskMessagePayload,
   Attachment,
+  Channel,
+  ChannelMessagesPage,
+  ChannelMessage,
+  CreateChannelRequest,
+  SendChannelMessageRequest,
   ChatSession,
   ChatPinnedAgent,
   ChatMessage,
@@ -195,9 +200,9 @@ import type {
   BeginWeixinInstallResponse,
   WeixinInstallStatusResponse,
   RedeemWeixinBindingTokenResponse,
-  Squad,
-  SquadMember,
-  SquadMemberStatusListResponse,
+  Team,
+  TeamMember,
+  TeamMemberStatusListResponse,
   BillingBalance,
   BillingTransactionsPage,
   BillingBatchesPage,
@@ -236,6 +241,13 @@ import {
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
   ChatMessageListSchema,
+  ChannelListSchema,
+  ChannelMessageListSchema,
+  ChannelMessagesPageSchema,
+  ChannelMessageSchema,
+  ChannelSchema,
+  EMPTY_CHANNEL_LIST,
+  EMPTY_CHANNEL_MESSAGE_LIST,
   ChatMessagesPageSchema,
   ChatPendingTaskSchema,
   PrioritizeQueuedChatTaskResponseSchema,
@@ -273,9 +285,9 @@ import {
   EMPTY_LIST_ISSUES_RESPONSE,
   EMPTY_SEARCH_ISSUES_RESPONSE,
   EMPTY_SEARCH_PROJECTS_RESPONSE,
-  EMPTY_SQUAD,
-  EMPTY_SQUAD_LIST,
-  EMPTY_SQUAD_MEMBER_STATUS_LIST,
+  EMPTY_TEAM,
+  EMPTY_TEAM_LIST,
+  EMPTY_TEAM_MEMBER_STATUS_LIST,
   EMPTY_TIMELINE_ENTRIES,
   EMPTY_USER,
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
@@ -303,9 +315,9 @@ import {
   RuntimeUsageListSchema,
   SearchIssuesResponseSchema,
   SearchProjectsResponseSchema,
-  SquadSchema,
-  SquadListSchema,
-  SquadMemberStatusListResponseSchema,
+  TeamSchema,
+  TeamListSchema,
+  TeamMemberStatusListResponseSchema,
   SubscribersListSchema,
   TimelineEntriesSchema,
   UserSchema,
@@ -1057,7 +1069,7 @@ export class ApiClient {
 
   async quickCreateIssue(data: {
     agent_id?: string;
-    squad_id?: string;
+    team_id?: string;
     prompt: string;
     priority?: IssuePriority;
     due_date?: string;
@@ -2914,6 +2926,84 @@ export class ApiClient {
     });
   }
 
+  // Workspace Channels
+  async listChannels(): Promise<Channel[]> {
+    const raw: unknown = await this.fetch("/api/channels");
+    return parseWithFallback(raw, ChannelListSchema, EMPTY_CHANNEL_LIST, {
+      endpoint: "GET /api/channels",
+    });
+  }
+
+  async getChannel(channelId: string): Promise<Channel> {
+    const raw: unknown = await this.fetch(`/api/channels/${channelId}`);
+    const channel = parseWithFallback<Channel | null>(raw, ChannelSchema, null, {
+      endpoint: "GET /api/channels/:id",
+    });
+    if (!channel) throw new Error("invalid channel response");
+    return channel;
+  }
+
+  async createChannel(data: CreateChannelRequest): Promise<Channel> {
+    const raw: unknown = await this.fetch("/api/channels", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const channel = parseWithFallback<Channel | null>(raw, ChannelSchema, null, {
+      endpoint: "POST /api/channels",
+    });
+    if (!channel) throw new Error("invalid create channel response");
+    return channel;
+  }
+
+  async listChannelMessages(channelId: string): Promise<ChannelMessage[]> {
+    return (await this.listChannelMessagesPage(channelId)).messages;
+  }
+
+  async listChannelMessagesPage(
+    channelId: string,
+    params: { before?: { created_at: string; id: string } | null; limit?: number } = {},
+  ): Promise<ChannelMessagesPage> {
+    const limit = params.limit ?? 50;
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (params.before) {
+      query.set("before_created_at", params.before.created_at);
+      query.set("before_id", params.before.id);
+    }
+    const raw: unknown = await this.fetch(
+      `/api/channels/${channelId}/messages?${query.toString()}`,
+    );
+    if (Array.isArray(raw)) {
+      const messages = parseWithFallback(raw, ChannelMessageListSchema, EMPTY_CHANNEL_MESSAGE_LIST, {
+        endpoint: "GET /api/channels/:id/messages",
+      });
+      return { messages, limit: messages.length, has_more: false, next_cursor: null };
+    }
+    return parseWithFallback(
+      raw,
+      ChannelMessagesPageSchema,
+      { messages: [], limit, has_more: false, next_cursor: null },
+      { endpoint: "GET /api/channels/:id/messages" },
+    );
+  }
+
+  async sendChannelMessage(
+    channelId: string,
+    data: SendChannelMessageRequest,
+  ): Promise<ChannelMessage> {
+    const raw: unknown = await this.fetch(`/api/channels/${channelId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const message = parseWithFallback<ChannelMessage | null>(
+      raw,
+      ChannelMessageSchema,
+      null,
+      { endpoint: "POST /api/channels/:id/messages" },
+    );
+    if (!message) throw new Error("invalid channel message response");
+    return message;
+  }
+
   // Chat Sessions
   async listChatSessions(
     params?: { status?: string },
@@ -3278,9 +3368,16 @@ export class ApiClient {
     return this.fetch(`/api/projects/${id}`);
   }
 
-  async createProject(data: CreateProjectRequest): Promise<Project> {
+  // `workspaceSlug` overrides the ambient `X-Workspace-Slug` header. Onboarding
+  // creates projects in a workspace the app has not navigated to yet, so it
+  // must name the target the same way Mika bootstrap does.
+  async createProject(
+    data: CreateProjectRequest,
+    workspaceSlug?: string,
+  ): Promise<Project> {
     return this.fetch("/api/projects", {
       method: "POST",
+      headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),
     });
   }
@@ -3750,64 +3847,64 @@ export class ApiClient {
     });
   }
 
-  // Squads
-  async listSquads(): Promise<Squad[]> {
-    const raw = await this.fetch<unknown>(`/api/squads`);
-    return parseWithFallback(raw, SquadListSchema, EMPTY_SQUAD_LIST, {
-      endpoint: "GET /api/squads",
-    }) as Squad[];
+  // Teams
+  async listTeams(): Promise<Team[]> {
+    const raw = await this.fetch<unknown>(`/api/teams`);
+    return parseWithFallback(raw, TeamListSchema, EMPTY_TEAM_LIST, {
+      endpoint: "GET /api/teams",
+    }) as Team[];
   }
 
-  async getSquad(id: string): Promise<Squad> {
-    const raw = await this.fetch<unknown>(`/api/squads/${id}`);
-    return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
-      endpoint: "GET /api/squads/:id",
-    }) as Squad;
+  async getTeam(id: string): Promise<Team> {
+    const raw = await this.fetch<unknown>(`/api/teams/${id}`);
+    return parseWithFallback(raw, TeamSchema, EMPTY_TEAM, {
+      endpoint: "GET /api/teams/:id",
+    }) as Team;
   }
 
-  async createSquad(data: { name: string; description?: string; leader_id: string; avatar_url?: string }): Promise<Squad> {
-    const raw = await this.fetch<unknown>("/api/squads", { method: "POST", body: JSON.stringify(data) });
-    return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
-      endpoint: "POST /api/squads",
-    }) as Squad;
+  async createTeam(data: { name: string; description?: string; leader_id: string; avatar_url?: string }): Promise<Team> {
+    const raw = await this.fetch<unknown>("/api/teams", { method: "POST", body: JSON.stringify(data) });
+    return parseWithFallback(raw, TeamSchema, EMPTY_TEAM, {
+      endpoint: "POST /api/teams",
+    }) as Team;
   }
 
-  async updateSquad(id: string, data: { name?: string; description?: string; instructions?: string; leader_id?: string; avatar_url?: string }): Promise<Squad> {
-    const raw = await this.fetch<unknown>(`/api/squads/${id}`, { method: "PUT", body: JSON.stringify(data) });
-    return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
-      endpoint: "PUT /api/squads/:id",
-    }) as Squad;
+  async updateTeam(id: string, data: { name?: string; description?: string; instructions?: string; leader_id?: string; avatar_url?: string }): Promise<Team> {
+    const raw = await this.fetch<unknown>(`/api/teams/${id}`, { method: "PUT", body: JSON.stringify(data) });
+    return parseWithFallback(raw, TeamSchema, EMPTY_TEAM, {
+      endpoint: "PUT /api/teams/:id",
+    }) as Team;
   }
 
-  async deleteSquad(id: string): Promise<void> {
-    await this.fetch(`/api/squads/${id}`, { method: "DELETE" });
+  async deleteTeam(id: string): Promise<void> {
+    await this.fetch(`/api/teams/${id}`, { method: "DELETE" });
   }
 
-  async listSquadMembers(squadId: string): Promise<SquadMember[]> {
-    return this.fetch(`/api/squads/${squadId}/members`);
+  async listTeamMembers(teamId: string): Promise<TeamMember[]> {
+    return this.fetch(`/api/teams/${teamId}/members`);
   }
 
-  async addSquadMember(squadId: string, data: { member_type: string; member_id: string; role?: string }): Promise<SquadMember> {
-    return this.fetch(`/api/squads/${squadId}/members`, { method: "POST", body: JSON.stringify(data) });
+  async addTeamMember(teamId: string, data: { member_type: string; member_id: string; role?: string }): Promise<TeamMember> {
+    return this.fetch(`/api/teams/${teamId}/members`, { method: "POST", body: JSON.stringify(data) });
   }
 
-  async removeSquadMember(squadId: string, data: { member_type: string; member_id: string }): Promise<void> {
-    await this.fetch(`/api/squads/${squadId}/members`, { method: "DELETE", body: JSON.stringify(data) });
+  async removeTeamMember(teamId: string, data: { member_type: string; member_id: string }): Promise<void> {
+    await this.fetch(`/api/teams/${teamId}/members`, { method: "DELETE", body: JSON.stringify(data) });
   }
 
-  async updateSquadMemberRole(squadId: string, data: { member_type: string; member_id: string; role: string }): Promise<SquadMember> {
-    return this.fetch(`/api/squads/${squadId}/members/role`, { method: "PATCH", body: JSON.stringify(data) });
+  async updateTeamMemberRole(teamId: string, data: { member_type: string; member_id: string; role: string }): Promise<TeamMember> {
+    return this.fetch(`/api/teams/${teamId}/members/role`, { method: "PATCH", body: JSON.stringify(data) });
   }
 
-  // Per-squad members status snapshot: one row per member with derived
+  // Per-team members status snapshot: one row per member with derived
   // working/idle/offline/unstable plus the issues each agent is currently
   // running. Parsed with a lenient schema so a new server-side status
-  // value or extra field can't white-screen the Squad page (#2143).
-  async getSquadMemberStatus(squadId: string): Promise<SquadMemberStatusListResponse> {
-    const raw = await this.fetch<unknown>(`/api/squads/${squadId}/members/status`);
-    return parseWithFallback(raw, SquadMemberStatusListResponseSchema, EMPTY_SQUAD_MEMBER_STATUS_LIST, {
-      endpoint: "GET /api/squads/:id/members/status",
-    }) as SquadMemberStatusListResponse;
+  // value or extra field can't white-screen the Team page (#2143).
+  async getTeamMemberStatus(teamId: string): Promise<TeamMemberStatusListResponse> {
+    const raw = await this.fetch<unknown>(`/api/teams/${teamId}/members/status`);
+    return parseWithFallback(raw, TeamMemberStatusListResponseSchema, EMPTY_TEAM_MEMBER_STATUS_LIST, {
+      endpoint: "GET /api/teams/:id/members/status",
+    }) as TeamMemberStatusListResponse;
   }
 
   // Autopilots

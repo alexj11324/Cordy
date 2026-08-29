@@ -307,6 +307,7 @@ function IssueSurfaceContent({
                 issues={issues}
                 visibleStatuses={controller.visibleStatuses}
                 hiddenStatuses={controller.hiddenStatuses}
+                droppableHiddenStatuses={controller.droppableHiddenStatuses}
                 onMoveIssue={controller.moveIssue}
                 childProgressMap={controller.childProgressMap}
                 projectMap={controller.projectMap}

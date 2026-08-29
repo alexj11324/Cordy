@@ -48,7 +48,7 @@ pub(super) enum IssueCommand {
     Create(IssueCreateArgs),
     #[command(about = "Update an issue")]
     Update(IssueUpdateArgs),
-    #[command(about = "Assign an issue to a member, agent, or squad")]
+    #[command(about = "Assign an issue to a member, agent, or team")]
     Assign(IssueAssignArgs),
     #[command(about = "Change issue status")]
     Status(IssueStatusArgs),
@@ -120,11 +120,11 @@ pub(super) struct IssueCreateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "Issue priority")]
     pub(super) priority: Option<String>,
-    #[arg(long, help = "Assignee name (member, agent, or squad; fuzzy match)")]
+    #[arg(long, help = "Assignee name (member, agent, or team; fuzzy match)")]
     pub(super) assignee: Option<String>,
     #[arg(
         long,
-        help = "Assignee UUID — member, agent, or squad (mutually exclusive with --assignee)"
+        help = "Assignee UUID — member, agent, or team (mutually exclusive with --assignee)"
     )]
     pub(super) assignee_id: Option<String>,
     #[arg(long, help = "Parent issue ID")]
@@ -185,12 +185,9 @@ pub(super) struct IssueUpdateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "New priority")]
     pub(super) priority: Option<String>,
-    #[arg(
-        long,
-        help = "New assignee name (member, agent, or squad; fuzzy match)"
-    )]
+    #[arg(long, help = "New assignee name (member, agent, or team; fuzzy match)")]
     pub(super) assignee: Option<String>,
-    #[arg(long, help = "New assignee UUID — member, agent, or squad")]
+    #[arg(long, help = "New assignee UUID — member, agent, or team")]
     pub(super) assignee_id: Option<String>,
     #[arg(long, help = "Project ID; pass an empty string to clear")]
     pub(super) project: Option<String>,
@@ -214,9 +211,9 @@ pub(super) struct IssueUpdateArgs {
 pub(super) struct IssueAssignArgs {
     #[arg(value_name = "ID")]
     pub(super) id: String,
-    #[arg(long, help = "Assignee name (member, agent, or squad; fuzzy match)")]
+    #[arg(long, help = "Assignee name (member, agent, or team; fuzzy match)")]
     pub(super) to: Option<String>,
-    #[arg(long, help = "Assignee UUID — member, agent, or squad")]
+    #[arg(long, help = "Assignee UUID — member, agent, or team")]
     pub(super) to_id: Option<String>,
     #[arg(long, help = "Remove current assignee")]
     pub(super) unassign: bool,

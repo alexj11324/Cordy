@@ -43,7 +43,7 @@ const INBOX_GROUPS: Array<{
   {
     key: "mentions",
     label: "Mentions",
-    description: "When someone @mentions you, including @all and @squad.",
+    description: "When someone @mentions you, including @all and @team.",
   },
   {
     key: "updates",

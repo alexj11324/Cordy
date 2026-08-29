@@ -24,7 +24,7 @@ pub(super) struct ResolvedIssueAssignee {
 async fn fetch_issue_actors(
     client: &ApiClient,
     workspace_id: &str,
-    include_squads: bool,
+    include_teams: bool,
 ) -> [Result<Vec<IssueActor>>; 3] {
     let members =
         retry_actor_get::<Vec<Value>>(client, &format!("/api/workspaces/{workspace_id}/members"))
@@ -61,14 +61,14 @@ async fn fetch_issue_actors(
             })
             .collect()
     });
-    let squads = if include_squads {
-        retry_actor_get::<Vec<Value>>(client, "/api/squads")
+    let teams = if include_teams {
+        retry_actor_get::<Vec<Value>>(client, "/api/teams")
             .await
             .map(|items| {
                 items
                     .iter()
                     .map(|item| IssueActor {
-                        actor_type: "squad",
+                        actor_type: "team",
                         id: value_string(item, "id"),
                         name: value_string(item, "name"),
                         email: String::new(),
@@ -79,7 +79,7 @@ async fn fetch_issue_actors(
     } else {
         Ok(Vec::new())
     };
-    [members, agents, squads]
+    [members, agents, teams]
 }
 
 pub(super) async fn retry_actor_get<T: DeserializeOwned>(
@@ -121,25 +121,25 @@ async fn resolve_actor_id(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-    allow_squads: bool,
+    allow_teams: bool,
 ) -> Result<ResolvedIssueAssignee> {
     let input = raw.trim();
     if !is_canonical_uuid(input) {
         bail!("expected a canonical UUID, got {raw:?}");
     }
-    let actors = fetch_issue_actors(client, workspace_id, allow_squads).await;
-    let actor_kind_count = if allow_squads { 3 } else { 2 };
+    let actors = fetch_issue_actors(client, workspace_id, allow_teams).await;
+    let actor_kind_count = if allow_teams { 3 } else { 2 };
     if actors[..actor_kind_count].iter().all(Result::is_err) {
         let errors = actors[..actor_kind_count]
             .iter()
             .enumerate()
             .map(|(index, result)| {
-                let kind = ["members", "agents", "squads"][index];
+                let kind = ["members", "agents", "teams"][index];
                 format!("fetch {kind}: {}", result.as_ref().unwrap_err())
             })
             .collect::<Vec<_>>()
             .join("; ");
-        if !allow_squads {
+        if !allow_teams {
             bail!("failed to resolve user: {errors}");
         }
         bail!(
@@ -154,7 +154,7 @@ async fn resolve_actor_id(
         .filter_map(|result| result.as_ref().ok())
         .flatten()
         .find(|actor| {
-            (allow_squads || actor.actor_type != "squad") && actor.id.eq_ignore_ascii_case(input)
+            (allow_teams || actor.actor_type != "team") && actor.id.eq_ignore_ascii_case(input)
         })
     {
         return Ok(ResolvedIssueAssignee {
@@ -163,8 +163,8 @@ async fn resolve_actor_id(
             name: actor.name.clone(),
         });
     }
-    if allow_squads {
-        bail!("no member, agent, or squad found with ID {input:?}")
+    if allow_teams {
+        bail!("no member, agent, or team found with ID {input:?}")
     }
     bail!("no member or agent found with ID {input:?}")
 }
@@ -189,28 +189,28 @@ async fn resolve_actor_name(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-    allow_squads: bool,
+    allow_teams: bool,
 ) -> Result<ResolvedIssueAssignee> {
     let input = normalize_assignee_input(raw);
     if input.is_empty() {
-        if allow_squads {
-            bail!("no member, agent, or squad found matching {raw:?}");
+        if allow_teams {
+            bail!("no member, agent, or team found matching {raw:?}");
         }
         bail!("no member or agent found matching {raw:?}");
     }
-    let actors = fetch_issue_actors(client, workspace_id, allow_squads).await;
-    let actor_kind_count = if allow_squads { 3 } else { 2 };
+    let actors = fetch_issue_actors(client, workspace_id, allow_teams).await;
+    let actor_kind_count = if allow_teams { 3 } else { 2 };
     if actors[..actor_kind_count].iter().all(Result::is_err) {
         let errors = actors[..actor_kind_count]
             .iter()
             .enumerate()
             .map(|(index, result)| {
-                let kind = ["members", "agents", "squads"][index];
+                let kind = ["members", "agents", "teams"][index];
                 format!("fetch {kind}: {}", result.as_ref().unwrap_err())
             })
             .collect::<Vec<_>>()
             .join("; ");
-        if !allow_squads {
+        if !allow_teams {
             bail!("failed to resolve user: {errors}");
         }
         bail!("failed to resolve assignee: {errors}");
@@ -219,7 +219,7 @@ async fn resolve_actor_name(
         .iter()
         .filter_map(|result| result.as_ref().ok())
         .flatten()
-        .filter(|actor| !actor.archived && (allow_squads || actor.actor_type != "squad"))
+        .filter(|actor| !actor.archived && (allow_teams || actor.actor_type != "team"))
         .collect::<Vec<_>>();
     let mut buckets = [Vec::new(), Vec::new(), Vec::new()];
     for actor in actors {
@@ -266,8 +266,8 @@ async fn resolve_actor_name(
             }
         }
     }
-    if allow_squads {
-        bail!("no member, agent, or squad found matching {input:?}")
+    if allow_teams {
+        bail!("no member, agent, or team found matching {input:?}")
     }
     bail!("no member or agent found matching {input:?}")
 }
@@ -278,7 +278,7 @@ pub(super) fn normalize_assignee_input(raw: &str) -> String {
         if input.starts_with('[') && input.ends_with(')') {
             let target = &input[marker + 12..input.len() - 1];
             if let Some((kind, id)) = target.split_once('/') {
-                if matches!(kind, "member" | "agent" | "squad") {
+                if matches!(kind, "member" | "agent" | "team") {
                     return id.into();
                 }
             }

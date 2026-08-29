@@ -48,6 +48,8 @@ These are developer commands, not the default agent verification path:
 
 ```bash
 make dev              # Auto-setup + start everything
+make web-dev          # Next.js + local fixture API; real product UI, no Rust
+make api-dev          # Rust API only (pair with PATCHBAY_UI_FIXTURES=0 make web-dev)
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Developer helper for Rust tests; GitHub Actions is authoritative

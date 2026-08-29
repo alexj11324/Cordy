@@ -191,6 +191,49 @@ describe("ApiClient Plugin preview response schema", () => {
   });
 });
 
+describe("ApiClient workspace integration installs", () => {
+  it("does not add an Agent selector to workspace Hub requests", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await client.beginLarkInstall("ws-1", undefined, "feishu");
+    await client.registerSlackBYO("ws-1", undefined, {
+      bot_token: "xoxb-token",
+      app_token: "xapp-token",
+    });
+    await client.registerDingTalkBYO("ws-1", undefined, {
+      client_id: "client-id",
+      client_secret: "client-secret",
+    });
+    await client.registerWecomBYO("ws-1", undefined, {
+      bot_id: "bot-id",
+      secret: "secret",
+    });
+    await client.registerTelegramBot("ws-1", undefined, { bot_token: "token" });
+    await client.beginWeixinInstall("ws-1");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.example.test/api/workspaces/ws-1/lark/install/begin?region=feishu",
+      "https://api.example.test/api/workspaces/ws-1/slack/install/byo",
+      "https://api.example.test/api/workspaces/ws-1/dingtalk/install/byo",
+      "https://api.example.test/api/workspaces/ws-1/wecom/install/byo",
+      "https://api.example.test/api/workspaces/ws-1/telegram/install",
+      "https://api.example.test/api/workspaces/ws-1/weixin/install/begin",
+    ]);
+    expect(fetchMock.mock.calls.every(([, init]) => !String(init?.body).includes("agent_id"))).toBe(
+      true,
+    );
+  });
+});
+
 describe("ApiClient server Table query", () => {
   it("posts the canonical query to the group and branch endpoints", async () => {
     const fetchMock = vi

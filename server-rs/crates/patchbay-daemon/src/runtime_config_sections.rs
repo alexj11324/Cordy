@@ -251,13 +251,13 @@ pub(crate) fn build_comment_reply_instructions(
     provider: &str,
     issue_id: &str,
     trigger_comment_id: &str,
-    squad_leader: bool,
+    team_leader: bool,
 ) -> String {
     let _ = provider; // Retained for caller symmetry.
     if trigger_comment_id.is_empty() {
         return String::new();
     }
-    let lead = if squad_leader {
+    let lead = if team_leader {
         "Unless your outcome is `no_action`, post your reply as a comment — always use the trigger comment ID below, "
     } else {
         "Post your reply as a comment — always use the trigger comment ID below, "
@@ -290,7 +290,7 @@ Do NOT write literal `\\n` escapes to simulate line breaks; the file preserves r
 pub(crate) fn build_multi_thread_comment_reply_instructions(
     issue_id: &str,
     targets: &[ThreadReplyTarget],
-    squad_leader: bool,
+    team_leader: bool,
 ) -> String {
     if issue_id.is_empty() || targets.len() < 2 {
         return String::new();
@@ -308,8 +308,8 @@ pub(crate) fn build_multi_thread_comment_reply_instructions(
 
     let lead_head = "This run coalesced comments from %d DISTINCT threads.";
     let _ = lead_head;
-    let leader_carve_out = if squad_leader {
-        "**If your outcome is `no_action`, skip this ENTIRE fan-out block — post no replies at all and exit via `patchbay squad activity` as your leader rules direct; everything below applies only otherwise.** Otherwise, post ONE reply per thread"
+    let leader_carve_out = if team_leader {
+        "**If your outcome is `no_action`, skip this ENTIRE fan-out block — post no replies at all and exit via `patchbay team activity` as your leader rules direct; everything below applies only otherwise.** Otherwise, post ONE reply per thread"
     } else {
         "Post ONE reply per thread"
     };

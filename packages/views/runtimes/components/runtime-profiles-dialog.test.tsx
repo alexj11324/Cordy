@@ -124,7 +124,7 @@ describe("RuntimeProfilesDialog", () => {
     renderDialog();
 
     expect(
-      screen.getByText("Create your first custom runtime"),
+      screen.getByText("Create your first custom device"),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Pick a base protocol family/),
@@ -136,7 +136,7 @@ describe("RuntimeProfilesDialog", () => {
     expect(builtinsToggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("claude")).not.toBeInTheDocument();
     expect(
-      screen.getAllByRole("button", { name: "New custom runtime" }),
+      screen.getAllByRole("button", { name: "New custom device" }),
     ).toHaveLength(1);
   });
 
@@ -145,7 +145,7 @@ describe("RuntimeProfilesDialog", () => {
 
     renderDialog();
 
-    const customTitle = screen.getByText("Custom runtimes (1)");
+    const customTitle = screen.getByText("Custom devices (1)");
     const customRow = screen.getByText("Team Codex");
     const builtinsToggle = screen.getByRole("button", {
       name: /Supported base protocols/,
@@ -182,7 +182,7 @@ describe("RuntimeProfilesDialog", () => {
 
     fireEvent.click(builtinsToggle);
 
-    expect(screen.getByText("Select a runtime")).toBeInTheDocument();
+    expect(screen.getByText("Select a device")).toBeInTheDocument();
     expect(
       screen.queryByText(/claude is a built-in protocol family/),
     ).not.toBeInTheDocument();
@@ -192,7 +192,7 @@ describe("RuntimeProfilesDialog", () => {
     renderDialog();
 
     const newRuntimeButtons = screen.getAllByRole("button", {
-      name: "New custom runtime",
+      name: "New custom device",
     });
     expect(newRuntimeButtons[0]).toBeDefined();
     fireEvent.click(newRuntimeButtons[0]!);
@@ -209,7 +209,7 @@ describe("RuntimeProfilesDialog", () => {
     expect(screen.getByText("--model")).toBeInTheDocument();
     expect(screen.getByText("composer-2.5")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Create runtime" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create device" }));
 
     await waitFor(() =>
       expect(mutationState.createProfile).toHaveBeenCalledWith({
@@ -232,7 +232,7 @@ describe("RuntimeProfilesDialog", () => {
     });
 
     expect(
-      screen.getByRole("heading", { name: "New custom runtime" }),
+      screen.getByRole("heading", { name: "New custom device" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/from Studio Mac/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View setup guide" })).toHaveAttribute(
@@ -241,7 +241,7 @@ describe("RuntimeProfilesDialog", () => {
     );
     expect(screen.getByText("Step 1 of 2")).toBeInTheDocument();
     expect(
-      screen.queryByText("Create your first custom runtime"),
+      screen.queryByText("Create your first custom device"),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
 
@@ -253,7 +253,7 @@ describe("RuntimeProfilesDialog", () => {
     fireEvent.change(screen.getByLabelText("Command"), {
       target: { value: "agent --model composer-2.5" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create runtime" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create device" }));
 
     await waitFor(() => {
       expect(onProfileCreated).toHaveBeenCalledWith(
@@ -270,12 +270,12 @@ describe("RuntimeProfilesDialog", () => {
     });
 
     expect(
-      screen.getByRole("heading", { name: "Edit custom runtime" }),
+      screen.getByRole("heading", { name: "Edit custom device" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Display name")).toHaveValue("Team Codex");
     expect(screen.getByLabelText("Command")).toHaveValue("codex");
     expect(
-      screen.queryByText("Create your first custom runtime"),
+      screen.queryByText("Create your first custom device"),
     ).not.toBeInTheDocument();
   });
 });

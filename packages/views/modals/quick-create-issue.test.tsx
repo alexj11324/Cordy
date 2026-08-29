@@ -39,14 +39,14 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
-    assigneeType: undefined as "agent" | "squad" | "member" | undefined,
+    assigneeType: undefined as "agent" | "team" | "member" | undefined,
     assigneeId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
   agent: {
     prompt: "",
-    actorType: undefined as "agent" | "squad" | undefined,
+    actorType: undefined as "agent" | "team" | undefined,
     actorId: undefined as string | undefined,
   },
   activeMode: "agent" as "agent" | "manual",
@@ -62,7 +62,7 @@ const mockIssueDraftStore = {
 };
 
 const mockQuickCreateStore = {
-  lastActorType: null as "agent" | "squad" | null,
+  lastActorType: null as "agent" | "team" | null,
   lastActorId: null as string | null,
   setLastActor: mockSetLastActor,
   keepOpen: false,
@@ -86,10 +86,10 @@ const mockProjectsQuery = vi.hoisted(() => ({
   isSuccess: true,
 }));
 
-// Per-test override for the squads list so we can flip between "squads
-// exist and one's leader is reachable" and "no squads" cases without
+// Per-test override for the teams list so we can flip between "teams
+// exist and one's leader is reachable" and "no teams" cases without
 // re-mocking the whole module.
-const mockSquadsData = vi.hoisted(
+const mockTeamsData = vi.hoisted(
   () => ({ list: [] as Array<{ id: string; name: string; leader_id: string; archived_at: string | null }> }),
 );
 
@@ -101,9 +101,9 @@ let mockUploadIdSeq = 0;
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
     // Workspace-scoped query keys carry the wsId as `queryKey[1]`; the
-    // discriminator is at `queryKey[2]` (e.g. ["workspaces", wsId, "squads"]).
-    if (queryKey[0] === "workspaces" && queryKey[2] === "squads") {
-      return { data: mockSquadsData.list };
+    // discriminator is at `queryKey[2]` (e.g. ["workspaces", wsId, "teams"]).
+    if (queryKey[0] === "workspaces" && queryKey[2] === "teams") {
+      return { data: mockTeamsData.list };
     }
     switch (queryKey[0]) {
       case "members":
@@ -152,8 +152,8 @@ vi.mock("../navigation/context", () => ({
 vi.mock("@patchbay/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
-  squadListOptions: (wsId: string) => ({
-    queryKey: ["workspaces", wsId, "squads"],
+  teamListOptions: (wsId: string) => ({
+    queryKey: ["workspaces", wsId, "teams"],
   }),
 }));
 
@@ -468,7 +468,7 @@ describe("AgentCreatePanel", () => {
     });
     mockProjectsQuery.data = [];
     mockProjectsQuery.isSuccess = true;
-    mockSquadsData.list = [];
+    mockTeamsData.list = [];
     mockQuickCreateIssue.mockResolvedValue(undefined);
     mockApiUploadFile.mockResolvedValue({
       id: "019ec09d-6222-722b-bdfa-427b105d80be",
@@ -503,8 +503,8 @@ describe("AgentCreatePanel", () => {
   });
 
   it("restores unfinished actor, project, priority, and due-date selections after remount", async () => {
-    mockSquadsData.list = [
-      { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
+    mockTeamsData.list = [
+      { id: "team-1", name: "Frontend Team", leader_id: "agent-1", archived_at: null },
     ];
     mockProjectsQuery.data = [{ id: "proj-1", title: "Web", icon: null }];
     mockCreateSettingsStore.quickCreateFields = ["project", "priority", "due_date"];
@@ -516,13 +516,13 @@ describe("AgentCreatePanel", () => {
       setIsExpanded: vi.fn(),
     });
 
-    await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
+    await user.click(screen.getByRole("button", { name: /Frontend Team/ }));
     await user.click(screen.getByTestId("project-picker"));
     await user.click(screen.getByTestId("priority-picker"));
     await user.click(screen.getByTestId("due-date-picker"));
 
     expect(mockIssueDraftStore.draft.agent).toEqual(
-      expect.objectContaining({ actorType: "squad", actorId: "squad-1" }),
+      expect.objectContaining({ actorType: "team", actorId: "team-1" }),
     );
     expect(mockIssueDraftStore.draft.shared).toEqual(
       expect.objectContaining({
@@ -535,7 +535,7 @@ describe("AgentCreatePanel", () => {
     firstOpen.unmount();
     renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-    expect(screen.getByRole("button", { name: /Frontend Squad/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /Frontend Team/ })).toHaveAttribute(
       "data-selected",
       "true",
     );
@@ -760,13 +760,13 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // Picking a squad routes the submission through `squad_id` (not
-  // `agent_id`) so the backend can resolve the squad's leader agent and
-  // inject the squad-leader briefing on dispatch. The persisted preference
-  // remembers the actor type so the next open defaults back to the squad.
-  it("submits squad_id when the user picks a squad in the actor picker", async () => {
-    mockSquadsData.list = [
-      { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
+  // Picking a team routes the submission through `team_id` (not
+  // `agent_id`) so the backend can resolve the team's leader agent and
+  // inject the team-leader briefing on dispatch. The persisted preference
+  // remembers the actor type so the next open defaults back to the team.
+  it("submits team_id when the user picks a team in the actor picker", async () => {
+    mockTeamsData.list = [
+      { id: "team-1", name: "Frontend Team", leader_id: "agent-1", archived_at: null },
     ];
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -774,8 +774,8 @@ describe("AgentCreatePanel", () => {
     renderPanel({ onClose, isExpanded: false, setIsExpanded: vi.fn() });
 
     // The picker mock renders both sections inline as buttons; click the
-    // squad row directly.
-    await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
+    // team row directly.
+    await user.click(screen.getByRole("button", { name: /Frontend Team/ }));
 
     const editor = screen.getByPlaceholderText(
       'Tell the agent what to do, e.g. "let Bohan fix the inbox loading slowness in the Web project"',
@@ -787,25 +787,25 @@ describe("AgentCreatePanel", () => {
 
     await waitFor(() => {
       expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        squad_id: "squad-1",
+        team_id: "team-1",
         prompt: "Investigate the regression",
         project_id: undefined,
       });
     });
-    expect(mockSetLastActor).toHaveBeenCalledWith("squad", "squad-1");
+    expect(mockSetLastActor).toHaveBeenCalledWith("team", "team-1");
   });
 
-  // Squads whose leader agent isn't visible (archived, private, etc.) must
+  // Teams whose leader agent isn't visible (archived, private, etc.) must
   // not appear in the picker — the backend would reject the pick on
   // validateAssigneePair, and showing them invites a confusing dead path.
-  it("hides squads whose leader agent is not in the visible-agents list", () => {
-    mockSquadsData.list = [
-      { id: "squad-orphan", name: "Orphan Squad", leader_id: "agent-missing", archived_at: null },
+  it("hides teams whose leader agent is not in the visible-agents list", () => {
+    mockTeamsData.list = [
+      { id: "team-orphan", name: "Orphan Team", leader_id: "agent-missing", archived_at: null },
     ];
 
     renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-    expect(screen.queryByRole("button", { name: /Orphan Squad/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Orphan Team/ })).toBeNull();
   });
 
   // A successful create used to persist its project, so the NEXT open

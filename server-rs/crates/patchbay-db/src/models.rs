@@ -157,7 +157,7 @@ pub struct AgentTaskQueue {
     pub runtime_mcp_overlay: Option<serde_json::Value>,
     pub session_id: Option<String>,
     pub session_rollout_missing: bool,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub started_at: Option<DateTime<Utc>>,
     pub status: String,
     pub trigger_comment_id: Option<Uuid>,
@@ -281,7 +281,7 @@ pub struct AutopilotRun {
     pub reason_code: Option<String>,
     pub result: Option<serde_json::Value>,
     pub source: String,
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub status: String,
     pub task_id: Option<Uuid>,
     pub trigger_id: Option<Uuid>,
@@ -377,7 +377,9 @@ pub struct ChannelInboundMessageDedup {
 /// Row of `channel_installation`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChannelInstallation {
-    pub agent_id: Uuid,
+    /// `None` means the platform is connected at workspace scope. The active
+    /// Agent is selected per chat by the channel hub (`/agents`).
+    pub agent_id: Option<Uuid>,
     pub channel_type: String,
     pub config: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -493,6 +495,50 @@ pub struct ChatSession {
     pub unread_since: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
     pub work_dir: Option<String>,
+    pub workspace_id: Uuid,
+}
+
+/// Row of `workspace_channel`.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct WorkspaceChannel {
+    pub archived_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub created_by: Uuid,
+    pub description: String,
+    pub id: Uuid,
+    pub name: String,
+    pub slug: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+/// A quoted channel message with the author snapshot needed by the client.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceChannelQuotedMessage {
+    pub author_id: Uuid,
+    pub author_name: String,
+    pub author_type: String,
+    pub content: String,
+    pub id: Uuid,
+}
+
+/// A channel message enriched with its member/agent display identity.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceChannelMessage {
+    pub author_avatar_url: Option<String>,
+    pub author_id: Uuid,
+    pub author_name: String,
+    pub author_status: Option<String>,
+    pub author_type: String,
+    pub channel_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub parent_message: Option<WorkspaceChannelQuotedMessage>,
+    pub parent_id: Option<Uuid>,
+    pub quoted_message: Option<WorkspaceChannelQuotedMessage>,
+    pub quoted_message_id: Option<Uuid>,
+    pub updated_at: DateTime<Utc>,
     pub workspace_id: Uuid,
 }
 
@@ -767,6 +813,8 @@ pub struct Issue {
     pub project_id: Option<Uuid>,
     pub properties: serde_json::Value,
     pub revision: i64,
+    pub reviewer_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
     pub stage: Option<i32>,
     pub start_date: Option<chrono::NaiveDate>,
     pub status: String,
@@ -1227,9 +1275,9 @@ pub struct SkillToLabel {
     pub skill_id: Uuid,
 }
 
-/// Row of `squad`.
+/// Row of `team`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct Squad {
+pub struct Team {
     pub archived_at: Option<DateTime<Utc>>,
     pub archived_by: Option<Uuid>,
     pub avatar_url: Option<String>,
@@ -1244,15 +1292,15 @@ pub struct Squad {
     pub workspace_id: Uuid,
 }
 
-/// Row of `squad_member`.
+/// Row of `team_member`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct SquadMember {
+pub struct TeamMember {
     pub created_at: DateTime<Utc>,
     pub id: Uuid,
     pub member_id: Uuid,
     pub member_type: String,
     pub role: String,
-    pub squad_id: Uuid,
+    pub team_id: Uuid,
 }
 
 /// Row of `sys_cron_executions`.

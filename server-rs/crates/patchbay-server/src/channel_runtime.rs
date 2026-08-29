@@ -1407,7 +1407,7 @@ impl patchbay_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
                 req.workspace_id,
                 req.requester_id,
                 req.agent_id,
-                req.squad_id,
+                req.team_id,
                 &req.prompt,
                 &req.priority,
                 &req.due_date,

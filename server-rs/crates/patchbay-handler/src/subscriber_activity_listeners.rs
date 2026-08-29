@@ -20,6 +20,8 @@ struct IssueFields {
     creator_id: Uuid,
     assignee_type: Option<String>,
     assignee_id: Option<Uuid>,
+    reviewer_type: Option<String>,
+    reviewer_id: Option<Uuid>,
     description: Option<String>,
     title: String,
     status: String,
@@ -177,6 +179,22 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
     }
     let review_handoff = flag(&event.payload, "review_handoff");
     if review_handoff {
+        if let (Some(user_type), Some(user_id)) =
+            (fields.reviewer_type.as_deref(), fields.reviewer_id)
+        {
+            if is_assignment_recipient(user_type) {
+                add_subscriber(
+                    pool,
+                    bus,
+                    fields.workspace_id,
+                    fields.id,
+                    user_type,
+                    user_id,
+                    "assignee",
+                )
+                .await;
+            }
+        }
         let mut details = Map::new();
         insert_optional(
             &mut details,
@@ -188,8 +206,8 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "from_id",
             event.payload.get("prev_assignee_id"),
         );
-        insert_optional_str(&mut details, "to_type", fields.assignee_type.as_deref());
-        if let Some(to_id) = fields.assignee_id {
+        insert_optional_str(&mut details, "to_type", fields.reviewer_type.as_deref());
+        if let Some(to_id) = fields.reviewer_id {
             details.insert("to_id".into(), Value::String(to_id.to_string()));
         }
         insert_optional(
@@ -569,6 +587,8 @@ fn scoped_issue(event: &Event) -> Option<IssueFields> {
         creator_id: uuid(issue, "creator_id")?,
         assignee_type: optional_string(issue, "assignee_type"),
         assignee_id: uuid(issue, "assignee_id"),
+        reviewer_type: optional_string(issue, "reviewer_type"),
+        reviewer_id: uuid(issue, "reviewer_id"),
         description: optional_string(issue, "description"),
         title: string(issue, "title"),
         status: string(issue, "status"),
@@ -621,7 +641,7 @@ fn is_assignment_recipient(user_type: &str) -> bool {
 fn parse_mentions(content: &str) -> Vec<Mention> {
     static MENTION_RE: OnceLock<Regex> = OnceLock::new();
     let re = MENTION_RE.get_or_init(|| {
-        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)")
+        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|team|issue|all)/([0-9a-fA-F-]+|all)\)")
             .expect("mention regex is valid")
     });
     let mut seen = HashSet::new();
@@ -678,7 +698,7 @@ mod tests {
     fn only_direct_assignee_types_are_subscriber_recipients() {
         assert!(is_assignment_recipient("member"));
         assert!(is_assignment_recipient("agent"));
-        assert!(!is_assignment_recipient("squad"));
+        assert!(!is_assignment_recipient("team"));
         assert!(!is_assignment_recipient("system"));
     }
 }

@@ -277,6 +277,52 @@ RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, s
     }))
 }
 
+/// Changes the Agent used by a channel chat session after a hub command such
+/// as `/agents 2`. The next task created from the session reads the selected
+/// Agent's runtime. The workspace predicate keeps a channel route from
+/// retargeting a session outside its installation workspace.
+pub async fn switch_chat_session_agent(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    chat_session_id: Uuid,
+    agent_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE chat_session
+SET agent_id = $3,
+    runtime_id = (
+        SELECT runtime_id
+        FROM agent
+        WHERE id = $3 AND workspace_id = $2
+    ),
+    -- A session/work directory belongs to the previously selected Agent's
+    -- execution context. Never let `/agents` hand that resume pointer to a
+    -- different Agent. Keep it when this is an idempotent re-selection.
+    session_id = CASE
+        WHEN chat_session.agent_id IS DISTINCT FROM $3 THEN NULL
+        ELSE chat_session.session_id
+    END,
+    work_dir = CASE
+        WHEN chat_session.agent_id IS DISTINCT FROM $3 THEN NULL
+        ELSE chat_session.work_dir
+    END,
+    updated_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND EXISTS (
+      SELECT 1
+      FROM agent
+      WHERE id = $3 AND workspace_id = $2 AND archived_at IS NULL
+  )"#,
+    )
+    .bind(chat_session_id)
+    .bind(workspace_id)
+    .bind(agent_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn create_chat_task(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     agent_id: Uuid,
@@ -317,7 +363,7 @@ SELECT
     $6::timestamptz,
     COALESCE($15::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, NULL, $2)
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
     )
         .bind(agent_id)
         .bind(runtime_id)
@@ -367,7 +413,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         initiator_user_id: row.try_get(26)?,
         handoff_note: row.try_get(27)?,
         prepare_lease_expires_at: row.try_get(28)?,
-        squad_id: row.try_get(29)?,
+        team_id: row.try_get(29)?,
         runtime_mcp_overlay: row.try_get(30)?,
         escalation_for_task_id: row.try_get(31)?,
         fire_at: row.try_get(32)?,
@@ -453,7 +499,7 @@ FROM (
 WHERE task.id = $1
   AND pending.max_until IS NOT NULL
   AND (task.fire_at IS NULL OR task.fire_at < pending.max_until)
-RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir"#
+RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.team_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir"#
     )
         .bind(task_id)
         .fetch_optional(executor)
@@ -489,7 +535,7 @@ RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, tas
         initiator_user_id: row.try_get(26)?,
         handoff_note: row.try_get(27)?,
         prepare_lease_expires_at: row.try_get(28)?,
-        squad_id: row.try_get(29)?,
+        team_id: row.try_get(29)?,
         runtime_mcp_overlay: row.try_get(30)?,
         escalation_for_task_id: row.try_get(31)?,
         fire_at: row.try_get(32)?,
@@ -2007,7 +2053,7 @@ WHERE task.chat_session_id = $1
         AND message.message_kind != 'channel_command'
         AND message.channel_media_pending_until > now()
   )
-RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir"#
+RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.team_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir"#
     )
         .bind(chat_session_id)
         .fetch_all(executor)
@@ -2044,7 +2090,7 @@ RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, tas
             initiator_user_id: row.try_get(26)?,
             handoff_note: row.try_get(27)?,
             prepare_lease_expires_at: row.try_get(28)?,
-            squad_id: row.try_get(29)?,
+            team_id: row.try_get(29)?,
             runtime_mcp_overlay: row.try_get(30)?,
             escalation_for_task_id: row.try_get(31)?,
             fire_at: row.try_get(32)?,
@@ -2343,7 +2389,7 @@ pub async fn set_chat_task_input_owner_self(
         r#"UPDATE agent_task_queue
 SET chat_input_task_id = id
 WHERE id = $1
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -2379,7 +2425,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         initiator_user_id: row.try_get(26)?,
         handoff_note: row.try_get(27)?,
         prepare_lease_expires_at: row.try_get(28)?,
-        squad_id: row.try_get(29)?,
+        team_id: row.try_get(29)?,
         runtime_mcp_overlay: row.try_get(30)?,
         escalation_for_task_id: row.try_get(31)?,
         fire_at: row.try_get(32)?,

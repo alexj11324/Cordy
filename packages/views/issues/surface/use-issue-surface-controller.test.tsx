@@ -510,7 +510,7 @@ describe("useIssueSurfaceController", () => {
           before_id: "issue-0",
           after_id: "issue-2",
         },
-        onSettled,
+        { onSettled },
       );
     });
 

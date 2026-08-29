@@ -19,6 +19,7 @@ import {
 } from "../../editor/use-coordinated-uploads";
 import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
 import { ChatAddMenu } from "./chat-add-menu";
+import { ChatFollowUpMenu } from "./chat-follow-up-menu";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useChatStore, DRAFT_NEW_SESSION } from "@patchbay/core/chat";
 import { attachmentToDraftUpload, type DraftUpload } from "@patchbay/core/drafts";
@@ -54,13 +55,15 @@ function isAttachmentReferenced(content: string, attachment: Attachment): boolea
   return attachmentReferenceUrls(attachment).some((url) => content.includes(url));
 }
 
+type ChatComposerSubmit = (
+  content: string,
+  attachmentIds: string[] | undefined,
+  commitInput: (options?: { extraDraftKeys?: string[]; clearEditor?: boolean }) => void,
+  draftAttachments: Attachment[],
+) => void | boolean | Promise<void | boolean>;
+
 interface ChatInputProps {
-  onSend: (
-    content: string,
-    attachmentIds: string[] | undefined,
-    commitInput: (options?: { extraDraftKeys?: string[]; clearEditor?: boolean }) => void,
-    draftAttachments: Attachment[],
-  ) => void | boolean | Promise<void | boolean>;
+  onSend: ChatComposerSubmit;
   restoreDraftRequest?: {
     id: string;
     content: string;
@@ -90,6 +93,15 @@ interface ChatInputProps {
   isRunning?: boolean;
   /** Enabled only after the server explicitly advertises follow-up queues. */
   allowSubmitWhileRunning?: boolean;
+  /**
+   * When the agent is already working, ask Wait vs Steer before sending
+   * instead of silently queueing. Used by the issue-agent conversation.
+   */
+  chooseFollowUp?: boolean;
+  /** Interrupt the current turn and send this draft as the next main turn. */
+  onSteer?: ChatComposerSubmit;
+  /** Queue tray rendered inside the composer card, LobeHub-style. */
+  queueSlot?: ReactNode;
   disabled?: boolean;
   /** True when the user has no agent available — disables the editor and
    *  surfaces a distinct placeholder. Kept separate from `disabled` so
@@ -145,6 +157,9 @@ export function ChatInput({
   onStop,
   isRunning,
   allowSubmitWhileRunning,
+  chooseFollowUp,
+  onSteer,
+  queueSlot,
   disabled,
   noAgent,
   agentArchived,
@@ -206,6 +221,11 @@ export function ChatInput({
   const setInputDraftAttachments = useChatStore((s) => s.setInputDraftAttachments);
   const clearInputDraft = useChatStore((s) => s.clearInputDraft);
   const [isEmpty, setIsEmpty] = useState(!inputDraft.trim());
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const followUpModeRef = useRef<"wait" | "steer">("wait");
+  useEffect(() => {
+    if (!isRunning) setFollowUpOpen(false);
+  }, [isRunning]);
   // `isEmpty` tracks the LIVE editor, which the persisted draft lags by a
   // debounce, so the send affordance cannot be derived from `inputDraft` alone.
   // But `isEmpty` is never re-derived when the composer switches draft slots
@@ -524,8 +544,12 @@ export function ChatInput({
         contentLength: content.length,
         draftKey: keyAtSend,
         attachmentCount: uniqueActiveIds.length,
+        followUpMode: followUpModeRef.current,
       });
-      const accepted = await onSend(
+      const sendFn =
+        followUpModeRef.current === "steer" && onSteer ? onSteer : onSend;
+      followUpModeRef.current = "wait";
+      const accepted = await sendFn(
         content,
         uniqueActiveIds.length > 0 ? uniqueActiveIds : undefined,
         commitInput,
@@ -565,6 +589,50 @@ export function ChatInput({
     !submitting &&
     !isProjectUpdating;
   const selectedProject = projects.find((project) => project.id === projectId);
+  const canQueueSend =
+    !!allowSubmitWhileRunning && !hasNothingToSend && !gate.uploading;
+  const showStop = !!isRunning && !!onStop;
+  const showSend = !isRunning || canQueueSend;
+
+  const requestSend = () => {
+    if (chooseFollowUp && isRunning && allowSubmitWhileRunning) {
+      setFollowUpOpen(true);
+      return;
+    }
+    void submit();
+  };
+
+  const sendTooltip = gate.uploading
+    ? tEditor(($) => $.upload.in_progress)
+    : isRunning
+      ? chooseFollowUp
+        ? t(($) => $.follow_up.choose_tooltip)
+        : t(($) => $.input.queue_send_tooltip)
+      : sendShortcut
+        ? `${t(($) => $.input.send_tooltip)} · ${formatShortcut(sendShortcut)}`
+        : t(($) => $.input.send_tooltip);
+  const sendAriaLabel = gate.uploading
+    ? tEditor(($) => $.upload.in_progress)
+    : isRunning
+      ? chooseFollowUp
+        ? t(($) => $.follow_up.choose_tooltip)
+        : t(($) => $.input.queue_send_tooltip)
+      : t(($) => $.input.send_tooltip);
+
+  const sendButton = (
+    <SubmitButton
+      onClick={requestSend}
+      disabled={hasNothingToSend || submitting || !!disabled || !!noAgent}
+      loading={submitting}
+      busy={gate.uploading}
+      tooltip={sendTooltip}
+      ariaLabel={sendAriaLabel}
+      ariaHasPopup={chooseFollowUp && isRunning ? "dialog" : undefined}
+      ariaExpanded={chooseFollowUp && isRunning ? followUpOpen : undefined}
+      stopTooltip={t(($) => $.input.stop_tooltip)}
+      stopAriaLabel={t(($) => $.input.stop_tooltip)}
+    />
+  );
 
   return (
     <div
@@ -580,9 +648,6 @@ export function ChatInput({
         // spilling out of it.
         "flex max-h-[50%] min-h-0 flex-col pb-3 pt-0",
         CHAT_GUTTER,
-        // Static elevation, NOT queue-conditional: ChatQueue tucks its bottom
-        // edge under this surface (z-0 + negative margin on its side), and the
-        // composer simply always paints on top. Its own chrome never varies.
         "relative z-10",
         // Outer wrapper carries the disabled cursor. Inner card sets
         // pointer-events-none, which suppresses hover (and therefore
@@ -601,7 +666,8 @@ export function ChatInput({
           // composer without a definite height (percentage max-height would
           // then resolve to none).
           CHAT_COLUMN,
-          "relative flex min-h-16 max-h-96 flex-col rounded-lg border border-surface-border bg-surface pb-9 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
+          "relative flex min-h-0 max-h-96 flex-col overflow-hidden rounded-xl border border-surface-border bg-surface shadow-sm",
+          "transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
           // Visual + interaction lock when there's no agent. We don't
           // toggle ContentEditor's editable mode (Tiptap can't switch
           // cleanly post-mount, and the prop has been removed); instead
@@ -612,6 +678,7 @@ export function ChatInput({
         )}
         aria-disabled={noAgent || undefined}
       >
+        {queueSlot}
         {selectedProject && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-2">
             <div
@@ -644,7 +711,7 @@ export function ChatInput({
             )}
           </div>
         )}
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        <div className="min-h-12 flex-1 overflow-y-auto px-3 pt-3">
           <ContentEditor
             // See the editorKey / draftKey split note above — editor identity
             // intentionally tracks neither the session nor the agent.
@@ -659,7 +726,7 @@ export function ChatInput({
               // upload's own completion dispatch.
               commitDraft(editorDraftKeyRef.current, md);
             }}
-            onSubmit={submit}
+            onSubmit={requestSend}
             onUploadFile={uploadEnabled ? handleUpload : undefined}
             pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
             onUploadingChange={uploadGate.onUploadingChange}
@@ -677,8 +744,12 @@ export function ChatInput({
             showBubbleMenu
           />
         </div>
-        {(uploadEnabled || projectSelectionEnabled || leftAdornment) && (
-          <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
+        <div
+          data-slot="chat-input-actions"
+          className="flex items-center justify-between gap-2 px-2 pb-2 pt-1"
+        >
+          <div className="flex min-w-0 items-center gap-0.5">
+            {leftAdornment}
             {(uploadEnabled || projectSelectionEnabled) && (
               <ChatAddMenu
                 onSelectFile={uploadEnabled
@@ -690,41 +761,38 @@ export function ChatInput({
                 projectContextUnsupported={projectContextUnsupported}
               />
             )}
-            {leftAdornment}
           </div>
-        )}
-        <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
-          <SubmitButton
-            onClick={submit}
-            disabled={hasNothingToSend || submitting || !!disabled || !!noAgent}
-            loading={submitting}
-            busy={gate.uploading}
-            // Queue-capable runs reuse this one action slot: an empty composer
-            // offers Stop, while live content swaps it to Queue Send. Older
-            // servers cannot accept follow-ups, so they remain stop-only. An
-            // upload blocks submit, so it also falls back to Stop rather than
-            // removing chat's only cancellation path; the attachment node
-            // remains the visible upload-progress surface in the editor.
-            running={
-              !!isRunning &&
-              (!allowSubmitWhileRunning || hasNothingToSend || gate.uploading)
-            }
-            onStop={onStop}
-            tooltip={gate.uploading
-              ? tEditor(($) => $.upload.in_progress)
-              : isRunning
-                ? t(($) => $.input.queue_send_tooltip)
-                : sendShortcut
-                  ? `${t(($) => $.input.send_tooltip)} · ${formatShortcut(sendShortcut)}`
-                  : t(($) => $.input.send_tooltip)}
-            ariaLabel={gate.uploading
-              ? tEditor(($) => $.upload.in_progress)
-              : isRunning
-                ? t(($) => $.input.queue_send_tooltip)
-              : t(($) => $.input.send_tooltip)}
-            stopTooltip={t(($) => $.input.stop_tooltip)}
-            stopAriaLabel={t(($) => $.input.stop_tooltip)}
-          />
+          <div className="flex shrink-0 items-center gap-1">
+            {showStop && (
+              <SubmitButton
+                onClick={() => {}}
+                running
+                onStop={onStop}
+                stopTooltip={t(($) => $.input.stop_tooltip)}
+                stopAriaLabel={t(($) => $.input.stop_tooltip)}
+              />
+            )}
+            {showSend && (
+              chooseFollowUp && isRunning ? (
+                <ChatFollowUpMenu
+                  open={followUpOpen}
+                  onOpenChange={setFollowUpOpen}
+                  onWait={() => {
+                    followUpModeRef.current = "wait";
+                    void submit();
+                  }}
+                  onSteer={() => {
+                    followUpModeRef.current = "steer";
+                    void submit();
+                  }}
+                >
+                  {sendButton}
+                </ChatFollowUpMenu>
+              ) : (
+                sendButton
+              )
+            )}
+          </div>
         </div>
         {uploadEnabled && isDragOver && <FileDropOverlay />}
       </div>

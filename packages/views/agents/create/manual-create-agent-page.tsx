@@ -33,7 +33,7 @@ export function ManualCreateAgentPage() {
   const navigation = useNavigation();
   const backOrReplace = useBackOrReplace();
   const duplicateId = navigation.searchParams.get("duplicate");
-  const squadId = navigation.searchParams.get("squad");
+  const teamId = navigation.searchParams.get("team");
 
   const form = useCreateAgentForm();
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
@@ -81,7 +81,7 @@ export function ManualCreateAgentPage() {
   const submit = useCreateAgentSubmit({
     draft: form.draft,
     runtimeId: form.selectedRuntime?.id ?? null,
-    squadId,
+    teamId,
     duplicateSource: duplicateAgent,
     // The work is committed; leaving it stored would hand the finished agent's
     // fields to whoever opens this form next. Only this flow's slot — another
@@ -99,8 +99,8 @@ export function ManualCreateAgentPage() {
           ? t(($) => $.creation_studio.duplicate_title, {
               name: duplicateAgent.name,
             })
-          : squadId
-            ? t(($) => $.creation_studio.squad_title)
+          : teamId
+            ? t(($) => $.creation_studio.team_title)
             : t(($) => $.creation_studio.title)
       }
       step={t(($) => $.creation_studio.step_configure)}
@@ -151,7 +151,7 @@ export function ManualCreateAgentPage() {
         <CreateAgentFooter
           canCreate={canCreate}
           creating={submit.creating}
-          squad={!!squadId}
+          team={!!teamId}
           error={submit.formError}
           onCreate={() => void submit.create()}
         />

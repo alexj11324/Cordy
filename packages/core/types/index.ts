@@ -160,6 +160,16 @@ export type {
   ChatDraftRestore,
   ChatDraftRestoresResponse,
 } from "./chat";
+export type {
+  Channel,
+  ChannelActorType,
+  ChannelMessageCursor,
+  ChannelMessagesPage,
+  ChannelMessage,
+  ChannelQuotedMessage,
+  CreateChannelRequest,
+  SendChannelMessageRequest,
+} from "./channel";
 export type { StorageAdapter } from "./storage";
 export type {
   Project,
@@ -269,23 +279,23 @@ export type {
   ListWebhookDeliveriesResponse,
 } from "./autopilot";
 export type {
-  Squad,
-  SquadMember,
-  SquadMemberType,
-  SquadMemberPreview,
-  SquadActivityLog,
-  SquadActivityOutcome,
-  CreateSquadRequest,
-  UpdateSquadRequest,
-  AddSquadMemberRequest,
-  RemoveSquadMemberRequest,
-  UpdateSquadMemberRoleRequest,
-  CreateSquadActivityLogRequest,
-  SquadMemberStatusValue,
-  SquadActiveIssueBrief,
-  SquadMemberStatus,
-  SquadMemberStatusListResponse,
-} from "./squad";
+  Team,
+  TeamMember,
+  TeamMemberType,
+  TeamMemberPreview,
+  TeamActivityLog,
+  TeamActivityOutcome,
+  CreateTeamRequest,
+  UpdateTeamRequest,
+  AddTeamMemberRequest,
+  RemoveTeamMemberRequest,
+  UpdateTeamMemberRoleRequest,
+  CreateTeamActivityLogRequest,
+  TeamMemberStatusValue,
+  TeamActiveIssueBrief,
+  TeamMemberStatus,
+  TeamMemberStatusListResponse,
+} from "./team";
 export type {
   BillingBalance,
   BillingTransaction,

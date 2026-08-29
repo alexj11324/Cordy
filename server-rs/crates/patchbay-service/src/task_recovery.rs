@@ -640,7 +640,7 @@ impl TaskService {
                 None,
                 Some(target.source.is_leader_task),
                 None,
-                target.source.squad_id.unwrap_or_else(Uuid::nil),
+                target.source.team_id.unwrap_or_else(Uuid::nil),
                 opt_str(&head_sha),
                 originator.unwrap_or_else(Uuid::nil),
                 accountable.unwrap_or_else(Uuid::nil),
@@ -948,7 +948,7 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_squads_and_skills(
+        patchbay_db::queries::workspace_delete::delete_workspace_teams_and_skills(
             &mut *tx,
             workspace_id,
         )

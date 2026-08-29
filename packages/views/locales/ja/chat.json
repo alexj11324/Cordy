@@ -13,7 +13,7 @@
     "placeholder_no_agent": "チャットを始めるにはエージェントを作成してください",
     "placeholder_archived": "このセッションはアーカイブされています",
     "placeholder_archived_agent": "このエージェントはアーカイブされています",
-    "placeholder_runtime_required": "ランタイムを設定して続ける",
+    "placeholder_runtime_required": "デバイスを設定して続ける",
     "placeholder_access_revoked": "このエージェントを実行する権限がありません",
     "placeholder_named": "{{name}} にメッセージ…",
     "placeholder_default": "メッセージを入力…",
@@ -22,7 +22,7 @@
     "stop_tooltip": "停止",
     "send_failed_toast": "メッセージを送信できませんでした",
     "send_blocked_toast": "メッセージは送信されませんでした — このエージェントを使用する権限がありません",
-    "runtime_required_toast": "メッセージは送信されませんでした — 先にこのエージェントのランタイムを設定してください",
+    "runtime_required_toast": "メッセージは送信されませんでした — 先にこのエージェントのデバイスを設定してください",
     "attachment_bind_failed_toast": "メッセージは送信されましたが、ファイルを添付できませんでした。しばらくしてからもう一度お試しください。",
     "add_tooltip": "追加",
     "upload_file": "画像・ファイル",
@@ -31,6 +31,14 @@
     "remove_project_context": "プロジェクトコンテキストを削除",
     "no_projects": "プロジェクトがまだありません",
     "project_context_unsupported": "プロジェクトの説明は適用されません——このエージェントのデーモンのアップグレードが必要です"
+  },
+  "follow_up": {
+    "title": "エージェントはまだ作業中です",
+    "wait": "待つ",
+    "wait_hint": "現在の返信が終わるまでキューに入れます",
+    "steer": "指示",
+    "steer_hint": "現在の返信を止めて、今すぐ送信します",
+    "choose_tooltip": "フォローアップ方法を選ぶ"
   },
   "queue": {
     "title_other": "キュー内のメッセージ {{count}} 件",
@@ -134,8 +142,8 @@
     "no_agents": "エージェントなし",
     "history_group": "チャット履歴",
     "agent_filter_placeholder": "エージェントを検索...",
-    "agent_needs_runtime": "ランタイム未設定",
-    "agent_needs_runtime_hint": "このエージェントとチャットする前にランタイムを設定してください"
+    "agent_needs_runtime": "デバイス未設定",
+    "agent_needs_runtime_hint": "このエージェントとチャットする前にデバイスを設定してください"
   },
   "empty_state": {
     "first_time_title": "エージェントとチャット",
@@ -178,8 +186,8 @@
   "agent_access_revoked_banner": "{{name}} を実行する権限がありません。この会話は読み取り専用です。",
   "runtime_required_banner": {
     "fallback_name": "このエージェント",
-    "message": "{{name}} が返信するにはランタイムの設定が必要です。",
-    "action": "ランタイムを設定"
+    "message": "{{name}} が返信するにはデバイスの設定が必要です。",
+    "action": "デバイスを設定"
   },
   "offline_banner": {
     "fallback_name": "エージェント",
@@ -231,5 +239,42 @@
     "delete": "チャットを削除",
     "archive": "チャットをアーカイブ",
     "unarchive": "アーカイブを解除"
+  },
+  "channels": {
+    "title": "チャンネル",
+    "subtitle": "チームとエージェントが同じ場所で協働",
+    "new_channel": "新しいチャンネル",
+    "create_title": "チャンネルを作成",
+    "create_description": "チームとエージェントが話せる共有スペースを作ります。",
+    "name_label": "名前",
+    "name_placeholder": "例：product…",
+    "description_label": "説明（任意）",
+    "description_placeholder": "このチャンネルの目的は？…",
+    "create": "チャンネルを作成",
+    "cancel": "キャンセル",
+    "empty_title": "最初のチャンネルを作成",
+    "empty_description": "メンバーとエージェントを一つの会話に集めます。",
+    "empty_message": "まだメッセージはありません。挨拶してみましょう。",
+    "message_placeholder": "#{{name}} にメッセージ…",
+    "mention_hint": "@ でメンバーやエージェントをメンション",
+    "send": "送信",
+    "reply": "返信",
+    "quote": "引用",
+    "clear_reference": "引用を解除",
+    "quoted_prefix": "{{name}} のメッセージを引用",
+    "replying_to": "{{name}} に返信中",
+    "agent_badge": "エージェント",
+    "member_badge": "メンバー",
+    "participants": "{{count}} 人の参加者",
+    "no_channels": "チャンネルはまだありません",
+    "create_failed": "チャンネルを作成できませんでした",
+    "send_failed": "メッセージを送信できませんでした",
+    "loading": "チャンネルを読み込み中…",
+    "load_older": "過去のメッセージを読み込む",
+    "loading_older": "過去のメッセージを読み込み中…",
+    "unknown_badge": "不明な投稿者",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "copy_failed": "コピーに失敗しました"
   }
 }

@@ -38,8 +38,8 @@ export function isKnownPropertyType(type: string): type is IssuePropertyType {
 
 /**
  * Actor properties (PB-6286) reference a workspace member. The assignee field
- * also accepts agents and squads; actor properties deliberately do not — an
- * agent reference would drag in agent-visibility rules, and a squad is a
+ * also accepts agents and teams; actor properties deliberately do not — an
+ * agent reference would drag in agent-visibility rules, and a team is a
  * routing target rather than a person.
  *
  * The stored form is "<kind>:<uuid>", so widening this union later needs no

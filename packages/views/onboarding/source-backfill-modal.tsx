@@ -65,7 +65,7 @@ const EMPTY_BACKFILL: Pick<
  *
  *   1. User-level: `needsSourceBackfill(user, dismissCount)` — no
  *      source recorded, never declined, dismiss cap not reached.
- *   2. Workspace-level: agents (or squads) have completed at least
+ *   2. Workspace-level: agents (or teams) have completed at least
  *      SOURCE_BACKFILL_MIN_AGENT_DONE_ISSUES issues here. Attribution
  *      is a zero-payoff ask for the user, so it waits until Patchbay
  *      has visibly delivered value. The count query only runs while

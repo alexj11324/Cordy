@@ -26,9 +26,10 @@ import {
   ChooseCreateMethodPage,
   ManualCreateAgentPage,
 } from "@patchbay/views/agents";
-import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@patchbay/views/squads/components";
+import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@patchbay/views/teams/components";
 import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
+import { ChannelsPage } from "@patchbay/views/channels";
 import { SettingsPage } from "@patchbay/views/settings";
 import { useT } from "@patchbay/views/i18n";
 import { Download, Server } from "lucide-react";
@@ -129,9 +130,6 @@ export const appRoutes: RouteObject[] = [
           { index: true, element: null },
           {
             path: "issues",
-            // Browser preview and Electron deliberately mount the same
-            // production IssuesPage. The browser host supplies an explicit
-            // local API adapter in Vite; it does not switch to a fake shell.
             element: <IssuesPage />,
             handle: { title: "Issues" },
           },
@@ -168,7 +166,7 @@ export const appRoutes: RouteObject[] = [
           {
             path: "runtimes",
             element: <DesktopRuntimesPage />,
-            handle: { title: "Runtimes" },
+            handle: { title: "Devices" },
           },
           {
             path: "runtimes/:id",
@@ -178,7 +176,7 @@ export const appRoutes: RouteObject[] = [
           {
             path: "runtimes/:id/runtime/:runtimeId",
             element: <RuntimeSettingsPage />,
-            handle: { title: "Runtime" },
+            handle: { title: "Device" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {
@@ -217,14 +215,15 @@ export const appRoutes: RouteObject[] = [
             element: <MemberDetailPage />,
             handle: { title: "Member" },
           },
-          { path: "squads", element: <SquadsPage />, handle: { title: "Teams" } },
+          { path: "teams", element: <TeamsPage />, handle: { title: "Teams" } },
           {
-            path: "squads/:id",
-            element: <SquadDetailPageView />,
+            path: "teams/:id",
+            element: <TeamDetailPageView />,
             handle: { title: "Team" },
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
           { path: "chat", element: <ChatPage />, handle: { title: "Chat" } },
+          { path: "channels", element: <ChannelsPage />, handle: { title: "Channels" } },
           {
             path: "attachments/:id/preview",
             element: <AttachmentPreviewRoute />,

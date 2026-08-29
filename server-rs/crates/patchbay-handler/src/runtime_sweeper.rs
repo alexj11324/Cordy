@@ -611,7 +611,7 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_squads_and_skills(
+        patchbay_db::queries::workspace_delete::delete_workspace_teams_and_skills(
             &mut *tx,
             workspace_id,
         )

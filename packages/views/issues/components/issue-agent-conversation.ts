@@ -2,6 +2,7 @@ import type {
   AgentTask,
   ChatMessage,
   ChatPendingTask,
+  ChatQueuedTask,
   TimelineEntry,
 } from "@patchbay/core/types";
 import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
@@ -240,4 +241,35 @@ export function buildIssueAgentConversation({
     messageActors,
     pendingTask,
   };
+}
+
+/**
+ * Queue-tray rows for an issue conversation. When the first Wait follow-up
+ * is still queued, `buildIssueAgentConversation` promotes it to `pendingTask`
+ * and only puts later work in `queued_tasks` — include that head so Edit /
+ * Remove / Clear still have a target.
+ */
+export function queuedIssueFollowUps(
+  pendingTask: ChatPendingTask | null,
+  tasks: readonly AgentTask[],
+): ChatQueuedTask[] {
+  if (!pendingTask) return [];
+  const rows: ChatQueuedTask[] = [];
+  if (
+    pendingTask.status === "queued" &&
+    pendingTask.task_id &&
+    pendingTask.created_at
+  ) {
+    const head = tasks.find((task) => task.id === pendingTask.task_id);
+    rows.push({
+      task_id: pendingTask.task_id,
+      status: pendingTask.status,
+      created_at: pendingTask.created_at,
+      content: head?.trigger_summary,
+    });
+  }
+  for (const task of pendingTask.queued_tasks ?? []) {
+    if (task.status === "queued") rows.push(task);
+  }
+  return rows;
 }

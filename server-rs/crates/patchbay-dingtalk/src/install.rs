@@ -14,9 +14,10 @@ use uuid::Uuid;
 use patchbay_db::dbid;
 use patchbay_db::models::ChannelInstallation;
 use patchbay_db::queries::channel::{
-    get_channel_installation_in_workspace, get_channel_installation_owner_by_app_id,
-    list_channel_installations_by_workspace, reclaim_dead_channel_installation_by_app_id,
-    set_channel_installation_status, upsert_channel_installation,
+    delete_channel_installation_for_replacement, get_channel_installation_in_workspace,
+    get_channel_installation_owner_by_app_id, list_channel_installations_by_workspace,
+    lock_channel_installation_hub_slot, reclaim_dead_channel_installation_by_app_id,
+    set_channel_installation_status, upsert_channel_installation, upsert_channel_installation_hub,
 };
 use patchbay_db::queries::dingtalk::{
     delete_ding_talk_installation_for_replacement, get_ding_talk_installation_owner_for_update,
@@ -138,9 +139,15 @@ impl InstallService {
         // channel) row. Serialize the logical slot across that gap so
         // concurrent installs cannot update the newly-created identity in
         // place.
-        lock_ding_talk_installation_owner(&mut *tx, p.ws_id, p.agent_id)
-            .await
-            .map_err(|e| anyhow::anyhow!("lock dingtalk installation owner: {e:#}"))?;
+        if p.agent_id.is_nil() {
+            lock_channel_installation_hub_slot(&mut *tx, TYPE_DINGTALK, p.ws_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("lock dingtalk hub installation: {e:#}"))?;
+        } else {
+            lock_ding_talk_installation_owner(&mut *tx, p.ws_id, p.agent_id)
+                .await
+                .map_err(|e| anyhow::anyhow!("lock dingtalk installation owner: {e:#}"))?;
+        }
 
         // Free the (dingtalk, app_id) routing slot from any DEAD prior owner —
         // a revoked placeholder, or an orphan whose owning workspace/agent was
@@ -159,31 +166,63 @@ impl InstallService {
         .await
         .map_err(|e| anyhow::anyhow!("reclaim dead dingtalk installation: {e:#}"))?;
 
-        let current =
-            get_ding_talk_installation_owner_for_update(&mut *tx, p.ws_id, p.agent_id).await?;
-        if let Some(current) = current {
-            if current.app_id != p.app_id_key {
-                delete_ding_talk_installation_for_replacement(
-                    &mut *tx,
-                    current.id.unwrap_or(Uuid::nil()),
-                    p.ws_id,
-                    p.agent_id,
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("retire replaced dingtalk installation: {e:#}"))?;
+        if p.agent_id.is_nil() {
+            let current = list_channel_installations_by_workspace(&mut *tx, p.ws_id, TYPE_DINGTALK)
+                .await?
+                .into_iter()
+                .find(|row| row.agent_id.is_none());
+            if let Some(current) = current {
+                if current
+                    .config
+                    .get("app_id")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(p.app_id_key.as_str())
+                {
+                    delete_channel_installation_for_replacement(&mut *tx, current.id)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("retire replaced dingtalk installation: {e:#}")
+                        })?;
+                }
+            }
+        } else {
+            let current =
+                get_ding_talk_installation_owner_for_update(&mut *tx, p.ws_id, p.agent_id).await?;
+            if let Some(current) = current {
+                if current.app_id != p.app_id_key {
+                    delete_ding_talk_installation_for_replacement(
+                        &mut *tx,
+                        current.id.unwrap_or(Uuid::nil()),
+                        p.ws_id,
+                        p.agent_id,
+                    )
+                    .await
+                    .map_err(|e| anyhow::anyhow!("retire replaced dingtalk installation: {e:#}"))?;
+                }
             }
         }
 
-        let inst = match upsert_channel_installation(
-            &mut *tx,
-            p.ws_id,
-            p.agent_id,
-            TYPE_DINGTALK,
-            &p.config_json,
-            p.installer_id,
-        )
-        .await
-        {
+        let upsert = if p.agent_id.is_nil() {
+            upsert_channel_installation_hub(
+                &mut *tx,
+                p.ws_id,
+                TYPE_DINGTALK,
+                &p.config_json,
+                p.installer_id,
+            )
+            .await
+        } else {
+            upsert_channel_installation(
+                &mut *tx,
+                p.ws_id,
+                p.agent_id,
+                TYPE_DINGTALK,
+                &p.config_json,
+                p.installer_id,
+            )
+            .await
+        };
+        let inst = match upsert {
             Ok(Some(row)) => row,
             Ok(None) => anyhow::bail!("upsert dingtalk installation: no row returned"),
             Err(err) => {

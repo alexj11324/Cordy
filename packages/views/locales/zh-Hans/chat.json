@@ -13,7 +13,7 @@
     "placeholder_no_agent": "创建一个智能体后才能开始对话",
     "placeholder_archived": "此会话已归档",
     "placeholder_archived_agent": "该智能体已归档",
-    "placeholder_runtime_required": "绑定运行时后继续",
+    "placeholder_runtime_required": "绑定设备后继续",
     "placeholder_access_revoked": "你已没有运行该智能体的权限",
     "placeholder_named": "给 {{name}} 发消息…",
     "placeholder_default": "输入消息…",
@@ -22,7 +22,7 @@
     "stop_tooltip": "停止",
     "send_failed_toast": "发送消息失败",
     "send_blocked_toast": "消息未发送——你已没有该智能体的使用权限",
-    "runtime_required_toast": "消息未发送——请先为该智能体绑定运行时",
+    "runtime_required_toast": "消息未发送——请先为该智能体绑定设备",
     "attachment_bind_failed_toast": "消息已发送，但文件未能附加。请稍后重试。",
     "add_tooltip": "添加",
     "upload_file": "图片或文件",
@@ -31,6 +31,14 @@
     "remove_project_context": "移除项目上下文",
     "no_projects": "还没有项目",
     "project_context_unsupported": "项目描述不会生效——该智能体的守护进程版本过旧，需要升级"
+  },
+  "follow_up": {
+    "title": "智能体仍在工作",
+    "wait": "等待",
+    "wait_hint": "先排队，等当前回复结束后再发",
+    "steer": "引导",
+    "steer_hint": "停下当前回复，立刻发送这条",
+    "choose_tooltip": "选择跟进方式"
   },
   "queue": {
     "title_other": "{{count}} 条排队消息",
@@ -54,7 +62,7 @@
     "reasoning_active": "正在思考…",
     "reasoning_complete": "思考过程",
     "failure": {
-      "agent_error": "智能体运行时出错，没能完成回复。请重试。",
+      "agent_error": "智能体设备出错，没能完成回复。请重试。",
       "timeout": "智能体处理超时，未能完成。可以重试，或把需求拆得更小一些。",
       "codex_semantic_inactivity": "智能体长时间无响应，已停止。请重试。",
       "runtime_offline": "智能体当前离线，暂时无法回复。等它恢复在线后再试。",
@@ -134,8 +142,8 @@
     "no_agents": "暂无智能体",
     "history_group": "历史对话",
     "agent_filter_placeholder": "搜索智能体...",
-    "agent_needs_runtime": "需绑定运行时",
-    "agent_needs_runtime_hint": "请先绑定运行时，再与该智能体开始对话"
+    "agent_needs_runtime": "需绑定设备",
+    "agent_needs_runtime_hint": "请先绑定设备，再与该智能体开始对话"
   },
   "empty_state": {
     "first_time_title": "和你的智能体对话",
@@ -178,8 +186,8 @@
   "agent_access_revoked_banner": "你已没有运行 {{name}} 的权限——此会话为只读。",
   "runtime_required_banner": {
     "fallback_name": "该智能体",
-    "message": "{{name}} 需要绑定运行时后才能回复。",
-    "action": "绑定运行时"
+    "message": "{{name}} 需要绑定设备后才能回复。",
+    "action": "绑定设备"
   },
   "offline_banner": {
     "fallback_name": "智能体",
@@ -231,5 +239,42 @@
     "delete": "删除会话",
     "archive": "归档会话",
     "unarchive": "取消归档"
+  },
+  "channels": {
+    "title": "频道",
+    "subtitle": "让成员和智能体在同一个空间协作",
+    "new_channel": "新建频道",
+    "create_title": "创建频道",
+    "create_description": "为成员和智能体创建一个共享讨论空间。",
+    "name_label": "名称",
+    "name_placeholder": "例如：产品讨论…",
+    "description_label": "描述（可选）",
+    "description_placeholder": "这个频道用于讨论什么？…",
+    "create": "创建频道",
+    "cancel": "取消",
+    "empty_title": "创建你的第一个频道",
+    "empty_description": "让成员和智能体在一个聚焦的对话里协作。",
+    "empty_message": "还没有消息，向频道打个招呼吧。",
+    "message_placeholder": "在 #{{name}} 中发送消息…",
+    "mention_hint": "使用 @ 提及成员或智能体",
+    "send": "发送",
+    "reply": "回复",
+    "quote": "引用",
+    "clear_reference": "清除引用",
+    "quoted_prefix": "引用 {{name}} 的消息",
+    "replying_to": "正在回复 {{name}}",
+    "agent_badge": "智能体",
+    "member_badge": "成员",
+    "participants": "{{count}} 位参与者",
+    "no_channels": "还没有频道",
+    "create_failed": "创建频道失败",
+    "send_failed": "发送消息失败",
+    "loading": "正在加载频道…",
+    "load_older": "加载更早消息",
+    "loading_older": "正在加载更早消息…",
+    "unknown_badge": "未知作者",
+    "copy": "复制",
+    "copied": "已复制",
+    "copy_failed": "复制失败"
   }
 }

@@ -47,6 +47,7 @@ import {
 import type { IssueCreateDefaults } from "./types";
 import {
   useIssueSurfaceActions,
+  type MoveIssueCallbacks,
   type MoveIssueUpdates,
 } from "./use-issue-surface-actions";
 import { useIssueSurfaceData } from "./use-issue-surface-data";
@@ -87,6 +88,8 @@ export interface IssueSurfaceController {
   ganttIssues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
+  /** Hidden rows that are display-hidden, rather than excluded by a status filter. */
+  droppableHiddenStatuses: IssueStatusCategory[];
   /** Exact server counts plus cursor controls for List/status Board. */
   statusPagination?: IssueStatusPagination;
   /** Exact group catalog plus independent row cursors for Assignee/Property
@@ -134,7 +137,7 @@ export interface IssueSurfaceController {
   moveIssue: (
     issueId: string,
     updates: MoveIssueUpdates,
-    onSettled?: () => void,
+    callbacks?: MoveIssueCallbacks,
   ) => boolean;
 }
 
@@ -355,6 +358,14 @@ export function useIssueSurfaceController({
    * loading state is the only honest option.
    */
   const statusFilterUnresolved = statusFilterPending || statusFilterError;
+
+  const droppableHiddenStatuses = useMemo<IssueStatusCategory[]>(() => {
+    if (statusFilters.length === 0) return hiddenStatusCategories;
+    if (statusColumnsForFilters.state !== "resolved") return [];
+    return hiddenStatusCategories.filter((status) =>
+      statusColumnsForFilters.columns.has(status),
+    );
+  }, [hiddenStatusCategories, statusColumnsForFilters, statusFilters]);
 
   // Columns are CATEGORIES. Two independent things narrow them, and conflating
   // them is what let "hide the Backlog column" also drop every custom status in
@@ -827,7 +838,11 @@ export function useIssueSurfaceController({
     createDefaults: resolvedCreateDefaults,
   });
   const moveIssue = useCallback(
-    (issueId: string, updates: MoveIssueUpdates, onSettled?: () => void) => {
+    (
+      issueId: string,
+      updates: MoveIssueUpdates,
+      callbacks?: MoveIssueCallbacks,
+    ) => {
       const issue = data.issues.find((candidate) => candidate.id === issueId);
       const intent = issue && runConfirmIntent(issue, updates, catalog);
       if (intent?.mode === "review") {
@@ -838,10 +853,12 @@ export function useIssueSurfaceController({
             ...fields,
             move_intent: { before_id, after_id },
           },
+          onSuccess: callbacks?.onSuccess,
+          onError: callbacks?.onError,
         });
         return false;
       }
-      commitMoveIssue(issueId, updates, onSettled);
+      commitMoveIssue(issueId, updates, callbacks);
       return true;
     },
     [catalog, commitMoveIssue, data.issues, openModal],
@@ -857,6 +874,7 @@ export function useIssueSurfaceController({
     allowGantt: allowedModes.has("gantt") && !!projectId,
     ...surfaceData,
     workingAgents,
+    droppableHiddenStatuses,
     hasActiveFilters,
     statusPagination: usesServerStatusSurface
       ? data.statusPagination

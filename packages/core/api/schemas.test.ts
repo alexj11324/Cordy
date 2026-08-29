@@ -50,8 +50,8 @@ import {
   RuntimeUsageByHourListSchema,
   RuntimeUsageListSchema,
   SendChatMessageResponseSchema,
-  SquadListSchema,
-  SquadSchema,
+  TeamListSchema,
+  TeamSchema,
   TimelineEntriesSchema,
   UserSchema,
   PluginInstallationSchema,
@@ -724,11 +724,11 @@ describe("UserSchema timezone drift", () => {
   });
 });
 
-describe("SquadListSchema member preview drift", () => {
-  const baseSquad = {
-    id: "squad-1",
+describe("TeamListSchema member preview drift", () => {
+  const baseTeam = {
+    id: "team-1",
     workspace_id: "ws-1",
-    name: "Frontend Squad",
+    name: "Frontend Team",
     description: "",
     instructions: "",
     avatar_url: null,
@@ -741,21 +741,21 @@ describe("SquadListSchema member preview drift", () => {
   };
 
   it("defaults preview fields when an older backend omits them", () => {
-    const parsed = SquadListSchema.parse([baseSquad]);
+    const parsed = TeamListSchema.parse([baseTeam]);
     expect(parsed[0]?.member_count).toBe(0);
     expect(parsed[0]?.member_preview).toEqual([]);
   });
 
-  it("defaults preview fields on a single squad response", () => {
-    const parsed = SquadSchema.parse(baseSquad);
+  it("defaults preview fields on a single team response", () => {
+    const parsed = TeamSchema.parse(baseTeam);
     expect(parsed.member_count).toBe(0);
     expect(parsed.member_preview).toEqual([]);
   });
 
   it("preserves lightweight member preview rows", () => {
-    const parsed = SquadListSchema.parse([
+    const parsed = TeamListSchema.parse([
       {
-        ...baseSquad,
+        ...baseTeam,
         member_count: 2,
         member_preview: [
           { member_type: "agent", member_id: "agent-1", role: "leader" },
@@ -1223,12 +1223,12 @@ describe("CommentTriggerPreviewSchema.blocked", () => {
     const parsed = CommentTriggerPreviewSchema.parse({
       agents: [{ id: "a1", source: "mention_agent", reason: "" }],
       blocked: [
-        { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+        { target_type: "team", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
       ],
     });
     expect(parsed.agents).toHaveLength(1);
     expect(parsed.blocked).toEqual([
-      { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+      { target_type: "team", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
     ]);
   });
 
@@ -1250,7 +1250,7 @@ describe("CommentTriggerPreviewSchema.blocked", () => {
     const parsed = CommentTriggerPreviewSchema.parse({
       agents: [],
       blocked: [
-        { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+        { target_type: "team", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
         { status: "blocked" }, // missing target_id → dropped individually
         { target_type: "agent", target_id: "a1", status: "blocked", reason_code: "runtime_offline" },
       ],

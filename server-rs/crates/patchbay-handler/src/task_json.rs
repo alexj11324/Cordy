@@ -328,7 +328,7 @@ mod tests {
             runtime_mcp_overlay: None,
             session_id: Some("provider-session-must-not-leak".into()),
             session_rollout_missing: false,
-            squad_id: None,
+            team_id: None,
             started_at: None,
             status: "queued".into(),
             trigger_comment_id: None,

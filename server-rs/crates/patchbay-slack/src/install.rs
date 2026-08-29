@@ -15,8 +15,9 @@ use patchbay_db::dbid;
 use patchbay_db::models::ChannelInstallation;
 use patchbay_db::queries::channel::{
     get_channel_installation_in_workspace, get_channel_installation_owner_by_app_id,
-    list_channel_installations_by_workspace, reclaim_dead_channel_installation_by_app_id,
-    set_channel_installation_status, upsert_channel_installation,
+    list_channel_installations_by_workspace, lock_channel_installation_hub_slot,
+    reclaim_dead_channel_installation_by_app_id, set_channel_installation_status,
+    upsert_channel_installation, upsert_channel_installation_hub,
 };
 
 use crate::config::InstallConfig;
@@ -127,10 +128,14 @@ impl InstallService {
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("begin install tx: {e:#}"))?;
-        patchbay_db::queries::channel::lock_channel_installation_agent_slot(
-            &mut *tx, TYPE_SLACK, p.ws_id, p.agent_id,
-        )
-        .await?;
+        if p.agent_id.is_nil() {
+            lock_channel_installation_hub_slot(&mut *tx, TYPE_SLACK, p.ws_id).await?;
+        } else {
+            patchbay_db::queries::channel::lock_channel_installation_agent_slot(
+                &mut *tx, TYPE_SLACK, p.ws_id, p.agent_id,
+            )
+            .await?;
+        }
         patchbay_db::queries::channel::lock_channel_installation_app_id_slot(
             &mut *tx,
             TYPE_SLACK,
@@ -160,7 +165,13 @@ impl InstallService {
         )
         .await?
         .into_iter()
-        .find(|row| row.agent_id == p.agent_id);
+        .find(|row| {
+            if p.agent_id.is_nil() {
+                row.agent_id.is_none()
+            } else {
+                row.agent_id == Some(p.agent_id)
+            }
+        });
         if let Some(current) = current.filter(|row| {
             row.config.get("app_id").and_then(serde_json::Value::as_str)
                 != Some(p.app_id_key.as_str())
@@ -171,16 +182,27 @@ impl InstallService {
             .await?;
         }
 
-        let inst = match upsert_channel_installation(
-            &mut *tx,
-            p.ws_id,
-            p.agent_id,
-            TYPE_SLACK,
-            &p.config_json,
-            p.installer_id,
-        )
-        .await
-        {
+        let upsert = if p.agent_id.is_nil() {
+            upsert_channel_installation_hub(
+                &mut *tx,
+                p.ws_id,
+                TYPE_SLACK,
+                &p.config_json,
+                p.installer_id,
+            )
+            .await
+        } else {
+            upsert_channel_installation(
+                &mut *tx,
+                p.ws_id,
+                p.agent_id,
+                TYPE_SLACK,
+                &p.config_json,
+                p.installer_id,
+            )
+            .await
+        };
+        let inst = match upsert {
             Ok(Some(row)) => row,
             Ok(None) => anyhow::bail!("upsert slack installation: no row returned"),
             Err(err) => {

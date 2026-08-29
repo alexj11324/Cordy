@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -98,6 +99,33 @@ struct AbortJobsOnDrop {
 struct AbortTrackedJobsOnDrop {
     jobs: Arc<TrackedJobs>,
     armed: bool,
+}
+
+/// Completion fence for a debounced session run. A hub route switch waits for
+/// the old Agent's flush to enqueue before changing the session's Agent.
+struct PendingRunCompletion {
+    completed: AtomicBool,
+    notify: Notify,
+}
+
+impl PendingRunCompletion {
+    fn new() -> Self {
+        Self {
+            completed: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+
+    fn complete(&self) {
+        self.completed.store(true, Ordering::SeqCst);
+        self.notify.notify_one();
+    }
+
+    async fn wait(&self) {
+        while !self.completed.load(Ordering::SeqCst) {
+            self.notify.notified().await;
+        }
+    }
 }
 
 impl Drop for AbortJobsOnDrop {
@@ -220,6 +248,7 @@ pub struct Router {
     reader: Arc<dyn SessionReader>,
 
     batcher: Mutex<Option<Arc<PendingBatcher>>>,
+    pending_runs: Arc<Mutex<HashMap<Uuid, Arc<PendingRunCompletion>>>>,
 
     reply_timeout: Duration,
     media_timeout: Duration,
@@ -264,6 +293,7 @@ impl Router {
             tasks,
             reader,
             batcher: Mutex::new(None),
+            pending_runs: Arc::new(Mutex::new(HashMap::new())),
             reply_timeout,
             media_timeout,
             media_ctx: CancellationToken::new(),
@@ -640,6 +670,63 @@ impl Router {
             }
         }
 
+        // Workspace-scoped installations route inside the channel itself.
+        // The settings page only creates the platform connection; the first
+        // ordinary message uses the current/default Agent, while `/agents`
+        // lists or switches Agents without becoming an Agent turn.
+        let binder = set.session.as_ref().unwrap();
+        let mut hub_route = None;
+        if inst.agent_id.is_nil() {
+            let Some(hub) = &set.hub else {
+                return (
+                    none,
+                    DedupFinalize::Release,
+                    Some(anyhow::anyhow!(
+                        "workspace installation has no channel hub router"
+                    )),
+                );
+            };
+            let binding_key = binder.binding_key(&msg);
+            let route = match hub.resolve(&inst, &identity, &msg, &binding_key).await {
+                Ok(route) => route,
+                Err(err) => {
+                    return (
+                        none,
+                        DedupFinalize::Release,
+                        Some(anyhow::anyhow!("resolve channel hub route: {err:#}")),
+                    );
+                }
+            };
+            let Some(agent_id) = route.agent_id else {
+                return (
+                    Result {
+                        outcome: Some(Outcome::hub_command()),
+                        reply_text: route.reply_text,
+                        installation_id: Some(inst.id),
+                        sender: msg.source.sender_id.clone(),
+                        ..Default::default()
+                    },
+                    DedupFinalize::Mark,
+                    None,
+                );
+            };
+            if route.handled && !route.ensure_session {
+                return (
+                    Result {
+                        outcome: Some(Outcome::hub_command()),
+                        reply_text: route.reply_text,
+                        installation_id: Some(inst.id),
+                        sender: msg.source.sender_id.clone(),
+                        ..Default::default()
+                    },
+                    DedupFinalize::Mark,
+                    None,
+                );
+            }
+            inst.agent_id = agent_id;
+            hub_route = Some((route, binding_key));
+        }
+
         // 5-6. Resolve the chat_session, then append the message and dedup
         //      Mark as the durable transition point. A platform route
         //      fence may reject the append when a concurrent reassignment
@@ -671,7 +758,6 @@ impl Router {
             0.0
         };
 
-        let binder = set.session.as_ref().unwrap();
         let session_id: Uuid;
         #[allow(unused_variables)]
         let append_res: AppendResult;
@@ -712,6 +798,50 @@ impl Router {
                         Some(anyhow::anyhow!("ensure chat session: {err:#}")),
                     );
                 }
+            }
+        }
+
+        if let Some((route, binding_key)) = &hub_route {
+            if let Some(agent_id) = route.agent_id {
+                if let Some(hub) = &set.hub {
+                    // `/agents` can arrive while the previous ordinary
+                    // message is still inside the debounce window. Fence
+                    // that old run before changing the session's Agent.
+                    // Ordinary messages keep the normal debounce behavior.
+                    if route.handled && route.ensure_session {
+                        self.flush_pending_run(session_id).await;
+                    }
+                    if let Err(err) = hub
+                        .persist_route(
+                            inst.id,
+                            inst.workspace_id,
+                            binding_key,
+                            session_id,
+                            agent_id,
+                        )
+                        .await
+                    {
+                        return (
+                            none,
+                            DedupFinalize::Release,
+                            Some(anyhow::anyhow!("persist channel hub route: {err:#}")),
+                        );
+                    }
+                }
+            }
+            if route.handled {
+                return (
+                    Result {
+                        outcome: Some(Outcome::hub_command()),
+                        reply_text: route.reply_text.clone(),
+                        installation_id: Some(inst.id),
+                        chat_session_id: Some(session_id),
+                        sender: msg.source.sender_id.clone(),
+                        ..Default::default()
+                    },
+                    DedupFinalize::Mark,
+                    None,
+                );
             }
         }
 
@@ -1231,6 +1361,12 @@ impl Router {
         let reader = self.reader.clone();
         let tasks = self.tasks.clone();
         let jobs = self.jobs.clone();
+        let completion = Arc::new(PendingRunCompletion::new());
+        self.pending_runs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(session_id, completion.clone());
+        let pending_runs = Arc::clone(&self.pending_runs);
         batcher.schedule(&session_id.to_string(), move || {
             // A later message may replace this closure inside the debounce
             // window. AppendMessage persists ForceFresh on the channel
@@ -1241,7 +1377,9 @@ impl Router {
             let msg = msg2.clone();
             let reader = reader.clone();
             let tasks = tasks.clone();
-            jobs.spawn(async move {
+            let completion_for_job = completion.clone();
+            let pending_runs_for_job = Arc::clone(&pending_runs);
+            let spawned = jobs.spawn(async move {
                 flush_chat_run(FlushJob {
                     reader,
                     tasks,
@@ -1253,8 +1391,52 @@ impl Router {
                     force_fresh: fresh,
                 })
                 .await;
+                completion_for_job.complete();
+                let mut pending = pending_runs_for_job
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if pending
+                    .get(&session_id)
+                    .is_some_and(|current| Arc::ptr_eq(current, &completion_for_job))
+                {
+                    pending.remove(&session_id);
+                }
             });
+            if !spawned {
+                completion.complete();
+                let mut pending = pending_runs.lock().unwrap_or_else(|e| e.into_inner());
+                if pending
+                    .get(&session_id)
+                    .is_some_and(|current| Arc::ptr_eq(current, &completion))
+                {
+                    pending.remove(&session_id);
+                }
+            }
         });
+    }
+
+    /// Starts an already scheduled run and waits until its enqueue has
+    /// completed. This prevents a route change from making a pending message
+    /// execute under the newly selected Agent.
+    async fn flush_pending_run(&self, session_id: Uuid) {
+        let completion = self
+            .pending_runs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&session_id)
+            .cloned();
+        let Some(completion) = completion else {
+            return;
+        };
+        let batcher = self
+            .batcher
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(batcher) = batcher {
+            batcher.flush_now(&session_id.to_string());
+        }
+        completion.wait().await;
     }
 
     /// Detaches the OutboundReplier from the ACK critical path. The reply

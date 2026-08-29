@@ -57,7 +57,7 @@
       "rate_limit": "レート制限",
       "timeout": "タイムアウト",
       "provider": "プロバイダー",
-      "runtime": "ランタイム",
+      "runtime": "デバイス",
       "agent": "エージェント",
       "other": "その他"
     },

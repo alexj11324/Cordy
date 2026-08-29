@@ -62,11 +62,9 @@ function formatInstalledAt(value: string): string {
 // Listing is member-visible; the disconnect action is admin-only (the backend
 // enforces it; the UI hides the button for non-admins to match).
 //
-// Adding a new installation flows through the Agent detail page: the install
-// path selects the robot's default agent (the installation still owns one
-// Stream connection). Additional group-specific agents are managed below via
-// group routing, so asking the user to pick an installation here would
-// re-create the Agent page's picker.
+// The settings page connects one workspace-scoped Hub. The channel selects
+// the active Agent with `/agents`; group-specific routes remain manageable
+// below for teams that want a fixed group target.
 export function DingTalkTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();

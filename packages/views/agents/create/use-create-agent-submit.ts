@@ -36,14 +36,14 @@ export function classifyAgentCreateError(
  * Commits the draft and leaves the creation flow.
  *
  * Deliberately not optimistic: the flow navigates away on success, so the agent
- * has to exist before the destination renders. A failed squad join is reported
+ * has to exist before the destination renders. A failed team join is reported
  * as a warning instead of failing the create — the agent is already committed
  * at that point and a retry would duplicate it.
  */
 export function useCreateAgentSubmit(options: {
   draft: AgentDraft;
   runtimeId: string | null;
-  squadId: string | null;
+  teamId: string | null;
   /** Creation-source attribution for the `agent_created` analytics event. */
   template?: string;
   duplicateSource?: Agent | null;
@@ -60,7 +60,7 @@ export function useCreateAgentSubmit(options: {
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { draft, runtimeId, squadId, template, duplicateSource, onCreated } =
+  const { draft, runtimeId, teamId, template, duplicateSource, onCreated } =
     options;
 
   const create = async () => {
@@ -79,23 +79,23 @@ export function useCreateAgentSubmit(options: {
       );
       if (!agent.id) throw new Error(t(($) => $.creation_studio.create_failed));
 
-      if (squadId) {
+      if (teamId) {
         try {
-          await api.addSquadMember(squadId, {
+          await api.addTeamMember(teamId, {
             member_type: "agent",
             member_id: agent.id,
           });
           await Promise.all([
             qc.invalidateQueries({
-              queryKey: [...workspaceKeys.squads(wsId), squadId, "members"],
+              queryKey: [...workspaceKeys.teams(wsId), teamId, "members"],
             }),
             qc.invalidateQueries({
-              queryKey: [...workspaceKeys.squads(wsId), squadId],
+              queryKey: [...workspaceKeys.teams(wsId), teamId],
             }),
           ]);
         } catch (error) {
           toast.warning(
-            t(($) => $.create_dialog.squad_join_failed_toast, {
+            t(($) => $.create_dialog.team_join_failed_toast, {
               name: agent.name || draft.name.trim(),
               error: error instanceof Error ? error.message : "unknown error",
             }),
@@ -115,7 +115,7 @@ export function useCreateAgentSubmit(options: {
         }),
       );
       navigation.push(
-        squadId ? paths.squadDetail(squadId) : paths.agentDetail(agent.id),
+        teamId ? paths.teamDetail(teamId) : paths.agentDetail(agent.id),
       );
     } catch (error) {
       const nextErrors = classifyAgentCreateError(

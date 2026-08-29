@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { getAuth, createRouteMatcher } from "@clerk/nextjs/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
   PATCHBAY_LOCALE_HEADER,
@@ -7,6 +7,7 @@ import {
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
 import { isOfficialMarketingHost } from "./lib/public-host";
+import { isUiFixturesEnabled } from "./lib/ui-fixtures/enabled";
 
 // Clerk public routes — no authentication required
 const clerkPublicRoutes = createRouteMatcher([
@@ -35,7 +36,7 @@ const LEGACY_ROUTE_SEGMENTS = new Set([
   "issues",
   "projects",
   "agents",
-  "squads",
+  "teams",
   "inbox",
   "my-issues",
   "autopilots",
@@ -66,8 +67,31 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // NextResponse / cookies / matcher) is identical; the only behavioral
 // change is the runtime — proxy is forced to nodejs and cannot opt into
 // edge.
-export const proxy = clerkMiddleware(async (auth, req: NextRequest) => {
+function isClerkAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/") ||
+    pathname === "/sign-in" ||
+    pathname.startsWith("/sign-in/") ||
+    pathname === "/sign-up" ||
+    pathname.startsWith("/sign-up/")
+  );
+}
+
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  if (isUiFixturesEnabled()) {
+    if (isClerkAuthPath(pathname)) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/ui-preview";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return nextWithLocale(req);
+  }
 
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
   if (runtimeDestination) {
@@ -77,7 +101,7 @@ export const proxy = clerkMiddleware(async (auth, req: NextRequest) => {
   }
 
   if (!clerkPublicRoutes(req)) {
-    const { userId } = await auth();
+    const { userId } = await getAuth(req);
     if (!userId) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
@@ -143,7 +167,7 @@ export const proxy = clerkMiddleware(async (auth, req: NextRequest) => {
   // --- Default: forward locale header to RSC, no redirect/rewrite ---
   // Covers logged-out root path, /login, /:slug/*, and everything else.
   return nextWithLocale(req);
-});
+}
 
 export const config = {
   // i18n header must land on every page request, so we use the standard

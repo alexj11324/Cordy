@@ -14,6 +14,7 @@ import {
 } from "@/features/auth/auth-cookie";
 import { detectWebOS } from "@/platform/client-os";
 import { ClerkAuthAdapter } from "./clerk-auth-adapter";
+import { UiFixturesProvider } from "@/lib/ui-fixtures/context";
 
 // Derive WebSocket URL from the page origin so self-hosted / LAN deployments
 // work without an explicit runtime wsUrl. The Next.js runtime proxy handles
@@ -36,14 +37,17 @@ export function WebProviders({
   resources,
   apiBaseUrl,
   wsUrl,
+  uiFixtures = false,
 }: {
   children: React.ReactNode;
   locale: SupportedLocale;
   resources: Record<string, LocaleResources>;
   apiBaseUrl?: string;
   wsUrl?: string;
+  uiFixtures?: boolean;
 }) {
-  // Clerk handles all authentication on web — skip legacy cookie/token logic.
+  // Clerk handles authentication on web unless local UI fixtures are serving
+  // the product screens without a session.
   const clerkAuth = true;
 
   // Stable identity reference so downstream effects keyed on it don't see a
@@ -53,27 +57,30 @@ export function WebProviders({
     [],
   );
   const localeAdapter = useMemo(() => createBrowserCookieLocaleAdapter(), []);
+  const tree = (
+    <WebNavigationProvider>
+      <WebScrollRestorationProvider>{children}</WebScrollRestorationProvider>
+    </WebNavigationProvider>
+  );
   return (
-    <CoreProvider
-      apiBaseUrl={apiBaseUrl}
-      wsUrl={wsUrl || deriveWsUrl()}
-      clerkAuth={clerkAuth}
-      cookieAuth
-      onLogin={setLoggedInCookie}
-      onLogout={() => {
-        useWelcomeStore.getState().reset();
-        clearLoggedInCookie();
-      }}
-      identity={identity}
-      locale={locale}
-      resources={resources}
-      localeAdapter={localeAdapter}
-    >
-      <ClerkAuthAdapter>
-        <WebNavigationProvider>
-          <WebScrollRestorationProvider>{children}</WebScrollRestorationProvider>
-        </WebNavigationProvider>
-      </ClerkAuthAdapter>
-    </CoreProvider>
+    <UiFixturesProvider enabled={uiFixtures}>
+      <CoreProvider
+        apiBaseUrl={apiBaseUrl}
+        wsUrl={wsUrl || deriveWsUrl()}
+        clerkAuth={clerkAuth}
+        cookieAuth={false}
+        onLogin={setLoggedInCookie}
+        onLogout={() => {
+          useWelcomeStore.getState().reset();
+          clearLoggedInCookie();
+        }}
+        identity={identity}
+        locale={locale}
+        resources={resources}
+        localeAdapter={localeAdapter}
+      >
+        {uiFixtures ? tree : <ClerkAuthAdapter>{tree}</ClerkAuthAdapter>}
+      </CoreProvider>
+    </UiFixturesProvider>
   );
 }

@@ -13,15 +13,15 @@
  *
  * Icon values are *names*, not React components, so this module stays
  * React-free and safe inside `@patchbay/core`. The name → component registry
- * lives in `packages/views/layout/route-icon-components.tsx`; its
- * `Record<RouteIconName, LucideIcon>` type makes a missing component a compile
- * error.
+ * lives in `packages/views/layout/route-icon-components.tsx`; its total
+ * `Record<RouteIconName, ...>` type makes a missing component a compile error.
  */
 
 /** Every icon name a nav page or a tab type-icon can resolve to. */
 export type RouteIconName =
   | "Inbox"
   | "MessageSquare"
+  | "Hash"
   | "CircleUser"
   | "ListTodo"
   | "FolderKanban"
@@ -46,12 +46,13 @@ export type RouteIconName =
 export type NavLabelKey =
   | "inbox"
   | "chat"
+  | "channels"
   | "my_issues"
   | "issues"
   | "projects"
   | "autopilots"
   | "agents"
-  | "squads"
+  | "teams"
   | "usage"
   | "runtimes"
   | "skills"
@@ -61,12 +62,13 @@ export type NavLabelKey =
 export type WorkspacePageKey =
   | "inbox"
   | "chat"
+  | "channels"
   | "myIssues"
   | "issues"
   | "projects"
   | "autopilots"
   | "agents"
-  | "squads"
+  | "teams"
   | "usage"
   | "runtimes"
   | "skills"
@@ -88,12 +90,13 @@ export interface WorkspacePage {
 export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   inbox: { segment: "inbox", icon: "Inbox", navKey: "inbox" },
   chat: { segment: "chat", icon: "MessageSquare", navKey: "chat" },
+  channels: { segment: "channels", icon: "Hash", navKey: "channels" },
   myIssues: { segment: "my-issues", icon: "CircleUser", navKey: "my_issues" },
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
   autopilots: { segment: "autopilots", icon: "AlarmClockCheck", navKey: "autopilots" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
-  squads: { segment: "squads", icon: "PeopleGroup", navKey: "squads" },
+  teams: { segment: "teams", icon: "PeopleGroup", navKey: "teams" },
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
   runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },

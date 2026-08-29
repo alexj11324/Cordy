@@ -43,10 +43,9 @@ import { useT } from "../../i18n";
 // admin-only (the backend enforces it; the UI hides the button for non-
 // admins to match).
 //
-// Adding a new installation flows through the Agent detail page: the install
-// path is per-agent (each Patchbay agent gets exactly one bot — the
-// (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
-// asking the user to pick an agent here would re-create that page's picker.
+// The settings page connects one workspace-scoped Hub. The channel selects
+// the active Agent with `/agents`; the optional per-Agent form remains
+// available for legacy links and existing installations.
 export function WecomTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();

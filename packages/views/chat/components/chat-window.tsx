@@ -952,19 +952,6 @@ export function ChatWindow() {
         <OfflineBanner agentName={activeAgent?.name} availability={availability} />
       )}
 
-      <ChatQueue
-        tasks={queuedTasks}
-        headStatus={pendingTask?.status}
-        onSendNow={handleSendQueuedTaskNow}
-        sendNowDisabled={isAgentAccessRevoked}
-        onEdit={handleEditQueuedTask}
-        onRemove={handleRemoveQueuedTask}
-        onClear={handleClearQueuedTasks}
-      />
-
-      {/* Input — disabled for legacy archived sessions and for sessions whose
-       *  agent has been archived (read-only); locked out entirely when there's
-       *  no agent (the EmptyState above carries the CTA). */}
       <ChatInput
         onSend={handleSend}
         restoreDraftRequest={restoreDraftRequest}
@@ -973,6 +960,17 @@ export function ChatWindow() {
         onStop={handleStop}
         isRunning={!!pendingTaskId}
         allowSubmitWhileRunning={pendingTask?.supports_queue === true}
+        queueSlot={
+          <ChatQueue
+            tasks={queuedTasks}
+            headStatus={pendingTask?.status}
+            onSendNow={handleSendQueuedTaskNow}
+            sendNowDisabled={isAgentAccessRevoked}
+            onEdit={handleEditQueuedTask}
+            onRemove={handleRemoveQueuedTask}
+            onClear={handleClearQueuedTasks}
+          />
+        }
         disabled={
           isSessionArchived ||
           isAgentArchived ||
@@ -993,6 +991,7 @@ export function ChatWindow() {
         }
         leftAdornment={
           <AgentDropdown
+            compact
             agents={availableAgents}
             activeAgent={activeAgent}
             userId={user?.id}
@@ -1016,11 +1015,14 @@ export function AgentDropdown({
   activeAgent,
   userId,
   onSelect,
+  compact = false,
 }: {
   agents: Agent[];
   activeAgent: Agent | null;
   userId: string | undefined;
   onSelect: (agent: Agent) => void;
+  /** Avatar-only trigger, matching the LobeHub composer model chip. */
+  compact?: boolean;
 }) {
   const { t } = useT("chat");
   const [open, setOpen] = useState(false);
@@ -1065,21 +1067,36 @@ export function AgentDropdown({
       triggerRender={
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 -ml-1 cursor-pointer outline-none transition-colors hover:bg-accent aria-expanded:bg-accent"
+          aria-label={activeAgent.name}
+          className={
+            compact
+              ? "flex size-8 items-center justify-center rounded-full outline-none transition-colors hover:bg-accent aria-expanded:bg-accent"
+              : "flex items-center gap-1.5 rounded-md px-1.5 py-1 -ml-1 cursor-pointer outline-none transition-colors hover:bg-accent aria-expanded:bg-accent"
+          }
         />
       }
       trigger={
-        <>
+        compact ? (
           <ActorAvatar
             actorType="agent"
             actorId={activeAgent.id}
-            size="md"
-            enableHoverCard
+            size="lg"
+            profileLink={false}
             showStatusDot
           />
-          <span className="text-caption font-medium max-w-28 truncate">{activeAgent.name}</span>
-          <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-        </>
+        ) : (
+          <>
+            <ActorAvatar
+              actorType="agent"
+              actorId={activeAgent.id}
+              size="md"
+              enableHoverCard
+              showStatusDot
+            />
+            <span className="text-caption font-medium max-w-28 truncate">{activeAgent.name}</span>
+            <ChevronDown className="size-3 text-muted-foreground shrink-0" />
+          </>
+        )
       }
     >
       {filteredMine.length === 0 && filteredOthers.length === 0 ? (

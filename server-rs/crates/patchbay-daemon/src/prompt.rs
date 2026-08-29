@@ -15,8 +15,8 @@ use crate::runtime_config_sections::{
 use crate::slash_skill::extract_slash_skills;
 use crate::types::{ActiveSiblingRunData, Task};
 
-/// Legacy role signal retained for historical squad briefings.
-const SQUAD_BRIEFING_MARKER: &str = "## Squad Operating Protocol";
+/// Legacy role signal retained for historical team briefings.
+const TEAM_BRIEFING_MARKER: &str = "## Team Operating Protocol";
 
 /// `sessionContinuityNoticeFor`.
 pub(crate) fn session_continuity_notice_for(task: &Task) -> &'static str {
@@ -349,9 +349,9 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
                 task.issue_id
             ));
         }
-        if task_is_squad_leader(task) {
+        if task_is_team_leader(task) {
             b.push_str(&format!(
-                "⚠️ **Squad leader no_action rule:** If you decide no action is needed, call `patchbay squad activity {} no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The squad activity call records your decision; a comment is redundant noise.\n\n",
+                "⚠️ **Team leader no_action rule:** If you decide no action is needed, call `patchbay team activity {} no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The team activity call records your decision; a comment is redundant noise.\n\n",
                 task.issue_id
             ));
         }
@@ -398,7 +398,7 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
             &crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
                 &task.issue_id,
                 &targets,
-                task_is_squad_leader(task),
+                task_is_team_leader(task),
             ),
         );
     } else {
@@ -407,7 +407,7 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
                 provider,
                 &task.issue_id,
                 &task.trigger_comment_id,
-                task_is_squad_leader(task),
+                task_is_team_leader(task),
             ),
         );
     }
@@ -654,8 +654,8 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
     }
 
     b.push_str("- **assignee**:\n");
-    b.push_str("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay squad list --output json` and find the matching entity by display name. Squads are first-class assignees too — a squad name (e.g. \"Super Human\") routes work to the squad leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or squad) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n");
-    b.push_str("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a squad, pass the squad's `id` as `--assignee-id`, not the leader agent's id.\n");
+    b.push_str("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. Teams are first-class assignees too — a team name (e.g. \"Super Human\") routes work to the team leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or team) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n");
+    b.push_str("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a team, pass the team's `id` as `--assignee-id`, not the leader agent's id.\n");
     let agent_id = task
         .agent
         .as_ref()
@@ -666,17 +666,17 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
         .as_ref()
         .map(|a| a.name.clone())
         .unwrap_or_default();
-    if !task.squad_id.is_empty() {
-        // Squad picker opened quick-create: the squad owns the flow.
-        if !task.squad_name.is_empty() {
+    if !task.team_id.is_empty() {
+        // Team picker opened quick-create: the team owns the flow.
+        if !task.team_name.is_empty() {
             b.push_str(&format!(
-                "    - When the user did NOT name an assignee, default to the picker SQUAD {:?}: pass `--assignee-id {:?}` (the squad's UUID). The user opened quick-create with the squad selected; you (the leader agent) are running on the squad's behalf, so the squad — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
-                task.squad_name, task.squad_id
+                "    - When the user did NOT name an assignee, default to the picker TEAM {:?}: pass `--assignee-id {:?}` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
+                task.team_name, task.team_id
             ));
         } else {
             b.push_str(&format!(
-                "    - When the user did NOT name an assignee, default to the picker SQUAD: pass `--assignee-id {:?}` (the squad's UUID). The user opened quick-create with the squad selected; you (the leader agent) are running on the squad's behalf, so the squad — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
-                task.squad_id
+                "    - When the user did NOT name an assignee, default to the picker TEAM: pass `--assignee-id {:?}` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
+                task.team_id
             ));
         }
     } else if !agent_id.is_empty() {
@@ -743,17 +743,17 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
     b
 }
 
-/// `taskIsSquadLeader`: leadership is a PER-TASK role. Servers without the
+/// `taskIsTeamLeader`: leadership is a PER-TASK role. Servers without the
 /// capability fall back to the legacy briefing-marker sniff (PB-5811).
-pub(crate) fn task_is_squad_leader(task: &Task) -> bool {
+pub(crate) fn task_is_team_leader(task: &Task) -> bool {
     if !task.leader_role_resolved {
         return task
             .agent
             .as_ref()
-            .map(|a| a.instructions.contains(SQUAD_BRIEFING_MARKER))
+            .map(|a| a.instructions.contains(TEAM_BRIEFING_MARKER))
             .unwrap_or(false);
     }
-    task.is_leader_task || !task.squad_id.is_empty()
+    task.is_leader_task || !task.team_id.is_empty()
 }
 
 #[cfg(test)]
@@ -883,19 +883,19 @@ mod tests {
     }
 
     #[test]
-    fn squad_leader_capability_gate() {
+    fn team_leader_capability_gate() {
         let mut t = base_task();
         // Legacy: briefing marker sniff when capability absent.
         t.agent = Some(AgentData {
-            instructions: "x\n## Squad Operating Protocol\ny".to_string(),
+            instructions: "x\n## Team Operating Protocol\ny".to_string(),
             ..Default::default()
         });
-        assert!(task_is_squad_leader(&t));
+        assert!(task_is_team_leader(&t));
         // Capability present but flags false → worker.
         t.leader_role_resolved = true;
-        assert!(!task_is_squad_leader(&t));
+        assert!(!task_is_team_leader(&t));
         t.is_leader_task = true;
-        assert!(task_is_squad_leader(&t));
+        assert!(task_is_team_leader(&t));
     }
 
     #[test]

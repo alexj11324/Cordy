@@ -422,10 +422,10 @@ pub struct TaskContextForEnv {
     /// Assignment handoff instruction; rendered into issue_context.md
     /// (PB-3375).
     pub handoff_note: String,
-    /// True when THIS TASK runs the squad-leader role; derived from the
-    /// claim's is_leader_task / squad_id, never sniffed from instruction text
+    /// True when THIS TASK runs the team-leader role; derived from the
+    /// claim's is_leader_task / team_id, never sniffed from instruction text
     /// (PB-5811).
-    pub is_squad_leader: bool,
+    pub is_team_leader: bool,
     /// Workspace-level system prompt (workspace.context in the DB), rendered
     /// into the brief as `## Workspace Context` when non-empty.
     pub workspace_context: String,
@@ -1390,7 +1390,7 @@ pub const MANAGED_ENV_PROVENANCE_MANAGED_BY: &str = "patchbay-daemon-managed-env
 
 /// ManagedEnvProvenance is persisted to .managed_env.json inside the env root
 /// at Prepare time (NOT on completion, unlike .gc_meta.json). Its whole reason
-/// to exist is timing: a squad-leader follow-up can be claimed the instant the
+/// to exist is timing: a team-leader follow-up can be claimed the instant the
 /// prior task completes — before the prior handler writes .gc_meta.json
 /// (PB-4886). Written only for non-local managed issue or chat envs, so its
 /// presence is itself the "safe to reuse, not a user local_directory"

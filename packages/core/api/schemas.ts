@@ -12,6 +12,8 @@ import type {
   BillingTopupsPage,
   BillingTransactionsPage,
   CancelTaskResponse,
+  Channel,
+  ChannelMessage,
   ChatMessage,
   ChatDraftRestoresResponse,
   ChatPendingTask,
@@ -79,7 +81,7 @@ import type {
   ShareLink,
   ShareLinkInfo,
   Skill,
-  Squad,
+  Team,
   TimelineEntry,
   User,
   WebhookDelivery,
@@ -756,6 +758,67 @@ export const ChatMessagesPageSchema = z.object({
   }).loose().nullable().optional(),
 }).loose();
 
+const ChannelActorTypeSchema = z.preprocess(
+  (value) => (value === "member" || value === "agent" ? value : "unknown"),
+  z.enum(["member", "agent", "unknown"]),
+);
+
+const ChannelQuotedMessageSchema = z.object({
+  id: z.string(),
+  author_type: ChannelActorTypeSchema,
+  author_id: z.string(),
+  author_name: z.string().default("Unknown"),
+  content: z.string().default(""),
+}).loose();
+
+export const ChannelSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  name: z.string().default(""),
+  slug: z.string().default(""),
+  description: z.string().default(""),
+  created_by: z.string().default(""),
+  archived_at: z.string().nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ChannelListSchema = z.array(ChannelSchema).default([]);
+export const EMPTY_CHANNEL_LIST: Channel[] = [];
+
+export const ChannelMessageSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  channel_id: z.string(),
+  author_type: ChannelActorTypeSchema,
+  author_id: z.string(),
+  author_name: z.string().default("Unknown"),
+  author_avatar_url: z.string().nullable().optional(),
+  author_status: z.string().nullable().optional(),
+  content: z.string().default(""),
+  parent_message: ChannelQuotedMessageSchema.nullable().optional(),
+  parent_id: z.string().nullable().optional(),
+  quoted_message_id: z.string().nullable().optional(),
+  quoted_message: ChannelQuotedMessageSchema.nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const ChannelMessageListSchema = z.array(ChannelMessageSchema).default([]);
+export const EMPTY_CHANNEL_MESSAGE_LIST: ChannelMessage[] = [];
+
+const ChannelMessageCursorSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+}).loose();
+
+export const ChannelMessagesPageSchema = z.object({
+  messages: z.array(ChannelMessageSchema).default([]),
+  limit: z.number().default(50),
+  has_more: z.boolean().default(false),
+  next_cursor: ChannelMessageCursorSchema.nullable().optional(),
+}).loose();
+
 // Standalone attachment lookup (`GET /api/attachments/{id}`) is the source of
 // truth for click-time download URLs. The two fields the download flow opens
 // in a new tab — `download_url` and `url` — must be strings, otherwise we'd
@@ -957,7 +1020,7 @@ const CommentTriggerPreviewAgentSchema = z.object({
   active_task_status: z.string().optional(),
 }).loose();
 
-// Per-target outcome of an explicit @agent / @squad mention (PB-4525 §2).
+// Per-target outcome of an explicit @agent / @team mention (PB-4525 §2).
 // target_id is required to correlate with the client's rendered mention; a
 // malformed entry (missing id) is dropped rather than failing the whole payload.
 export const CommentTriggerOutcomeSchema = z.object({
@@ -1018,6 +1081,8 @@ export const IssueSchema = z.object({
   priority: z.string(),
   assignee_type: z.string().nullable(),
   assignee_id: z.string().nullable(),
+  reviewer_type: z.string().nullable().optional().default(null),
+  reviewer_id: z.string().nullable().optional().default(null),
   creator_type: z.string(),
   creator_id: z.string(),
   parent_issue_id: z.string().nullable(),
@@ -1752,16 +1817,16 @@ export const agentBuilderRuntimeSwitchFallback = (
   requestedRuntimeID: string,
 ): AgentBuilderRuntimeSwitch => ({ runtime_id: requestedRuntimeID });
 
-// Squad list responses carry lightweight membership previews used by hover
+// Team list responses carry lightweight membership previews used by hover
 // cards. The preview fields are additive API fields, so older backends default
 // cleanly to no preview instead of breaking newer frontends.
-const SquadMemberPreviewSchema = z.object({
+const TeamMemberPreviewSchema = z.object({
   member_type: z.string(),
   member_id: z.string(),
   role: z.string().default(""),
 }).loose();
 
-export const SquadSchema = z.object({
+export const TeamSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   name: z.string(),
@@ -1777,12 +1842,12 @@ export const SquadSchema = z.object({
   archived_at: z.string().nullable().optional().transform((v) => v ?? null),
   archived_by: z.string().nullable().optional().transform((v) => v ?? null),
   member_count: z.number().default(0),
-  member_preview: z.array(SquadMemberPreviewSchema).default([]),
+  member_preview: z.array(TeamMemberPreviewSchema).default([]),
 }).loose();
 
-export const SquadListSchema = z.array(SquadSchema);
-export const EMPTY_SQUAD_LIST: Squad[] = [];
-export const EMPTY_SQUAD: Squad = {
+export const TeamListSchema = z.array(TeamSchema);
+export const EMPTY_TEAM_LIST: Team[] = [];
+export const EMPTY_TEAM: Team = {
   id: "",
   workspace_id: "",
   name: "",
@@ -1799,30 +1864,30 @@ export const EMPTY_SQUAD: Squad = {
   member_preview: [],
 };
 
-// Squad member status — backs the Squad detail page's Members tab. status
-// is `string | null` (not the narrow `SquadMemberStatusValue` union) so a
+// Team member status — backs the Team detail page's Members tab. status
+// is `string | null` (not the narrow `TeamMemberStatusValue` union) so a
 // new server-side status doesn't fail the parse; the UI defaults to a
 // neutral pill for unknown values.
-const SquadActiveIssueBriefSchema = z.object({
+const TeamActiveIssueBriefSchema = z.object({
   issue_id: z.string(),
   identifier: z.string(),
   title: z.string(),
   issue_status: z.string(),
 }).loose();
 
-const SquadMemberStatusSchema = z.object({
+const TeamMemberStatusSchema = z.object({
   member_type: z.string(),
   member_id: z.string(),
   status: z.string().nullable().optional().transform((v) => v ?? null),
-  active_issues: z.array(SquadActiveIssueBriefSchema).default([]),
+  active_issues: z.array(TeamActiveIssueBriefSchema).default([]),
   last_active_at: z.string().nullable().optional().transform((v) => v ?? null),
 }).loose();
 
-export const SquadMemberStatusListResponseSchema = z.object({
-  members: z.array(SquadMemberStatusSchema).default([]),
+export const TeamMemberStatusListResponseSchema = z.object({
+  members: z.array(TeamMemberStatusSchema).default([]),
 }).loose();
 
-export const EMPTY_SQUAD_MEMBER_STATUS_LIST = { members: [] };
+export const EMPTY_TEAM_MEMBER_STATUS_LIST = { members: [] };
 
 // ---------------------------------------------------------------------------
 // Structured error body — POST /api/workspaces/:wsId/issues 409 conflict.

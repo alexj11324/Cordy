@@ -43,10 +43,10 @@ export function toggleActorRefValue(current: string[], key: string): string[] | 
  * Value editor for `actor` / `multi_actor` custom properties (PB-6286).
  *
  * Shaped like AssigneePicker's members section — same rows, same avatars — but
- * members are the only kind an actor property accepts. Agents and squads are
+ * members are the only kind an actor property accepts. Agents and teams are
  * assignable but not referenceable: an agent would need the picker to answer
  * visibility and invoke-permission questions that a passive reference has no
- * business asking, and a squad is a routing target rather than a person.
+ * business asking, and a team is a routing target rather than a person.
  *
  * `multi_actor` toggles in place and keeps the popover open (mirroring
  * multi_select); `actor` commits and closes.

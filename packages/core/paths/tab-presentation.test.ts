@@ -66,9 +66,9 @@ describe("resolveTabPresentation — direct resources", () => {
       visual: { kind: "actor", actorType: "member", id: "m1" },
       title: { kind: "text", text: "Ada" },
     });
-    expect(present("/acme/squads/sq1")).toEqual({
-      visual: { kind: "actor", actorType: "squad", id: "sq1" },
-      title: { kind: "tab", tabKey: "squad" },
+    expect(present("/acme/teams/team1")).toEqual({
+      visual: { kind: "actor", actorType: "team", id: "team1" },
+      title: { kind: "tab", tabKey: "team" },
     });
   });
 

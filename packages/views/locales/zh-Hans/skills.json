@@ -25,7 +25,7 @@
     },
     "empty": {
       "title": "还没有 skill",
-      "description": "创建第一个 skill、从 URL 导入、或从已连接的运行时复制——之后工作区里每个智能体都能用它。"
+      "description": "创建第一个 skill、从 URL 导入、或从已连接的设备复制——之后工作区里每个智能体都能用它。"
     },
     "no_matches": {
       "title": "无匹配",
@@ -36,15 +36,15 @@
     },
     "intro_banner": {
       "title": "在工作区内共享。",
-      "body": "任何成员都可以创建 skill、从 URL 导入、或从本地运行时复制——之后所有智能体都能用它。",
-      "highlight": "本地运行时里的 skill 在你复制过来之前是私有的。"
+      "body": "任何成员都可以创建 skill、从 URL 导入、或从本地设备复制——之后所有智能体都能用它。",
+      "highlight": "本地设备里的 skill 在你复制过来之前是私有的。"
     },
     "list_error": {
       "title": "无法加载 skill",
       "fallback": "拉取 skill 列表时出错。",
       "retry": "重试"
     },
-    "supporting_data_warning": "部分工作区数据加载失败。创建者归属、运行时名称、编辑权限可能显示不完整。"
+    "supporting_data_warning": "部分工作区数据加载失败。创建者归属、设备名称、编辑权限可能显示不完整。"
   },
   "table": {
     "name": "名称",
@@ -58,8 +58,8 @@
     "by_creator": "由 {{name}} 创建",
     "source_manual": "手动创建",
     "source_runtime_named": "来自 {{name}}",
-    "source_runtime_provider": "来自 {{provider}} 运行时",
-    "source_runtime_unknown": "来自某个运行时",
+    "source_runtime_provider": "来自 {{provider}} 设备",
+    "source_runtime_unknown": "来自某个设备",
     "source_clawhub": "来自 ClawHub",
     "source_skills_sh": "来自 Skills.sh",
     "source_github": "来自 GitHub"
@@ -116,14 +116,14 @@
     "read_only": "只读",
     "delete_aria": "删除 skill",
     "delete_tooltip": "删除 skill",
-    "supporting_data_warning": "部分工作区数据加载失败。创建者归属、运行时名称、编辑权限可能要等下次刷新才完整。",
+    "supporting_data_warning": "部分工作区数据加载失败。创建者归属、设备名称、编辑权限可能要等下次刷新才完整。",
     "delete_file": "删除文件",
     "name_placeholder": "skill-name",
     "description_placeholder": "用一句话描述智能体什么时候应该使用这个 skill...",
     "subline": {
-      "origin_runtime_named": "本地运行时 · {{name}}",
-      "origin_runtime_provider": "本地运行时 · {{provider}}",
-      "origin_runtime_unknown": "本地运行时",
+      "origin_runtime_named": "本地设备 · {{name}}",
+      "origin_runtime_provider": "本地设备 · {{provider}}",
+      "origin_runtime_unknown": "本地设备",
       "origin_clawhub": "导入自 · ClawHub",
       "origin_skills_sh": "导入自 · Skills.sh",
       "origin_github": "导入自 · GitHub",
@@ -209,7 +209,7 @@
       "labels": "标签",
       "used_by_other": "被 {{count}} 个智能体使用",
       "used_by_empty": "还未分配给任何智能体。打开某个智能体的 Skills 标签页进行分配。",
-      "permissions_owner": "你可以编辑和删除该技能。改动将在智能体下次运行时生效。",
+      "permissions_owner": "你可以编辑和删除该技能。改动将在智能体下次设备生效。",
       "permissions_locked_creator": "只有创建者（{{name}}）或工作区管理员可以编辑该技能。",
       "permissions_locked": "只有创建者或工作区管理员可以编辑该技能。"
     },
@@ -244,8 +244,8 @@
         "desc": "通过 URL 拉取已发布的 skill，文件由服务端拉取。"
       },
       "runtime": {
-        "title": "从运行时复制",
-        "desc": "扫描本地运行时，把它磁盘上的 skill 提升到工作区。"
+        "title": "从设备复制",
+        "desc": "扫描本地设备，把它磁盘上的 skill 提升到工作区。"
       }
     },
     "method_card": {
@@ -253,8 +253,8 @@
       "manual_desc": "从空白 SKILL.md 开始，自己写指令。",
       "url_title": "从 URL 导入",
       "url_desc": "从 ClawHub 或 Skills.sh 拉取已发布的 skill。",
-      "runtime_title": "从运行时复制",
-      "runtime_desc": "把本地运行时里已经装好的 skill 提升过来。"
+      "runtime_title": "从设备复制",
+      "runtime_desc": "把本地设备里已经装好的 skill 提升过来。"
     },
     "manual": {
       "name_label": "名称",
@@ -284,16 +284,16 @@
     }
   },
   "runtime_import": {
-    "runtime_label": "运行时",
-    "runtime_placeholder": "选择一个本地运行时",
-    "no_local_runtimes_title": "暂无可用的本地运行时",
-    "no_local_runtimes_hint": "连接一个本地运行时，才能浏览并导入其本地 skill。",
-    "choose_runtime": "请选择一个运行时继续",
-    "must_be_online": "运行时必须在线才能浏览本地 skill。",
+    "runtime_label": "设备",
+    "runtime_placeholder": "选择一个本地设备",
+    "no_local_runtimes_title": "暂无可用的本地设备",
+    "no_local_runtimes_hint": "连接一个本地设备，才能浏览并导入其本地 skill。",
+    "choose_runtime": "请选择一个设备继续",
+    "must_be_online": "设备必须在线才能浏览本地 skill。",
     "load_failed": "加载本地 skill 失败",
     "not_supported": "这个 provider 暂不支持本地 skill 列表。",
     "no_skills_title": "未找到本地 skill",
-    "no_skills_hint": "这个运行时上还没有可发现的本地 skill。",
+    "no_skills_hint": "这个设备上还没有可发现的本地 skill。",
     "search_placeholder": "搜索本地 skill",
     "no_search_results_title": "没有匹配的本地 skill",
     "no_search_results_hint": "没有本地 skill 匹配 \"{{query}}\"。",

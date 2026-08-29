@@ -14,12 +14,12 @@ pub(super) struct IssueListArgs {
     pub(super) priority: Option<String>,
     #[arg(
         long,
-        help = "Filter by assignee name (member, agent, or squad; fuzzy match)"
+        help = "Filter by assignee name (member, agent, or team; fuzzy match)"
     )]
     pub(super) assignee: Option<String>,
     #[arg(
         long,
-        help = "Filter by assignee UUID — member, agent, or squad (mutually exclusive with --assignee)"
+        help = "Filter by assignee UUID — member, agent, or team (mutually exclusive with --assignee)"
     )]
     pub(super) assignee_id: Option<String>,
     #[arg(long, help = "Filter by project ID")]

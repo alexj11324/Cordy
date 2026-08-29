@@ -57,12 +57,9 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // Listing is member-visible; the disconnect action is admin-only (the
 // backend enforces it; the UI hides the button for non-admins to match).
 //
-// Adding a new installation flows through the Agent detail page: the
-// install path is per-agent (each Patchbay Agent gets exactly one Bot —
-// see the (workspace_id, agent_id) UNIQUE in lark_installation), so
-// asking the user to pick an agent here would re-create that page's
-// picker. The "Bind your first agent" copy in the empty state hints
-// users at the right entry point.
+// The settings page connects one workspace-scoped Hub. The channel selects
+// the active Agent with `/agents`; the optional per-Agent form remains
+// available for legacy links and existing installations.
 export function LarkTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
@@ -215,12 +212,9 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
-  // The bot is bound 1:1 to a Patchbay Agent (per the (workspace_id,
-  // agent_id) UNIQUE in lark_installation). Render the Patchbay agent's
-  // identity here rather than the raw Lark app_id / bot_open_id — those
-  // mean nothing to product users. getAgentName falls back to
-  // "Unknown Agent" when the agent has been deleted; the Disconnect
-  // affordance below is the recovery path for that orphan row.
+  // Render the Patchbay agent's identity for legacy Agent-scoped rows. A
+  // workspace Hub has no Agent until a chat uses `/agents`, so it gets the
+  // platform mark instead of being sent through the Agent avatar lookup.
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
   const agentName = installation.agent_id
@@ -322,7 +316,7 @@ export function LarkAgentBindButton({
    * "jump to the Integrations tab" handler so the left column stays a
    * glanceable summary and the management actions live in one place (the
    * tab). The tab itself omits this prop and gets the full badge.
-   */
+  */
   onShowConnectedDetails?: () => void;
   /** The workspace Integrations card connects the platform Hub, not an Agent. */
   workspaceScoped?: boolean;

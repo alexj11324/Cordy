@@ -210,13 +210,13 @@ pub struct Task {
     /// Project-scoped resources to expose to the agent.
     #[serde(rename = "project_resources", skip_serializing_if = "Vec::is_empty")]
     pub project_resources: Vec<ProjectResourceData>,
-    /// True when executing in the squad-leader coordinator role.
+    /// True when executing in the team-leader coordinator role.
     #[serde(rename = "is_leader_task", skip_serializing_if = "std::ops::Not::not")]
     pub is_leader_task: bool,
-    /// Server capability: IsLeaderTask/SquadID authoritatively answer "is this
+    /// Server capability: IsLeaderTask/TeamID authoritatively answer "is this
     /// a leader run". Absent on servers predating it — those before #4951
     /// never sent is_leader_task at all, later ones send it without this
-    /// guarantee — so taskIsSquadLeader falls back to the briefing marker for
+    /// guarantee — so taskIsTeamLeader falls back to the briefing marker for
     /// both (PB-5811).
     #[serde(
         rename = "leader_role_resolved",
@@ -422,13 +422,13 @@ pub struct Task {
     #[serde(rename = "handoff_note", skip_serializing_if = "String::is_empty")]
     pub handoff_note: String,
 
-    /// When the picker was a squad, the squad's UUID; Agent is still the
+    /// When the picker was a team, the team's UUID; Agent is still the
     /// resolved leader.
-    #[serde(rename = "squad_id", skip_serializing_if = "String::is_empty")]
-    pub squad_id: String,
-    /// Display name for the picker squad, used in prompt text.
-    #[serde(rename = "squad_name", skip_serializing_if = "String::is_empty")]
-    pub squad_name: String,
+    #[serde(rename = "team_id", skip_serializing_if = "String::is_empty")]
+    pub team_id: String,
+    /// Display name for the picker team, used in prompt text.
+    #[serde(rename = "team_name", skip_serializing_if = "String::is_empty")]
+    pub team_name: String,
     /// For quick-create tasks opened from "Add sub issue" — UUID of the parent
     /// issue the new issue should be filed under.
     #[serde(rename = "parent_issue_id", skip_serializing_if = "String::is_empty")]

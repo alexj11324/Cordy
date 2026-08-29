@@ -71,10 +71,10 @@
     "dont_start": "まだ開始しない",
     "toast_failed": "操作に失敗しました",
     "create_will_start": "作成後、{{name}} がすぐに作業を開始します。",
-    "create_will_start_squad": "作成後、{{name}} のリーダーが内容を評価し、タスクの割り振りを開始します。",
+    "create_will_start_team": "作成後、{{name}} のリーダーが内容を評価し、タスクの割り振りを開始します。",
     "create_parked": "割り当て済み — バックログでは作業を開始しません。"
   },
-  "create_squad": {
+  "create_team": {
     "title": "チームを作成",
     "description": "リーダーエージェントと任意の追加メンバーで協働チームを作成します。",
     "name_label": "名前",
@@ -203,10 +203,10 @@
       "created_by": "作成者",
       "select_agent_aria": "エージェントを選択",
       "pick_an_agent": "エージェントを選択…",
-      "no_agents": "利用可能なエージェントまたはチームがありません。",
-      "search_placeholder": "エージェントとチームを検索…",
+    "no_agents": "利用可能なエージェントまたはチームがありません。",
+    "search_placeholder": "エージェントとチームを検索…",
       "agents_group": "エージェント",
-      "squads_group": "チーム",
+    "teams_group": "チーム",
       "version_missing": "このエージェントのデーモンは CLI バージョンを報告していません。エージェントで作成には patchbay CLI {{min}} 以上が必要です。デーモンをアップグレードして再接続するか、手動作成に切り替えてください。",
       "version_below": "このエージェントのデーモン CLI は {{current}} です。エージェントで作成には {{min}} 以上が必要です。デーモンをアップグレードするか、手動作成に切り替えてください。",
       "prompt_placeholder": "エージェントにやってほしいことを伝えてください。例: 「Bohan に Web プロジェクトのインボックス読み込みの遅さを直してもらう」",

@@ -1,6 +1,6 @@
 import type { useT } from "../i18n";
 
-// Localized copy for a blocked @agent / @squad trigger outcome (PB-4525 §2),
+// Localized copy for a blocked @agent / @team trigger outcome (PB-4525 §2),
 // shared by the composer preview chip and the post-send toast so both name the
 // same reason the same way. `reason_code` is the enumeration-safe wire code; the
 // label it maps to never reveals the target's identity — the caller supplies the

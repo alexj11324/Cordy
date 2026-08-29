@@ -7,6 +7,7 @@ import type { TimelineEntry } from "./activity";
 import type { Workspace, MemberWithUser, Invitation } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
+import type { Channel, ChannelMessage } from "./channel";
 
 // WebSocket event types (matching the Rust protocol crate)
 export type WSEventType =
@@ -63,12 +64,14 @@ export type WSEventType =
   | "chat:session_read"
   | "chat:session_deleted"
   | "chat:session_updated"
+  | "channel:created"
+  | "channel:message"
   | "project:created"
   | "project:updated"
   | "project:deleted"
-  | "squad:created"
-  | "squad:updated"
-  | "squad:deleted"
+  | "team:created"
+  | "team:updated"
+  | "team:deleted"
   | "label:created"
   | "label:updated"
   | "label:deleted"
@@ -519,6 +522,15 @@ export interface InvitationRevokedPayload {
   invitee_email: string;
 }
 
+export interface ChannelCreatedPayload {
+  channel: Channel;
+}
+
+export interface ChannelMessageCreatedPayload {
+  channel_id: string;
+  message: ChannelMessage;
+}
+
 /**
  * Maps every WSEventType to its payload interface. Events whose payload
  * shape isn't formally typed (server emits an object the client doesn't
@@ -586,6 +598,8 @@ export interface WSEventPayloadMap {
   "chat:session_read": ChatSessionReadPayload;
   "chat:session_deleted": ChatSessionDeletedPayload;
   "chat:session_updated": unknown;
+  "channel:created": ChannelCreatedPayload;
+  "channel:message": ChannelMessageCreatedPayload;
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project:deleted": ProjectDeletedPayload;
@@ -600,9 +614,9 @@ export interface WSEventPayloadMap {
   "skill:created": unknown;
   "skill:updated": unknown;
   "skill:deleted": unknown;
-  "squad:created": unknown;
-  "squad:updated": unknown;
-  "squad:deleted": unknown;
+  "team:created": unknown;
+  "team:updated": unknown;
+  "team:deleted": unknown;
   "label:created": unknown;
   "label:updated": unknown;
   "label:deleted": unknown;

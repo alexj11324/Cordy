@@ -114,24 +114,24 @@ WHERE i.workspace_id = $1
            WHERE a.workspace_id = $1
              AND a.owner_id     = $10::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
              AND sm.member_id   = $10::uuid
           UNION
           SELECT s.id
-            FROM squad s
+            FROM team s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = $10::uuid
           UNION
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
             JOIN agent a ON a.id = sm.member_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'
@@ -185,7 +185,7 @@ pub async fn create_issue(
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
     $16, now(), COALESCE($17::uuid, gen_random_uuid())
-) RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+) RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(workspace_id)
         .bind(title)
@@ -236,6 +236,8 @@ pub async fn create_issue(
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -270,7 +272,7 @@ pub async fn create_issue_with_origin(
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
     $16, $17, $18, now(), COALESCE($19::uuid, gen_random_uuid())
-) RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+) RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(workspace_id)
         .bind(title)
@@ -323,6 +325,8 @@ pub async fn create_issue_with_origin(
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -364,7 +368,7 @@ pub async fn delete_issue_metadata_key(
     END,
     updated_at = now()
 WHERE id = $2 AND workspace_id = $3
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(key)
         .bind(id)
@@ -401,6 +405,8 @@ RETURNING id, workspace_id, title, description, status, priority, assignee_type,
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -412,7 +418,7 @@ pub async fn find_active_duplicate_issue(
     normalized_title: &str,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE workspace_id = $1
   AND issue_effective_status(workspace_id, status) NOT IN ('done', 'cancelled')
   AND project_id IS NOT DISTINCT FROM $2::uuid
@@ -464,6 +470,8 @@ LIMIT 1"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -476,7 +484,7 @@ pub async fn find_recent_autopilot_duplicate_issue(
     created_after: Option<DateTime<Utc>>,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at FROM issue i
+        r#"SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at, i.reviewer_type, i.reviewer_id FROM issue i
 WHERE i.workspace_id = $1
   AND issue_effective_status(i.workspace_id, i.status) NOT IN ('done', 'cancelled')
   AND i.origin_type = 'autopilot'
@@ -538,6 +546,8 @@ LIMIT 1"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -546,7 +556,7 @@ pub async fn get_issue(
     id: Uuid,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE id = $1"#
     )
         .bind(id)
@@ -582,6 +592,8 @@ WHERE id = $1"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -591,7 +603,7 @@ pub async fn get_issue_by_number(
     number: i32,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE workspace_id = $1 AND number = $2"#
     )
         .bind(workspace_id)
@@ -628,6 +640,8 @@ WHERE workspace_id = $1 AND number = $2"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -638,7 +652,7 @@ pub async fn get_issue_by_origin(
     origin_id: Uuid,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE workspace_id = $1
   AND origin_type = $2
   AND origin_id = $3
@@ -679,6 +693,8 @@ LIMIT 1"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -715,7 +731,7 @@ pub async fn get_issue_in_workspace(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE id = $1 AND workspace_id = $2"#
     )
         .bind(id)
@@ -752,6 +768,8 @@ WHERE id = $1 AND workspace_id = $2"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -760,7 +778,7 @@ pub async fn list_child_issues(
     parent_issue_id: Uuid,
 ) -> anyhow::Result<Vec<Issue>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE parent_issue_id = $1
 ORDER BY number ASC"#
     )
@@ -798,6 +816,8 @@ ORDER BY number ASC"#
             properties: row.try_get(25)?,
             revision: row.try_get(26)?,
             last_activity_at: row.try_get(27)?,
+            reviewer_type: row.try_get("reviewer_type")?,
+            reviewer_id: row.try_get("reviewer_id")?,
         });
     }
     Ok(out)
@@ -809,7 +829,7 @@ pub async fn list_children_by_parents(
     parent_ids: Vec<Uuid>,
 ) -> anyhow::Result<Vec<Issue>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE workspace_id = $1
   AND parent_issue_id = ANY($2::uuid[])
 ORDER BY parent_issue_id, number ASC"#
@@ -849,6 +869,8 @@ ORDER BY parent_issue_id, number ASC"#
             properties: row.try_get(25)?,
             revision: row.try_get(26)?,
             last_activity_at: row.try_get(27)?,
+            reviewer_type: row.try_get("reviewer_type")?,
+            reviewer_id: row.try_get("reviewer_id")?,
         });
     }
     Ok(out)
@@ -952,31 +974,31 @@ WHERE i.workspace_id = $1
            WHERE a.workspace_id = $1
              AND a.owner_id     = $12::uuid
     ))
-    -- (2)(3)(4) assignee is a squad related to the user — three relations
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-          -- (2) the user is a human member of the squad
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+    -- (2)(3)(4) assignee is a team related to the user — three relations
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+          -- (2) the user is a human member of the team
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
              AND sm.member_id   = $12::uuid
           UNION
-          -- (3) the squad's canonical leader is an agent owned by the user.
-          -- We read squad.leader_id directly rather than relying on a
-          -- squad_member row, because the leader copy in squad_member is
-          -- best-effort (see squad.go AddSquadMember error handling).
+          -- (3) the team's canonical leader is an agent owned by the user.
+          -- We read team.leader_id directly rather than relying on a
+          -- team_member row, because the leader copy in team_member is
+          -- best-effort (see team.go AddTeamMember error handling).
           SELECT s.id
-            FROM squad s
+            FROM team s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = $12::uuid
           UNION
-          -- (4) the squad has an agent member owned by the user
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+          -- (4) the team has an agent member owned by the user
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
             JOIN agent a ON a.id = sm.member_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'
@@ -1112,24 +1134,24 @@ WHERE i.workspace_id = $1
            WHERE a.workspace_id = $1
              AND a.owner_id     = $9::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
              AND sm.member_id   = $9::uuid
           UNION
           SELECT s.id
-            FROM squad s
+            FROM team s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = $9::uuid
           UNION
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
             JOIN agent a ON a.id = sm.member_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'
@@ -1234,7 +1256,7 @@ pub async fn lock_issue_for_description_update(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Issue>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at FROM issue
+        r#"SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue
 WHERE id = $1 AND workspace_id = $2
 FOR UPDATE"#
     )
@@ -1272,6 +1294,8 @@ FOR UPDATE"#
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -1328,7 +1352,7 @@ SET description = CASE
     updated_at = now()
 WHERE id = $4
   AND workspace_id = $5
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(base_description)
         .bind(description)
@@ -1367,6 +1391,8 @@ RETURNING id, workspace_id, title, description, status, priority, assignee_type,
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -1388,7 +1414,7 @@ pub async fn set_issue_metadata_key(
     END,
     updated_at = now()
 WHERE id = $3 AND workspace_id = $4
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(key)
         .bind(value)
@@ -1426,6 +1452,8 @@ RETURNING id, workspace_id, title, description, status, priority, assignee_type,
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -1449,7 +1477,7 @@ pub async fn update_issue(
     let row = sqlx::query(
         r#"WITH candidate AS (
     SELECT
-        i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at,
+        i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at, i.reviewer_type, i.reviewer_id,
         COALESCE($2::text, i.title) AS next_title,
         COALESCE($3::text, i.description) AS next_description,
         COALESCE($4::text, i.status) AS next_status,
@@ -1467,7 +1495,7 @@ pub async fn update_issue(
       AND ($14::bigint IS NULL OR i.revision = $14::bigint)
 ), changed AS (
     SELECT
-        candidate.id, candidate.workspace_id, candidate.title, candidate.description, candidate.status, candidate.priority, candidate.assignee_type, candidate.assignee_id, candidate.creator_type, candidate.creator_id, candidate.parent_issue_id, candidate.acceptance_criteria, candidate.context_refs, candidate.position, candidate.due_date, candidate.created_at, candidate.updated_at, candidate.number, candidate.project_id, candidate.origin_type, candidate.origin_id, candidate.first_executed_at, candidate.start_date, candidate.metadata, candidate.stage, candidate.properties, candidate.revision, candidate.last_activity_at, candidate.next_title, candidate.next_description, candidate.next_status, candidate.next_priority, candidate.next_assignee_type, candidate.next_assignee_id, candidate.next_position, candidate.next_start_date, candidate.next_due_date, candidate.next_parent_issue_id, candidate.next_project_id, candidate.next_stage,
+        candidate.id, candidate.workspace_id, candidate.title, candidate.description, candidate.status, candidate.priority, candidate.assignee_type, candidate.assignee_id, candidate.creator_type, candidate.creator_id, candidate.parent_issue_id, candidate.acceptance_criteria, candidate.context_refs, candidate.position, candidate.due_date, candidate.created_at, candidate.updated_at, candidate.number, candidate.project_id, candidate.origin_type, candidate.origin_id, candidate.first_executed_at, candidate.start_date, candidate.metadata, candidate.stage, candidate.properties, candidate.revision, candidate.last_activity_at, candidate.reviewer_type, candidate.reviewer_id, candidate.next_title, candidate.next_description, candidate.next_status, candidate.next_priority, candidate.next_assignee_type, candidate.next_assignee_id, candidate.next_position, candidate.next_start_date, candidate.next_due_date, candidate.next_parent_issue_id, candidate.next_project_id, candidate.next_stage,
         ROW(
             title, description, status, priority, assignee_type, assignee_id,
             position, start_date, due_date, parent_issue_id, project_id, stage
@@ -1507,7 +1535,7 @@ UPDATE issue AS i SET
     updated_at = CASE WHEN changed.did_change THEN now() ELSE i.updated_at END
 FROM changed
 WHERE i.id = changed.id
-RETURNING i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at"#
+RETURNING i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at, i.reviewer_type, i.reviewer_id"#
     )
         .bind(id)
         .bind(title)
@@ -1555,6 +1583,8 @@ RETURNING i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }
 
@@ -1574,7 +1604,7 @@ pub async fn update_issue_status(
     END,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $3
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at"#
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id"#
     )
         .bind(id)
         .bind(status)
@@ -1611,5 +1641,7 @@ RETURNING id, workspace_id, title, description, status, priority, assignee_type,
         properties: row.try_get(25)?,
         revision: row.try_get(26)?,
         last_activity_at: row.try_get(27)?,
+        reviewer_type: row.try_get("reviewer_type")?,
+        reviewer_id: row.try_get("reviewer_id")?,
     }))
 }

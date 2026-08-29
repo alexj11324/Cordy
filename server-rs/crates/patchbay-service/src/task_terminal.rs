@@ -28,6 +28,7 @@ use patchbay_db::queries::chat::{
 };
 use patchbay_db::queries::comment::get_comment;
 use patchbay_db::queries::issue::{get_issue, update_issue_status};
+use patchbay_db::queries::workspace_channel as workspace_channel_q;
 
 use crate::chat_quick_actions::{split_chat_quick_actions, ChatQuickActionsOrigin};
 use crate::issue_status;
@@ -40,8 +41,9 @@ use crate::task_helpers::{
 };
 use crate::task_service::{
     chat_input_owner_id, create_assistant_chat_message_typed, downcast_sqlx, opt_str,
-    overlay_value_or_null, sanitize_text_for_postgres, RuntimeMcpOverlayData, TaskService,
-    TaskServiceError, ERR_RERUN_INVOKE_NOT_ALLOWED,
+    overlay_value_or_null, sanitize_text_for_postgres, workspace_channel_dispatch,
+    RuntimeMcpOverlayData, TaskService, TaskServiceError, WorkspaceChannelDispatch,
+    ERR_RERUN_INVOKE_NOT_ALLOWED,
 };
 
 /// The non-empty English body stored on a no_response assistant row. New
@@ -135,6 +137,7 @@ impl TaskService {
         durable_work_dir: &str,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let mut chat_assistant_msg: Option<ChatMessage> = None;
+        let mut workspace_channel_reply: Option<(WorkspaceChannelDispatch, Uuid)> = None;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         // chat_session → agent_task_queue is the repo-wide lock order.
         lock_chat_session_for_task_write(&mut tx, task_id).await?;
@@ -202,12 +205,19 @@ impl TaskService {
             // status flip (PB-4351). Failing here rolls everything back so
             // the daemon retries the terminal callback; the status CAS above
             // guarantees a replay can't write a second row.
-            chat_assistant_msg = self
+            let (assistant_message, channel_reply) = self
                 .write_chat_completion_outcome_tx(&mut tx, &t, result)
                 .await?;
+            chat_assistant_msg = assistant_message;
+            workspace_channel_reply = channel_reply;
         }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
+
+        if let Some((dispatch, message_id)) = workspace_channel_reply {
+            self.publish_workspace_channel_reply(&task, dispatch, message_id)
+                .await;
+        }
 
         tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task completed");
         self.capture_task_completed(&task).await;
@@ -216,7 +226,7 @@ impl TaskService {
         // comment, so synthesize a fallback from the final output when the
         // agent never posted one during execution.
         if let Some(issue_id) = task.issue_id {
-            let suppress_no_action = has_squad_leader_no_action_for_task(&self.pool, &task).await;
+            let suppress_no_action = has_team_leader_no_action_for_task(&self.pool, &task).await;
             let agent_commented = patchbay_db::queries::comment::has_agent_commented_since(
                 &self.pool,
                 issue_id,
@@ -711,7 +721,7 @@ impl TaskService {
     }
 
     /// Manual rerun endpoint core. Target resolution: source task's agent
-    /// (with leader/squad provenance + trigger inheritance) or the issue's
+    /// (with leader/team provenance + trigger inheritance) or the issue's
     /// current assignee. A block fails closed before anything mutates
     /// (PB-4525); the pending-slot clear/enqueue pair retries once against a
     /// concurrent system retry.
@@ -731,7 +741,7 @@ impl TaskService {
         let mut trigger_comment_id = trigger_comment_id_in;
         let agent_id: Uuid;
         let mut is_leader = false;
-        let mut squad_id: Option<Uuid> = None;
+        let mut team_id: Option<Uuid> = None;
         let mut coalesced_comment_ids: Vec<Uuid> = Vec::new();
         if let Some(source_task_id) = source_task_id {
             let source_task = get_agent_task(&self.pool, source_task_id)
@@ -745,7 +755,7 @@ impl TaskService {
             }
             agent_id = source_task.agent_id;
             is_leader = source_task.is_leader_task;
-            squad_id = source_task.squad_id;
+            team_id = source_task.team_id;
             // Carry trigger provenance so a per-row rerun stays comment-
             // triggered; only override when the caller passed none.
             if trigger_comment_id.is_none() {
@@ -766,26 +776,26 @@ impl TaskService {
         } else {
             match (issue.assignee_type.as_deref(), issue.assignee_id) {
                 (Some("agent"), Some(assignee)) => agent_id = assignee,
-                (Some("squad"), Some(squad_assignee)) => {
-                    let squad = patchbay_db::queries::squad::get_squad(&self.pool, squad_assignee)
+                (Some("team"), Some(team_assignee)) => {
+                    let team = patchbay_db::queries::team::get_team(&self.pool, team_assignee)
                         .await
                         .map_err(|_| {
                             TaskServiceError::Internal(
-                                "issue is assigned to a squad but squad not found".into(),
+                                "issue is assigned to a team but team not found".into(),
                             )
                         })?
                         .ok_or_else(|| {
                             TaskServiceError::Internal(
-                                "issue is assigned to a squad but squad not found".into(),
+                                "issue is assigned to a team but team not found".into(),
                             )
                         })?;
-                    agent_id = squad.leader_id;
+                    agent_id = team.leader_id;
                     is_leader = true;
-                    squad_id = Some(squad_assignee);
+                    team_id = Some(team_assignee);
                 }
                 _ => {
                     return Err(TaskServiceError::Internal(
-                        "issue is not assigned to an agent or squad".into(),
+                        "issue is not assigned to an agent or team".into(),
                     ));
                 }
             }
@@ -813,7 +823,7 @@ impl TaskService {
                 trigger_comment_id,
                 coalesced_comment_ids.clone(),
                 is_leader,
-                squad_id,
+                team_id,
                 actor_user_id,
                 source_task_id,
                 &mut cancelled_count,
@@ -835,7 +845,7 @@ impl TaskService {
                     trigger_comment_id,
                     coalesced_comment_ids,
                     is_leader,
-                    squad_id,
+                    team_id,
                     actor_user_id,
                     source_task_id,
                     &mut cancelled_count,
@@ -860,7 +870,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         coalesced_comment_ids: Vec<Uuid>,
         is_leader: bool,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         actor_user_id: Option<Uuid>,
         source_task_id: Option<Uuid>,
         cancelled_count: &mut usize,
@@ -895,7 +905,7 @@ impl TaskService {
             trigger_comment_id,
             coalesced_comment_ids,
             is_leader,
-            squad_id,
+            team_id,
             actor_user_id,
             source_task_id,
         )
@@ -962,7 +972,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         coalesced_comment_ids: Vec<Uuid>,
         is_leader: bool,
-        squad_id: Option<Uuid>,
+        team_id: Option<Uuid>,
         actor_user_id: Option<Uuid>,
         rerun_of_task_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
@@ -989,7 +999,7 @@ impl TaskService {
             trigger_comment_id,
             coalesced_comment_ids,
             is_leader,
-            squad_id,
+            team_id,
             true,
             "",
             actor_user_id,
@@ -1133,7 +1143,13 @@ impl TaskService {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         task: &AgentTaskQueue,
         result: &serde_json::Value,
-    ) -> Result<Option<ChatMessage>, TaskServiceError> {
+    ) -> Result<
+        (
+            Option<ChatMessage>,
+            Option<(WorkspaceChannelDispatch, Uuid)>,
+        ),
+        TaskServiceError,
+    > {
         use patchbay_protocol::messages::TaskCompletedPayload;
 
         // result is the daemon request re-marshalled by the handler, always
@@ -1150,6 +1166,7 @@ impl TaskService {
         // suggestions are DISCARDED — the server-side pass supersedes them.
         let (body, _) = split_chat_quick_actions(&body_full);
         let is_empty = body.trim().is_empty();
+        let workspace_channel = workspace_channel_dispatch(task);
 
         // Completion-boundary observation (PB-4899). Strictly non-blocking.
         observe_chat_output_local_path(self, task, &body);
@@ -1169,8 +1186,11 @@ impl TaskService {
         // Channel/legacy empty completion with nothing to show: emit no
         // assistant row at all.
         if is_empty && pending_attachments == 0 {
+            if workspace_channel.is_some() {
+                return Ok((None, None));
+            }
             match task.chat_input_task_id {
-                None => return Ok(None), // legacy task
+                None => return Ok((None, None)), // legacy task
                 Some(input_owner) => {
                     let channel_ingested =
                         task_has_channel_ingested_messages(&mut **tx, input_owner)
@@ -1182,7 +1202,7 @@ impl TaskService {
                             })?
                             .unwrap_or(false);
                     if channel_ingested {
-                        return Ok(None); // channel task
+                        return Ok((None, None)); // channel task
                     }
                 }
             }
@@ -1252,7 +1272,121 @@ impl TaskService {
                 }
             }
         }
-        Ok(Some(row))
+        let channel_reply = if let Some(dispatch) = workspace_channel {
+            if content.trim().is_empty() {
+                None
+            } else {
+                let id = new_v7();
+                workspace_channel_q::create_message(
+                    &mut **tx,
+                    id,
+                    dispatch.workspace_id,
+                    dispatch.channel_id,
+                    "agent",
+                    task.agent_id,
+                    &content,
+                    Some(dispatch.source_message_id),
+                    None,
+                )
+                .await
+                .map_err(|e| {
+                    TaskServiceError::Internal(format!("create workspace channel agent reply: {e}"))
+                })?
+                .ok_or_else(|| {
+                    TaskServiceError::Internal(
+                        "create workspace channel agent reply: no row".into(),
+                    )
+                })?;
+                Some((dispatch, id))
+            }
+        } else {
+            None
+        };
+        Ok((Some(row), channel_reply))
+    }
+
+    async fn publish_workspace_channel_reply(
+        &self,
+        task: &AgentTaskQueue,
+        dispatch: WorkspaceChannelDispatch,
+        message_id: Uuid,
+    ) {
+        let message = match workspace_channel_q::get_message(
+            &self.pool,
+            message_id,
+            dispatch.channel_id,
+            dispatch.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(message)) => message,
+            Ok(None) => {
+                tracing::warn!(
+                    task_id = %task.id,
+                    message_id = %message_id,
+                    "workspace channel reply disappeared before broadcast"
+                );
+                return;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    task_id = %task.id,
+                    message_id = %message_id,
+                    error = %error,
+                    "failed to load workspace channel reply for broadcast"
+                );
+                return;
+            }
+        };
+        let quoted_message = message.quoted_message.as_ref().map(|quoted| {
+            serde_json::json!({
+                "id": quoted.id,
+                "author_type": quoted.author_type,
+                "author_id": quoted.author_id,
+                "author_name": quoted.author_name,
+                "content": quoted.content,
+            })
+        });
+        let parent_message = message.parent_message.as_ref().map(|parent| {
+            serde_json::json!({
+                "id": parent.id,
+                "author_type": parent.author_type,
+                "author_id": parent.author_id,
+                "author_name": parent.author_name,
+                "content": parent.content,
+            })
+        });
+        self.bus.publish(&patchbay_events::Event {
+            event_type: patchbay_protocol::events::EVENT_CHANNEL_MESSAGE_CREATED.to_string(),
+            workspace_id: dispatch.workspace_id.to_string(),
+            actor_type: "agent".to_string(),
+            actor_id: task.agent_id.to_string(),
+            payload: serde_json::json!({
+                "channel_id": message.channel_id,
+                "message": {
+                    "id": message.id,
+                    "workspace_id": message.workspace_id,
+                    "channel_id": message.channel_id,
+                    "author_type": message.author_type,
+                    "author_id": message.author_id,
+                    "author_name": message.author_name,
+                    "author_avatar_url": message.author_avatar_url,
+                    "author_status": message.author_status,
+                    "content": message.content,
+                    "parent_message": parent_message,
+                    "parent_id": message.parent_id,
+                    "quoted_message_id": message.quoted_message_id,
+                    "quoted_message": quoted_message,
+                    "created_at": patchbay_util::rfc3339_nano(message.created_at),
+                    "updated_at": patchbay_util::rfc3339_nano(message.updated_at),
+                },
+            }),
+            task_id: task.id.to_string(),
+            chat_session_id: task
+                .chat_session_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        });
     }
 
     /// ErrNoRows on the terminal UPDATE means another actor finalized first.
@@ -1313,11 +1447,11 @@ async fn lock_chat_session_for_task_write(
     Ok(())
 }
 
-async fn has_squad_leader_no_action_for_task(pool: &sqlx::PgPool, task: &AgentTaskQueue) -> bool {
+async fn has_team_leader_no_action_for_task(pool: &sqlx::PgPool, task: &AgentTaskQueue) -> bool {
     let Some(issue_id) = task.issue_id else {
         return false;
     };
-    match patchbay_db::queries::activity::has_squad_leader_no_action_evaluation_for_task(
+    match patchbay_db::queries::activity::has_team_leader_no_action_evaluation_for_task(
         pool,
         issue_id,
         task.agent_id,
@@ -1330,7 +1464,7 @@ async fn has_squad_leader_no_action_for_task(pool: &sqlx::PgPool, task: &AgentTa
             tracing::warn!(
                 task_id = %task.id,
                 error = %err,
-                "checking squad leader no_action evaluation failed"
+                "checking team leader no_action evaluation failed"
             );
             false
         }

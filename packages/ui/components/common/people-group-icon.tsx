@@ -1,6 +1,12 @@
 import { forwardRef } from "react";
 import type { LucideIcon, LucideProps } from "lucide-react";
 
+/**
+ * Akar Icons' People Group glyph, exposed with the Lucide-compatible props
+ * used by the shared icon surfaces.
+ *
+ * Source: https://www.shadcn.io/icon/akar-icons-people-group
+ */
 export const PeopleGroupIcon: LucideIcon = forwardRef<SVGSVGElement, LucideProps>(
   ({ color = "currentColor", size = 24, strokeWidth = 2, ...props }, ref) => (
     <svg

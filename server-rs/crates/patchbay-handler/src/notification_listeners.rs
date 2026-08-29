@@ -4,7 +4,7 @@ use std::future::Future;
 use std::sync::{Arc, OnceLock};
 
 use patchbay_db::models::{InboxItem, Issue};
-use patchbay_db::queries::{inbox, issue, member, notification_preference, squad, subscriber};
+use patchbay_db::queries::{inbox, issue, member, notification_preference, subscriber, team};
 use patchbay_events::{Bus, Event};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -21,6 +21,8 @@ struct IssueFields {
     priority: String,
     assignee_type: Option<String>,
     assignee_id: Option<Uuid>,
+    reviewer_type: Option<String>,
+    reviewer_id: Option<Uuid>,
     start_date: Option<String>,
     due_date: Option<String>,
 }
@@ -205,6 +207,36 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 &details,
             )
             .await;
+        }
+        if flag(&event.payload, "review_handoff") {
+            if let (Some(recipient_type), Some(recipient_id)) =
+                (fields.reviewer_type.as_deref(), fields.reviewer_id)
+            {
+                if is_assignment_recipient(recipient_type) {
+                    let reviewer_id = recipient_id.to_string();
+                    let mut details = Map::new();
+                    insert_str(&mut details, "new_assignee_type", Some(recipient_type));
+                    insert_str(&mut details, "new_assignee_id", Some(reviewer_id.as_str()));
+                    let details = Value::Object(details);
+                    notify_direct(
+                        &pool,
+                        &bus,
+                        &event,
+                        InboxSpec {
+                            recipient_type,
+                            recipient_id,
+                            issue_id: fields.id,
+                            issue_status: &fields.status,
+                            notif_type: "issue_assigned",
+                            severity: "action_required",
+                            title: &fields.title,
+                            body: None,
+                            details: &details,
+                        },
+                    )
+                    .await;
+                }
+            }
         }
 
         if flag(&event.payload, "status_changed") {
@@ -656,11 +688,11 @@ async fn notify_mentions(
                 }
             }
             "all" => all = true,
-            "squad" => {
+            "team" => {
                 let Ok(id) = mention.user_id.parse() else {
                     continue;
                 };
-                if squad::get_squad_in_workspace(pool, id, workspace_id)
+                if team::get_team_in_workspace(pool, id, workspace_id)
                     .await
                     .ok()
                     .flatten()
@@ -668,7 +700,7 @@ async fn notify_mentions(
                 {
                     continue;
                 }
-                match squad::list_squad_members(pool, id).await {
+                match team::list_team_members(pool, id).await {
                     Ok(members) => recipients.extend(
                         members
                             .into_iter()
@@ -676,7 +708,7 @@ async fn notify_mentions(
                             .map(|m| m.member_id),
                     ),
                     Err(error) => {
-                        tracing::error!(%error, squad_id = %id, "notification listener: squad expansion failed")
+                        tracing::error!(%error, team_id = %id, "notification listener: team expansion failed")
                     }
                 }
             }
@@ -835,6 +867,8 @@ fn handler_issue(event: &Event, created: bool) -> Option<IssueFields> {
         priority: string(value, "priority"),
         assignee_type: optional_string(value, "assignee_type"),
         assignee_id: uuid(value, "assignee_id"),
+        reviewer_type: optional_string(value, "reviewer_type"),
+        reviewer_id: uuid(value, "reviewer_id"),
         start_date: optional_string(value, "start_date"),
         due_date: optional_string(value, "due_date"),
     })
@@ -858,6 +892,8 @@ fn fields_from_issue(issue: Issue) -> IssueFields {
         priority: issue.priority,
         assignee_type: issue.assignee_type,
         assignee_id: issue.assignee_id,
+        reviewer_type: issue.reviewer_type,
+        reviewer_id: issue.reviewer_id,
         start_date: issue.start_date.map(|d| d.to_string()),
         due_date: issue.due_date.map(|d| d.to_string()),
     }
@@ -926,7 +962,7 @@ fn deliver_to_subscriber(reason: &str, notif_type: &str, status: &str) -> bool {
 fn parse_mentions(content: &str) -> Vec<Mention> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)")
+        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|team|issue|all)/([0-9a-fA-F-]+|all)\)")
             .expect("mention regex is valid")
     });
     let mut seen = HashSet::new();
@@ -988,8 +1024,8 @@ mod tests {
         let id = "11111111-1111-4111-8111-111111111111";
         assert_eq!(
             parse_mentions(&format!(
-            "[@A](mention://member/{id}) [@A](mention://member/{id}) [@S](mention://squad/{id})"
-        ))
+                "[@A](mention://member/{id}) [@A](mention://member/{id}) [@S](mention://team/{id})"
+            ))
             .len(),
             2
         );

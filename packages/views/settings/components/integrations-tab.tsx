@@ -27,7 +27,7 @@ import { ComposioTab } from "./composio-tab";
 import { VCSTab } from "./vcs-tab";
 import { LarkAgentBindButton } from "./lark-tab";
 import { SlackAgentBindButton } from "./slack-tab";
-import { DingTalkAgentBindButton } from "./dingtalk-tab";
+import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
 import { WecomAgentBindButton } from "./wecom-tab";
 import { TelegramAgentBindButton } from "./telegram-tab";
 import { WeixinAgentBindButton } from "./weixin-tab";
@@ -60,6 +60,7 @@ type IntegrationCardProps = {
 type HubActionProps = {
   canManage: boolean;
   children: ReactNode;
+  isGuest: boolean;
   query: IntegrationQuery;
 };
 
@@ -72,9 +73,21 @@ function hasActiveHub(listing: InstallationListing | undefined) {
   );
 }
 
-function HubAction({ canManage, children, query }: HubActionProps) {
+function HubAction({ canManage, children, isGuest, query }: HubActionProps) {
   const { t } = useT("settings");
   const hubConnected = hasActiveHub(query.data);
+
+  // A guest may own its temporary workspace, but external platform
+  // authorization is still a formal-account-only operation. Keep this gate
+  // ahead of the workspace role check so a guest owner cannot reach a real
+  // provider dialog by virtue of owning the guest workspace.
+  if (isGuest) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {t(($) => $.page.integrations_login_required)}
+      </span>
+    );
+  }
 
   if (!canManage) {
     return (
@@ -166,6 +179,11 @@ export function IntegrationsTab() {
   const currentMember = members.find((member) => member.user_id === user?.id);
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
+  const isGuest = Boolean(
+    user &&
+      "is_guest" in user &&
+      (user as { is_guest?: boolean }).is_guest === true,
+  );
 
   const lark = useQuery({
     ...larkInstallationsOptions(wsId),
@@ -191,6 +209,10 @@ export function IntegrationsTab() {
     ...weixinInstallationsOptions(wsId),
     enabled: !!wsId,
   });
+  const hasLegacyDingTalkInstallation =
+    dingtalk.data?.installations.some(
+      (installation) => installation.agent_id !== null,
+    ) ?? false;
 
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const composioToolkits = useQuery({
@@ -223,7 +245,7 @@ export function IntegrationsTab() {
             description={t(($) => $.lark.workspace_description)}
             iconClassName="bg-[#3370FF]/10"
             action={
-              <HubAction canManage={canManage} query={lark}>
+              <HubAction canManage={canManage} isGuest={isGuest} query={lark}>
                 <LarkAgentBindButton workspaceScoped />
               </HubAction>
             }
@@ -234,7 +256,7 @@ export function IntegrationsTab() {
             description={t(($) => $.slack.workspace_description)}
             iconClassName="bg-[#611f69]/10"
             action={
-              <HubAction canManage={canManage} query={slack}>
+              <HubAction canManage={canManage} isGuest={isGuest} query={slack}>
                 <SlackAgentBindButton />
               </HubAction>
             }
@@ -245,7 +267,7 @@ export function IntegrationsTab() {
             description={t(($) => $.dingtalk.workspace_description)}
             iconClassName="bg-[#1677FF]/10"
             action={
-              <HubAction canManage={canManage} query={dingtalk}>
+              <HubAction canManage={canManage} isGuest={isGuest} query={dingtalk}>
                 <DingTalkAgentBindButton />
               </HubAction>
             }
@@ -256,7 +278,7 @@ export function IntegrationsTab() {
             description={t(($) => $.wecom.workspace_description)}
             iconClassName="bg-[#07C160]/10"
             action={
-              <HubAction canManage={canManage} query={wecom}>
+              <HubAction canManage={canManage} isGuest={isGuest} query={wecom}>
                 <WecomAgentBindButton />
               </HubAction>
             }
@@ -267,7 +289,7 @@ export function IntegrationsTab() {
             description={t(($) => $.telegram.workspace_description)}
             iconClassName="bg-[#2AABEE]/10"
             action={
-              <HubAction canManage={canManage} query={telegram}>
+              <HubAction canManage={canManage} isGuest={isGuest} query={telegram}>
                 <TelegramAgentBindButton />
               </HubAction>
             }
@@ -278,13 +300,22 @@ export function IntegrationsTab() {
             description={t(($) => $.weixin.workspace_description)}
             iconClassName="bg-[#07C160]/10"
             action={
-              <HubAction canManage={canManage} query={weixin}>
+              <HubAction canManage={canManage} isGuest={isGuest} query={weixin}>
                 <WeixinAgentBindButton />
               </HubAction>
             }
           />
         </div>
       </section>
+
+      {hasLegacyDingTalkInstallation ? (
+        <SettingsSection
+          title={t(($) => $.dingtalk.legacy_management_title)}
+          description={t(($) => $.dingtalk.legacy_management_description)}
+        >
+          <DingTalkTab />
+        </SettingsSection>
+      ) : null}
 
       {composioEnabled && !composioUnconfigured ? (
         <SettingsSection title={t(($) => $.composio.section_title)}>

@@ -4,7 +4,7 @@
 //!
 //! IssueService is the single service-layer entry point for creating issues:
 //! duplicate guard, issue numbering, label/attachment linking, broadcast,
-//! analytics, and agent/squad enqueue stay aligned across every create entry
+//! analytics, and agent/team enqueue stay aligned across every create entry
 //! (HTTP POST /issues, channel /issue, future MCP/API-key callers). The
 //! service stays transport-agnostic — callers pass fully-resolved params.
 
@@ -24,7 +24,7 @@ use patchbay_db::queries::issue::{create_issue, create_issue_with_origin, get_is
 use patchbay_db::queries::issue_label::{attach_label_to_issue_on_create, get_label};
 use patchbay_db::queries::issue_status::lock_issue_status_catalog_shared;
 use patchbay_db::queries::project::get_project_in_workspace;
-use patchbay_db::queries::squad::get_squad_in_workspace;
+use patchbay_db::queries::team::get_team_in_workspace;
 use patchbay_db::queries::workspace::{get_workspace, increment_issue_counter};
 
 use crate::agent_ready::{agent_readiness, AgentVerdict};
@@ -373,11 +373,11 @@ impl IssueService {
                         "hydrate deferred channel issue task overlay failed"
                     );
                 }
-            } else if self.should_enqueue_squad_leader_on_assign(&issue).await {
+            } else if self.should_enqueue_team_leader_on_assign(&issue).await {
                 // fire-at currently belongs to channel /issue, which always
-                // resolves an agent assignee; keep the ordinary squad path for
-                // future callers that supply the option with a squad.
-                self.enqueue_squad_leader_task(&issue, None, &p.creator_type, &actor_id)
+                // resolves an agent assignee; keep the ordinary team path for
+                // future callers that supply the option with a team.
+                self.enqueue_team_leader_task(&issue, None, &p.creator_type, &actor_id)
                     .await;
             }
         }
@@ -680,7 +680,7 @@ impl IssueService {
 
     /// Assignment-time enqueue decision: backlog parks silently (PB-6243),
     /// blocked runtimes leave a visible refusal notice (PB-6164), ready
-    /// agents enqueue immediately, squads route to their leader when ready.
+    /// agents enqueue immediately, teams route to their leader when ready.
     async fn maybe_enqueue_on_assign(
         &self,
         issue: &Issue,
@@ -701,7 +701,7 @@ impl IssueService {
         let (verdict, admitted) = match self.pool.acquire().await {
             Ok(mut conn) => Self::agent_assignee_verdict(&mut conn, issue).await,
             // Mirrors Go's lookup-error path: default (non-unusable) verdict
-            // skips the direct enqueue while the squad fallback still runs.
+            // skips the direct enqueue while the team fallback still runs.
             Err(err) => {
                 tracing::warn!(issue_id = %issue.id, error = %err, "enqueue on assign: acquire failed");
                 default_verdict()
@@ -724,8 +724,8 @@ impl IssueService {
                 }
             }
         }
-        if self.should_enqueue_squad_leader_on_assign(issue).await {
-            self.enqueue_squad_leader_task(issue, None, creator_type, actor_id)
+        if self.should_enqueue_team_leader_on_assign(issue).await {
+            self.enqueue_team_leader_task(issue, None, creator_type, actor_id)
                 .await;
         }
         None
@@ -777,30 +777,30 @@ impl IssueService {
         (verdict, admitted)
     }
 
-    async fn should_enqueue_squad_leader_on_assign(&self, issue: &Issue) -> bool {
+    async fn should_enqueue_team_leader_on_assign(&self, issue: &Issue) -> bool {
         if issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await
             == issue_status::BACKLOG
         {
             return false;
         }
-        self.is_squad_leader_ready(issue).await
+        self.is_team_leader_ready(issue).await
     }
 
-    async fn is_squad_leader_ready(&self, issue: &Issue) -> bool {
+    async fn is_team_leader_ready(&self, issue: &Issue) -> bool {
         let Some(assignee_id) = issue.assignee_id else {
             return false;
         };
-        if issue.assignee_type.as_deref() != Some("squad") {
+        if issue.assignee_type.as_deref() != Some("team") {
             return false;
         }
-        let Some(squad) = get_squad_in_workspace(&self.pool, assignee_id, issue.workspace_id)
+        let Some(team) = get_team_in_workspace(&self.pool, assignee_id, issue.workspace_id)
             .await
             .ok()
             .flatten()
         else {
             return false;
         };
-        let Some(agent) = get_agent(&self.pool, squad.leader_id).await.ok().flatten() else {
+        let Some(agent) = get_agent(&self.pool, team.leader_id).await.ok().flatten() else {
             return false;
         };
         matches!(
@@ -809,9 +809,9 @@ impl IssueService {
         )
     }
 
-    /// Squad-leader enqueue with pending-run dedup keyed on the reviewed
+    /// Team-leader enqueue with pending-run dedup keyed on the reviewed
     /// HEAD (TEN-356). Best-effort throughout.
-    async fn enqueue_squad_leader_task(
+    async fn enqueue_team_leader_task(
         &self,
         issue: &Issue,
         trigger_comment_id: Option<Uuid>,
@@ -821,7 +821,7 @@ impl IssueService {
         let Some(assignee_id) = issue.assignee_id else {
             return;
         };
-        let Some(squad) = get_squad_in_workspace(&self.pool, assignee_id, issue.workspace_id)
+        let Some(team) = get_team_in_workspace(&self.pool, assignee_id, issue.workspace_id)
             .await
             .ok()
             .flatten()
@@ -832,7 +832,7 @@ impl IssueService {
         match has_pending_task_for_issue_and_agent(
             &self.pool,
             issue.id,
-            squad.leader_id,
+            team.leader_id,
             opt_str(&head_sha),
         )
         .await
@@ -842,15 +842,15 @@ impl IssueService {
         }
         if let Err(err) = self
             .task_svc
-            .enqueue_task_for_squad_leader(issue, squad.leader_id, squad.id, trigger_comment_id)
+            .enqueue_task_for_team_leader(issue, team.leader_id, team.id, trigger_comment_id)
             .await
         {
             tracing::warn!(
                 issue_id = %issue.id,
-                squad_id = %squad.id,
-                leader_id = %squad.leader_id,
+                team_id = %team.id,
+                leader_id = %team.leader_id,
                 error = %err,
-                "enqueue squad leader task on create failed"
+                "enqueue team leader task on create failed"
             );
         }
     }
@@ -874,7 +874,7 @@ fn default_verdict() -> (AgentVerdict, bool) {
 /// so the UI can explain each trigger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunEnqueueSource {
-    /// Creation and assignee changes — the issue is handed to an agent/squad.
+    /// Creation and assignee changes — the issue is handed to an agent/team.
     Assign,
     /// Promoting an already-assigned issue out of backlog.
     Status,
@@ -918,7 +918,7 @@ pub struct IssueTriggerInput {
 }
 
 /// Resolved decision shared by preview and write paths. `agent_id` is who
-/// actually runs — assignee for agent issues, squad leader otherwise.
+/// actually runs — assignee for agent issues, team leader otherwise.
 #[derive(Debug, Clone)]
 pub struct IssueRunTrigger {
     pub issue_id: Uuid,
@@ -1018,15 +1018,15 @@ impl IssueService {
                 })
             }
             // Pair-scoped self-assignment suppression intentionally applies
-            // only to DIRECT agent ownership: assigning a squad changes the
+            // only to DIRECT agent ownership: assigning a team changes the
             // execution context (briefing, roles, member routing), so even a
-            // leader acting on its own squad is an intentional group handoff.
+            // leader acting on its own team is an intentional group handoff.
             // The status path still uses the leader's pending-task guard.
-            "squad" => {
-                let squad = get_squad_in_workspace(&self.pool, assignee_id, issue.workspace_id)
+            "team" => {
+                let team = get_team_in_workspace(&self.pool, assignee_id, issue.workspace_id)
                     .await
                     .ok()??;
-                let leader = get_agent(&self.pool, squad.leader_id).await.ok()??;
+                let leader = get_agent(&self.pool, team.leader_id).await.ok()??;
                 let verdict = agent_readiness(&self.pool, &leader).await.ok()?;
                 if !verdict.ready() {
                     return None;
@@ -1035,14 +1035,14 @@ impl IssueService {
                     return None;
                 }
                 if source == RunEnqueueSource::Status
-                    && self.has_pending_run(issue.id, squad.leader_id).await
+                    && self.has_pending_run(issue.id, team.leader_id).await
                 {
                     return None;
                 }
                 Some(IssueRunTrigger {
                     issue_id: issue.id,
-                    agent_id: squad.leader_id,
-                    assignee_type: "squad".to_string(),
+                    agent_id: team.leader_id,
+                    assignee_type: "team".to_string(),
                     source,
                 })
             }

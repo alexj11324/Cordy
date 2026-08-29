@@ -10,8 +10,8 @@
 //!
 //! The command is a QUICK-CREATE entry point: it does NOT create the issue
 //! itself. It takes the invoker's natural-language description as a prompt and
-//! enqueues a quick-create task against the installation's agent — the very
-//! same pipeline as the web "quick create" modal
+//! enqueues a quick-create task against the selected workspace Agent — the
+//! very same pipeline as the web "quick create" modal
 //! (TaskService::enqueue_quick_create_task). The agent turns the prompt into a
 //! well-formed `patchbay issue create` in the background, so the issue gets a
 //! proper title + structured description instead of the raw one-liner the user
@@ -32,6 +32,7 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use patchbay_channel_engine::hub::PostgresHubRouter;
 use patchbay_channel_engine::resolvers::{ResolvedInstallation, ResolverError};
 use patchbay_db::queries::channel::get_channel_installation_by_app_id;
 use patchbay_db::queries::member::get_member_by_user_and_workspace;
@@ -53,6 +54,8 @@ const SLASH_LINK_ACCOUNT_FALLBACK: &str =
     "Link your Slack account to Patchbay first, then try `/issue` again.";
 const SLASH_INTERNAL_ERROR_TEXT: &str =
     "⚠️ Something went wrong creating the issue. Please try again.";
+const SLASH_NO_AGENT_TEXT: &str =
+    "No available Agent is connected to this workspace. Create or share an Agent, then try `/issue` again.";
 const SLASH_DISABLED_TEXT: &str = "This Slack app isn't connected to Patchbay (or was disconnected). Ask a workspace admin to reconnect it.";
 
 /// The narrow slice of TaskService the slash command needs to hand the
@@ -65,7 +68,7 @@ pub struct QuickCreateRequest {
     pub requester_id: Uuid,
     pub agent_id: Uuid,
     /// None — dispatch straight to the installation agent.
-    pub squad_id: Option<Uuid>,
+    pub team_id: Option<Uuid>,
     pub prompt: String,
     /// Empty = no explicit priority.
     pub priority: String,
@@ -89,6 +92,7 @@ pub struct SlashCommand {
     pub user_id: String,
     pub team_id: String,
     pub api_app_id: String,
+    pub channel_id: String,
     pub response_url: String,
 }
 
@@ -208,19 +212,39 @@ impl SlashCommandProcessor {
             }
         };
 
-        // Hand the raw natural-language prompt to the installation's agent as a
-        // quick-create task; the agent authors the well-formed issue in the
+        let agent_id = if inst.agent_id.is_nil() {
+            match PostgresHubRouter::new(self.pool.clone())
+                .selected_or_default_agent(&inst, user_id, &cmd.channel_id)
+                .await
+            {
+                Ok(Some(agent_id)) => agent_id,
+                Ok(None) => return SLASH_NO_AGENT_TEXT.to_string(),
+                Err(err) => {
+                    tracing::warn!(
+                        app_id = %cmd.api_app_id,
+                        error = %err,
+                        "slack slash command: resolve workspace Agent failed"
+                    );
+                    return SLASH_INTERNAL_ERROR_TEXT.to_string();
+                }
+            }
+        } else {
+            inst.agent_id
+        };
+
+        // Hand the raw natural-language prompt to the selected Agent as a
+        // quick-create task; the Agent authors the well-formed issue in the
         // background and attributes it to the bound member. No project / parent
-        // / attachments and no squad routing — the slash command targets the
-        // installation's own agent directly.
+        // / attachments and no team routing — the slash command follows the
+        // conversation's workspace-Hub selection when one exists.
         if let Err(err) = self
             .tasks
             .enqueue_quick_create_task(QuickCreateRequest {
                 workspace_id: inst.workspace_id,
                 requester_id: user_id,
-                agent_id: inst.agent_id,
-                // No squad — dispatch straight to the installation agent.
-                squad_id: None,
+                agent_id,
+                // No team — dispatch straight to the selected Agent.
+                team_id: None,
                 prompt: prompt.to_string(),
                 // No explicit priority / due date / project / parent /
                 // attachments.
@@ -258,7 +282,7 @@ impl SlashCommandProcessor {
         Ok(ResolvedInstallation {
             id: inst.id,
             workspace_id: inst.workspace_id,
-            agent_id: inst.agent_id,
+            agent_id: inst.agent_id.unwrap_or_default(),
             route_revision: 0,
             installer_user_id: inst.installer_user_id,
             active: inst.status == "active",

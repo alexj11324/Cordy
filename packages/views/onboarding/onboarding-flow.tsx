@@ -16,7 +16,6 @@ import { useWorkspaceList } from "@patchbay/core/workspace";
 import type { AgentRuntime, Workspace } from "@patchbay/core/types";
 import { StepWelcome } from "./steps/step-welcome";
 import { StepShell } from "./components/step-shell";
-import { StepAboutYou } from "./steps/step-about-you";
 import { StepWorkspace } from "./steps/step-workspace";
 import { StepRuntimeConnect } from "./steps/step-runtime-connect";
 import { StepPlatformFork } from "./steps/step-platform-fork";
@@ -126,8 +125,6 @@ interface OnboardingFlowProps {
   /** Render the post-welcome steps as one centred shadcn card. The Web app
    *  enables this; Desktop keeps the progress rail until separately approved. */
   singlePane?: boolean;
-  /** Keep the local preview usable without config, workspace, or auth APIs. */
-  backendFree?: boolean;
 }
 
 export function OnboardingFlow(props: OnboardingFlowProps) {
@@ -142,7 +139,6 @@ function OnboardingStepFlow({
   onRuntimeRefresh,
   runtimesPending,
   singlePane = false,
-  backendFree = false,
 }: OnboardingFlowProps) {
   const { t, i18n } = useT("onboarding");
   const user = useAuthStore((s) => s.user);
@@ -154,8 +150,7 @@ function OnboardingStepFlow({
   // question steps on re-entry. That's the only piece of onboarding
   // state persisted across sessions — which step the user is on is
   // deliberately not saved, so every entry starts at Welcome.
-  const storedQuestionnaire = mergeQuestionnaire(user.onboarding_questionnaire);
-  const [answers, setAnswers] = useState<QuestionnaireAnswers>(storedQuestionnaire);
+  const answers = mergeQuestionnaire(user.onboarding_questionnaire);
 
   const isNewWorkspace = mode === "new_workspace";
   const [step, setStep] = useState<OnboardingStep>(
@@ -175,8 +170,7 @@ function OnboardingStepFlow({
   // shown when the user already has at least one workspace, otherwise
   // skipping would land them in limbo.
   const { workspaces, ready: workspacesReady } = useWorkspaceList({
-    enabled:
-      !backendFree && (step === "welcome" || step === "workspace"),
+    enabled: step === "welcome" || step === "workspace",
   });
   const existingWorkspace = isNewWorkspace
     ? workspace
@@ -214,34 +208,11 @@ function OnboardingStepFlow({
     setStep(ONBOARDING_STEP_ORDER[0]!);
   }, []);
 
-  // Apply an in-memory patch and fire-and-forget a PATCH to persist
-  // it. We never block UI on the request — the next step's render is
-  // what matters; a transient save failure surfaces as a toast but
-  // does not roll the user back.
-  const applyAnswers = useCallback(
-    (patch: Partial<QuestionnaireAnswers>) => {
-      setAnswers((a) => {
-        const next = { ...a, ...patch };
-        if (!backendFree) {
-          void saveQuestionnaire(next).catch((err) => {
-            if (err instanceof Error) toast.error(err.message);
-          });
-        }
-        return next;
-      });
-    },
-    [backendFree],
-  );
-
   // "I've done this before" path — returning user who already has a
   // workspace and just wants to land there. Marks onboarding complete
   // server-side (idempotent via COALESCE on onboarded_at) and navigates
   // without creating new workspace content.
   const handleWelcomeSkip = useCallback(async () => {
-    if (backendFree) {
-      onComplete(workspaces[0] ?? undefined);
-      return;
-    }
     try {
       await completeOnboarding("skip_existing", workspaces[0]?.id);
     } catch (err) {
@@ -251,7 +222,7 @@ function OnboardingStepFlow({
       return;
     }
     onComplete(workspaces[0] ?? undefined);
-  }, [backendFree, workspaces, onComplete]);
+  }, [workspaces, onComplete]);
 
   const handleWorkspaceCreated = useCallback(
     (ws: Workspace) => {
@@ -270,10 +241,6 @@ function OnboardingStepFlow({
   const handleRuntimeNext = useCallback(
     async (rt: AgentRuntime | null, model?: string) => {
       if (!workspace) return;
-      if (backendFree) {
-        onComplete(workspace, undefined);
-        return;
-      }
       // A connected runtime provisions only Mika and immediately opens the
       // real interactive onboarding conversation. Specialists are created
       // later, only when the member's actual workflow justifies them.
@@ -319,15 +286,7 @@ function OnboardingStepFlow({
       });
       onComplete(workspace, undefined);
     },
-    [
-      answers,
-      backendFree,
-      bootstrapMika,
-      i18n.language,
-      workspace,
-      onComplete,
-      t,
-    ],
+    [answers, bootstrapMika, i18n.language, workspace, onComplete, t],
   );
 
   const handleBack = useCallback((from: OnboardingStep) => {
@@ -342,7 +301,7 @@ function OnboardingStepFlow({
     }
     const idx = ONBOARDING_STEP_ORDER.indexOf(from);
     if (idx <= 0) {
-      // About you (the first persisted step) returns to Welcome.
+      // Workspace is the first persisted step, so Back returns to Welcome.
       setStep("welcome");
       return;
     }
@@ -382,24 +341,22 @@ function OnboardingStepFlow({
   // only the step body swapping.
   if (step === "welcome") {
     // Welcome has no rail, so the escape hatch stays pinned there.
+    // `dark` forces readable light tokens on the unconditional black
+    // welcome surface even when the app theme is light.
     return (
-      <>
+      <div className="dark h-full">
         <OnboardingLogoutButton />
         <StepWelcome
           onNext={handleWelcomeNext}
           onSkip={canSkipWelcome ? handleWelcomeSkip : undefined}
           isWeb={isWeb}
         />
-      </>
+      </div>
     );
   }
 
   const stepBack =
-    step === "about_you"
-      ? () => handleBack("about_you")
-      : step === "workspace"
-        ? () => handleBack("workspace")
-        : runtimeStepBack;
+    step === "workspace" ? () => handleBack("workspace") : runtimeStepBack;
 
   return (
     <StepShell
@@ -411,15 +368,6 @@ function OnboardingStepFlow({
       chromeFooter={headerTrailing}
       singlePane={singlePane}
     >
-      {step === "about_you" && (
-        <StepAboutYou
-          answers={answers}
-          onChange={applyAnswers}
-          onAdvance={() => advanceFrom("about_you")}
-          onSkip={() => advanceFrom("about_you")}
-        />
-      )}
-
       {step === "workspace" && (
         <StepWorkspace
           existing={existingWorkspace}
@@ -449,7 +397,6 @@ function OnboardingStepFlow({
             wsSlug={workspace.slug}
             onNext={handleRuntimeNext}
             cliInstructions={runtimeInstructions}
-            backendFree={backendFree}
           />
         ))}
     </StepShell>

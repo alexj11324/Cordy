@@ -120,7 +120,7 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ("patchbay_issue_created_total", &[SOURCE, PLATFORM]),
     ("patchbay_chat_message_sent_total", &[PLATFORM]),
     ("patchbay_agent_created_total", &[RUNTIME_MODE, SOURCE]),
-    ("patchbay_squad_created_total", &[]),
+    ("patchbay_team_created_total", &[]),
     ("patchbay_autopilot_created_total", &[CADENCE]),
     ("patchbay_issue_executed_total", &[SOURCE]),
     (

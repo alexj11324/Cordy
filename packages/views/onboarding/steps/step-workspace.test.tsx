@@ -39,11 +39,25 @@ vi.mock("@patchbay/core/config", () => ({
 const mockCreateMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@patchbay/core/workspace/mutations", () => ({
-  useCreateWorkspace: () => ({ mutate: mockCreateMutate, isPending: false }),
+  useCreateWorkspace: () => ({
+    mutate: mockCreateMutate,
+    mutateAsync: (...args: unknown[]) => {
+      mockCreateMutate(...args);
+      return Promise.resolve({
+        id: "ws-new",
+        name: "Created",
+        slug: "created",
+      });
+    },
+    isPending: false,
+  }),
 }));
 
 vi.mock("@patchbay/core/api", () => ({
-  api: { getBaseUrl: () => "http://127.0.0.1:8080" },
+  api: {
+    getBaseUrl: () => "http://127.0.0.1:8080",
+    createProject: vi.fn(),
+  },
 }));
 
 import { StepWorkspace } from "./step-workspace";
@@ -97,7 +111,7 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
     renderStep({ existing: null, disabled: false });
 
     expect(
-      screen.getByText("Name your workspace.", { exact: false }),
+      screen.getByText("Set up your first workspace", { exact: false }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace name")).toBeInTheDocument();
     expect(screen.getByLabelText("URL")).toBeInTheDocument();

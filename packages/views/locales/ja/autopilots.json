@@ -27,7 +27,7 @@
   "status": {
     "active": "アクティブ",
     "paused": "一時停止中",
-    "paused_runtime_required": "一時停止中 — 担当エージェントのランタイムが必要です",
+    "paused_runtime_required": "一時停止中 — 担当エージェントのデバイスが必要です",
     "archived": "アーカイブ済み"
   },
   "execution_mode": {
@@ -70,16 +70,16 @@
     "not_found": "オートパイロットが見つかりません",
     "pause_aria": "オートパイロットを一時停止",
     "activate_aria": "オートパイロットを有効化",
-    "paused_runtime_required": "担当エージェントのランタイムが失われたため一時停止しました。ランタイムを設定してから再度有効にしてください。",
-    "bind_runtime": "ランタイムを設定",
+    "paused_runtime_required": "担当エージェントのデバイスが失われたため一時停止しました。デバイスを設定してから再度有効にしてください。",
+    "bind_runtime": "デバイスを設定",
     "edit": "編集",
     "run_now": "今すぐ実行",
     "running": "実行中...",
     "toast_triggered": "オートパイロットを実行しました",
     "toast_trigger_failed": "オートパイロットを実行できませんでした",
     "run_blocked_invocation_not_allowed": "実行されませんでした — このオートパイロットのエージェントを使用する権限がありません",
-    "run_blocked_runtime_offline": "実行されませんでした — エージェントのランタイムがオフラインです",
-    "run_blocked_agent_runtime_required": "実行されませんでした — エージェントにランタイムがありません。実行するにはバインドしてください",
+    "run_blocked_runtime_offline": "実行されませんでした — エージェントのデバイスがオフラインです",
+    "run_blocked_agent_runtime_required": "実行されませんでした — エージェントにデバイスがありません。実行するにはバインドしてください",
     "run_blocked_target_unavailable": "実行されませんでした — エージェントを利用できません",
     "run_blocked_attribution": "実行されませんでした — 実行の責任者を特定できませんでした",
     "run_blocked_already_active": "実行されませんでした — 直近の実行が本件をカバーしています",
@@ -144,7 +144,8 @@
     "skipped_group": {
       "label": "スキップ済み",
       "summary": "スキップされた実行 {{count}} 件"
-    }
+    },
+    "view_log": "実行ログを表示"
   },
   "webhook_payload": {
     "label": "Webhook イベント:",
@@ -418,9 +419,9 @@
     "select_agent": "エージェントを選択",
     "select_assignee": "エージェントまたはチームを選択",
     "agents_group": "エージェント",
-    "squads_group": "チーム",
-    "agent_runtime_required": "このエージェントを選択する前にランタイムをバインドしてください",
-    "squad_runtime_required": "選択する前に、このチームのリーダーにランタイムをバインドしてください"
+    "teams_group": "チーム",
+    "agent_runtime_required": "このエージェントを選択する前にデバイスをバインドしてください",
+    "team_runtime_required": "選択する前に、このチームのリーダーにデバイスをバインドしてください"
   },
   "timezone_picker": {
     "search_placeholder": "タイムゾーンを検索..."

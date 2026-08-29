@@ -31,7 +31,7 @@ export function assigneeTypesForActorKind(
     case "members":
       return ["member"];
     case "agents":
-      return ["agent", "squad"];
+      return ["agent", "team"];
     default:
       return undefined;
   }

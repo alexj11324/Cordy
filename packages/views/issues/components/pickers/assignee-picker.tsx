@@ -9,7 +9,7 @@ import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import { canAssignAgentToIssue } from "@patchbay/core/permissions";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions, assigneeFrequencyOptions } from "@patchbay/core/workspace/queries";
+import { memberListOptions, agentListOptions, teamListOptions, assigneeFrequencyOptions } from "@patchbay/core/workspace/queries";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { DeferredPopup } from "../../../common/deferred-popup";
 import {
@@ -56,10 +56,12 @@ interface AssigneePickerProps {
   open?: boolean;
   onOpenChange?: (v: boolean) => void;
   align?: "start" | "center" | "end";
+  /** Hide the Unassigned row. Reviewer cannot be cleared once chosen. */
+  allowUnassigned?: boolean;
 }
 
 /**
- * Mounting the real picker subscribes to members/agents/squads/frequency
+ * Mounting the real picker subscribes to members/agents/teams/frequency
  * queries — multiplied per board card / list row that cost froze tab
  * switches. Uncontrolled callers that bring their own trigger content get a
  * deferred lookalike trigger instead; the picker mounts on first interaction.
@@ -99,6 +101,7 @@ function AssigneePickerImpl({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   align,
+  allowUnassigned = true,
 }: AssigneePickerProps) {
   const { t } = useT("issues");
   const [internalOpen, setInternalOpen] = useState(false);
@@ -109,7 +112,7 @@ function AssigneePickerImpl({
   const wsId = useWorkspaceId();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: squads = [] } = useQuery(squadListOptions(wsId));
+  const { data: teams = [] } = useQuery(teamListOptions(wsId));
   const { data: frequency = [] } = useQuery(assigneeFrequencyOptions(wsId));
   const { getActorName } = useActorName();
 
@@ -134,9 +137,9 @@ function AssigneePickerImpl({
   const filteredAgents = agents
     .filter((a) => !a.archived_at && (a.name.toLowerCase().includes(query) || matchesPinyin(a.name, query)))
     .sort((a, b) => getFreq("agent", b.id) - getFreq("agent", a.id));
-  const filteredSquads = squads
+  const filteredTeams = teams
     .filter((s) => !s.archived_at && (s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)))
-    .sort((a, b) => getFreq("squad", b.id) - getFreq("squad", a.id));
+    .sort((a, b) => getFreq("team", b.id) - getFreq("team", a.id));
   const runnableAgentIds = new Set(
     agents
       .filter((agent) => !agent.archived_at && isAgentRuntimeBound(agent))
@@ -177,7 +180,8 @@ function AssigneePickerImpl({
     >
       {/* Unassigned — always the first row, search active or not. Every
           picker in the app puts the empty value there, so "clear this field"
-          never moves. */}
+          never moves. Reviewer pickers omit it: a reviewer cannot be cleared. */}
+      {allowUnassigned && (
       <PickerItem
         emptyValue
         selected={!mixed && !assigneeType && !assigneeId}
@@ -189,6 +193,7 @@ function AssigneePickerImpl({
         <UserMinus className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-muted-foreground">{t(($) => $.pickers.assignee.trigger_unassigned)}</span>
       </PickerItem>
+      )}
 
       {/* Members */}
       {filteredMembers.length > 0 && (
@@ -259,32 +264,32 @@ function AssigneePickerImpl({
         </PickerSection>
       )}
 
-      {/* Squads — group ownership; assigning to a squad routes the issue to
+      {/* Teams — group ownership; assigning to a team routes the issue to
           its leader agent on the backend. */}
-      {filteredSquads.length > 0 && (
-        <PickerSection label={t(($) => $.pickers.assignee.squads_group)}>
-          {filteredSquads.map((s) => {
+      {filteredTeams.length > 0 && (
+        <PickerSection label={t(($) => $.pickers.assignee.teams_group)}>
+          {filteredTeams.map((s) => {
             const runtimeBound = runnableAgentIds.has(s.leader_id);
             return (
               <PickerItem
                 key={s.id}
-                selected={isSelected("squad", s.id)}
+                selected={isSelected("team", s.id)}
                 disabled={!runtimeBound}
                 tooltip={
                   runtimeBound
                     ? undefined
-                    : t(($) => $.pickers.assignee.squad_runtime_required)
+                    : t(($) => $.pickers.assignee.team_runtime_required)
                 }
                 onClick={() => {
                   if (!runtimeBound) return;
                   onUpdate({
-                    assignee_type: "squad",
+                    assignee_type: "team",
                     assignee_id: s.id,
                   });
                   setOpen(false);
                 }}
               >
-                <ActorAvatar actorType="squad" actorId={s.id} size="sm" />
+                <ActorAvatar actorType="team" actorId={s.id} size="sm" />
                 <span className="truncate">{s.name}</span>
               </PickerItem>
             );
@@ -294,7 +299,7 @@ function AssigneePickerImpl({
 
       {filteredMembers.length === 0 &&
         filteredAgents.length === 0 &&
-        filteredSquads.length === 0 &&
+        filteredTeams.length === 0 &&
         filter && <PickerEmpty />}
     </PropertyPicker>
   );

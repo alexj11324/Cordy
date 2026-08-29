@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  AlarmClockCheck,
   BarChart3,
   Bug,
   Clock,
@@ -765,7 +766,7 @@ export function AutopilotsPage() {
     <div className="relative flex flex-1 min-h-0 flex-col">
       {/* Header */}
       <CollectionPageHeader
-        icon={Zap}
+        icon={AlarmClockCheck}
         title={t(($) => $.page.title)}
         count={totalCount}
         actions={
@@ -802,7 +803,7 @@ export function AutopilotsPage() {
         </div>
       ) : showEmpty ? (
         <div className="flex flex-col items-center px-5 py-16">
-          <Zap className="mb-3 h-10 w-10 text-faint-foreground" />
+          <AlarmClockCheck className="mb-3 h-10 w-10 text-faint-foreground" />
           <p className="text-body text-muted-foreground">
             {t(($) => $.page.empty.title)}
           </p>
