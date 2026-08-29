@@ -163,6 +163,8 @@ export type {
 export type {
   Channel,
   ChannelActorType,
+  ChannelMessageCursor,
+  ChannelMessagesPage,
   ChannelMessage,
   ChannelQuotedMessage,
   CreateChannelRequest,

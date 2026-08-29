@@ -1,9 +1,10 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { api } from "../api";
 import { useWorkspaceId } from "../hooks";
 import type {
   Channel,
   ChannelMessage,
+  ChannelMessagesPage,
   CreateChannelRequest,
   SendChannelMessageRequest,
 } from "../types";
@@ -34,11 +35,22 @@ export function useSendChannelMessage() {
     mutationFn: ({ channelId, ...request }: SendChannelMessageRequest & { channelId: string }) =>
       api.sendChannelMessage(channelId, request),
     onSuccess: (message, variables) => {
-      queryClient.setQueryData<ChannelMessage[]>(
+      queryClient.setQueryData<InfiniteData<ChannelMessagesPage>>(
         channelKeys.messages(variables.channelId),
         (old) => {
-          if (old?.some((item) => item.id === message.id)) return old;
-          return [...(old ?? []), message];
+          if (!old) return old;
+          if (old.pages.some((page) => page.messages.some((item) => item.id === message.id))) {
+            return old;
+          }
+          const [firstPage, ...olderPages] = old.pages;
+          if (!firstPage) return old;
+          return {
+            ...old,
+            pages: [
+              { ...firstPage, messages: [...firstPage.messages, message] },
+              ...olderPages,
+            ],
+          };
         },
       );
     },

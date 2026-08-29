@@ -1,4 +1,9 @@
-export type ChannelActorType = "member" | "agent";
+export type ChannelActorType = "member" | "agent" | "unknown";
+
+export interface ChannelMessageCursor {
+  created_at: string;
+  id: string;
+}
 
 export interface Channel {
   id: string;
@@ -30,6 +35,7 @@ export interface ChannelMessage {
   author_avatar_url?: string | null;
   author_status?: string | null;
   content: string;
+  parent_message?: ChannelQuotedMessage | null;
   parent_id?: string | null;
   quoted_message_id?: string | null;
   quoted_message?: ChannelQuotedMessage | null;
@@ -46,4 +52,11 @@ export interface SendChannelMessageRequest {
   content: string;
   parent_id?: string | null;
   quoted_message_id?: string | null;
+}
+
+export interface ChannelMessagesPage {
+  messages: ChannelMessage[];
+  limit: number;
+  has_more: boolean;
+  next_cursor?: ChannelMessageCursor | null;
 }

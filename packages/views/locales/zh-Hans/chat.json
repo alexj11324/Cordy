@@ -262,6 +262,9 @@
     "create_failed": "创建频道失败",
     "send_failed": "发送消息失败",
     "loading": "正在加载频道…",
+    "load_older": "加载更早消息",
+    "loading_older": "正在加载更早消息…",
+    "unknown_badge": "未知作者",
     "copy": "复制",
     "copied": "已复制",
     "copy_failed": "复制失败"

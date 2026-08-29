@@ -169,7 +169,7 @@ fn actor(headers: &HeaderMap, user_id: Uuid) -> (&'static str, Uuid) {
     ("member", user_id)
 }
 
-async fn can_invoke_agent(
+pub(crate) async fn can_invoke_agent(
     state: &HandlerState,
     target: &patchbay_db::models::Agent,
     actor_type: &str,
@@ -1044,6 +1044,7 @@ async fn send_message(
             attachment_ids,
             actor_type,
             Some(actor_id),
+            None,
         )
         .await
     {

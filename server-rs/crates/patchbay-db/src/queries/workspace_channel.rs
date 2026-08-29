@@ -9,6 +9,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::models::{WorkspaceChannel, WorkspaceChannelMessage, WorkspaceChannelQuotedMessage};
+use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -117,9 +118,10 @@ pub async fn get_message(
     channel_id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<WorkspaceChannelMessage>> {
-    let query = message_select(Some(
-        "m.id = $1 AND m.channel_id = $2 AND m.workspace_id = $3",
-    ));
+    let query = message_select(
+        Some("m.id = $1 AND m.channel_id = $2 AND m.workspace_id = $3"),
+        "LIMIT 1",
+    );
     let row = sqlx::query(&query)
         .bind(id)
         .bind(channel_id)
@@ -133,20 +135,31 @@ pub async fn list_messages(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     channel_id: Uuid,
     workspace_id: Uuid,
+    limit: i32,
+    before_created_at: Option<DateTime<Utc>>,
+    before_id: Uuid,
 ) -> anyhow::Result<Vec<WorkspaceChannelMessage>> {
-    let query = message_select(Some("m.channel_id = $1 AND m.workspace_id = $2"));
+    let query = message_select(
+        Some(
+            "m.channel_id = $1
+             AND m.workspace_id = $2
+             AND ($3::timestamptz IS NULL
+                  OR (m.created_at, m.id) < ($3::timestamptz, $4::uuid))",
+        ),
+        "LIMIT $5",
+    );
     let rows = sqlx::query(&query)
         .bind(channel_id)
         .bind(workspace_id)
+        .bind(before_created_at)
+        .bind(before_id)
+        .bind(limit)
         .fetch_all(executor)
         .await?;
 
-    let mut messages = rows
-        .into_iter()
+    rows.into_iter()
         .map(message_from_row)
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    messages.reverse();
-    Ok(messages)
+        .collect()
 }
 
 pub async fn create_message(
@@ -182,7 +195,7 @@ RETURNING id"#,
         .map_err(Into::into)
 }
 
-fn message_select(predicate: Option<&str>) -> String {
+fn message_select(predicate: Option<&str>, limit: &str) -> String {
     let predicate = predicate.unwrap_or("TRUE");
     format!(
         r#"SELECT
@@ -195,7 +208,12 @@ fn message_select(predicate: Option<&str>) -> String {
     q.author_type AS quoted_author_type,
     q.author_id AS quoted_author_id,
     q.content AS quoted_content,
-    COALESCE(qu.name, qa.name, 'Unknown') AS quoted_author_name
+    COALESCE(qu.name, qa.name, 'Unknown') AS quoted_author_name,
+    p.id AS parent_id,
+    p.author_type AS parent_author_type,
+    p.author_id AS parent_author_id,
+    p.content AS parent_content,
+    COALESCE(pu.name, pa.name, 'Unknown') AS parent_author_name
 FROM workspace_channel_message AS m
 LEFT JOIN "user" AS u
     ON m.author_type = 'member' AND u.id = m.author_id
@@ -209,14 +227,34 @@ LEFT JOIN "user" AS qu
     ON q.author_type = 'member' AND qu.id = q.author_id
 LEFT JOIN agent AS qa
     ON q.author_type = 'agent' AND qa.id = q.author_id
+LEFT JOIN workspace_channel_message AS p
+    ON p.id = m.parent_id
+   AND p.channel_id = m.channel_id
+   AND p.workspace_id = m.workspace_id
+LEFT JOIN "user" AS pu
+    ON p.author_type = 'member' AND pu.id = p.author_id
+LEFT JOIN agent AS pa
+    ON p.author_type = 'agent' AND pa.id = p.author_id
 WHERE {predicate}
 ORDER BY m.created_at DESC, m.id DESC
-LIMIT 200"#,
+{limit}"#,
     )
 }
 
 fn message_from_row(row: sqlx::postgres::PgRow) -> anyhow::Result<WorkspaceChannelMessage> {
     let quoted_id: Option<Uuid> = row.try_get(13)?;
+    let parent_id: Option<Uuid> = row.try_get(18)?;
+    let parent_message = if let Some(id) = parent_id {
+        Some(WorkspaceChannelQuotedMessage {
+            id,
+            author_type: row.try_get(19)?,
+            author_id: row.try_get(20)?,
+            content: row.try_get(21)?,
+            author_name: row.try_get(22)?,
+        })
+    } else {
+        None
+    };
     Ok(WorkspaceChannelMessage {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
@@ -231,6 +269,7 @@ fn message_from_row(row: sqlx::postgres::PgRow) -> anyhow::Result<WorkspaceChann
         author_name: row.try_get(10)?,
         author_avatar_url: row.try_get(11)?,
         author_status: row.try_get(12)?,
+        parent_message,
         quoted_message: if let Some(id) = quoted_id {
             Some(WorkspaceChannelQuotedMessage {
                 id,

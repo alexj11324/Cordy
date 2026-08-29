@@ -262,6 +262,9 @@
     "create_failed": "채널을 만들지 못했습니다",
     "send_failed": "메시지를 보내지 못했습니다",
     "loading": "채널을 불러오는 중…",
+    "load_older": "이전 메시지 불러오기",
+    "loading_older": "이전 메시지를 불러오는 중…",
+    "unknown_badge": "알 수 없는 작성자",
     "copy": "복사",
     "copied": "복사했습니다",
     "copy_failed": "복사 실패"

@@ -13,6 +13,7 @@ import type {
   BillingTransactionsPage,
   CancelTaskResponse,
   Channel,
+  ChannelMessagesPage,
   ChannelMessage,
   ChatMessage,
   ChatDraftRestoresResponse,
@@ -760,7 +761,7 @@ export const ChatMessagesPageSchema = z.object({
 
 const ChannelQuotedMessageSchema = z.object({
   id: z.string(),
-  author_type: z.string().catch("member"),
+  author_type: z.enum(["member", "agent"]).catch("unknown"),
   author_id: z.string(),
   author_name: z.string().default("Unknown"),
   content: z.string().default(""),
@@ -785,12 +786,13 @@ export const ChannelMessageSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   channel_id: z.string(),
-  author_type: z.string().catch("member"),
+  author_type: z.enum(["member", "agent"]).catch("unknown"),
   author_id: z.string(),
   author_name: z.string().default("Unknown"),
   author_avatar_url: z.string().nullable().optional(),
   author_status: z.string().nullable().optional(),
   content: z.string().default(""),
+  parent_message: ChannelQuotedMessageSchema.nullable().optional(),
   parent_id: z.string().nullable().optional(),
   quoted_message_id: z.string().nullable().optional(),
   quoted_message: ChannelQuotedMessageSchema.nullable().optional(),
@@ -800,6 +802,18 @@ export const ChannelMessageSchema = z.object({
 
 export const ChannelMessageListSchema = z.array(ChannelMessageSchema).default([]);
 export const EMPTY_CHANNEL_MESSAGE_LIST: ChannelMessage[] = [];
+
+const ChannelMessageCursorSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+}).loose();
+
+export const ChannelMessagesPageSchema = z.object({
+  messages: z.array(ChannelMessageSchema).default([]),
+  limit: z.number().default(50),
+  has_more: z.boolean().default(false),
+  next_cursor: ChannelMessageCursorSchema.nullable().optional(),
+}).loose();
 
 // Standalone attachment lookup (`GET /api/attachments/{id}`) is the source of
 // truth for click-time download URLs. The two fields the download flow opens

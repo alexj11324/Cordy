@@ -262,6 +262,9 @@
     "create_failed": "チャンネルを作成できませんでした",
     "send_failed": "メッセージを送信できませんでした",
     "loading": "チャンネルを読み込み中…",
+    "load_older": "過去のメッセージを読み込む",
+    "loading_older": "過去のメッセージを読み込み中…",
+    "unknown_badge": "不明な投稿者",
     "copy": "コピー",
     "copied": "コピーしました",
     "copy_failed": "コピーに失敗しました"

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   Check,
   Clipboard,
   CornerUpLeft,
+  CircleHelp,
   Hash,
   LoaderCircle,
   MessageSquareQuote,
@@ -25,7 +26,7 @@ import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useCreateChannel, useSendChannelMessage } from "@patchbay/core/channels/mutations";
 import { channelListOptions, channelMessagesOptions } from "@patchbay/core/channels/queries";
 import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
-import type { Channel, ChannelMessage, MemberWithUser, Agent } from "@patchbay/core/types";
+import type { Channel, ChannelMessage, ChannelQuotedMessage, MemberWithUser, Agent } from "@patchbay/core/types";
 import { ContentEditor, ReadonlyContent, type ContentEditorRef } from "../editor";
 import { ActorAvatar } from "../common/actor-avatar";
 import { PageHeader } from "../layout/page-header";
@@ -33,7 +34,6 @@ import { useNavigation } from "../navigation";
 import { useT, useTimeAgo } from "../i18n";
 
 const EMPTY_CHANNELS: Channel[] = [];
-const EMPTY_MESSAGES: ChannelMessage[] = [];
 const EMPTY_MEMBERS: MemberWithUser[] = [];
 const EMPTY_AGENTS: Agent[] = [];
 
@@ -120,7 +120,7 @@ function ChannelMessageRow({
   timeAgo,
 }: {
   message: ChannelMessage;
-  parent: ChannelMessage | undefined;
+  parent: ChannelQuotedMessage | undefined;
   onReply: (message: ChannelMessage) => void;
   onQuote: (message: ChannelMessage) => void;
   onCopy: (message: ChannelMessage) => void;
@@ -128,20 +128,35 @@ function ChannelMessageRow({
 }) {
   const { t } = useT("chat");
   const isAgent = message.author_type === "agent";
+  const hasKnownActor = message.author_type === "member" || message.author_type === "agent";
   return (
     <article className="group flex gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/35 [content-visibility:auto]">
-      <ActorAvatar
-        actorType={message.author_type}
-        actorId={message.author_id}
-        size="md"
-        enableHoverCard
-        showStatusDot={isAgent}
-      />
+      {hasKnownActor ? (
+        <ActorAvatar
+          actorType={message.author_type}
+          actorId={message.author_id}
+          size="md"
+          enableHoverCard
+          showStatusDot={isAgent}
+        />
+      ) : (
+        <span
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          aria-label={t(($) => $.channels.unknown_badge)}
+          title={t(($) => $.channels.unknown_badge)}
+        >
+          <CircleHelp className="size-4" aria-hidden="true" />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <header className="flex flex-wrap items-center gap-2">
           <span className="text-body-sm font-semibold text-foreground">{message.author_name}</span>
           <Badge variant="outline" className={cn("h-4 px-1.5 text-micro", isAgent && "border-brand/30 bg-brand/10 text-brand")}>
-            {isAgent ? t(($) => $.channels.agent_badge) : t(($) => $.channels.member_badge)}
+            {isAgent
+              ? t(($) => $.channels.agent_badge)
+              : hasKnownActor
+                ? t(($) => $.channels.member_badge)
+                : t(($) => $.channels.unknown_badge)}
           </Badge>
           <time dateTime={message.created_at} className="text-caption text-muted-foreground">
             {timeAgo(message.created_at)}
@@ -204,13 +219,35 @@ export function ChannelsPage() {
   const { data: members = EMPTY_MEMBERS } = useQuery(memberListOptions(workspaceId));
   const { data: agents = EMPTY_AGENTS } = useQuery(agentListOptions(workspaceId));
   const activeChannel = channels.find((channel) => channel.id === urlChannelId) ?? channels[0] ?? null;
-  const { data: messages = EMPTY_MESSAGES, isPending: messagesPending } = useQuery(
+  const {
+    data: messagePages,
+    isPending: messagesPending,
+    fetchNextPage: fetchOlderMessages,
+    hasNextPage: hasOlderMessages,
+    isFetchingNextPage: isFetchingOlderMessages,
+  } = useInfiniteQuery(
     channelMessagesOptions(activeChannel?.id ?? ""),
   );
   const createChannel = useCreateChannel();
   const sendMessage = useSendChannelMessage();
   const activeChannelIdRef = useRef<string | null>(activeChannel?.id ?? null);
   activeChannelIdRef.current = activeChannel?.id ?? null;
+  const messageViewportRef = useRef<HTMLDivElement>(null);
+  const messageBottomRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const pendingPrependScrollRef = useRef<{ height: number; top: number } | null>(null);
+
+  const messages = useMemo(() => {
+    const seen = new Set<string>();
+    return [...(messagePages?.pages ?? [])]
+      .reverse()
+      .flatMap((page) => page.messages)
+      .filter((message) => {
+        if (seen.has(message.id)) return false;
+        seen.add(message.id);
+        return true;
+      });
+  }, [messagePages]);
 
   useEffect(() => {
     if (!activeChannel) return;
@@ -222,7 +259,13 @@ export function ChannelsPage() {
   useEffect(() => {
     setDraft("");
     setReference(null);
+    stickToBottomRef.current = true;
   }, [activeChannel?.id]);
+
+  useEffect(() => {
+    if (messagesPending || pendingPrependScrollRef.current || !stickToBottomRef.current) return;
+    messageBottomRef.current?.scrollIntoView({ block: "end" });
+  }, [activeChannel?.id, messages.length, messagesPending]);
 
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
@@ -238,6 +281,32 @@ export function ChannelsPage() {
     editorRef.current?.clearContent();
     setDraft("");
     setReference(null);
+  };
+
+  const handleMessageScroll = () => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) return;
+    stickToBottomRef.current =
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 96;
+  };
+
+  const loadOlderMessages = async () => {
+    const viewport = messageViewportRef.current;
+    if (!viewport || !hasOlderMessages || isFetchingOlderMessages) return;
+    stickToBottomRef.current = false;
+    pendingPrependScrollRef.current = {
+      height: viewport.scrollHeight,
+      top: viewport.scrollTop,
+    };
+    await fetchOlderMessages();
+    requestAnimationFrame(() => {
+      const current = messageViewportRef.current;
+      const previous = pendingPrependScrollRef.current;
+      if (current && previous) {
+        current.scrollTop = current.scrollHeight - previous.height + previous.top;
+      }
+      pendingPrependScrollRef.current = null;
+    });
   };
 
   const handleSend = async () => {
@@ -382,7 +451,12 @@ export function ChannelsPage() {
                 ))}
               </nav>
 
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-3 sm:px-3" aria-busy={messagesPending}>
+              <div
+                ref={messageViewportRef}
+                onScroll={handleMessageScroll}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 py-3 sm:px-3"
+                aria-busy={messagesPending}
+              >
                 {messagesPending ? (
                   <div className="space-y-4 px-3" role="status" aria-live="polite">
                     <span className="sr-only">{t(($) => $.channels.loading)}</span>
@@ -397,17 +471,34 @@ export function ChannelsPage() {
                   </div>
                 ) : (
                   <div className="mx-auto max-w-4xl space-y-1">
+                    {hasOlderMessages && (
+                      <div className="flex justify-center pb-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => void loadOlderMessages()}
+                          disabled={isFetchingOlderMessages}
+                        >
+                          {isFetchingOlderMessages && <LoaderCircle className="animate-spin" />}
+                          {isFetchingOlderMessages
+                            ? t(($) => $.channels.loading_older)
+                            : t(($) => $.channels.load_older)}
+                        </Button>
+                      </div>
+                    )}
                     {messages.map((message) => (
                       <ChannelMessageRow
                         key={message.id}
                         message={message}
-                        parent={message.parent_id ? messageById.get(message.parent_id) : undefined}
+                        parent={message.parent_message ?? (message.parent_id ? messageById.get(message.parent_id) : undefined)}
                         onReply={(value) => setReference({ kind: "reply", message: value })}
                         onQuote={(value) => setReference({ kind: "quote", message: value })}
                         onCopy={copyMessage}
                         timeAgo={timeAgo}
                       />
                     ))}
+                    <div ref={messageBottomRef} aria-hidden="true" />
                   </div>
                 )}
               </div>

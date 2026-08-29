@@ -5,14 +5,17 @@
 //! authenticated workspace context; agent authors are resolved by the shared
 //! task-token actor boundary before a message is written.
 
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use patchbay_db::models::{WorkspaceChannel, WorkspaceChannelMessage};
+use patchbay_db::queries::{agent, chat};
 use patchbay_db::queries::workspace_channel as channel_q;
 use patchbay_middleware::workspace::WorkspaceContext;
+use patchbay_service::task_service::WorkspaceChannelDispatch;
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -23,6 +26,7 @@ use crate::state::HandlerState;
 const CHANNEL_NAME_MAX_CHARS: usize = 80;
 const CHANNEL_DESCRIPTION_MAX_CHARS: usize = 240;
 const MESSAGE_MAX_CHARS: usize = 20_000;
+const AGENT_MENTION_PREFIX: &str = "mention://agent/";
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -46,6 +50,13 @@ struct CreateMessageRequest {
     content: String,
     parent_id: Option<String>,
     quoted_message_id: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct ChannelMessagesQuery {
+    limit: Option<usize>,
+    before_created_at: Option<String>,
+    before_id: Option<String>,
 }
 
 fn channel_json(channel: &WorkspaceChannel) -> Value {
@@ -83,6 +94,7 @@ fn message_json(message: &WorkspaceChannelMessage) -> Value {
         "author_avatar_url": message.author_avatar_url,
         "author_status": message.author_status,
         "content": message.content,
+        "parent_message": message.parent_message.as_ref().map(quoted_message_json),
         "parent_id": message.parent_id,
         "quoted_message_id": message.quoted_message_id,
         "quoted_message": message.quoted_message.as_ref().map(quoted_message_json),
@@ -114,6 +126,27 @@ fn validate_length(value: &str, max_chars: usize, field: &str) -> Result<(), Res
         ));
     }
     Ok(())
+}
+
+fn mentioned_agent_ids(content: &str) -> Vec<Uuid> {
+    let mut ids = Vec::new();
+    let mut remaining = content;
+    while let Some(offset) = remaining.find(AGENT_MENTION_PREFIX) {
+        let candidate = &remaining[offset + AGENT_MENTION_PREFIX.len()..];
+        let end = candidate
+            .find(|character: char| !character.is_ascii_hexdigit() && character != '-')
+            .unwrap_or(candidate.len());
+        if let Ok(id) = Uuid::parse_str(&candidate[..end]) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        remaining = &candidate[end..];
+        if remaining.is_empty() {
+            break;
+        }
+    }
+    ids
 }
 
 fn slugify(value: &str) -> String {
@@ -181,6 +214,126 @@ fn publish_channel_event(
     });
 }
 
+async fn dispatch_agent_mentions(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    channel: &WorkspaceChannel,
+    source_message_id: Uuid,
+    content: &str,
+) {
+    for agent_id in mentioned_agent_ids(content) {
+        let target = match agent::get_agent_in_workspace(
+            &state.pool,
+            agent_id,
+            context.member.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(target)) => target,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    agent_id = %agent_id,
+                    channel_id = %channel.id,
+                    "failed to load mentioned channel agent"
+                );
+                continue;
+            }
+        };
+        if target.archived_at.is_some() || target.runtime_id.is_none() {
+            continue;
+        }
+        if !crate::chat_api::can_invoke_agent(
+            state,
+            &target,
+            "member",
+            Some(context.member.user_id),
+            context.member.workspace_id,
+        )
+        .await
+        {
+            tracing::info!(
+                agent_id = %agent_id,
+                channel_id = %channel.id,
+                "skipping channel agent mention without invocation permission"
+            );
+            continue;
+        }
+        let session = match chat::create_chat_session(
+            &state.pool,
+            context.member.workspace_id,
+            target.id,
+            context.member.user_id,
+            &format!("Channel #{}", channel.name),
+            false,
+            Uuid::nil(),
+            Uuid::now_v7(),
+        )
+        .await
+        {
+            Ok(Some(session)) => session,
+            Ok(None) => {
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    channel_id = %channel.id,
+                    "mentioned channel agent session was not created"
+                );
+                continue;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    agent_id = %agent_id,
+                    channel_id = %channel.id,
+                    "failed to create mentioned channel agent session"
+                );
+                continue;
+            }
+        };
+        let prompt = format!(
+            "You are participating in the shared workspace channel #{} with people and other agents. You were mentioned in the channel message below. Reply with a concise, useful message for that channel.\n\n{}",
+            channel.name, content
+        );
+        let dispatch = WorkspaceChannelDispatch {
+            workspace_id: context.member.workspace_id,
+            channel_id: channel.id,
+            source_message_id,
+        };
+        match state
+            .tasks
+            .send_direct_chat_message(
+                &session,
+                &target,
+                Some(context.member.user_id),
+                &prompt,
+                vec![],
+                "member",
+                Some(context.member.user_id),
+                Some(dispatch),
+            )
+            .await
+        {
+            Ok(result) => {
+                tracing::info!(
+                    agent_id = %agent_id,
+                    channel_id = %channel.id,
+                    task_id = ?result.task.as_ref().map(|task| task.id),
+                    "dispatched workspace channel agent mention"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    agent_id = %agent_id,
+                    channel_id = %channel.id,
+                    "workspace channel agent mention was not dispatched"
+                );
+            }
+        }
+    }
+}
+
 async fn list_channels(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -194,8 +347,16 @@ async fn list_channels(
 async fn create_channel(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     Json(request): Json<CreateChannelRequest>,
 ) -> Response {
+    let (_, _, task_id) = crate::issue::mutation_actor(&state, &context, &headers).await;
+    if task_id.is_some() {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "agents cannot create workspace channels",
+        );
+    }
     let name = clean_text(&request.name);
     if name.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "name is required");
@@ -270,13 +431,63 @@ async fn list_messages(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(channel_id): Path<String>,
+    Query(query): Query<ChannelMessagesQuery>,
 ) -> Response {
     let channel = match load_channel(&state, &context, &channel_id).await {
         Ok(channel) => channel,
         Err(response) => return response,
     };
-    match channel_q::list_messages(&state.pool, channel.id, context.member.workspace_id).await {
-        Ok(messages) => Json(messages.iter().map(message_json).collect::<Vec<_>>()).into_response(),
+    let limit = query.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return error_response(StatusCode::BAD_REQUEST, "invalid limit");
+    }
+    let cursor = match (&query.before_created_at, &query.before_id) {
+        (None, None) => (None, Uuid::nil()),
+        (Some(created_at), Some(id)) => {
+            let created_at = match DateTime::parse_from_rfc3339(created_at) {
+                Ok(created_at) => created_at.with_timezone(&Utc),
+                Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid cursor"),
+            };
+            let id = match parse_uuid(id, "cursor") {
+                Ok(id) => id,
+                Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid cursor"),
+            };
+            (Some(created_at), id)
+        }
+        _ => return error_response(StatusCode::BAD_REQUEST, "invalid cursor"),
+    };
+    match channel_q::list_messages(
+        &state.pool,
+        channel.id,
+        context.member.workspace_id,
+        (limit + 1) as i32,
+        cursor.0,
+        cursor.1,
+    )
+    .await
+    {
+        Ok(mut messages) => {
+            let has_more = messages.len() > limit;
+            messages.truncate(limit);
+            let next_cursor = if has_more {
+                messages.last().map(|message| {
+                    json!({
+                        "created_at": patchbay_util::rfc3339_nano(message.created_at),
+                        "id": message.id,
+                    })
+                })
+            } else {
+                None
+            };
+            messages.reverse();
+            Json(json!({
+                "messages": messages.iter().map(message_json).collect::<Vec<_>>(),
+                "limit": limit,
+                "has_more": has_more,
+                "next_cursor": next_cursor,
+            }))
+            .into_response()
+        }
         Err(error) => internal("failed to list channel messages", error),
     }
 }
@@ -384,6 +595,7 @@ async fn create_message(
         task_id,
         json!({ "channel_id": channel.id, "message": &response }),
     );
+    dispatch_agent_mentions(&state, &context, &channel, message.id, &content).await;
     (StatusCode::CREATED, Json(response)).into_response()
 }
 
@@ -400,5 +612,12 @@ mod tests {
     #[test]
     fn route_set_is_complete() {
         let _ = router();
+    }
+
+    #[test]
+    fn mentioned_agent_ids_deduplicates_canonical_mentions() {
+        let id = Uuid::now_v7();
+        let content = format!("[A](mention://agent/{id}) mention://agent/{id} mention://member/{id}");
+        assert_eq!(mentioned_agent_ids(&content), vec![id]);
     }
 }

@@ -83,6 +83,7 @@ import type {
   TaskMessagePayload,
   Attachment,
   Channel,
+  ChannelMessagesPage,
   ChannelMessage,
   CreateChannelRequest,
   SendChannelMessageRequest,
@@ -242,6 +243,7 @@ import {
   ChatMessageListSchema,
   ChannelListSchema,
   ChannelMessageListSchema,
+  ChannelMessagesPageSchema,
   ChannelMessageSchema,
   ChannelSchema,
   EMPTY_CHANNEL_LIST,
@@ -2947,10 +2949,34 @@ export class ApiClient {
   }
 
   async listChannelMessages(channelId: string): Promise<ChannelMessage[]> {
-    const raw: unknown = await this.fetch(`/api/channels/${channelId}/messages`);
-    return parseWithFallback(raw, ChannelMessageListSchema, EMPTY_CHANNEL_MESSAGE_LIST, {
-      endpoint: "GET /api/channels/:id/messages",
-    });
+    return (await this.listChannelMessagesPage(channelId)).messages;
+  }
+
+  async listChannelMessagesPage(
+    channelId: string,
+    params: { before?: { created_at: string; id: string } | null; limit?: number } = {},
+  ): Promise<ChannelMessagesPage> {
+    const limit = params.limit ?? 50;
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (params.before) {
+      query.set("before_created_at", params.before.created_at);
+      query.set("before_id", params.before.id);
+    }
+    const raw: unknown = await this.fetch(
+      `/api/channels/${channelId}/messages?${query.toString()}`,
+    );
+    if (Array.isArray(raw)) {
+      const messages = parseWithFallback(raw, ChannelMessageListSchema, EMPTY_CHANNEL_MESSAGE_LIST, {
+        endpoint: "GET /api/channels/:id/messages",
+      });
+      return { messages, limit: messages.length, has_more: false, next_cursor: null };
+    }
+    return parseWithFallback(
+      raw,
+      ChannelMessagesPageSchema,
+      { messages: [], limit, has_more: false, next_cursor: null },
+      { endpoint: "GET /api/channels/:id/messages" },
+    );
   }
 
   async sendChannelMessage(

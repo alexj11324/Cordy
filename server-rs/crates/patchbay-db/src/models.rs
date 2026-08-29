@@ -532,6 +532,7 @@ pub struct WorkspaceChannelMessage {
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub id: Uuid,
+    pub parent_message: Option<WorkspaceChannelQuotedMessage>,
     pub parent_id: Option<Uuid>,
     pub quoted_message: Option<WorkspaceChannelQuotedMessage>,
     pub quoted_message_id: Option<Uuid>,

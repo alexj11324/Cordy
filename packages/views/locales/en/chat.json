@@ -266,6 +266,9 @@
     "create_failed": "Couldn't create channel",
     "send_failed": "Couldn't send message",
     "loading": "Loading channels…",
+    "load_older": "Load older messages",
+    "loading_older": "Loading older messages…",
+    "unknown_badge": "Unknown author",
     "copy": "Copy",
     "copied": "Copied",
     "copy_failed": "Copy failed"
