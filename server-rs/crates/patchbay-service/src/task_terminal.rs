@@ -1386,7 +1386,6 @@ impl TaskService {
                 .chat_session_id
                 .map(|id| id.to_string())
                 .unwrap_or_default(),
-            ..Default::default()
         });
     }
 
