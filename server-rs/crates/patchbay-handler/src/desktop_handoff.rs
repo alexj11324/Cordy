@@ -203,15 +203,13 @@ fn valid_code(value: &str, prefix: &str) -> bool {
 
 fn valid_pkce_value(value: &str) -> bool {
     (43..=128).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| {
-                byte.is_ascii_alphanumeric()
-                    || byte == b'-'
-                    || byte == b'_'
-                    || byte == b'.'
-                    || byte == b'~'
-            })
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || byte == b'-'
+                || byte == b'_'
+                || byte == b'.'
+                || byte == b'~'
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -291,11 +289,8 @@ async fn redeem(State(state): State<HandlerState>, Json(request): Json<RedeemReq
     ) {
         return error_response(StatusCode::FORBIDDEN, "account disabled");
     }
-    match patchbay_auth::jwt::issue_user_jwt(
-        &current.id.to_string(),
-        &current.email,
-        &current.name,
-    ) {
+    match patchbay_auth::jwt::issue_user_jwt(&current.id.to_string(), &current.email, &current.name)
+    {
         Ok(token) => Json(serde_json::json!({ "token": token })).into_response(),
         Err(_) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -315,7 +310,10 @@ mod tests {
         let code = store.issue(user_id, "challenge").await.unwrap();
 
         assert_eq!(store.consume(&code, "wrong").await.unwrap(), None);
-        assert_eq!(store.consume(&code, "challenge").await.unwrap(), Some(user_id));
+        assert_eq!(
+            store.consume(&code, "challenge").await.unwrap(),
+            Some(user_id)
+        );
         assert_eq!(store.consume(&code, "challenge").await.unwrap(), None);
     }
 

@@ -1103,8 +1103,7 @@ impl HandlerState {
     /// client: auth/member caches, empty-claim cache, runtime liveness,
     /// invitation/webhook gates, and pending request stores.
     pub fn with_redis(mut self, client: redis::Client) -> Self {
-        let desktop_handoff_connection =
-            patchbay_redis::RecoveringConnection::new(client.clone());
+        let desktop_handoff_connection = patchbay_redis::RecoveringConnection::new(client.clone());
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
         self.rate_limit_client = Some(client.clone());

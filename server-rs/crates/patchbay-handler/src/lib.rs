@@ -40,8 +40,8 @@ pub mod connectors;
 pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
-pub mod desktop_handoff;
 pub mod dashboard;
+pub mod desktop_handoff;
 pub mod error;
 pub mod feedback;
 pub mod github;
@@ -244,12 +244,11 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         state.auth_rate_limit.clone(),
         state.auth_verify_rate_limit.clone(),
     );
-    let desktop_handoff_public = desktop_handoff::public_router().route_layer(
-        middleware::from_fn_with_state(
+    let desktop_handoff_public =
+        desktop_handoff::public_router().route_layer(middleware::from_fn_with_state(
             state.auth_verify_rate_limit.clone(),
             patchbay_middleware::ratelimit::rate_limit,
-        ),
-    );
+        ));
 
     let issue_routes = issue::router().route_layer(middleware::from_fn_with_state(
         WorkspaceGuardState::member_only(state.pool.clone()),
