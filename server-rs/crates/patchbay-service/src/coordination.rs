@@ -54,10 +54,12 @@ struct CoordinationEvent {
 #[derive(Debug, Clone)]
 struct Assignment {
     id: Uuid,
+    role: String,
     status: String,
     owner_type: Option<String>,
     owner_id: Option<Uuid>,
     dispatched_task_id: Option<Uuid>,
+    decision: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +223,9 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
         if plan.publish_reviewer_update {
             self.publish_reviewer_update(&plan).await;
         }
+        if plan.publish_issue_update || plan.publish_reviewer_update {
+            self.mark_issue_update_published(&event, &plan).await?;
+        }
         if let Some(activity) = &plan.assignment_activity {
             self.publish_assignment_activity(activity);
         }
@@ -266,7 +271,7 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
     ) -> anyhow::Result<Option<DispatchPlan>> {
         let mut tx = self.pool.begin().await?;
         let assignment = sqlx::query(
-            r#"SELECT id, status, owner_type, owner_id, dispatched_task_id
+            r#"SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision
 FROM agent_coordination_assignment
 WHERE event_id = $1
 ORDER BY created_at, id
@@ -279,10 +284,12 @@ FOR UPDATE"#,
         .ok_or_else(|| anyhow::anyhow!("coordination event has no assignment"))?;
         let assignment = Assignment {
             id: assignment.try_get(0)?,
-            status: assignment.try_get(1)?,
-            owner_type: assignment.try_get(2)?,
-            owner_id: assignment.try_get(3)?,
-            dispatched_task_id: assignment.try_get(4)?,
+            role: assignment.try_get(1)?,
+            status: assignment.try_get(2)?,
+            owner_type: assignment.try_get(3)?,
+            owner_id: assignment.try_get(4)?,
+            dispatched_task_id: assignment.try_get(5)?,
+            decision: assignment.try_get(6)?,
         };
 
         if assignment.dispatched_task_id.is_some()
@@ -354,6 +361,34 @@ FOR UPDATE"#,
                 None,
                 json!({"outcome": "blocked", "reason": "unknown_event_type"}),
                 Some("unknown coordinator event type"),
+            )
+            .await?;
+            tx.commit().await?;
+            return Ok(None);
+        }
+
+        // A reviewer assignment can remain pending when enqueue fails after
+        // the implementation completion transaction committed. If review
+        // then returns the issue to in progress before that event is retried,
+        // the old completion is stale: do not select another reviewer or move
+        // the issue back into review.
+        if is_task_completion
+            && assignment.role == ASSIGNMENT_REVIEWER
+            && assignment.status == "assigned"
+            && assignment.dispatched_task_id.is_none()
+            && category != issue_status::IN_REVIEW
+        {
+            complete_claimed_tx(
+                &mut *tx,
+                event,
+                &assignment,
+                "completed",
+                None,
+                json!({
+                    "outcome": "stale_completion",
+                    "reason": "reviewer handoff became stale after issue left review",
+                }),
+                Some("reviewer handoff became stale after issue left review"),
             )
             .await?;
             tx.commit().await?;
@@ -481,8 +516,8 @@ FOR UPDATE"#,
                     .get("agent_id")
                     .and_then(Value::as_str)
                     .and_then(|value| Uuid::parse_str(value).ok());
-                let previous_reviewer_type = issue.reviewer_type.clone();
-                let previous_reviewer_id = issue.reviewer_id;
+                let reviewer_before_recovery_type = issue.reviewer_type.clone();
+                let reviewer_before_recovery_id = issue.reviewer_id;
                 let (dispatch_owner_id, issue, assignment_activity, reviewer_replaced) =
                     if reviewer_is_dispatchable(
                         &mut *tx,
@@ -517,9 +552,15 @@ RETURNING *"#,
                         let decision = json!({
                             "policy": "reviewer_recovery_replacement",
                             "role": ASSIGNMENT_REVIEWER,
+                            "review_publication": "reviewer_replacement",
+                            "issue_update_published": false,
                             "candidate_agent_id": candidate.id,
                             "candidate_agent_name": candidate.name,
-                            "previous_reviewer_id": owner_id,
+                            "previous_status": issue.status,
+                            "previous_assignee_type": issue.assignee_type,
+                            "previous_assignee_id": issue.assignee_id,
+                            "previous_reviewer_type": issue.reviewer_type,
+                            "previous_reviewer_id": issue.reviewer_id,
                             "source_agent_id": source_agent_id,
                         });
                         record_assignment_decision(
@@ -567,9 +608,82 @@ RETURNING *"#,
                         tx.commit().await?;
                         return Ok(None);
                     };
-                let previous_status = issue.status.clone();
-                let previous_assignee_type = issue.assignee_type.clone();
-                let previous_assignee_id = issue.assignee_id;
+                let (
+                    previous_status,
+                    previous_assignee_type,
+                    previous_assignee_id,
+                    previous_reviewer_type,
+                    previous_reviewer_id,
+                    publish_issue_update,
+                    publish_reviewer_update,
+                ) = if reviewer_replaced {
+                    (
+                        issue.status.clone(),
+                        issue.assignee_type.clone(),
+                        issue.assignee_id,
+                        reviewer_before_recovery_type,
+                        reviewer_before_recovery_id,
+                        false,
+                        true,
+                    )
+                } else {
+                    let publication_kind = assignment
+                        .decision
+                        .get("review_publication")
+                        .and_then(Value::as_str);
+                    let issue_update_published = assignment
+                        .decision
+                        .get("issue_update_published")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    let previous_status = assignment
+                        .decision
+                        .get("previous_status")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| issue.status.clone());
+                    let previous_assignee_type = assignment
+                        .decision
+                        .get("previous_assignee_type")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                        .or_else(|| issue.assignee_type.clone());
+                    let previous_assignee_id = assignment
+                        .decision
+                        .get("previous_assignee_id")
+                        .and_then(Value::as_str)
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                        .or(issue.assignee_id);
+                    let previous_reviewer_type =
+                        if assignment.decision.get("previous_reviewer_type").is_some() {
+                            assignment
+                                .decision
+                                .get("previous_reviewer_type")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        } else {
+                            None
+                        };
+                    let previous_reviewer_id =
+                        if assignment.decision.get("previous_reviewer_id").is_some() {
+                            assignment
+                                .decision
+                                .get("previous_reviewer_id")
+                                .and_then(Value::as_str)
+                                .and_then(|value| Uuid::parse_str(value).ok())
+                        } else {
+                            None
+                        };
+                    (
+                        previous_status,
+                        previous_assignee_type,
+                        previous_assignee_id,
+                        previous_reviewer_type,
+                        previous_reviewer_id,
+                        !issue_update_published && publication_kind != Some("reviewer_replacement"),
+                        !issue_update_published && publication_kind == Some("reviewer_replacement"),
+                    )
+                };
                 let plan = DispatchPlan {
                     event_id: event.id,
                     assignment_id: assignment.id,
@@ -577,8 +691,8 @@ RETURNING *"#,
                     owner_type: "agent".to_string(),
                     owner_id: dispatch_owner_id,
                     expected_issue_category: issue_status::IN_REVIEW.to_string(),
-                    publish_issue_update: false,
-                    publish_reviewer_update: reviewer_replaced,
+                    publish_issue_update,
+                    publish_reviewer_update,
                     previous_status,
                     previous_assignee_type,
                     previous_assignee_id,
@@ -705,8 +819,15 @@ RETURNING *"#,
                 let decision = json!({
                     "policy": if team_id.is_some() { "team_reviewer_role" } else { "workspace_reviewer_role" },
                     "role": ASSIGNMENT_REVIEWER,
+                    "review_publication": "review_handoff",
+                    "issue_update_published": false,
                     "candidate_agent_id": candidate.id,
                     "candidate_agent_name": candidate.name,
+                    "previous_status": issue.status,
+                    "previous_assignee_type": issue.assignee_type,
+                    "previous_assignee_id": issue.assignee_id,
+                    "previous_reviewer_type": issue.reviewer_type,
+                    "previous_reviewer_id": issue.reviewer_id,
                     "source_agent_id": source_agent_id,
                 });
                 record_assignment_decision(
@@ -1018,17 +1139,19 @@ LIMIT 1"#,
     ) -> anyhow::Result<bool> {
         let mut tx = self.pool.begin().await?;
         let assignment = sqlx::query(
-            "SELECT id, status, owner_type, owner_id, dispatched_task_id FROM agent_coordination_assignment WHERE id = $1 FOR UPDATE",
+            "SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision FROM agent_coordination_assignment WHERE id = $1 FOR UPDATE",
         )
         .bind(plan.assignment_id)
         .fetch_one(&mut *tx)
         .await?;
         let assignment = Assignment {
             id: assignment.try_get(0)?,
-            status: assignment.try_get(1)?,
-            owner_type: assignment.try_get(2)?,
-            owner_id: assignment.try_get(3)?,
-            dispatched_task_id: assignment.try_get(4)?,
+            role: assignment.try_get(1)?,
+            status: assignment.try_get(2)?,
+            owner_type: assignment.try_get(3)?,
+            owner_id: assignment.try_get(4)?,
+            dispatched_task_id: assignment.try_get(5)?,
+            decision: assignment.try_get(6)?,
         };
         let coordinated_task_status: Option<String> = sqlx::query_scalar(
             r#"SELECT status
@@ -1148,7 +1271,7 @@ WHERE id = $1
     ) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
         let assignment = sqlx::query(
-            "SELECT id, status, owner_type, owner_id, dispatched_task_id FROM agent_coordination_assignment WHERE event_id = $1 FOR UPDATE",
+            "SELECT id, role, status, owner_type, owner_id, dispatched_task_id, decision FROM agent_coordination_assignment WHERE event_id = $1 FOR UPDATE",
         )
         .bind(event.id)
         .fetch_optional(&mut *tx)
@@ -1156,10 +1279,12 @@ WHERE id = $1
         if let Some(row) = assignment {
             let assignment = Assignment {
                 id: row.try_get(0)?,
-                status: row.try_get(1)?,
-                owner_type: row.try_get(2)?,
-                owner_id: row.try_get(3)?,
-                dispatched_task_id: row.try_get(4)?,
+                role: row.try_get(1)?,
+                status: row.try_get(2)?,
+                owner_type: row.try_get(3)?,
+                owner_id: row.try_get(4)?,
+                dispatched_task_id: row.try_get(5)?,
+                decision: row.try_get(6)?,
             };
             defer_claimed_tx(
                 &mut *tx,
@@ -1186,6 +1311,34 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $4"#,
             .await?;
         }
         tx.commit().await?;
+        Ok(())
+    }
+
+    async fn mark_issue_update_published(
+        &self,
+        event: &CoordinationEvent,
+        plan: &DispatchPlan,
+    ) -> anyhow::Result<()> {
+        let updated = sqlx::query(
+            r#"UPDATE agent_coordination_assignment
+SET decision = decision || jsonb_build_object('issue_update_published', true),
+    updated_at = now()
+WHERE id = $1
+  AND EXISTS (
+      SELECT 1 FROM agent_coordination_outbox
+      WHERE id = $2 AND status = 'processing' AND lease_owner = $3
+  )"#,
+        )
+        .bind(plan.assignment_id)
+        .bind(event.id)
+        .bind(&event.lease_owner)
+        .execute(&self.pool)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(anyhow::anyhow!(
+                "coordination assignment lease is no longer owned while recording issue update publication"
+            ));
+        }
         Ok(())
     }
 
@@ -1677,12 +1830,19 @@ pub async fn record_task_completed(
         return Ok(());
     }
 
-    let source_role: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM agent_coordination_assignment WHERE dispatched_task_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
-    )
-    .bind(task.id)
-    .fetch_optional(&mut *executor)
-    .await?;
+    let source_role: Option<String> = if let Some(assignment_id) = coordination_assignment_id {
+        sqlx::query_scalar("SELECT role FROM agent_coordination_assignment WHERE id = $1")
+            .bind(assignment_id)
+            .fetch_optional(&mut *executor)
+            .await?
+    } else {
+        sqlx::query_scalar(
+            "SELECT role FROM agent_coordination_assignment WHERE dispatched_task_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+        )
+        .bind(task.id)
+        .fetch_optional(&mut *executor)
+        .await?
+    };
     if coordination_assignment_id.is_some() && source_role.is_none() {
         return Err(anyhow::anyhow!(
             "coordinator task completed before its assignment was correlated"
