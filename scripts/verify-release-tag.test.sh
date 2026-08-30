@@ -65,6 +65,21 @@ if [ "$guard_count" -lt 7 ]; then
   exit 1
 fi
 
+for release_contract in \
+  'group: production-release-${{ inputs.tag }}' \
+  'git merge-base --is-ancestor "$commit_sha" origin/main' \
+  'git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main'; do
+  if ! grep -Fq -- "$release_contract" "$release_workflow"; then
+    echo "release workflow is missing main/concurrency contract: $release_contract" >&2
+    exit 1
+  fi
+done
+
+if [ "$(grep -Fc -- 'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main' "$release_workflow")" -lt 3 ]; then
+  echo "release workflow must re-fetch main at verification and final publication boundaries" >&2
+  exit 1
+fi
+
 if grep -Fq -- '--publish always' "$release_workflow"; then
   echo "Desktop matrix still publishes before all release jobs succeed" >&2
   exit 1

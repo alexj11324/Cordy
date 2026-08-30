@@ -21,6 +21,10 @@ permissions:
   packages: write
   checks: write
 
+concurrency:
+  group: production-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   macos-release-preflight:
     # A production release is incomplete without trusted macOS installers.
@@ -101,8 +105,14 @@ jobs:
             echo "::error::Refusing to release from dirty tag '$tag'."
             exit 1
           fi
+          commit_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$commit_sha" origin/main; then
+            echo "::error::Refusing to release '$tag' because commit '$commit_sha' is not contained in main."
+            exit 1
+          fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
@@ -754,7 +764,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
           EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+        run: |
+          bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
+            echo "::error::Refusing to promote latest because prepared commit '$EXPECTED_COMMIT' is not contained in main."
+            exit 1
+          fi
 
       - name: Promote stable image tags
         env:
@@ -1081,6 +1097,11 @@ jobs:
           IS_STABLE: ${{ needs.verify.outputs.is_stable }}
         run: |
           bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
+            echo "::error::Refusing to publish release because prepared commit '$EXPECTED_COMMIT' is not contained in main."
+            exit 1
+          fi
           release_channel=(--latest=true)
           if [ "$IS_STABLE" != "true" ]; then
             release_channel=(--prerelease --latest=false)
