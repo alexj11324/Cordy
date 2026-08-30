@@ -17,8 +17,46 @@ vi.mock("@patchbay/core/auth", () => ({
 }));
 
 vi.mock("@patchbay/views/auth", () => ({
-  LoginPage: ({ extra }: { extra?: ReactNode }) => (
-    <div data-testid="email-otp-flow">{extra}</div>
+  LoginPage: ({
+    embedded,
+    showGoogleSeparator,
+    googleLoading,
+    onGoogleLogin,
+    extra,
+  }: {
+    embedded?: boolean;
+    showGoogleSeparator?: boolean;
+    googleLoading?: boolean;
+    onGoogleLogin?: () => void;
+    extra?: ReactNode;
+  }) => (
+    <section data-testid="email-otp-flow" data-embedded={embedded}>
+      <div className="flex flex-col gap-2 text-center">
+        <h1>Sign in to Patchbay</h1>
+        <p>Enter your email to get a login code</p>
+      </div>
+      <div className="grid gap-6">
+        <form aria-label="Email sign in">
+          <label htmlFor="login-email">Email</label>
+          <input id="login-email" type="email" />
+          <button type="submit">Continue</button>
+        </form>
+        {showGoogleSeparator && (
+          <div data-testid="google-separator">Or continue with</div>
+        )}
+        {onGoogleLogin && (
+          <button
+            type="button"
+            onClick={onGoogleLogin}
+            disabled={googleLoading}
+            aria-busy={googleLoading}
+          >
+            {googleLoading ? "Opening Google sign-in…" : "Continue with Google"}
+          </button>
+        )}
+      </div>
+      {extra}
+    </section>
   ),
 }));
 
@@ -42,19 +80,18 @@ vi.mock("@patchbay/views/i18n", () => ({
   useT: () => ({
     t: (
       select: (locale: {
-        common: { back: string };
+        common: { or_continue_with: string };
         desktop: { entry: Record<string, string> };
       }) => string,
     ) =>
       select({
-        common: { back: "Back" },
+        common: { or_continue_with: "Or continue with" },
         desktop: {
           entry: {
-            title: "Welcome to Patchbay",
-            description: "Choose how to continue",
-            login_google: "Continue with Google",
+            login_label: "Login",
+            brand: "Patchbay",
+            quote: "Patchbay keeps work in one clear place.",
             opening_google: "Opening Google sign-in…",
-            login_email: "Continue with Email",
             skip: "Continue as guest",
             skipping: "Starting guest session…",
             login_error: "Could not open the login page",
@@ -91,19 +128,34 @@ beforeEach(() => {
 });
 
 describe("DesktopLoginPage", () => {
-  it("renders the branded equal Google and Email choices with Guest secondary", () => {
+  it("keeps the authentication example hierarchy with Email first and Google second", () => {
     render(<DesktopLoginPage />);
 
-    expect(screen.getByTestId("patchbay-icon")).toBeInTheDocument();
+    const example = screen.getByTestId("authentication-example");
+    expect(example).toHaveClass("lg:grid-cols-2");
+    expect(screen.getByTestId("authentication-brand-panel")).toHaveClass(
+      "lg:flex",
+    );
+    expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute(
+      "href",
+      "#desktop-login",
+    );
+    expect(screen.getByTestId("email-otp-flow")).toHaveAttribute(
+      "data-embedded",
+      "true",
+    );
+    expect(
+      screen.getByRole("form", { name: "Email sign in" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("google-separator")).toHaveTextContent(
+      "Or continue with",
+    );
     expect(
       screen.getByRole("button", { name: "Continue with Google" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Continue with Email" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Continue as guest" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Continue with Email" }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens the provider-specific Google route with the #623 PKCE binding", async () => {
@@ -124,15 +176,28 @@ describe("DesktopLoginPage", () => {
     expect(parsed.searchParams.get("token")).toBeNull();
   });
 
-  it("keeps the real Email OTP flow inside Electron", () => {
+  it("exposes the real Email OTP form without opening the browser", () => {
+    render(<DesktopLoginPage />);
+
+    fireEvent.submit(screen.getByRole("form", { name: "Email sign in" }));
+
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("shows the Google loading state while the external login is opening", async () => {
+    mocks.openExternal.mockReturnValue(new Promise(() => undefined));
     render(<DesktopLoginPage />);
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Continue with Email" }),
+      screen.getByRole("button", { name: "Continue with Google" }),
     );
 
-    expect(screen.getByTestId("email-otp-flow")).toBeInTheDocument();
-    expect(mocks.openExternal).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Opening Google sign-in…" }),
+      ).toBeDisabled();
+    });
   });
 
   it("starts the existing real guest session without opening the browser", async () => {
