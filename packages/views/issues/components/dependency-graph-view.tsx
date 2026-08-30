@@ -510,7 +510,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                         strokeWidth={isSelected ? 2.5 : 1.5}
                         strokeDasharray={edge.satisfied ? "4 4" : undefined}
                         className={cn(
-                          edge.satisfied ? "text-emerald-500/70" : "text-muted-foreground/70",
+                          edge.satisfied ? "text-emerald-500" : "text-muted-foreground",
                           isSelected && "text-brand",
                         )}
                       />
@@ -520,7 +520,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                         stroke="currentColor"
                         strokeWidth={isSelected ? 2.5 : 1.5}
                         className={cn(
-                          edge.satisfied ? "text-emerald-500/70" : "text-muted-foreground/70",
+                          edge.satisfied ? "text-emerald-500" : "text-muted-foreground",
                           isSelected && "text-brand",
                         )}
                       />
