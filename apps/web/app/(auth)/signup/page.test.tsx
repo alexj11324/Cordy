@@ -59,16 +59,16 @@ describe("SignUpPage", () => {
   });
 
   it("preserves an allowlisted browser app origin through signup", () => {
-    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://patchbay.aspectlylabs.com";
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
-      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+      "&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com";
 
     render(<SignUpPage />);
 
     const query =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
-      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+      "&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com";
     expect(signUpProps.current).toMatchObject({
       signInUrl: `/login?${query}`,
       fallbackRedirectUrl: `/login?${query}`,
@@ -76,7 +76,7 @@ describe("SignUpPage", () => {
   });
 
   it("fails closed for a mismatched browser app origin", () => {
-    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://patchbay.aspectlylabs.com";
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
       "&app_origin=https%3A%2F%2Fevil.example";

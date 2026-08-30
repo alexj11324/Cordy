@@ -659,6 +659,7 @@ if (!gotTheLock) {
       readonly VITE_API_URL?: string;
       readonly VITE_WS_URL?: string;
       readonly VITE_APP_URL?: string;
+      readonly VITE_ACCOUNTS_URL?: string;
     };
 
     runtimeConfigResult = await loadRuntimeConfig({
@@ -670,6 +671,7 @@ if (!gotTheLock) {
         apiUrl: viteEnv.VITE_API_URL,
         wsUrl: viteEnv.VITE_WS_URL,
         appUrl: viteEnv.VITE_APP_URL,
+        accountsUrl: viteEnv.VITE_ACCOUNTS_URL,
       },
     });
 

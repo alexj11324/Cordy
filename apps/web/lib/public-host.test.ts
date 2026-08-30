@@ -11,7 +11,7 @@ describe("isOfficialMarketingHost", () => {
     },
   );
 
-  it.each(["app.patchbay.ai", "api.patchbay.ai", "localhost", "patchbay.test"])(
+  it.each(["patchbay.aspectlylabs.com", "api.aspectlylabs.com", "localhost", "patchbay.test"])(
     "does not treat %s as the public marketing host",
     (host) => {
       expect(isOfficialMarketingHost(host)).toBe(false);

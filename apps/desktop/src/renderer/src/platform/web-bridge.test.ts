@@ -33,6 +33,24 @@ afterEach(() => {
 });
 
 describe("Vite Desktop auth handoff", () => {
+  it("keeps API, app, and accounts origins distinct when configured", () => {
+    vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
+    vi.stubEnv("VITE_APP_URL", "https://patchbay.aspectlylabs.com");
+    vi.stubEnv("VITE_ACCOUNTS_URL", "https://accounts.aspectlylabs.com");
+
+    expect(installWebDesktopBridge()).toBe(true);
+    expect(window.desktopAPI.runtimeConfig).toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "https://api.aspectlylabs.com",
+        wsUrl: "wss://api.aspectlylabs.com/ws",
+        appUrl: "https://patchbay.aspectlylabs.com",
+        accountsUrl: "https://accounts.aspectlylabs.com",
+      },
+    });
+  });
+
   it("delivers a validated one-time callback to the backend-enabled renderer", async () => {
     const code = `pbd_${"a".repeat(43)}`;
     const state = "b".repeat(43);

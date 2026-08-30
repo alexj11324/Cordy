@@ -557,7 +557,7 @@ Nothing in this flow touches the system-installed `patchbay` or the default
 | Health port | `19514` | `19514 + 1 + (name_hash % 1000)` |
 | Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<hash>/` |
 | Database | remote / production | local Docker: `patchbay_<slug>_<hash>` |
-| Desktop profile | `desktop-api.patchbay.ai` | `desktop-localhost-<port>` |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>` |
 
 Multiple worktrees can run simultaneously without conflict.
 

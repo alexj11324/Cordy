@@ -59,14 +59,14 @@ patchbay login --token
 ```bash
 export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
-curl https://api.patchbay.ai/api/me \
+curl https://api.aspectlylabs.com/api/me \
   -H "Authorization: Bearer $PATCHBAY_TOKEN"
 ```
 
 调用工作区级 API 时，还需要按接口要求提供工作区：
 
 ```bash
-curl https://api.patchbay.ai/api/issues \
+curl https://api.aspectlylabs.com/api/issues \
   -H "Authorization: Bearer $PATCHBAY_TOKEN" \
   -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
 ```

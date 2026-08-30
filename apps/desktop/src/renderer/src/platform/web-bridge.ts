@@ -109,12 +109,23 @@ export function installWebDesktopBridge(): boolean {
   const preview = import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
   let pendingBrowserAuthHandoff = preview ? null : takeBrowserAuthHandoff();
   const runtimeConfig = runtimeConfigFromDevEnv({
-    // `make start-worktree` exports the Next.js convention, while direct
-    // Desktop development uses Vite's convention. Accept both so a linked
-    // worktree never falls back to the primary checkout's port.
-    apiUrl: viteEnv.VITE_API_URL || viteEnv.NEXT_PUBLIC_API_URL,
-    wsUrl: viteEnv.VITE_WS_URL || viteEnv.NEXT_PUBLIC_WS_URL,
-    appUrl: viteEnv.VITE_APP_URL,
+    // The browser preview owns a same-origin local API middleware by default.
+    // An explicit VITE_API_URL still opts into a real remote/local backend for
+    // full server-backed acceptance without changing the Vite host.
+    apiUrl:
+      import.meta.env.VITE_API_URL ||
+      (preview ? window.location.origin : undefined),
+    wsUrl: import.meta.env.VITE_WS_URL,
+    // The no-backend preview must stay on its Vite origin. A backend-enabled
+    // browser host derives share links from VITE_API_URL unless VITE_APP_URL is
+    // explicit. Auth reuses that app origin unless VITE_ACCOUNTS_URL separates
+    // the broker onto another deployed host.
+    appUrl:
+      import.meta.env.VITE_APP_URL ||
+      (preview ? window.location.origin : undefined),
+    accountsUrl:
+      import.meta.env.VITE_ACCOUNTS_URL ||
+      (preview ? window.location.origin : undefined),
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 

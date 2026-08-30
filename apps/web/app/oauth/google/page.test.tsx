@@ -51,17 +51,17 @@ describe("GoogleOAuthPage", () => {
   it("keeps the allowlisted browser app origin through the Google callback", async () => {
     const codeChallenge = "a".repeat(43);
     const state = "b".repeat(43);
-    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://patchbay.aspectlylabs.com";
     search.current =
       `platform=desktop&code_challenge=${codeChallenge}&state=${state}` +
-      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+      "&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com";
 
     render(<GoogleOAuthPage />);
 
     await waitFor(() => expect(sso).toHaveBeenCalledOnce());
     const query =
       `platform=desktop&code_challenge=${codeChallenge}&state=${state}` +
-      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+      "&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com";
     expect(sso).toHaveBeenCalledWith(
       expect.objectContaining({
         redirectUrl: `/login?${query}`,

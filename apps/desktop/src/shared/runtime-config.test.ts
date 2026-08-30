@@ -11,9 +11,10 @@ describe("runtime config", () => {
   it("uses cloud defaults without a desktop.json file", () => {
     expect(DEFAULT_RUNTIME_CONFIG).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.patchbay.ai",
-      wsUrl: "wss://api.patchbay.ai/ws",
-      appUrl: "https://accounts.patchbay.ai",
+      apiUrl: "https://api.aspectlylabs.com",
+      wsUrl: "wss://api.aspectlylabs.com/ws",
+      appUrl: "https://patchbay.aspectlylabs.com",
+      accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
 
@@ -30,19 +31,21 @@ describe("runtime config", () => {
       apiUrl: "https://congvc-x99.taila6fa8a.ts.net:18443",
       wsUrl: "wss://congvc-x99.taila6fa8a.ts.net:18443/ws",
       appUrl: "https://congvc-x99.taila6fa8a.ts.net:18443",
+      accountsUrl: "https://congvc-x99.taila6fa8a.ts.net:18443",
     });
   });
 
   it("strips the leading api. label when deriving appUrl", () => {
     expect(
       parseRuntimeConfig(
-        JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.patchbay.ai" }),
+        JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.aspectlylabs.com" }),
       ),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.patchbay.ai",
-      wsUrl: "wss://api.patchbay.ai/ws",
-      appUrl: "https://patchbay.ai",
+      apiUrl: "https://api.aspectlylabs.com",
+      wsUrl: "wss://api.aspectlylabs.com/ws",
+      appUrl: "https://aspectlylabs.com",
+      accountsUrl: "https://aspectlylabs.com",
     });
   });
 
@@ -50,7 +53,7 @@ describe("runtime config", () => {
     expect(deriveWsUrl("http://localhost:8080")).toBe("ws://localhost:8080/ws");
   });
 
-  it("accepts explicit appUrl and wsUrl", () => {
+  it("accepts explicit app, accounts, and websocket URLs", () => {
     expect(
       parseRuntimeConfig(
         JSON.stringify({
@@ -58,6 +61,7 @@ describe("runtime config", () => {
           apiUrl: "https://api.example.com/",
           wsUrl: "wss://ws.example.com/socket/",
           appUrl: "https://app.example.com/",
+          accountsUrl: "https://accounts.example.com/",
         }),
       ),
     ).toEqual({
@@ -65,6 +69,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.example.com",
       wsUrl: "wss://ws.example.com/socket",
       appUrl: "https://app.example.com",
+      accountsUrl: "https://accounts.example.com",
     });
   });
 
@@ -108,6 +113,7 @@ describe("runtime config", () => {
       apiUrl: "http://dev-api.example.test:8080",
       wsUrl: "ws://dev-api.example.test:8080/ws",
       appUrl: "http://dev-app.example.test:3000",
+      accountsUrl: "http://dev-app.example.test:3000",
     });
   });
 
@@ -117,6 +123,7 @@ describe("runtime config", () => {
       apiUrl: "http://localhost:8080",
       wsUrl: "ws://localhost:8080/ws",
       appUrl: "http://localhost:3000",
+      accountsUrl: "http://localhost:3000",
     });
   });
 
@@ -127,26 +134,29 @@ describe("runtime config", () => {
     // api at `api.<web-host>`, so stripping the leading label gives the
     // right web origin without a separate VITE_APP_URL.
     expect(
-      runtimeConfigFromDevEnv({ apiUrl: "https://api.test.patchbay.ai" }),
+      runtimeConfigFromDevEnv({ apiUrl: "https://api.test.aspectlylabs.com" }),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.test.patchbay.ai",
-      wsUrl: "wss://api.test.patchbay.ai/ws",
-      appUrl: "https://test.patchbay.ai",
+      apiUrl: "https://api.test.aspectlylabs.com",
+      wsUrl: "wss://api.test.aspectlylabs.com/ws",
+      appUrl: "https://test.aspectlylabs.com",
+      accountsUrl: "https://test.aspectlylabs.com",
     });
   });
 
   it("dev VITE_APP_URL still wins over apiUrl-derived value", () => {
     expect(
       runtimeConfigFromDevEnv({
-        apiUrl: "https://api.test.patchbay.ai",
-        appUrl: "https://staging.patchbay.ai",
+        apiUrl: "https://api.test.aspectlylabs.com",
+        appUrl: "https://staging.aspectlylabs.com",
+        accountsUrl: "https://accounts.staging.aspectlylabs.com",
       }),
     ).toEqual({
       schemaVersion: 1,
-      apiUrl: "https://api.test.patchbay.ai",
-      wsUrl: "wss://api.test.patchbay.ai/ws",
-      appUrl: "https://staging.patchbay.ai",
+      apiUrl: "https://api.test.aspectlylabs.com",
+      wsUrl: "wss://api.test.aspectlylabs.com/ws",
+      appUrl: "https://staging.aspectlylabs.com",
+      accountsUrl: "https://accounts.staging.aspectlylabs.com",
     });
   });
 });

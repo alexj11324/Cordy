@@ -91,14 +91,16 @@ Desktop은 기본적으로 Patchbay Cloud에 연결됩니다. 자체 호스팅 �
 이 파일은 CLI의 `~/.patchbay/config.json`과 **다른 파일**이며 키 이름도 다릅니다. CLI는 `server_url`을, Desktop은 `apiUrl`을 사용합니다. Desktop은 CLI 설정을 읽지 않고 `~/.patchbay/profiles/desktop-<host>/` 아래에 별도의 daemon 프로필을 관리합니다. `config.json`을 수정해도 Desktop이 연결하는 서버는 바뀌지 않습니다.
 </Callout>
 
-`apiUrl`은 backend의 공개 주소로 필수이며 `http` 또는 `https`를 사용해야 합니다. 다음 두 주소는 생략할 수 있으며 Desktop이 자동으로 추론합니다.
+`apiUrl`은 backend의 공개 주소로 필수이며 `http` 또는 `https`를 사용해야 합니다. 다음 세 주소는 생략할 수 있으며 Desktop이 자동으로 추론합니다.
 
 - `wsUrl`: `apiUrl`의 프로토콜을 `ws` 또는 `wss`로 바꾸고 경로 뒤에 `/ws`를 추가합니다.
 - `appUrl`: 도메인이 `api.`로 시작하고 세 구간 이상이면 `api.` 접두사를 제거합니다(`api.example.com` → `example.com`). 그렇지 않으면 `apiUrl`과 동일하게 유지합니다.
+- `accountsUrl`: 인증 브로커가 별도 origin에 배포되지 않았다면 `appUrl`을 재사용합니다.
 
-보통 `apiUrl`만 작성하면 됩니다. 추론 결과가 맞지 않을 때 명시적으로 덮어쓰면 됩니다. 일반적인 경우는 세 가지입니다.
+보통 `apiUrl`만 작성하면 됩니다. 추론 결과가 맞지 않을 때 명시적으로 덮어쓰면 됩니다. 일반적인 경우는 네 가지입니다.
 
 - Web과 API가 서로 다른 도메인을 사용
+- 인증 브로커가 별도 도메인을 사용
 - WebSocket을 별도로 배포
 - 도메인이 접두사 제거 규칙을 만족하지 않음(`api.local` 같은 두 구간 도메인은 접두사를 제거하지 않음)
 
@@ -107,6 +109,7 @@ Desktop은 기본적으로 Patchbay Cloud에 연결됩니다. 자체 호스팅 �
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
+  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```

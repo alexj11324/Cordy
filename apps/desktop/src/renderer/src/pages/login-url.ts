@@ -14,13 +14,10 @@ function normalizeBrowserReturnOrigin(value: string): string {
 }
 
 export function buildDesktopGoogleLoginUrl(
-  appUrl: string,
+  accountsUrl: string,
   browserReturnOrigin?: string,
 ): string {
-  const url = new URL("/oauth/google", appUrl);
-  if (url.hostname === "accounts.aspectlylabs.com") {
-    throw new Error("Legacy accounts login origin is not supported");
-  }
+  const url = new URL("/oauth/google", accountsUrl);
   url.searchParams.set("platform", "desktop");
   if (browserReturnOrigin) {
     url.searchParams.set(
