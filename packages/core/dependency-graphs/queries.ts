@@ -13,12 +13,24 @@ export const dependencyGraphKeys = {
 export function dependencyGraphsOptions(wsId: string, projectId?: string) {
   return queryOptions({
     queryKey: dependencyGraphKeys.list(wsId, projectId),
-    queryFn: () =>
-      api.listDependencyGraphs({
-        ...(projectId ? { projectId } : {}),
-        limit: 64,
-      }),
-    select: (response) => response.graphs,
+    queryFn: async () => {
+      const graphs: DependencyGraphResponse[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await api.listDependencyGraphs({
+          ...(projectId ? { projectId } : {}),
+          limit: 64,
+          ...(cursor ? { cursor } : {}),
+        });
+        graphs.push(...page.graphs);
+        const nextCursor = page.next_cursor ?? undefined;
+        if (nextCursor === cursor) {
+          throw new Error("dependency graph pagination cursor did not advance");
+        }
+        cursor = nextCursor;
+      } while (cursor);
+      return graphs;
+    },
     staleTime: 0,
   });
 }

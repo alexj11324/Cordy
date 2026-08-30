@@ -2634,6 +2634,18 @@ SELECT
 FROM agent_task_queue p
 WHERE p.id = $1
   AND lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id)
+  -- A prerequisite may have been reopened after the parent started. Treat
+  -- that race as "no retry" so the parent's terminal failure can still
+  -- commit; the admission trigger remains the final guard for other inserts.
+  AND (
+      p.issue_id IS NULL
+      OR EXISTS (
+          SELECT 1
+          FROM issue task_issue
+          WHERE task_issue.id = p.issue_id
+            AND dependency_graph_issue_gate_open(task_issue.workspace_id, task_issue.id)
+      )
+  )
 ON CONFLICT (issue_id, agent_id) WHERE (
            status IN ('queued', 'dispatched')
            AND COALESCE(context->>'side_chat_parent_task_id', '') = ''
@@ -6229,6 +6241,15 @@ WHERE id = (
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
       )
+      AND (
+          atq.issue_id IS NULL
+          OR EXISTS (
+              SELECT 1
+              FROM issue task_issue
+              WHERE task_issue.id = atq.issue_id
+                AND dependency_graph_issue_gate_open(task_issue.workspace_id, task_issue.id)
+          )
+      )
     ORDER BY atq.priority DESC, atq.dispatched_at ASC
     LIMIT 1
     FOR UPDATE SKIP LOCKED
@@ -6325,6 +6346,15 @@ WHERE id IN (
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
+      )
+      AND (
+          atq.issue_id IS NULL
+          OR EXISTS (
+              SELECT 1
+              FROM issue task_issue
+              WHERE task_issue.id = atq.issue_id
+                AND dependency_graph_issue_gate_open(task_issue.workspace_id, task_issue.id)
+          )
       )
     ORDER BY atq.priority DESC, atq.dispatched_at ASC
     LIMIT $5::int

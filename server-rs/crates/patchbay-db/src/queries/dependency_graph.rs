@@ -5,6 +5,7 @@
 //! the transaction that validates and writes a complete plan.
 
 use crate::models::{DependencyGraphEdge, DependencyGraphNode, DependencyGraphPlan};
+use chrono::{DateTime, Utc};
 use sqlx::{Executor, Row};
 use uuid::Uuid;
 
@@ -22,6 +23,23 @@ where
 {
     Ok(sqlx::query_as::<_, DependencyGraphPlan>(&format!(
         "SELECT {PLAN_COLUMNS} FROM dependency_graph_plan WHERE id = $1 AND workspace_id = $2"
+    ))
+    .bind(plan_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn lock_plan_by_id<'e, E>(
+    executor: E,
+    plan_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<DependencyGraphPlan>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphPlan>(&format!(
+        "SELECT {PLAN_COLUMNS} FROM dependency_graph_plan WHERE id = $1 AND workspace_id = $2 FOR UPDATE"
     ))
     .bind(plan_id)
     .bind(workspace_id)
@@ -93,15 +111,18 @@ pub async fn list_active_plans<'e, E>(
     workspace_id: Uuid,
     project_id: Option<Uuid>,
     limit: i64,
+    after: Option<(DateTime<Utc>, Uuid)>,
 ) -> anyhow::Result<Vec<DependencyGraphPlan>>
 where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
     Ok(sqlx::query_as::<_, DependencyGraphPlan>(&format!(
-        "SELECT {PLAN_COLUMNS} FROM dependency_graph_plan plan WHERE plan.workspace_id = $1 AND plan.status = 'active' AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM issue parent WHERE parent.id = plan.parent_issue_id AND parent.workspace_id = plan.workspace_id AND parent.project_id = $2)) ORDER BY plan.updated_at DESC, plan.id ASC LIMIT $3"
+        "SELECT {PLAN_COLUMNS} FROM dependency_graph_plan plan WHERE plan.workspace_id = $1 AND plan.status = 'active' AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM issue parent WHERE parent.id = plan.parent_issue_id AND parent.workspace_id = plan.workspace_id AND parent.project_id = $2)) AND ($3::timestamptz IS NULL OR plan.updated_at < $3 OR (plan.updated_at = $3 AND plan.id > $4)) ORDER BY plan.updated_at DESC, plan.id ASC LIMIT $5"
     ))
     .bind(workspace_id)
     .bind(project_id)
+    .bind(after.map(|(updated_at, _)| updated_at))
+    .bind(after.map(|(_, id)| id))
     .bind(limit)
     .fetch_all(executor)
     .await?)
@@ -125,6 +146,26 @@ where
     .bind(&plan.goal)
     .bind(&plan.created_by_type)
     .bind(plan.created_by_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+/// Retires one active plan so its parent can be replanned. A cancelled plan
+/// remains queryable for audit history but is no longer considered by the
+/// execution gate or the active-plan uniqueness invariant.
+pub async fn retire_active_plan<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+) -> anyhow::Result<Option<DependencyGraphPlan>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphPlan>(&format!(
+        "UPDATE dependency_graph_plan SET status = 'cancelled', updated_at = now() WHERE id = $1 AND workspace_id = $2 AND status = 'active' RETURNING {PLAN_COLUMNS}"
+    ))
+    .bind(plan_id)
+    .bind(workspace_id)
     .fetch_optional(executor)
     .await?)
 }
@@ -221,6 +262,118 @@ pub struct DependencyGraphEdgeInsert {
     pub consumed_output: String,
 }
 
+/// Durable publication work created in the same transaction as graph nodes.
+/// The handler claims these rows before sending the normal issue:created event
+/// and marks them published only after the in-process bus accepts it.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DependencyGraphIssueCreatedOutboxRow {
+    pub plan_id: Uuid,
+    pub node_id: Uuid,
+    pub workspace_id: Uuid,
+    pub issue_id: Uuid,
+}
+
+pub async fn ensure_issue_created_outbox<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+) -> anyhow::Result<u64>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query(
+        r#"INSERT INTO dependency_graph_issue_created_outbox (
+    plan_id, node_id, workspace_id, issue_id
+)
+SELECT node.plan_id, node.id, node.workspace_id, node.issue_id
+FROM dependency_graph_node node
+WHERE node.plan_id = $1
+  AND node.workspace_id = $2
+ON CONFLICT (plan_id, node_id) DO NOTHING"#,
+    )
+    .bind(plan_id)
+    .bind(workspace_id)
+    .execute(executor)
+    .await?
+    .rows_affected())
+}
+
+pub async fn claim_issue_created_outbox<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+    lease_owner: &str,
+) -> anyhow::Result<Vec<DependencyGraphIssueCreatedOutboxRow>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphIssueCreatedOutboxRow>(
+        r#"WITH candidates AS (
+    SELECT plan_id, node_id
+    FROM dependency_graph_issue_created_outbox
+    WHERE workspace_id = $1
+      AND plan_id = $2
+      AND (
+          status = 'pending'
+          OR (
+              status = 'processing'
+              AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+          )
+      )
+    ORDER BY created_at ASC, node_id ASC
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE dependency_graph_issue_created_outbox AS event
+SET status = 'processing',
+    attempt = event.attempt + 1,
+    lease_owner = $3,
+    lease_expires_at = now() + interval '30 seconds',
+    updated_at = now()
+FROM candidates
+WHERE event.plan_id = candidates.plan_id
+  AND event.node_id = candidates.node_id
+RETURNING event.plan_id, event.node_id, event.workspace_id, event.issue_id"#,
+    )
+    .bind(workspace_id)
+    .bind(plan_id)
+    .bind(lease_owner)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn mark_issue_created_outbox_published<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+    node_id: Uuid,
+    lease_owner: &str,
+) -> anyhow::Result<bool>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query(
+        r#"UPDATE dependency_graph_issue_created_outbox
+SET status = 'published',
+    published_at = now(),
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    updated_at = now()
+WHERE workspace_id = $1
+  AND plan_id = $2
+  AND node_id = $3
+  AND status = 'processing'
+  AND lease_owner = $4"#,
+    )
+    .bind(workspace_id)
+    .bind(plan_id)
+    .bind(node_id)
+    .bind(lease_owner)
+    .execute(executor)
+    .await?
+    .rows_affected()
+        == 1)
+}
+
 pub async fn list_nodes<'e, E>(
     executor: E,
     plan_id: Uuid,
@@ -238,6 +391,44 @@ where
     .await?)
 }
 
+/// Returns the child issue IDs owned by every graph plan affected by deleting
+/// one issue. Plan and node rows are locked so the caller can reconcile those
+/// children before the graph metadata is removed in the same transaction.
+pub async fn list_child_issue_ids_for_issue_delete<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<Vec<Uuid>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_scalar(
+        r#"SELECT node.issue_id
+FROM dependency_graph_plan AS plan
+JOIN dependency_graph_node AS node
+  ON node.plan_id = plan.id
+ AND node.workspace_id = plan.workspace_id
+WHERE plan.workspace_id = $1
+  AND (
+      plan.parent_issue_id = $2
+      OR node.issue_id = $2
+      OR EXISTS (
+          SELECT 1
+          FROM dependency_graph_edge AS edge
+          WHERE edge.plan_id = plan.id
+            AND edge.workspace_id = plan.workspace_id
+            AND (edge.from_issue_id = $2 OR edge.to_issue_id = $2)
+      )
+  )
+  AND node.issue_id <> $2
+FOR UPDATE OF plan, node"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_id)
+    .fetch_all(executor)
+    .await?)
+}
+
 pub async fn list_edges<'e, E>(
     executor: E,
     plan_id: Uuid,
@@ -251,6 +442,63 @@ where
     ))
     .bind(plan_id)
     .bind(workspace_id)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn list_nodes_for_plans<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<DependencyGraphNode>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphNode>(&format!(
+        "SELECT {NODE_COLUMNS} FROM dependency_graph_node WHERE workspace_id = $1 AND plan_id = ANY($2::uuid[]) ORDER BY plan_id ASC, wave ASC, temp_id ASC"
+    ))
+    .bind(workspace_id)
+    .bind(plan_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn list_edges_for_plans<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<DependencyGraphEdge>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphEdge>(&format!(
+        "SELECT {EDGE_COLUMNS} FROM dependency_graph_edge WHERE workspace_id = $1 AND plan_id = ANY($2::uuid[]) ORDER BY plan_id ASC, from_issue_id ASC, to_issue_id ASC, id ASC"
+    ))
+    .bind(workspace_id)
+    .bind(plan_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DependencyGraphIssueStatus {
+    pub issue_id: Uuid,
+    pub effective_status: String,
+}
+
+pub async fn list_effective_issue_statuses<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<DependencyGraphIssueStatus>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphIssueStatus>(
+        "SELECT id AS issue_id, issue_effective_status(workspace_id, status) AS effective_status FROM issue WHERE workspace_id = $1 AND id = ANY($2::uuid[])",
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
     .fetch_all(executor)
     .await?)
 }
@@ -283,6 +531,61 @@ pub struct DependencyGateState {
     pub gate_open: bool,
     pub satisfied_prerequisites: i64,
     pub total_prerequisites: i64,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DependencyGraphGateState {
+    pub issue_id: Uuid,
+    pub gate_open: bool,
+    pub satisfied_prerequisites: i64,
+    pub total_prerequisites: i64,
+}
+
+/// Reads gate state for all requested issues in one query. The grouped edge
+/// counts and the database gate function intentionally share the same active
+/// plan and workspace predicates as the single-issue form.
+pub async fn get_gate_states<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<DependencyGraphGateState>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphGateState>(
+        r#"WITH requested AS (
+    SELECT issue_id
+    FROM unnest($2::uuid[]) AS requested(issue_id)
+), counts AS (
+    SELECT edge.to_issue_id AS issue_id,
+           COUNT(*)::bigint AS total_prerequisites,
+           COUNT(*) FILTER (
+               WHERE prerequisite.id IS NOT NULL
+                 AND issue_effective_status(prerequisite.workspace_id, prerequisite.status) = 'done'
+           )::bigint AS satisfied_prerequisites
+    FROM dependency_graph_edge edge
+    JOIN dependency_graph_plan plan
+      ON plan.id = edge.plan_id
+     AND plan.workspace_id = edge.workspace_id
+     AND plan.status = 'active'
+    LEFT JOIN issue prerequisite
+      ON prerequisite.id = edge.from_issue_id
+     AND prerequisite.workspace_id = edge.workspace_id
+    WHERE edge.workspace_id = $1
+      AND edge.to_issue_id = ANY($2::uuid[])
+    GROUP BY edge.to_issue_id
+)
+SELECT requested.issue_id,
+       dependency_graph_issue_gate_open($1, requested.issue_id) AS gate_open,
+       COALESCE(counts.satisfied_prerequisites, 0)::bigint AS satisfied_prerequisites,
+       COALESCE(counts.total_prerequisites, 0)::bigint AS total_prerequisites
+FROM requested
+LEFT JOIN counts ON counts.issue_id = requested.issue_id"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .fetch_all(executor)
+    .await?)
 }
 
 /// Reads the same predicate used by queue INSERT/claim admission. Missing
@@ -342,9 +645,12 @@ where
 {
     let rows = sqlx::query(
         r#"UPDATE issue AS target
-SET status = 'todo', updated_at = now()
+SET status = 'todo',
+    revision = revision + 1,
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    updated_at = now()
 WHERE target.workspace_id = $1
-  AND target.status = 'blocked'
+  AND issue_effective_status(target.workspace_id, target.status) = 'blocked'
   AND EXISTS (
       SELECT 1
       FROM dependency_graph_node node
@@ -382,9 +688,12 @@ where
 {
     let rows = sqlx::query(
         r#"UPDATE issue AS target
-SET status = 'todo', updated_at = now()
+SET status = 'todo',
+    revision = revision + 1,
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    updated_at = now()
 WHERE target.workspace_id = $1
-  AND target.status = 'blocked'
+  AND issue_effective_status(target.workspace_id, target.status) = 'blocked'
   AND EXISTS (
       SELECT 1
       FROM dependency_graph_edge edge
@@ -422,14 +731,26 @@ where
 {
     let rows = sqlx::query(
         r#"UPDATE issue AS target
-SET status = 'todo', updated_at = now()
+SET status = 'todo',
+    revision = revision + 1,
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    updated_at = now()
 FROM agent agent_owner
 WHERE target.workspace_id = agent_owner.workspace_id
-  AND target.assignee_type = 'agent'
-  AND target.assignee_id = agent_owner.id
+  AND agent_owner.id = CASE
+      WHEN target.assignee_type = 'team' THEN (
+          SELECT team.leader_id
+          FROM team
+          WHERE team.id = target.assignee_id
+            AND team.workspace_id = target.workspace_id
+            AND team.archived_at IS NULL
+      )
+      ELSE target.assignee_id
+  END
   AND agent_owner.runtime_id = $1
   AND agent_owner.archived_at IS NULL
-  AND target.status = 'blocked'
+  AND issue_effective_status(target.workspace_id, target.status) = 'blocked'
+  AND target.assignee_type IN ('agent', 'team')
   AND EXISTS (
       SELECT 1
       FROM dependency_graph_node node
@@ -471,17 +792,26 @@ JOIN dependency_graph_plan plan
  AND plan.status = 'active'
 JOIN issue ON issue.id = node.issue_id
          AND issue.workspace_id = node.workspace_id
+LEFT JOIN team team_owner
+  ON team_owner.id = issue.assignee_id
+ AND team_owner.workspace_id = issue.workspace_id
+ AND team_owner.archived_at IS NULL
 WHERE node.workspace_id = $1
   AND node.plan_id = $2
-  AND issue.assignee_type = 'agent'
-  AND issue.assignee_id IS NOT NULL
+  AND (
+      (issue.assignee_type = 'agent' AND issue.assignee_id IS NOT NULL)
+      OR (issue.assignee_type = 'team' AND team_owner.id IS NOT NULL)
+  )
   AND issue_effective_status(issue.workspace_id, issue.status) = 'todo'
   AND dependency_graph_issue_gate_open(issue.workspace_id, issue.id)
   AND NOT EXISTS (
       SELECT 1
       FROM agent_task_queue pending
       WHERE pending.issue_id = issue.id
-        AND pending.agent_id = issue.assignee_id
+        AND pending.agent_id = CASE
+            WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
+            ELSE issue.assignee_id
+        END
         AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
   )
 ORDER BY node.wave ASC, node.temp_id ASC"#,
@@ -513,16 +843,25 @@ JOIN dependency_graph_plan plan
  AND plan.status = 'active'
 JOIN issue ON issue.id = node.issue_id
          AND issue.workspace_id = node.workspace_id
+LEFT JOIN team team_owner
+  ON team_owner.id = issue.assignee_id
+ AND team_owner.workspace_id = issue.workspace_id
+ AND team_owner.archived_at IS NULL
 WHERE node.workspace_id = $1
-  AND issue.assignee_type = 'agent'
-  AND issue.assignee_id IS NOT NULL
+  AND (
+      (issue.assignee_type = 'agent' AND issue.assignee_id IS NOT NULL)
+      OR (issue.assignee_type = 'team' AND team_owner.id IS NOT NULL)
+  )
   AND issue_effective_status(issue.workspace_id, issue.status) = 'todo'
   AND dependency_graph_issue_gate_open(issue.workspace_id, issue.id)
   AND NOT EXISTS (
       SELECT 1
       FROM agent_task_queue pending
       WHERE pending.issue_id = issue.id
-        AND pending.agent_id = issue.assignee_id
+        AND pending.agent_id = CASE
+            WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
+            ELSE issue.assignee_id
+        END
         AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
   )
 ORDER BY node.wave ASC, node.temp_id ASC"#,
@@ -553,20 +892,32 @@ JOIN dependency_graph_plan plan
  AND plan.status = 'active'
 JOIN issue ON issue.id = node.issue_id
          AND issue.workspace_id = node.workspace_id
+LEFT JOIN team team_owner
+  ON team_owner.id = issue.assignee_id
+ AND team_owner.workspace_id = issue.workspace_id
+ AND team_owner.archived_at IS NULL
 JOIN agent agent_owner
-  ON agent_owner.id = issue.assignee_id
+  ON agent_owner.id = CASE
+      WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
+      ELSE issue.assignee_id
+  END
  AND agent_owner.workspace_id = issue.workspace_id
 WHERE agent_owner.runtime_id = $1
   AND agent_owner.archived_at IS NULL
-  AND issue.assignee_type = 'agent'
-  AND issue.assignee_id IS NOT NULL
+  AND (
+      (issue.assignee_type = 'agent' AND issue.assignee_id IS NOT NULL)
+      OR (issue.assignee_type = 'team' AND team_owner.id IS NOT NULL)
+  )
   AND issue_effective_status(issue.workspace_id, issue.status) = 'todo'
   AND dependency_graph_issue_gate_open(issue.workspace_id, issue.id)
   AND NOT EXISTS (
       SELECT 1
       FROM agent_task_queue pending
       WHERE pending.issue_id = issue.id
-        AND pending.agent_id = issue.assignee_id
+        AND pending.agent_id = CASE
+            WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
+            ELSE issue.assignee_id
+        END
         AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
   )
 ORDER BY node.wave ASC, node.temp_id ASC"#,
@@ -650,7 +1001,7 @@ where
 {
     let exists = match assignee_type {
         "member" => sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM member WHERE id = $1 AND workspace_id = $2)",
+            "SELECT EXISTS (SELECT 1 FROM member WHERE user_id = $1 AND workspace_id = $2)",
         )
         .bind(assignee_id)
         .bind(workspace_id)

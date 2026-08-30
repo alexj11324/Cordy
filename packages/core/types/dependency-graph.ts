@@ -92,4 +92,5 @@ export type DependencyGraphResponse = {
 
 export type ListDependencyGraphsResponse = {
   graphs: DependencyGraphResponse[];
+  next_cursor: string | null;
 };

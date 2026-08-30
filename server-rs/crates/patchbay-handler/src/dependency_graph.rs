@@ -10,19 +10,24 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use chrono::{DateTime, Utc};
 use patchbay_authorization::Action;
-use patchbay_db::queries::agent;
+use patchbay_db::queries::{agent, dependency_graph as graph_q};
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_service::dependency_graph::{
-    apply_dependency_plan, load_active_dependency_graph_for_issue, load_active_dependency_graphs,
-    load_dependency_graph, DependencyGraphError, DependencyGraphPlanInput, DependencyGraphSnapshot,
+    apply_dependency_plan, load_active_dependency_graph_for_issue,
+    load_active_dependency_graphs_after, load_dependency_graph, retire_dependency_plan,
+    DependencyGraphError, DependencyGraphPage, DependencyGraphPlanInput, DependencyGraphSnapshot,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::error::{error_code_response, error_response};
-use crate::issue::issue_response_projection;
+use crate::issue::{
+    issue_created_response_with_status_category, issue_prefix, issue_response_with_status_category,
+};
 use crate::state::HandlerState;
 
 pub fn router() -> Router<HandlerState> {
@@ -39,6 +44,10 @@ pub fn router() -> Router<HandlerState> {
             "/api/dependency-graphs/{id}",
             get(get_dependency_graph_by_id),
         )
+        .route(
+            "/api/dependency-graphs/{id}/retire",
+            post(retire_dependency_graph),
+        )
         .route("/api/dependency-graphs", get(list_dependency_graphs))
 }
 
@@ -46,6 +55,143 @@ pub fn router() -> Router<HandlerState> {
 struct DependencyGraphListQuery {
     project_id: Option<Uuid>,
     limit: Option<u32>,
+    cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DependencyGraphCursor {
+    v: u8,
+    workspace_id: Uuid,
+    project_id: Option<Uuid>,
+    updated_at: DateTime<Utc>,
+    id: Uuid,
+}
+
+fn decode_graph_cursor(
+    raw: Option<&str>,
+    workspace_id: Uuid,
+    project_id: Option<Uuid>,
+) -> Result<Option<(DateTime<Utc>, Uuid)>, Response> {
+    let Some(raw) = raw.filter(|value| !value.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let cursor = URL_SAFE_NO_PAD
+        .decode(raw)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<DependencyGraphCursor>(&bytes).ok())
+        .filter(|cursor| cursor.v == 1)
+        .ok_or_else(|| {
+            error_response(StatusCode::BAD_REQUEST, "invalid dependency graph cursor")
+        })?;
+    if cursor.workspace_id != workspace_id {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "dependency graph cursor does not belong to this workspace",
+        ));
+    }
+    if cursor.project_id != project_id {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "dependency graph cursor does not belong to this project query",
+        ));
+    }
+    Ok(Some((cursor.updated_at, cursor.id)))
+}
+
+fn encode_graph_cursor(
+    workspace_id: Uuid,
+    project_id: Option<Uuid>,
+    cursor: (DateTime<Utc>, Uuid),
+) -> String {
+    URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&DependencyGraphCursor {
+            v: 1,
+            workspace_id,
+            project_id,
+            updated_at: cursor.0,
+            id: cursor.1,
+        })
+        .expect("dependency graph cursor is serializable"),
+    )
+}
+
+async fn publish_pending_issue_created_events(
+    state: &HandlerState,
+    snapshot: &DependencyGraphSnapshot,
+) {
+    let lease_owner = format!("dependency-graph-issue-created:{}", Uuid::now_v7());
+    let pending = match graph_q::claim_issue_created_outbox(
+        &state.pool,
+        snapshot.plan.workspace_id,
+        snapshot.plan.id,
+        &lease_owner,
+    )
+    .await
+    {
+        Ok(pending) => pending,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                plan_id = %snapshot.plan.id,
+                "dependency graph issue-created publication claim deferred"
+            );
+            return;
+        }
+    };
+    if pending.is_empty() {
+        return;
+    }
+    let prefix = issue_prefix(state, snapshot.plan.workspace_id).await;
+    for event in pending {
+        let Some(node) = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.node.id == event.node_id && node.issue.id == event.issue_id)
+        else {
+            tracing::warn!(
+                plan_id = %event.plan_id,
+                node_id = %event.node_id,
+                issue_id = %event.issue_id,
+                "dependency graph issue-created outbox row has no matching snapshot node"
+            );
+            continue;
+        };
+        let issue = issue_created_response_with_status_category(
+            &node.issue,
+            &prefix,
+            &node.effective_status,
+        );
+        state.bus.publish(&patchbay_events::Event {
+            event_type: patchbay_protocol::EVENT_ISSUE_CREATED.to_string(),
+            workspace_id: event.workspace_id.to_string(),
+            actor_type: snapshot.plan.created_by_type.clone(),
+            actor_id: snapshot.plan.created_by_id.to_string(),
+            payload: json!({ "issue": issue }),
+            ..Default::default()
+        });
+        match graph_q::mark_issue_created_outbox_published(
+            &state.pool,
+            event.workspace_id,
+            event.plan_id,
+            event.node_id,
+            &lease_owner,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(
+                plan_id = %event.plan_id,
+                node_id = %event.node_id,
+                "dependency graph issue-created publication was not acknowledged"
+            ),
+            Err(error) => tracing::warn!(
+                %error,
+                plan_id = %event.plan_id,
+                node_id = %event.node_id,
+                "dependency graph issue-created publication mark deferred"
+            ),
+        }
+    }
 }
 
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
@@ -229,13 +375,34 @@ async fn list_dependency_graphs(
         Err(response) => return response,
     };
     let limit = i64::from(query.limit.unwrap_or(64).min(64));
-    match load_active_dependency_graphs(&state.pool, workspace_id, query.project_id, limit).await {
-        Ok(snapshots) => {
+    let after = match decode_graph_cursor(query.cursor.as_deref(), workspace_id, query.project_id) {
+        Ok(after) => after,
+        Err(response) => return response,
+    };
+    match load_active_dependency_graphs_after(
+        &state.pool,
+        workspace_id,
+        query.project_id,
+        limit,
+        after,
+    )
+    .await
+    {
+        Ok(DependencyGraphPage {
+            snapshots,
+            next_cursor,
+        }) => {
+            let prefix = issue_prefix(&state, workspace_id).await;
             let mut graphs = Vec::with_capacity(snapshots.len());
             for snapshot in snapshots {
-                graphs.push(snapshot_value(&state, snapshot).await);
+                graphs.push(snapshot_value(&snapshot, &prefix));
             }
-            Json(json!({ "graphs": graphs })).into_response()
+            Json(json!({
+                "graphs": graphs,
+                "next_cursor": next_cursor
+                    .map(|cursor| encode_graph_cursor(workspace_id, query.project_id, cursor)),
+            }))
+            .into_response()
         }
         Err(error) => graph_error(error),
     }
@@ -278,6 +445,26 @@ async fn apply_issue_dependency_graph(
             "task capability does not allow applying a dependency graph",
         );
     }
+    let task_authorization = crate::issue::TaskAuthorizationContext::from_headers(&headers);
+    for task in &input.tasks {
+        for assignee in task.assignee.iter().chain(task.candidate_assignees.iter()) {
+            if let Err(message) = crate::issue::validate_assignee(
+                &state,
+                &context,
+                &assignee.type_,
+                assignee.id,
+                task_authorization,
+            )
+            .await
+            {
+                return error_code_response(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "invalid_assignee",
+                    &message,
+                );
+            }
+        }
+    }
     let (created_by_type, created_by_id) = match graph_creator(&headers, &context) {
         Ok(creator) => creator,
         Err(response) => return response,
@@ -294,6 +481,10 @@ async fn apply_issue_dependency_graph(
     .await
     {
         Ok(snapshot) => {
+            // The outbox is populated in the same transaction as the graph.
+            // Drain it for both the first apply and idempotent replays so a
+            // post-commit handler failure can recover the standard events.
+            publish_pending_issue_created_events(&state, &snapshot).await;
             if let Err(error) = state
                 .tasks
                 .wake_dependency_graph_ready_tasks(workspace_id, snapshot.plan.id)
@@ -321,14 +512,84 @@ async fn apply_issue_dependency_graph(
     }
 }
 
-async fn snapshot_response(state: &HandlerState, snapshot: DependencyGraphSnapshot) -> Response {
-    Json(snapshot_value(state, snapshot).await).into_response()
+async fn retire_dependency_graph(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(plan_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    let workspace_id = match workspace_id(&context) {
+        Ok(workspace_id) => workspace_id,
+        Err(response) => return response,
+    };
+    let plan = match graph_q::get_plan_by_id(&state.pool, plan_id, workspace_id).await {
+        Ok(Some(plan)) => plan,
+        Ok(None) => return graph_error(DependencyGraphError::NotFound(plan_id)),
+        Err(error) => return graph_error(DependencyGraphError::Database(error.to_string())),
+    };
+    if plan.status != "active" {
+        return error_code_response(
+            StatusCode::CONFLICT,
+            "plan_not_active",
+            "dependency graph plan is not active",
+        );
+    }
+    if !graph_apply_allowed(&state, &headers, workspace_id, plan.parent_issue_id).await {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow retiring this dependency graph",
+        );
+    }
+    let (actor_type, actor_id) = match graph_creator(&headers, &context) {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    match retire_dependency_plan(&state.pool, workspace_id, plan_id).await {
+        Ok(retirement) => {
+            state
+                .tasks
+                .publish_transactional_cancellations(&retirement.cancellation.cancelled_tasks)
+                .await;
+            for (previous, updated) in retirement.cancellation.cancelled_issues {
+                crate::issue::publish_issue_updated(
+                    &state, &previous, &updated, actor_type, actor_id, None,
+                )
+                .await;
+            }
+            let plan = retirement.plan;
+            state.bus.publish(&patchbay_events::Event {
+                event_type: patchbay_protocol::EVENT_DEPENDENCY_GRAPH_UPDATED.to_string(),
+                workspace_id: workspace_id.to_string(),
+                actor_type: actor_type.to_string(),
+                actor_id: actor_id.to_string(),
+                payload: json!({
+                    "plan_id": plan.id,
+                    "parent_issue_id": plan.parent_issue_id,
+                    "status": plan.status,
+                }),
+                ..Default::default()
+            });
+            Json(json!({
+                "plan_id": plan.id,
+                "parent_issue_id": plan.parent_issue_id,
+                "status": plan.status,
+            }))
+            .into_response()
+        }
+        Err(error) => graph_error(error),
+    }
 }
 
-async fn snapshot_value(state: &HandlerState, snapshot: DependencyGraphSnapshot) -> Value {
+async fn snapshot_response(state: &HandlerState, snapshot: DependencyGraphSnapshot) -> Response {
+    let prefix = issue_prefix(state, snapshot.plan.workspace_id).await;
+    Json(snapshot_value(&snapshot, &prefix)).into_response()
+}
+
+fn snapshot_value(snapshot: &DependencyGraphSnapshot, prefix: &str) -> Value {
     let mut node_values = Vec::with_capacity(snapshot.nodes.len());
     for node in &snapshot.nodes {
-        let issue = issue_response_projection(state, &node.issue).await;
+        let issue =
+            issue_response_with_status_category(&node.issue, prefix, &node.effective_status);
         node_values.push(json!({
             "id": node.node.id,
             "temp_id": node.node.temp_id,
@@ -394,7 +655,11 @@ async fn snapshot_value(state: &HandlerState, snapshot: DependencyGraphSnapshot)
             "created_at": snapshot.plan.created_at,
             "updated_at": snapshot.plan.updated_at,
         },
-        "parent": issue_response_projection(state, &snapshot.parent).await,
+        "parent": issue_response_with_status_category(
+            &snapshot.parent,
+            prefix,
+            &snapshot.parent_effective_status,
+        ),
         "children": children,
         "nodes": node_values,
         "edges": edges,
@@ -408,4 +673,26 @@ async fn snapshot_value(state: &HandlerState, snapshot: DependencyGraphSnapshot)
             "cancelled": snapshot.readiness.cancelled,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_cursor_is_bound_to_workspace_and_project() {
+        let workspace_id = Uuid::now_v7();
+        let other_workspace_id = Uuid::now_v7();
+        let project_id = Some(Uuid::now_v7());
+        let updated_at = Utc::now();
+        let graph_id = Uuid::now_v7();
+        let encoded = encode_graph_cursor(workspace_id, project_id, (updated_at, graph_id));
+
+        assert_eq!(
+            decode_graph_cursor(Some(&encoded), workspace_id, project_id).expect("cursor decodes"),
+            Some((updated_at, graph_id))
+        );
+        assert!(decode_graph_cursor(Some(&encoded), other_workspace_id, project_id).is_err());
+        assert!(decode_graph_cursor(Some(&encoded), workspace_id, None).is_err());
+    }
 }
