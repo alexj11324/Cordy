@@ -598,7 +598,7 @@ function StatusAccordionItem({
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
           <StatusHeading status={status} count={page.total} />
         </Accordion.Trigger>
-        {onCreateIssue && (
+        {!readOnly && onCreateIssue && (
           <div className="pr-2">
             {/* Lazy-mounted tooltip machinery — see DeferredTooltip. */}
             <DeferredTooltip
@@ -608,6 +608,7 @@ function StatusAccordionItem({
                   variant="ghost"
                   size="icon-sm"
                   className="rounded-full text-muted-foreground opacity-0 group-hover/header:opacity-100 transition-opacity"
+                  aria-label={t(($) => $.list.add_issue_tooltip)}
                   onClick={() => {
                     const defaults = {
                       status,

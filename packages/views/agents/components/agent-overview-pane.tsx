@@ -437,6 +437,7 @@ export function AgentOverviewPane({
                   {effectiveView === "instructions" && (
                     <InstructionsTab
                       agent={agent}
+                      canEdit={canEdit}
                       onSave={(instructions) =>
                         onUpdate(agent.id, { instructions })
                       }
@@ -481,6 +482,7 @@ export function AgentOverviewPane({
                       agent={agent}
                       members={members}
                       currentUserId={currentUserId ?? null}
+                      canEdit={canEdit}
                       onDirtyChange={setActiveDirty}
                       onUpdate={onUpdate}
                     />
@@ -492,6 +494,7 @@ export function AgentOverviewPane({
                     <CustomArgsTab
                       agent={agent}
                       runtimeDevice={runtime ?? undefined}
+                      canEdit={canEdit}
                       onSave={(updates) => onUpdate(agent.id, updates)}
                       onDirtyChange={setActiveDirty}
                     />
@@ -499,6 +502,7 @@ export function AgentOverviewPane({
                   {effectiveView === "runtime_config" && (
                     <RuntimeConfigTab
                       agent={agent}
+                      canEdit={canEdit}
                       onSave={(updates) => onUpdate(agent.id, updates)}
                       onDirtyChange={setActiveDirty}
                     />

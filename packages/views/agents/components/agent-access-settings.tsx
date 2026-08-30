@@ -12,12 +12,14 @@ export function AgentAccessSettings({
   agent,
   members,
   currentUserId,
+  canEdit = true,
   onDirtyChange,
   onUpdate,
 }: {
   agent: Agent;
   members: MemberWithUser[];
   currentUserId: string | null;
+  canEdit?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
 }) {
@@ -36,7 +38,7 @@ export function AgentAccessSettings({
           members={members}
           ownerId={agent.owner_id}
           canEdit={
-            currentUserId !== null && agent.owner_id === currentUserId
+            canEdit && currentUserId !== null && agent.owner_id === currentUserId
           }
           hasComposioAllowlist={
             (agent.composio_toolkit_allowlist ?? []).length > 0

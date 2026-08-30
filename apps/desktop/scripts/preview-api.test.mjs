@@ -78,6 +78,13 @@ describe("local Vite preview API", () => {
       },
       page: { limit: 50 },
     });
+    const involved = await call("POST", "/api/issues/table/rows", {
+      query: {
+        ...baseQuery,
+        scope: { kind: "my", relation: "involved" },
+      },
+      page: { limit: 50 },
+    });
     const noAssignee = await call("POST", "/api/issues/table/rows", {
       query: {
         ...baseQuery,
@@ -123,6 +130,10 @@ describe("local Vite preview API", () => {
     expect(assigned.body.rows.map(({ issue }) => issue.identifier)).not.toEqual(
       expect.arrayContaining(["PRE-104", "PRE-105"]),
     );
+    expect(involved.body.rows.map(({ issue }) => issue.identifier)).toEqual([
+      "PRE-104",
+      "PRE-105",
+    ]);
     expect(noAssignee.body).toMatchObject({ total: 0, rows: [] });
     expect(byPriority.body.rows.map(({ issue }) => issue.identifier)).toEqual([
       "PRE-104",
@@ -279,6 +290,7 @@ describe("local Vite preview API", () => {
     const agents = await call("GET", "/api/agents");
     const issue = await call("GET", "/api/issues/PRE-105");
     const tasks = await call("GET", "/api/issues/PRE-105/task-runs");
+    const snapshot = await call("GET", "/api/agent-task-snapshot");
 
     expect(agents.body.map((agent) => agent.name)).toEqual(
       expect.arrayContaining(["Atlas", "Mika", "Nova", "Quill"]),
@@ -313,6 +325,15 @@ describe("local Vite preview API", () => {
       expect(task).not.toHaveProperty("side_chat_root_comment_id");
       expect(task).not.toHaveProperty("transcript");
       expect(task).not.toHaveProperty("messages");
+    }
+    for (const agent of agents.body) {
+      for (const task of snapshot.body.filter(
+        (candidate) => candidate.agent_id === agent.id,
+      )) {
+        expect(Date.parse(agent.created_at)).toBeLessThanOrEqual(
+          Date.parse(task.created_at),
+        );
+      }
     }
   });
 
@@ -458,6 +479,11 @@ describe("local Vite preview API", () => {
     expect(Date.parse(currentRun.triggered_at)).toBeLessThanOrEqual(
       Date.parse(currentTask.created_at),
     );
+    const queuedRun = runs.body.runs.find((run) => run.id === "run-pr-review-queued");
+    const queuedIssue = await call("GET", "/api/issues/PRE-102");
+    expect(Date.parse(queuedRun.triggered_at)).toBeLessThan(
+      Date.parse(queuedIssue.body.created_at),
+    );
     expect(Date.parse(completedRun.triggered_at)).toBeLessThanOrEqual(
       Date.parse(completedTask.created_at),
     );
@@ -541,9 +567,15 @@ describe("local Vite preview API", () => {
         if (!run.issue_id) continue;
         const issue = issuesById.get(run.issue_id);
         expect(issue).toBeDefined();
-        expect(Date.parse(issue.created_at)).toBeLessThanOrEqual(
-          Date.parse(run.triggered_at),
-        );
+        if (run.status === "issue_created") {
+          expect(Date.parse(issue.created_at)).toBeGreaterThan(
+            Date.parse(run.triggered_at),
+          );
+        } else {
+          expect(Date.parse(issue.created_at)).toBeLessThanOrEqual(
+            Date.parse(run.triggered_at),
+          );
+        }
       }
     }
     for (const task of tasks.body) {

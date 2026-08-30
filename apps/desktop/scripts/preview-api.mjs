@@ -228,7 +228,7 @@ const PREVIEW_DIRECTORY_AGENT = {
   model: "preview",
   owner_id: PREVIEW_USER_ID,
   skills: [],
-  created_at: NOW,
+  created_at: previewTime(-1501),
   updated_at: NOW,
   archived_at: null,
   archived_by: null,
@@ -317,7 +317,15 @@ const PREVIEW_RUNTIMES = [
   previewRuntime("runtime-quill", "Preview runtime · Quill", "codex", "offline"),
 ];
 
-function previewAgent(id, name, runtimeId, status, description, systemKey = null) {
+function previewAgent(
+  id,
+  name,
+  runtimeId,
+  status,
+  description,
+  systemKey = null,
+  createdAt = NOW,
+) {
   return {
     id,
     workspace_id: WORKSPACE_ID,
@@ -340,7 +348,7 @@ function previewAgent(id, name, runtimeId, status, description, systemKey = null
     service_tier: "",
     owner_id: PREVIEW_USER_ID,
     skills: [],
-    created_at: NOW,
+    created_at: createdAt,
     updated_at: NOW,
     archived_at: null,
     archived_by: null,
@@ -366,6 +374,7 @@ const PREVIEW_DIRECTORY_AGENTS = [
     "working",
     "Reviews completed work and sends actionable feedback.",
     "mika",
+    previewTime(-4322),
   ),
   previewAgent(
     "agent-nova",
@@ -373,6 +382,8 @@ const PREVIEW_DIRECTORY_AGENTS = [
     "runtime-nova",
     "idle",
     "Runs CI checks and closes validated tasks.",
+    null,
+    previewTime(-20),
   ),
   {
     ...previewAgent(
@@ -381,6 +392,8 @@ const PREVIEW_DIRECTORY_AGENTS = [
       "runtime-quill",
       "offline",
       "Prepares scheduled workspace summaries.",
+      null,
+      previewTime(-10110),
     ),
     runtime_bound: true,
   },
@@ -698,7 +711,7 @@ const PREVIEW_RUNS = {
       status: "issue_created",
       issueNumber: "102",
       taskId: "task-pre-102",
-      triggeredAt: previewTime(-28),
+      triggeredAt: previewTime(-30),
     }),
   ],
   "autopilot-ci-watch": [
@@ -1103,7 +1116,7 @@ function matchesMyScope(issue, relation) {
     case "created":
       return createdByPreviewUser;
     case "involved":
-      return assignedToPreviewUser || assignedToPreviewAgent;
+      return assignedToPreviewAgent;
     case "any":
       return assignedToPreviewUser || assignedToPreviewAgent || createdByPreviewUser;
     default:

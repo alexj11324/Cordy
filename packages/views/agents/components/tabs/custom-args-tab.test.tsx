@@ -51,12 +51,14 @@ const runtimeDevice = {
 function renderTab(
   overrides: Partial<Agent> = {},
   onSave = vi.fn().mockResolvedValue(undefined),
+  canEdit = true,
 ) {
   const result = render(
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <CustomArgsTab
         agent={{ ...baseAgent, ...overrides }}
         runtimeDevice={runtimeDevice}
+        canEdit={canEdit}
         onSave={onSave}
       />
     </I18nProvider>,
@@ -120,5 +122,14 @@ describe("CustomArgsTab", () => {
     await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(onSave).toHaveBeenCalledWith({ custom_args: ["value with spaces"] });
+  });
+
+  it("hides custom-argument writes when read-only", () => {
+    renderTab({}, vi.fn().mockResolvedValue(undefined), false);
+
+    expect(screen.getByRole("button", { name: /add argument/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /edit argument 1/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /remove argument 1/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^save$/i })).toBeDisabled();
   });
 });
