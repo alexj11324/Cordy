@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { classifyAuthChange } from "./classify-auth-change.mjs";
+
+const ciWorkflow = readFileSync(
+  new URL("../.github/workflows/ci.yml", import.meta.url),
+  "utf8",
+);
 
 test("ordinary product updates do not require an auth broker release or full OAuth E2E", () => {
   for (const path of [
@@ -51,5 +57,13 @@ test("deduplicates and ignores empty path records", () => {
   assert.deepEqual(
     classifyAuthChange(["", "apps/auth-broker/app/globals.css", "apps/auth-broker/app/globals.css"]),
     { authBrokerRelease: true, fullGoogleOAuthE2E: false },
+  );
+});
+
+test("broker-only image builds check out their source context", () => {
+  assert.ok(
+    ciWorkflow.includes(`      - name: Checkout
+        if: \${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
+        uses: actions/checkout@v6`),
   );
 });

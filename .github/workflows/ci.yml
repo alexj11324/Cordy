@@ -222,7 +222,7 @@ jobs:
       TURBO_CACHE_DIR: .turbo/cache
     steps:
       - name: Checkout
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
         uses: actions/checkout@v6
 
       - name: Setup pnpm

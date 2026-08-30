@@ -160,6 +160,34 @@ describe("Rust desktop Google proxy", () => {
     });
   });
 
+  it("stops reading a chunked upstream response as soon as it exceeds the limit", async () => {
+    const cancel = vi.fn();
+    let pulls = 0;
+    const chunkedBody = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          controller.enqueue(new Uint8Array(4097));
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const upstream = new Response(chunkedBody);
+    expect(upstream.headers.get("content-length")).toBeNull();
+
+    const response = await proxyRustDesktopGoogleRequest(
+      request("/v1/desktop/google/attempt"),
+      "attempt",
+      { apiOrigin, brokerOrigin },
+      vi.fn().mockResolvedValue(upstream),
+    );
+
+    expect(response.status).toBe(502);
+    expect(pulls).toBe(1);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it("stops reading a chunked request as soon as it exceeds the limit", async () => {
     const oversized = request("/v1/desktop/google/attempt", {
       body: { state: "s".repeat(5000), code_challenge: codeChallenge },

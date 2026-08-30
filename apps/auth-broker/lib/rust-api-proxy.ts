@@ -46,7 +46,7 @@ export async function proxyRustDesktopGoogleRequest(
   if (!contentType.startsWith("application/json")) {
     return jsonError(415, "content_type_rejected");
   }
-  const bodyResult = await readBoundedRequestBody(request, MAX_REQUEST_BYTES);
+  const bodyResult = await readBoundedUtf8Body(request.body, MAX_REQUEST_BYTES);
   if (bodyResult.status === "too_large") {
     return jsonError(413, "request_too_large");
   }
@@ -97,20 +97,27 @@ export async function proxyRustDesktopGoogleRequest(
     const status = upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502;
     return jsonError(status, "authorization_rejected");
   }
-  const upstreamLength = Number(upstream.headers.get("content-length") ?? "0");
-  if (
-    !Number.isFinite(upstreamLength) ||
-    upstreamLength > MAX_UPSTREAM_RESPONSE_BYTES
-  ) {
+  const upstreamLengthHeader = upstream.headers.get("content-length");
+  if (upstreamLengthHeader !== null) {
+    const upstreamLength = Number(upstreamLengthHeader);
+    if (
+      !Number.isFinite(upstreamLength) ||
+      upstreamLength < 0 ||
+      upstreamLength > MAX_UPSTREAM_RESPONSE_BYTES
+    ) {
+      return jsonError(502, "invalid_rust_api_response");
+    }
+  }
+  const upstreamBody = await readBoundedUtf8Body(
+    upstream.body,
+    MAX_UPSTREAM_RESPONSE_BYTES,
+  );
+  if (upstreamBody.status !== "ok") {
     return jsonError(502, "invalid_rust_api_response");
   }
   let payload: unknown;
   try {
-    const text = await upstream.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_UPSTREAM_RESPONSE_BYTES) {
-      return jsonError(502, "invalid_rust_api_response");
-    }
-    payload = JSON.parse(text);
+    payload = JSON.parse(upstreamBody.text);
   } catch {
     return jsonError(502, "invalid_rust_api_response");
   }
@@ -133,16 +140,16 @@ export async function proxyRustDesktopGoogleRequest(
   return jsonError(502, "invalid_rust_api_response");
 }
 
-async function readBoundedRequestBody(
-  request: Request,
+async function readBoundedUtf8Body(
+  body: ReadableStream<Uint8Array> | null,
   limit: number,
 ): Promise<
   | { status: "ok"; text: string }
   | { status: "invalid" }
   | { status: "too_large" }
 > {
-  if (!request.body) return { status: "ok", text: "" };
-  const reader = request.body.getReader();
+  if (!body) return { status: "ok", text: "" };
+  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let byteLength = 0;
   try {
