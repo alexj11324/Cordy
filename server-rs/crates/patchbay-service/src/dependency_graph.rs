@@ -542,16 +542,12 @@ pub async fn cancel_dependency_graph_children(
 
     let mut cancelled_tasks = Vec::new();
     for issue in &previous {
-        cancelled_tasks.extend(
-            agent_q::cancel_agent_tasks_by_issue(&mut *connection, issue.id).await?,
-        );
+        cancelled_tasks
+            .extend(agent_q::cancel_agent_tasks_by_issue(&mut *connection, issue.id).await?);
     }
-    let updated = issue_q::cancel_dependency_graph_children(
-        &mut *connection,
-        workspace_id,
-        issue_ids,
-    )
-    .await?;
+    let updated =
+        issue_q::cancel_dependency_graph_children(&mut *connection, workspace_id, issue_ids)
+            .await?;
     let previous_by_id = previous
         .into_iter()
         .map(|issue| (issue.id, issue))
@@ -1748,13 +1744,10 @@ mod tests {
         )
         .await
         .expect("list owned graph children before parent delete");
-        let delete_cancellation = cancel_dependency_graph_children(
-            &mut *delete_tx,
-            workspace_id,
-            delete_child_ids,
-        )
-        .await
-        .expect("cancel owned graph children before parent delete");
+        let delete_cancellation =
+            cancel_dependency_graph_children(&mut *delete_tx, workspace_id, delete_child_ids)
+                .await
+                .expect("cancel owned graph children before parent delete");
         assert_eq!(delete_cancellation.cancelled_issues.len(), 2);
         assert!(delete_cancellation
             .cancelled_issues
@@ -1771,14 +1764,11 @@ mod tests {
             .commit()
             .await
             .expect("commit dependency graph parent delete");
-        let delete_dependent = issue_q::get_issue_in_workspace(
-            &pool,
-            delete_dependent_issue_id,
-            workspace_id,
-        )
-        .await
-        .expect("load surviving graph child after parent delete")
-        .expect("surviving graph child issue");
+        let delete_dependent =
+            issue_q::get_issue_in_workspace(&pool, delete_dependent_issue_id, workspace_id)
+                .await
+                .expect("load surviving graph child after parent delete")
+                .expect("surviving graph child issue");
         assert_eq!(delete_dependent.status, issue_status::CANCELLED);
 
         // Deleting any graph node removes the whole affected plan before the

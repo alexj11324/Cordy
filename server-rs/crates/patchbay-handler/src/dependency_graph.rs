@@ -375,11 +375,7 @@ async fn list_dependency_graphs(
         Err(response) => return response,
     };
     let limit = i64::from(query.limit.unwrap_or(64).min(64));
-    let after = match decode_graph_cursor(
-        query.cursor.as_deref(),
-        workspace_id,
-        query.project_id,
-    ) {
+    let after = match decode_graph_cursor(query.cursor.as_deref(), workspace_id, query.project_id) {
         Ok(after) => after,
         Err(response) => return response,
     };
@@ -482,7 +478,7 @@ async fn apply_issue_dependency_graph(
         created_by_type,
         created_by_id,
     )
-        .await
+    .await
     {
         Ok(snapshot) => {
             // The outbox is populated in the same transaction as the graph.
@@ -698,8 +694,7 @@ mod tests {
         let encoded = encode_graph_cursor(workspace_id, project_id, (updated_at, graph_id));
 
         assert_eq!(
-            decode_graph_cursor(Some(&encoded), workspace_id, project_id)
-                .expect("cursor decodes"),
+            decode_graph_cursor(Some(&encoded), workspace_id, project_id).expect("cursor decodes"),
             Some((updated_at, graph_id))
         );
         assert!(decode_graph_cursor(Some(&encoded), other_workspace_id, project_id).is_err());

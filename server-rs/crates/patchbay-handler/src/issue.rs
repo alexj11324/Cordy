@@ -2271,8 +2271,7 @@ async fn batch_delete_issues(
             continue;
         };
         let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
-        let Ok(cleanup) = delete_issue_and_collect_attachment_urls(&state, &issue).await
-        else {
+        let Ok(cleanup) = delete_issue_and_collect_attachment_urls(&state, &issue).await else {
             continue;
         };
         state
