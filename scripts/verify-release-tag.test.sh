@@ -89,6 +89,7 @@ for staged_contract in \
   'name: github-release-rust-cli' \
   'name: desktop-release-${{ matrix.target }}-${{ matrix.arch }}' \
   'pattern: desktop-release-*' \
+  'needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart]' \
   'needs: [verify, release, desktop, helm-chart, promote-self-hosted-latest]'; do
   if ! grep -Fq -- "$staged_contract" "$release_workflow"; then
     echo "release workflow is missing staged publication contract: $staged_contract" >&2

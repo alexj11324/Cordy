@@ -726,7 +726,7 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
   promote-self-hosted-latest:
-    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge]
+    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart]
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
