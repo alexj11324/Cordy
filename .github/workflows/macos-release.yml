@@ -37,6 +37,7 @@ jobs:
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
+          startsWith(github.event.workflow_run.head_branch, 'v') &&
           github.event.workflow_run.head_repository.full_name == github.repository
         )
       )
@@ -47,6 +48,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       is_stable: ${{ steps.meta.outputs.is_stable }}
       commit_sha: ${{ steps.meta.outputs.commit_sha }}
+      package_matrix: ${{ steps.meta.outputs.package_matrix }}
     steps:
       - name: Checkout release candidate
         uses: actions/checkout@v4
@@ -58,9 +60,11 @@ jobs:
         id: meta
         env:
           REQUESTED_TAG: ${{ inputs.tag }}
+          REQUESTED_ARCH: ${{ inputs.arch }}
         shell: bash
         run: |
           tag="$REQUESTED_TAG"
+          release_arch="$REQUESTED_ARCH"
           if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
             mapfile -t matching_tags < <(
               git tag --points-at HEAD --list 'v*.*.*' |
@@ -68,10 +72,14 @@ jobs:
             )
             if [ "${#matching_tags[@]}" -ne 1 ]; then
               echo "::notice::CI succeeded without exactly one version tag at $GITHUB_SHA; no macOS ARM64 release will be published."
-              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              {
+                echo "should_publish=false"
+                echo 'package_matrix={"include":[]}'
+              } >> "$GITHUB_OUTPUT"
               exit 0
             fi
             tag="${matching_tags[0]}"
+            release_arch=arm64
           fi
 
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -94,12 +102,28 @@ jobs:
           if [[ "$tag" == *-* ]]; then
             is_stable=false
           fi
+          case "$release_arch" in
+            arm64)
+              package_matrix='{"include":[{"runner":"macos-14","arch":"arm64","rust_target":"aarch64-apple-darwin","metadata":"latest-mac.yml"}]}'
+              ;;
+            x64)
+              package_matrix='{"include":[{"runner":"macos-15-intel","arch":"x64","rust_target":"x86_64-apple-darwin","metadata":"latest-x64-mac.yml"}]}'
+              ;;
+            all)
+              package_matrix='{"include":[{"runner":"macos-15-intel","arch":"x64","rust_target":"x86_64-apple-darwin","metadata":"latest-x64-mac.yml"},{"runner":"macos-14","arch":"arm64","rust_target":"aarch64-apple-darwin","metadata":"latest-mac.yml"}]}'
+              ;;
+            *)
+              echo "::error::Unsupported macOS release architecture '$release_arch'."
+              exit 1
+              ;;
+          esac
           {
             echo "should_publish=true"
             echo "tag_name=$tag"
             echo "version=${tag#v}"
             echo "is_stable=$is_stable"
             echo "commit_sha=$commit_sha"
+            echo "package_matrix=$package_matrix"
           } >> "$GITHUB_OUTPUT"
 
       - name: Require macOS signing and notarization credentials
@@ -172,31 +196,19 @@ jobs:
   package-macos:
     name: Package macOS (${{ matrix.arch }})
     needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15-intel
-            arch: x64
-            rust_target: x86_64-apple-darwin
-            metadata: latest-x64-mac.yml
-          - runner: macos-14
-            arch: arm64
-            rust_target: aarch64-apple-darwin
-            metadata: latest-mac.yml
+      matrix: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
     runs-on: ${{ matrix.runner }}
-    env:
-      BUILD_TARGET: ${{ needs.prepare.outputs.should_publish == 'true' && ((github.event_name == 'workflow_run' && matrix.arch == 'arm64') || (github.event_name == 'workflow_dispatch' && (inputs.arch == 'all' || inputs.arch == matrix.arch))) }}
     steps:
       - name: Checkout prepared release commit
-        if: env.BUILD_TARGET == 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Verify prepared release commit
-        if: env.BUILD_TARGET == 'true'
         env:
           EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit_sha }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
@@ -210,7 +222,6 @@ jobs:
           fi
 
       - name: Setup Rust toolchain
-        if: env.BUILD_TARGET == 'true'
         shell: bash
         run: |
           rustup toolchain install stable --profile minimal
@@ -218,22 +229,18 @@ jobs:
           rustup target add ${{ matrix.rust_target }}
 
       - name: Setup pnpm
-        if: env.BUILD_TARGET == 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
-        if: env.BUILD_TARGET == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
-        if: env.BUILD_TARGET == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Package signed and notarized macOS installers
-        if: env.BUILD_TARGET == 'true'
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -247,7 +254,6 @@ jobs:
         run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
 
       - name: Verify Developer ID signature and notarization
-        if: env.BUILD_TARGET == 'true'
         working-directory: apps/desktop
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -280,7 +286,6 @@ jobs:
           }
 
       - name: Upload verified macOS assets
-        if: env.BUILD_TARGET == 'true'
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

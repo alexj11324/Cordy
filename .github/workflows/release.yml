@@ -158,6 +158,7 @@ jobs:
         run: echo "::warning::RustSec audit was explicitly skipped for ${TAG_NAME}; see .github/RELEASING.md"
 
   self-hosted-prepare:
+    needs: verify
     if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     outputs:
@@ -169,7 +170,7 @@ jobs:
       - name: Checkout requested version tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Require Clerk publishable key for web image
@@ -251,7 +252,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.verify.outputs.tag_name }}
+          ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Install Rust toolchain
@@ -442,7 +443,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Compute backend image labels
         id: meta
@@ -462,6 +464,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before backend image publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Build and push by digest
         id: build
@@ -500,6 +509,12 @@ jobs:
       group: self-hosted-docker-backend-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -527,6 +542,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before backend manifest publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -573,7 +595,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Compute web image labels
         id: meta
@@ -593,6 +616,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before web image publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Build and push by digest
         id: build
@@ -632,6 +662,12 @@ jobs:
       group: self-hosted-docker-web-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -659,6 +695,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before web manifest publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -699,7 +742,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
@@ -722,6 +766,13 @@ jobs:
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
+      - name: Verify release tag before chart publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+
       - name: Push chart to GHCR
         run: helm push ".chart-packages/patchbay-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
 
@@ -736,6 +787,12 @@ jobs:
       github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -745,6 +802,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before latest promotion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Promote stable image tags
         env:
@@ -793,7 +857,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.verify.outputs.tag_name }}
+          ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Install rpmbuild (Linux)
@@ -847,6 +911,14 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify release tag before Desktop publication
+        if: matrix.target != 'mac'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Package Desktop installers (${{ matrix.target }})
         if: matrix.target != 'mac'
@@ -915,8 +987,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
         shell: bash
         run: |
+          bash ../../scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
           version="${TAG_NAME#v}"
           metadata='latest-mac.yml'
           if [ "${{ matrix.arch }}" = 'x64' ]; then
@@ -949,6 +1023,12 @@ jobs:
     if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download Rust CLI archives
         uses: actions/download-artifact@v4
         with:
@@ -1007,4 +1087,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
+        run: |
+          bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
