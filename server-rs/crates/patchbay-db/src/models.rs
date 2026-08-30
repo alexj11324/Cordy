@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// The database stores the same value on every task row. Keep the constructor
 /// in sync with the generated-column expression in migration 409: this value
 /// is routing metadata, not provider transcript or prompt content.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, sqlx::Decode, sqlx::Encode, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, sqlx::Type)]
 #[sqlx(transparent)]
 #[serde(transparent)]
 pub struct ExecutionLaneKey(String);
