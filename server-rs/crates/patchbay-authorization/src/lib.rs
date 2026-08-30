@@ -316,7 +316,7 @@ impl PostgresAuthorizer {
         delegated_task_ids: &[Uuid],
     ) -> Result<Vec<Grant>, sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT id, effect, conditions
+            r#"SELECT id, effect, conditions, created_by
 FROM authorization_grant
 WHERE workspace_id = $1
   AND revoked_at IS NULL
@@ -371,6 +371,7 @@ ORDER BY created_at, id"#,
                     id: row.try_get("id")?,
                     effect: row.try_get("effect")?,
                     conditions: row.try_get("conditions")?,
+                    created_by: row.try_get("created_by")?,
                 })
             })
             .collect()
@@ -655,6 +656,7 @@ struct Grant {
     id: Uuid,
     effect: String,
     conditions: Value,
+    created_by: Option<Uuid>,
 }
 
 #[derive(Debug, Clone)]
@@ -780,7 +782,10 @@ fn evaluate(
 
     let matched: Vec<&Grant> = grants
         .iter()
-        .filter(|grant| grant_conditions_match(&grant.conditions, request))
+        .filter(|grant| {
+            grant_conditions_match(&grant.conditions, request)
+                && provider_grant_owner_matches(grant, request)
+        })
         .collect();
     let mut matched_ids: Vec<Uuid> = matched.iter().map(|grant| grant.id).collect();
     matched_ids.sort_unstable();
@@ -852,6 +857,15 @@ fn evaluate(
     };
     decision.matched_grants = matched_ids;
     decision
+}
+
+fn provider_grant_owner_matches(grant: &Grant, request: &AuthorizationRequest) -> bool {
+    if request.action.as_str() != Action::CREDENTIAL_USE
+        || request.resource.resource_type.as_str() != ResourceType::PROVIDER_IDENTITY
+    {
+        return true;
+    }
+    grant.created_by.is_some() && grant.created_by == request.resource.owner_id
 }
 
 fn relationship_allows(request: &AuthorizationRequest) -> bool {
@@ -1204,13 +1218,22 @@ mod tests {
                 "provider": "codex",
                 "provider_action": "provider.invoke",
             }),
+            created_by: Some(owner),
         };
         assert_eq!(
             evaluate(&req, std::slice::from_ref(&allow), &[]).effect,
             DecisionEffect::Allow
         );
 
+        req.resource.owner_id = Some(Uuid::now_v7());
+        assert_eq!(
+            evaluate(&req, std::slice::from_ref(&allow), &[]).effect,
+            DecisionEffect::Deny,
+            "a runtime ownership change invalidates the prior owner's provider grant"
+        );
+
         req.principal.id = Some(owner);
+        req.resource.owner_id = Some(owner);
         assert_eq!(evaluate(&req, &[], &[]).effect, DecisionEffect::Allow);
     }
 
@@ -1238,6 +1261,7 @@ mod tests {
                 id: Uuid::now_v7(),
                 effect: "allow".to_string(),
                 conditions: json!({}),
+                created_by: None,
             }],
             &[],
         );
@@ -1298,6 +1322,7 @@ mod tests {
                 id: Uuid::now_v7(),
                 effect: "allow".to_string(),
                 conditions: json!({}),
+                created_by: None,
             }],
             &[lease],
         );
@@ -1495,6 +1520,7 @@ mod tests {
             id: Uuid::now_v7(),
             effect: "allow".to_string(),
             conditions: json!({}),
+            created_by: None,
         };
         let decision = evaluate(&req, &[grant], &[]);
         assert_eq!(decision.effect, DecisionEffect::Deny);
