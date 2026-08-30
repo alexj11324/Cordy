@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { CoreProvider } from "@patchbay/core/platform";
 import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
 import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
@@ -31,21 +32,29 @@ function deriveWsUrl(): string | undefined {
 const WEB_VERSION =
   process.env.NEXT_PUBLIC_APP_VERSION || packageJson.version || "dev";
 
-export function WebProviders({
-  children,
-  locale,
-  resources,
-  apiBaseUrl,
-  wsUrl,
-  uiFixtures = false,
-}: {
+type WebProvidersProps = {
   children: React.ReactNode;
   locale: SupportedLocale;
   resources: Record<string, LocaleResources>;
   apiBaseUrl?: string;
   wsUrl?: string;
   uiFixtures?: boolean;
-}) {
+};
+
+function clearWebSessionState() {
+  useWelcomeStore.getState().reset();
+  clearLoggedInCookie();
+}
+
+function WebProviderTree({
+  children,
+  locale,
+  resources,
+  apiBaseUrl,
+  wsUrl,
+  uiFixtures = false,
+  onLogout,
+}: WebProvidersProps & { onLogout: () => void | Promise<void> }) {
   // Normal web sessions are initialized by ClerkAuthAdapter. UI fixtures omit
   // ClerkProvider, so they must use the cookie-auth initializer to reach the
   // fixture /api/me endpoint instead of remaining in "authenticating" forever.
@@ -71,10 +80,7 @@ export function WebProviders({
         clerkAuth={clerkAuth}
         cookieAuth
         onLogin={setLoggedInCookie}
-        onLogout={() => {
-          useWelcomeStore.getState().reset();
-          clearLoggedInCookie();
-        }}
+        onLogout={onLogout}
         identity={identity}
         locale={locale}
         resources={resources}
@@ -84,4 +90,29 @@ export function WebProviders({
       </CoreProvider>
     </UiFixturesProvider>
   );
+}
+
+function ClerkWebProviders(props: WebProvidersProps) {
+  const { isSignedIn, signOut } = useAuth();
+  // CoreProvider installs its platform callbacks once at app boot. Keep the
+  // latest Clerk state behind a stable ref so that callback never captures
+  // the initial loading state or an obsolete signOut function.
+  const clerkAuthRef = useRef({ isSignedIn, signOut });
+  clerkAuthRef.current = { isSignedIn, signOut };
+
+  const logout = useCallback(async () => {
+    if (clerkAuthRef.current.isSignedIn) {
+      await clerkAuthRef.current.signOut();
+    }
+    clearWebSessionState();
+  }, []);
+
+  return <WebProviderTree {...props} onLogout={logout} />;
+}
+
+export function WebProviders(props: WebProvidersProps) {
+  if (props.uiFixtures) {
+    return <WebProviderTree {...props} onLogout={clearWebSessionState} />;
+  }
+  return <ClerkWebProviders {...props} />;
 }

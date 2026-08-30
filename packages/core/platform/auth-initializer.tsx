@@ -41,7 +41,7 @@ export function AuthInitializer({
 }: {
   children: ReactNode;
   onLogin?: () => void;
-  onLogout?: () => void;
+  onLogout?: () => void | Promise<void>;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
   clerkAuth?: boolean;
@@ -219,7 +219,7 @@ export function AuthInitializer({
     };
 
     const onAuthFailure = () => {
-      onLogout?.();
+      void onLogout?.();
       resetAnalytics();
       useAuthStore.setState({
         user: null,
@@ -345,7 +345,7 @@ export function AuthInitializer({
       const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
-        onLogout?.();
+        void onLogout?.();
         useAuthStore.setState({
           user: null,
           isLoading: false,
