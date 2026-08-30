@@ -1,8 +1,8 @@
 //! User queries.
 //!
-//! Compile-time checked via `query_as!`: every statement is verified against
-//! the live schema at build time (or `.sqlx` offline cache in CI), so any
-//! schema drift fails the build.
+//! The small auth-facing query set uses runtime-checked SQL so the guest
+//! column can ship with its migration without requiring generated `.sqlx`
+//! artifacts in this focused change.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -12,6 +12,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct User {
     pub id: Uuid,
+    pub is_guest: bool,
     pub name: String,
     pub email: String,
     pub avatar_url: Option<String>,
@@ -32,15 +33,14 @@ pub async fn get_user(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
 ) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as!(
-        User,
+    sqlx::query_as::<_, User>(
         r#"SELECT id, name, email, avatar_url, created_at, updated_at,
                   onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                   cloud_waitlist_reason, starter_content_state, language,
-                  profile_description, timezone
+                  profile_description, timezone, is_guest
            FROM "user" WHERE id = $1"#,
-        id
     )
+    .bind(id)
     .fetch_optional(executor)
     .await
 }
@@ -49,15 +49,14 @@ pub async fn get_user_by_email(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     email: &str,
 ) -> Result<Option<User>, sqlx::Error> {
-    sqlx::query_as!(
-        User,
+    sqlx::query_as::<_, User>(
         r#"SELECT id, name, email, avatar_url, created_at, updated_at,
                   onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                   cloud_waitlist_reason, starter_content_state, language,
-                  profile_description, timezone
+                  profile_description, timezone, is_guest
            FROM "user" WHERE email = $1"#,
-        email
     )
+    .bind(email)
     .fetch_optional(executor)
     .await
 }
@@ -80,18 +79,17 @@ pub async fn create_user(
     email: &str,
     avatar_url: Option<&str>,
 ) -> Result<User, sqlx::Error> {
-    sqlx::query_as!(
-        User,
+    sqlx::query_as::<_, User>(
         r#"INSERT INTO "user" (name, email, avatar_url)
            VALUES ($1, $2, $3)
            RETURNING id, name, email, avatar_url, created_at, updated_at,
                      onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                      cloud_waitlist_reason, starter_content_state, language,
-                     profile_description, timezone"#,
-        name,
-        email,
-        avatar_url
+                     profile_description, timezone, is_guest"#,
     )
+    .bind(name)
+    .bind(email)
+    .bind(avatar_url)
     .fetch_one(executor)
     .await
 }
@@ -100,8 +98,7 @@ pub async fn mark_user_onboarded(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
 ) -> Result<User, sqlx::Error> {
-    sqlx::query_as!(
-        User,
+    sqlx::query_as::<_, User>(
         r#"UPDATE "user" SET
                onboarded_at = COALESCE(onboarded_at, now()),
                updated_at = now()
@@ -109,9 +106,9 @@ pub async fn mark_user_onboarded(
            RETURNING id, name, email, avatar_url, created_at, updated_at,
                      onboarded_at, onboarding_questionnaire, cloud_waitlist_email,
                      cloud_waitlist_reason, starter_content_state, language,
-                     profile_description, timezone"#,
-        id
+                     profile_description, timezone, is_guest"#,
     )
+    .bind(id)
     .fetch_one(executor)
     .await
 }

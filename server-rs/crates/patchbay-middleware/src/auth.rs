@@ -30,7 +30,7 @@ use patchbay_auth::disabled_users::{
 use patchbay_auth::jwt::{hash_token, jwt_secret};
 use patchbay_auth::pat_cache::{ttl_for_expiry, PatCache};
 use patchbay_db::queries::user;
-use patchbay_db::queries::{personal_access_token, task_token};
+use patchbay_db::queries::{guest, personal_access_token, task_token};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -289,7 +289,7 @@ fn set_header(req: &mut Request, name: &'static str, value: &str) {
 }
 
 fn clear_untrusted_task_identity(req: &mut Request) {
-    for name in ["x-actor-source", "x-agent-id", "x-task-id"] {
+    for name in ["x-actor-source", "x-agent-id", "x-task-id", "x-guest-user"] {
         req.headers_mut().remove(name);
     }
 }
@@ -354,6 +354,53 @@ pub async fn auth_middleware(
     }
 
     let hash = hash_token(&token);
+
+    // Guest tokens are opaque, server-backed bearer tokens. They are checked
+    // against both the session table and the real user row instead of being
+    // accepted as a self-describing/local-only identity.
+    if token.starts_with("pbg_") {
+        let session = match guest::find_active_by_token_hash(&state.pool, &hash).await {
+            Ok(Some(session)) => session,
+            Ok(None) => {
+                tracing::warn!(path = ?req.uri().path(), "auth: invalid guest token");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(error) => {
+                tracing::error!(%error, "auth: guest session lookup unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"authentication temporarily unavailable"}"#,
+                ));
+            }
+        };
+        let guest_user = match user::get_user(&state.pool, session.user_id).await {
+            Ok(Some(guest_user)) => guest_user,
+            Ok(None) => {
+                tracing::warn!(path = ?req.uri().path(), "auth: guest user not found");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(error) => {
+                tracing::error!(%error, "auth: guest user lookup unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"authentication temporarily unavailable"}"#,
+                ));
+            }
+        };
+        if !guest_user.is_guest {
+            tracing::warn!(path = ?req.uri().path(), "auth: guest session points to formal user");
+            return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+        }
+        if reject_disabled(&guest_user.id.to_string(), &guest_user.email, "guest") {
+            return Err(err_response(
+                StatusCode::FORBIDDEN,
+                TEMPORARILY_DISABLED_USER_ERROR,
+            ));
+        }
+        set_header(&mut req, "x-user-id", &guest_user.id.to_string());
+        set_header(&mut req, "x-guest-user", "true");
+        return Ok(next.run(req).await);
+    }
 
     // Agent task token: "mat_" prefix. Minted by the server at task-claim
     // time and injected by the daemon into the agent process. Authoritative
@@ -512,6 +559,54 @@ pub async fn auth_middleware(
         set_header(&mut req, "x-user-email", email);
     }
 
+    Ok(next.run(req).await)
+}
+
+/// Blocks operations that require a formal account while leaving the normal
+/// authenticated router available to real guest users. The user row is
+/// checked here rather than trusting a client-provided marker; auth_middleware
+/// strips that marker before it stamps the server-owned identity.
+pub async fn require_formal_user(
+    State(pool): State<sqlx::PgPool>,
+    req: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, &'static str)> {
+    let Some(raw_user_id) = req.headers().get("x-user-id") else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"user not authenticated","code":"login_required"}"#,
+        ));
+    };
+    let Ok(user_id) = raw_user_id
+        .to_str()
+        .ok()
+        .and_then(|value| Uuid::parse_str(value.trim()).ok())
+        .ok_or(())
+    else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"user not authenticated","code":"login_required"}"#,
+        ));
+    };
+    let user = user::get_user(&pool, user_id).await.map_err(|error| {
+        tracing::warn!(%error, %user_id, "formal-account guard user lookup failed");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            r#"{"error":"account status unavailable"}"#,
+        )
+    })?;
+    let Some(user) = user else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"user not found","code":"login_required"}"#,
+        ));
+    };
+    if user.is_guest {
+        return Err((
+            StatusCode::FORBIDDEN,
+            r#"{"error":"formal login required","code":"login_required"}"#,
+        ));
+    }
     Ok(next.run(req).await)
 }
 

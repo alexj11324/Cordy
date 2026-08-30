@@ -30,6 +30,7 @@ export interface AuthState {
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
+  createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   /** Clears local auth state and resolves after a cookie session is revoked. */
   logout: () => Promise<void>;
@@ -40,7 +41,7 @@ export interface AuthState {
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
 
-  return create<AuthState>((set) => ({
+  return create<AuthState>((set, get) => ({
     user: null,
     isLoading: true,
     status: "authenticating",
@@ -105,6 +106,20 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
+    createGuestSession: async () => {
+      const { token, user } = await api.createGuestSession();
+      if (user.is_guest !== true) {
+        throw new Error("server did not return a guest session");
+      }
+      // Guest auth is still token auth: the user is real and the bearer is
+      // required for every subsequent workspace/onboarding API call.
+      storage.setItem("patchbay_token", token);
+      api.setToken(token);
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
     loginWithToken: async (token: string) => {
       storage.setItem("patchbay_token", token);
       api.setToken(token);
@@ -116,11 +131,11 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: () => {
-      // Keep the promise so callers that are about to start a new Clerk
-      // exchange can serialize it behind this server-side cookie revocation.
-      const serverLogout = cookieAuth
+      const serverLogout = cookieAuth || get().user?.is_guest === true
         ? api.logout().catch(() => {})
         : Promise.resolve();
+      // Keep the promise so callers that are about to start a new Clerk
+      // exchange can serialize it behind server-side session revocation.
       storage.removeItem("patchbay_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);

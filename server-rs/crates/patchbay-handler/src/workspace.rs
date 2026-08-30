@@ -524,6 +524,43 @@ async fn create_workspace(
             )
         }
     };
+    // Guest sessions get one workspace. Locking their user row for the
+    // duration of this transaction makes the quota atomic across concurrent
+    // create requests, while formal users retain the existing behavior.
+    let is_guest = headers
+        .get("x-guest-user")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == "true");
+    if is_guest {
+        match user::get_user_for_update(&mut *transaction, user_id).await {
+            Ok(Some(guest_user)) if guest_user.is_guest => {}
+            Ok(Some(_)) => return error_response(StatusCode::FORBIDDEN, "formal login required"),
+            Ok(None) => return error_response(StatusCode::UNAUTHORIZED, "user not found"),
+            Err(error) => {
+                tracing::warn!(%error, %user_id, "failed to lock guest workspace quota");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "guest workspace quota unavailable",
+                );
+            }
+        }
+        match workspace::list_workspaces(&mut *transaction, user_id).await {
+            Ok(workspaces) if !workspaces.is_empty() => {
+                return error_response(
+                    StatusCode::FORBIDDEN,
+                    "guest workspace limit reached; formal login required",
+                )
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, %user_id, "failed to read guest workspace quota");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "guest workspace quota unavailable",
+                );
+            }
+        }
+    }
     let created = match workspace::create_workspace(
         &mut *transaction,
         &request.name,
@@ -1966,6 +2003,7 @@ mod tests {
             created_at: timestamp,
             email: "alex@example.com".into(),
             id: user_id,
+            is_guest: false,
             language: None,
             name: "Alex".into(),
             onboarded_at: None,
