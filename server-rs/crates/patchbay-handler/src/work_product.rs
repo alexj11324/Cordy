@@ -31,7 +31,7 @@ pub(crate) struct ExecutionProvenanceInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct AttachExistingRequest {
+pub(crate) struct AttachExistingRequest {
     work_product_id: Uuid,
     #[serde(default)]
     close_intent: bool,
