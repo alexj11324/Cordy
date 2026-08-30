@@ -70,6 +70,12 @@ struct AttachPullRequestBody {
     branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     head_sha: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    close_intent: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 pub(super) async fn run_issue_pull_request_attach(
@@ -97,6 +103,7 @@ pub(super) async fn run_issue_pull_request_attach(
         state: optional(&args.state),
         branch: optional(&args.branch),
         head_sha: optional(&args.head_sha),
+        close_intent: args.close_intent,
     };
     let result: Value = client
         .post_json(&format!("/api/issues/{issue_id}/pull-requests"), &body)

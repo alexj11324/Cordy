@@ -97,6 +97,20 @@ pub fn router() -> Router<HandlerState> {
                 .post(crate::issue_pull_request::attach)
                 .layer(DefaultBodyLimit::max(4 << 20)),
         )
+        .route(
+            "/api/issues/{id}/work-products",
+            get(crate::work_product::list_for_issue)
+                .post(crate::work_product::attach_existing)
+                .layer(DefaultBodyLimit::max(4 << 20)),
+        )
+        .route(
+            "/api/issues/{id}/work-products/{work_product_id}",
+            axum::routing::delete(crate::work_product::detach),
+        )
+        .route(
+            "/api/work-products/unassociated",
+            get(crate::work_product::list_unassociated),
+        )
         .route("/api/issues/{id}/tasks/{task_id}/cancel", post(cancel_task))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
         .route(
@@ -6562,8 +6576,8 @@ pub(crate) async fn mutation_actor(
     context: &WorkspaceContext,
     headers: &HeaderMap,
 ) -> (String, Uuid, Option<Uuid>) {
-    if let Some((task_id, agent_id)) = trusted_agent_task(state, context, headers).await {
-        ("agent".to_string(), agent_id, Some(task_id))
+    if let Some(execution) = trusted_agent_execution_context(state, context, headers).await {
+        ("agent".to_string(), execution.agent_id, Some(execution.task_id))
     } else {
         ("member".to_string(), context.member.user_id, None)
     }
@@ -7519,11 +7533,26 @@ pub(crate) async fn task_project_resource_allows(
         .is_ok_and(|decision| decision.is_allowed())
 }
 
-async fn trusted_agent_task(
+#[derive(Debug, Clone)]
+pub(crate) struct TrustedAgentExecutionContext {
+    pub agent_id: Uuid,
+    pub issue_id: Option<Uuid>,
+    pub run_id: Option<Uuid>,
+    pub task_id: Uuid,
+}
+
+pub(crate) fn has_task_execution_claim(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        == Some("task_token")
+}
+
+pub(crate) async fn trusted_agent_execution_context(
     state: &HandlerState,
     context: &WorkspaceContext,
     headers: &HeaderMap,
-) -> Option<(Uuid, Uuid)> {
+) -> Option<TrustedAgentExecutionContext> {
     let (task_id, agent_id) = authoritative_task_actor_headers(headers)?;
     // Resolve through the workspace-scoped join before trusting the task.
     // Callers that bind a mutation to one issue retain their stricter
@@ -7541,7 +7570,22 @@ async fn trusted_agent_task(
         .ok()
         .flatten()
         .filter(|agent| agent.archived_at.is_none())?;
-    Some((task_id, agent_id))
+    Some(TrustedAgentExecutionContext {
+        agent_id,
+        issue_id: task.issue_id,
+        run_id: task.autopilot_run_id,
+        task_id,
+    })
+}
+
+async fn trusted_agent_task(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    headers: &HeaderMap,
+) -> Option<(Uuid, Uuid)> {
+    trusted_agent_execution_context(state, context, headers)
+        .await
+        .map(|execution| (execution.task_id, execution.agent_id))
 }
 
 fn authoritative_task_actor_headers(headers: &HeaderMap) -> Option<(Uuid, Uuid)> {

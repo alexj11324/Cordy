@@ -448,11 +448,25 @@ impl Client {
         &self,
         ctx: &crate::repocache::Ctx,
         task_id: &str,
+        execution_repo_identity: &str,
+        execution_workspace: &str,
+        execution_head_branch: &str,
+        execution_head_sha: &str,
+        execution_head_state: &str,
     ) -> anyhow::Result<()> {
+        let mut body = serde_json::Map::new();
+        Self::add_execution_provenance(
+            &mut body,
+            execution_repo_identity,
+            execution_workspace,
+            execution_head_branch,
+            execution_head_sha,
+            execution_head_state,
+        );
         self.post_json_unit(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/start"),
-            json!({}),
+            Value::Object(body),
         )
         .await
     }
@@ -539,6 +553,11 @@ impl Client {
         session_rollout_missing: bool,
         retired_session_id: &str,
         durable_work_dir: &str,
+        execution_repo_identity: &str,
+        execution_workspace: &str,
+        execution_head_branch: &str,
+        execution_head_sha: &str,
+        execution_head_state: &str,
     ) -> anyhow::Result<()> {
         let mut body = serde_json::Map::new();
         body.insert("output".into(), json!(output));
@@ -560,6 +579,14 @@ impl Client {
         if !retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(retired_session_id));
         }
+        Self::add_execution_provenance(
+            &mut body,
+            execution_repo_identity,
+            execution_workspace,
+            execution_head_branch,
+            execution_head_sha,
+            execution_head_state,
+        );
         self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/complete"),
@@ -583,6 +610,11 @@ impl Client {
         session_rollout_missing: bool,
         retired_session_id: &str,
         durable_work_dir: &str,
+        execution_repo_identity: &str,
+        execution_workspace: &str,
+        execution_head_branch: &str,
+        execution_head_sha: &str,
+        execution_head_state: &str,
     ) -> anyhow::Result<()> {
         let mut body = serde_json::Map::new();
         body.insert("error".into(), json!(error_msg));
@@ -610,6 +642,14 @@ impl Client {
         if !retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(retired_session_id));
         }
+        Self::add_execution_provenance(
+            &mut body,
+            execution_repo_identity,
+            execution_workspace,
+            execution_head_branch,
+            execution_head_sha,
+            execution_head_state,
+        );
         self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/fail"),
@@ -617,6 +657,31 @@ impl Client {
             DEFAULT_TERMINAL_RETRY_SCHEDULE,
         )
         .await
+    }
+
+    fn add_execution_provenance(
+        body: &mut serde_json::Map<String, Value>,
+        repo_identity: &str,
+        execution_workspace: &str,
+        head_branch: &str,
+        head_sha: &str,
+        head_state: &str,
+    ) {
+        if !repo_identity.is_empty() {
+            body.insert("execution_repo_identity".into(), json!(repo_identity));
+        }
+        if !execution_workspace.is_empty() {
+            body.insert("execution_workspace".into(), json!(execution_workspace));
+        }
+        if !head_branch.is_empty() {
+            body.insert("execution_head_branch".into(), json!(head_branch));
+        }
+        if !head_sha.is_empty() {
+            body.insert("execution_head_sha".into(), json!(head_sha));
+        }
+        if !head_state.is_empty() {
+            body.insert("execution_head_state".into(), json!(head_state));
+        }
     }
 
     /// `PinTaskSession` (client.go:504): persists the agent's session_id and
@@ -666,6 +731,11 @@ pub struct TaskCancelAck {
     /// The adapter withheld a Codex session whose rollout never became
     /// durable. The cancelled terminal path must clear the pinned pointer too.
     pub session_rollout_missing: bool,
+    pub execution_repo_identity: String,
+    pub execution_workspace: String,
+    pub execution_head_branch: String,
+    pub execution_head_sha: String,
+    pub execution_head_state: String,
 }
 
 /// `TaskMessageData` (client.go:426): a single agent execution message for
@@ -713,6 +783,14 @@ impl Client {
         if ack.session_rollout_missing {
             body.insert("session_rollout_missing".into(), json!(true));
         }
+        Self::add_execution_provenance(
+            &mut body,
+            &ack.execution_repo_identity,
+            &ack.execution_workspace,
+            &ack.execution_head_branch,
+            &ack.execution_head_sha,
+            &ack.execution_head_state,
+        );
         self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/cancel-ack"),

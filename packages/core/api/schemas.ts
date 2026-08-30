@@ -50,6 +50,9 @@ import type {
   GroupedIssuesResponse,
   GitHubConnectResponse,
   GitHubPullRequest,
+  IssueWorkProductsResponse,
+  TaskWorkProductsResponse,
+  UnassociatedWorkProductsResponse,
   InboxItem,
   InboxWorkspaceUnread,
   Label,
@@ -356,6 +359,99 @@ export const IssuePullRequestsResponseSchema = z.object({
 
 export const EMPTY_ISSUE_PULL_REQUESTS_RESPONSE: { pull_requests: GitHubPullRequest[] } = {
   pull_requests: [],
+};
+
+export const WorkProductRelationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  work_product_id: z.string(),
+  issue_id: z.string().nullable(),
+  task_id: z.string().nullable(),
+  run_id: z.string().nullable(),
+  relation_key: z.string(),
+  relation_source: z.string(),
+  attached_by_type: z.string(),
+  attached_by_id: z.string(),
+  attached_at: z.string(),
+  close_intent: z.boolean(),
+  detached_at: z.string().nullable(),
+  detached_by_type: z.string().nullable(),
+  detached_by_id: z.string().nullable(),
+  detached_task_id: z.string().nullable(),
+  detached_run_id: z.string().nullable(),
+}).loose();
+
+export const WorkProductSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  kind: z.string(),
+  provider: z.string(),
+  external_identity: z.string(),
+  external_url: z.string().nullable(),
+  provider_record_type: z.string().nullable(),
+  provider_record_id: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  association_state: z.string(),
+  relation: WorkProductRelationSchema.nullable(),
+}).loose();
+
+export const IssueWorkProductsResponseSchema = z.object({
+  work_products: z.array(WorkProductSchema).default([]),
+}).loose();
+
+export const AttachIssuePullRequestResponseSchema = z.object({
+  pull_request: GitHubPullRequestSchema,
+  work_product: WorkProductSchema,
+  relation: WorkProductRelationSchema,
+}).loose();
+
+export const AttachWorkProductResponseSchema = z.object({
+  work_product: WorkProductSchema,
+  relation: WorkProductRelationSchema,
+}).loose();
+
+export const EMPTY_ISSUE_WORK_PRODUCTS_RESPONSE: IssueWorkProductsResponse = {
+  work_products: [],
+};
+
+export const ExecutionProvenanceSchema = z.object({
+  task_id: z.string(),
+  workspace_id: z.string(),
+  run_id: z.string().nullable(),
+  repo_identity: z.string().nullable(),
+  execution_workspace: z.string().nullable(),
+  head_branch: z.string().nullable(),
+  head_sha: z.string().nullable(),
+  head_state: z.string(),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
+  discovery_status: z.string(),
+  discovery_match_count: z.number(),
+  discovery_reason: z.string().nullable(),
+  discovery_work_product_id: z.string().nullable(),
+  discovery_at: z.string().nullable(),
+  updated_at: z.string(),
+}).loose();
+
+export const TaskWorkProductsResponseSchema = z.object({
+  task_id: z.string(),
+  provenance: ExecutionProvenanceSchema.nullable(),
+  work_products: z.array(WorkProductSchema).default([]),
+}).loose();
+
+export const EMPTY_TASK_WORK_PRODUCTS_RESPONSE: TaskWorkProductsResponse = {
+  task_id: "",
+  provenance: null,
+  work_products: [],
+};
+
+export const UnassociatedWorkProductsResponseSchema = z.object({
+  work_products: z.array(WorkProductSchema).default([]),
+}).loose();
+
+export const EMPTY_UNASSOCIATED_WORK_PRODUCTS_RESPONSE: UnassociatedWorkProductsResponse = {
+  work_products: [],
 };
 
 // Label responses are consumed by settings tables and resource pickers. Keep

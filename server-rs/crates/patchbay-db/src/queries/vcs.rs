@@ -18,18 +18,31 @@ pub async fn delete_vcs_connection(
         r#"WITH target AS (
     SELECT vcs_connection.id FROM vcs_connection WHERE vcs_connection.id = $1 AND vcs_connection.workspace_id = $2
 ),
-cleared_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE pull_request_id IN (
-        SELECT vcs_pull_request.id FROM vcs_pull_request
-        WHERE vcs_pull_request.connection_id IN (SELECT target.id FROM target)
-    )
+pull_requests AS (
+    SELECT vcs_pull_request.id
+    FROM vcs_pull_request
+    WHERE vcs_pull_request.connection_id IN (SELECT target.id FROM target)
+),
+work_products AS (
+    SELECT work_product.id
+    FROM work_product
+    WHERE work_product.workspace_id = $2
+      AND work_product.provider_record_type = 'vcs_pull_request'
+      AND work_product.provider_record_id IN (SELECT id FROM pull_requests)
+),
+cleared_work_product_relations AS (
+    DELETE FROM work_product_relation
+    WHERE work_product_id IN (SELECT id FROM work_products)
+),
+cleared_work_products AS (
+    DELETE FROM work_product
+    WHERE id IN (SELECT id FROM work_products)
 ),
 cleared_statuses AS (
     DELETE FROM vcs_commit_status WHERE connection_id IN (SELECT target.id FROM target)
 ),
 cleared_prs AS (
-    DELETE FROM vcs_pull_request WHERE connection_id IN (SELECT target.id FROM target)
+    DELETE FROM vcs_pull_request WHERE id IN (SELECT id FROM pull_requests)
 )
 DELETE FROM vcs_connection WHERE vcs_connection.id = $1 AND vcs_connection.workspace_id = $2"#
     )
@@ -52,15 +65,31 @@ pub async fn get_issue_combined_pull_request_close_aggregate(
 ) -> anyhow::Result<Option<GetIssueCombinedPullRequestCloseAggregateRow>> {
     let row = sqlx::query(
         r#"WITH combined AS (
-    SELECT pr.state AS state, ipr.close_intent AS close_intent
+    SELECT pr.id, pr.state AS state, bool_or(wpr.close_intent) AS close_intent
     FROM github_pull_request pr
-    JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
+    JOIN work_product wp
+      ON wp.workspace_id = pr.workspace_id
+     AND wp.provider_record_type = 'github_pull_request'
+     AND wp.provider_record_id = pr.id
+    JOIN work_product_relation wpr
+      ON wpr.workspace_id = wp.workspace_id
+     AND wpr.work_product_id = wp.id
+     AND wpr.issue_id = $1
+     AND wpr.detached_at IS NULL
+    GROUP BY pr.id, pr.state
     UNION ALL
-    SELECT pr.state AS state, ipr.close_intent AS close_intent
+    SELECT pr.id, pr.state AS state, bool_or(wpr.close_intent) AS close_intent
     FROM vcs_pull_request pr
-    JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
+    JOIN work_product wp
+      ON wp.workspace_id = pr.workspace_id
+     AND wp.provider_record_type = 'vcs_pull_request'
+     AND wp.provider_record_id = pr.id
+    JOIN work_product_relation wpr
+      ON wpr.workspace_id = wp.workspace_id
+     AND wpr.work_product_id = wp.id
+     AND wpr.issue_id = $1
+     AND wpr.detached_at IS NULL
+    GROUP BY pr.id, pr.state
 )
 SELECT
     COALESCE(SUM(CASE WHEN state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
@@ -103,64 +132,33 @@ WHERE id = $1"#
     }))
 }
 
-pub async fn link_issue_to_vcs_pull_request(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    issue_id: Uuid,
-    pull_request_id: Uuid,
-    close_intent: bool,
-    linked_by_type: Option<&str>,
-    linked_by_id: Option<Uuid>,
-    reference_only: bool,
-    preserve_close_intent: bool,
-) -> anyhow::Result<u64> {
-    let r = sqlx::query(
-        r#"INSERT INTO issue_vcs_pull_request (
-    issue_id, pull_request_id, linked_by_type, linked_by_id, close_intent, reference_only
-) VALUES (
-    $1, $2, $4, $5, $3, $6
-)
-ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
-    close_intent = CASE
-        WHEN $7 THEN issue_vcs_pull_request.close_intent
-        ELSE EXCLUDED.close_intent
-    END,
-    reference_only = CASE
-        WHEN $7 THEN issue_vcs_pull_request.reference_only
-        ELSE EXCLUDED.reference_only
-    END"#,
-    )
-    .bind(issue_id)
-    .bind(pull_request_id)
-    .bind(close_intent)
-    .bind(linked_by_type)
-    .bind(linked_by_id)
-    .bind(reference_only)
-    .bind(preserve_close_intent)
-    .execute(executor)
-    .await?;
-    Ok(r.rows_affected())
-}
-
 pub async fn list_issue_i_ds_for_vcspr_head(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     connection_id: Uuid,
     head_sha: &str,
-) -> anyhow::Result<Vec<Option<Uuid>>> {
+) -> anyhow::Result<Vec<Uuid>> {
     let rows = sqlx::query(
-        r#"SELECT DISTINCT ipr.issue_id
+        r#"SELECT DISTINCT wpr.issue_id
 FROM vcs_pull_request pr
-JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-WHERE pr.connection_id = $1 AND pr.head_sha = $2 AND pr.head_sha <> ''"#,
+JOIN work_product wp
+  ON wp.workspace_id = pr.workspace_id
+ AND wp.provider_record_type = 'vcs_pull_request'
+ AND wp.provider_record_id = pr.id
+JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+WHERE pr.connection_id = $1
+  AND pr.head_sha = $2
+  AND pr.head_sha <> ''
+  AND wpr.workspace_id = pr.workspace_id
+  AND wpr.issue_id IS NOT NULL
+  AND wpr.detached_at IS NULL"#,
     )
     .bind(connection_id)
     .bind(head_sha)
     .fetch_all(executor)
     .await?;
-    let mut out = Vec::with_capacity(rows.len());
-    for row in &rows {
-        out.push(row.try_get(0)?);
-    }
-    Ok(out)
+    rows.into_iter()
+        .map(|row| row.try_get(0).map_err(Into::into))
+        .collect()
 }
 
 pub async fn list_vcs_connections_by_workspace(
@@ -229,7 +227,22 @@ pub async fn list_vcs_pull_requests_by_issue(
     issue_id: Uuid,
 ) -> anyhow::Result<Vec<ListVCSPullRequestsByIssueRow>> {
     let rows = sqlx::query(
-        r#"WITH checks AS (
+        r#"WITH issue_prs AS (
+    SELECT pr.id
+    FROM vcs_pull_request pr
+    WHERE EXISTS (
+        SELECT 1
+        FROM work_product wp
+        JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+        WHERE wp.workspace_id = pr.workspace_id
+          AND wp.provider_record_type = 'vcs_pull_request'
+          AND wp.provider_record_id = pr.id
+          AND wpr.workspace_id = pr.workspace_id
+          AND wpr.issue_id = $1
+          AND wpr.detached_at IS NULL
+    )
+),
+checks AS (
     SELECT
         pr.id AS pr_id,
         COUNT(*)::bigint AS total,
@@ -237,12 +250,11 @@ pub async fn list_vcs_pull_requests_by_issue(
         SUM(CASE WHEN cs.state = 'passed'  THEN 1 ELSE 0 END)::bigint AS passed,
         SUM(CASE WHEN cs.state = 'pending' THEN 1 ELSE 0 END)::bigint AS pending
     FROM vcs_pull_request pr
-    JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
+    JOIN issue_prs ip ON ip.id = pr.id
     JOIN vcs_commit_status cs
         ON cs.connection_id = pr.connection_id
        AND cs.sha = pr.head_sha
        AND pr.head_sha <> ''
-    WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
     GROUP BY pr.id
 )
 SELECT
@@ -252,9 +264,8 @@ SELECT
     COALESCE(c.failed, 0)::bigint  AS checks_failed,
     COALESCE(c.pending, 0)::bigint AS checks_pending
 FROM vcs_pull_request pr
-JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
+JOIN issue_prs ip ON ip.id = pr.id
 LEFT JOIN checks c ON c.pr_id = pr.id
-WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
 ORDER BY pr.pr_created_at DESC"#
     )
         .bind(issue_id)

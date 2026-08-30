@@ -2811,13 +2811,28 @@ async fn get_task_status(
     Json(json!({ "status": task.status })).into_response()
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct TaskStartRequest {
+    #[serde(default)]
+    execution_repo_identity: String,
+    #[serde(default)]
+    execution_workspace: String,
+    #[serde(default)]
+    execution_head_branch: String,
+    #[serde(default)]
+    execution_head_sha: String,
+    #[serde(default)]
+    execution_head_state: String,
+}
+
 async fn start_task(
     State(state): State<HandlerState>,
     Path(task_id): Path<String>,
     headers: HeaderMap,
+    body: Option<Json<TaskStartRequest>>,
 ) -> Response {
     let access = Access::new(&state, &headers);
-    let (_, ws_id) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await
+    let (task, ws_id) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await
     {
         Ok(v) => v,
         Err(res) => return res,
@@ -2825,8 +2840,45 @@ async fn start_task(
     let Ok(task_uuid) = Uuid::parse_str(task_id.trim()) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid task_id");
     };
+    let workspace_id = match Uuid::parse_str(&ws_id) {
+        Ok(id) => id,
+        Err(_) => {
+            tracing::error!(task_id = %task_uuid, workspace_id = %ws_id, "start task resolved an invalid workspace id");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "invalid task workspace");
+        }
+    };
     match state.tasks.start_task(task_uuid).await {
-        Ok(task) => Json(crate::task_json::task_to_map(&task, &ws_id)).into_response(),
+        Ok(started_task) => {
+            if let Some(Json(request)) = body {
+                if !request.execution_repo_identity.trim().is_empty()
+                    || !request.execution_workspace.trim().is_empty()
+                    || !request.execution_head_branch.trim().is_empty()
+                    || !request.execution_head_sha.trim().is_empty()
+                    || !request.execution_head_state.trim().is_empty()
+                {
+                    let input = crate::work_product::ExecutionProvenanceInput {
+                        repo_identity: request.execution_repo_identity,
+                        execution_workspace: request.execution_workspace,
+                        head_branch: request.execution_head_branch,
+                        head_sha: request.execution_head_sha,
+                        head_state: request.execution_head_state,
+                    };
+                    if let Err(error) = crate::work_product::record_execution_provenance(
+                        &state,
+                        task_uuid,
+                        workspace_id,
+                        started_task.autopilot_run_id.or(task.autopilot_run_id),
+                        &input,
+                        false,
+                    )
+                    .await
+                    {
+                        tracing::warn!(%error, task_id = %task_uuid, "record start execution provenance failed");
+                    }
+                }
+            }
+            Json(crate::task_json::task_to_map(&started_task, &ws_id)).into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, task_id = %task_id, "start task failed");
             error_response(StatusCode::BAD_REQUEST, &e.to_string())
@@ -2916,8 +2968,6 @@ async fn report_task_progress(
 
 #[derive(Deserialize)]
 struct TaskCompleteRequest {
-    #[serde(default, rename = "pr_url")]
-    pr_url: String,
     #[serde(default)]
     output: String,
     #[serde(default, rename = "session_id")]
@@ -2932,6 +2982,16 @@ struct TaskCompleteRequest {
     session_rollout_missing: bool,
     #[serde(default, rename = "retired_session_id")]
     retired_session_id: String,
+    #[serde(default, rename = "execution_repo_identity")]
+    execution_repo_identity: String,
+    #[serde(default, rename = "execution_workspace")]
+    execution_workspace: String,
+    #[serde(default, rename = "execution_head_branch")]
+    execution_head_branch: String,
+    #[serde(default, rename = "execution_head_sha")]
+    execution_head_sha: String,
+    #[serde(default, rename = "execution_head_state")]
+    execution_head_state: String,
 }
 
 fn sanitize(s: &str) -> String {
@@ -2963,7 +3023,6 @@ async fn complete_task(
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
     let req = TaskCompleteRequest {
-        pr_url: sanitize(&req.pr_url),
         output: sanitize(&req.output),
         session_id: sanitize(&req.session_id),
         work_dir: sanitize(&req.work_dir),
@@ -2971,6 +3030,11 @@ async fn complete_task(
         branch_name: sanitize(&req.branch_name),
         session_rollout_missing: req.session_rollout_missing,
         retired_session_id: sanitize(&req.retired_session_id),
+        execution_repo_identity: sanitize(&req.execution_repo_identity),
+        execution_workspace: sanitize(&req.execution_workspace),
+        execution_head_branch: sanitize(&req.execution_head_branch),
+        execution_head_sha: sanitize(&req.execution_head_sha),
+        execution_head_state: sanitize(&req.execution_head_state),
     };
 
     if patchbay_task_failure::context_exhausted_completion(&req.output) {
@@ -2988,13 +3052,17 @@ async fn complete_task(
                 branch_name: req.branch_name.clone(),
                 session_rollout_missing: req.session_rollout_missing,
                 retired_session_id: req.retired_session_id.clone(),
+                execution_repo_identity: req.execution_repo_identity.clone(),
+                execution_workspace: req.execution_workspace.clone(),
+                execution_head_branch: req.execution_head_branch.clone(),
+                execution_head_sha: req.execution_head_sha.clone(),
+                execution_head_state: req.execution_head_state.clone(),
             },
         )
         .await;
     }
 
     let result = json!({
-        "pr_url": req.pr_url,
         "output": req.output,
         "session_id": req.session_id,
         "work_dir": req.work_dir,
@@ -3021,6 +3089,24 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
+            let execution = crate::work_product::ExecutionProvenanceInput {
+                repo_identity: req.execution_repo_identity,
+                execution_workspace: req.execution_workspace,
+                head_branch: req.execution_head_branch,
+                head_sha: req.execution_head_sha,
+                head_state: req.execution_head_state,
+            };
+            if let Ok(workspace_id) = Uuid::parse_str(&ws_id) {
+                crate::work_product::discover_after_task(
+                    &state,
+                    &task,
+                    workspace_id,
+                    &execution,
+                )
+                .await;
+            } else {
+                tracing::warn!(task_id = %task_id, workspace_id = %ws_id, "complete: invalid resolved workspace id for work product discovery");
+            }
             state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");
@@ -3059,6 +3145,16 @@ struct FailBody {
     session_rollout_missing: bool,
     #[serde(default, rename = "retired_session_id")]
     retired_session_id: String,
+    #[serde(default, rename = "execution_repo_identity")]
+    execution_repo_identity: String,
+    #[serde(default, rename = "execution_workspace")]
+    execution_workspace: String,
+    #[serde(default, rename = "execution_head_branch")]
+    execution_head_branch: String,
+    #[serde(default, rename = "execution_head_sha")]
+    execution_head_sha: String,
+    #[serde(default, rename = "execution_head_state")]
+    execution_head_state: String,
 }
 
 async fn fail_task(
@@ -3089,6 +3185,11 @@ async fn fail_task(
             branch_name: sanitize(&req.branch_name),
             session_rollout_missing: req.session_rollout_missing,
             retired_session_id: sanitize(&req.retired_session_id),
+            execution_repo_identity: sanitize(&req.execution_repo_identity),
+            execution_workspace: sanitize(&req.execution_workspace),
+            execution_head_branch: sanitize(&req.execution_head_branch),
+            execution_head_sha: sanitize(&req.execution_head_sha),
+            execution_head_state: sanitize(&req.execution_head_state),
         },
     )
     .await
@@ -3119,6 +3220,24 @@ async fn fail_task_impl(
         .await
     {
         Ok(task) => {
+            let execution = crate::work_product::ExecutionProvenanceInput {
+                repo_identity: req.execution_repo_identity,
+                execution_workspace: req.execution_workspace,
+                head_branch: req.execution_head_branch,
+                head_sha: req.execution_head_sha,
+                head_state: req.execution_head_state,
+            };
+            if let Ok(workspace_uuid) = Uuid::parse_str(workspace_id) {
+                crate::work_product::discover_after_task(
+                    state,
+                    &task,
+                    workspace_uuid,
+                    &execution,
+                )
+                .await;
+            } else {
+                tracing::warn!(task_id = %task_id, workspace_id = %workspace_id, "fail: invalid resolved workspace id for work product discovery");
+            }
             state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(state, task.id).await;
             tracing::info!(
@@ -3423,6 +3542,16 @@ struct CancelAckBody {
     failure_reason: String,
     #[serde(default, rename = "session_rollout_missing")]
     session_rollout_missing: bool,
+    #[serde(default, rename = "execution_repo_identity")]
+    execution_repo_identity: String,
+    #[serde(default, rename = "execution_workspace")]
+    execution_workspace: String,
+    #[serde(default, rename = "execution_head_branch")]
+    execution_head_branch: String,
+    #[serde(default, rename = "execution_head_sha")]
+    execution_head_sha: String,
+    #[serde(default, rename = "execution_head_state")]
+    execution_head_state: String,
 }
 
 /// POST /api/daemon/tasks/{taskId}/cancel-ack. Both writes carry a
@@ -3445,6 +3574,13 @@ async fn ack_task_cancelled(
     let durable = sanitize(req.durable_work_dir.trim());
     let error_message = sanitize(req.error_message.trim());
     let failure_reason = sanitize(req.failure_reason.trim());
+    let execution = crate::work_product::ExecutionProvenanceInput {
+        repo_identity: sanitize(req.execution_repo_identity.trim()),
+        execution_workspace: sanitize(req.execution_workspace.trim()),
+        head_branch: sanitize(req.execution_head_branch.trim()),
+        head_sha: sanitize(req.execution_head_sha.trim()),
+        head_state: sanitize(req.execution_head_state.trim()),
+    };
 
     let mut delivered = false;
     if req.session_rollout_missing {
@@ -3510,6 +3646,19 @@ async fn ack_task_cancelled(
         state.tasks.rebroadcast_cancelled_task(task.id).await;
     }
     let _ = state.tasks.finalize_deferred_cancelled_chat(task.id).await;
+    if let Some(workspace_id) = state.tasks.resolve_task_workspace_id(&task).await
+        .and_then(|value| Uuid::parse_str(&value).ok())
+    {
+        crate::work_product::discover_after_task(
+            &state,
+            &task,
+            workspace_id,
+            &execution,
+        )
+        .await;
+    } else {
+        tracing::warn!(task_id = %task_id, "cancel ack: invalid resolved workspace id for work product discovery");
+    }
     Json(json!({ "status": "ok" })).into_response()
 }
 

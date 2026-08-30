@@ -342,6 +342,10 @@ pub async fn delete_issue(
 cleared_vcs_pr_links AS (
     DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT target.id FROM target)
 ),
+cleared_work_product_relations AS (
+    DELETE FROM work_product_relation
+    WHERE issue_id IN (SELECT target.id FROM target)
+),
 cleared_coordination_assignments AS (
     DELETE FROM agent_coordination_assignment
     WHERE issue_id IN (SELECT target.id FROM target)

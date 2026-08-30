@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use patchbay_db::models::{GithubPullRequest, VcsPullRequest};
-use patchbay_db::queries::{github, vcs};
+use patchbay_db::queries::{github, vcs, work_product as work_product_q};
 use patchbay_middleware::workspace::WorkspaceContext;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -31,9 +31,10 @@ struct AttachRequest {
     state: Option<String>,
     branch: Option<String>,
     head_ref_name: Option<String>,
-    #[allow(dead_code)]
     head_sha: Option<String>,
     author_login: Option<String>,
+    #[serde(default)]
+    close_intent: bool,
 }
 
 fn decode_attach_request(body: &[u8]) -> Result<AttachRequest, serde_json::Error> {
@@ -411,6 +412,25 @@ pub(crate) async fn attach(
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
     };
 
+    // Resolve the actor before any provider metadata lookup or mirror write.
+    // A task-scoped caller is authorized only by the server-stamped task token;
+    // the URL and request body never select an issue, task, or run.
+    let execution = crate::issue::trusted_agent_execution_context(&state, &context, &headers).await;
+    if crate::issue::has_task_execution_claim(&headers) && execution.is_none() {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "the task execution context is not authorized",
+        );
+    }
+    if let Some(execution) = execution.as_ref() {
+        if execution.issue_id != Some(issue.id) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "a task may only attach work products to its assigned issue",
+            );
+        }
+    }
+
     let mut metadata = None;
     if let (Some(client), Ok(installations)) = (
         state.github_snapshots.client(),
@@ -431,7 +451,11 @@ pub(crate) async fn attach(
     let mut installation_id = None;
     let mut title = format!("{owner}/{repo}#{number}");
     let mut branch = request.branch.or(request.head_ref_name);
-    let mut head_sha = String::new();
+    let mut head_sha = request
+        .head_sha
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default();
     let mut author_login = request
         .author_login
         .filter(|value| !value.is_empty())
@@ -470,6 +494,36 @@ pub(crate) async fn attach(
         }
     }
     branch = branch.filter(|value| !value.is_empty());
+
+    if let Some(execution) = execution.as_ref() {
+        let Some((_, provider_metadata)) = metadata.as_ref() else {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "task attach requires provider metadata for execution ownership",
+            );
+        };
+        let repo_identity = format!("{owner}/{repo}");
+        if let Err(reason) = crate::work_product::validate_task_explicit_product(
+            &state,
+            issue.workspace_id,
+            execution.task_id,
+            &repo_identity,
+            provider_metadata,
+        )
+        .await
+        {
+            tracing::warn!(
+                task_id = %execution.task_id,
+                issue_id = %issue.id,
+                reason,
+                "task attach rejected: provider object is not owned by this execution"
+            );
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "pull request is not owned by this task execution",
+            );
+        }
+    }
 
     let is_new = match github::get_git_hub_pull_request(
         &state.pool,
@@ -531,33 +585,73 @@ pub(crate) async fn attach(
         }
     };
 
-    let (actor_type, actor_id, task_id) =
-        crate::issue::mutation_actor(&state, &context, &headers).await;
-    let linked_by_type = if actor_type == "member" {
-        "user"
-    } else {
-        actor_type.as_str()
+    let (actor_type, actor_id, task_id, run_id, attached_by_type) = match execution {
+        Some(execution) => (
+            "agent".to_string(),
+            execution.agent_id,
+            Some(execution.task_id),
+            execution.run_id,
+            "agent",
+        ),
+        None => (
+            "member".to_string(),
+            context.member.user_id,
+            None,
+            None,
+            "user",
+        ),
     };
-    if let Err(error) = github::link_issue_to_pull_request(
+    let work_product = match work_product_q::upsert_work_product(
         &state.pool,
-        issue.id,
-        pull_request.id,
-        false,
-        Some(linked_by_type),
-        Some(actor_id),
-        false,
-        true,
-        false,
-        false,
+        issue.workspace_id,
+        "pull_request",
+        "github",
+        &work_product_q::external_identity_for_github(&owner, &repo, number),
+        Some(&canonical_url),
+        Some("github_pull_request"),
+        Some(pull_request.id),
     )
     .await
     {
-        tracing::warn!(%error, "github: attach link failed");
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to link pull request",
-        );
-    }
+        Ok(product) => product,
+        Err(error) => {
+            tracing::warn!(%error, "github: attach work product failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to register work product",
+            );
+        }
+    };
+    let relation_key = work_product_q::relation_key(Some(issue.id), task_id, run_id);
+    let relation_source = if task_id.is_some() {
+        work_product_q::RELATION_SOURCE_TASK_EXPLICIT
+    } else {
+        work_product_q::RELATION_SOURCE_MANUAL_EXPLICIT
+    };
+    let relation = match work_product_q::attach_work_product_relation(
+        &state.pool,
+        issue.workspace_id,
+        work_product.id,
+        Some(issue.id),
+        task_id,
+        run_id,
+        &relation_key,
+        relation_source,
+        attached_by_type,
+        actor_id,
+        request.close_intent,
+    )
+    .await
+    {
+        Ok(relation) => relation,
+        Err(error) => {
+            tracing::warn!(%error, "github: attach relation failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to attach work product",
+            );
+        }
+    };
 
     let response = github_model_response(pull_request, state.github_snapshots.enabled());
     state.bus.publish(&patchbay_events::Event {
@@ -568,6 +662,7 @@ pub(crate) async fn attach(
         payload: serde_json::json!({
             "pull_request": response.clone(),
             "linked_issue_ids": [issue.id.to_string()],
+            "relation": crate::work_product::relation_response(&relation),
         }),
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
@@ -579,7 +674,11 @@ pub(crate) async fn attach(
     };
     (
         status,
-        Json(serde_json::json!({ "pull_request": response })),
+        Json(serde_json::json!({
+            "pull_request": response,
+            "work_product": crate::work_product::product_response(&work_product, Some(&relation)),
+            "relation": crate::work_product::relation_response(&relation),
+        })),
     )
         .into_response()
 }

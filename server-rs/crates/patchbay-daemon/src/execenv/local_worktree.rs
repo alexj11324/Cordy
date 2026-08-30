@@ -140,6 +140,11 @@ pub struct LocalWorktree {
     /// Branch is the branch created for this task, in the user's repo.
     #[serde(rename = "Branch")]
     pub branch: String,
+    /// RepoIdentity is the canonical remote repository identity captured when
+    /// the task worktree is prepared. It is used to scope terminal PR
+    /// discovery; it is never inferred from a PR title, body, or branch name.
+    #[serde(rename = "RepoIdentity")]
+    pub repo_identity: String,
     /// BaseCommit is the commit the worktree started from. Finalize compares
     /// the branch tip against it to decide whether the task produced anything.
     #[serde(rename = "BaseCommit")]
@@ -178,6 +183,11 @@ pub struct LocalWorktreeOutcome {
     /// changes. The worktree at this path was intentionally left on disk because
     /// it is the only remaining copy of that work.
     pub preserved_path: String,
+    /// Provenance needed by the server's terminal exact-head discovery.
+    pub repo_identity: String,
+    pub execution_workspace: String,
+    pub head_sha: String,
+    pub head_state: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +210,9 @@ pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Resu
     }
 
     let git_root = resolve_git_root(&params.local_path).await?;
+    let repo_identity = run_git_trimmed(&git_root, ["remote", "get-url", "origin"])
+        .await
+        .unwrap_or_default();
 
     // The agent's cwd keeps the user's chosen depth: a resource pointed at
     // <repo>/services/api must land the agent in <worktree>/services/api, not
@@ -300,6 +313,7 @@ pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Resu
         path: worktree_path.clone(),
         work_dir: join_path(&[&worktree_path, &rel]),
         branch: actual_branch.clone(),
+        repo_identity,
         base_commit: head_sha,
         ..Default::default()
     };
@@ -435,6 +449,9 @@ impl LocalWorktree {
 
         let mut outcome = LocalWorktreeOutcome {
             branch: self.branch.clone(),
+            repo_identity: self.repo_identity.clone(),
+            execution_workspace: self.path.clone(),
+            head_state: "attached".to_string(),
             ..Default::default()
         };
 
@@ -504,6 +521,7 @@ impl LocalWorktree {
         // nothing — the read-only case. Delete it so the user's branch list only
         // ever grows for tasks that actually produced work.
         let tip = run_git_trimmed(&self.path, ["rev-parse", "--verify", "HEAD"]).await;
+        outcome.head_sha = tip.clone().unwrap_or_default();
         let produced_work = match &tip {
             Err(_) => true,
             Ok(tip) => *tip != self.base_commit,

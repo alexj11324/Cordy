@@ -57,3 +57,4 @@ pub mod workspace;
 pub mod workspace_channel;
 pub mod workspace_delete;
 pub mod workspace_mcp;
+pub mod work_product;

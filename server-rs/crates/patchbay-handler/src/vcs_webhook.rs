@@ -1,8 +1,5 @@
 //! Public webhook ingress for token-based Git providers.
 
-use std::collections::HashSet;
-use std::sync::LazyLock;
-
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -14,22 +11,14 @@ use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use patchbay_db::models::{Issue, VcsConnection, VcsPullRequest};
+use patchbay_db::queries::work_product as work_product_q;
 use patchbay_vcs::{CiStatusEvent, EventKind, PullRequestEvent};
-use regex::Regex;
 use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
 
 const MAX_BODY_BYTES: usize = 10 << 20;
-
-static IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b([a-z][a-z0-9]{1,9})-(\d+)\b").expect("issue identifier regex is valid")
-});
-static CLOSING_IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[:\s]+([a-z][a-z0-9]{1,9})-(\d+)\b")
-        .expect("closing identifier regex is valid")
-});
 
 pub fn router() -> Router<HandlerState> {
     Router::new().route("/api/webhooks/vcs/{connection_id}", post(handle))
@@ -176,62 +165,60 @@ async fn mirror_pull_request(
         return;
     }
 
-    let prefix =
-        match patchbay_db::queries::workspace::get_workspace(&state.pool, connection.workspace_id)
-            .await
-        {
-            Ok(Some(workspace)) => workspace.issue_prefix,
-            _ => String::new(),
-        };
-    let identifiers = extract_identifiers([
-        event.title.as_str(),
-        event.body.as_str(),
-        event.branch.as_str(),
-    ]);
-    let closing: HashSet<String> =
-        extract_closing_identifiers([event.title.as_str(), event.body.as_str()])
-            .into_iter()
-            .collect();
-    let qualifying: HashSet<String> =
-        extract_identifiers([event.title.as_str(), event.branch.as_str()])
-            .into_iter()
-            .chain(closing.iter().cloned())
-            .collect();
-    let preserve_close_intent =
-        !event.terminal() && matches!(event.state.as_str(), "merged" | "closed");
-    let mut linked_issue_ids = Vec::new();
-    let mut reevaluate = Vec::new();
-    for identifier in identifiers {
-        let Some(issue) = lookup_issue(state, connection.workspace_id, &prefix, &identifier).await
-        else {
-            continue;
-        };
-        let close_intent = closing.contains(&identifier) && !preserve_close_intent;
-        let reference_only = !qualifying.contains(&identifier);
-        match patchbay_db::queries::vcs::link_issue_to_vcs_pull_request(
-            &state.pool,
-            issue.id,
-            pull_request.id,
-            close_intent,
-            Some("system"),
-            None,
-            reference_only,
-            preserve_close_intent,
-        )
-        .await
-        {
-            Ok(_) => {
-                linked_issue_ids.push(issue.id.to_string());
-                reevaluate.push(issue);
-            }
-            Err(error) => tracing::warn!(%error, "vcs: link failed"),
+    let work_product = match work_product_q::upsert_work_product(
+        &state.pool,
+        connection.workspace_id,
+        "pull_request",
+        &connection.provider,
+        &work_product_q::external_identity_for_vcs(
+            connection.id,
+            &event.repo_owner,
+            &event.repo_name,
+            event.number,
+        ),
+        Some(&event.html_url),
+        Some("vcs_pull_request"),
+        Some(pull_request.id),
+    )
+    .await
+    {
+        Ok(product) => product,
+        Err(error) => {
+            tracing::warn!(%error, pr_id = %pull_request.id, "vcs: upsert work product failed");
+            return;
         }
-    }
+    };
+    let issue_ids = match work_product_q::list_issue_ids_for_work_product(
+        &state.pool,
+        connection.workspace_id,
+        work_product.id,
+    )
+    .await
+    {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::warn!(%error, pr_id = %pull_request.id, "vcs: list work product relations failed");
+            return;
+        }
+    };
     if matches!(event.state.as_str(), "merged" | "closed") {
-        for issue in reevaluate {
+        for issue_id in &issue_ids {
+            let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(
+                &state.pool,
+                *issue_id,
+                connection.workspace_id,
+            )
+            .await
+            else {
+                continue;
+            };
             maybe_complete_issue(state, issue).await;
         }
     }
+    let linked_issue_ids = issue_ids
+        .into_iter()
+        .map(|issue_id| issue_id.to_string())
+        .collect();
     publish_pull_request(state, &pull_request, linked_issue_ids);
 }
 
@@ -267,7 +254,7 @@ async fn mirror_ci_status(state: &HandlerState, connection: &VcsConnection, even
             return;
         }
     };
-    for issue_id in issue_ids.into_iter().flatten() {
+    for issue_id in issue_ids {
         state.bus.publish(&patchbay_events::Event {
             event_type: patchbay_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
             workspace_id: connection.workspace_id.to_string(),
@@ -321,47 +308,6 @@ fn publish_pull_request(
     });
 }
 
-pub(crate) async fn lookup_issue(
-    state: &HandlerState,
-    workspace_id: Uuid,
-    prefix: &str,
-    identifier: &str,
-) -> Option<Issue> {
-    let captures = IDENTIFIER.captures(identifier)?;
-    if !captures[1].eq_ignore_ascii_case(prefix) {
-        return None;
-    }
-    let number = captures[2].parse::<i32>().ok()?;
-    patchbay_db::queries::issue::get_issue_by_number(&state.pool, workspace_id, number)
-        .await
-        .ok()
-        .flatten()
-}
-
-pub(crate) fn extract_identifiers<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    extract_with(&IDENTIFIER, texts)
-}
-
-pub(crate) fn extract_closing_identifiers<'a>(
-    texts: impl IntoIterator<Item = &'a str>,
-) -> Vec<String> {
-    extract_with(&CLOSING_IDENTIFIER, texts)
-}
-
-fn extract_with<'a>(regex: &Regex, texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut output = Vec::new();
-    for text in texts {
-        for captures in regex.captures_iter(text) {
-            let identifier = format!("{}-{}", captures[1].to_ascii_uppercase(), &captures[2]);
-            if seen.insert(identifier.clone()) {
-                output.push(identifier);
-            }
-        }
-    }
-    output
-}
-
 fn event_time(raw: &str) -> DateTime<Utc> {
     optional_event_time(raw).unwrap_or_else(Utc::now)
 }
@@ -381,18 +327,6 @@ mod tests {
     use super::*;
     use axum::http::Request;
     use tower::ServiceExt;
-
-    #[test]
-    fn identifiers_match_go_link_and_close_grammar() {
-        assert_eq!(
-            extract_identifiers(["CORD-2 then cord-1 and CORD-2"]),
-            vec!["CORD-2", "CORD-1"]
-        );
-        assert_eq!(
-            extract_closing_identifiers(["Related CORD-1. Fixes: cord-2; resolve CORD-3"]),
-            vec!["CORD-2", "CORD-3"]
-        );
-    }
 
     #[tokio::test]
     async fn limited_reader_matches_go_prefix_contract() {

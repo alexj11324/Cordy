@@ -848,6 +848,34 @@ pub struct TaskResult {
     /// authoritative.
     #[serde(rename = "durable_work_dir", skip_serializing_if = "String::is_empty")]
     pub durable_work_dir: String,
+    /// Task-owned execution provenance. These facts are captured by the
+    /// daemon from the prepared worktree and are the only inputs the server
+    /// may use for deterministic terminal PR discovery.
+    #[serde(
+        rename = "execution_repo_identity",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub execution_repo_identity: String,
+    #[serde(
+        rename = "execution_workspace",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub execution_workspace: String,
+    #[serde(
+        rename = "execution_head_branch",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub execution_head_branch: String,
+    #[serde(
+        rename = "execution_head_sha",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub execution_head_sha: String,
+    #[serde(
+        rename = "execution_head_state",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub execution_head_state: String,
     /// Env root dir for writing GC metadata (not sent to server).
     #[serde(skip)]
     pub env_root: String,

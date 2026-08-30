@@ -860,7 +860,19 @@ impl ProductionProviderAdapter {
             return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
-            let start_result = client.start_task(&preparation_ctx, &task.id).await;
+            let (repo_identity, execution_workspace, head_branch, head_sha, head_state) =
+                execution_provenance_for_start(&environment);
+            let start_result = client
+                .start_task(
+                    &preparation_ctx,
+                    &task.id,
+                    repo_identity,
+                    execution_workspace,
+                    head_branch,
+                    head_sha,
+                    head_state,
+                )
+                .await;
             // The dispatched-task lease remains owned through temp allocation
             // and stops only after the server returns the running transition.
             // Join it on both success and failure instead of relying on Drop's
@@ -2637,9 +2649,22 @@ async fn finalize_environment(
         }
     }
     if let Some(worktree) = environment.local_worktree.as_ref() {
+        // Capture the task-owned execution facts before Finalize removes the
+        // disposable worktree. The server uses these values only to perform
+        // a repository-scoped exact-head lookup after the run; no PR text is
+        // inspected and the branch is not stored as a durable relation key.
+        outcome.result.execution_repo_identity = worktree.repo_identity.clone();
+        outcome.result.execution_workspace = worktree.path.clone();
+        outcome.result.execution_head_branch = worktree.branch.clone();
+        outcome.result.execution_head_state = "attached".to_string();
         match worktree.finalize().await {
             Ok(finalized) => {
                 outcome.result.branch_name = finalized.branch;
+                outcome.result.execution_repo_identity = finalized.repo_identity;
+                outcome.result.execution_workspace = finalized.execution_workspace;
+                outcome.result.execution_head_branch = outcome.result.branch_name.clone();
+                outcome.result.execution_head_sha = finalized.head_sha;
+                outcome.result.execution_head_state = finalized.head_state;
                 if let Some(assignment) = assignment {
                     outcome.result.durable_work_dir = assignment.abs_path.clone();
                 }
@@ -2664,6 +2689,19 @@ async fn finalize_environment(
         }
     }
     outcome
+}
+
+fn execution_provenance_for_start(environment: &Environment) -> (&str, &str, &str, &str, &str) {
+    let Some(worktree) = environment.local_worktree.as_ref() else {
+        return ("", "", "", "", "");
+    };
+    (
+        &worktree.repo_identity,
+        &worktree.path,
+        &worktree.branch,
+        &worktree.base_commit,
+        "attached",
+    )
 }
 
 fn reusable_workdir(workspaces_root: &str, task: &Task) -> bool {

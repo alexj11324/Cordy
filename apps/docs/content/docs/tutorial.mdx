@@ -104,7 +104,7 @@ Open **Settings → Repositories** to confirm: `personal-website` is in the list
 
 Without the GitHub CLI, you can create the repository on GitHub yourself and add it manually on the same page; the result is the same.
 
-Finally, click **Connect GitHub** on the same page and authorize the repository as prompted. Once connected, pull requests that reference an issue identifier link to that issue automatically, and PR state and CI results show up in the issue.
+Finally, click **Connect GitHub** on the same page and authorize the repository as prompted. Once connected, PRs are mirrored into Patchbay; an agent must register a PR from its authenticated task/run, or you can explicitly Attach the mirrored Work Product to the issue. PR state and CI results then show up in the issue. An issue identifier remains optional context for human search.
 
 ## The first issue: build the site
 
@@ -173,7 +173,7 @@ Open it, select Engineer, and type `@` to reference the current issue — the co
 
 ![Asking in chat with the issue referenced](/images/docs/tutorial-chat-ask-in-issue.webp)
 
-Engineer's reply has two parts: the local server is running, with the address to open; and the PR was in fact already submitted, but the title, branch name, and body all lacked `PB-1`, so automatic linking had nothing to match — it then added the identifier to the PR title.
+Engineer's reply has two parts: the local server is running, with the address to open; and the PR was already submitted but had not been explicitly registered, so it remains unassociated even if its title, branch, or body contains `PB-1`. Select the PR in the issue's Attach control to create the audited relation.
 
 ![Engineer's reply: the local address and why the PR was not linked](/images/docs/tutorial-chat-engineer-reply.webp)
 
@@ -187,9 +187,9 @@ Back on the issue, a PR card now appears in the **Pull requests** area on the ri
 
 ## Write feedback into the instructions
 
-This round of review exposed two of Engineer's working habits: it checks its own work with repeated screenshots after finishing, which takes up a lot of run time; and it opens PRs without the issue identifier, so they don't link. Neither is a one-off mistake — both are things it repeats every time. What needs changing is not this issue but its instructions.
+This round of review exposed two of Engineer's working habits: it checks its own work with repeated screenshots after finishing, which takes up a lot of run time; and it does not explicitly register the PR it opens. An issue identifier in the PR is optional and does not replace registration. Neither is a one-off mistake — both are things it repeats every time. What needs changing is not this issue but its instructions.
 
-You don't have to edit the instructions by hand: an agent can update its own configuration with the patchbay CLI. In the same conversation, give Engineer the two rules — no screenshot self-checks after finishing, since review happens in a browser; and the branch name or title of a PR must carry the issue identifier — and have it write them into its own instructions:
+You don't have to edit the instructions by hand: an agent can update its own configuration with the patchbay CLI. In the same conversation, give Engineer the two rules — no screenshot self-checks after finishing, since review happens in a browser; and every PR must be registered through the authenticated task/run context or an explicit Attach operation — and have it write them into its own instructions:
 
 ![Asking Engineer to write the rules into its own instructions](/images/docs/tutorial-chat-update-instructions.webp)
 

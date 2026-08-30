@@ -19,6 +19,11 @@ vi.mock("@patchbay/core/github/queries", async () => {
       queryFn: async () => ({ pull_requests: mockPRs }),
       enabled: !!issueId,
     }),
+    unassociatedWorkProductsOptions: (workspaceId: string) => ({
+      queryKey: ["work-products", workspaceId, "unassociated"],
+      queryFn: async () => ({ work_products: [] }),
+      enabled: true,
+    }),
   };
 });
 
@@ -67,7 +72,7 @@ function renderList() {
   return render(
     <QueryClientProvider client={qc}>
       <I18nProvider resources={TEST_RESOURCES} locale="en">
-        <PullRequestList issueId="issue-1" />
+        <PullRequestList issueId="issue-1" workspaceId="ws-1" />
       </I18nProvider>
     </QueryClientProvider>,
   );
@@ -78,6 +83,18 @@ async function waitForRender() {
 }
 
 describe("PullRequestList sidebar rows", () => {
+  it("keeps PR text from creating an association and offers explicit Attach", async () => {
+    mockPRs = [];
+    renderList();
+    expect(await screen.findByTestId("attach-pull-request-form")).toBeInTheDocument();
+    expect(screen.getByTestId("attach-pull-request-input")).toHaveAttribute(
+      "placeholder",
+      "https://github.com/org/repo/pull/123",
+    );
+    expect(screen.getByText(/does not create a link/)).toBeInTheDocument();
+    expect(screen.queryByText(/auto-link/i)).not.toBeInTheDocument();
+  });
+
   it("uses the sidebar list-row surface instead of a card surface", async () => {
     mockPRs = [makePR({ title: "Visual row" })];
     renderList();

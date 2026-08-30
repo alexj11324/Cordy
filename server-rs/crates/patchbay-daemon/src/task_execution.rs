@@ -370,6 +370,11 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
                 false,
                 "",
                 "",
+                "",
+                "",
+                "",
+                "",
+                "",
             )
             .await
         {
@@ -425,6 +430,11 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
                 outcome.result.session_rollout_missing,
                 &outcome.result.retired_session_id,
                 &outcome.result.durable_work_dir,
+                &outcome.result.execution_repo_identity,
+                &outcome.result.execution_workspace,
+                &outcome.result.execution_head_branch,
+                &outcome.result.execution_head_sha,
+                &outcome.result.execution_head_state,
             )
             .await
         {
@@ -550,6 +560,11 @@ async fn acknowledge_cancelled_run(client: &Client, task_id: &str, outcome: &Tas
         branch_name: outcome.result.branch_name.clone(),
         durable_work_dir: outcome.result.durable_work_dir.clone(),
         session_rollout_missing: outcome.result.session_rollout_missing,
+        execution_repo_identity: outcome.result.execution_repo_identity.clone(),
+        execution_workspace: outcome.result.execution_workspace.clone(),
+        execution_head_branch: outcome.result.execution_head_branch.clone(),
+        execution_head_sha: outcome.result.execution_head_sha.clone(),
+        execution_head_state: outcome.result.execution_head_state.clone(),
         ..TaskCancelAck::default()
     };
     if let Some(delivery) = outcome
@@ -580,6 +595,11 @@ async fn report_task_result(client: &Client, task_id: &str, result: &TaskResult)
                 result.session_rollout_missing,
                 &result.retired_session_id,
                 &result.durable_work_dir,
+                &result.execution_repo_identity,
+                &result.execution_workspace,
+                &result.execution_head_branch,
+                &result.execution_head_sha,
+                &result.execution_head_state,
             )
             .await;
         match complete {
@@ -604,6 +624,11 @@ async fn report_task_result(client: &Client, task_id: &str, result: &TaskResult)
                         result.session_rollout_missing,
                         &result.retired_session_id,
                         &result.durable_work_dir,
+                        &result.execution_repo_identity,
+                        &result.execution_workspace,
+                        &result.execution_head_branch,
+                        &result.execution_head_sha,
+                        &result.execution_head_state,
                     )
                     .await
                 {
@@ -627,6 +652,11 @@ async fn report_task_result(client: &Client, task_id: &str, result: &TaskResult)
             result.session_rollout_missing,
             &result.retired_session_id,
             &result.durable_work_dir,
+            &result.execution_repo_identity,
+            &result.execution_workspace,
+            &result.execution_head_branch,
+            &result.execution_head_sha,
+            &result.execution_head_state,
         )
         .await
     {

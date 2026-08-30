@@ -1042,18 +1042,6 @@ pub struct IssueProperty {
     pub workspace_id: Uuid,
 }
 
-/// Row of `issue_pull_request`.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct IssuePullRequest {
-    pub close_intent: bool,
-    pub issue_id: Uuid,
-    pub linked_at: DateTime<Utc>,
-    pub linked_by_id: Option<Uuid>,
-    pub linked_by_type: Option<String>,
-    pub pull_request_id: Uuid,
-    pub reference_only: bool,
-}
-
 /// Row of `issue_reaction`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct IssueReaction {
@@ -1100,18 +1088,6 @@ pub struct IssueSubscriber {
 pub struct IssueToLabel {
     pub issue_id: Uuid,
     pub label_id: Uuid,
-}
-
-/// Row of `issue_vcs_pull_request`.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct IssueVcsPullRequest {
-    pub close_intent: bool,
-    pub issue_id: Uuid,
-    pub linked_at: DateTime<Utc>,
-    pub linked_by_id: Option<Uuid>,
-    pub linked_by_type: Option<String>,
-    pub pull_request_id: Uuid,
-    pub reference_only: bool,
 }
 
 /// Row of `issue_view`.
@@ -1703,6 +1679,79 @@ pub struct VcsPullRequest {
     pub title: String,
     pub updated_at: DateTime<Utc>,
     pub workspace_id: Uuid,
+}
+
+/// Row of `work_product`.
+///
+/// Work products are the provider-neutral identity for externally hosted
+/// artifacts. Provider mirrors (for example `github_pull_request`) remain
+/// responsible for snapshots; this row is the identity that relations attach
+/// to.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct WorkProduct {
+    pub created_at: DateTime<Utc>,
+    pub external_identity: String,
+    pub external_url: Option<String>,
+    pub id: Uuid,
+    pub kind: String,
+    pub provider: String,
+    pub provider_record_id: Option<Uuid>,
+    pub provider_record_type: Option<String>,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+/// Row of `work_product_relation`.
+///
+/// `relation_source` is one of the three canonical, auditable paths: a manual
+/// user attach, a task execution attach, or a unique exact-branch discovery
+/// performed from that task's persisted execution provenance. A relation never
+/// records a guessed text match, and the nullable task/run fields are filled by
+/// the server from authenticated context rather than request JSON.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct WorkProductRelation {
+    pub attached_at: DateTime<Utc>,
+    pub attached_by_id: Uuid,
+    pub attached_by_type: String,
+    pub close_intent: bool,
+    pub detached_at: Option<DateTime<Utc>>,
+    pub detached_by_id: Option<Uuid>,
+    pub detached_by_type: Option<String>,
+    pub detached_run_id: Option<Uuid>,
+    pub detached_task_id: Option<Uuid>,
+    pub id: Uuid,
+    pub issue_id: Option<Uuid>,
+    pub relation_key: String,
+    pub relation_source: String,
+    pub run_id: Option<Uuid>,
+    pub task_id: Option<Uuid>,
+    pub work_product_id: Uuid,
+    pub workspace_id: Uuid,
+}
+
+/// Server-persisted execution provenance used by the post-run branch
+/// discovery path. The task id is the ownership boundary: callers can only
+/// write this row through the authenticated daemon/task context, and the
+/// discovery result is an audit of that exact execution rather than a
+/// reusable branch association.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AgentTaskExecutionProvenance {
+    pub task_id: Uuid,
+    pub workspace_id: Uuid,
+    pub run_id: Option<Uuid>,
+    pub repo_identity: Option<String>,
+    pub execution_workspace: Option<String>,
+    pub head_branch: Option<String>,
+    pub head_sha: Option<String>,
+    pub head_state: String,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub discovery_status: String,
+    pub discovery_match_count: i32,
+    pub discovery_reason: Option<String>,
+    pub discovery_work_product_id: Option<Uuid>,
+    pub discovery_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// Row of `verification_code`.

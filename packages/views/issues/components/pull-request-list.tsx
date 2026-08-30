@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   CheckCircle2,
   Circle,
@@ -17,13 +18,17 @@ import {
 } from "lucide-react";
 import {
   issuePullRequestsOptions,
+  unassociatedWorkProductsOptions,
   deriveChecksStatus,
   deriveMergeStatus,
   shouldShowPullRequestStats,
+  useAttachIssuePullRequest,
+  useAttachIssueWorkProduct,
   type PullRequestChecksStatus,
   type PullRequestMergeStatus,
 } from "@patchbay/core/github";
 import type { GitHubPullRequest, GitHubPullRequestState } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 
@@ -43,10 +48,11 @@ const STATE_ICON: Record<
   closed: { icon: GitPullRequestClosed, className: "text-rose-600 dark:text-rose-400" },
 };
 
-export function PullRequestList({ issueId }: { issueId: string }) {
+export function PullRequestList({ issueId, workspaceId }: { issueId: string; workspaceId: string }) {
   const { t } = useT("issues");
   const [expanded, setExpanded] = useState(false);
   const { data, isLoading } = useQuery(issuePullRequestsOptions(issueId));
+  const attachMutation = useAttachIssuePullRequest(issueId, workspaceId);
   const prs = data?.pull_requests ?? [];
 
   if (isLoading) {
@@ -54,9 +60,13 @@ export function PullRequestList({ issueId }: { issueId: string }) {
   }
   if (prs.length === 0) {
     return (
-      <p className="text-caption text-muted-foreground px-2">
-        {t(($) => $.detail.pull_requests_empty)}
-      </p>
+      <div className="space-y-2">
+        <p className="text-caption text-muted-foreground px-2">
+          {t(($) => $.detail.pull_requests_empty)}
+        </p>
+        <UnassociatedPullRequests issueId={issueId} workspaceId={workspaceId} />
+        <AttachPullRequestForm issueId={issueId} mutation={attachMutation} />
+      </div>
     );
   }
 
@@ -89,7 +99,131 @@ export function PullRequestList({ issueId }: { issueId: string }) {
           </button>
         </div>
       ) : null}
+      <UnassociatedPullRequests issueId={issueId} workspaceId={workspaceId} />
+      <AttachPullRequestForm issueId={issueId} mutation={attachMutation} />
     </div>
+  );
+}
+
+function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; workspaceId: string }) {
+  const { t } = useT("issues");
+  const { data } = useQuery(unassociatedWorkProductsOptions(workspaceId));
+  const mutation = useAttachIssueWorkProduct(issueId, workspaceId);
+  const [attachingId, setAttachingId] = useState<string | null>(null);
+  const products = (data?.work_products ?? []).filter(
+    (product) =>
+      product.kind === "pull_request" &&
+      product.provider === "github" &&
+      product.external_url,
+  );
+
+  if (products.length === 0) return null;
+
+  return (
+    <div
+      data-testid="unassociated-pull-requests"
+      className="space-y-1 rounded-md border border-dashed border-border/70 px-2 py-1.5"
+    >
+      <p className="text-micro font-medium text-muted-foreground">
+        {t(($) => $.detail.pull_requests_unassociated_heading)}
+      </p>
+      {products.map((product) => (
+        <div key={product.id} className="flex items-center gap-2 text-micro">
+          <a
+            href={product.external_url ?? undefined}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground"
+          >
+            {product.external_identity}
+          </a>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={mutation.isPending}
+            onClick={() => {
+              setAttachingId(product.id);
+              mutation.mutate(
+                { work_product_id: product.id },
+                {
+                  onSuccess: () => toast.success(t(($) => $.detail.pull_requests_attach_success)),
+                  onError: () => toast.error(t(($) => $.detail.pull_requests_attach_failed)),
+                  onSettled: () => setAttachingId(null),
+                },
+              );
+            }}
+          >
+            {mutation.isPending && attachingId === product.id
+              ? t(($) => $.detail.pull_requests_attaching)
+              : t(($) => $.detail.pull_requests_unassociated_attach)}
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AttachPullRequestForm({
+  issueId,
+  mutation,
+}: {
+  issueId: string;
+  mutation: ReturnType<typeof useAttachIssuePullRequest>;
+}) {
+  const { t } = useT("issues");
+  const [url, setUrl] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = url.trim();
+    if (!value || mutation.isPending) return;
+    mutation.mutate(
+      { url: value },
+      {
+        onSuccess: () => {
+          setUrl("");
+          toast.success(t(($) => $.detail.pull_requests_attach_success));
+        },
+        onError: () => {
+          toast.error(t(($) => $.detail.pull_requests_attach_failed));
+        },
+      },
+    );
+  }
+
+  return (
+    <form
+      data-testid="attach-pull-request-form"
+      onSubmit={submit}
+      className="flex items-center gap-2 px-2 pt-1"
+    >
+      <label htmlFor={`attach-pull-request-${issueId}`} className="sr-only">
+        {t(($) => $.detail.pull_requests_attach_label)}
+      </label>
+      <input
+        id={`attach-pull-request-${issueId}`}
+        data-testid="attach-pull-request-input"
+        type="url"
+        value={url}
+        onChange={(event) => setUrl(event.target.value)}
+        placeholder={t(($) => $.detail.pull_requests_attach_placeholder)}
+        aria-label={t(($) => $.detail.pull_requests_attach_label)}
+        disabled={mutation.isPending}
+        className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-micro outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <Button
+        data-testid="attach-pull-request-button"
+        type="submit"
+        size="sm"
+        variant="outline"
+        disabled={!url.trim() || mutation.isPending}
+      >
+        {mutation.isPending
+          ? t(($) => $.detail.pull_requests_attaching)
+          : t(($) => $.detail.pull_requests_attach_action)}
+      </Button>
+    </form>
   );
 }
 
