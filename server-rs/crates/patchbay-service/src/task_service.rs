@@ -1672,24 +1672,25 @@ impl TaskService {
             };
             let result = if issue.assignee_type.as_deref() == Some("team") {
                 match issue.assignee_id {
-                    Some(team_id) => match get_team_in_workspace(
-                        &self.pool,
-                        team_id,
-                        issue.workspace_id,
-                    )
-                    .await
-                    {
-                        Ok(Some(team)) if team.archived_at.is_none() => {
-                            self.enqueue_task_for_team_leader(&issue, team.leader_id, team.id, None)
+                    Some(team_id) => {
+                        match get_team_in_workspace(&self.pool, team_id, issue.workspace_id).await {
+                            Ok(Some(team)) if team.archived_at.is_none() => {
+                                self.enqueue_task_for_team_leader(
+                                    &issue,
+                                    team.leader_id,
+                                    team.id,
+                                    None,
+                                )
                                 .await
+                            }
+                            Ok(_) => Err(TaskServiceError::Internal(
+                                "ready dependency team is unavailable".to_string(),
+                            )),
+                            Err(error) => Err(TaskServiceError::Internal(format!(
+                                "load ready dependency team: {error}"
+                            ))),
                         }
-                        Ok(_) => Err(TaskServiceError::Internal(
-                            "ready dependency team is unavailable".to_string(),
-                        )),
-                        Err(error) => Err(TaskServiceError::Internal(format!(
-                            "load ready dependency team: {error}"
-                        ))),
-                    },
+                    }
                     None => Err(TaskServiceError::Internal(
                         "ready dependency team has no assignee".to_string(),
                     )),

@@ -537,30 +537,21 @@ async fn load_graphs(
         .collect::<Vec<_>>();
     issue_ids.sort_unstable();
     issue_ids.dedup();
-    let issue_by_id = issue_q::list_issues_in_workspace_by_ids(
-        pool,
-        plans[0].workspace_id,
-        issue_ids.clone(),
-    )
-    .await
-    .map_err(db_error)?
-    .into_iter()
-    .map(|issue| (issue.id, issue))
-    .collect::<HashMap<_, _>>();
-    let status_by_issue = graph_q::list_effective_issue_statuses(
-        pool,
-        plans[0].workspace_id,
-        issue_ids.clone(),
-    )
-    .await
-    .map_err(db_error)?
-    .into_iter()
-    .map(|status| (status.issue_id, status.effective_status))
-    .collect::<HashMap<_, _>>();
-    let mut node_issue_ids = nodes
-        .iter()
-        .map(|node| node.issue_id)
-        .collect::<Vec<_>>();
+    let issue_by_id =
+        issue_q::list_issues_in_workspace_by_ids(pool, plans[0].workspace_id, issue_ids.clone())
+            .await
+            .map_err(db_error)?
+            .into_iter()
+            .map(|issue| (issue.id, issue))
+            .collect::<HashMap<_, _>>();
+    let status_by_issue =
+        graph_q::list_effective_issue_statuses(pool, plans[0].workspace_id, issue_ids.clone())
+            .await
+            .map_err(db_error)?
+            .into_iter()
+            .map(|status| (status.issue_id, status.effective_status))
+            .collect::<HashMap<_, _>>();
+    let mut node_issue_ids = nodes.iter().map(|node| node.issue_id).collect::<Vec<_>>();
     node_issue_ids.sort_unstable();
     node_issue_ids.dedup();
     let gate_by_issue = graph_q::get_gate_states(pool, plans[0].workspace_id, node_issue_ids)
@@ -850,9 +841,11 @@ pub async fn load_active_dependency_graphs(
     project_id: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<DependencyGraphSnapshot>, DependencyGraphError> {
-    Ok(load_active_dependency_graphs_after(pool, workspace_id, project_id, limit, None)
-        .await?
-        .snapshots)
+    Ok(
+        load_active_dependency_graphs_after(pool, workspace_id, project_id, limit, None)
+            .await?
+            .snapshots,
+    )
 }
 
 pub async fn load_active_dependency_graphs_after(
@@ -1577,13 +1570,12 @@ mod tests {
             "dependency_graph_node",
             "dependency_graph_plan",
         ] {
-            let remaining: i64 = sqlx::query_scalar(&format!(
-                "SELECT COUNT(*) FROM {table} WHERE plan_id = $1"
-            ))
-            .bind(first.plan.id)
-            .fetch_one(&pool)
-            .await
-            .expect("count graph rows after issue deletion");
+            let remaining: i64 =
+                sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table} WHERE plan_id = $1"))
+                    .bind(first.plan.id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("count graph rows after issue deletion");
             assert_eq!(remaining, 0, "dangling rows remain in {table}");
         }
 

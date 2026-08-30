@@ -26,8 +26,7 @@ use uuid::Uuid;
 
 use crate::error::{error_code_response, error_response};
 use crate::issue::{
-    issue_created_response_with_status_category, issue_prefix,
-    issue_response_with_status_category,
+    issue_created_response_with_status_category, issue_prefix, issue_response_with_status_category,
 };
 use crate::state::HandlerState;
 
@@ -356,11 +355,7 @@ async fn apply_issue_dependency_graph(
     }
     let task_authorization = crate::issue::TaskAuthorizationContext::from_headers(&headers);
     for task in &input.tasks {
-        for assignee in task
-            .assignee
-            .iter()
-            .chain(task.candidate_assignees.iter())
-        {
+        for assignee in task.assignee.iter().chain(task.candidate_assignees.iter()) {
             if let Err(message) = crate::issue::validate_assignee(
                 &state,
                 &context,
@@ -504,11 +499,8 @@ async fn snapshot_response(state: &HandlerState, snapshot: DependencyGraphSnapsh
 fn snapshot_value(snapshot: &DependencyGraphSnapshot, prefix: &str) -> Value {
     let mut node_values = Vec::with_capacity(snapshot.nodes.len());
     for node in &snapshot.nodes {
-        let issue = issue_response_with_status_category(
-            &node.issue,
-            prefix,
-            &node.effective_status,
-        );
+        let issue =
+            issue_response_with_status_category(&node.issue, prefix, &node.effective_status);
         node_values.push(json!({
             "id": node.node.id,
             "temp_id": node.node.temp_id,
