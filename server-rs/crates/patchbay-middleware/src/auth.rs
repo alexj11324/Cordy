@@ -338,6 +338,9 @@ fn stamp_task_identity(req: &mut Request, identity: TaskIdentity) {
 /// PAT, credential-management session, Agent secret read, or another durable
 /// human control-plane authority.
 fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) -> bool {
+    if method == Method::POST && path == "/api/authorization/provider-leases/validate" {
+        return true;
+    }
     if path.starts_with("/api/issues") {
         if method == Method::GET {
             let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
@@ -947,6 +950,15 @@ mod tests {
             (Method::GET, "/api/runtimes"),
             (Method::PATCH, "/api/runtimes/runtime-id"),
             (Method::GET, "/api/authorization/decisions/decision-id"),
+            (
+                Method::GET,
+                "/api/authorization/provider-leases/validate",
+            ),
+            (
+                Method::POST,
+                "/api/authorization/provider-leases/validate/extra",
+            ),
+            (Method::POST, "/api/authorization/provider-grants"),
             (Method::GET, bound_workspace.as_str()),
         ] {
             assert!(
@@ -965,6 +977,10 @@ mod tests {
             (Method::POST, "/api/issues/issue-id/comments"),
             (Method::POST, "/api/issues"),
             (Method::POST, "/api/tasks/task-id/message-bus"),
+            (
+                Method::POST,
+                "/api/authorization/provider-leases/validate",
+            ),
         ] {
             assert!(
                 task_token_route_allowed(&method, path, workspace_id),
