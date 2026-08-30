@@ -30,6 +30,7 @@ import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useT } from "../../i18n";
+import { DependencyBlockerBadge } from "./dependency-blocker-badge";
 
 function formatDate(date: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
@@ -226,6 +227,8 @@ export const BoardCardContent = memo(function BoardCardContent({
           ))}
         </div>
       )}
+
+      <DependencyBlockerBadge issueId={issue.id} className="mt-1.5" />
 
       {/* Meta row: assignee (left), start date, due date, child progress (right) */}
       {showMetaRow && (

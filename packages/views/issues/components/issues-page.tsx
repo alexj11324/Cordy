@@ -39,6 +39,7 @@ function IssuesSurfaceHeader({
       dateFilter={dateFilter}
       onDateFilterChange={setDateFilter}
       isRefreshing={isRefreshing}
+      allowGraph
       facetCountsExact={facetCountsExact}
       tableFacetCounts={tableFacetCounts}
       onTableFacetChange={onTableFacetChange}
@@ -59,7 +60,7 @@ export function IssuesPage() {
 
       <IssueSurface
         scope={{ type: "workspace", actorKind: scope }}
-        modes={["board", "list", "table", "swimlane"]}
+        modes={["board", "list", "table", "swimlane", "graph"]}
         batchToolbar="list"
         renderHeader={({ controller }) => (
           <IssuesSurfaceHeader

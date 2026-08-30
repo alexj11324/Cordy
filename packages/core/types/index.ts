@@ -1,5 +1,16 @@
 export type { Issue, IssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction } from "./issue";
 export type {
+  DependencyGraphAssignee,
+  DependencyGraphEdge,
+  DependencyGraphNode,
+  DependencyGraphNodeReadiness,
+  DependencyGraphPlan,
+  DependencyGraphReadiness,
+  DependencyGraphReadinessState,
+  DependencyGraphResponse,
+  ListDependencyGraphsResponse,
+} from "./dependency-graph";
+export type {
   IssueStatusCategory,
   IssueStatusEntry,
   ListIssueStatusesResponse,

@@ -223,6 +223,21 @@ impl TaskService {
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
 
+        if let Some(issue_id) = task.issue_id {
+            if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
+                if let Err(error) = self
+                    .wake_dependency_dependents(issue.workspace_id, issue.id)
+                    .await
+                {
+                    tracing::warn!(
+                        %error,
+                        issue_id = %issue.id,
+                        "dependency wakeup after task completion failed"
+                    );
+                }
+            }
+        }
+
         if let Some((dispatch, message_id)) = workspace_channel_reply {
             self.publish_workspace_channel_reply(&task, dispatch, message_id)
                 .await;
@@ -546,6 +561,25 @@ impl TaskService {
         }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
+
+        if let Some(issue_id) = task.issue_id {
+            if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
+                if let Err(error) = self
+                    .flag_dependency_attention(
+                        issue.workspace_id,
+                        issue.id,
+                        &format!("prerequisite task failed: {failure_reason}"),
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        %error,
+                        issue_id = %issue.id,
+                        "dependency attention update after task failure failed"
+                    );
+                }
+            }
+        }
 
         tracing::warn!(
             task_id = %task.id,

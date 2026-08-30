@@ -2,7 +2,15 @@ import { forwardRef, useEffect, useRef, useState, useImperativeHandle } from "re
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@patchbay/core/types";
+import type {
+  DependencyGraphEdge,
+  DependencyGraphNode,
+  DependencyGraphResponse,
+  Issue,
+  IssueStatusEntry,
+  Label,
+  TimelineEntry,
+} from "@patchbay/core/types";
 import { issueStatusKeys } from "@patchbay/core/issue-statuses";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { toast } from "sonner";
@@ -308,6 +316,10 @@ const mockApiObj = vi.hoisted(() => ({
   listChildIssues: vi.fn().mockResolvedValue({ issues: [] }),
   getChildIssueProgress: vi.fn().mockResolvedValue({ progress: [] }),
   getAgentTaskSnapshot: vi.fn().mockResolvedValue([]),
+  // The default detail fixture has no active graph. Keep that as an explicit
+  // empty response so the dependency section does not turn unrelated detail
+  // coverage into an API-error test.
+  getDependencyGraph: vi.fn().mockResolvedValue(null),
   // The sub-issues header chip reads this narrowed to the parent issue.
   getWorkspaceWorkingAgents: vi.fn().mockResolvedValue([]),
   listProperties: vi.fn().mockResolvedValue({ properties: [], total: 0 }),
@@ -588,6 +600,110 @@ const mockTimeline: TimelineEntry[] = [
   },
 ];
 
+function dependencyNode(
+  nodeIssue: Issue,
+  state: DependencyGraphNode["readiness"]["state"],
+  satisfied: number,
+  total: number,
+): DependencyGraphNode {
+  return {
+    id: `node-${nodeIssue.id}`,
+    temp_id: nodeIssue.identifier,
+    issue_id: nodeIssue.id,
+    issue: nodeIssue,
+    title: nodeIssue.title,
+    description: nodeIssue.description ?? "",
+    acceptance_criteria: [],
+    context: {},
+    outputs: [`${nodeIssue.identifier}-output`],
+    assignee_type: nodeIssue.assignee_type,
+    assignee_id: nodeIssue.assignee_id,
+    candidate_assignees: [],
+    wave: 0,
+    status: nodeIssue.status,
+    readiness: {
+      state,
+      gate_open: satisfied === total,
+      satisfied_prerequisites: satisfied,
+      total_prerequisites: total,
+      unlock_condition: `All ${total} hard prerequisites must be Done (${satisfied}/${total} currently satisfied)`,
+    },
+  };
+}
+
+function dependencyEdge(
+  source: Issue,
+  target: Issue,
+  status: string,
+  satisfied: boolean,
+  index: number,
+): DependencyGraphEdge {
+  return {
+    id: `edge-${index}`,
+    plan_id: "plan-1",
+    from_issue_id: source.id,
+    to_issue_id: target.id,
+    from: source.identifier,
+    to: target.identifier,
+    type: "hard",
+    reason: `${target.identifier} consumes ${source.identifier}'s output`,
+    consumed_output: `${source.identifier}-output`,
+    prerequisite_status: status,
+    satisfied,
+    satisfied_prerequisites: satisfied ? 1 : 0,
+    total_prerequisites: 2,
+    unlock_condition: "All 2 hard prerequisites must be Done (1/2 currently satisfied)",
+  };
+}
+
+function dependencyGraphFixture(): DependencyGraphResponse {
+  const sourceDone = {
+    ...mockIssue,
+    id: "issue-2",
+    identifier: "TES-2",
+    title: "Prepare schema",
+    status: "done" as const,
+  };
+  const sourceRunning = {
+    ...mockIssue,
+    id: "issue-3",
+    identifier: "TES-3",
+    title: "Build API",
+    status: "in_progress" as const,
+  };
+  const target = { ...mockIssue, status: "blocked" as const };
+  const nodes = [
+    dependencyNode(sourceDone, "done", 0, 0),
+    dependencyNode(sourceRunning, "running", 0, 0),
+    dependencyNode(target, "blocked", 1, 2),
+  ];
+  return {
+    plan: {
+      id: "plan-1",
+      workspace_id: "ws-1",
+      parent_issue_id: "parent-1",
+      idempotency_key: "detail-test",
+      goal: "Ship API",
+      status: "active",
+      attention_required: false,
+      attention_reason: null,
+      created_by_type: "member",
+      created_by_id: "user-1",
+      created_at: "2026-08-29T00:00:00Z",
+      updated_at: "2026-08-29T00:00:00Z",
+    },
+    parent: { ...mockIssue, id: "parent-1", identifier: "TES-9" },
+    children: nodes.map((node) => node.issue),
+    nodes,
+    edges: [
+      dependencyEdge(sourceDone, target, "done", true, 1),
+      dependencyEdge(sourceRunning, target, "in_progress", false, 2),
+    ],
+    waves: [["TES-2", "TES-3"], ["TES-1"]],
+    readiness: { total: 3, ready: 0, running: 1, blocked: 1, done: 1, cancelled: 0 },
+  };
+}
+
 // Canvas animation belongs to thinking-orbs; issue-detail only cares that
 // the Working row and Agent button mount.
 vi.mock("thinking-orbs", () => ({
@@ -708,6 +824,7 @@ describe("IssueDetail (shared)", () => {
     mockApiObj.listIssues.mockResolvedValue({ issues: [], total: 0 });
     mockApiObj.getActiveTasksForIssue.mockResolvedValue({ tasks: [] });
     mockApiObj.listTasksByIssue.mockResolvedValue([]);
+    mockApiObj.getDependencyGraph.mockResolvedValue(null);
     mockApiObj.rerunIssue.mockResolvedValue({ id: "task-rerun" });
     mockApiObj.listMembers.mockResolvedValue([
       { user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" },
@@ -933,6 +1050,27 @@ describe("IssueDetail (shared)", () => {
     // No parent → no standalone Parent issue section either.
     expect(screen.queryByText("Parent issue")).not.toBeInTheDocument();
     expect(screen.getByText("Add property")).toBeInTheDocument();
+  });
+
+  it("renders every persisted prerequisite with its real status and fail-closed target readiness", async () => {
+    mockApiObj.getDependencyGraph.mockResolvedValue(dependencyGraphFixture());
+
+    renderIssueDetail();
+
+    const section = await screen.findByRole("region", { name: "Dependencies" });
+    expect(within(section).getByText("Prepare schema")).toBeInTheDocument();
+    expect(within(section).getByText("Build API")).toBeInTheDocument();
+    expect(
+      within(section).getByText(/Blocked · 1\/2 hard prerequisites satisfied/),
+    ).toBeInTheDocument();
+    expect(within(section).getAllByText("Done")).toHaveLength(2);
+    expect(within(section).getByText("In Progress")).toBeInTheDocument();
+    expect(within(section).getByText(/TES-2's output/)).toBeInTheDocument();
+
+    const sourceLink = within(section).getByRole("link", {
+      name: "Open prerequisite TES-2",
+    });
+    expect(sourceLink).toHaveAttribute("href", "/test/issues/TES-2");
   });
 
   it("uses a non-resizable layout with the sidebar sheet closed by default on mobile", async () => {

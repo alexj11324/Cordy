@@ -53,6 +53,9 @@ mod issue_comment_add_commands;
 mod issue_comment_list_commands;
 mod issue_comment_mutation_commands;
 mod issue_create_commands;
+#[cfg(test)]
+mod issue_dependency_graph_command_tests;
+mod issue_dependency_graph_commands;
 mod issue_description;
 mod issue_get_commands;
 #[cfg(test)]
@@ -253,7 +256,8 @@ use issue_children_commands::run_issue_children;
 #[cfg(test)]
 use issue_children_commands::{child_stage, format_issue_children_table, group_issue_children};
 pub(crate) use issue_command_schema::{
-    IssueArgs, IssueAssignArgs, IssueCommand, IssueCreateArgs, IssueReorderArgs, IssueStatusArgs,
+    IssueArgs, IssueAssignArgs, IssueCommand, IssueCreateArgs, IssueDependencyGraphApplyArgs,
+    IssueDependencyGraphArgs, IssueDependencyGraphCommand, IssueReorderArgs, IssueStatusArgs,
     IssueUpdateArgs,
 };
 #[cfg(test)]
@@ -264,6 +268,9 @@ use issue_comment_list_commands::format_issue_comments_table;
 use issue_comment_list_commands::run_issue_comment_list;
 use issue_comment_mutation_commands::{run_issue_comment_delete, run_issue_comment_resolution};
 use issue_create_commands::run_issue_create;
+use issue_dependency_graph_commands::{
+    run_issue_dependency_graph_apply, run_issue_dependency_graph_get,
+};
 use issue_description::{resolve_issue_create_description, resolve_issue_update_description};
 #[cfg(test)]
 use issue_get_commands::format_issue_get_table;

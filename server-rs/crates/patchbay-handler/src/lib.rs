@@ -42,6 +42,7 @@ pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
+pub mod dependency_graph;
 pub mod desktop_handoff;
 pub mod error;
 pub mod feedback;
@@ -602,6 +603,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             notification::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 issue::require_issue_workspace,
+            )),
+        )
+        .merge(
+            dependency_graph::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
             )),
         )
         .route_layer(middleware::from_fn_with_state(

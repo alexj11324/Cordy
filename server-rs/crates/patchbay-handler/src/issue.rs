@@ -6661,12 +6661,35 @@ fn terminal_category(category: &str) -> bool {
 }
 
 async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, issue: &Issue) {
-    let Some(parent_id) = issue.parent_issue_id else {
-        return;
-    };
     let mut resolver = patchbay_service::issue_status::Resolver::new(issue.workspace_id);
     let previous_category = resolver.effective(&state.pool, &previous.status).await;
     let current_category = resolver.effective(&state.pool, &issue.status).await;
+    if previous_category != current_category && current_category == "done" {
+        if let Err(error) = state
+            .tasks
+            .wake_dependency_dependents(issue.workspace_id, issue.id)
+            .await
+        {
+            tracing::warn!(%error, issue_id = %issue.id, "dependency wakeup after issue completion failed");
+        }
+    }
+    if previous_category != current_category && current_category == "cancelled" {
+        if let Err(error) = state
+            .tasks
+            .flag_dependency_attention(
+                issue.workspace_id,
+                issue.id,
+                "prerequisite issue was cancelled",
+            )
+            .await
+        {
+            tracing::warn!(%error, issue_id = %issue.id, "dependency attention update after issue cancellation failed");
+        }
+    }
+
+    let Some(parent_id) = issue.parent_issue_id else {
+        return;
+    };
     if terminal_category(&previous_category) || !terminal_category(&current_category) {
         return;
     }

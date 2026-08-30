@@ -11,6 +11,7 @@ pub mod channel_media_reconciler;
 pub mod chat_quick_actions;
 pub mod coordination;
 pub mod cron;
+pub mod dependency_graph;
 pub mod dispatch_reason;
 pub mod email;
 pub mod empty_claim_cache;

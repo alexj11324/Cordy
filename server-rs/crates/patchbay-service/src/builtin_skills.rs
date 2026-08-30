@@ -14,6 +14,10 @@ use include_dir::{include_dir, Dir};
 /// Compile-time embed of the built-in skill tree.
 static BUILTIN_SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/builtin_skills");
 
+/// The planning skill is an execution capability for a leader/planner task,
+/// not a general-purpose skill that should be injected into every worker.
+pub const TASK_PLANNING_SKILL_NAME: &str = "patchbay-task-planning";
+
 /// A skill for task execution responses. JSON field names are part of the
 /// task-claim API contract.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -62,6 +66,17 @@ pub fn load_builtin_skills() -> Vec<AgentSkillData> {
         }
     }
     skills
+}
+
+/// Returns built-ins for a claimed task. Planning is deliberately scoped to
+/// leader/planner claims; the skill itself still decides whether the goal is
+/// complex enough to split. Ordinary worker claims must not receive a prompt
+/// that can encourage them to manufacture child work.
+pub fn load_builtin_skills_for_task(is_leader_task: bool) -> Vec<AgentSkillData> {
+    load_builtin_skills()
+        .into_iter()
+        .filter(|skill| is_leader_task || skill.name != TASK_PLANNING_SKILL_NAME)
+        .collect()
 }
 
 /// Loads one skill directory. A directory without a SKILL.md is malformed —
@@ -121,12 +136,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_nine_platform_skills_embed() {
+    fn all_ten_platform_skills_embed() {
         let skills = load_builtin_skills();
-        assert_eq!(skills.len(), 9, "expected the 9 shipped platform skills");
+        assert_eq!(skills.len(), 10, "expected the 10 shipped platform skills");
         // Deterministic sorted order.
         assert_eq!(skills[0].name, "patchbay-autopilots");
-        assert_eq!(skills[8].name, "patchbay-working-on-issues");
+        assert_eq!(
+            skills
+                .iter()
+                .position(|skill| skill.name == TASK_PLANNING_SKILL_NAME),
+            Some(7)
+        );
+        assert_eq!(skills[9].name, "patchbay-working-on-issues");
+    }
+
+    #[test]
+    fn planning_skill_is_scoped_to_leader_claims() {
+        let worker = load_builtin_skills_for_task(false);
+        assert!(worker
+            .iter()
+            .all(|skill| skill.name != TASK_PLANNING_SKILL_NAME));
+        let leader = load_builtin_skills_for_task(true);
+        let planning = leader
+            .iter()
+            .find(|skill| skill.name == TASK_PLANNING_SKILL_NAME)
+            .expect("planning skill for leader");
+        assert!(planning.content.contains("LLM proposes; runtime validates"));
+        assert!(planning.content.contains("dependency-graph apply"));
     }
 
     #[test]
@@ -178,5 +214,19 @@ mod tests {
         if s.files.is_empty() {
             assert!(v.get("files").is_none());
         }
+    }
+
+    #[test]
+    fn planning_skill_has_non_invocable_metadata_and_trigger_boundary() {
+        let planning = load_builtin_skills()
+            .into_iter()
+            .find(|skill| skill.name == TASK_PLANNING_SKILL_NAME)
+            .expect("planning skill is embedded");
+        assert!(planning.content.contains("user-invocable: false"));
+        assert!(planning
+            .content
+            .contains("only for complex, genuinely splittable"));
+        assert!(planning.content.contains("do not split"));
+        assert!(planning.content.contains("atomic"));
     }
 }

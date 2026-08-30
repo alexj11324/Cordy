@@ -22,7 +22,7 @@ use patchbay_db::queries::skill::{list_agent_skills, list_skill_files};
 use patchbay_db::queries::workspace::get_workspace;
 use patchbay_protocol::messages::{ChatDonePayload, TaskProgressPayload};
 
-use crate::builtin_skills::{load_builtin_skills, AgentSkillData};
+use crate::builtin_skills::{load_builtin_skills_for_task, AgentSkillData};
 use crate::issue_status;
 use crate::redact;
 use crate::skill_bundle::{build_manifest, File as BundleFile, Skill as BundleSkill};
@@ -170,8 +170,18 @@ impl TaskService {
         &self,
         agent_id: Uuid,
     ) -> (Vec<AgentSkillData>, Vec<AgentSkillRefData>) {
+        self.load_agent_skill_bundles_for_task(agent_id, true).await
+    }
+
+    /// Loads the skill bundle visible to a specific claim. Leader/planner
+    /// claims receive the dependency planner; ordinary worker claims do not.
+    pub async fn load_agent_skill_bundles_for_task(
+        &self,
+        agent_id: Uuid,
+        is_leader_task: bool,
+    ) -> (Vec<AgentSkillData>, Vec<AgentSkillRefData>) {
         let mut skills = self.load_agent_skills(agent_id).await;
-        skills.extend(load_builtin_skills());
+        skills.extend(load_builtin_skills_for_task(is_leader_task));
         build_agent_skill_bundles(skills)
     }
 

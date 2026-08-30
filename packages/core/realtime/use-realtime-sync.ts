@@ -10,6 +10,7 @@ import { clearWorkspaceStorage } from "../platform/storage-cleanup";
 import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
+import { dependencyGraphKeys } from "../dependency-graphs";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
@@ -144,6 +145,16 @@ export function invalidateChatMessageQueries(
 ) {
   qc.invalidateQueries({ queryKey: chatKeys.messages(sessionId) });
   qc.invalidateQueries({ queryKey: chatKeys.messagesPage(sessionId) });
+}
+
+/**
+ * Dependency readiness is server-derived. A graph event therefore invalidates
+ * both list and issue-detail graph queries through the shared workspace key;
+ * mounted detail surfaces refetch the persisted gate instead of patching a
+ * guessed status locally.
+ */
+export function invalidateDependencyGraphQueries(qc: QueryClient, wsId: string): void {
+  qc.invalidateQueries({ queryKey: dependencyGraphKeys.all(wsId) });
 }
 
 // refetchPendingChatAggregate marks the current user's cross-session pending
@@ -666,6 +677,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     // 5-minute staleTime — long enough to offer a status the server already
     // archived, or to keep painting its old name.
     qc.invalidateQueries({ queryKey: issueStatusKeys.all(wsId) });
+    invalidateDependencyGraphQueries(qc, wsId);
   }
   // Cross-workspace, so outside the wsId guard: a reconnect may have missed
   // inbox events from any workspace, so re-pull the switcher-dot summary.
@@ -838,6 +850,16 @@ export function useRealtimeSync(
         const userId = authStore.getState().user?.id;
         if (wsId && userId) qc.invalidateQueries({ queryKey: pinKeys.all(wsId, userId) });
       },
+      dependency_graph: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) {
+          invalidateDependencyGraphQueries(qc, wsId);
+          // A successful wakeup promotes blocked issues to todo in the same
+          // server transaction. Refresh the ordinary issue surfaces too; the
+          // graph event is the only signal emitted for that promotion.
+          qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });
+        }
+      },
       daemon: () => {
         const wsId = getCurrentWsId();
         if (wsId) {
@@ -903,6 +925,7 @@ export function useRealtimeSync(
         if (!wsId) return;
         qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
         qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
+        invalidateDependencyGraphQueries(qc, wsId);
         // The Table working-agent shortcut derives an assignee set from the
         // projection above. Refresh its server-owned graph alongside that set
         // so rows/groups/facets cannot remain on an old task transition while
@@ -1017,6 +1040,9 @@ export function useRealtimeSync(
         if (issue.status) {
           onInboxIssueStatusChanged(qc, wsId, issue.id, issue.status);
         }
+        // Graph node readiness is derived from the persisted issue status and
+        // must repaint when a prerequisite completes or a dependent changes.
+        invalidateDependencyGraphQueries(qc, wsId);
       }
     });
 

@@ -379,6 +379,15 @@ deleted_workspace_channel_messages AS (
 deleted_workspace_channels AS (
     DELETE FROM workspace_channel WHERE workspace_id = $1
 ),
+deleted_dependency_graph_edges AS (
+    DELETE FROM dependency_graph_edge WHERE workspace_id = $1
+),
+deleted_dependency_graph_nodes AS (
+    DELETE FROM dependency_graph_node WHERE workspace_id = $1
+),
+deleted_dependency_graph_plans AS (
+    DELETE FROM dependency_graph_plan WHERE workspace_id = $1
+),
 deleted_issue_dependencies AS (
     DELETE FROM issue_dependency
     WHERE issue_id IN (SELECT id FROM ws_issues)

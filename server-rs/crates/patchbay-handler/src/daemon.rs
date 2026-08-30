@@ -2771,7 +2771,10 @@ async fn resolve_task_skill_bundles(
     if req.skills.is_empty() {
         return Json(json!({ "bundles": [] })).into_response();
     }
-    let (bundles, _) = state.tasks.load_agent_skill_bundles(task.agent_id).await;
+    let (bundles, _) = state
+        .tasks
+        .load_agent_skill_bundles_for_task(task.agent_id, task.is_leader_task)
+        .await;
     let mut selected = Vec::with_capacity(req.skills.len());
     for r in &req.skills {
         if r.id.is_empty() || r.source.is_empty() || r.hash.is_empty() {
