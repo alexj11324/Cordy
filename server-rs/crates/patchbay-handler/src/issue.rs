@@ -9105,7 +9105,10 @@ mod tests {
         let task_id = Uuid::now_v7();
         let dispatched_at = Utc::now();
 
-        sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, 'issue auth', $2)")
+        sqlx::query(
+            "INSERT INTO workspace (id, name, slug, issue_counter) \
+             VALUES ($1, 'issue auth', $2, 2)",
+        )
             .bind(workspace_id)
             .bind(format!("issue-auth-{workspace_id}"))
             .execute(&pool)
