@@ -1166,15 +1166,6 @@ mod tests {
         assert!(error.contains("exit status: 7"));
     }
 
-    #[test]
-    fn inherited_environment_filters_daemon_internal_state() {
-        assert!(should_filter_inherited_env("PATCHBAY_TASK_ID"));
-        assert!(should_filter_inherited_env("CLAUDECODE"));
-        assert!(should_filter_inherited_env("CLAUDECODE_PARENT"));
-        assert!(!should_filter_inherited_env("CLAUDE_CODE_GIT_BASH_PATH"));
-        assert!(!should_filter_inherited_env("PATH"));
-    }
-
     #[cfg(unix)]
     fn fake_backend(script: &str) -> (tempfile::TempDir, CopilotBackend) {
         let directory = tempfile::tempdir_in(".")

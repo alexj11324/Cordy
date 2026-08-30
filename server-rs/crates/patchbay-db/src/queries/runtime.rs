@@ -178,9 +178,9 @@ pub async fn delete_agent_runtime(
 )
 DELETE FROM agent_runtime WHERE id = $1"#,
     )
-        .bind(id)
-        .execute(executor)
-        .await?;
+    .bind(id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 
@@ -202,9 +202,9 @@ pub async fn delete_system_agents_by_runtime(
 )
 DELETE FROM agent WHERE id IN (SELECT id FROM victims)"#,
     )
-        .bind(runtime_id)
-        .execute(executor)
-        .await?;
+    .bind(runtime_id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 

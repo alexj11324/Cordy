@@ -1301,8 +1301,7 @@ mod tests {
 
     #[tokio::test]
     async fn task_overlay_loads_only_the_capability_users_connections() {
-        const SHARED_AGENT_OWNER: Uuid =
-            uuid::uuid!("0198c0de-0000-7000-8000-000000000099");
+        const SHARED_AGENT_OWNER: Uuid = uuid::uuid!("0198c0de-0000-7000-8000-000000000099");
         assert_ne!(USER, SHARED_AGENT_OWNER);
         let (svc, sdk, store) = service();
         store.rows.lock().unwrap().push(ComposioConnectionRow {
@@ -1320,7 +1319,10 @@ mod tests {
 
         assert!(!result.mcp_overlay.is_empty());
         assert_eq!(store.listed_users.lock().unwrap().last(), Some(&USER));
-        assert_eq!(sdk.sessions.lock().unwrap().last().unwrap().user_id, USER.to_string());
+        assert_eq!(
+            sdk.sessions.lock().unwrap().last().unwrap().user_id,
+            USER.to_string()
+        );
     }
 
     #[tokio::test]

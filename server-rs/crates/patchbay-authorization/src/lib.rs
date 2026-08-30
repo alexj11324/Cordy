@@ -164,7 +164,13 @@ impl Capability {
         }
     }
 
-    fn covers(&self, action: &str, resource_type: &str, resource_id: Option<Uuid>, task_id: Uuid) -> bool {
+    fn covers(
+        &self,
+        action: &str,
+        resource_type: &str,
+        resource_id: Option<Uuid>,
+        task_id: Uuid,
+    ) -> bool {
         self.action == action
             && self.resource_type == resource_type
             && match self.resource_id.as_str() {
@@ -370,10 +376,7 @@ ORDER BY created_at, id"#,
             .collect()
     }
 
-    async fn load_lease_chain(
-        &self,
-        lease_id: Uuid,
-    ) -> Result<Vec<LeaseRow>, AuthorizationError> {
+    async fn load_lease_chain(&self, lease_id: Uuid) -> Result<Vec<LeaseRow>, AuthorizationError> {
         let rows = sqlx::query(
             r#"WITH RECURSIVE lease_chain AS (
     SELECT token.id, token.task_id, token.agent_id, token.workspace_id,
@@ -437,8 +440,7 @@ SELECT * FROM lease_chain ORDER BY delegation_depth DESC"#,
                     current_dispatched_at: row.try_get("current_dispatched_at")?,
                     current_agent_id: row.try_get("current_agent_id")?,
                     current_device_id: row.try_get("current_device_id")?,
-                    current_on_behalf_of_user_id: row
-                        .try_get("current_on_behalf_of_user_id")?,
+                    current_on_behalf_of_user_id: row.try_get("current_on_behalf_of_user_id")?,
                     current_workspace_id: row.try_get("current_workspace_id")?,
                 })
             })
@@ -452,7 +454,8 @@ SELECT * FROM lease_chain ORDER BY delegation_depth DESC"#,
     ) -> Result<Uuid, sqlx::Error> {
         let id = Uuid::now_v7();
         let obligations = serde_json::to_value(&decision.obligations).unwrap_or_else(|_| json!([]));
-        let delegation = serde_json::to_value(&request.delegation_chain).unwrap_or_else(|_| json!([]));
+        let delegation =
+            serde_json::to_value(&request.delegation_chain).unwrap_or_else(|_| json!([]));
         // Keep the audit context identifier-only. Resource attributes may carry
         // integration metadata and are intentionally not persisted here.
         let context = json!({
@@ -868,13 +871,15 @@ fn relationship_allows(request: &AuthorizationRequest) -> bool {
         .unwrap_or(false);
 
     match request.action.as_str() {
-        Action::AGENT_INVOKE => is_owner
-            || request
-                .resource
-                .attributes
-                .get("invocation_allowed")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+        Action::AGENT_INVOKE => {
+            is_owner
+                || request
+                    .resource
+                    .attributes
+                    .get("invocation_allowed")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+        }
         Action::CREDENTIAL_USE | Action::CREDENTIAL_READ_SECRET => is_owner,
         Action::RUNTIME_READ => {
             is_owner
@@ -913,10 +918,12 @@ fn grant_conditions_match(conditions: &Value, request: &AuthorizationRequest) ->
     };
     for (key, value) in map {
         let matches = match key.as_str() {
-            "workspace_role" => serde_json::to_value(request.context.workspace_role)
-                .ok()
-                .as_ref()
-                == Some(value),
+            "workspace_role" => {
+                serde_json::to_value(request.context.workspace_role)
+                    .ok()
+                    .as_ref()
+                    == Some(value)
+            }
             "device_id" => request
                 .context
                 .device_id
@@ -934,16 +941,16 @@ fn grant_conditions_match(conditions: &Value, request: &AuthorizationRequest) ->
                 .via_agent_id
                 .is_some_and(|id| value.as_str() == Some(id.to_string().as_str())),
             "provider" => request.resource.attributes.get("provider") == Some(value),
-            "provider_action" => {
-                request.resource.attributes.get("provider_action") == Some(value)
-            }
+            "provider_action" => request.resource.attributes.get("provider_action") == Some(value),
             "models" => value.as_array().is_some_and(|models| {
                 request
                     .resource
                     .attributes
                     .get("model")
                     .and_then(Value::as_str)
-                    .is_some_and(|model| models.iter().any(|allowed| allowed.as_str() == Some(model)))
+                    .is_some_and(|model| {
+                        models.iter().any(|allowed| allowed.as_str() == Some(model))
+                    })
             }),
             "max_tokens" => value.as_u64().is_some_and(|maximum| {
                 request
@@ -963,10 +970,7 @@ fn grant_conditions_match(conditions: &Value, request: &AuthorizationRequest) ->
     true
 }
 
-fn validate_lease(
-    request: &AuthorizationRequest,
-    chain: &[LeaseRow],
-) -> Result<(), &'static str> {
+fn validate_lease(request: &AuthorizationRequest, chain: &[LeaseRow]) -> Result<(), &'static str> {
     let Some(lease_id) = request.context.lease_id else {
         return Err("task/run principal requires a capability lease");
     };
@@ -979,9 +983,7 @@ fn validate_lease(
     if leaf.workspace_id != request.resource.workspace_id {
         return Err("capability lease is bound to another workspace");
     }
-    if request.context.task_id != Some(leaf.task_id)
-        || request.principal.id != Some(leaf.task_id)
-    {
+    if request.context.task_id != Some(leaf.task_id) || request.principal.id != Some(leaf.task_id) {
         return Err("capability lease is bound to another task");
     }
     if request.context.on_behalf_of_user_id != leaf.on_behalf_of_user_id {
@@ -1068,7 +1070,12 @@ pub fn scope_is_subset(child: &[Capability], parent: &[Capability]) -> bool {
 mod tests {
     use super::*;
 
-    fn request(action: &str, resource_type: &str, owner: Uuid, actor: Uuid) -> AuthorizationRequest {
+    fn request(
+        action: &str,
+        resource_type: &str,
+        owner: Uuid,
+        actor: Uuid,
+    ) -> AuthorizationRequest {
         AuthorizationRequest {
             principal: Principal {
                 principal_type: PrincipalType::User,
@@ -1314,7 +1321,12 @@ mod tests {
             runtime_id,
             Capability::task(Action::TASK_READ),
         );
-        let mut req = request(Action::TASK_READ, ResourceType::TASK_RUN, originator, originator);
+        let mut req = request(
+            Action::TASK_READ,
+            ResourceType::TASK_RUN,
+            originator,
+            originator,
+        );
         req.principal = Principal {
             principal_type: PrincipalType::TaskRun,
             id: Some(task_id),
@@ -1375,7 +1387,12 @@ mod tests {
         child.depth = 1;
         parent.device_id = Some(Uuid::now_v7());
 
-        let mut req = request(Action::TASK_READ, ResourceType::TASK_RUN, originator, originator);
+        let mut req = request(
+            Action::TASK_READ,
+            ResourceType::TASK_RUN,
+            originator,
+            originator,
+        );
         req.principal = Principal {
             principal_type: PrincipalType::TaskRun,
             id: Some(task_id),
@@ -1390,7 +1407,10 @@ mod tests {
             lease_id: Some(lease_id),
             ..Default::default()
         };
-        assert_eq!(evaluate(&req, &[], &[child, parent]).effect, DecisionEffect::Deny);
+        assert_eq!(
+            evaluate(&req, &[], &[child, parent]).effect,
+            DecisionEffect::Deny
+        );
     }
 
     #[test]
@@ -1428,7 +1448,12 @@ mod tests {
         let originator = Uuid::now_v7();
         let parent_agent = Uuid::now_v7();
         let child_agent = Uuid::now_v7();
-        let mut req = request(Action::TASK_READ, ResourceType::TASK_RUN, originator, originator);
+        let mut req = request(
+            Action::TASK_READ,
+            ResourceType::TASK_RUN,
+            originator,
+            originator,
+        );
         req.context.via_agent_id = Some(child_agent);
         req.delegation_chain = vec![
             DelegationHop {

@@ -2,8 +2,7 @@
 
 use chrono::{Duration, Utc};
 use patchbay_db::queries::task_token::{
-    create_task_token, get_task_token_by_hash, revoke_task_token,
-    task_token_exists_for_claim,
+    create_task_token, get_task_token_by_hash, revoke_task_token, task_token_exists_for_claim,
 };
 use serde_json::json;
 use sqlx::PgPool;
@@ -150,7 +149,8 @@ fn task_scope() -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() -> anyhow::Result<()> {
+async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() -> anyhow::Result<()>
+{
     let Some(rows) = Rows::optional().await? else {
         return Ok(());
     };
@@ -195,13 +195,19 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     let (first, second) = tokio::join!(first, second);
     let first = first?;
     let second = second?;
-    assert_ne!(first.is_some(), second.is_some(), "one claim consumes one lease slot");
+    assert_ne!(
+        first.is_some(),
+        second.is_some(),
+        "one claim consumes one lease slot"
+    );
     let (winner_hash, winner) = if let Some(lease) = first {
         (&first_hash, lease)
     } else {
         (&second_hash, second.expect("one insert must win"))
     };
-    assert!(get_task_token_by_hash(&rows.pool, winner_hash).await?.is_some());
+    assert!(get_task_token_by_hash(&rows.pool, winner_hash)
+        .await?
+        .is_some());
 
     sqlx::query("UPDATE agent_task_queue SET runtime_id = NULL WHERE id = $1")
         .bind(task_id)
@@ -229,7 +235,9 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         .bind(task_id)
         .execute(&rows.pool)
         .await?;
-    assert!(get_task_token_by_hash(&rows.pool, winner_hash).await?.is_none());
+    assert!(get_task_token_by_hash(&rows.pool, winner_hash)
+        .await?
+        .is_none());
     let persisted_revocation: Option<chrono::DateTime<Utc>> =
         sqlx::query_scalar("SELECT revoked_at FROM task_token WHERE id = $1")
             .bind(winner.id)
@@ -239,11 +247,13 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         persisted_revocation.is_some(),
         "terminal leases remain queryable as revoked audit evidence"
     );
-    assert!(sqlx::query("UPDATE task_token SET revoked_at = NULL WHERE id = $1")
-        .bind(winner.id)
-        .execute(&rows.pool)
-        .await
-        .is_err());
+    assert!(
+        sqlx::query("UPDATE task_token SET revoked_at = NULL WHERE id = $1")
+            .bind(winner.id)
+            .execute(&rows.pool)
+            .await
+            .is_err()
+    );
     assert!(create_task_token(
         &rows.pool,
         &format!("lease-terminal-replay-{task_id}"),
@@ -283,7 +293,9 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         Uuid::now_v7(),
     )
     .await?;
-    assert!(get_task_token_by_hash(&rows.pool, &expired_hash).await?.is_none());
+    assert!(get_task_token_by_hash(&rows.pool, &expired_hash)
+        .await?
+        .is_none());
 
     let revoked_dispatched_at = Utc::now();
     let revoked_task = rows.task(revoked_dispatched_at).await?;
@@ -306,9 +318,17 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     )
     .await?
     .expect("active lease");
-    assert_eq!(revoke_task_token(&rows.pool, revoked.id, "contract").await?, 1);
-    assert_eq!(revoke_task_token(&rows.pool, revoked.id, "replay").await?, 0);
-    assert!(get_task_token_by_hash(&rows.pool, &revoked_hash).await?.is_none());
+    assert_eq!(
+        revoke_task_token(&rows.pool, revoked.id, "contract").await?,
+        1
+    );
+    assert_eq!(
+        revoke_task_token(&rows.pool, revoked.id, "replay").await?,
+        0
+    );
+    assert!(get_task_token_by_hash(&rows.pool, &revoked_hash)
+        .await?
+        .is_none());
     assert!(create_task_token(
         &rows.pool,
         &format!("lease-revoked-replay-{revoked_task}"),
@@ -405,12 +425,10 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     )
     .await?
     .is_none());
-    assert!(!task_token_exists_for_claim(
-        &rows.pool,
-        rejected_task,
-        Some(rejected_dispatched_at),
-    )
-    .await?);
+    assert!(
+        !task_token_exists_for_claim(&rows.pool, rejected_task, Some(rejected_dispatched_at),)
+            .await?
+    );
 
     rows.cleanup().await;
     Ok(())

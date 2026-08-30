@@ -19,12 +19,12 @@ use axum::routing::get;
 use axum::{Json, Router};
 use chrono::Utc;
 use http_body_util::BodyExt as _;
-use patchbay_daemon::hub::{
-    ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
-};
 use patchbay_authorization::{
     Action, AuthorizationContext, AuthorizationRequest, Authorizer, Principal, PrincipalType,
     Resource, ResourceType, WorkspaceRole,
+};
+use patchbay_daemon::hub::{
+    ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
 };
 use patchbay_db::models::AgentRuntime;
 use patchbay_db::queries::{
@@ -2075,15 +2075,16 @@ async fn authorize_provider_identity_for_claim(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let team_ids = team::list_teams_by_member(&state.pool, runtime.workspace_id, "member", originator)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, task_id = %task.id, "load provider grant teams failed");
-            true
-        })?
-        .into_iter()
-        .map(|team| team.id)
-        .collect::<Vec<_>>();
+    let team_ids =
+        team::list_teams_by_member(&state.pool, runtime.workspace_id, "member", originator)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, task_id = %task.id, "load provider grant teams failed");
+                true
+            })?
+            .into_iter()
+            .map(|team| team.id)
+            .collect::<Vec<_>>();
     let request_for = |principal_type, principal_id| AuthorizationRequest {
         principal: Principal {
             principal_type,
@@ -2281,20 +2282,17 @@ async fn finalize_claim_enriched_full(
     };
 
     let provider_authorization = if let Some(runtime) = runtime {
-        let workspace_role = member::get_member_by_user_and_workspace(
-            &state.pool,
-            originator,
-            workspace_id,
-        )
-        .await
-        .ok()
-        .flatten()
-        .and_then(|membership| match membership.role.as_str() {
-            "owner" => Some(WorkspaceRole::Owner),
-            "admin" => Some(WorkspaceRole::Admin),
-            "member" => Some(WorkspaceRole::Member),
-            _ => None,
-        });
+        let workspace_role =
+            member::get_member_by_user_and_workspace(&state.pool, originator, workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|membership| match membership.role.as_str() {
+                    "owner" => Some(WorkspaceRole::Owner),
+                    "admin" => Some(WorkspaceRole::Admin),
+                    "member" => Some(WorkspaceRole::Member),
+                    _ => None,
+                });
         let Some(workspace_role) = workspace_role else {
             tracing::warn!(
                 task_id = %task.id,

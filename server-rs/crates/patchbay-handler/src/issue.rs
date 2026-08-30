@@ -18,6 +18,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
+    ResourceType, WorkspaceRole,
+};
 use patchbay_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
 };
@@ -28,10 +32,6 @@ use patchbay_db::queries::{
     subscriber, task_usage, team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
-use patchbay_authorization::{
-    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
-    ResourceType, WorkspaceRole,
-};
 use patchbay_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
@@ -2379,14 +2379,7 @@ async fn quick_create_issue(
         }
     };
     if let Err(message) =
-        validate_assignee(
-            &state,
-            &context,
-            requested_assignee.0,
-            requested_id,
-            None,
-        )
-        .await
+        validate_assignee(&state, &context, requested_assignee.0, requested_id, None).await
     {
         return error_response(StatusCode::FORBIDDEN, &message);
     }
@@ -5660,8 +5653,8 @@ async fn apply_issue_update(
                 id,
                 TaskAuthorizationContext::from_headers(headers),
             )
-                .await
-                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+            .await
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
             _ => {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
@@ -5699,8 +5692,8 @@ async fn apply_issue_update(
                 id,
                 TaskAuthorizationContext::from_headers(headers),
             )
-                .await
-                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+            .await
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
             _ => {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
@@ -5994,8 +5987,8 @@ async fn apply_issue_update(
                 id,
                 TaskAuthorizationContext::from_headers(headers),
             )
-                .await
-                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
+            .await
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
         }
     }
     if let Some(violation) = issue_workflow_violation(
@@ -7100,16 +7093,14 @@ async fn create_issue(
     let workspace_id = context.member.workspace_id;
     let task_authorization = TaskAuthorizationContext::from_headers(&headers);
     if let Some(authorization) = task_authorization {
-        let task = agent::get_agent_task_in_workspace(
-            &state.pool,
-            authorization.task_id,
-            workspace_id,
-        )
-        .await
-        .ok()
-        .flatten();
+        let task =
+            agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+                .await
+                .ok()
+                .flatten();
         let quick_create_allowed = task.as_ref().is_some_and(|task| {
-            let context = patchbay_service::task_service::TaskService::parse_quick_create_context(task);
+            let context =
+                patchbay_service::task_service::TaskService::parse_quick_create_context(task);
             context.is_some_and(|quick_create| {
                 let mut requested_attachments = request.attachment_ids.clone();
                 requested_attachments.sort_unstable();
@@ -7125,13 +7116,12 @@ async fn create_issue(
                 };
                 authorization.via_agent_id == Some(task.agent_id)
                     && quick_create.workspace_id == workspace_id.to_string()
-                    && authorization.on_behalf_of_user_id.is_some_and(|user_id| {
-                        quick_create.requester_id == user_id.to_string()
-                    })
+                    && authorization
+                        .on_behalf_of_user_id
+                        .is_some_and(|user_id| quick_create.requester_id == user_id.to_string())
                     && request.priority.trim() == quick_create.priority
                     && request.due_date.as_deref().unwrap_or("").trim() == quick_create.due_date
-                    && request.project_id.as_deref().unwrap_or("").trim()
-                        == quick_create.project_id
+                    && request.project_id.as_deref().unwrap_or("").trim() == quick_create.project_id
                     && request.parent_issue_id.as_deref().unwrap_or("").trim()
                         == quick_create.parent_issue_id
                     && requested_attachments == allowed_attachments
@@ -7393,11 +7383,12 @@ pub(crate) async fn task_project_resource_allows(
         return true;
     };
     if require_bound_issue {
-        let bound = agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|task| task.issue_id);
+        let bound =
+            agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|task| task.issue_id);
         if bound != resource_id {
             return false;
         }
@@ -7622,10 +7613,12 @@ pub(crate) async fn can_invoke_agent(
     let owner = originator_user_id.is_some_and(|user_id| target.owner_id == Some(user_id));
     let workspace_broad = matches!(actor_type, "agent" | "system");
     let membership = match originator_user_id {
-        Some(user_id) => member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
-            .await
-            .ok()
-            .flatten(),
+        Some(user_id) => {
+            member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
+                .await
+                .ok()
+                .flatten()
+        }
         None => None,
     };
     let acl_allowed = owner
@@ -7639,18 +7632,20 @@ pub(crate) async fn can_invoke_agent(
                     "member" => originator_user_id == Some(entry.target_id),
                     _ => false,
                 }));
-    let role = membership.as_ref().and_then(|member| match member.role.as_str() {
-        "owner" => Some(WorkspaceRole::Owner),
-        "admin" => Some(WorkspaceRole::Admin),
-        "member" => Some(WorkspaceRole::Member),
-        _ => None,
-    });
+    let role = membership
+        .as_ref()
+        .and_then(|member| match member.role.as_str() {
+            "owner" => Some(WorkspaceRole::Owner),
+            "admin" => Some(WorkspaceRole::Admin),
+            "member" => Some(WorkspaceRole::Member),
+            _ => None,
+        });
     let principal_type = if task_authorization.is_some() {
         PrincipalType::TaskRun
     } else {
         match actor_type {
-        "agent" => PrincipalType::AgentDefinition,
-        "system" => PrincipalType::System,
+            "agent" => PrincipalType::AgentDefinition,
+            "system" => PrincipalType::System,
             _ => PrincipalType::User,
         }
     };
@@ -7700,14 +7695,11 @@ pub(crate) async fn can_invoke_agent(
     let Some(runtime_id) = target.runtime_id else {
         return true;
     };
-    let Some(target_runtime) = runtime::get_agent_runtime_for_workspace(
-        &state.pool,
-        runtime_id,
-        workspace_id,
-    )
-    .await
-    .ok()
-    .flatten()
+    let Some(target_runtime) =
+        runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, workspace_id)
+            .await
+            .ok()
+            .flatten()
     else {
         return false;
     };
@@ -9125,14 +9117,12 @@ mod tests {
             .execute(&pool)
             .await
             .expect("create user");
-        sqlx::query(
-            "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
-        )
-        .bind(workspace_id)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .expect("create member");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create member");
         sqlx::query(
             "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
              VALUES ($1, $2, 'issue-auth-daemon', 'issue auth runtime', 'local', 'codex', 'online', $3, 'private')",
@@ -9243,11 +9233,7 @@ mod tests {
                 .body(axum::body::Body::empty())
                 .expect("issue request");
             *request.headers_mut() = headers.clone();
-            let response = app
-                .clone()
-                .oneshot(request)
-                .await
-                .expect("issue response");
+            let response = app.clone().oneshot(request).await.expect("issue response");
             let status = response.status();
             let bytes = response
                 .into_body()

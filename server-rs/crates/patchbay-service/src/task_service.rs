@@ -1084,9 +1084,7 @@ impl TaskService {
                 task.attempt,
             );
         }
-        if let Err(err) =
-            revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await
-        {
+        if let Err(err) = revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await {
             tracing::warn!(
                 task_id = %task.id,
                 error = %err,
@@ -3708,12 +3706,8 @@ pub struct CreateTaskToken {
 /// `create_task_token` in the same transaction that persists the lease.
 pub fn root_task_capability_scope(task: &AgentTaskQueue) -> serde_json::Value {
     let mut scope = vec![
-        patchbay_authorization::Capability::task(
-            patchbay_authorization::Action::TASK_READ,
-        ),
-        patchbay_authorization::Capability::task(
-            patchbay_authorization::Action::TASK_UPDATE,
-        ),
+        patchbay_authorization::Capability::task(patchbay_authorization::Action::TASK_READ),
+        patchbay_authorization::Capability::task(patchbay_authorization::Action::TASK_UPDATE),
         patchbay_authorization::Capability::wildcard(
             patchbay_authorization::Action::AGENT_INVOKE,
             patchbay_authorization::ResourceType::AGENT_DEFINITION,

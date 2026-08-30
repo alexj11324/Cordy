@@ -11,10 +11,7 @@ use std::ffi::OsString;
 
 use tokio::process::Command;
 
-pub(crate) fn configure_child_env(
-    command: &mut Command,
-    overrides: &BTreeMap<String, String>,
-) {
+pub(crate) fn configure_child_env(command: &mut Command, overrides: &BTreeMap<String, String>) {
     command.env_clear();
     for (key, value) in filtered_inherited_env() {
         command.env(key, value);

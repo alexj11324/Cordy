@@ -102,23 +102,23 @@ pub async fn create_task_token(
               delegation_depth, delegation_fence, claim_dispatched_at,
               on_behalf_of_user_id, device_id, revoked_at, revoked_reason
 )
-SELECT * FROM inserted"#
+SELECT * FROM inserted"#,
     )
-        .bind(token_hash)
-        .bind(task_id)
-        .bind(agent_id)
-        .bind(workspace_id)
-        .bind(user_id)
-        .bind(expires_at)
-        .bind(scope)
-        .bind(parent_task_id)
-        .bind(claim_dispatched_at)
-        .bind(delegation_fence)
-        .bind(on_behalf_of_user_id)
-        .bind(device_id)
-        .bind(id)
-        .fetch_optional(executor)
-        .await?;
+    .bind(token_hash)
+    .bind(task_id)
+    .bind(agent_id)
+    .bind(workspace_id)
+    .bind(user_id)
+    .bind(expires_at)
+    .bind(scope)
+    .bind(parent_task_id)
+    .bind(claim_dispatched_at)
+    .bind(delegation_fence)
+    .bind(on_behalf_of_user_id)
+    .bind(device_id)
+    .bind(id)
+    .fetch_optional(executor)
+    .await?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(TaskToken {
         id: row.try_get(0)?,
@@ -162,10 +162,10 @@ SET revoked_at = COALESCE(revoked_at, now()),
     revoked_reason = COALESCE(revoked_reason, $2)
 WHERE task_id = $1 AND revoked_at IS NULL"#,
     )
-        .bind(task_id)
-        .bind(reason)
-        .execute(executor)
-        .await?;
+    .bind(task_id)
+    .bind(reason)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 

@@ -1439,8 +1439,7 @@ async fn fail_claimed_task_before_launch(
 #[cfg(test)]
 mod tests {
     use super::{
-        capability_scoped_task_overlay, explicit_goal_objective,
-        strip_unleased_execution_resume,
+        capability_scoped_task_overlay, explicit_goal_objective, strip_unleased_execution_resume,
     };
     use serde_json::json;
 
@@ -1503,5 +1502,4 @@ mod tests {
         }
         assert_eq!(payload.get("title"), Some(&json!("safe metadata")));
     }
-
 }

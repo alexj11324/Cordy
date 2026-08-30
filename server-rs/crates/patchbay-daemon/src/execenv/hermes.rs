@@ -606,6 +606,8 @@ fn atomic_write(path: &Path, data: &[u8], mode: u32) -> anyhow::Result<()> {
         temp.as_file()
             .set_permissions(fs::Permissions::from_mode(mode))?;
     }
+    #[cfg(not(unix))]
+    let _ = mode;
     temp.write_all(data)?;
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|error| anyhow!(error))?;

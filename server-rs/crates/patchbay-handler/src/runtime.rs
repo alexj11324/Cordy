@@ -6,12 +6,12 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
-use patchbay_db::models::{AgentRuntime, Member};
-use patchbay_db::queries::{agent, runtime, runtime_profile};
 use patchbay_authorization::{
     Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
     ResourceType, WorkspaceRole,
 };
+use patchbay_db::models::{AgentRuntime, Member};
+use patchbay_db::queries::{agent, runtime, runtime_profile};
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_protocol::EVENT_DAEMON_REGISTER;
 use serde::{Deserialize, Serialize};
@@ -792,14 +792,12 @@ mod tests {
                 .await
                 .expect("create user");
         }
-        sqlx::query(
-            "INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
-        )
-        .bind(workspace_id)
-        .bind(originator)
-        .execute(&pool)
-        .await
-        .expect("create membership");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
+            .bind(workspace_id)
+            .bind(originator)
+            .execute(&pool)
+            .await
+            .expect("create membership");
         sqlx::query(
             "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
              VALUES ($1, $2, 'runtime-auth-daemon', 'public local runtime', 'local', 'codex', 'online', $3, 'public')",
@@ -905,10 +903,16 @@ mod tests {
         ] {
             headers.insert(name, value.parse().expect("header value"));
         }
-        let state = HandlerState::new(pool.clone(), patchbay_auth::pat_cache::PatCache::disabled(), None);
-        assert!(!runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
-            .await
-            .expect("deny runtime use"));
+        let state = HandlerState::new(
+            pool.clone(),
+            patchbay_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert!(
+            !runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
+                .await
+                .expect("deny runtime use")
+        );
 
         sqlx::query(
             "INSERT INTO authorization_grant (workspace_id, principal_type, principal_id, action, resource_type, resource_id, effect, created_by) VALUES \
@@ -926,9 +930,11 @@ mod tests {
         .execute(&pool)
         .await
         .expect("grant agent and device runtime use");
-        assert!(!runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
-            .await
-            .expect("agent and device grants are ceilings, not caller authority"));
+        assert!(
+            !runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
+                .await
+                .expect("agent and device grants are ceilings, not caller authority")
+        );
 
         sqlx::query(
             "INSERT INTO authorization_grant (workspace_id, principal_type, principal_id, action, resource_type, resource_id, effect, created_by) \
@@ -942,9 +948,11 @@ mod tests {
         .execute(&pool)
         .await
         .expect("grant runtime use");
-        assert!(!runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
-            .await
-            .expect("a grant cannot expose another owner's local device"));
+        assert!(
+            !runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
+                .await
+                .expect("a grant cannot expose another owner's local device")
+        );
 
         sqlx::query(
             "INSERT INTO authorization_grant (workspace_id, principal_type, principal_id, action, resource_type, resource_id, effect, created_by) \
@@ -958,9 +966,11 @@ mod tests {
         .execute(&pool)
         .await
         .expect("require runtime approval");
-        assert!(!runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
-            .await
-            .expect("require approval is not allow"));
+        assert!(
+            !runtime_allowed(&state, &member, &headers, &runtime, Action::RUNTIME_USE)
+                .await
+                .expect("require approval is not allow")
+        );
 
         sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
             .bind(workspace_id)

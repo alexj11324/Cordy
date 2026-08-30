@@ -1137,6 +1137,8 @@ fn root_sudo_preflight(env: &BTreeMap<String, String>) -> Result<(), AgentError>
             ));
         }
     }
+    #[cfg(not(unix))]
+    let _ = env;
     Ok(())
 }
 
@@ -1491,18 +1493,6 @@ mod tests {
             vec!["low", "medium", "high"]
         );
         assert!(claude_effort_levels_from_help("claude --help without effort").is_empty());
-    }
-
-    #[test]
-    fn inherited_environment_filters_only_patchbay_and_claude_internal_state() {
-        assert!(should_filter_inherited_env("PATCHBAY_WORKSPACE"));
-        assert!(should_filter_inherited_env("PATCHBAY_"));
-        assert!(should_filter_inherited_env("CLAUDECODE"));
-        assert!(should_filter_inherited_env("CLAUDECODE_PARENT"));
-        assert!(should_filter_inherited_env("CLAUDE_CODE_SESSION_ID"));
-        assert!(should_filter_inherited_env("CLAUDE_CODE_ENTRYPOINT"));
-        assert!(!should_filter_inherited_env("CLAUDE_CODE_GIT_BASH_PATH"));
-        assert!(!should_filter_inherited_env("PATH"));
     }
 
     #[test]

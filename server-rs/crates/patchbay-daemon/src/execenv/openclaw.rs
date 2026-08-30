@@ -638,6 +638,8 @@ fn atomic_json(path: &Path, value: &Value, mode: u32) -> anyhow::Result<()> {
         temp.as_file()
             .set_permissions(fs::Permissions::from_mode(mode))?;
     }
+    #[cfg(not(unix))]
+    let _ = mode;
     temp.as_file_mut().write_all(&data)?;
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|error| anyhow!(error))?;

@@ -300,11 +300,9 @@ mod tests {
         };
         let conns = vec![conn("github", "ca_1")];
         // Gate 1: no owner.
-        let r = build_task_overlay(&spawner, None, &["github".into()], &conns, |s| {
-            s.into()
-        })
-        .await
-        .unwrap();
+        let r = build_task_overlay(&spawner, None, &["github".into()], &conns, |s| s.into())
+            .await
+            .unwrap();
         assert!(r.mcp_overlay.is_empty());
         // Gate 2: empty allowlist.
         let r = build_task_overlay(&spawner, Some(CALLER), &[], &conns, |s| s.into())
@@ -312,13 +310,9 @@ mod tests {
             .unwrap();
         assert!(r.mcp_overlay.is_empty());
         // Gate 3: allowlist misses all connections.
-        let r = build_task_overlay(
-            &spawner,
-            Some(CALLER),
-            &["notion".into()],
-            &conns,
-            |s| s.into(),
-        )
+        let r = build_task_overlay(&spawner, Some(CALLER), &["notion".into()], &conns, |s| {
+            s.into()
+        })
         .await
         .unwrap();
         assert!(r.mcp_overlay.is_empty());
@@ -371,8 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn shared_agent_session_is_minted_for_caller_not_definition_owner() {
-        const DEFINITION_OWNER: Uuid =
-            uuid::uuid!("0198c0de-0000-7000-8000-000000000001");
+        const DEFINITION_OWNER: Uuid = uuid::uuid!("0198c0de-0000-7000-8000-000000000001");
         assert_ne!(CALLER, DEFINITION_OWNER);
         let spawner = FakeSpawner {
             url: "https://mcp/sess",

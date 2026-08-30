@@ -361,8 +361,8 @@ fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) ->
     }
     if method == Method::GET
         && ["/api/properties", "/api/labels"]
-        .iter()
-        .any(|prefix| path.starts_with(prefix))
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
     {
         return true;
     }
@@ -923,7 +923,10 @@ mod tests {
             (Method::DELETE, "/api/issues/issue-id"),
             (Method::POST, "/api/issues/batch-delete"),
             (Method::DELETE, "/api/comments/comment-id"),
-            (Method::POST, "/api/runtimes/runtime-id/unbind-agents-and-delete"),
+            (
+                Method::POST,
+                "/api/runtimes/runtime-id/unbind-agents-and-delete",
+            ),
             (Method::POST, "/api/cloud-runtime/nodes"),
             (Method::GET, "/api/workspaces"),
             (Method::GET, "/api/agent-task-snapshot"),

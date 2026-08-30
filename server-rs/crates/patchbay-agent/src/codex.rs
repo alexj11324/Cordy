@@ -8,7 +8,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{self, Write};
+use std::io;
+#[cfg(unix)]
+use std::io::Write;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};

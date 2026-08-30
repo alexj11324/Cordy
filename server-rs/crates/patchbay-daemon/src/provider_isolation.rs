@@ -43,10 +43,12 @@ fn canonical_existing(path: &str, label: &str) -> anyhow::Result<PathBuf> {
 }
 
 fn executable_root(executable: &Path) -> anyhow::Result<PathBuf> {
-    executable
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| anyhow!("provider executable has no parent: {}", executable.display()))
+    executable.parent().map(Path::to_path_buf).ok_or_else(|| {
+        anyhow!(
+            "provider executable has no parent: {}",
+            executable.display()
+        )
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -58,7 +60,10 @@ fn isolate_macos(
     temp_dir: &Path,
 ) -> anyhow::Result<()> {
     const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
-    anyhow::ensure!(Path::new(SANDBOX_EXEC).is_file(), "sandbox-exec is unavailable");
+    anyhow::ensure!(
+        Path::new(SANDBOX_EXEC).is_file(),
+        "sandbox-exec is unavailable"
+    );
     let provider_root = executable_root(executable)?;
     let readable = [
         Path::new("/System"),

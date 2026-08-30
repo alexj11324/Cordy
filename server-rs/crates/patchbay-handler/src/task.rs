@@ -87,7 +87,10 @@ async fn send_message_to_main_task(
     )
     .await
     {
-        return error_response(StatusCode::FORBIDDEN, "task capability does not allow update");
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow update",
+        );
     }
     let Some(actor_agent_id) = headers
         .get("x-agent-id")
@@ -225,7 +228,10 @@ async fn cancel_task(
     )
     .await
     {
-        return error_response(StatusCode::FORBIDDEN, "task capability does not allow update");
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow update",
+        );
     }
     let task =
         match agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)

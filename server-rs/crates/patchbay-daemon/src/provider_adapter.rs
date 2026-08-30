@@ -901,14 +901,15 @@ impl ProductionProviderAdapter {
             let mut child_env = bound.child_env.into_inner();
             let provider_broker = match task.provider_authorization.as_ref() {
                 Some(authorization) => {
-                    let broker = crate::provider_credential_broker::ProviderCredentialBroker::start(
-                        Arc::clone(&client),
-                        ctx.clone(),
-                        &task,
-                        authorization,
-                    )
-                    .await
-                    .context("start provider credential broker")?;
+                    let broker =
+                        crate::provider_credential_broker::ProviderCredentialBroker::start(
+                            Arc::clone(&client),
+                            ctx.clone(),
+                            &task,
+                            authorization,
+                        )
+                        .await
+                        .context("start provider credential broker")?;
                     broker
                         .configure_child_environment(&target.provider, &mut child_env)
                         .context("configure provider credential broker")?;

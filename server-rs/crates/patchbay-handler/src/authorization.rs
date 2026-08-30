@@ -81,11 +81,15 @@ WHERE task.id = $1 AND runtime.id = $2"#,
     let provider: String = row.try_get("provider").unwrap_or_default();
     let workspace_id: Uuid = match row.try_get("workspace_id") {
         Ok(value) => value,
-        Err(_) => return error_response(StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable"),
+        Err(_) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable")
+        }
     };
     let agent_id: Uuid = match row.try_get("agent_id") {
         Ok(value) => value,
-        Err(_) => return error_response(StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable"),
+        Err(_) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable")
+        }
     };
     let owner_id: Option<Uuid> = row.try_get("owner_id").unwrap_or(None);
     if workspace_id != context.member.workspace_id
@@ -215,10 +219,16 @@ async fn create_provider_grant(
 ) -> Response {
     let actor_id = context.member.user_id;
     let workspace_id = context.member.workspace_id;
-    if !matches!(request.grantee_type.as_str(), "user" | "team" | "agent_definition") {
+    if !matches!(
+        request.grantee_type.as_str(),
+        "user" | "team" | "agent_definition"
+    ) {
         return error_response(StatusCode::BAD_REQUEST, "invalid provider grant grantee");
     }
-    if !matches!(request.effect.as_str(), "allow" | "deny" | "require_approval") {
+    if !matches!(
+        request.effect.as_str(),
+        "allow" | "deny" | "require_approval"
+    ) {
         return error_response(StatusCode::BAD_REQUEST, "invalid provider grant effect");
     }
     if request.allowed_actions.len() != 1
@@ -251,7 +261,10 @@ async fn create_provider_grant(
         );
     }
     if request.max_tokens.is_some_and(|tokens| tokens == 0) {
-        return error_response(StatusCode::BAD_REQUEST, "provider token budget must be positive");
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "provider token budget must be positive",
+        );
     }
 
     let runtime = match sqlx::query(
@@ -271,7 +284,10 @@ async fn create_provider_grant(
     };
     let owner_id: Option<Uuid> = runtime.try_get("owner_id").unwrap_or(None);
     if owner_id != Some(actor_id) {
-        return error_response(StatusCode::FORBIDDEN, "only the provider owner can grant use");
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "only the provider owner can grant use",
+        );
     }
     let provider: String = runtime.try_get("provider").unwrap_or_default();
     if !matches!(provider.as_str(), "codex" | "claude") {
