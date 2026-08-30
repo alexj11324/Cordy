@@ -50,6 +50,8 @@ redis_backend="$(
     --set backend.redis.enabled=true
 )"
 require_rendered_value "$redis_backend" 'replicas: 2'
+require_rendered_value "$redis_backend" '- name: PATCHBAY_REQUIRE_SHARED_DESKTOP_HANDOFF'
+require_rendered_value "$redis_backend" 'value: "true"'
 require_rendered_value "$redis_backend" '- name: REDIS_URL'
 require_rendered_value "$redis_backend" 'key: "REDIS_URL"'
 

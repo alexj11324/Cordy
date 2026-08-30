@@ -77,6 +77,8 @@ spec:
               value: {{ include "patchbay.databaseUrl" . | quote }}
             {{- end }}
             {{- if .Values.backend.redis.enabled }}
+            - name: PATCHBAY_REQUIRE_SHARED_DESKTOP_HANDOFF
+              value: "true"
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
