@@ -677,6 +677,7 @@ mod tests {
         let colleague_id = Uuid::now_v7();
         let runtime_id = Uuid::now_v7();
         let agent_id = Uuid::now_v7();
+        let issue_id = Uuid::now_v7();
         let parent_task_id = Uuid::now_v7();
         let child_task_id = Uuid::now_v7();
         let parent_dispatched_at = Utc::now();
@@ -727,16 +728,34 @@ mod tests {
         .execute(&pool)
         .await
         .expect("create agent");
-        for (task_id, dispatched_at, delegated_from_task_id) in [
-            (parent_task_id, parent_dispatched_at, None),
-            (child_task_id, child_dispatched_at, Some(parent_task_id)),
+        sqlx::query(
+            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number) \
+             VALUES ($1, $2, 'broker revoke issue', 'in_progress', 'medium', 'member', $3, 'agent', $4, 1)",
+        )
+        .bind(issue_id)
+        .bind(workspace_id)
+        .bind(colleague_id)
+        .bind(agent_id)
+        .execute(&pool)
+        .await
+        .expect("create issue");
+        for (task_id, dispatched_at, delegated_from_task_id, task_context) in [
+            (parent_task_id, parent_dispatched_at, None, json!({})),
+            (
+                child_task_id,
+                child_dispatched_at,
+                Some(parent_task_id),
+                json!({"side_chat_parent_task_id": parent_task_id.to_string()}),
+            ),
         ] {
             sqlx::query(
-                "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id, delegated_from_task_id) \
-                 VALUES ($1, $2, 'dispatched', 0, $3, $4, $4, $5, $6)",
+                "INSERT INTO agent_task_queue (id, agent_id, issue_id, context, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id, delegated_from_task_id) \
+                 VALUES ($1, $2, $3, $4, 'dispatched', 0, $5, $6, $6, $7, $8)",
             )
             .bind(task_id)
             .bind(agent_id)
+            .bind(issue_id)
+            .bind(task_context)
             .bind(dispatched_at)
             .bind(colleague_id)
             .bind(runtime_id)
@@ -896,6 +915,11 @@ mod tests {
             .execute(&pool)
             .await
             .expect("delete tasks");
+        sqlx::query("DELETE FROM issue WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete issue");
         sqlx::query("DELETE FROM agent WHERE id = $1")
             .bind(agent_id)
             .execute(&pool)
