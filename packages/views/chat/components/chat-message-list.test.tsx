@@ -121,7 +121,9 @@ describe("ChatMessageList live timeline (PB-3960 regression)", () => {
     expect(await screen.findByTestId("agent-thread-event-tool_result")).toBeInTheDocument();
     expect(screen.getByText("Bash")).toBeInTheDocument();
     expect(screen.getByText(/cargo test --workspace/)).toBeInTheDocument();
-    expect(screen.getByText(/Bash result: ok/)).toBeInTheDocument();
+    expect(screen.getByTestId("agent-thread-event-tool_result")).toHaveTextContent(
+      "Bash result: ok",
+    );
     expect(screen.queryByText("raw tool payload must not render")).not.toBeInTheDocument();
     expect(screen.queryByText("Inspecting the repository.")).not.toBeInTheDocument();
     expect(document.querySelector('[data-agent-thread-event="thinking"]')).toBeNull();

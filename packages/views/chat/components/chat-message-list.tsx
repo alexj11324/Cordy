@@ -3,7 +3,6 @@
 import {
   memo,
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -1262,7 +1261,7 @@ function TimelineView({
   return (
     <div className="space-y-3">
       {blocks.map((block) => {
-        if (block.type === "tool_use" || block.type === "tool_result") {
+        if ("event" in block) {
           return <ToolEventRow key={`${block.type}:${block.seq}`} event={block.event} />;
         }
         if (block.type === "error") {
@@ -1271,7 +1270,7 @@ function TimelineView({
         return (
           <RichContent
             key={`text:${block.seq}`}
-            content={block.content}
+            content={block.type === "text" ? block.content : ""}
             attachments={attachments}
             density="compact"
             phase={phase}
