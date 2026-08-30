@@ -362,9 +362,16 @@ pub(crate) fn b64(data: &[u8]) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::{Mutex, MutexGuard};
+
+    fn trace_test_lock() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn set_trace_roundtrips() {
+        let _guard = trace_test_lock();
         assert!(set_trace(true));
         assert!(tracing_on());
         assert!(!set_trace(false));
@@ -402,6 +409,7 @@ mod tests {
 
     #[test]
     fn trace_out_fields_reads_named_fields_only() {
+        let _guard = trace_test_lock();
         set_trace(true);
         let frame = json!({
             "cmd": "aibot_send_msg",
@@ -436,6 +444,7 @@ mod tests {
 
     #[test]
     fn media_header_line_fires_even_when_absent() {
+        let _guard = trace_test_lock();
         set_trace(true);
         // No panic and no filtering: absence is recorded as empty strings.
         trace_media_headers("m1", 0, "", "");

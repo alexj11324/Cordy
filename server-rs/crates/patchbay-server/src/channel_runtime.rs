@@ -1514,6 +1514,7 @@ mod tests {
     // SecretBox wire fixture for ZERO_KEY + a zero nonce + "123456:test-token".
     const SEALED_TEST_SECRET: &str = "AAAAAAAAAAAAAAAA/5VzCXhWURpiPbH+zpz2fRywHKYN3+Y5+wsRBx2QX13v";
 
+    /// Serializes tests that mutate process-wide environment or WeCom security state.
     fn production_env_lock() -> &'static tokio::sync::Mutex<()> {
         static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
@@ -1694,6 +1695,7 @@ mod tests {
 
     #[tokio::test]
     async fn telegram_production_configuration_registers_only_with_a_valid_secret() {
+        let _env_lock = production_env_lock().lock().await;
         const KEY_ENV: &str = "PATCHBAY_TELEGRAM_SECRET_KEY";
         let original = std::env::var_os(KEY_ENV);
         let state = patchbay_handler::HandlerState::new(
@@ -1775,8 +1777,45 @@ mod tests {
         assert_eq!(app_url(&cfg), "https://app.example");
     }
 
-    #[test]
-    fn wecom_security_config_applies_bounded_cidrs_and_exact_trace_flag() {
+    #[tokio::test]
+    async fn parallel_wecom_security_configurations_keep_global_state_isolated() {
+        let mut allow_list_cfg = patchbay_config::Config::default();
+        allow_list_cfg.integrations.wecom_media_allow_cidrs = Some("198.18.0.0/15".into());
+        allow_list_cfg.integrations.wecom_trace = Some("1".into());
+        let default_cfg = patchbay_config::Config::default();
+
+        let allow_list = async {
+            let _env_lock = production_env_lock().lock().await;
+            configure_wecom_security(&allow_list_cfg);
+            // Force the joined futures to contend after each global update.
+            tokio::task::yield_now().await;
+            let observed = (
+                patchbay_wecom::media_guard::public_addr_only("198.18.0.1".parse().unwrap()),
+                patchbay_wecom::trace::tracing_on(),
+            );
+            configure_wecom_security(&default_cfg);
+            observed
+        };
+        let defaults = async {
+            let _env_lock = production_env_lock().lock().await;
+            configure_wecom_security(&default_cfg);
+            tokio::task::yield_now().await;
+            let observed = (
+                patchbay_wecom::media_guard::public_addr_only("198.18.0.1".parse().unwrap()),
+                patchbay_wecom::trace::tracing_on(),
+            );
+            configure_wecom_security(&default_cfg);
+            observed
+        };
+
+        let (allow_list_observed, defaults_observed) = tokio::join!(allow_list, defaults);
+        assert_eq!(allow_list_observed, (true, true));
+        assert_eq!(defaults_observed, (false, false));
+    }
+
+    #[tokio::test]
+    async fn wecom_security_config_applies_bounded_cidrs_and_exact_trace_flag() {
+        let _env_lock = production_env_lock().lock().await;
         let mut cfg = patchbay_config::Config::default();
         cfg.integrations.wecom_media_allow_cidrs = Some(" 198.18.0.0/15,not-a-network, ".into());
         cfg.integrations.wecom_trace = Some(" 1 ".into());
