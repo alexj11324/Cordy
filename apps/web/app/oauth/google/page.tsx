@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useClerk, useSignIn } from "@clerk/nextjs";
+import { useAuth, useSignIn } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
@@ -22,22 +22,45 @@ function GoogleOAuthContent() {
     () => readDesktopHandoffBinding(searchParams),
     [searchParams],
   );
-  const clerk = useClerk();
+  const { isLoaded, isSignedIn, signOut } = useAuth();
   const { signIn } = useSignIn();
   const { t } = useT("auth");
-  const attempted = useRef(false);
+  const signOutAttemptedFor = useRef<string | null>(null);
+  const ssoAttemptedFor = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (attempted.current) return;
     if (!binding) {
       setError(t(($) => $.web.google_oauth.invalid_binding));
       return;
     }
-    if (!clerk.loaded) return;
-    attempted.current = true;
+    if (!isLoaded) return;
 
     const currentPathname = window.location.pathname;
+    const oauthStartUrl = `${buildBrokerRoute(
+      currentPathname,
+      "/oauth/google",
+      "/oauth/google",
+    )}?${binding.query}`;
+    const failClosed = () => {
+      setError(t(($) => $.web.google_oauth.failed));
+    };
+
+    // A browser session from the web app must not silently authorize a new
+    // desktop login. Clerk also rejects a second sign-in attempt with
+    // `session_exists`, before Google can show its account chooser. Clear the
+    // browser-side Clerk sessions, then return to this exact PKCE/state-bound
+    // entry URL and start a fresh provider attempt.
+    if (isSignedIn) {
+      if (signOutAttemptedFor.current === binding.query) return;
+      signOutAttemptedFor.current = binding.query;
+      void signOut({ redirectUrl: oauthStartUrl }).catch(failClosed);
+      return;
+    }
+
+    if (ssoAttemptedFor.current === binding.query) return;
+    ssoAttemptedFor.current = binding.query;
+
     const returnUrl = `${buildBrokerRoute(
       currentPathname,
       "/oauth/google",
@@ -58,14 +81,10 @@ function GoogleOAuthContent() {
         oidcPrompt: "select_account",
       })
       .then(({ error: clerkError }) => {
-        if (clerkError) {
-          setError(t(($) => $.web.google_oauth.failed));
-        }
+        if (clerkError) failClosed();
       })
-      .catch(() => {
-        setError(t(($) => $.web.google_oauth.failed));
-      });
-  }, [binding, clerk.loaded, signIn, t]);
+      .catch(failClosed);
+  }, [binding, isLoaded, isSignedIn, signIn, signOut, t]);
 
   return (
     <ClerkAuthShell>
