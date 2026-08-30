@@ -651,22 +651,10 @@ mod tests {
         .await
         .expect("persist provider budget reservations");
 
-        let first_load = load_provider_budget(
-            &pool,
-            workspace_id,
-            lease_id,
-            task_id,
-            runtime_id,
-        )
-        .await;
-        let replacement_load = load_provider_budget(
-            &pool,
-            workspace_id,
-            lease_id,
-            task_id,
-            runtime_id,
-        )
-        .await;
+        let first_load =
+            load_provider_budget(&pool, workspace_id, lease_id, task_id, runtime_id).await;
+        let replacement_load =
+            load_provider_budget(&pool, workspace_id, lease_id, task_id, runtime_id).await;
         sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
             .bind(workspace_id)
             .execute(&pool)
