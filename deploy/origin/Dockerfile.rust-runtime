@@ -1,0 +1,25 @@
+# OCI fallback runtime image. The normal Dockerfile remains the canonical
+# CI/build image; this image is used only when the OCI BuildKit executor's
+# per-process CPU limit prevents its Rust builder from finishing.
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes ca-certificates tzdata wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY server ./server
+COPY migrate ./migrate
+COPY migrations ./migrations
+COPY entrypoint.sh ./entrypoint.sh
+
+RUN chmod 0755 ./server ./migrate ./entrypoint.sh
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
+    CMD wget --quiet --output-document=/dev/null "http://127.0.0.1:${PORT:-8080}/readyz" || exit 1
+
+ENTRYPOINT ["./entrypoint.sh"]
