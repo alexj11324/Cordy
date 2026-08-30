@@ -1,13 +1,11 @@
 //! OpenClaw task configuration capability.
 //!
-//! Ports the production contract of Go's `openclaw_config.go` and
-//! `openclaw_config_cache.go`: discovery is delegated to the installed CLI,
-//! per-task config pins every workspace to the task workdir, managed MCP is a
-//! strict replacement, Gateway pins are emitted without leaking tokens in
-//! diagnostics, and successful discovery is cached only with non-secret
-//! fingerprints.  All malformed or unavailable provider configuration fails
-//! closed; only a genuine fresh install (no config file) receives a minimal
-//! wrapper.
+//! Discovery is delegated to the installed CLI, but a host configuration or
+//! Gateway bearer is never copied or included in a task. Per-task config pins
+//! every workspace to the task workdir and managed MCP is a strict
+//! replacement. All credential-bearing host configurations fail closed until
+//! OpenClaw is integrated with the provider credential broker; only a genuine
+//! fresh install (no config file) receives a minimal wrapper.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -25,7 +23,7 @@ use serde_json::{Map, Value};
 use super::execenv::{OpenclawConfigPrep, OpenclawConfigResult, OpenclawGatewayPin};
 
 const CONFIG_FILE: &str = "openclaw-config.json";
-const SNAPSHOT_FILE: &str = "openclaw-user-snapshot.json";
+const LEGACY_SNAPSHOT_FILE: &str = "openclaw-user-snapshot.json";
 const CACHE_FILE: &str = "openclaw-discovery-cache.json";
 const CACHE_TTL: Duration = Duration::from_secs(60);
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
@@ -61,6 +59,7 @@ pub(crate) fn prepare_openclaw_config(
     work_dir: &str,
     opts: &OpenclawConfigPrep,
 ) -> anyhow::Result<OpenclawConfigResult> {
+    remove_legacy_task_credentials(env_root)?;
     let bin = if opts.openclaw_bin.trim().is_empty() {
         "openclaw".to_string()
     } else {
@@ -68,25 +67,17 @@ pub(crate) fn prepare_openclaw_config(
     };
     let timeout = resolve_timeout(opts.timeout);
     let discovery = discover(&bin, timeout, &opts.profile)?;
+    anyhow::ensure!(
+        !discovery.exists,
+        "host OpenClaw configuration cannot be mounted into a task; a credential broker is required"
+    );
+    anyhow::ensure!(
+        opts.gateway.token.is_empty(),
+        "OpenClaw gateway bearer cannot be materialized in a task; a credential broker is required"
+    );
     let (managed_mcp, has_managed_mcp) = managed_mcp(opts.mcp_config.as_ref())?;
 
-    let mut snapshot_path = None;
-    if has_managed_mcp && discovery.exists {
-        let mut resolved = run_json(&bin, timeout, &["config", "get", "--json"])?
-            .ok_or_else(|| anyhow!("openclaw resolved config was empty"))?;
-        let resolved = resolved
-            .as_object_mut()
-            .ok_or_else(|| anyhow!("openclaw resolved config must be a JSON object"))?;
-        strip_user_mcp(resolved);
-        let path = Path::new(env_root).join(SNAPSHOT_FILE);
-        atomic_json(&path, &Value::Object(resolved.clone()), 0o600)?;
-        snapshot_path = Some(path.display().to_string());
-    }
-
     let config = build_wrapper(
-        &discovery.path,
-        discovery.exists,
-        snapshot_path.as_deref(),
         &discovery.agents,
         discovery.agents_from_registry,
         work_dir,
@@ -96,15 +87,6 @@ pub(crate) fn prepare_openclaw_config(
     );
     let out_path = Path::new(env_root).join(CONFIG_FILE);
     atomic_json(&out_path, &config, 0o600)?;
-    let include_root = if snapshot_path.is_some() || !discovery.exists {
-        String::new()
-    } else {
-        Path::new(&discovery.path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .display()
-            .to_string()
-    };
     tracing::info!(
         active_config = %discovery.path,
         active_config_exists = discovery.exists,
@@ -114,8 +96,24 @@ pub(crate) fn prepare_openclaw_config(
     );
     Ok(OpenclawConfigResult {
         config_path: out_path.display().to_string(),
-        include_root,
+        include_root: String::new(),
     })
+}
+
+fn remove_legacy_task_credentials(env_root: &str) -> anyhow::Result<()> {
+    for name in [CONFIG_FILE, LEGACY_SNAPSHOT_FILE] {
+        let path = Path::new(env_root).join(name);
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("remove legacy OpenClaw task credential file {}", path.display())
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn resolve_timeout(explicit: Duration) -> Duration {
@@ -307,27 +305,9 @@ fn managed_mcp(raw: Option<&Value>) -> anyhow::Result<(BTreeMap<String, Value>, 
     Ok((output, true))
 }
 
-fn strip_user_mcp(config: &mut Map<String, Value>) {
-    let remove_parent = match config.get_mut("mcp") {
-        Some(Value::Object(mcp)) => {
-            mcp.remove("servers");
-            mcp.is_empty()
-        }
-        _ => false,
-    };
-    if remove_parent {
-        config.remove("mcp");
-    }
-}
-
-// The arguments mirror the Go contract's independently sourced discovery and
-// policy inputs; keeping them explicit prevents a secret-bearing config or
-// Gateway pin from being hidden in an untyped aggregate.
-#[allow(clippy::too_many_arguments)]
+// Keep the credential-free policy inputs explicit so a secret-bearing host
+// config or Gateway pin cannot be hidden in an untyped aggregate.
 fn build_wrapper(
-    active_path: &str,
-    exists: bool,
-    snapshot_path: Option<&str>,
     agents: &[Value],
     agents_from_registry: bool,
     work_dir: &str,
@@ -364,17 +344,6 @@ fn build_wrapper(
     if let Some(gateway) = gateway_override(gateway) {
         root.insert("gateway".into(), gateway);
     }
-    if let Some(path) = snapshot_path {
-        root.insert(
-            "$include".into(),
-            Value::Array(vec![Value::String(path.into())]),
-        );
-    } else if exists {
-        root.insert(
-            "$include".into(),
-            Value::Array(vec![Value::String(active_path.into())]),
-        );
-    }
     Value::Object(root)
 }
 
@@ -391,15 +360,6 @@ fn gateway_override(pin: &OpenclawGatewayPin) -> Option<Value> {
     }
     if pin.tls {
         value.insert("tls".into(), Value::Bool(true));
-    }
-    if !pin.token.is_empty() {
-        value.insert(
-            "auth".into(),
-            Value::Object(Map::from_iter([
-                ("mode".into(), Value::String("token".into())),
-                ("token".into(), Value::String(pin.token.clone())),
-            ])),
-        );
     }
     (!value.is_empty()).then_some(Value::Object(value))
 }
@@ -679,9 +639,6 @@ mod tests {
             tls: true,
         };
         let cfg = build_wrapper(
-            "/home/user/openclaw.json",
-            true,
-            None,
             &[serde_json::json!({"id": "main", "model": "x"})],
             false,
             "/task/workdir",
@@ -691,9 +648,23 @@ mod tests {
         );
         assert_eq!(cfg["agents"]["defaults"]["workspace"], "/task/workdir");
         assert_eq!(cfg["agents"]["list"][0]["workspace"], "/task/workdir");
-        assert_eq!(cfg["gateway"]["auth"]["token"], "secret");
+        assert!(cfg["gateway"].get("auth").is_none());
+        assert!(cfg.get("$include").is_none());
         assert!(pin.to_string().contains("***"));
         assert!(!pin.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn legacy_task_credentials_are_removed_before_preparation() {
+        let root = tempfile::tempdir().unwrap();
+        for name in [CONFIG_FILE, LEGACY_SNAPSHOT_FILE] {
+            fs::write(root.path().join(name), "long-lived-secret").unwrap();
+        }
+
+        remove_legacy_task_credentials(root.path().to_str().unwrap()).unwrap();
+
+        assert!(!root.path().join(CONFIG_FILE).exists());
+        assert!(!root.path().join(LEGACY_SNAPSHOT_FILE).exists());
     }
 
     #[test]
