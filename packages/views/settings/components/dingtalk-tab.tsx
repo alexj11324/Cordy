@@ -105,7 +105,9 @@ export function DingTalkTab({ installationId }: { installationId?: string } = {}
     ...dingtalkGroupRoutesOptions(wsId),
     enabled: configured && groupRoutingSupported && hasActiveInstallation && !!wsId,
   });
-  const groupRoutes = groupRouteData?.routes ?? [];
+  const groupRoutes = (groupRouteData?.routes ?? []).filter(
+    (route) => !installationId || route.installation_id === installationId,
+  );
   const activeAgents = (agents ?? []).filter((agent) => !agent.archived_at);
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
