@@ -53,7 +53,6 @@ config="$(
 require_config "$config" 'published: "3100"'
 require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
-require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
 require_config "$config" 'PATCHBAY_APP_URL: http://localhost:3100'
 require_config "$config" 'SMTP_FROM_EMAIL: patchbay@example.com'
 
@@ -66,6 +65,44 @@ require_config "$config" 'PATCHBAY_LLM_API_KEY: llm-key-from-env'
 require_config "$config" 'PATCHBAY_LLM_BASE_URL: http://gateway.example/v1'
 require_config "$config" 'PATCHBAY_LLM_DEFAULT_MODEL: model-from-env'
 require_config "$config" 'PATCHBAY_LLM_MAX_RETRIES: "3"'
+
+# NEXT_PUBLIC values are compiled into the Web client. Every supported local
+# image build must pass the exact desktop callback origin through BuildKit;
+# setting it only on the running container is too late for Next.js.
+for compose_file in docker-compose.selfhost.build.yml docker-compose.labs.yml; do
+  if ! grep -Fq \
+    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN: ${NEXT_PUBLIC_DESKTOP_APP_ORIGIN:-}' \
+    "$compose_file"; then
+    echo "$compose_file does not pass NEXT_PUBLIC_DESKTOP_APP_ORIGIN to Dockerfile.web"
+    exit 1
+  fi
+done
+
+# Hosted images use a repository variable so the callback stays disabled until
+# the approved HTTPS app origin is actually deployed. Never bake a speculative
+# production hostname into a public image.
+for workflow_file in .github/workflows/container-images.yml .github/workflows/release.yml; do
+  if ! grep -Fq \
+    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}' \
+    "$workflow_file"; then
+    echo "$workflow_file does not source the Desktop callback origin from repository configuration"
+    exit 1
+  fi
+done
+
+# Those hosted workflow contracts must run when either workflow changes.
+# Keep this scoped to the frontend filter; release.yml also appears in the
+# backend filter and would otherwise make a broad grep pass accidentally.
+frontend_filter="$(
+  sed -n "/^            frontend:/,/^            backend:/p" \
+    .github/workflows/ci.yml
+)"
+for workflow_file in .github/workflows/container-images.yml .github/workflows/release.yml; do
+  if ! grep -Fq -- "- '${workflow_file}'" <<<"$frontend_filter"; then
+    echo "$workflow_file must trigger the frontend deployment contract tests"
+    exit 1
+  fi
+done
 
 while IFS= read -r llm_var; do
   if ! grep -Eq "^[[:space:]]+${llm_var}: \\\$\{${llm_var}:-" docker-compose.selfhost.yml; then
@@ -97,7 +134,6 @@ local_env="$(
       "FRONTEND_PORT=${FRONTEND_PORT}" \
       "FRONTEND_ORIGIN=${FRONTEND_ORIGIN}" \
       "PATCHBAY_APP_URL=${PATCHBAY_APP_URL}" \
-      "GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}" \
       "PATCHBAY_SERVER_URL=${PATCHBAY_SERVER_URL}" \
       "LOCAL_UPLOAD_BASE_URL=${LOCAL_UPLOAD_BASE_URL}" \
       "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
@@ -108,7 +144,6 @@ require_env "$local_env" 'PORT=9100'
 require_env "$local_env" 'FRONTEND_PORT=3100'
 require_env "$local_env" 'FRONTEND_ORIGIN=http://localhost:3100'
 require_env "$local_env" 'PATCHBAY_APP_URL=http://localhost:3100'
-require_env "$local_env" 'GOOGLE_REDIRECT_URI=http://localhost:3100/auth/callback'
 require_env "$local_env" 'PATCHBAY_SERVER_URL=ws://localhost:9100/ws'
 require_env "$local_env" 'LOCAL_UPLOAD_BASE_URL=http://localhost:9100'
 require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'

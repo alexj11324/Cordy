@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApiClient } from "../api/client";
 import type { StorageAdapter, User } from "../types";
 import { createAuthStore } from "./store";
+import type { AuthLogoutOptions } from "./store";
 
 const fakeUser: User = {
   id: "u1",
@@ -89,6 +90,22 @@ describe("authStore", () => {
     expect(api.setToken).not.toHaveBeenCalled();
   });
 
+  it("retains a handed-off token when user hydration fails transiently", async () => {
+    const storage = makeStorage();
+    const api = {
+      getMe: vi.fn().mockRejectedValue(new TypeError("temporarily offline")),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage });
+
+    await expect(
+      store.getState().loginWithToken("redeemed-session-token"),
+    ).rejects.toThrow("temporarily offline");
+
+    expect(storage.snapshot().patchbay_token).toBe("redeemed-session-token");
+    expect(api.setToken).toHaveBeenCalledWith("redeemed-session-token");
+  });
+
   it("explicit logout still clears credentials and publishes unauthenticated state", () => {
     const storage = makeStorage({ patchbay_token: "t" });
     const api = makeApi();
@@ -103,6 +120,35 @@ describe("authStore", () => {
     expect(onLogout).toHaveBeenCalledOnce();
     expect(store.getState().user).toBeNull();
     expect(store.getState().status).toBe("unauthenticated");
+  });
+
+  it("waits for platform auth cleanup before logout resolves", async () => {
+    let finishPlatformLogout: (() => void) | undefined;
+    const platformLogout = new Promise<void>((resolve) => {
+      finishPlatformLogout = resolve;
+    });
+    const onLogout = vi.fn(() => platformLogout);
+    const store = createAuthStore({
+      api: makeApi(),
+      storage: makeStorage({ patchbay_token: "t" }),
+      onLogout,
+    });
+
+    let settled = false;
+    const logout = store
+      .getState()
+      .logout()
+      .then(() => {
+        settled = true;
+      });
+
+    expect(onLogout).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    finishPlatformLogout?.();
+    await logout;
+    expect(settled).toBe(true);
   });
 
   it("exchanges a Clerk session for the UUID-backed cookie session", async () => {
@@ -191,6 +237,48 @@ describe("authStore", () => {
     expect(settled).toBe(false);
 
     resolveLogout?.();
+    await pending;
+    expect(settled).toBe(true);
+  });
+
+  it("passes the server revocation barrier to platform logout", async () => {
+    let resolveServerLogout!: () => void;
+    const api = {
+      logout: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveServerLogout = resolve;
+          }),
+      ),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    let receivedBarrier: Promise<void> | undefined;
+    let receivedOptions: AuthLogoutOptions | undefined;
+    const onLogout = vi.fn(
+      (serverLogout?: Promise<void>, options?: AuthLogoutOptions) => {
+        receivedBarrier = serverLogout;
+        receivedOptions = options;
+      },
+    );
+    const store = createAuthStore({
+      api,
+      storage: makeStorage(),
+      cookieAuth: true,
+      onLogout,
+    });
+    store.setState({ user: fakeUser, status: "authenticated", isLoading: false });
+
+    let settled = false;
+    const logoutOptions = { rearmAuth: false };
+    const pending = store.getState().logout(logoutOptions).then(() => {
+      settled = true;
+    });
+    expect(receivedBarrier).toBeInstanceOf(Promise);
+    expect(receivedOptions).toEqual(logoutOptions);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveServerLogout();
     await pending;
     expect(settled).toBe(true);
   });

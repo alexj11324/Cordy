@@ -34,4 +34,5 @@ describe("AuthCallbackPage", () => {
       expect(mockReplace).toHaveBeenCalledWith("/login?platform=desktop"),
     );
   });
+
 });

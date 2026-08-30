@@ -98,5 +98,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_APP_VERSION=manual
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}
           cache-from: type=gha,scope=ci-web
           cache-to: type=gha,mode=max,scope=ci-web

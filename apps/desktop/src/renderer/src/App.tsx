@@ -29,10 +29,7 @@ import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
-import {
-  clearDesktopHandoffVerifier,
-  readDesktopHandoffVerifier,
-} from "./pages/login-handoff";
+import { completeDesktopHandoff } from "./pages/login-handoff";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -138,19 +135,24 @@ function AppContent() {
     });
   }, []);
 
-  // Listen for the PKCE-bound one-time code delivered via deep link
-  // (patchbay://auth/callback?code=...&state=...). daemonAPI.syncToken is
-  // handled separately by the [user] effect below, which fires whenever a
-  // user logs in (deep link, session restore, account switch).
+  // Listen for the PKCE-bound one-time code delivered by the Electron deep
+  // link. daemonAPI.syncToken is handled
+  // separately by the [user] effect below, which fires whenever a user logs
+  // in (handoff, session restore, account switch).
   useEffect(() => {
     return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
-      const verifier = readDesktopHandoffVerifier(state);
-      if (!verifier) return;
       setBootstrapping(true);
+      let acknowledged = false;
       try {
-        const { token } = await api.redeemDesktopHandoff(code, verifier);
-        await useAuthStore.getState().loginWithToken(token);
-        clearDesktopHandoffVerifier(state);
+        const completion = await completeDesktopHandoff(code, state, {
+          redeem: (handoffCode, verifier) =>
+            api.redeemDesktopHandoff(handoffCode, verifier),
+          login: (token) => useAuthStore.getState().loginWithToken(token),
+          recoverPersistedToken: () =>
+            useAuthStore.getState().retryAuthentication(),
+        });
+        acknowledged = completion.acknowledged;
+        if (!completion.authenticated) return completion.acknowledged;
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects
@@ -158,8 +160,10 @@ function AppContent() {
         // WorkspaceRouteLayout when the URL resolves.
         const wsList = await api.listWorkspaces();
         qc.setQueryData(workspaceKeys.list(), wsList);
+        return completion.acknowledged;
       } catch {
         // Token invalid or expired — user stays on login page
+        return acknowledged;
       } finally {
         setBootstrapping(false);
       }

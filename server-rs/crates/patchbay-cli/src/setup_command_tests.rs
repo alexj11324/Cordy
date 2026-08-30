@@ -406,7 +406,7 @@ async fn setup_daemon_dispatch_leaves_active_daemon_untouched() {
 #[test]
 fn websocket_server_urls_normalize_to_http_api_base() {
     assert_eq!(
-        normalize_api_base_url("wss://api.patchbay.ai/ws?old=1#fragment").expect("URL"),
-        "https://api.patchbay.ai"
+        normalize_api_base_url("wss://api.aspectlylabs.com/ws?old=1#fragment").expect("URL"),
+        "https://api.aspectlylabs.com"
     );
 }

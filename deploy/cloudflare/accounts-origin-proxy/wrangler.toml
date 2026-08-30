@@ -1,0 +1,13 @@
+name = "aspectlylabs-proxy"
+main = "src/index.js"
+compatibility_date = "2026-08-30"
+account_id = "d8f6630c7869111a5139bc5ed4d24ace"
+
+# This is the existing accounts custom domain, now backed by the canonical
+# OCI Web origin. The Worker contains no authentication implementation.
+[[routes]]
+pattern = "accounts.aspectlylabs.com"
+custom_domain = true
+
+[vars]
+ORIGIN = "https://origin.aspectlylabs.com"

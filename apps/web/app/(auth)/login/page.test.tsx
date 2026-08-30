@@ -10,6 +10,7 @@ const {
   issueDesktopHandoff,
   redirectToCliCallback,
   redirectToDesktopApp,
+  exchangeReady,
 } = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
@@ -21,6 +22,7 @@ const {
   issueDesktopHandoff: vi.fn(),
   redirectToCliCallback: vi.fn(),
   redirectToDesktopApp: vi.fn(),
+  exchangeReady: { current: true },
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -49,8 +51,38 @@ vi.mock("@patchbay/views/auth", async (importOriginal) => {
   return { ...original, redirectToCliCallback, redirectToDesktopApp };
 });
 
+vi.mock("@/components/clerk-auth-adapter", () => ({
+  useClerkSessionExchangeReady: () => exchangeReady.current,
+}));
+
 vi.mock("@patchbay/views/i18n", () => ({
-  useT: () => ({ t: () => "Open Patchbay Desktop" }),
+  useT: () => ({
+    t: (
+      selector: (resources: {
+        web: {
+          cli_authorization: Record<string, string>;
+          desktop_handoff: Record<string, string>;
+        };
+      }) => string,
+    ) =>
+      selector({
+        web: {
+          cli_authorization: {
+            prompt: "Localized CLI authorization prompt",
+            authorize_button: "Localized CLI authorization button",
+            failed: "Localized CLI authorization failure",
+            invalid_callback: "Localized invalid CLI callback",
+          },
+          desktop_handoff: {
+            opening_title: "Opening Patchbay",
+            preparing: "Preparing Desktop sign-in...",
+            opening_description: "Opening Patchbay Desktop",
+            open_button: "Open Patchbay Desktop",
+            prepare_failed: "Failed to prepare Desktop sign-in",
+          },
+        },
+      }),
+  }),
 }));
 
 import LoginPage from "./page";
@@ -61,6 +93,7 @@ describe("LoginPage", () => {
     search.current = "";
     authStoreState.current = { status: "unauthenticated" };
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
+    exchangeReady.current = true;
     issueCliToken.mockReset();
     issueDesktopHandoff.mockReset();
     redirectToCliCallback.mockReset();
@@ -88,6 +121,18 @@ describe("LoginPage", () => {
     expect(signInProps.current.forceRedirectUrl).toBe(
       "/login?cli_callback=http%3A%2F%2F127.0.0.1%3A43821%2Fcallback&cli_state=opaque-state",
     );
+  });
+
+  it("localizes an invalid CLI callback", () => {
+    search.current =
+      "cli_callback=https%3A%2F%2Fevil.example%2Fcallback&cli_state=opaque-state";
+
+    render(<LoginPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Localized invalid CLI callback",
+    );
+    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   });
 
   it("preserves the requested app path and query through Clerk sign-in", () => {
@@ -135,7 +180,12 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     expect(
-      screen.getByRole("button", { name: "Authorize CLI" }),
+      screen.getByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Localized CLI authorization prompt"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   });
@@ -148,7 +198,11 @@ describe("LoginPage", () => {
     issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
 
     render(<LoginPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Authorize CLI" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    );
 
     await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
     expect(redirectToCliCallback).toHaveBeenCalledWith(
@@ -157,6 +211,28 @@ describe("LoginPage", () => {
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();
+  });
+
+  it("localizes a retryable CLI authorization failure", async () => {
+    search.current =
+      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    issueCliToken.mockRejectedValue(new Error("temporary failure"));
+
+    render(<LoginPage />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Localized CLI authorization failure",
+      ),
+    );
+    expect(redirectToCliCallback).not.toHaveBeenCalled();
   });
 
   it("does not authorize CLI before the Patchbay session exchange completes", () => {
@@ -168,7 +244,11 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Authorize CLI" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    ).not.toBeInTheDocument();
     expect(issueCliToken).not.toHaveBeenCalled();
   });
 
@@ -186,6 +266,20 @@ describe("LoginPage", () => {
       "desktop-handoff-code",
       "opaque-state",
     );
+  });
+
+  it("waits for the current Clerk identity to finish the Rust session exchange", async () => {
+    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    exchangeReady.current = false;
+
+    render(<LoginPage />);
+
+    expect(issueDesktopHandoff).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Preparing Desktop sign-in..." }),
+    ).toBeDisabled();
   });
 
   it("does not mint a desktop handoff without a renderer binding", async () => {

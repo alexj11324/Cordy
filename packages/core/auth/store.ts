@@ -8,10 +8,21 @@ export interface AuthStoreOptions {
   api: ApiClient;
   storage: StorageAdapter;
   onLogin?: () => void;
-  onLogout?: () => void;
+  onLogout?: AuthLogoutHandler;
   /** When true, rely on HttpOnly cookies instead of localStorage for auth tokens. */
   cookieAuth?: boolean;
 }
+
+export type AuthLogoutOptions = {
+  /** Prevent platform auth recovery when cleaning up a permanently rejected session. */
+  rearmAuth?: boolean;
+};
+
+/** Optional promise that platform auth cleanup can await before re-authentication. */
+export type AuthLogoutHandler = (
+  serverLogout?: Promise<void>,
+  options?: AuthLogoutOptions,
+) => void | Promise<void>;
 
 export type AuthStatus =
   | "authenticating"
@@ -28,12 +39,11 @@ export interface AuthState {
   retryAuthentication: () => void;
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
-  loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
   createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   /** Clears local auth state and resolves after a cookie session is revoked. */
-  logout: () => Promise<void>;
+  logout: (options?: AuthLogoutOptions) => Promise<void>;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
 }
@@ -63,18 +73,6 @@ export function createAuthStore(options: AuthStoreOptions) {
       const { token, user } = await api.verifyCode(email, code);
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
-        storage.setItem("patchbay_token", token);
-        api.setToken(token);
-      }
-      onLogin?.();
-      identifyAnalytics(user.id, { email: user.email, name: user.name });
-      set({ user, isLoading: false, status: "authenticated" });
-      return user;
-    },
-
-    loginWithGoogle: async (code: string, redirectUri: string) => {
-      const { token, user } = await api.googleLogin(code, redirectUri);
-      if (!cookieAuth) {
         storage.setItem("patchbay_token", token);
         api.setToken(token);
       }
@@ -130,19 +128,21 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    logout: () => {
-      const serverLogout = cookieAuth || get().user?.is_guest === true
-        ? api.logout().catch(() => {})
-        : Promise.resolve();
+    logout: async (logoutOptions?: AuthLogoutOptions) => {
+      const serverLogout =
+        cookieAuth || get().user?.is_guest === true
+          ? api.logout().catch(() => {})
+          : Promise.resolve();
+      const platformLogout = onLogout?.(serverLogout, logoutOptions);
       // Keep the promise so callers that are about to start a new Clerk
-      // exchange can serialize it behind server-side session revocation.
+      // exchange or navigate away can serialize behind both server-side
+      // session revocation and platform auth cleanup (for example Clerk).
       storage.removeItem("patchbay_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
       resetAnalytics();
-      onLogout?.();
       set({ user: null, isLoading: false, status: "unauthenticated" });
-      return serverLogout;
+      await Promise.all([serverLogout, platformLogout]);
     },
 
     setUser: (user: User) => {

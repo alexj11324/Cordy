@@ -91,14 +91,16 @@ These are the default locations — if your home directory has been moved or red
 This is **not** the CLI's `~/.patchbay/config.json`, and the key names differ: the CLI uses `server_url`, Desktop uses `apiUrl`. Desktop never reads the CLI's config — it manages a separate daemon profile under `~/.patchbay/profiles/desktop-<host>/`. Editing `config.json` does not change which server Desktop connects to.
 </Callout>
 
-`apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other two URLs can be omitted — Desktop derives them automatically:
+`apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other three URLs can be omitted — Desktop derives them automatically:
 
 - `wsUrl`: swaps the `apiUrl` scheme to `ws` or `wss` and appends `/ws` to the path;
 - `appUrl`: strips the `api.` prefix when the host starts with `api.` and has at least three labels (`api.example.com` → `example.com`); otherwise it stays the same as `apiUrl`.
+- `accountsUrl`: reuses `appUrl` unless authentication is deployed on a separate origin.
 
-Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the three common cases:
+Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the four common cases:
 
 - the web app and the API are on different domains;
+- the authentication broker is on a separate domain;
 - WebSocket is deployed separately;
 - the host doesn't fit the prefix-stripping convention (two-label hosts like `api.local` keep their prefix).
 
@@ -107,6 +109,7 @@ Usually `apiUrl` alone is enough. Override explicitly only when the derivation d
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
+  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```

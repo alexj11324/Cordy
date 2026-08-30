@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getApi } from "../api";
 import { ApiError } from "../api/client";
-import { useAuthStore } from "../auth";
+import { useAuthStore, type AuthLogoutHandler } from "../auth";
 import {
   captureSignupSource,
   identify as identifyAnalytics,
@@ -41,7 +41,7 @@ export function AuthInitializer({
 }: {
   children: ReactNode;
   onLogin?: () => void;
-  onLogout?: () => void;
+  onLogout?: AuthLogoutHandler;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
   clerkAuth?: boolean;
@@ -70,7 +70,6 @@ export function AuthInitializer({
         }
         configStore.getState().setAuthConfig({
           allowSignup: cfg.allow_signup,
-          googleClientId: cfg.google_client_id,
           // Old servers omit this field — treat that as "creation allowed"
           // (the managed-cloud default) rather than blocking the UI.
           workspaceCreationDisabled: cfg.workspace_creation_disabled === true,
@@ -210,7 +209,7 @@ export function AuthInitializer({
     };
 
     const onAuthFailure = () => {
-      onLogout?.();
+      void onLogout?.();
       resetAnalytics();
       useAuthStore.setState({
         user: null,
@@ -330,7 +329,7 @@ export function AuthInitializer({
       const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
-        onLogout?.();
+        void onLogout?.();
         useAuthStore.setState({
           user: null,
           isLoading: false,

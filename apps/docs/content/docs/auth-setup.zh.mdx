@@ -78,24 +78,16 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 
 ## Google 登录
 
-1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 2.0 client。
-2. 把 Patchbay 前端的回调地址加入 **Authorized redirect URIs**：
+1. 在托管的 `accounts` 服务中配置 Google provider。
+2. 把 broker 回调地址加入 **Authorized redirect URIs**：
 
    ```text
-   https://patchbay.example.com/auth/callback
+   https://accounts.example.com/oauth/google/callback
    ```
 
-3. 设置：
-
-   ```dotenv
-   GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
-   ```
-
-4. 重启 API 服务。
-
-Google Console 与 `GOOGLE_REDIRECT_URI` 中的地址必须完全一致，包括协议、端口和结尾斜杠。配置生效后，登录页会出现 Google 登录按钮；前端镜像不需要重新构建。
+3. Desktop 登录只使用 broker 的 `/oauth/google` 与
+   `/oauth/google/callback`。broker 只通过 `patchbay://auth/callback` 返回
+   一次性 PKCE code，Rust API 在 `/api/desktop-handoff/redeem` 兑换它。
 
 ## 注册范围控制
 

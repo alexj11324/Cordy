@@ -91,14 +91,16 @@ Desktop はデフォルトで Patchbay Cloud に接続します。セルフホ�
 これは CLI の `~/.patchbay/config.json` と**別のファイル**で、キー名も異なります: CLI は `server_url`、Desktop は `apiUrl` を使います。Desktop は CLI の設定を読みません。`~/.patchbay/profiles/desktop-<host>/` の下に専用の daemon プロファイルを管理します。`config.json` を編集しても、Desktop の接続先は変わりません。
 </Callout>
 
-`apiUrl` はバックエンドの公開アドレスです。必須で、`http` または `https` を使う必要があります。残りの 2 つのアドレスは省略でき、Desktop が自動で導出します:
+`apiUrl` はバックエンドの公開アドレスです。必須で、`http` または `https` を使う必要があります。残りの 3 つのアドレスは省略でき、Desktop が自動で導出します:
 
 - `wsUrl`: `apiUrl` のスキームを `ws` または `wss` に置き換え、パスの末尾に `/ws` を追加します。
 - `appUrl`: ホスト名が `api.` で始まりラベルが 3 つ以上ある場合は `api.` プレフィックスを取り除きます（`api.example.com` → `example.com`）。それ以外は `apiUrl` と同じままです。
+- `accountsUrl`: 認証ブローカーが別オリジンにない限り `appUrl` を再利用します。
 
-通常は `apiUrl` だけで十分です。導出結果がデプロイと合わない場合にのみ明示的に上書きします。よくあるのは次の 3 つのケースです:
+通常は `apiUrl` だけで十分です。導出結果がデプロイと合わない場合にのみ明示的に上書きします。よくあるのは次の 4 つのケースです:
 
 - Web アプリと API が異なるドメインにある。
+- 認証ブローカーが別ドメインにある。
 - WebSocket を別途デプロイしている。
 - ホスト名がプレフィックス除去の規則に合わない（`api.local` のような 2 ラベルのホストはプレフィックスが残ります）。
 
@@ -107,6 +109,7 @@ Desktop はデフォルトで Patchbay Cloud に接続します。セルフホ�
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
+  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```

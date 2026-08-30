@@ -18,6 +18,7 @@ import { defaultStorage } from "./storage";
 import { AuthInitializer } from "./auth-initializer";
 import type { CoreProviderProps, ClientIdentity } from "./types";
 import type { StorageAdapter } from "../types/storage";
+import type { AuthLogoutHandler } from "../auth";
 import { ClientUsageReporter } from "../client-usage";
 import {
   configureShortcutPlatform,
@@ -33,7 +34,7 @@ function initCore(
   apiBaseUrl: string,
   storage: StorageAdapter,
   onLogin?: () => void,
-  onLogout?: () => void,
+  onLogout?: AuthLogoutHandler,
   cookieAuth?: boolean,
   identity?: ClientIdentity,
   clerkAuth?: boolean,

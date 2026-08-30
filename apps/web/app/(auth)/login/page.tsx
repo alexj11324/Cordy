@@ -11,7 +11,6 @@ import {
 import { SignIn, useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
 import { api } from "@patchbay/core/api";
-import { useSearchParams } from "next/navigation";
 import {
   redirectToCliCallback,
   redirectToDesktopApp,
@@ -23,6 +22,8 @@ import {
   authRouteWithRedirect,
   resolveSafeRedirectUrl,
 } from "@/features/auth/safe-redirect";
+import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
+import { useWebSearchParams } from "@/platform/client-navigation";
 
 function desktopHandoffQuery(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({ platform: "desktop" });
@@ -40,8 +41,10 @@ export default function LoginPage() {
 }
 
 function LoginContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useWebSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
+  const { t } = useT("auth");
+  const clerkSessionExchangeReady = useClerkSessionExchangeReady();
   const patchbayAuthStatus = useAuthStore((state) => state.status);
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
@@ -53,7 +56,10 @@ function LoginContent() {
   const validCliCallback = cliCallback !== "" && validateCliCallback(cliCallback);
   const returnUrl = useMemo(() => {
     if (desktopHandoff) {
-      return `/login?${desktopHandoffQuery(desktopCodeChallenge, desktopState)}`;
+      return `/login?${desktopHandoffQuery(
+        desktopCodeChallenge,
+        desktopState,
+      )}`;
     }
     if (!validCliCallback) return resolveSafeRedirectUrl(requestedRedirectUrl);
     const params = new URLSearchParams({
@@ -74,7 +80,9 @@ function LoginContent() {
   if (cliCallback && !validCliCallback) {
     return (
       <ClerkAuthShell>
-        <p role="alert">Invalid CLI callback URL.</p>
+        <p role="alert">
+          {t(($) => $.web.cli_authorization.invalid_callback)}
+        </p>
       </ClerkAuthShell>
     );
   }
@@ -95,20 +103,20 @@ function LoginContent() {
         if (!token) throw new Error("Patchbay CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);
       } catch {
-        setError("Could not authorize the CLI. Please try again.");
+        setError(t(($) => $.web.cli_authorization.failed));
       }
     };
 
     return (
       <ClerkAuthShell>
         <div className="flex flex-col items-center gap-3">
-          <p>Authorize Patchbay CLI for this signed-in account?</p>
+          <p>{t(($) => $.web.cli_authorization.prompt)}</p>
           <button
             type="button"
             onClick={authorize}
             className="rounded bg-primary px-4 py-2 text-primary-foreground"
           >
-            Authorize CLI
+            {t(($) => $.web.cli_authorization.authorize_button)}
           </button>
           {error && <p role="alert">{error}</p>}
         </div>
@@ -121,6 +129,7 @@ function LoginContent() {
       <DesktopHandoff
         codeChallenge={desktopCodeChallenge}
         state={desktopState}
+        clerkSessionExchangeReady={clerkSessionExchangeReady}
       />
     );
   }
@@ -132,7 +141,10 @@ function LoginContent() {
         path="/login"
         signUpUrl={
           desktopHandoff
-            ? `/signup?${desktopHandoffQuery(desktopCodeChallenge, desktopState)}`
+            ? `/signup?${desktopHandoffQuery(
+                desktopCodeChallenge,
+                desktopState,
+              )}`
             : authRouteWithRedirect("/signup", returnUrl)
         }
         forceRedirectUrl={returnUrl}
@@ -144,13 +156,16 @@ function LoginContent() {
 function DesktopHandoff({
   codeChallenge,
   state,
+  clerkSessionExchangeReady,
 }: {
   codeChallenge: string;
   state: string;
+  clerkSessionExchangeReady: boolean;
 }) {
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
-  const backendSessionReady = authStatus === "authenticated";
+  const backendSessionReady =
+    clerkSessionExchangeReady && authStatus === "authenticated";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const automaticAttempted = useRef(false);

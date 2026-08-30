@@ -82,6 +82,7 @@ export function installWebDesktopBridge(): boolean {
     apiUrl: viteEnv.VITE_API_URL || viteEnv.NEXT_PUBLIC_API_URL,
     wsUrl: viteEnv.VITE_WS_URL || viteEnv.NEXT_PUBLIC_WS_URL,
     appUrl: viteEnv.VITE_APP_URL,
+    accountsUrl: viteEnv.VITE_ACCOUNTS_URL,
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 
@@ -103,8 +104,11 @@ export function installWebDesktopBridge(): boolean {
     getLastFreeze: () => null,
     ackFreeze: (_ts: number) => undefined,
     reportAuthSession: (_userId: string | null) => undefined,
+    // Browser Vite hosts have no native deep-link receiver. The canonical
+    // handoff is delivered only by Electron's main/preload bridge through
+    // patchbay://auth/callback; this host must never accept an HTTP callback.
     onAuthHandoff: (
-      _callback: (payload: { code: string; state: string }) => void,
+      _callback: (payload: { code: string; state: string }) => boolean | Promise<boolean>,
     ) => noopUnsubscribe(),
     onInviteOpen: (_callback: (invitationId: string) => void) =>
       noopUnsubscribe(),

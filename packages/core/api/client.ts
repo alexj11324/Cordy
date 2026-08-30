@@ -766,13 +766,6 @@ export class ApiClient {
     });
   }
 
-  async googleLogin(code: string, redirectUri: string): Promise<LoginResponse> {
-    return this.fetch("/auth/google", {
-      method: "POST",
-      body: JSON.stringify({ code, redirect_uri: redirectUri }),
-    });
-  }
-
   async clerkLogin(
     sessionToken: string,
     signal?: AbortSignal,

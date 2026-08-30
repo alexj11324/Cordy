@@ -44,7 +44,10 @@ interface DesktopAPI {
   reportAuthSession: (userId: string | null) => void;
   /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
   onAuthHandoff: (
-    callback: (payload: { code: string; state: string }) => void,
+    callback: (payload: {
+      code: string;
+      state: string;
+    }) => boolean | Promise<boolean>,
   ) => () => void;
   /** Listen for invitation IDs delivered via deep link. Returns an unsubscribe function. */
   onInviteOpen: (callback: (invitationId: string) => void) => () => void;

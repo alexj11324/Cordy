@@ -79,7 +79,7 @@ vi.mock("../editor/link-hover-card", () => ({
 
 import { RichContent } from "./rich-content";
 
-const APP_ORIGIN = "https://app.patchbay.ai";
+const APP_ORIGIN = "https://patchbay.aspectlylabs.com";
 const PROJECT_ID = "8f14e45f-ceea-4d0e-a1a2-9b1c0d3e4f5a";
 const ISSUE_ID = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
 

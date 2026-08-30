@@ -1,4 +1,5 @@
-import { buildDesktopLoginUrl } from "./login-url";
+import { buildDesktopGoogleLoginUrl } from "./login-url";
+import { ApiError } from "@patchbay/core/api";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -8,6 +9,25 @@ type PendingHandoff = {
   verifier: string;
   expiresAt: number;
 };
+
+export type DesktopHandoffCompletion = {
+  /** The callback is terminal and must not be offered to the renderer again. */
+  acknowledged: boolean;
+  authenticated: boolean;
+};
+
+function isTerminalRedeemFailure(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  // The server uses 4xx responses for an invalid, expired, or already-used
+  // one-time code. Timeouts and rate limits can still recover, while 5xx and
+  // transport failures must retain the verifier for a later retry.
+  return (
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429
+  );
+}
 
 function isPendingHandoff(value: unknown): value is PendingHandoff {
   if (typeof value !== "object" || value === null) return false;
@@ -73,7 +93,9 @@ function randomBase64Url(byteLength: number): string {
  * protocol URL. The verifier remains in app-local storage so a recreated
  * BrowserWindow can redeem the one-time code returned by the web login.
  */
-export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
+export async function createDesktopGoogleLoginUrl(
+  accountsUrl: string,
+): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -91,7 +113,7 @@ export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
     (entry) => entry.state !== state,
   );
   writePendingHandoffs([...pendingHandoffs, pending]);
-  const url = new URL(buildDesktopLoginUrl(appUrl));
+  const url = new URL(buildDesktopGoogleLoginUrl(accountsUrl));
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("state", state);
   return url.href;
@@ -111,5 +133,43 @@ export function clearDesktopHandoffVerifier(state: string): void {
   const pending = readPendingHandoffs();
   if (pending.some((entry) => entry.state === state)) {
     writePendingHandoffs(pending.filter((entry) => entry.state !== state));
+  }
+}
+
+/**
+ * Redeem a one-time code, then publish the resulting session. Once redeem
+ * succeeds the code can never be used again, so clear its verifier immediately.
+ * If user hydration fails after the token was persisted, restart the normal
+ * auth initializer instead of attempting to redeem the consumed code again.
+ */
+export async function completeDesktopHandoff(
+  code: string,
+  state: string,
+  dependencies: {
+    redeem: (code: string, verifier: string) => Promise<{ token: string }>;
+    login: (token: string) => Promise<unknown>;
+    recoverPersistedToken: () => void;
+  },
+): Promise<DesktopHandoffCompletion> {
+  const verifier = readDesktopHandoffVerifier(state);
+  if (!verifier) return { acknowledged: true, authenticated: false };
+
+  let token: string;
+  try {
+    ({ token } = await dependencies.redeem(code, verifier));
+  } catch (error) {
+    if (isTerminalRedeemFailure(error)) {
+      clearDesktopHandoffVerifier(state);
+      return { acknowledged: true, authenticated: false };
+    }
+    throw error;
+  }
+  clearDesktopHandoffVerifier(state);
+  try {
+    await dependencies.login(token);
+    return { acknowledged: true, authenticated: true };
+  } catch {
+    dependencies.recoverPersistedToken();
+    return { acknowledged: true, authenticated: false };
   }
 }
