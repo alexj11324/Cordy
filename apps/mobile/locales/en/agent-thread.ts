@@ -44,6 +44,8 @@ const agentThread = {
     "The Agent runtime no longer exists, so its thread cannot continue.",
   reason_agent_thread_invoke_forbidden:
     "You can read this Agent thread, but you do not have permission to continue it.",
+  reason_agent_thread_depth_limit:
+    "This Agent thread has reached its maximum continuation depth.",
   status: {
     queued: "Queued",
     deferred: "Retrying",

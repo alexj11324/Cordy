@@ -6,7 +6,14 @@ import ja from "@/locales/ja/agent-thread";
 import ko from "@/locales/ko/agent-thread";
 
 export type MobileLocale = "en" | "zh-Hans" | "ja" | "ko";
-export type AgentThreadCopy = typeof en;
+type LocalizedShape<T> = {
+  [K in keyof T]: T[K] extends string
+    ? string
+    : T[K] extends object
+      ? LocalizedShape<T[K]>
+      : T[K];
+};
+export type AgentThreadCopy = LocalizedShape<typeof en>;
 
 const RESOURCES = {
   en,
@@ -53,6 +60,7 @@ export function agentThreadAvailabilityMessage(
     agent_runtime_rebound: copy.reason_agent_runtime_rebound,
     agent_runtime_missing: copy.reason_agent_runtime_missing,
     agent_thread_invoke_forbidden: copy.reason_agent_thread_invoke_forbidden,
+    agent_thread_depth_limit: copy.reason_agent_thread_depth_limit,
   };
   return (reasonCode && localized[reasonCode]) || serverReason || fallback;
 }

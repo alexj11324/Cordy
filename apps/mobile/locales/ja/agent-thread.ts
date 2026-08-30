@@ -43,6 +43,8 @@ const agentThread = {
     "この Agent のランタイムは存在しないため、スレッドを続行できません。",
   reason_agent_thread_invoke_forbidden:
     "この Agent スレッドは読めますが、続行する権限がありません。",
+  reason_agent_thread_depth_limit:
+    "この Agent スレッドは続行回数の上限に達しました。",
   status: {
     queued: "待機中",
     deferred: "再試行中",

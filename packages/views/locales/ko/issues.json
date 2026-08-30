@@ -549,6 +549,7 @@
     "reason_agent_runtime_rebound": "이 Agent가 다른 런타임에 연결되어 안전하게 계속할 수 없습니다.",
     "reason_agent_runtime_missing": "이 Agent의 런타임이 더 이상 존재하지 않아 스레드를 계속할 수 없습니다.",
     "reason_agent_thread_invoke_forbidden": "이 Agent 스레드는 읽을 수 있지만 계속 실행할 권한이 없습니다.",
+    "reason_agent_thread_depth_limit": "이 Agent 스레드는 계속 실행 한도에 도달했습니다.",
     "trigger_retry": "다시 시도",
     "trigger_retry_attempt": "{{attempt}}번째 다시 시도",
     "trigger_retry_attempt_prefix": "{{attempt}}번째 다시 시도 · ",

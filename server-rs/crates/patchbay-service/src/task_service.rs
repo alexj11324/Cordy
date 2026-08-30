@@ -96,6 +96,7 @@ pub const CLAIM_RESPONSE_RECOVERY_WINDOW: Duration = Duration::from_secs(90);
 pub const PREPARE_LEASE_DURATION: Duration = Duration::from_secs(45);
 
 const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
+const MAX_AGENT_THREAD_TASKS_BEFORE_DEPTH_LIMIT: usize = 100;
 
 /// Signals that a run resolved to no precise accountable human and the enqueue
 /// is REFUSED rather than started (PB-4302 §1/§3.5).
@@ -317,6 +318,8 @@ pub enum TaskServiceError {
     AgentThreadUnavailable(AgentThreadUnavailableReason),
     #[error("agent thread idempotency key was already used with different content")]
     AgentThreadIdempotencyConflict,
+    #[error("agent thread reached its maximum continuation depth")]
+    AgentThreadDepthLimit,
     #[error("agent thread continuation is not permitted for this requester")]
     AgentThreadInvokeForbidden,
     #[error("task is no longer queued")]
@@ -3024,6 +3027,15 @@ impl TaskService {
                 continuation_task_id: existing.task_id,
                 coalesced: true,
             });
+        }
+
+        // The history query intentionally caps traversal at the root plus
+        // 100 descendants. Refuse the next new turn once that cap is reached
+        // so a successful child can never execute outside the visible thread.
+        // Keep the idempotency lookup above this guard so a committed request
+        // whose response was lost can still be replayed safely.
+        if thread_tasks.len() > MAX_AGENT_THREAD_TASKS_BEFORE_DEPTH_LIMIT {
+            return Err(TaskServiceError::AgentThreadDepthLimit);
         }
 
         let message_id = new_v7();

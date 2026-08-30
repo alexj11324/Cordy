@@ -662,7 +662,7 @@ class ApiClient {
     );
   }
 
-  // Active tasks for an issue (status in queued/dispatched/running). Returns
+  // Active tasks for an issue (status in queued/deferred/dispatched/running). Returns
   // the inner `tasks` array directly — the handler wraps it in `{ tasks: [] }`
   // so the response object survives
   // future field additions without breaking the cache shape.

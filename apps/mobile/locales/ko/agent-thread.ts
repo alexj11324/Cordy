@@ -42,6 +42,8 @@ const agentThread = {
     "이 Agent의 런타임이 더 이상 존재하지 않아 스레드를 계속할 수 없습니다.",
   reason_agent_thread_invoke_forbidden:
     "이 Agent 스레드는 읽을 수 있지만 계속 실행할 권한이 없습니다.",
+  reason_agent_thread_depth_limit:
+    "이 Agent 스레드는 계속 실행 한도에 도달했습니다.",
   status: {
     queued: "대기 중",
     deferred: "재시도 중",

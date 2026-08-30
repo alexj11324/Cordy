@@ -37,7 +37,6 @@ export function TaskAgentThreadDialog({
   const queryClient = useQueryClient();
   const continuation = useContinueAgentThread();
   const pendingSendRef = useRef<{
-    taskId: string;
     content: string;
     idempotencyKey: string;
   } | null>(null);
@@ -119,6 +118,8 @@ export function TaskAgentThreadDialog({
           return t(($) => $.agent_thread.reason_agent_runtime_missing);
         case "agent_thread_invoke_forbidden":
           return t(($) => $.agent_thread.reason_agent_thread_invoke_forbidden);
+        case "agent_thread_depth_limit":
+          return t(($) => $.agent_thread.reason_agent_thread_depth_limit);
         default:
           return serverReason || fallback;
       }
@@ -168,12 +169,10 @@ export function TaskAgentThreadDialog({
       if (!continuationParentTaskId || !normalizedContent) return false;
       const pendingSend = pendingSendRef.current;
       const idempotencyKey =
-        pendingSend?.taskId === continuationParentTaskId &&
-        pendingSend.content === normalizedContent
+        pendingSend?.content === normalizedContent
           ? pendingSend.idempotencyKey
           : createSafeId();
       pendingSendRef.current = {
-        taskId: continuationParentTaskId,
         content: normalizedContent,
         idempotencyKey,
       };

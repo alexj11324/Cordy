@@ -427,6 +427,15 @@ async fn continue_agent_thread(
             })),
         )
             .into_response(),
+        Err(TaskServiceError::AgentThreadDepthLimit) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "agent_thread_depth_limit",
+                "reason_code": "agent_thread_depth_limit",
+                "reason": "This Agent thread has reached its maximum continuation depth.",
+            })),
+        )
+            .into_response(),
         Err(TaskServiceError::AgentThreadInvokeForbidden) => error_response(
             StatusCode::FORBIDDEN,
             "you do not have permission to continue this Agent thread",

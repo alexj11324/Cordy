@@ -549,6 +549,7 @@
     "reason_agent_runtime_rebound": "此 Agent 已绑定到其他运行时，无法安全继续其对话。",
     "reason_agent_runtime_missing": "此 Agent 的运行时已不存在，无法继续其对话。",
     "reason_agent_thread_invoke_forbidden": "你可以阅读此 Agent 对话，但没有权限继续执行。",
+    "reason_agent_thread_depth_limit": "此 Agent 对话已达到最大继续深度。",
     "trigger_retry": "重试",
     "trigger_retry_attempt": "重试 #{{attempt}}",
     "trigger_retry_attempt_prefix": "重试 #{{attempt}} · ",

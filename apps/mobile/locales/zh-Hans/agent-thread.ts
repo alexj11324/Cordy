@@ -38,6 +38,7 @@ const agentThread = {
   reason_agent_runtime_missing: "此 Agent 的运行时已不存在，无法继续其对话。",
   reason_agent_thread_invoke_forbidden:
     "你可以阅读此 Agent 对话，但没有权限继续执行。",
+  reason_agent_thread_depth_limit: "此 Agent 对话已达到最大继续深度。",
   status: {
     queued: "排队中",
     deferred: "重试中",

@@ -29,7 +29,7 @@ export const issueKeys = {
     [...issueKeys.all(wsId), "detail", id] as const,
   timeline: (wsId: string | null, id: string) =>
     [...issueKeys.all(wsId), "timeline", id] as const,
-  // Currently-running tasks for an issue (queued/dispatched/running). Drives
+  // Active and deferred tasks for an issue (queued/deferred/dispatched/running). Drives
   // the "Working" state of the AgentActivityRow inside IssueHeaderCard.
   activeTasks: (wsId: string | null, id: string) =>
     [...issueKeys.all(wsId), "active-tasks", id] as const,

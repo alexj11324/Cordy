@@ -549,6 +549,7 @@
     "reason_agent_runtime_rebound": "この Agent は別のランタイムに再接続されているため、安全に続行できません。",
     "reason_agent_runtime_missing": "この Agent のランタイムは存在しないため、スレッドを続行できません。",
     "reason_agent_thread_invoke_forbidden": "この Agent スレッドは読めますが、続行する権限がありません。",
+    "reason_agent_thread_depth_limit": "この Agent スレッドは続行回数の上限に達しました。",
     "trigger_retry": "再試行",
     "trigger_retry_attempt": "再試行 #{{attempt}}",
     "trigger_retry_attempt_prefix": "再試行 #{{attempt}} · ",

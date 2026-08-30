@@ -1,9 +1,7 @@
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
-import type {
-  AgentAvailability,
-} from "@patchbay/core/agents";
+import type { AgentAvailability } from "@patchbay/core/agents";
 import type {
   ChatMessage,
   ChatPendingTask,
@@ -160,13 +158,18 @@ export function AgentThreadSurface({
               allowSubmitWhileRunning={allowSubmitWhileRunning}
               chooseFollowUp={chooseFollowUp}
               queueSlot={
-                queueHandlersReady ? (
+                queueTasks.length > 0 ? (
                   <ChatQueue
                     tasks={queueTasks}
                     headStatus={pendingTask?.status}
-                    onEdit={onEditQueuedTask!}
-                    onRemove={onRemoveQueuedTask!}
-                    onClear={onClearQueuedTasks!}
+                    readOnly={!queueHandlersReady}
+                    onEdit={queueHandlersReady ? onEditQueuedTask : undefined}
+                    onRemove={
+                      queueHandlersReady ? onRemoveQueuedTask : undefined
+                    }
+                    onClear={
+                      queueHandlersReady ? onClearQueuedTasks : undefined
+                    }
                   />
                 ) : null
               }

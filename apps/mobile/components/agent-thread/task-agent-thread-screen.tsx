@@ -84,7 +84,6 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
   const threadQuery = useQuery(agentThreadOptions(wsId, taskId));
   const continuation = useContinueAgentThread();
   const pendingSendRef = useRef<{
-    taskId: string;
     content: string;
     idempotencyKey: string;
   } | null>(null);
@@ -159,12 +158,10 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
       }
       const pendingSend = pendingSendRef.current;
       const idempotencyKey =
-        pendingSend?.taskId === continuationParentTaskId &&
-        pendingSend.content === normalizedContent
+        pendingSend?.content === normalizedContent
           ? pendingSend.idempotencyKey
           : createSafeId();
       pendingSendRef.current = {
-        taskId: continuationParentTaskId,
         content: normalizedContent,
         idempotencyKey,
       };
