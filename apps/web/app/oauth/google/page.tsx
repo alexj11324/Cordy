@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSignIn } from "@clerk/nextjs";
+import { useClerk, useSignIn } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
@@ -26,6 +26,7 @@ function GoogleOAuthContent() {
       ),
     [searchParams],
   );
+  const clerk = useClerk();
   const { signIn } = useSignIn();
   const { t } = useT("auth");
   const attempted = useRef(false);
@@ -33,11 +34,12 @@ function GoogleOAuthContent() {
 
   useEffect(() => {
     if (attempted.current) return;
-    attempted.current = true;
     if (!binding) {
       setError(t(($) => $.web.google_oauth.invalid_binding));
       return;
     }
+    if (!clerk.loaded) return;
+    attempted.current = true;
 
     const currentPathname = window.location.pathname;
     const returnUrl = `${buildBrokerRoute(
@@ -67,7 +69,7 @@ function GoogleOAuthContent() {
       .catch(() => {
         setError(t(($) => $.web.google_oauth.failed));
       });
-  }, [binding, signIn, t]);
+  }, [binding, clerk.loaded, signIn, t]);
 
   return (
     <ClerkAuthShell>
