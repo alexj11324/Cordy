@@ -17,7 +17,7 @@ jobs:
       - name: Checkout exact deployment source
         uses: actions/checkout@v4
         with:
-          ref: fce7fead79d71908e2475111940671995c9f1b6b
+          ref: ${{ github.sha }}
           fetch-depth: 1
 
       - name: Set up Buildx
@@ -51,7 +51,7 @@ jobs:
       - name: Checkout exact deployment source
         uses: actions/checkout@v4
         with:
-          ref: fce7fead79d71908e2475111940671995c9f1b6b
+          ref: ${{ github.sha }}
           fetch-depth: 1
 
       - name: Require the production Clerk publishable key
@@ -93,7 +93,7 @@ jobs:
       - name: Checkout exact deployment source
         uses: actions/checkout@v4
         with:
-          ref: fce7fead79d71908e2475111940671995c9f1b6b
+          ref: ${{ github.sha }}
           fetch-depth: 1
 
       - name: Set up Buildx
