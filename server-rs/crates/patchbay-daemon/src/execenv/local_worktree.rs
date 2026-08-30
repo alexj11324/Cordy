@@ -521,7 +521,7 @@ impl LocalWorktree {
         // nothing — the read-only case. Delete it so the user's branch list only
         // ever grows for tasks that actually produced work.
         let tip = run_git_trimmed(&self.path, ["rev-parse", "--verify", "HEAD"]).await;
-        outcome.head_sha = tip.clone().unwrap_or_default();
+        outcome.head_sha = tip.as_ref().map(|value| value.clone()).unwrap_or_default();
         let produced_work = match &tip {
             Err(_) => true,
             Ok(tip) => *tip != self.base_commit,

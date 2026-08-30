@@ -6577,7 +6577,11 @@ pub(crate) async fn mutation_actor(
     headers: &HeaderMap,
 ) -> (String, Uuid, Option<Uuid>) {
     if let Some(execution) = trusted_agent_execution_context(state, context, headers).await {
-        ("agent".to_string(), execution.agent_id, Some(execution.task_id))
+        (
+            "agent".to_string(),
+            execution.agent_id,
+            Some(execution.task_id),
+        )
     } else {
         ("member".to_string(), context.member.user_id, None)
     }

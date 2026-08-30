@@ -108,7 +108,9 @@ fn work_product_relation_from_joined_row(
     ))
 }
 
-fn provenance_from_row(row: &sqlx::postgres::PgRow) -> anyhow::Result<AgentTaskExecutionProvenance> {
+fn provenance_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> anyhow::Result<AgentTaskExecutionProvenance> {
     Ok(AgentTaskExecutionProvenance {
         task_id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
@@ -348,7 +350,9 @@ ORDER BY 21 DESC, 10 DESC, 1 DESC"#,
         .bind(issue_id)
         .fetch_all(executor)
         .await?;
-    rows.iter().map(work_product_relation_from_joined_row).collect()
+    rows.iter()
+        .map(work_product_relation_from_joined_row)
+        .collect()
 }
 
 pub async fn list_issue_ids_for_work_product(
@@ -415,7 +419,9 @@ ORDER BY wpr.attached_at DESC, wpr.id DESC"#,
         .bind(task_id)
         .fetch_all(executor)
         .await?;
-    rows.iter().map(work_product_relation_from_joined_row).collect()
+    rows.iter()
+        .map(work_product_relation_from_joined_row)
+        .collect()
 }
 
 pub async fn has_active_relation_for_task(
@@ -688,8 +694,12 @@ pub fn relation_key(issue_id: Option<Uuid>, task_id: Option<Uuid>, run_id: Optio
         issue_id
             .map(|id| id.to_string())
             .unwrap_or_else(|| "none".into()),
-        task_id.map(|id| id.to_string()).unwrap_or_else(|| "manual".into()),
-        run_id.map(|id| id.to_string()).unwrap_or_else(|| "none".into()),
+        task_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "manual".into()),
+        run_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "none".into()),
     )
 }
 
@@ -723,7 +733,9 @@ pub fn valid_kind(kind: &str) -> bool {
 pub fn valid_provider(provider: &str) -> bool {
     !provider.trim().is_empty()
         && provider.len() <= 64
-        && provider.bytes().all(|byte| byte.is_ascii_graphic() && byte != b' ')
+        && provider
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() && byte != b' ')
 }
 
 pub fn valid_external_identity(identity: &str) -> bool {

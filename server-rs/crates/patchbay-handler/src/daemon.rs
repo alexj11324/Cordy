@@ -2832,8 +2832,8 @@ async fn start_task(
     body: Option<Json<TaskStartRequest>>,
 ) -> Response {
     let access = Access::new(&state, &headers);
-    let (task, ws_id) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await
-    {
+    let (task, ws_id) =
+        match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
         Ok(v) => v,
         Err(res) => return res,
     };
@@ -3097,13 +3097,8 @@ async fn complete_task(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_id) = Uuid::parse_str(&ws_id) {
-                crate::work_product::discover_after_task(
-                    &state,
-                    &task,
-                    workspace_id,
-                    &execution,
-                )
-                .await;
+                crate::work_product::discover_after_task(&state, &task, workspace_id, &execution)
+                    .await;
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %ws_id, "complete: invalid resolved workspace id for work product discovery");
             }
@@ -3228,13 +3223,8 @@ async fn fail_task_impl(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_uuid) = Uuid::parse_str(workspace_id) {
-                crate::work_product::discover_after_task(
-                    state,
-                    &task,
-                    workspace_uuid,
-                    &execution,
-                )
-                .await;
+                crate::work_product::discover_after_task(state, &task, workspace_uuid, &execution)
+                    .await;
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %workspace_id, "fail: invalid resolved workspace id for work product discovery");
             }
@@ -3646,16 +3636,13 @@ async fn ack_task_cancelled(
         state.tasks.rebroadcast_cancelled_task(task.id).await;
     }
     let _ = state.tasks.finalize_deferred_cancelled_chat(task.id).await;
-    if let Some(workspace_id) = state.tasks.resolve_task_workspace_id(&task).await
+    if let Some(workspace_id) = state
+        .tasks
+        .resolve_task_workspace_id(&task)
+        .await
         .and_then(|value| Uuid::parse_str(&value).ok())
     {
-        crate::work_product::discover_after_task(
-            &state,
-            &task,
-            workspace_id,
-            &execution,
-        )
-        .await;
+        crate::work_product::discover_after_task(&state, &task, workspace_id, &execution).await;
     } else {
         tracing::warn!(task_id = %task_id, "cancel ack: invalid resolved workspace id for work product discovery");
     }

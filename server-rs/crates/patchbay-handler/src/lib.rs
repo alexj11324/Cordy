@@ -95,10 +95,10 @@ pub mod vcs;
 pub mod vcs_webhook;
 pub mod webhook_delivery_worker;
 pub mod webhook_rate_limit;
+pub mod work_product;
 pub mod workspace;
 pub mod workspace_channel;
 pub mod workspace_mcp;
-pub mod work_product;
 pub mod ws;
 
 use std::sync::Arc;
