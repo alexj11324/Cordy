@@ -1771,7 +1771,7 @@ async fn issue_matches_dispatch_plan(
     issue: &Issue,
     plan: &DispatchPlan,
 ) -> bool {
-    let category = issue_status::effective(executor, issue.workspace_id, &issue.status).await;
+    let category = issue_status::effective(&mut *executor, issue.workspace_id, &issue.status).await;
     let owner_generation_matches = match plan.expected_owner_generation {
         Some(expected) => {
             sqlx::query_scalar::<_, i64>(
