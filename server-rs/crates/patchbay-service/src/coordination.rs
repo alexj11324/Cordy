@@ -7,7 +7,7 @@
 //! decision, and only then dispatches the next task.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use patchbay_db::dbid::new_v7;
@@ -37,6 +37,8 @@ pub const ASSIGNMENT_EXECUTOR: &str = "executor";
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const NO_OWNER_RETRY: Duration = Duration::from_secs(30);
 const ERROR_RETRY: Duration = Duration::from_secs(10);
+const PUBLICATION_ACK_POLL: Duration = Duration::from_millis(50);
+const PUBLICATION_ACK_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
@@ -75,6 +77,7 @@ struct DispatchPlan {
     issue: Issue,
     owner_type: String,
     owner_id: Uuid,
+    expected_owner_generation: Option<i64>,
     expected_issue_category: String,
     publish_issue_update: bool,
     publish_reviewer_update: bool,
@@ -279,7 +282,8 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
             self.publish_reviewer_update(&plan, &issue_prefix);
         }
         if plan.publish_issue_update || plan.publish_reviewer_update {
-            self.mark_issue_update_published(&event, &plan).await?;
+            self.wait_for_issue_update_publication(&event, &plan)
+                .await?;
         }
         if let Some(activity) = &plan.assignment_activity {
             self.publish_assignment_activity(activity);
@@ -387,6 +391,11 @@ FOR UPDATE"#,
         let category = issue_status::effective(&mut *tx, issue.workspace_id, &issue.status).await;
         let is_task_completion = event.event_type == EVENT_TASK_COMPLETED;
         let is_review_return = event.event_type == EVENT_REVIEW_RETURNED;
+        let is_persisted_reviewer_recovery = is_task_completion
+            && category == issue_status::IN_REVIEW
+            && assignment.role == ASSIGNMENT_REVIEWER
+            && assignment.owner_type.as_deref() == Some("agent")
+            && assignment.dispatched_task_id.is_none();
 
         if !is_task_completion && !is_review_return {
             complete_claimed_tx(
@@ -401,6 +410,50 @@ FOR UPDATE"#,
             .await?;
             tx.commit().await?;
             return Ok(None);
+        }
+
+        if is_review_return {
+            if let Some(captured_revision) =
+                event.payload.get("issue_revision").and_then(Value::as_i64)
+            {
+                let superseded = sqlx::query_scalar::<_, bool>(
+                    r#"SELECT EXISTS (
+    SELECT 1
+    FROM agent_coordination_outbox newer
+    WHERE newer.issue_id = $1
+      AND newer.event_type = $2
+      AND newer.id <> $3
+      AND CASE
+          WHEN newer.payload->>'issue_revision' ~ '^[0-9]+$'
+          THEN (newer.payload->>'issue_revision')::bigint
+      END > $4
+)"#,
+                )
+                .bind(issue.id)
+                .bind(EVENT_REVIEW_RETURNED)
+                .bind(event.id)
+                .bind(captured_revision)
+                .fetch_one(&mut *tx)
+                .await?;
+                if superseded {
+                    complete_claimed_tx(
+                        &mut *tx,
+                        event,
+                        &assignment,
+                        "completed",
+                        None,
+                        json!({
+                            "outcome": "stale_review_return",
+                            "reason": "a newer review return exists",
+                            "captured_issue_revision": captured_revision,
+                        }),
+                        Some("a newer review return exists"),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    return Ok(None);
+                }
+            }
         }
 
         // A reviewer assignment can remain pending when enqueue fails after
@@ -439,6 +492,7 @@ FOR UPDATE"#,
         // completion is only an assignment acknowledgement and must not be
         // checked against the implementation owner.
         if is_task_completion
+            && !is_persisted_reviewer_recovery
             && event.payload.get("source_role").and_then(Value::as_str) != Some(ASSIGNMENT_REVIEWER)
         {
             let captured_owner_type = event
@@ -500,7 +554,6 @@ FOR UPDATE"#,
       )
       AND newer.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
       AND COALESCE(newer.context->>'side_chat_parent_task_id', '') = ''
-      AND COALESCE(newer.context->>'message_bus_parent_task_id', '') = ''
       AND newer.context ? 'coordination_owner_type'
       AND newer.context ? 'coordination_owner_id'
 )"#,
@@ -757,6 +810,10 @@ RETURNING *"#,
                     issue,
                     owner_type: "agent".to_string(),
                     owner_id: dispatch_owner_id,
+                    // Recovery deliberately follows the persisted reviewer
+                    // decision even if the implementation owner changed
+                    // while the original reviewer task was unavailable.
+                    expected_owner_generation: None,
                     expected_issue_category: issue_status::IN_REVIEW.to_string(),
                     publish_issue_update,
                     publish_reviewer_update,
@@ -1121,6 +1178,7 @@ RETURNING *"#,
             issue,
             owner_type,
             owner_id,
+            expected_owner_generation: Some(current_owner_generation),
             expected_issue_category: expected_issue_category.to_string(),
             publish_issue_update: event.event_type == EVENT_TASK_COMPLETED,
             publish_reviewer_update: false,
@@ -1412,6 +1470,12 @@ WHERE id = $1
             return Ok(false);
         }
 
+        if !coordinated_task_is_promotable(coordinated_task_status.as_deref()) {
+            return Err(anyhow::anyhow!(
+                "coordinator task is missing or no longer promotable"
+            ));
+        }
+
         complete_claimed_tx(
             &mut *tx,
             event,
@@ -1501,32 +1565,39 @@ WHERE id = $1 AND status = 'processing' AND lease_owner = $4"#,
         Ok(())
     }
 
-    async fn mark_issue_update_published(
+    async fn wait_for_issue_update_publication(
         &self,
         event: &CoordinationEvent,
         plan: &DispatchPlan,
     ) -> anyhow::Result<()> {
-        let updated = sqlx::query(
-            r#"UPDATE agent_coordination_assignment
-SET decision = decision || jsonb_build_object('issue_update_published', true),
-    updated_at = now()
-WHERE id = $1
-  AND EXISTS (
-      SELECT 1 FROM agent_coordination_outbox
-      WHERE id = $2 AND status = 'processing' AND lease_owner = $3
-  )"#,
-        )
-        .bind(plan.assignment_id)
-        .bind(event.id)
-        .bind(&event.lease_owner)
-        .execute(&self.pool)
-        .await?;
-        if updated.rows_affected() != 1 {
-            return Err(anyhow::anyhow!(
-                "coordination assignment lease is no longer owned while recording issue update publication"
-            ));
+        let started = Instant::now();
+        loop {
+            let acknowledged = sqlx::query_scalar::<_, bool>(
+                r#"SELECT COALESCE((decision->>$3)::boolean, false)
+FROM agent_coordination_assignment
+WHERE id = $1 AND event_id = $2"#,
+            )
+            .bind(plan.assignment_id)
+            .bind(event.id)
+            .bind("issue_update_published")
+            .fetch_optional(&self.pool)
+            .await?;
+            match acknowledged {
+                Some(true) => return Ok(()),
+                Some(false) if started.elapsed() < PUBLICATION_ACK_TIMEOUT => {}
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "coordination assignment disappeared while waiting for issue update publication"
+                    ));
+                }
+                Some(false) => {
+                    return Err(anyhow::anyhow!(
+                        "ordered event side effects did not acknowledge issue update publication"
+                    ));
+                }
+            }
+            tokio::time::sleep(PUBLICATION_ACK_POLL).await;
         }
-        Ok(())
     }
 
     async fn mark_assignment_activity_published(
@@ -1642,18 +1713,98 @@ WHERE id = $1
     }
 }
 
+/// Records completion of the ordered side effects for a coordinator-owned
+/// issue update. The coordinator waits for this durable acknowledgement before
+/// finalizing its outbox row, so a process restart cannot mistake bus enqueue
+/// for completed subscriber, notification, and Autopilot work.
+pub async fn acknowledge_coordination_publication(
+    pool: &sqlx::PgPool,
+    event: &Event,
+) -> anyhow::Result<()> {
+    let Some(event_id) = event
+        .payload
+        .get("coordination_event_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+    else {
+        return Ok(());
+    };
+    let publication = event
+        .payload
+        .get("coordination_publication")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            if event.payload.get("review_handoff").and_then(Value::as_bool) == Some(true) {
+                Some("review_handoff")
+            } else if event
+                .payload
+                .get("reviewer_changed")
+                .and_then(Value::as_bool)
+                == Some(true)
+            {
+                Some("reviewer_replacement")
+            } else {
+                None
+            }
+        });
+    let Some(decision_key) = (match publication {
+        Some("review_handoff") | Some("reviewer_replacement") => Some("issue_update_published"),
+        Some("assignment_activity") => Some("assignment_activity_published"),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+    sqlx::query(
+        r#"UPDATE agent_coordination_assignment
+SET decision = decision || jsonb_build_object($2, true), updated_at = now()
+WHERE event_id = $1"#,
+    )
+    .bind(event_id)
+    .bind(decision_key)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 async fn issue_matches_dispatch_plan(
     executor: &mut sqlx::PgConnection,
     issue: &Issue,
     plan: &DispatchPlan,
 ) -> bool {
     let category = issue_status::effective(executor, issue.workspace_id, &issue.status).await;
-    issue_matches_dispatch_fields(
-        category.as_str(),
-        issue,
-        &plan.expected_issue_category,
-        &plan.owner_type,
-        plan.owner_id,
+    let owner_generation_matches = match plan.expected_owner_generation {
+        Some(expected) => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+            )
+            .bind(issue.id)
+            .bind(issue.workspace_id)
+            .fetch_optional(&mut *executor)
+            .await
+            .ok()
+            .flatten()
+                == Some(expected)
+        }
+        None => true,
+    };
+    owner_generation_matches
+        && issue_matches_dispatch_fields(
+            category.as_str(),
+            issue,
+            &plan.expected_issue_category,
+            &plan.owner_type,
+            plan.owner_id,
+        )
+}
+
+fn coordinated_task_is_promotable(status: Option<&str>) -> bool {
+    matches!(
+        status,
+        Some("deferred")
+            | Some("queued")
+            | Some("dispatched")
+            | Some("running")
+            | Some("waiting_local_directory")
     )
 }
 
@@ -2474,5 +2625,22 @@ mod tests {
             "agent",
             owner_id,
         ));
+    }
+
+    #[test]
+    fn only_live_coordinator_tasks_can_be_promoted() {
+        for status in [
+            "deferred",
+            "queued",
+            "dispatched",
+            "running",
+            "waiting_local_directory",
+        ] {
+            assert!(coordinated_task_is_promotable(Some(status)), "{status}");
+        }
+        for status in ["completed", "failed", "cancelled"] {
+            assert!(!coordinated_task_is_promotable(Some(status)), "{status}");
+        }
+        assert!(!coordinated_task_is_promotable(None));
     }
 }

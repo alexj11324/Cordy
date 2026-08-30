@@ -271,7 +271,7 @@ pub(crate) const COORDINATION_OWNER_ID_CONTEXT_KEY: &str = "coordination_owner_i
 pub(crate) const COORDINATION_OWNER_GENERATION_CONTEXT_KEY: &str = "coordination_owner_generation";
 pub(crate) const COORDINATION_ISSUE_REVISION_CONTEXT_KEY: &str = "coordination_issue_revision";
 
-fn issue_task_context(
+pub(crate) fn issue_task_context(
     issue: &Issue,
     assignment_id: Option<Uuid>,
     owner_generation: Option<i64>,

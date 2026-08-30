@@ -53,8 +53,16 @@ impl OrderedEventSideEffects {
             let autopilots = autopilots.clone();
             Box::pin(async move {
                 crate::subscriber_activity_listeners::handle_event(&pool, &bus, &event).await;
-                crate::notification_listeners::handle_event(pool, bus, event.clone()).await;
+                crate::notification_listeners::handle_event(pool.clone(), bus, event.clone()).await;
                 crate::autopilot_listeners::handle_event(&autopilots, &event).await;
+                if let Err(error) =
+                    patchbay_service::coordination::acknowledge_coordination_publication(
+                        &pool, &event,
+                    )
+                    .await
+                {
+                    tracing::error!(%error, "ordered event side-effect acknowledgement failed");
+                }
             })
         });
         Self::with_processor(bus, processor)
