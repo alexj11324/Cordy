@@ -1,6 +1,9 @@
 name: Aspectlylabs production images
 
 on:
+  push:
+    branches:
+      - codex/aspectlylabs-fce7-build
   workflow_dispatch:
 
 permissions:
