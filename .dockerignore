@@ -45,6 +45,11 @@ coverage
 # app workspaces so they do not silently enter the build context.
 /apps/*
 !/apps/web/
+!/apps/web/**
+
+# The production docs image is built from the exact docs workspace as well.
+!/apps/docs/
+!/apps/docs/**
 
 # Repository-only tooling
 /.github/
