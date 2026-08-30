@@ -3095,13 +3095,8 @@ async fn schedule_work_product_discovery(
     workspace_id: Uuid,
     execution: crate::work_product::ExecutionProvenanceInput,
 ) {
-    if let Err(error) = crate::work_product::queue_task_discovery(
-        state,
-        &task,
-        workspace_id,
-        &execution,
-    )
-    .await
+    if let Err(error) =
+        crate::work_product::queue_task_discovery(state, &task, workspace_id, &execution).await
     {
         tracing::warn!(%error, task_id = %task.id, "durable work product discovery enqueue failed");
         return;
@@ -3205,7 +3200,8 @@ async fn complete_task(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_id) = Uuid::parse_str(&ws_id) {
-                schedule_work_product_discovery(&state, task.clone(), workspace_id, execution).await;
+                schedule_work_product_discovery(&state, task.clone(), workspace_id, execution)
+                    .await;
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %ws_id, "complete: invalid resolved workspace id for work product discovery");
             }
@@ -3330,7 +3326,8 @@ async fn fail_task_impl(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_uuid) = Uuid::parse_str(workspace_id) {
-                schedule_work_product_discovery(state, task.clone(), workspace_uuid, execution).await;
+                schedule_work_product_discovery(state, task.clone(), workspace_uuid, execution)
+                    .await;
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %workspace_id, "fail: invalid resolved workspace id for work product discovery");
             }

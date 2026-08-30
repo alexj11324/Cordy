@@ -2768,8 +2768,7 @@ async fn execution_provenance_for_start(
     .strip_prefix("origin/")
     .map(str::to_string)
     .unwrap_or_default();
-    let head_state =
-        classify_execution_head_state(&repo_identity, &head_branch, &default_branch);
+    let head_state = classify_execution_head_state(&repo_identity, &head_branch, &default_branch);
     ExecutionProvenanceFacts {
         repo_identity,
         execution_workspace,
@@ -4136,7 +4135,10 @@ mod tests {
             classify_execution_head_state("owner/repo", "feature", "main"),
             "attached"
         );
-        assert_eq!(classify_execution_head_state("owner/repo", "", "main"), "detached");
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "", "main"),
+            "detached"
+        );
     }
 
     #[test]

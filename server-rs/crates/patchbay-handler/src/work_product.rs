@@ -488,9 +488,10 @@ pub(crate) async fn validate_task_explicit_product(
     repo_identity: &str,
     metadata: &patchbay_ghsnapshot::PullRequestMetadata,
 ) -> Result<(), &'static str> {
-    let provenances = work_product_q::list_execution_provenances(&state.pool, workspace_id, task_id)
-        .await
-        .map_err(|_| "execution_provenance_unavailable")?;
+    let provenances =
+        work_product_q::list_execution_provenances(&state.pool, workspace_id, task_id)
+            .await
+            .map_err(|_| "execution_provenance_unavailable")?;
     if provenances.is_empty() {
         return Err("execution_provenance_unavailable");
     }
@@ -534,7 +535,10 @@ pub(crate) async fn validate_task_explicit_product(
         }
         return Ok(());
     }
-    if provenances.iter().all(|provenance| provenance.head_state != "attached") {
+    if provenances
+        .iter()
+        .all(|provenance| provenance.head_state != "attached")
+    {
         return Err("execution_head_not_attached");
     }
     if provenances.iter().any(|provenance| {

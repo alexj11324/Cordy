@@ -613,7 +613,12 @@ WHERE workspace_id = $1
     .bind(reason)
     .bind(work_product_id)
     .bind(provenance.repo_identity.as_deref().unwrap_or_default())
-    .bind(provenance.execution_workspace.as_deref().unwrap_or_default())
+    .bind(
+        provenance
+            .execution_workspace
+            .as_deref()
+            .unwrap_or_default(),
+    )
     .execute(executor)
     .await?;
     Ok(())
@@ -672,7 +677,12 @@ RETURNING {PROVENANCE_COLUMNS}"#
         .bind(provenance.workspace_id)
         .bind(provenance.task_id)
         .bind(provenance.repo_identity.as_deref().unwrap_or_default())
-        .bind(provenance.execution_workspace.as_deref().unwrap_or_default())
+        .bind(
+            provenance
+                .execution_workspace
+                .as_deref()
+                .unwrap_or_default(),
+        )
         .fetch_optional(executor)
         .await?;
     row.as_ref().map(provenance_from_row).transpose()
