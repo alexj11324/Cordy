@@ -13,9 +13,9 @@ vi.mock("@patchbay/core/auth", () => ({
 }));
 
 vi.mock("@patchbay/views/auth", () => ({
-  LoginPage: ({ extra, onGoogleLogin }: { extra?: ReactNode; onGoogleLogin: () => void }) => (
+  LoginPage: ({ extra, onGoogleLogin }: { extra?: ReactNode; onGoogleLogin?: () => void }) => (
     <div>
-      <button type="button" onClick={onGoogleLogin}>Log in</button>
+      {onGoogleLogin ? <button type="button" onClick={onGoogleLogin}>Log in</button> : null}
       {extra}
     </div>
   ),
@@ -53,6 +53,7 @@ beforeEach(() => {
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
+      host: "electron",
       runtimeConfig: {
         ok: true,
         config: { appUrl: "https://accounts.aspectlylabs.com" },
@@ -67,6 +68,27 @@ describe("DesktopLoginPage", () => {
     render(<DesktopLoginPage />);
 
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Continue without signing in" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides native Google handoff in the browser renderer", () => {
+    Object.defineProperty(window, "desktopAPI", {
+      configurable: true,
+      value: {
+        host: "browser",
+        runtimeConfig: {
+          ok: true,
+          config: { appUrl: "http://localhost:3000" },
+        },
+        openExternal: mocks.openExternal,
+      },
+    });
+
+    render(<DesktopLoginPage />);
+
+    expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Continue without signing in" }),
     ).toBeInTheDocument();

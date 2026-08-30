@@ -18,6 +18,8 @@ import type {
 } from "../shared/daemon-types";
 
 interface DesktopAPI {
+  /** Host runtime for gating capabilities that only Electron can provide. */
+  host: "electron" | "browser";
   /** App version + normalized OS, captured synchronously at preload time. */
   appInfo: {
     version: string;

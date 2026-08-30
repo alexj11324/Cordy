@@ -392,6 +392,7 @@ export default function App() {
   // restarting Electron; packaged builds always expose windowContext.
   const windowContext =
     window.desktopAPI.windowContext ?? { kind: "main" as const };
+  const isBrowserRenderer = window.desktopAPI.host === "browser";
   useCmdWCloseTab();
   // Mounted at the App root for the same reason as Cmd+W: the chord has to
   // work in every renderer state, not only inside the tab shell.
@@ -473,7 +474,7 @@ export default function App() {
         >
           <DesktopAuthSessionBridge />
           {windowContext.kind === "main" && <DiagnosticRouteReporter />}
-          {windowContext.kind === "main" && (
+          {windowContext.kind === "main" && !isBrowserRenderer && (
             <DesktopClientUsageReporter
               apiUrl={runtimeConfigResult.config.apiUrl}
             />

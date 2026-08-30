@@ -56,6 +56,11 @@ function browserDaemonStatus(apiUrl: string): DaemonStatus {
   };
 }
 
+const viteEnv = import.meta.env as ImportMetaEnv & {
+  readonly NEXT_PUBLIC_API_URL?: string;
+  readonly NEXT_PUBLIC_WS_URL?: string;
+};
+
 /**
  * Install the small browser equivalent of Electron's preload bridge.
  *
@@ -71,13 +76,18 @@ export function installWebDesktopBridge(): boolean {
   if (existingWindow.desktopAPI) return false;
 
   const runtimeConfig = runtimeConfigFromDevEnv({
-    apiUrl: import.meta.env.VITE_API_URL,
-    wsUrl: import.meta.env.VITE_WS_URL,
-    appUrl: import.meta.env.VITE_APP_URL,
+    // `make start-worktree` exports the Next.js convention, while direct
+    // Desktop development uses Vite's convention. Accept both so a linked
+    // worktree never falls back to the primary checkout's port.
+    apiUrl: viteEnv.VITE_API_URL || viteEnv.NEXT_PUBLIC_API_URL,
+    wsUrl: viteEnv.VITE_WS_URL || viteEnv.NEXT_PUBLIC_WS_URL,
+    appUrl: viteEnv.VITE_APP_URL,
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 
   const desktopAPI = {
+    /** Identifies the browser host for native-only capability decisions. */
+    host: "browser" as const,
     appInfo: {
       version: import.meta.env.VITE_APP_VERSION || "vite",
       os: browserPlatform(),

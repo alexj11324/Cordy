@@ -21,6 +21,7 @@ describe("Vite browser Desktop bridge", () => {
     clearWebBridge();
 
     expect(installWebDesktopBridge()).toBe(true);
+    expect(window.desktopAPI.host).toBe("browser");
 
     await expect(window.desktopAPI.pickDirectory()).resolves.toEqual({
       ok: false,

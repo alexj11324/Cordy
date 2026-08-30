@@ -14,6 +14,10 @@ const port =
 export default defineConfig({
   // Keep the browser renderer on the same env files as the Electron renderer.
   envDir: desktopRoot,
+  // Worktree Make targets export NEXT_PUBLIC_API_URL/WS_URL because those are
+  // also consumed by the Next.js client. They are public endpoint values, so
+  // expose that convention to this Vite-only renderer as well.
+  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   plugins: [react(), tailwindcss()],
   root: resolve(desktopRoot, "src/renderer"),
   base: "/",
