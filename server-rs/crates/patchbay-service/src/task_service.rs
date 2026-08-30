@@ -1921,7 +1921,7 @@ impl TaskService {
         // The owner-row fence acquires workspace → agent → issue → runtime
         // locks. Take it before the issue FOR UPDATE below so this transaction
         // cannot invert the teardown/merge lock order.
-        lock_task_owner_rows_before_issue(&mut *tx, prep.assignee_id, issue.id, prep.runtime_id)
+        lock_task_owner_rows_before_issue(&mut tx, prep.assignee_id, issue.id, prep.runtime_id)
             .await?;
         let (current_owner_type, current_owner_id, owner_generation): (
             Option<String>,
@@ -2612,7 +2612,7 @@ impl TaskService {
         if owner_context || coordination_assignment_id.is_some() {
             // Keep the owner-row lock order ahead of the issue snapshot lock;
             // the INSERT below fences the same rows again inside its write.
-            lock_task_owner_rows_before_issue(&mut *tx, agent_id, issue.id, runtime_id).await?;
+            lock_task_owner_rows_before_issue(&mut tx, agent_id, issue.id, runtime_id).await?;
         }
         let owner_snapshot = if coordination_assignment_id.is_some() || owner_context {
             Some(
