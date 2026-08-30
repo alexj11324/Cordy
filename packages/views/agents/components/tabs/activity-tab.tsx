@@ -173,7 +173,7 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <NowSection tasks={activeTasks} issueMap={issueMap} agent={agent} />
+      <NowSection tasks={activeTasks} issueMap={issueMap} />
       {showPerformance && (
         <Last30dSection activity={activity} avgDurationMs={avgDurationMs} />
       )}
@@ -186,7 +186,6 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
           setRecentDisplayLimit((n) => n + RECENT_PAGE)
         }
         issueMap={issueMap}
-        agent={agent}
       />
     </div>
   );
@@ -285,11 +284,9 @@ function Metric({
 function NowSection({
   tasks,
   issueMap,
-  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   return (
@@ -308,7 +305,6 @@ function NowSection({
           tasks={tasks}
           issueMap={issueMap}
           timeMode="active"
-          agent={agent}
         />
       )}
     </Section>
@@ -391,7 +387,6 @@ function RecentWorkSection({
   loading,
   onShowMore,
   issueMap,
-  agent,
 }: {
   tasks: AgentTask[];
   totalCount: number;
@@ -399,7 +394,6 @@ function RecentWorkSection({
   loading: boolean;
   onShowMore: () => void;
   issueMap: Map<string, Issue>;
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   // While the first fetch is in flight we have no counts to summarise, so
@@ -423,7 +417,6 @@ function RecentWorkSection({
             tasks={tasks}
             issueMap={issueMap}
             timeMode="completed"
-            agent={agent}
           />
           {hasMore && (
             <button
@@ -472,12 +465,10 @@ function TaskList({
   tasks,
   issueMap,
   timeMode,
-  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
-  agent: Agent;
 }) {
   return (
     <div
@@ -493,7 +484,6 @@ function TaskList({
           task={task}
           issueMap={issueMap}
           timeMode={timeMode}
-          agent={agent}
         />
       ))}
     </div>
@@ -504,12 +494,10 @@ function TaskRow({
   task,
   issueMap,
   timeMode,
-  agent,
 }: {
   task: AgentTask;
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
