@@ -60,11 +60,15 @@ export function readGoogleSso(
   const record = asRecord(signIn);
   if (!record) return null;
   if (typeof record.sso === "function") {
-    return record.sso as (params: GoogleSsoParams) => Promise<GoogleSsoResult>;
+    return record.sso.bind(record) as (
+      params: GoogleSsoParams,
+    ) => Promise<GoogleSsoResult>;
   }
   const future = asRecord(record.__internal_future);
   if (future && typeof future.sso === "function") {
-    return future.sso as (params: GoogleSsoParams) => Promise<GoogleSsoResult>;
+    return future.sso.bind(future) as (
+      params: GoogleSsoParams,
+    ) => Promise<GoogleSsoResult>;
   }
   return null;
 }
@@ -117,8 +121,10 @@ export async function consumeGoogleOAuthNonce(
   if (!record) return false;
   const future = asRecord(record.__internal_future);
   const reload =
-    (typeof record.reload === "function" ? record.reload : null) ??
-    (future && typeof future.reload === "function" ? future.reload : null);
+    (typeof record.reload === "function" ? record.reload.bind(record) : null) ??
+    (future && typeof future.reload === "function"
+      ? future.reload.bind(future)
+      : null);
   if (typeof reload !== "function") return false;
   await (
     reload as (params: { rotatingTokenNonce: string }) => Promise<unknown>

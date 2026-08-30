@@ -96,6 +96,24 @@ describe("startGoogleOAuth", () => {
     expect(canStartGoogleOAuth({ __internal_future: { sso } })).toBe(true);
     expect(canStartGoogleOAuth({})).toBe(false);
   });
+
+  it("keeps Clerk's resource receiver when calling sso", async () => {
+    const signIn = {
+      marker: "sign-in",
+      async sso(this: { marker: string }) {
+        expect(this).toBe(signIn);
+        return { error: null };
+      },
+    };
+
+    await expect(
+      startGoogleOAuth(signIn, {
+        returnUrl: "/login",
+        callbackUrl: "/oauth/google/callback",
+        origin: "https://accounts.aspectlylabs.com",
+      }),
+    ).resolves.toEqual({ error: null });
+  });
 });
 
 describe("googleOAuthAttemptIsReady", () => {
@@ -134,5 +152,21 @@ describe("consumeGoogleOAuthNonce", () => {
     await expect(consumeGoogleOAuthNonce({}, "nonce-value")).resolves.toBe(
       false,
     );
+  });
+
+  it("keeps Clerk's resource receiver when reloading a nonce", async () => {
+    const signIn = {
+      marker: "sign-in",
+      async reload(
+        this: { marker: string },
+        _params: { rotatingTokenNonce: string },
+      ) {
+        expect(this).toBe(signIn);
+      },
+    };
+
+    await expect(
+      consumeGoogleOAuthNonce(signIn, "nonce-value"),
+    ).resolves.toBe(true);
   });
 });
