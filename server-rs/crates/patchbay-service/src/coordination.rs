@@ -87,6 +87,14 @@ struct ReviewerCandidate {
     name: String,
 }
 
+fn requires_explicit_reviewer(
+    assignment_owner_id: Option<Uuid>,
+    issue_reviewer: Option<(&str, Uuid)>,
+    payload_explicit: bool,
+) -> bool {
+    (assignment_owner_id.is_none() && issue_reviewer.is_some()) || payload_explicit
+}
+
 #[derive(Debug, Clone)]
 struct DispatchPlan {
     event_id: Uuid,
@@ -370,9 +378,91 @@ FOR UPDATE"#,
             return Ok(None);
         }
 
-        // Reviewer recovery follows the global assignment -> task -> issue
-        // order. Lock any correlated unpublished task before the issue row so
-        // replacement cancellation cannot invert review-return retirement.
+        // Reviewer selection follows assignment -> agent -> issue. Read an
+        // unlocked issue snapshot only to decide which agent row to lock;
+        // after acquiring the issue lock below, every owner/reviewer field and
+        // the candidate's capacity are revalidated before the decision is used.
+        let needs_reviewer_selection = event.event_type == EVENT_TASK_COMPLETED
+            && event.payload.get("source_role").and_then(Value::as_str)
+                != Some(ASSIGNMENT_REVIEWER);
+        let reviewer_snapshot = if needs_reviewer_selection {
+            sqlx::query_as::<_, Issue>("SELECT * FROM issue WHERE id = $1 AND workspace_id = $2")
+                .bind(event.issue_id)
+                .bind(event.workspace_id)
+                .fetch_optional(&mut *tx)
+                .await?
+        } else {
+            None
+        };
+        let source_agent_id = event
+            .payload
+            .get("agent_id")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok());
+        let explicit_reviewer = reviewer_snapshot
+            .as_ref()
+            .and_then(|issue| issue.reviewer_type.as_deref().zip(issue.reviewer_id));
+        let requested_reviewer_id = assignment
+            .owner_id
+            .or_else(|| explicit_reviewer.and_then(|(kind, id)| (kind == "agent").then_some(id)));
+        let reviewer_team_id = reviewer_snapshot.as_ref().and_then(|issue| {
+            (issue.assignee_type.as_deref() == Some("team"))
+                .then_some(issue.assignee_id)
+                .flatten()
+        });
+        let explicit_reviewer_required = requires_explicit_reviewer(
+            assignment.owner_id,
+            explicit_reviewer,
+            event
+                .payload
+                .get("explicit_reviewer")
+                .and_then(Value::as_bool)
+                == Some(true),
+        );
+        let prelocked_reviewer = if let Some(reviewer_id) = requested_reviewer_id {
+            if lock_reviewer_if_dispatchable(
+                &mut *tx,
+                event.workspace_id,
+                reviewer_team_id,
+                source_agent_id,
+                reviewer_id,
+                assignment.id,
+            )
+            .await?
+            {
+                Some(ReviewerCandidate {
+                    id: reviewer_id,
+                    name: sqlx::query_scalar("SELECT name FROM agent WHERE id = $1")
+                        .bind(reviewer_id)
+                        .fetch_one(&mut *tx)
+                        .await?,
+                })
+            } else if explicit_reviewer_required {
+                None
+            } else {
+                select_reviewer(
+                    &mut *tx,
+                    event.workspace_id,
+                    reviewer_team_id,
+                    source_agent_id,
+                )
+                .await?
+            }
+        } else if needs_reviewer_selection && !explicit_reviewer_required {
+            select_reviewer(
+                &mut *tx,
+                event.workspace_id,
+                reviewer_team_id,
+                source_agent_id,
+            )
+            .await?
+        } else {
+            None
+        };
+
+        // Keep the selected agent lock ahead of any correlated task lock, and
+        // keep both ahead of the issue. This matches enqueue's agent -> issue
+        // order and review-return's task -> issue order.
         let locked_reviewer_task_ids = if event.event_type == EVENT_TASK_COMPLETED
             && assignment.role == ASSIGNMENT_REVIEWER
             && assignment.owner_type.as_deref() == Some("agent")
@@ -410,6 +500,50 @@ FOR UPDATE"#,
             tx.commit().await?;
             return Ok(None);
         };
+        if let Some(snapshot) = reviewer_snapshot.as_ref() {
+            if snapshot.status != issue.status
+                || snapshot.assignee_type != issue.assignee_type
+                || snapshot.assignee_id != issue.assignee_id
+                || snapshot.reviewer_type != issue.reviewer_type
+                || snapshot.reviewer_id != issue.reviewer_id
+            {
+                defer_claimed_tx(
+                    &mut *tx,
+                    event,
+                    &assignment,
+                    "issue changed while reviewer agent was being locked",
+                    ERROR_RETRY,
+                    assignment.owner_type.as_deref().zip(assignment.owner_id),
+                )
+                .await?;
+                tx.commit().await?;
+                return Ok(None);
+            }
+        }
+        if let Some(candidate) = prelocked_reviewer.as_ref() {
+            if !reviewer_is_dispatchable_after_lock(
+                &mut *tx,
+                issue.workspace_id,
+                reviewer_team_id,
+                source_agent_id,
+                candidate.id,
+                assignment.id,
+            )
+            .await?
+            {
+                defer_claimed_tx(
+                    &mut *tx,
+                    event,
+                    &assignment,
+                    "selected reviewer changed or reached capacity",
+                    NO_OWNER_RETRY,
+                    assignment.owner_type.as_deref().zip(assignment.owner_id),
+                )
+                .await?;
+                tx.commit().await?;
+                return Ok(None);
+            }
+        }
         let current_owner_generation: i64 = sqlx::query_scalar(
             "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
         )
@@ -678,21 +812,12 @@ FOR UPDATE"#,
                     None
                 };
                 let (dispatch_owner_id, issue, assignment_activity, reviewer_replaced) =
-                    if reviewer_is_dispatchable(
-                        &mut *tx,
-                        issue.workspace_id,
-                        team_id,
-                        source_agent_id,
-                        owner_id,
-                        assignment.id,
-                    )
-                    .await?
+                    if prelocked_reviewer
+                        .as_ref()
+                        .is_some_and(|candidate| candidate.id == owner_id)
                     {
                         (owner_id, issue, persisted_assignment_activity, false)
-                    } else if let Some(candidate) =
-                        select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id)
-                            .await?
-                    {
+                    } else if let Some(candidate) = prelocked_reviewer.as_ref() {
                         cancel_unpromoted_reviewer_task(&mut *tx, &locked_reviewer_task_ids)
                             .await?;
                         let updated = sqlx::query_as::<_, Issue>(
@@ -723,7 +848,7 @@ RETURNING *"#,
                             "issue_update_publication_key": publication_key,
                             "assignment_activity_published": false,
                             "candidate_agent_id": candidate.id,
-                            "candidate_agent_name": candidate.name,
+                            "candidate_agent_name": candidate.name.clone(),
                             "previous_status": issue.status,
                             "previous_assignee_type": issue.assignee_type,
                             "previous_assignee_id": issue.assignee_id,
@@ -985,14 +1110,16 @@ RETURNING *"#,
                     .get("agent_id")
                     .and_then(Value::as_str)
                     .and_then(|value| Uuid::parse_str(value).ok());
-                let Some(candidate) =
-                    select_reviewer(&mut *tx, issue.workspace_id, team_id, source_agent_id).await?
-                else {
+                let Some(candidate) = prelocked_reviewer.as_ref() else {
                     defer_claimed_tx(
                         &mut *tx,
                         event,
                         &assignment,
-                        "no reviewer with role=reviewer and a bound runtime",
+                        if explicit_reviewer_required {
+                            "explicit reviewer is unavailable or invalid"
+                        } else {
+                            "no reviewer with role=reviewer and a bound runtime"
+                        },
                         NO_OWNER_RETRY,
                         None,
                     )
@@ -1029,7 +1156,7 @@ RETURNING *"#,
                     "issue_update_publication_key": publication_key,
                     "assignment_activity_published": false,
                     "candidate_agent_id": candidate.id,
-                    "candidate_agent_name": candidate.name,
+                    "candidate_agent_name": candidate.name.clone(),
                     "previous_status": issue.status,
                     "previous_assignee_type": issue.assignee_type,
                     "previous_assignee_id": issue.assignee_id,
@@ -2114,7 +2241,7 @@ FOR UPDATE SKIP LOCKED"#,
     .transpose()
 }
 
-async fn reviewer_is_dispatchable(
+async fn lock_reviewer_if_dispatchable(
     executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
     team_id: Option<Uuid>,
@@ -2157,6 +2284,59 @@ WHERE a.id = $4
         AND reservation.id <> $5
   ) < a.max_concurrent_tasks
 FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .bind(team_id)
+    .bind(source_agent_id)
+    .bind(reviewer_id)
+    .bind(assignment_id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    Ok(row.is_some())
+}
+
+async fn reviewer_is_dispatchable_after_lock(
+    executor: &mut sqlx::PgConnection,
+    workspace_id: Uuid,
+    team_id: Option<Uuid>,
+    source_agent_id: Option<Uuid>,
+    reviewer_id: Uuid,
+    assignment_id: Uuid,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"SELECT a.id
+FROM agent a
+WHERE a.id = $4
+  AND a.workspace_id = $1
+  AND a.kind = 'user'
+  AND a.archived_at IS NULL
+  AND a.runtime_id IS NOT NULL
+  AND ($3::uuid IS NULL OR a.id <> $3)
+  AND EXISTS (
+      SELECT 1
+      FROM team_member tm
+      JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
+                  AND t.archived_at IS NULL
+      WHERE tm.member_type = 'agent'
+        AND tm.member_id = a.id
+        AND tm.role = 'reviewer'
+        AND ($2::uuid IS NULL OR tm.team_id = $2)
+  )
+  AND (
+      SELECT count(*)
+      FROM agent_task_queue q
+      WHERE q.agent_id = a.id
+        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+        AND COALESCE(q.context->>'coordination_assignment_id', '') <> $5::uuid::text
+  ) + (
+      SELECT count(*)
+      FROM agent_coordination_assignment reservation
+      WHERE reservation.owner_type = 'agent'
+        AND reservation.owner_id = a.id
+        AND reservation.status = 'assigned'
+        AND reservation.dispatched_task_id IS NULL
+        AND reservation.id <> $5
+  ) < a.max_concurrent_tasks"#,
     )
     .bind(workspace_id)
     .bind(team_id)
@@ -2656,6 +2836,135 @@ pub async fn record_review_return(
     .await
 }
 
+/// Persists an explicitly selected reviewer handoff in the same transaction
+/// as the issue's reviewer change. The assignment is pre-owned so recovery
+/// reuses the user's final reviewer instead of running automatic selection.
+pub async fn record_reviewer_reassignment(
+    executor: &mut sqlx::PgConnection,
+    issue: &Issue,
+    source_task_id: Option<Uuid>,
+) -> anyhow::Result<()> {
+    let Some(reviewer_id) = issue
+        .reviewer_type
+        .as_deref()
+        .filter(|kind| *kind == "agent")
+        .and(issue.reviewer_id)
+    else {
+        return Err(anyhow::anyhow!(
+            "reviewer reassignment has no agent reviewer"
+        ));
+    };
+    let event_key = format!("reviewer_reassigned:{}:{}", issue.id, issue.revision);
+    record_event_and_assignment(
+        executor,
+        &event_key,
+        issue.workspace_id,
+        issue.id,
+        source_task_id,
+        EVENT_TASK_COMPLETED,
+        json!({
+            "issue_id": issue.id,
+            "explicit_reviewer": true,
+            "reviewer_reassignment": true,
+        }),
+        ASSIGNMENT_REVIEWER,
+    )
+    .await?;
+    sqlx::query(
+        r#"UPDATE agent_coordination_assignment assignment
+SET owner_type = 'agent', owner_id = $2, status = 'assigned', updated_at = now()
+FROM agent_coordination_outbox event
+WHERE event.event_key = $1
+  AND assignment.event_id = event.id
+  AND assignment.role = 'reviewer'"#,
+    )
+    .bind(event_key)
+    .bind(reviewer_id)
+    .execute(&mut *executor)
+    .await?;
+    Ok(())
+}
+
+/// A cancelled coordinated reviewer task must leave a durable recovery signal
+/// before its cancellation commits. The task id is the idempotency key.
+pub async fn record_reviewer_task_cancelled(
+    executor: &mut sqlx::PgConnection,
+    task: &AgentTaskQueue,
+) -> anyhow::Result<()> {
+    let Some(issue_id) = task.issue_id else {
+        return Ok(());
+    };
+    let coordination_assignment_id = task
+        .context
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|context| context.get(COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY))
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok());
+    let assignment = sqlx::query(
+        r#"SELECT assignment.role
+FROM agent_coordination_assignment assignment
+WHERE assignment.dispatched_task_id = $1
+   OR ($2::uuid IS NOT NULL AND assignment.id = $2)
+ORDER BY assignment.created_at DESC, assignment.id DESC
+LIMIT 1"#,
+    )
+    .bind(task.id)
+    .bind(coordination_assignment_id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    let Some(assignment) = assignment else {
+        return Ok(());
+    };
+    let role: String = assignment.try_get(0)?;
+    if role != ASSIGNMENT_REVIEWER {
+        return Ok(());
+    }
+    let issue =
+        sqlx::query("SELECT workspace_id, reviewer_type, reviewer_id FROM issue WHERE id = $1")
+            .bind(issue_id)
+            .fetch_optional(&mut *executor)
+            .await?;
+    let Some(issue) = issue else {
+        return Ok(());
+    };
+    let workspace_id: Uuid = issue.try_get(0)?;
+    let reviewer_type: Option<String> = issue.try_get(1)?;
+    let reviewer_id: Option<Uuid> = issue.try_get(2)?;
+    if reviewer_type.as_deref() != Some("agent") || reviewer_id != Some(task.agent_id) {
+        return Ok(());
+    }
+    let event_key = format!("reviewer_task_cancelled:{}", task.id);
+    record_event_and_assignment(
+        executor,
+        &event_key,
+        workspace_id,
+        issue_id,
+        Some(task.id),
+        EVENT_TASK_COMPLETED,
+        json!({
+            "issue_id": issue_id,
+            "agent_id": task.agent_id,
+            "reviewer_task_cancelled": true,
+        }),
+        ASSIGNMENT_REVIEWER,
+    )
+    .await?;
+    sqlx::query(
+        r#"UPDATE agent_coordination_assignment assignment
+SET owner_type = 'agent', owner_id = $2, status = 'assigned', updated_at = now()
+FROM agent_coordination_outbox event
+WHERE event.event_key = $1
+  AND assignment.event_id = event.id
+  AND assignment.role = 'reviewer'"#,
+    )
+    .bind(event_key)
+    .bind(task.agent_id)
+    .execute(&mut *executor)
+    .await?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn record_event_and_assignment(
     executor: &mut sqlx::PgConnection,
@@ -2892,6 +3201,72 @@ mod tests {
             None,
             None,
         ));
+    }
+
+    #[test]
+    fn explicit_reviewer_is_never_replaced_by_automatic_selection() {
+        let reviewer = Uuid::from_u128(51);
+        assert!(requires_explicit_reviewer(
+            None,
+            Some(("agent", reviewer)),
+            false,
+        ));
+        assert!(requires_explicit_reviewer(
+            Some(reviewer),
+            Some(("agent", reviewer)),
+            true,
+        ));
+        assert!(!requires_explicit_reviewer(
+            Some(reviewer),
+            Some(("agent", reviewer)),
+            false,
+        ));
+
+        let source = include_str!("coordination.rs");
+        assert!(source.contains("explicit reviewer is unavailable or invalid"));
+        assert!(source.contains("&& !explicit_reviewer_required"));
+    }
+
+    #[test]
+    fn reviewer_agent_is_locked_before_issue_and_revalidated_afterward() {
+        let source = include_str!("coordination.rs");
+        let prepare = source
+            .split("async fn prepare_dispatch")
+            .nth(1)
+            .expect("prepare dispatch")
+            .split("async fn dispatch")
+            .next()
+            .expect("prepare dispatch body");
+        let agent_lock = prepare
+            .find("lock_reviewer_if_dispatchable")
+            .expect("reviewer agent lock");
+        let issue_lock = prepare
+            .find("SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE")
+            .expect("issue row lock");
+        let task_lock = prepare
+            .find("lock_unpromoted_reviewer_tasks")
+            .expect("correlated reviewer task lock");
+        let capacity_revalidation = prepare
+            .find("reviewer_is_dispatchable_after_lock")
+            .expect("reviewer capacity revalidation");
+        assert!(agent_lock < task_lock);
+        assert!(task_lock < issue_lock);
+        assert!(issue_lock < capacity_revalidation);
+    }
+
+    #[test]
+    fn cancelled_reviewer_recovery_is_idempotent_and_preowned() {
+        let source = include_str!("coordination.rs");
+        let recovery = source
+            .split("pub async fn record_reviewer_task_cancelled")
+            .nth(1)
+            .expect("reviewer cancellation recovery")
+            .split("async fn record_event_and_assignment")
+            .next()
+            .expect("reviewer cancellation recovery body");
+        assert!(recovery.contains("reviewer_task_cancelled:{}"));
+        assert!(recovery.contains("record_event_and_assignment("));
+        assert!(recovery.contains("SET owner_type = 'agent', owner_id = $2"));
     }
 
     #[test]

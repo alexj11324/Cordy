@@ -3771,9 +3771,20 @@ impl TaskService {
         &self,
         agent_id: Uuid,
     ) -> Result<Vec<AgentTaskQueue>, TaskServiceError> {
-        let cancelled = cancel_agent_tasks_by_agent(&self.pool, agent_id)
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let cancelled = cancel_agent_tasks_by_agent(&mut *tx, agent_id)
             .await
             .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
+        for task in &cancelled {
+            crate::coordination::record_reviewer_task_cancelled(&mut tx, task)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
+        }
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
         for t in &cancelled {
             self.capture_task_cancelled(t).await;
             self.broadcast_task_event(
@@ -3953,6 +3964,13 @@ impl TaskService {
             let Some(cancelled) = cancelled else {
                 return Err(TaskServiceError::NoLongerQueued(ErrTaskNoLongerQueued));
             };
+            crate::coordination::record_reviewer_task_cancelled(&mut tx, &cancelled)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
             cancelled_chat_message = self
                 .settle_queued_chat_input(&mut tx, &cancelled, &opts.queue_action)
                 .await?;
@@ -3998,6 +4016,13 @@ impl TaskService {
                         TaskServiceError::Internal(format!("advance cancelled chat pointer: {e}"))
                     })?;
             }
+            crate::coordination::record_reviewer_task_cancelled(&mut tx, &cancelled)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
             tx.commit().await.map_err(TaskServiceError::Sql)?;
             cancelled
         };
@@ -5554,5 +5579,36 @@ mod tests {
             TaskSideEffectShutdownOutcome::Stopped
         );
         assert!(completed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn reviewer_recovery_is_recorded_before_cancellation_commit() {
+        let source = include_str!("task_service.rs");
+        let cancel_for_agent = source
+            .split("pub async fn cancel_tasks_for_agent")
+            .nth(1)
+            .expect("agent cancellation")
+            .split("pub async fn cancel_tasks_by_trigger_comment")
+            .next()
+            .expect("agent cancellation body");
+        let recovery = cancel_for_agent
+            .find("record_reviewer_task_cancelled")
+            .expect("durable reviewer recovery");
+        let commit = cancel_for_agent
+            .find("tx.commit()")
+            .expect("transaction commit");
+        assert!(recovery < commit);
+
+        let cancel_one = source
+            .split("pub async fn cancel_task_with_result")
+            .nth(1)
+            .expect("single cancellation")
+            .split("pub async fn cancel_queued_chat_tasks")
+            .next()
+            .expect("single cancellation body");
+        assert_eq!(
+            cancel_one.matches("record_reviewer_task_cancelled").count(),
+            2
+        );
     }
 }
