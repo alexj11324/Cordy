@@ -172,6 +172,20 @@ const PREVIEW_EMPTY_DINGTALK_GROUP_ROUTES = { routes: [] };
 const PREVIEW_EMPTY_RUNTIME_PROFILES = { runtime_profiles: [] };
 const PREVIEW_EMPTY_PLUGINS = { plugins: [] };
 
+function previewRuntimeLocalSkills(runtimeId) {
+  return {
+    id: `preview-local-skills-${runtimeId}`,
+    runtime_id: runtimeId,
+    status: "completed",
+    skills: [],
+    supported: true,
+    mcp_servers: [],
+    mcp_supported: false,
+    created_at: NOW,
+    updated_at: NOW,
+  };
+}
+
 function previewRuntime(id, name, provider, status) {
   return {
     id,
@@ -415,6 +429,7 @@ function previewAutopilot({
   lastRunStatus,
   nextRunAt,
   triggerKinds,
+  createdAt,
   pauseReason = null,
 }) {
   return {
@@ -432,7 +447,7 @@ function previewAutopilot({
     created_by_type: "member",
     created_by_id: PREVIEW_USER_ID,
     last_run_at: lastRunAt,
-    created_at: NOW,
+    created_at: createdAt,
     updated_at: NOW,
     trigger_kinds: triggerKinds,
     next_run_at: nextRunAt,
@@ -457,6 +472,7 @@ const PREVIEW_AUTOPILOTS = [
     lastRunStatus: "running",
     nextRunAt: previewTime(30),
     triggerKinds: ["schedule"],
+    createdAt: previewTime(-4320),
   }),
   previewAutopilot({
     id: "autopilot-ci-watch",
@@ -469,6 +485,7 @@ const PREVIEW_AUTOPILOTS = [
     lastRunStatus: "running",
     nextRunAt: previewTime(15),
     triggerKinds: ["schedule"],
+    createdAt: previewTime(-270),
   }),
   previewAutopilot({
     id: "autopilot-weekly-summary",
@@ -481,6 +498,7 @@ const PREVIEW_AUTOPILOTS = [
     lastRunStatus: "skipped",
     nextRunAt: null,
     triggerKinds: ["schedule"],
+    createdAt: previewTime(-10110),
     pauseReason: "agent_runtime_required",
   }),
 ];
@@ -1138,6 +1156,13 @@ export async function handlePreviewRequest(req, res) {
     const runtimeId = decodeURIComponent(runtimeUsage[1]);
     return PREVIEW_RUNTIMES.some((runtime) => runtime.id === runtimeId)
       ? json(res, [])
+      : json(res, { error: "Preview runtime not found" }, 404);
+  }
+  const runtimeLocalSkills = /^\/api\/runtimes\/([^/]+)\/local-skills$/.exec(path);
+  if (method === "POST" && runtimeLocalSkills) {
+    const runtimeId = decodeURIComponent(runtimeLocalSkills[1]);
+    return PREVIEW_RUNTIMES.some((runtime) => runtime.id === runtimeId)
+      ? json(res, previewRuntimeLocalSkills(runtimeId))
       : json(res, { error: "Preview runtime not found" }, 404);
   }
   if (method === "GET" && path === "/api/squads") return json(res, []);

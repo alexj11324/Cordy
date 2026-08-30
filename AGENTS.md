@@ -81,8 +81,9 @@ these workspace tabs in an in-memory router, so `/preview/autopilots` is an
 internal tab path rather than a URL to paste into the browser. Product data
 writes are intentionally unsupported and fall through to Vite; view
 preferences may only update in memory for the current tab. Do not treat this
-preview as persisted or live automation data. Set `VITE_API_URL` only when
-deliberately testing the renderer against a real backend.
+preview as persisted or live automation data. For a real backend, set both
+`VITE_API_URL` and `VITE_DESKTOP_PREVIEW=false`; otherwise leave `VITE_API_URL`
+unset so the renderer stays on the local preview API.
 
 ### Coding Conventions
 

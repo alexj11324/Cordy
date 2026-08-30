@@ -207,6 +207,38 @@ describe("local Vite preview API", () => {
     expect(unknown).toMatchObject({ handled: true, status: 404 });
   });
 
+  it("serves completed empty capability responses for every seeded runtime", async () => {
+    const runtimes = await call("GET", "/api/runtimes");
+
+    for (const runtime of runtimes.body) {
+      const capabilities = await call(
+        "POST",
+        `/api/runtimes/${runtime.id}/local-skills`,
+      );
+      expect(capabilities).toMatchObject({
+        handled: true,
+        status: 200,
+        body: {
+          id: `preview-local-skills-${runtime.id}`,
+          runtime_id: runtime.id,
+          status: "completed",
+          skills: [],
+          supported: true,
+          mcp_servers: [],
+          mcp_supported: false,
+        },
+      });
+      expect(capabilities.body.created_at).toEqual(expect.any(String));
+      expect(capabilities.body.updated_at).toEqual(expect.any(String));
+    }
+
+    const unknown = await call(
+      "POST",
+      "/api/runtimes/runtime-unknown/local-skills",
+    );
+    expect(unknown).toMatchObject({ handled: true, status: 404 });
+  });
+
   it("serves read-only automation samples with runs and an explicit write boundary", async () => {
     const list = await call("GET", "/api/autopilots");
     const detail = await call("GET", "/api/autopilots/autopilot-pr-review");
@@ -227,6 +259,22 @@ describe("local Vite preview API", () => {
       "run-pr-review-current",
       "run-pr-review-completed",
     ]);
+    const earliestRunAt = Math.min(
+      ...runs.body.runs.map((run) => Date.parse(run.triggered_at)),
+    );
+    expect(Date.parse(list.body.autopilots.find(
+      (autopilot) => autopilot.id === "autopilot-pr-review",
+    ).created_at)).toBeLessThan(earliestRunAt);
+    for (const autopilot of list.body.autopilots) {
+      const autopilotRuns = await call(
+        "GET",
+        `/api/autopilots/${autopilot.id}/runs`,
+      );
+      const oldestRun = Math.min(
+        ...autopilotRuns.body.runs.map((run) => Date.parse(run.triggered_at)),
+      );
+      expect(Date.parse(autopilot.created_at)).toBeLessThan(oldestRun);
+    }
     expect(runs.body.runs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ status: "running", task_id: "task-pre-105-review" }),
