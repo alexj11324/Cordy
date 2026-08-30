@@ -552,12 +552,7 @@ async fn retire_dependency_graph(
                 .await;
             for (previous, updated) in retirement.cancellation.cancelled_issues {
                 crate::issue::publish_issue_updated(
-                    &state,
-                    &previous,
-                    &updated,
-                    actor_type,
-                    actor_id,
-                    None,
+                    &state, &previous, &updated, actor_type, actor_id, None,
                 )
                 .await;
             }
