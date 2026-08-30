@@ -1,9 +1,8 @@
-# Work Product explicit relations (numbering pending)
+# Work Product explicit relations (migrations 430–447)
 
-This directory is an intentionally unnumbered migration candidate. The
-migration runner only reads files directly under `migrations/`, so these files
-are inert until the coordinator assigns final versions and moves each unit to
-that directory.
+The 18 numbered migration units live directly under `migrations/` so the
+migration runner applies them in the assigned `430–447` sequence. This file
+remains as the schema manifest; it is not itself a migration.
 
 The schema is provider-neutral at the identity/relation boundary:
 
@@ -75,5 +74,6 @@ the earlier 20-unit sketch because it does not create unused run or
 discovery-status indexes, while retaining every index with a live query
 consumer and keeping each concurrent index in its own unit.
 
-Final numbering must be assigned only after the migration sequence supplied by
-the coordination task is stable.
+The final assigned versions are `430–447`; the later `448/449` Graph
+follow-up migrations already present on `main` are intentionally left
+unchanged.
