@@ -842,6 +842,7 @@ fn isolate_linux(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
