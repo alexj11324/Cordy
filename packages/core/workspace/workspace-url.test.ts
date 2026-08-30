@@ -29,9 +29,9 @@ describe("workspaceUrlHost", () => {
   });
 
   it("falls back to the brand host when no app URL is configured", () => {
-    expect(workspaceUrlHost("")).toBe("patchbay.ai");
-    expect(workspaceUrlHost("   ")).toBe("patchbay.ai");
-    expect(workspaceUrlHost(null)).toBe("patchbay.ai");
-    expect(workspaceUrlHost(undefined)).toBe("patchbay.ai");
+    expect(workspaceUrlHost("")).toBe("patchbay.aspectlylabs.com");
+    expect(workspaceUrlHost("   ")).toBe("patchbay.aspectlylabs.com");
+    expect(workspaceUrlHost(null)).toBe("patchbay.aspectlylabs.com");
+    expect(workspaceUrlHost(undefined)).toBe("patchbay.aspectlylabs.com");
   });
 });

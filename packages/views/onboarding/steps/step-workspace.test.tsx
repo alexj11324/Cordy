@@ -165,7 +165,7 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
 describe("StepWorkspace — workspace URL prefix", () => {
   it("shows the brand host when no app URL is configured", () => {
     renderStep({ existing: null, disabled: false });
-    expect(screen.getByText("patchbay.ai/")).toBeInTheDocument();
+    expect(screen.getByText("patchbay.aspectlylabs.com/")).toBeInTheDocument();
   });
 
   it("shows the deployment host for self-hosted instances", () => {
@@ -175,7 +175,9 @@ describe("StepWorkspace — workspace URL prefix", () => {
       daemonAppUrl: "https://patchbay.example.com",
     });
     expect(screen.getByText("patchbay.example.com/")).toBeInTheDocument();
-    expect(screen.queryByText("patchbay.ai/")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("patchbay.aspectlylabs.com/"),
+    ).not.toBeInTheDocument();
   });
 });
 
