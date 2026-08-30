@@ -20,6 +20,7 @@
     "bundle-cli": "node scripts/bundle-cli.mjs",
     "brand-dev-electron": "node scripts/brand-dev-electron.mjs",
     "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --config vite.web.config.mjs",
     "dev:staging": "node scripts/dev.mjs --mode staging",
     "build": "pnpm run bundle-cli && electron-vite build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
@@ -59,16 +60,15 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4",
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@patchbay/eslint-config": "workspace:*",
     "@patchbay/tsconfig": "workspace:*",
-    "@tailwindcss/vite": "^4",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@vitejs/plugin-react": "^5.1.1",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
@@ -76,6 +76,8 @@
     "jsdom": "catalog:",
     "tailwindcss": "^4",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^8.0.1"
   }
 }

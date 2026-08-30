@@ -1,6 +1,10 @@
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AppCrashBoundary } from "./components/app-crash-boundary";
+import {
+  installWebDesktopBridge,
+  isDesktopWebPreview,
+} from "./platform/web-bridge";
 // Inter variable font covers all weights (100-900) in a single file.
 // CJK is handled by system font fallback (see globals.css --font-sans chain).
 // Keep font stack in sync with apps/web/app/layout.tsx.
@@ -36,6 +40,21 @@ if (import.meta.env.DEV && import.meta.env.VITE_REACT_GRAB) {
   grab.src = "//unpkg.com/react-grab/dist/index.global.js";
   grab.crossOrigin = "anonymous";
   document.head.appendChild(grab);
+}
+
+const webBridgeInstalled = installWebDesktopBridge();
+if (
+  webBridgeInstalled &&
+  isDesktopWebPreview() &&
+  !window.location.pathname.startsWith("/ui-preview")
+) {
+  // The preview is intentionally a path, not a separate Next.js route. The
+  // shared CoreProvider uses this prefix to disable auth/config/WS startup.
+  window.history.replaceState(
+    null,
+    "",
+    `/ui-preview${window.location.search}${window.location.hash}`,
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

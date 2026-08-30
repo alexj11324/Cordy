@@ -98,6 +98,7 @@ pub fn public_router(
     let general = Router::new()
         .route("/auth/send-code", post(send_code))
         .route("/auth/google", post(google_login))
+        .route("/auth/clerk", post(clerk_login))
         .route_layer(axum::middleware::from_fn_with_state(
             auth_limit,
             patchbay_middleware::ratelimit::rate_limit,
@@ -146,6 +147,12 @@ struct GoogleUserInfo {
     name: String,
     #[serde(default)]
     picture: String,
+}
+
+struct LoginProfile {
+    name: String,
+    picture: String,
+    auth_method: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -453,14 +460,59 @@ async fn google_login(
         return error_response(StatusCode::BAD_REQUEST, "Google account has no email");
     }
     let email = google_user.email.trim().to_lowercase();
-    complete_login(&state, &headers, &email, Some(google_user)).await
+    complete_login(
+        &state,
+        &headers,
+        &email,
+        Some(LoginProfile {
+            name: google_user.name,
+            picture: google_user.picture,
+            auth_method: "google",
+        }),
+    )
+    .await
+}
+
+async fn clerk_login(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
+    let Some(token) = bearer_token(&headers) else {
+        return error_response(StatusCode::UNAUTHORIZED, "Clerk session is required");
+    };
+    let Some(verifier) = state.clerk_auth.as_ref() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Clerk login is not configured",
+        );
+    };
+    let identity = match verifier.verify(token).await {
+        Ok(identity) => identity,
+        Err(crate::clerk_auth::ClerkAuthError::Invalid) => {
+            return error_response(StatusCode::UNAUTHORIZED, "invalid Clerk session");
+        }
+        Err(crate::clerk_auth::ClerkAuthError::Unavailable) => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Clerk login is temporarily unavailable",
+            );
+        }
+    };
+    complete_login(
+        &state,
+        &headers,
+        &identity.email,
+        Some(LoginProfile {
+            name: identity.name,
+            picture: identity.avatar_url.unwrap_or_default(),
+            auth_method: "clerk",
+        }),
+    )
+    .await
 }
 
 async fn complete_login(
     state: &HandlerState,
     headers: &HeaderMap,
     email: &str,
-    google_profile: Option<GoogleUserInfo>,
+    profile: Option<LoginProfile>,
 ) -> Response {
     if patchbay_auth::disabled_users::is_temporarily_disabled_user_email(email) {
         return error_response(StatusCode::FORBIDDEN, "account disabled");
@@ -504,11 +556,11 @@ async fn complete_login(
             &current.email,
             &signup_source(headers),
         );
-        if google_profile.is_some() {
+        if let Some(profile) = profile.as_ref() {
             event
                 .properties
                 .get_or_insert_default()
-                .insert("auth_method".into(), serde_json::json!("google"));
+                .insert("auth_method".into(), serde_json::json!(profile.auth_method));
         }
         patchbay_metrics::business_events::record_event(
             Some(state.analytics.as_ref()),
@@ -516,7 +568,7 @@ async fn complete_login(
             &event,
         );
     }
-    if let Some(profile) = google_profile {
+    if let Some(profile) = profile {
         let email_prefix = email.split_once('@').map(|(name, _)| name).unwrap_or(email);
         let new_name = if !profile.name.is_empty() && current.name == email_prefix {
             profile.name.as_str()
@@ -587,6 +639,12 @@ async fn complete_login(
         }
     }
     response
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    (scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty()).then(|| token.trim())
 }
 
 fn env_trimmed(name: &str) -> String {
@@ -676,6 +734,7 @@ fn signup_source(headers: &HeaderMap) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use axum::body::Body;
     use axum::http::Request;
     use http_body_util::BodyExt;
@@ -684,6 +743,70 @@ mod tests {
     fn state() -> HandlerState {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         HandlerState::new(pool, patchbay_auth::pat_cache::PatCache::disabled(), None)
+    }
+
+    struct RejectClerk(crate::clerk_auth::ClerkAuthError);
+
+    #[async_trait]
+    impl crate::clerk_auth::ClerkSessionVerifier for RejectClerk {
+        async fn verify(
+            &self,
+            _token: &str,
+        ) -> Result<crate::clerk_auth::ClerkIdentity, crate::clerk_auth::ClerkAuthError> {
+            Err(self.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn clerk_exchange_fails_closed_before_database_access() {
+        for (verifier, status, message) in [
+            (
+                Some(
+                    std::sync::Arc::new(RejectClerk(crate::clerk_auth::ClerkAuthError::Invalid))
+                        as std::sync::Arc<dyn crate::clerk_auth::ClerkSessionVerifier>,
+                ),
+                StatusCode::UNAUTHORIZED,
+                "invalid Clerk session",
+            ),
+            (
+                Some(std::sync::Arc::new(RejectClerk(
+                    crate::clerk_auth::ClerkAuthError::Unavailable,
+                ))
+                    as std::sync::Arc<
+                        dyn crate::clerk_auth::ClerkSessionVerifier,
+                    >),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Clerk login is temporarily unavailable",
+            ),
+            (
+                None,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Clerk login is not configured",
+            ),
+        ] {
+            let mut state = state();
+            state.clerk_auth = verifier;
+            let app = public_router(
+                state.auth_rate_limit.clone(),
+                state.auth_verify_rate_limit.clone(),
+            )
+            .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::post("/auth/clerk")
+                        .header(header::AUTHORIZATION, "Bearer clerk-session")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&body).unwrap()["error"],
+                message
+            );
+        }
     }
 
     #[tokio::test]
@@ -736,6 +859,12 @@ mod tests {
                 r#"{"code":null,"redirect_uri":null} {}"#,
                 StatusCode::BAD_REQUEST,
                 "code is required",
+            ),
+            (
+                "/auth/clerk",
+                "{}",
+                StatusCode::UNAUTHORIZED,
+                "Clerk session is required",
             ),
         ] {
             let response = app

@@ -138,9 +138,10 @@ const desktopAPI = {
    *  dedicated issue windows that belong to an old account. */
   reportAuthSession: (userId: string | null) =>
     ipcRenderer.send(AUTH_SESSION_STATE_CHANNEL, userId),
-  /** Listen for auth token delivered via deep link */
-  onAuthToken: (callback: (token: string) => void) =>
-    subscribeToMainRendererChannel("auth:token", callback),
+  /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
+  onAuthHandoff: (
+    callback: (payload: { code: string; state: string }) => void,
+  ) => subscribeToMainRendererChannel("auth:handoff", callback),
   /** Listen for invitation IDs delivered via deep link */
   onInviteOpen: (callback: (invitationId: string) => void) =>
     subscribeToMainRendererChannel("invite:open", callback),

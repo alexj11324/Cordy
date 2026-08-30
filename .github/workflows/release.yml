@@ -1,12 +1,9 @@
 name: Release
 
 on:
-  push:
-    tags:
-      # GitHub Actions uses glob patterns here, not regex. Match versioned
-      # tags broadly at the trigger layer, then enforce strict semver below.
-      - "v*.*.*"
-      - "!v*-dirty*"
+  # Non-macOS-ARM publication is intentionally manual. The automatic
+  # macOS ARM64 path is owned by macos-release.yml and starts only after CI
+  # succeeds for a version tag.
   workflow_dispatch:
     inputs:
       tag:
@@ -24,12 +21,16 @@ permissions:
   packages: write
   checks: write
 
+concurrency:
+  group: production-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   macos-release-preflight:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization
     # credential is present in the canonical repository's Actions secrets.
-    if: github.event_name == 'push' && github.repository == 'patchbay-ai/patchbay'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -58,7 +59,7 @@ jobs:
           fi
 
   verify:
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -79,18 +80,22 @@ jobs:
       SQLX_OFFLINE: "false"
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
+      commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
 
       - name: Validate tag name
         id: release_meta
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME}"
+          tag="$REQUESTED_TAG"
           echo "Triggered by tag: $tag"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$tag'."
@@ -100,7 +105,14 @@ jobs:
             echo "::error::Refusing to release from dirty tag '$tag'."
             exit 1
           fi
+          commit_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$commit_sha" origin/main; then
+            echo "::error::Refusing to release '$tag' because commit '$commit_sha' is not contained in main."
+            exit 1
+          fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
@@ -130,7 +142,7 @@ jobs:
         working-directory: server-rs
         env:
           PATCHBAY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
-          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
+          PATCHBAY_BUILD_COMMIT: ${{ steps.release_meta.outputs.commit_sha }}
         run: |
           PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
           export PATCHBAY_BUILD_DATE
@@ -139,7 +151,7 @@ jobs:
       - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
         # override to this exact tag. See .github/RELEASING.md.
-        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != github.ref_name }}
+        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != steps.release_meta.outputs.tag_name }}
         uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -150,10 +162,13 @@ jobs:
           ignore: RUSTSEC-2023-0071
 
       - name: Record emergency vulnerability-scan bypass
-        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
-        run: echo "::warning::RustSec audit was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
+        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == steps.release_meta.outputs.tag_name }}
+        env:
+          TAG_NAME: ${{ steps.release_meta.outputs.tag_name }}
+        run: echo "::warning::RustSec audit was explicitly skipped for ${TAG_NAME}; see .github/RELEASING.md"
 
   self-hosted-prepare:
+    needs: verify
     if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     outputs:
@@ -165,8 +180,18 @@ jobs:
       - name: Checkout requested version tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
+
+      - name: Require Clerk publishable key for web image
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          if [[ -z "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}" ]]; then
+            echo "::error::Missing required web release secret: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
+            exit 1
+          fi
 
       - name: Validate self-hosted release tag
         id: meta
@@ -236,6 +261,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         run: |
@@ -264,7 +292,7 @@ jobs:
         shell: bash
         env:
           PATCHBAY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
-          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
+          PATCHBAY_BUILD_COMMIT: ${{ needs.verify.outputs.commit_sha }}
         run: |
           PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
           export PATCHBAY_BUILD_DATE
@@ -321,8 +349,8 @@ jobs:
 
   release:
     needs: [macos-release-preflight, verify, rust-cli-build]
-    # Only the canonical repository may publish release assets. A fork can
-    # still run verification and builds without creating a Release.
+    # Only the canonical repository stages the final release asset set. A fork
+    # can still run verification and builds without creating release artifacts.
     if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
@@ -337,70 +365,22 @@ jobs:
         working-directory: release-assets
         run: sha256sum -- ./* > checksums.txt
 
-      - name: Create or reuse draft Rust CLI release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
-        run: |
-          release_channel=(--latest=true)
-          if [ "$IS_STABLE" != "true" ]; then
-            release_channel=(--prerelease --latest=false)
-          fi
-
-          # The tag is the immutable release target. Resolve annotated tags
-          # until the underlying commit and ensure it is still the commit that
-          # triggered this workflow before reusing or creating any release.
-          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
-          tag_type="$(jq -r '.object.type' <<<"$tag_object")"
-          tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
-          while [ "$tag_type" = "tag" ]; do
-            tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
-            tag_type="$(jq -r '.object.type' <<<"$tag_object")"
-            tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
-          done
-          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$GITHUB_SHA" ]; then
-            echo "::error::Tag $TAG_NAME no longer resolves to workflow commit $GITHUB_SHA"
-            exit 1
-          fi
-
-          # A failed upload must be recoverable with GitHub's "rerun failed
-          # jobs" button. Reuse an existing draft for this exact tag, but
-          # refuse to mutate a release that is already public or whose channel
-          # no longer matches this workflow invocation.
-          if release_json="$(gh release view "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json isDraft,isPrerelease 2>/dev/null)"; then
-            is_draft="$(jq -r '.isDraft' <<<"$release_json")"
-            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
-            expected_prerelease=false
-            if [ "$IS_STABLE" != "true" ]; then
-              expected_prerelease=true
-            fi
-            if [ "$is_draft" != "true" ] || [ "$is_prerelease" != "$expected_prerelease" ]; then
-              echo "::error::Release $TAG_NAME already exists with incompatible draft/channel state"
-              exit 1
-            fi
-          else
-            gh release create "$TAG_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "$TAG_NAME" \
-              --generate-notes \
-              --draft \
-              "${release_channel[@]}"
-          fi
-          gh release upload "$TAG_NAME" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+      - name: Stage Rust CLI release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-rust-cli
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 1
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
   # manifest list. This avoids QEMU emulation, which was making the Next.js
-  # arm64 build run for 30+ minutes. These self-hosted artifacts are manual
-  # so desktop releases never wait for container publication.
+  # arm64 build run for 30+ minutes. These self-hosted artifacts are manual;
+  # the full manual release stages Desktop assets until container and chart
+  # publication has also succeeded.
   docker-backend-build:
-    needs: self-hosted-prepare
+    needs: [self-hosted-prepare, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -419,7 +399,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Compute backend image labels
         id: meta
@@ -439,6 +420,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before backend image publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
 
       - name: Build and push by digest
         id: build
@@ -471,12 +459,18 @@ jobs:
           retention-days: 1
 
   docker-backend-merge:
-    needs: [self-hosted-prepare, docker-backend-build]
+    needs: [self-hosted-prepare, verify, docker-backend-build]
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-docker-backend-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -505,6 +499,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify release tag before backend manifest publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
@@ -531,7 +532,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/patchbay-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
-    needs: self-hosted-prepare
+    needs: [self-hosted-prepare, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -550,7 +551,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Compute web image labels
         id: meta
@@ -571,6 +573,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify release tag before web image publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
@@ -585,6 +594,7 @@ jobs:
           build-args: |
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -602,12 +612,18 @@ jobs:
           retention-days: 1
 
   docker-web-merge:
-    needs: [self-hosted-prepare, docker-web-build]
+    needs: [self-hosted-prepare, verify, docker-web-build]
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-docker-web-${{ needs.self-hosted-prepare.outputs.tag_name }}
       cancel-in-progress: true
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -636,6 +652,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify release tag before web manifest publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
@@ -662,7 +685,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.meta.outputs.version }}
 
   helm-chart:
-    needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
+    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge]
     if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     concurrency:
@@ -675,7 +698,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
@@ -698,6 +722,13 @@ jobs:
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
+      - name: Verify release tag before chart publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+
       - name: Push chart to GHCR
         run: helm push ".chart-packages/patchbay-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
 
@@ -705,13 +736,19 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
   promote-self-hosted-latest:
-    needs: [self-hosted-prepare, docker-backend-merge, docker-web-merge]
+    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart, publish-release]
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
       github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -721,6 +758,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release tag before latest promotion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
+        run: |
+          bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
+            echo "::error::Refusing to promote latest because prepared commit '$EXPECTED_COMMIT' is not contained in main."
+            exit 1
+          fi
 
       - name: Promote stable image tags
         env:
@@ -734,12 +784,13 @@ jobs:
               "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
           done
 
-  # Build the Desktop installers for every supported platform and upload them
-  # to the draft GitHub Release created above. The release remains private
-  # until every matrix entry succeeds. macOS production builds require a
-  # Developer ID Application identity and successful Apple notarization.
+  # Build the Desktop installers for every supported platform and stage them
+  # as workflow artifacts. No matrix leg mutates the GitHub Release; the final
+  # publication job uploads only after every required build succeeds. macOS
+  # production builds require a Developer ID Application identity and
+  # successful Apple notarization.
   desktop:
-    needs: release
+    needs: [release, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -769,6 +820,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
 
       - name: Install rpmbuild (Linux)
@@ -827,15 +879,12 @@ jobs:
         if: matrix.target != 'mac'
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # electron-builder's GitHub publisher reads this:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable code signing on Linux/Windows for now — the public
           # release is unsigned for these platforms, the CLI carries the
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always
+        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish never
 
       - name: Package Desktop installers (macOS)
         if: matrix.target == 'mac'
@@ -884,63 +933,125 @@ jobs:
             exit 1
           }
 
-      - name: Upload verified macOS release assets
-        if: matrix.target == 'mac'
+      - name: Collect Desktop release assets
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
         shell: bash
         run: |
           version="${TAG_NAME#v}"
-          metadata='latest-mac.yml'
-          if [ "${{ matrix.arch }}" = 'x64' ]; then
-            metadata='latest-x64-mac.yml'
-          fi
-
-          required_assets=(
-            "dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.dmg"
-            "dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.zip"
-            "dist/$metadata"
-          )
+          stage_dir="$RUNNER_TEMP/patchbay-desktop-release"
+          mkdir -p "$stage_dir"
+          case "$TARGET:$ARCH" in
+            linux:x64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-linux-x86_64.AppImage"
+                "dist/patchbay-desktop-$version-linux-amd64.deb"
+                "dist/patchbay-desktop-$version-linux-x86_64.rpm"
+                "dist/latest-linux.yml"
+              )
+              ;;
+            linux:arm64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-linux-arm64.AppImage"
+                "dist/patchbay-desktop-$version-linux-arm64.deb"
+                "dist/patchbay-desktop-$version-linux-aarch64.rpm"
+                "dist/latest-linux-arm64.yml"
+              )
+              ;;
+            mac:x64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-mac-x64.dmg"
+                "dist/patchbay-desktop-$version-mac-x64.zip"
+                "dist/latest-x64-mac.yml"
+              )
+              ;;
+            mac:arm64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-mac-arm64.dmg"
+                "dist/patchbay-desktop-$version-mac-arm64.zip"
+                "dist/latest-mac.yml"
+              )
+              ;;
+            win:x64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-windows-x64.exe"
+                "dist/patchbay-desktop-$version-windows-x64.exe.blockmap"
+                "dist/latest.yml"
+              )
+              ;;
+            win:arm64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-windows-arm64.exe"
+                "dist/patchbay-desktop-$version-windows-arm64.exe.blockmap"
+                "dist/latest-arm64.yml"
+              )
+              ;;
+            *)
+              echo "::error::Unsupported Desktop release target $TARGET:$ARCH"
+              exit 1
+              ;;
+          esac
           for asset in "${required_assets[@]}"; do
             if [ ! -f "$asset" ]; then
-              echo "::error::Missing verified macOS release asset $asset"
+              echo "::error::Missing Desktop release asset $asset"
               exit 1
             fi
+            cp "$asset" "$stage_dir/"
           done
 
-          blockmap="dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.zip.blockmap"
-          if [ -f "$blockmap" ]; then
-            required_assets+=("$blockmap")
+          if [ "$TARGET" = 'mac' ]; then
+            blockmap="dist/patchbay-desktop-$version-mac-$ARCH.zip.blockmap"
+            if [ -f "$blockmap" ]; then
+              cp "$blockmap" "$stage_dir/"
+            fi
           fi
-          gh release upload "$TAG_NAME" \
-            "${required_assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+
+      - name: Stage Desktop release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-desktop-release/*
+          if-no-files-found: error
+          retention-days: 1
 
   publish-release:
-    needs: [verify, release, desktop]
-    if: github.repository == 'patchbay-ai/patchbay'
+    needs: [verify, release, desktop, helm-chart]
+    if: >-
+      always() &&
+      github.repository == 'patchbay-ai/patchbay' &&
+      needs.verify.result == 'success' &&
+      needs.release.result == 'success' &&
+      needs.desktop.result == 'success' &&
+      needs.helm-chart.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Download Rust CLI archives
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Download staged Rust CLI release assets
         uses: actions/download-artifact@v4
         with:
-          pattern: rust-cli-*
+          name: github-release-rust-cli
+          path: release-assets
+
+      - name: Download staged Desktop release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-release-*
           path: release-assets
           merge-multiple: true
 
-      - name: Verify draft assets
+      - name: Verify staged release assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: |
           version="${TAG_NAME#v}"
-          published_assets="$(gh release view "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json assets \
-            --jq '.assets[].name')"
           # electron-builder maps its `${arch}` macro per Linux package type:
           # x64 becomes x86_64 for AppImage/RPM and amd64 for deb, while arm64
           # becomes aarch64 for RPM. These are the actual uploaded filenames.
@@ -972,14 +1083,56 @@ jobs:
             "patchbay-desktop-$version-windows-arm64.exe.blockmap" \
             "latest.yml" \
             "latest-arm64.yml"; do
-            grep -Fxq "$asset" <<<"$published_assets" || {
-              echo "::error::Draft release is missing required asset $asset"
+            test -f "release-assets/$asset" || {
+              echo "::error::Staged release is missing required asset $asset"
               exit 1
             }
           done
 
-      - name: Publish complete GitHub release
+      - name: Upload and publish complete GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
+          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
+        run: |
+          bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
+            echo "::error::Refusing to publish release because prepared commit '$EXPECTED_COMMIT' is not contained in main."
+            exit 1
+          fi
+          release_channel=(--latest=true)
+          if [ "$IS_STABLE" != "true" ]; then
+            release_channel=(--prerelease --latest=false)
+          fi
+
+          # A failed final upload must be recoverable with GitHub's "rerun
+          # failed jobs" button. The automatic macOS workflow may already have
+          # published this exact tag; validate its channel before appending the
+          # now-complete staged asset set.
+          if release_json="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease 2>/dev/null)"; then
+            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
+            expected_prerelease=false
+            if [ "$IS_STABLE" != "true" ]; then
+              expected_prerelease=true
+            fi
+            if [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with an incompatible channel"
+              exit 1
+            fi
+          else
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft \
+              "${release_channel[@]}"
+          fi
+          gh release upload "$TAG_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

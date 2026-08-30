@@ -27,6 +27,8 @@ images:
 #     --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
 #     --from-literal=RESEND_API_KEY="" \
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
+#     --from-literal=CLERK_SECRET_KEY="" \
+#     --from-literal=CLERK_JWT_KEY="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
 #     --from-literal=PATCHBAY_ENTITLEMENT_SERVICE_TOKEN="" \
 #     --from-literal=PATCHBAY_DEV_VERIFICATION_CODE=""
@@ -38,6 +40,8 @@ images:
 #     --from-literal=DATABASE_URL="postgres://user:pass@host:5432/patchbay?sslmode=require" \
 #     --from-literal=RESEND_API_KEY="" \
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
+#     --from-literal=CLERK_SECRET_KEY="" \
+#     --from-literal=CLERK_JWT_KEY="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
 #     --from-literal=PATCHBAY_ENTITLEMENT_SERVICE_TOKEN="" \
 #     --from-literal=PATCHBAY_DEV_VERIFICATION_CODE=""
@@ -148,6 +152,10 @@ backend:
       emergencyDisabled: false
     googleClientId: ""
     googleRedirectUri: http://patchbay.dev.lan/auth/callback
+    # Clerk session verification. CLERK_SECRET_KEY and CLERK_JWT_KEY stay in
+    # existingSecret; these origin values are safe deployment configuration.
+    clerkIssuer: ""
+    clerkAuthorizedParties: ""
     s3Bucket: ""
     s3Region: us-west-2
     cloudfrontDomain: ""
@@ -179,6 +187,11 @@ frontend:
     # default same-origin frontend proxy.
     publicApiUrl: ""
     publicWsUrl: ""
+    # Clerk's publishable key is public. It must also be supplied when the
+    # frontend image is built so the client bundle can initialize Clerk.
+    clerkPublishableKey: ""
+    clerkSignInUrl: /sign-in
+    clerkSignUpUrl: /sign-up
   # Compatibility shim for legacy patchbay-web images built before runtime
   # URL rewrites. New images do not need this unprefixed Service.
   compatibility:

@@ -25,6 +25,7 @@ pub mod chat_api;
 mod chat_title;
 pub mod claim_comments;
 pub mod claim_response;
+pub mod clerk_auth;
 pub mod cli_token;
 pub mod client_usage;
 pub mod cloud_billing;
@@ -40,6 +41,7 @@ pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
+pub mod desktop_handoff;
 pub mod error;
 pub mod feedback;
 pub mod github;
@@ -243,6 +245,11 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         state.auth_rate_limit.clone(),
         state.auth_verify_rate_limit.clone(),
     );
+    let desktop_handoff_public =
+        desktop_handoff::public_router().route_layer(middleware::from_fn_with_state(
+            state.auth_verify_rate_limit.clone(),
+            patchbay_middleware::ratelimit::rate_limit,
+        ));
     let public_guest_auth = guest::public_router(state.auth_rate_limit.clone());
     let formal_guard = |router: Router<HandlerState>| {
         router.route_layer(middleware::from_fn_with_state(
@@ -422,6 +429,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(formal_guard(cli_token::router()))
+        .merge(formal_guard(desktop_handoff::authenticated_router()))
         .merge(client_usage::router())
         .merge(feedback::router())
         .merge(formal_guard(invitation::router()))
@@ -645,6 +653,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let app = Router::new()
         .merge(health::router())
         .merge(public_auth)
+        .merge(desktop_handoff_public)
         .merge(public_guest_auth)
         .merge(session::public_router())
         .merge(workspace::public_router())

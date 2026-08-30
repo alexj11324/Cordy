@@ -334,6 +334,7 @@ async fn build_production_router(
     .with_autopilot_entitlements(entitlements)
     .with_github_snapshots(github_client)
     .with_auth_settings(patchbay_handler::auth::AuthSettings::from_config(cfg))
+    .with_clerk_auth_from_config(&cfg.auth)?
     .with_cloud_pat_fleet_url(
         cfg.fleet
             .cloud_fleet_url

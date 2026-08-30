@@ -205,10 +205,13 @@ function handleDeepLink(url: string): void {
       return;
     }
 
-    // patchbay://auth/callback?token=<jwt>
+    // patchbay://auth/callback?code=<one-time-code>&state=<request-state>
     if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
-      const token = parsed.searchParams.get("token");
-      if (token) dispatchToMainRenderer("auth:token", token);
+      const code = parsed.searchParams.get("code");
+      const state = parsed.searchParams.get("state");
+      if (code && state) {
+        dispatchToMainRenderer("auth:handoff", { code, state });
+      }
       return;
     }
 

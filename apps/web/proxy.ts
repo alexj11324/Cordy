@@ -14,7 +14,10 @@ const clerkPublicRoutes = createRouteMatcher([
   "/",
   "/login(.*)",
   "/signup(.*)",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
   "/sso-callback(.*)",
+  "/auth/callback",
   "/api/webhooks(.*)",
   "/api/config",
   "/api/health",
@@ -69,7 +72,11 @@ function isClerkAuthPath(pathname: string): boolean {
     pathname === "/login" ||
     pathname.startsWith("/login/") ||
     pathname === "/signup" ||
-    pathname.startsWith("/signup/")
+    pathname.startsWith("/signup/") ||
+    pathname === "/sign-in" ||
+    pathname.startsWith("/sign-in/") ||
+    pathname === "/sign-up" ||
+    pathname.startsWith("/sign-up/")
   );
 }
 
@@ -98,7 +105,8 @@ export async function proxy(req: NextRequest) {
     if (!userId) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
-      loginUrl.searchParams.set("redirect_url", pathname);
+      loginUrl.search = "";
+      loginUrl.searchParams.set("redirect_url", `${pathname}${req.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);
     }
   }

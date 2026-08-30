@@ -29,9 +29,11 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
+  loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
   createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
-  logout: () => void;
+  /** Clears local auth state and resolves after a cookie session is revoked. */
+  logout: () => Promise<void>;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
 }
@@ -82,6 +84,28 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
+    loginWithClerk: async (sessionToken: string, signal?: AbortSignal) => {
+      const { token, user } = await api.clerkLogin(sessionToken, signal);
+      if (signal?.aborted) {
+        const error = new Error("Clerk session exchange aborted");
+        error.name = "AbortError";
+        throw error;
+      }
+      // The Clerk token is only an input to the exchange. Every subsequent
+      // API and WebSocket request uses the HttpOnly Patchbay session cookie.
+      api.setTokenProvider(null);
+      if (cookieAuth) {
+        api.setToken(null);
+      } else {
+        storage.setItem("patchbay_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
     createGuestSession: async () => {
       const { token, user } = await api.createGuestSession();
       if (user.is_guest !== true) {
@@ -107,17 +131,18 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: () => {
-      if (cookieAuth || get().user?.is_guest === true) {
-        // Clear server-side HttpOnly cookies and revoke any server-backed
-        // guest bearer before local state removes the credential.
-        api.logout().catch(() => {});
-      }
+      const serverLogout = cookieAuth || get().user?.is_guest === true
+        ? api.logout().catch(() => {})
+        : Promise.resolve();
+      // Keep the promise so callers that are about to start a new Clerk
+      // exchange can serialize it behind server-side session revocation.
       storage.removeItem("patchbay_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
       resetAnalytics();
       onLogout?.();
       set({ user: null, isLoading: false, status: "unauthenticated" });
+      return serverLogout;
     },
 
     setUser: (user: User) => {

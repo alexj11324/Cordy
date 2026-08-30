@@ -25,6 +25,8 @@ data:
   PATCHBAY_ENTITLEMENT_EMERGENCY_DISABLED: {{ .Values.backend.config.entitlementPolicy.emergencyDisabled | quote }}
   GOOGLE_CLIENT_ID: {{ .Values.backend.config.googleClientId | quote }}
   GOOGLE_REDIRECT_URI: {{ .Values.backend.config.googleRedirectUri | quote }}
+  CLERK_ISSUER: {{ .Values.backend.config.clerkIssuer | quote }}
+  CLERK_AUTHORIZED_PARTIES: {{ .Values.backend.config.clerkAuthorizedParties | quote }}
   S3_BUCKET: {{ .Values.backend.config.s3Bucket | quote }}
   S3_REGION: {{ .Values.backend.config.s3Region | quote }}
   CLOUDFRONT_DOMAIN: {{ .Values.backend.config.cloudfrontDomain | quote }}

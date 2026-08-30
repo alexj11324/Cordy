@@ -5,16 +5,27 @@ const {
   signInProps,
   authState,
   search,
+  authStoreState,
   issueCliToken,
+  issueDesktopHandoff,
   redirectToCliCallback,
+  redirectToDesktopApp,
 } = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
     current: { isLoaded: true, isSignedIn: false, getToken: vi.fn() },
   },
   search: { current: "" },
+  authStoreState: { current: { status: "unauthenticated" } },
   issueCliToken: vi.fn(),
+  issueDesktopHandoff: vi.fn(),
   redirectToCliCallback: vi.fn(),
+  redirectToDesktopApp: vi.fn(),
+}));
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: (selector: (state: { status: string }) => unknown) =>
+    selector(authStoreState.current),
 }));
 
 vi.mock("@clerk/nextjs", () => ({
@@ -30,13 +41,17 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@patchbay/core/api", () => ({
-  api: { issueCliToken },
+  api: { issueCliToken, issueDesktopHandoff },
 }));
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("@patchbay/views/auth")>();
-  return { ...original, redirectToCliCallback };
+  return { ...original, redirectToCliCallback, redirectToDesktopApp };
 });
+
+vi.mock("@patchbay/views/i18n", () => ({
+  useT: () => ({ t: () => "Open Patchbay Desktop" }),
+}));
 
 import LoginPage from "./page";
 
@@ -44,9 +59,12 @@ describe("LoginPage", () => {
   beforeEach(() => {
     signInProps.current = {};
     search.current = "";
+    authStoreState.current = { status: "unauthenticated" };
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
     issueCliToken.mockReset();
+    issueDesktopHandoff.mockReset();
     redirectToCliCallback.mockReset();
+    redirectToDesktopApp.mockReset();
   });
 
   it("renders the Clerk sign-in flow at the canonical login route", () => {
@@ -72,10 +90,47 @@ describe("LoginPage", () => {
     );
   });
 
+  it("preserves the requested app path and query through Clerk sign-in", () => {
+    search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current.forceRedirectUrl).toBe(
+      "/usage?tab=billing#summary",
+    );
+    expect(signInProps.current.signUpUrl).toBe(
+      "/signup?redirect_url=%2Fusage%3Ftab%3Dbilling%23summary",
+    );
+  });
+
+  it("rejects an external post-login redirect", () => {
+    search.current =
+      "redirect_url=https%3A%2F%2Fevil.example%2Ftakeover";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current.forceRedirectUrl).toBe("/");
+    expect(signInProps.current.signUpUrl).toBe("/signup");
+  });
+
+  it("preserves the desktop handoff through Clerk sign-in", () => {
+    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+
+    render(<LoginPage />);
+
+    expect(signInProps.current).toMatchObject({
+      signUpUrl:
+        "/signup?platform=desktop&code_challenge=challenge-value&state=opaque-state",
+      forceRedirectUrl:
+        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
+    });
+  });
+
   it("offers CLI authorization after Clerk has established the session", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
 
     render(<LoginPage />);
 
@@ -89,6 +144,7 @@ describe("LoginPage", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
     issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
 
     render(<LoginPage />);
@@ -101,5 +157,46 @@ describe("LoginPage", () => {
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();
+  });
+
+  it("does not authorize CLI before the Patchbay session exchange completes", () => {
+    search.current =
+      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticating" };
+
+    render(<LoginPage />);
+
+    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Authorize CLI" })).not.toBeInTheDocument();
+    expect(issueCliToken).not.toHaveBeenCalled();
+  });
+
+  it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
+    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    issueDesktopHandoff.mockResolvedValue({ code: "desktop-handoff-code" });
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(issueDesktopHandoff).toHaveBeenCalledOnce());
+    expect(issueDesktopHandoff).toHaveBeenCalledWith("challenge-value");
+    expect(redirectToDesktopApp).toHaveBeenCalledWith(
+      "desktop-handoff-code",
+      "opaque-state",
+    );
+  });
+
+  it("does not mint a desktop handoff without a renderer binding", async () => {
+    search.current = "platform=desktop";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(issueDesktopHandoff).not.toHaveBeenCalled();
+    expect(redirectToDesktopApp).not.toHaveBeenCalled();
   });
 });

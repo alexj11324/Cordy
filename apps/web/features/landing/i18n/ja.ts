@@ -10,6 +10,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
     header: {
       github: "GitHub",
       cta: "始める",
+      signIn: "ログイン",
       dashboard: "ダッシュボード",
       docs: "ドキュメント",
       changelog: "変更履歴",

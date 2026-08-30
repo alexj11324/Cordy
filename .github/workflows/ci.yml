@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # Version-tag pushes must pass the same CI gate before the automatic
+    # macOS ARM64 release workflow is allowed to run.
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, edited]
@@ -110,6 +113,8 @@ jobs:
               - 'packages/core/runtimes/cli-version.ts'
               - 'Makefile'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/macos-release.yml'
+              - '.github/workflows/release.yml'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'
@@ -438,6 +443,8 @@ jobs:
         run: |
           bash scripts/helm-config.test.sh
           bash scripts/makefile-build.test.sh
+          bash scripts/macos-release-contract.test.sh
+          bash scripts/verify-release-tag.test.sh
 
   rust-quality:
     needs: changes

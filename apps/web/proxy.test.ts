@@ -29,12 +29,18 @@ function makeRequest(
   });
 }
 
+async function runProxy(request: NextRequest) {
+  const response = await proxy(request);
+  if (!response) throw new Error("proxy returned no response");
+  return response;
+}
+
 async function redirectLocation(
   path: string,
   cookies: Record<string, string> = {},
   host?: string,
 ) {
-  return (await proxy(makeRequest(path, cookies, host))).headers.get("location");
+  return (await runProxy(makeRequest(path, cookies, host))).headers.get("location");
 }
 
 function restoreEnv(key: string, value: string | undefined) {
@@ -97,7 +103,7 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("sends logged-out legacy URLs to login", async () => {
     expect(await redirectLocation("/usage?tab=billing")).toBe(
-      "https://app.patchbay.test/login?tab=billing&redirect_url=%2Fusage",
+      "https://app.patchbay.test/login?redirect_url=%2Fusage%3Ftab%3Dbilling",
     );
   });
 
@@ -143,7 +149,7 @@ describe("proxy legacy workspace route redirects", () => {
 describe("proxy runtime upstream rewrites", () => {
   it("does not rewrite API requests when no runtime API origin is configured", async () => {
     await withoutRuntimeUpstreams(async () => {
-      const res = await proxy(makeRequest("/api/config?x=1"));
+      const res = await runProxy(makeRequest("/api/config?x=1"));
 
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
@@ -155,7 +161,7 @@ describe("proxy runtime upstream rewrites", () => {
 
   it("does not rewrite docs requests when no runtime docs origin is configured", async () => {
     await withoutRuntimeUpstreams(async () => {
-      const res = await proxy(makeRequest("/docs/zh"));
+      const res = await runProxy(makeRequest("/docs/zh"));
 
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
@@ -190,7 +196,7 @@ describe("proxy runtime upstream rewrites", () => {
       const previous = process.env[key];
       process.env[key] = origin;
       try {
-        const res = await proxy(makeRequest(path));
+        const res = await runProxy(makeRequest(path));
         expect(res.status).toBe(200);
         expect(res.headers.get("x-middleware-rewrite")).toBe(expected);
       } finally {
@@ -203,7 +209,7 @@ describe("proxy runtime upstream rewrites", () => {
     const previous = process.env.REMOTE_API_URL;
     process.env.REMOTE_API_URL = "http://backend:8080";
     try {
-      const res = await proxy(
+      const res = await runProxy(
         makeRequest("/auth/callback", { patchbay_logged_in: "1" }),
       );
 
@@ -220,7 +226,7 @@ describe("proxy runtime upstream rewrites", () => {
 
 describe("proxy root and locale handling", () => {
   it("redirects logged-in root visits to the last workspace", async () => {
-    const res = await proxy(
+    const res = await runProxy(
       makeRequest("/", {
         patchbay_logged_in: "1",
         last_workspace_slug: "acme",
@@ -234,7 +240,7 @@ describe("proxy root and locale handling", () => {
   });
 
   it("forwards locale on login requests", async () => {
-    const res = await proxy(
+    const res = await runProxy(
       makeRequest("/login", { "patchbay-locale": "zh-Hans" }),
     );
 
@@ -243,6 +249,10 @@ describe("proxy root and locale handling", () => {
     expect(
       res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
     ).toBe("zh-Hans");
+  });
+
+  it("leaves the legacy frontend auth callback public", async () => {
+    expect(await redirectLocation("/auth/callback")).toBeNull();
   });
 });
 

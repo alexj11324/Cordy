@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
@@ -67,7 +67,9 @@ vi.mock("@patchbay/views/layout", () => ({
   NavigationProgress: () => null,
 }));
 
-vi.mock("@patchbay/views/modals/registry", () => ({ ModalRegistry: () => null }));
+vi.mock("@patchbay/views/modals/registry", () => ({
+  ModalRegistry: () => null,
+}));
 vi.mock("@patchbay/views/search", () => ({
   SearchCommand: () => null,
   SearchTrigger: () => null,
@@ -80,9 +82,23 @@ vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
 // a `PageHeader` reads before deciding to render its own fallback trigger.
 vi.mock("./tab-content", () => ({
   TabContent: () => {
-    const { hasExternalTrigger } = useSidebar();
+    const {
+      hasExternalTrigger,
+      open,
+      state,
+      toggleSidebar,
+      revealHoverSidebar,
+    } = useSidebar();
     return (
-      <div data-testid="page-content" data-external-trigger={hasExternalTrigger} />
+      <div
+        data-testid="page-content"
+        data-external-trigger={hasExternalTrigger}
+        data-open={open}
+        data-state={state}
+      >
+        <button data-testid="toggle-sidebar" onClick={toggleSidebar} />
+        <button data-testid="reveal-sidebar" onClick={revealHoverSidebar} />
+      </div>
     );
   },
 }));
@@ -90,9 +106,7 @@ vi.mock("./tab-content", () => ({
 const { DesktopShell } = await import("./desktop-layout");
 
 function renderShell() {
-  (
-    window as unknown as { desktopAPI: Record<string, unknown> }
-  ).desktopAPI = {
+  (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };
@@ -121,10 +135,39 @@ describe("DesktopShell sidebar trigger", () => {
   it("keeps exactly one trigger and tells page headers not to add another", () => {
     const { container, getByTestId } = renderShell();
 
-    expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
+    expect(
+      container.querySelectorAll("[data-slot='sidebar-trigger']"),
+    ).toHaveLength(1);
     expect(getByTestId("page-content")).toHaveAttribute(
       "data-external-trigger",
       "true",
     );
+  });
+
+  it("keeps desktop geometry collapsed during a temporary hover reveal", async () => {
+    const { container, getByTestId } = renderShell();
+    const topBar = container.querySelector("header");
+    const canvas = getByTestId("page-content").parentElement;
+
+    expect(topBar).toHaveStyle({ paddingLeft: "0px" });
+    expect(canvas).toHaveStyle({ marginLeft: "2px" });
+
+    fireEvent.click(getByTestId("toggle-sidebar"));
+    await waitFor(() => {
+      expect(getByTestId("page-content")).toHaveAttribute("data-open", "false");
+      expect(topBar).toHaveStyle({ paddingLeft: "184px" });
+      expect(canvas).toHaveStyle({ marginLeft: "8px" });
+    });
+
+    fireEvent.click(getByTestId("reveal-sidebar"));
+    await waitFor(() => {
+      expect(getByTestId("page-content")).toHaveAttribute(
+        "data-state",
+        "expanded",
+      );
+      expect(getByTestId("page-content")).toHaveAttribute("data-open", "false");
+    });
+    expect(topBar).toHaveStyle({ paddingLeft: "184px" });
+    expect(canvas).toHaveStyle({ marginLeft: "8px" });
   });
 });

@@ -29,6 +29,13 @@ import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
+import { isDesktopWebPreview } from "./platform/web-bridge";
+import { DesktopWebPreviewSession } from "./platform/desktop-web-preview-session";
+import { DesktopWebPreviewOnboardingPage } from "./components/desktop-web-preview-onboarding-page";
+import {
+  clearDesktopHandoffVerifier,
+  readDesktopHandoffVerifier,
+} from "./pages/login-handoff";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -102,6 +109,7 @@ function AppContent() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const authStatus = useAuthStore((s) => s.status);
   const qc = useQueryClient();
+  const isWebPreview = isDesktopWebPreview();
 
   // Deep-link login runs loginWithToken → syncToken → listWorkspaces →
   // setQueryData sequentially. loginWithToken sets user+isLoading=false
@@ -134,14 +142,19 @@ function AppContent() {
     });
   }, []);
 
-  // Listen for auth token delivered via deep link (patchbay://auth/callback?token=...).
-  // daemonAPI.syncToken is handled separately by the [user] effect below, which
-  // fires whenever a user logs in (deep link, session restore, account switch).
+  // Listen for the PKCE-bound one-time code delivered via deep link
+  // (patchbay://auth/callback?code=...&state=...). daemonAPI.syncToken is
+  // handled separately by the [user] effect below, which fires whenever a
+  // user logs in (deep link, session restore, account switch).
   useEffect(() => {
-    return window.desktopAPI.onAuthToken(async (token) => {
+    return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
+      const verifier = readDesktopHandoffVerifier(state);
+      if (!verifier) return;
       setBootstrapping(true);
       try {
+        const { token } = await api.redeemDesktopHandoff(code, verifier);
         await useAuthStore.getState().loginWithToken(token);
+        clearDesktopHandoffVerifier(state);
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects
@@ -223,6 +236,7 @@ function AppContent() {
   // /onboarding — we also clear the active workspace so the dashboard
   // doesn't render under the overlay with stale workspace context.
   useEffect(() => {
+    if (isWebPreview) return undefined;
     if (!user || !workspaceListReady) return undefined;
     const { overlay, open } = useWindowOverlayStore.getState();
     if (overlay) return undefined;
@@ -264,7 +278,7 @@ function AppContent() {
     }
     open({ type: "new-workspace" });
     return undefined;
-  }, [user, workspaceListReady, wsCount, workspaces, hasOnboarded, qc]);
+  }, [user, workspaceListReady, wsCount, workspaces, hasOnboarded, isWebPreview, qc]);
 
 
   // Validate persisted tab state against the current user's workspace list,
@@ -383,6 +397,9 @@ export default function App() {
   // restarting Electron; packaged builds always expose windowContext.
   const windowContext =
     window.desktopAPI.windowContext ?? { kind: "main" as const };
+  const isWebPreview = isDesktopWebPreview();
+  const isWebPreviewOnboarding =
+    isWebPreview && window.location.pathname.startsWith("/ui-preview/onboarding");
   useCmdWCloseTab();
   // Mounted at the App root for the same reason as Cmd+W: the chord has to
   // work in every renderer state, not only inside the tab shell.
@@ -462,18 +479,24 @@ export default function App() {
           resources={resources}
           localeAdapter={localeAdapter}
         >
-          <DesktopAuthSessionBridge />
-          {windowContext.kind === "main" && <DiagnosticRouteReporter />}
-          {windowContext.kind === "main" && (
-            <DesktopClientUsageReporter
-              apiUrl={runtimeConfigResult.config.apiUrl}
-            />
-          )}
-          {windowContext.kind === "issue" ? (
-            <IssueWindowContent />
-          ) : (
-            <AppContent />
-          )}
+          <DesktopWebPreviewSession>
+            <DesktopAuthSessionBridge />
+            {windowContext.kind === "main" && !isWebPreview && (
+              <DiagnosticRouteReporter />
+            )}
+            {windowContext.kind === "main" && !isWebPreview && (
+              <DesktopClientUsageReporter
+                apiUrl={runtimeConfigResult.config.apiUrl}
+              />
+            )}
+            {isWebPreviewOnboarding ? (
+              <DesktopWebPreviewOnboardingPage />
+            ) : windowContext.kind === "issue" ? (
+              <IssueWindowContent />
+            ) : (
+              <AppContent />
+            )}
+          </DesktopWebPreviewSession>
         </CoreProvider>
       ) : (
         <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />

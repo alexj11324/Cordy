@@ -73,6 +73,18 @@ export function redirectToCliCallback(url: string, token: string, state: string)
 }
 
 /**
+ * Hand a freshly issued native session to the installed desktop app. The
+ * custom protocol lets the OS show its normal "Open Patchbay?" confirmation
+ * before Electron receives the one-time code through its deep-link handler.
+ */
+export function redirectToDesktopApp(code: string, state: string) {
+  const callback = new URL("patchbay://auth/callback");
+  callback.searchParams.set("code", code);
+  callback.searchParams.set("state", state);
+  window.location.href = callback.href;
+}
+
+/**
  * Validate that a CLI callback URL points to a safe host over HTTP.
  * Allows localhost and private/LAN IPs (RFC 1918) to support self-hosted setups
  * on local VMs while blocking arbitrary public hosts.

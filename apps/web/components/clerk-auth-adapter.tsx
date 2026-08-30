@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { useUser, useAuth } from "@clerk/nextjs";
+import { ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
+
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
 
 /**
  * Bridges Clerk's auth state into the existing Zustand AuthState store.
@@ -13,86 +17,87 @@ import { useAuthStore } from "@patchbay/core/auth";
  *
  * Mount this component inside `<CoreProvider>` (web only).
  */
-export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
+export function ClerkAuthAdapter({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const isPreviewRoute = pathname.startsWith("/ui-preview");
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
-  const { getToken, isSignedIn } = useAuth();
-  const store = useAuthStore;
-  const previousUserIdRef = useRef<string | null>(null);
+  const { getToken, isSignedIn, signOut } = useAuth();
+  const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
 
-  // Sync Clerk user → Zustand store whenever Clerk state changes
   useEffect(() => {
+    if (isPreviewRoute) return;
     if (!clerkLoaded) return;
-
-    const storeState = store.getState();
-
     if (!isSignedIn || !clerkUser) {
-      // User signed out — clear the store
-      previousUserIdRef.current = null;
-      storeState.setUser(null as any);
+      logoutBarrierRef.current = Promise.resolve(
+        useAuthStore.getState().logout(),
+      );
       return;
     }
 
-    // Only update if the user actually changed (avoids unnecessary re-renders)
-    if (previousUserIdRef.current === clerkUser.id) return;
-    previousUserIdRef.current = clerkUser.id;
-
-    // Map Clerk user → AuthUser shape that all consumers expect
-    const authUser = {
-      id: clerkUser.id,
-      email: clerkUser.primaryEmailAddress?.emailAddress ?? "",
-      name:
-        clerkUser.fullName ||
-        [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
-        clerkUser.primaryEmailAddress?.emailAddress?.split("@")[0] ||
-        "",
-      avatarUrl: clerkUser.imageUrl || null,
-      createdAt: clerkUser.createdAt?.toISOString() ?? new Date().toISOString(),
-      // Clerk manages these server-side; keep them safe as empty
-      emailVerified: true, // Clerk handles email verification
-      avatarGenerated: false,
-      roles: ["owner"],
-      username: clerkUser.username || clerkUser.primaryEmailAddress?.emailAddress?.split("@")[0] || "",
-    };
-
-    storeState.setUser(authUser as any);
-  }, [clerkLoaded, clerkUser, isSignedIn, store]);
-
-  // Keep the API client's token getter current with Clerk sessions.
-  // When the API client needs a token for a request, it calls getToken()
-  // which returns the Clerk session JWT. The managed web identity boundary
-  // authenticates that session before the request reaches the Rust API.
-  useEffect(() => {
-    if (!clerkLoaded || !isSignedIn) return;
-
-    // Inject a token getter that the API client can use
-    (window as any).__CLERK_GET_TOKEN__ = async () => {
+    const previousLogout = logoutBarrierRef.current;
+    let cancelled = false;
+    let retryIndex = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let abortController: AbortController | undefined;
+    const exchange = async () => {
+      await previousLogout;
+      if (cancelled) return;
+      const controller = new AbortController();
+      abortController = controller;
+      useAuthStore.setState({
+        user: null,
+        isLoading: true,
+        status: retryIndex === 0 ? "authenticating" : "recovering",
+      });
       try {
-        return await getToken();
-      } catch {
-        return null;
+        const sessionToken = await getToken();
+        if (!sessionToken) throw new Error("Clerk session token unavailable");
+        await useAuthStore
+          .getState()
+          .loginWithClerk(sessionToken, controller.signal);
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        const status = error instanceof ApiError ? error.status : undefined;
+        const isPermanentRejection =
+          status !== undefined &&
+          status >= 400 &&
+          status < 500 &&
+          status !== 408 &&
+          status !== 429;
+        if (isPermanentRejection) {
+          // A rejected identity cannot recover by retrying the same Clerk
+          // session. Clear the Patchbay session and Clerk identity so the
+          // user can take an actionable sign-in path instead of seeing a
+          // blank recovering shell forever.
+          logoutBarrierRef.current = useAuthStore.getState().logout();
+          await logoutBarrierRef.current;
+          if (cancelled) return;
+          void signOut().catch(() => {});
+          return;
+        }
+        const delay =
+          RETRY_DELAYS_MS[Math.min(retryIndex, RETRY_DELAYS_MS.length - 1)] ??
+          30_000;
+        retryIndex += 1;
+        useAuthStore.setState({
+          user: null,
+          isLoading: true,
+          status: "recovering",
+        });
+        retryTimer = setTimeout(() => void exchange(), delay);
       }
     };
-
+    void exchange();
     return () => {
-      delete (window as any).__CLERK_GET_TOKEN__;
+      cancelled = true;
+      abortController?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [clerkLoaded, isSignedIn, getToken]);
-
-  // Sync auth status so isLoading transitions correctly
-  useEffect(() => {
-    const storeState = store.getState();
-
-    if (!clerkLoaded) {
-      // Still loading — keep isLoading true
-      return;
-    }
-
-    // Clerk has loaded. If signed out, status = "unauthenticated"
-    // If signed in, the user effect above will set the user, which flips status
-    if (!isSignedIn) {
-      storeState.setUser(null as any);
-    }
-  }, [clerkLoaded, isSignedIn, store]);
+  }, [isPreviewRoute, clerkLoaded, clerkUser?.id, getToken, isSignedIn, signOut]);
 
   return <>{children}</>;
 }

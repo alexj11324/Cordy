@@ -33,6 +33,7 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "sidebar_width"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_DRAG_THRESHOLD = 2
+const SIDEBAR_HOVER_CLOSE_DELAY = 180
 // Tailwind `lg`–`xl`: wide enough to keep a two-pane list/detail surface, too
 // narrow to also spend 256px on the nav. The nav starts collapsed here and the
 // header's trigger brings it back.
@@ -82,6 +83,16 @@ type SidebarContextProps = {
    * whether that trigger happens to be mounted this render.
    */
   hasExternalTrigger: boolean
+  /**
+   * Temporarily reveal a collapsed desktop sidebar while the pointer or
+   * keyboard focus is over its edge rail. The underlying `open` preference is
+   * never changed by this mode.
+   */
+  hoverReveal: boolean
+  revealHoverSidebar: () => void
+  hideHoverSidebar: () => void
+  /** Keep a temporary hover reveal open while an owned portalled menu is open. */
+  setHoverRevealSuspended: (suspended: boolean) => void
 }
 
 type SidebarResizeContextProps = {
@@ -120,6 +131,7 @@ function SidebarProvider({
   open: openProp,
   onOpenChange: setOpenProp,
   hasExternalTrigger = false,
+  hoverReveal = false,
   className,
   style,
   children,
@@ -137,37 +149,14 @@ function SidebarProvider({
    * forgets leaves a collapsed nav with no way back.
    */
   hasExternalTrigger?: boolean
+  /** Enable a temporary pointer/focus reveal from the collapsed edge rail. */
+  hoverReveal?: boolean
 }) {
   const isCompact = useIsCompact()
   const [openMobile, setOpenMobile] = React.useState(false)
 
-  const [width, _setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
-  React.useEffect(() => {
-    const stored = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
-    if (stored) {
-      const storedWidth = Number(stored)
-      if (Number.isFinite(storedWidth)) {
-        _setWidth(clampSidebarWidth(storedWidth))
-      }
-    }
-  }, [])
-  const commitWidth = React.useCallback((w: number) => {
-    const clamped = clampSidebarWidth(w)
-    _setWidth(clamped)
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped))
-  }, [])
-
-  // This is the internal state of the sidebar.
-  // We use openProp and setOpenProp for control from outside the component.
-  //
-  // Deliberately not persisted. Upstream shadcn writes a `sidebar_state` cookie
-  // here and seeds `defaultOpen` from it on the server; we dropped the write
-  // because nothing ever read it, and restoring the pair would be a bug rather
-  // than a feature: the auto-collapse below drives `setOpen(false)` from the
-  // viewport, so persisting its result would carry a collapse the user never
-  // asked for out of the `lg`–`xl` band and into their next session on a wider
-  // display. Persisting this needs a source that distinguishes a user toggle
-  // from an automated one — not a cookie on this callback.
+  // This is the internal state of the sidebar. Hover reveal below is kept
+  // separate so it never changes this user preference.
   const [_open, _setOpen] = React.useState(defaultOpen)
   const open = openProp ?? _open
   const setOpen = React.useCallback(
@@ -181,6 +170,71 @@ function SidebarProvider({
     },
     [setOpenProp, open]
   )
+
+  const [hoverRevealed, setHoverRevealed] = React.useState(false)
+  const hoverCloseTimeoutRef = React.useRef<number | null>(null)
+  const hoverRevealSuspendedRef = React.useRef(false)
+
+  const clearHoverClose = React.useCallback(() => {
+    if (hoverCloseTimeoutRef.current === null) return
+    window.clearTimeout(hoverCloseTimeoutRef.current)
+    hoverCloseTimeoutRef.current = null
+  }, [])
+
+  const revealHoverSidebar = React.useCallback(() => {
+    clearHoverClose()
+    if (hoverReveal && !isCompact && !open) {
+      setHoverRevealed(true)
+    }
+  }, [clearHoverClose, hoverReveal, isCompact, open])
+
+  const hideHoverSidebar = React.useCallback(() => {
+    if (!hoverReveal || isCompact || open || hoverRevealSuspendedRef.current) return
+    clearHoverClose()
+    hoverCloseTimeoutRef.current = window.setTimeout(() => {
+      hoverCloseTimeoutRef.current = null
+      setHoverRevealed(false)
+    }, SIDEBAR_HOVER_CLOSE_DELAY)
+  }, [clearHoverClose, hoverReveal, isCompact, open])
+
+  const setHoverRevealSuspended = React.useCallback(
+    (suspended: boolean) => {
+      hoverRevealSuspendedRef.current = suspended
+      if (suspended) {
+        clearHoverClose()
+      } else {
+        // If the popup closed after focus/pointer moved outside the sidebar,
+        // resume the same boundary-based close path used by the sidebar root.
+        hideHoverSidebar()
+      }
+    },
+    [clearHoverClose, hideHoverSidebar]
+  )
+
+  React.useEffect(() => {
+    if (hoverReveal && !isCompact && !open) return
+    hoverRevealSuspendedRef.current = false
+    clearHoverClose()
+    setHoverRevealed(false)
+  }, [clearHoverClose, hoverReveal, isCompact, open])
+
+  React.useEffect(() => () => clearHoverClose(), [clearHoverClose])
+
+  const [width, _setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
+  React.useEffect(() => {
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
+    if (stored) {
+      const storedWidth = Number(stored)
+      if (Number.isFinite(storedWidth)) {
+        _setWidth(clampSidebarWidth(storedWidth))
+      }
+    }
+  }, [])
+  const commitWidth = React.useCallback((w: number) => {
+    const clamped = clampSidebarWidth(w)
+    _setWidth(clamped)
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped))
+  }, [])
 
   // Auto-collapse across the `lg`–`xl` band. Only the two crossings are
   // automated: entering it parks the state we came in with and closes the nav,
@@ -221,7 +275,7 @@ function SidebarProvider({
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
-  const state = open ? "expanded" : "collapsed"
+  const state = open || (hoverReveal && hoverRevealed) ? "expanded" : "collapsed"
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
@@ -233,6 +287,10 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
       hasExternalTrigger,
+      hoverReveal,
+      revealHoverSidebar,
+      hideHoverSidebar,
+      setHoverRevealSuspended,
     }),
     [
       state,
@@ -243,6 +301,10 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
       hasExternalTrigger,
+      hoverReveal,
+      revealHoverSidebar,
+      hideHoverSidebar,
+      setHoverRevealSuspended,
     ]
   )
   const resizeContextValue = React.useMemo<SidebarResizeContextProps>(
@@ -297,14 +359,22 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isCompact, state, openMobile, setOpenMobile } = useSidebar()
+  const {
+    isCompact,
+    state,
+    open,
+    openMobile,
+    setOpenMobile,
+    revealHoverSidebar,
+    hideHoverSidebar,
+  } = useSidebar()
 
   if (collapsible === "none") {
     return (
       <div
         data-slot="sidebar"
         className={cn(
-          "flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground",
+          "flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-text-primary",
           className
         )}
         {...props}
@@ -322,7 +392,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-text-primary [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -346,23 +416,37 @@ function Sidebar({
   // frame before the hook resolved and collapsed it into a sheet.
   return (
     <div
-      className="group peer hidden text-sidebar-foreground lg:block"
+      className="group peer hidden text-sidebar-text-primary lg:block"
       data-state={state}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
+      onPointerEnter={revealHoverSidebar}
+      onPointerLeave={hideHoverSidebar}
+      onFocusCapture={revealHoverSidebar}
+      onBlurCapture={(event) => {
+        const relatedTarget = event.relatedTarget
+        if (
+          relatedTarget instanceof Node &&
+          event.currentTarget.contains(relatedTarget)
+        ) {
+          return
+        }
+        hideHoverSidebar()
+      }}
     >
       {/* This is what handles the sidebar gap on desktop */}
       <div
         data-slot="sidebar-gap"
+        data-layout-collapsible={open ? "" : collapsible}
         className={cn(
           "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-out motion-reduce:transition-none",
-          "group-data-[collapsible=offcanvas]:w-0",
+          "data-[layout-collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
-            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
-            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
+            ? "data-[layout-collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
+            : "data-[layout-collapsible=icon]:w-(--sidebar-width-icon)"
         )}
       />
       <div
@@ -419,7 +503,13 @@ function SidebarTrigger({
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar()
+  const {
+    toggleSidebar,
+    state,
+    hoverReveal,
+    revealHoverSidebar,
+    hideHoverSidebar,
+  } = useSidebar()
   const { commitWidth } = useSidebarResize()
   const { t } = useTranslation("ui")
   const toggleLabel = t(($) => $.toggle_sidebar)
@@ -543,7 +633,14 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   )
 
   const handleClick = React.useCallback(() => {
-    if (!didDragRef.current) toggleSidebar()
+    if (didDragRef.current) {
+      // The click immediately following a completed pointer drag is the one
+      // gesture we intentionally suppress. Clear the marker here so a later
+      // keyboard-generated click can still toggle the rail.
+      didDragRef.current = false
+      return
+    }
+    toggleSidebar()
   }, [toggleSidebar])
 
   return (
@@ -552,13 +649,26 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       data-sidebar="rail"
       data-slot="sidebar-rail"
       aria-label={toggleLabel}
-      tabIndex={-1}
+      aria-expanded={state === "expanded"}
+      tabIndex={hoverReveal ? 0 : -1}
       onClick={handleClick}
+      onPointerEnter={revealHoverSidebar}
+      onFocus={revealHoverSidebar}
+      onBlur={(event) => {
+        const relatedTarget = event.relatedTarget
+        if (
+          relatedTarget instanceof Node &&
+          event.currentTarget.closest("[data-slot='sidebar']")?.contains(relatedTarget)
+        ) {
+          return
+        }
+        hideHoverSidebar()
+      }}
       onPointerDown={onPointerDown}
       title={toggleLabel}
       className={cn(
         "absolute inset-y-0 z-20 hidden w-4 touch-none cursor-ew-resize transition-[transform,background-color] ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
-        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
+        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
         "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
         className
@@ -600,7 +710,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-header"
       data-sidebar="header"
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex flex-col gap-2 p-1", className)}
       {...props}
     />
   )
@@ -611,7 +721,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-footer"
       data-sidebar="footer"
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex flex-col gap-2 p-1", className)}
       {...props}
     />
   )
@@ -625,7 +735,7 @@ function SidebarSeparator({
     <Separator
       data-slot="sidebar-separator"
       data-sidebar="separator"
-      className={cn("mx-2 w-auto bg-sidebar-border", className)}
+      className={cn("mx-1 w-auto bg-sidebar-border", className)}
       {...props}
     />
   )
@@ -650,7 +760,7 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-group"
       data-sidebar="group"
-      className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
+      className={cn("relative flex w-full min-w-0 flex-col px-1 py-1", className)}
       {...props}
     />
   )
@@ -666,7 +776,7 @@ function SidebarGroupLabel({
     props: mergeProps<"div">(
       {
         className: cn(
-          "flex h-8 shrink-0 items-center rounded-md px-2 text-caption font-medium text-muted-foreground ring-sidebar-ring outline-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0 focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+          "flex h-6 shrink-0 items-center rounded-md px-1 text-caption font-medium text-sidebar-text-secondary ring-sidebar-ring outline-hidden transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-6 group-data-[collapsible=icon]:opacity-0 focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
           className
         ),
       },
@@ -690,7 +800,7 @@ function SidebarGroupAction({
     props: mergeProps<"button">(
       {
         className: cn(
-          "absolute top-3.5 right-3 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
+          "absolute top-3.5 right-3 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-text-primary ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden after:absolute after:-inset-2 hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
           className
         ),
       },
@@ -741,17 +851,17 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-body ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground data-active:hover:bg-sidebar-accent [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-1 text-left text-body text-sidebar-text-primary ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-1! hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground focus-visible:ring-2 active:bg-sidebar-item-active active:text-sidebar-item-active-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-item-hover data-open:hover:text-sidebar-item-active-foreground data-active:bg-sidebar-item-active data-active:font-medium data-active:text-sidebar-item-active-foreground data-active:hover:bg-sidebar-item-active [&_svg]:size-[18px] [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: {
-        default: "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        default: "hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground",
         outline:
-          "bg-background shadow-[0_0_0_1px_var(--color-sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--color-sidebar-accent)]",
+          "bg-background shadow-[0_0_0_1px_var(--color-sidebar-border)] hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground hover:shadow-[0_0_0_1px_var(--color-sidebar-item-active)]",
       },
       size: {
-        default: "h-8 text-body",
-        sm: "h-7 text-caption",
+        default: "h-9 text-body",
+        sm: "h-8 text-caption",
         lg: "h-12 text-body group-data-[collapsible=icon]:p-0!",
       },
     },
@@ -830,9 +940,9 @@ function SidebarMenuAction({
     props: mergeProps<"button">(
       {
         className: cn(
-          "absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
+          "absolute top-2 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-text-primary ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-item-active-foreground peer-data-[size=default]/menu-button:top-2 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 after:absolute after:-inset-2 hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
           showOnHover &&
-            "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 peer-data-active/menu-button:text-sidebar-accent-foreground aria-expanded:opacity-100 md:opacity-0",
+            "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 peer-data-active/menu-button:text-sidebar-item-active-foreground aria-expanded:opacity-100 md:opacity-0",
           className
         ),
       },
@@ -855,7 +965,7 @@ function SidebarMenuBadge({
       data-slot="sidebar-menu-badge"
       data-sidebar="menu-badge"
       className={cn(
-        "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-caption font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground",
+        "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-caption font-medium text-sidebar-text-primary tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-item-active-foreground peer-data-[size=default]/menu-button:top-2 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-item-active-foreground",
         className
       )}
       {...props}
@@ -879,12 +989,12 @@ function SidebarMenuSkeleton({
     <div
       data-slot="sidebar-menu-skeleton"
       data-sidebar="menu-skeleton"
-      className={cn("flex h-8 items-center gap-2 rounded-md px-2", className)}
+      className={cn("flex h-9 items-center gap-2 rounded-md p-1", className)}
       {...props}
     >
       {showIcon && (
         <Skeleton
-          className="size-4 rounded-md"
+          className="size-[18px] rounded-md"
           data-sidebar="menu-skeleton-icon"
         />
       )}
@@ -945,7 +1055,7 @@ function SidebarMenuSubButton({
     props: mergeProps<"a">(
       {
         className: cn(
-          "flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-foreground ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-body data-[size=sm]:text-caption data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:hover:bg-sidebar-accent [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
+          "flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-sidebar-text-primary ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground focus-visible:ring-2 active:bg-sidebar-item-active active:text-sidebar-item-active-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-body data-[size=sm]:text-caption data-active:bg-sidebar-item-active data-active:text-sidebar-item-active-foreground data-active:hover:bg-sidebar-item-active [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-item-active-foreground",
           className
         ),
       },

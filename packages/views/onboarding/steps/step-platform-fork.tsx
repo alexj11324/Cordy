@@ -59,6 +59,7 @@ export function StepPlatformFork({
   wsSlug,
   onNext,
   cliInstructions,
+  backendFree = false,
 }: {
   wsId: string;
   /** Slug of the target workspace. Sent explicitly so the runtime list reads
@@ -68,6 +69,8 @@ export function StepPlatformFork({
   onNext: (runtime: AgentRuntime | null, model?: string) => void | Promise<void>;
   /** Platform-specific CLI install card, rendered inside the CLI dialog. */
   cliInstructions?: ReactNode;
+  /** Disable runtime discovery for local UI previews. */
+  backendFree?: boolean;
 }) {
   const { t } = useT("onboarding");
 
@@ -75,7 +78,7 @@ export function StepPlatformFork({
   const [connecting, setConnecting] = useState(false);
   const [model, setModel] = useState("");
 
-  const picker = useRuntimePicker(wsId, wsSlug);
+  const picker = useRuntimePicker(wsId, wsSlug, { enabled: !backendFree });
 
   const pickDesktop = () => {
     // No post-click state. `noopener` makes window.open return null by spec

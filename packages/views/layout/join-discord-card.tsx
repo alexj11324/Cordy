@@ -46,7 +46,7 @@ export function JoinDiscordCard() {
         rel="noopener noreferrer"
         className="flex h-8 items-center gap-2 rounded-md px-2 pr-8 text-body text-muted-foreground ring-sidebar-ring outline-hidden transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2"
       >
-        <DiscordIcon className="size-4 shrink-0" />
+        <DiscordIcon className="size-4 shrink-0 text-faint-foreground" />
         <span className="truncate">
           {t(($) => $.sidebar.discord_card.title)}
         </span>

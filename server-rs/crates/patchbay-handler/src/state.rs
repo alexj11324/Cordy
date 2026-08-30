@@ -418,6 +418,9 @@ pub struct HandlerState {
     pub liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
     /// Public authentication dependencies and boot-time policy.
     pub auth_settings: crate::auth::AuthSettings,
+    /// Clerk session verifier used only by the public session-exchange route.
+    /// None keeps self-hosted deployments that do not use Clerk unchanged.
+    pub clerk_auth: Option<Arc<dyn crate::clerk_auth::ClerkSessionVerifier>>,
     pub email_service: Arc<EmailService>,
     pub analytics: Arc<dyn patchbay_analytics::AnalyticsClient>,
     pub auth_rate_limit: patchbay_middleware::ratelimit::RateLimitState,
@@ -447,6 +450,9 @@ pub struct HandlerState {
     pub plugins: Arc<PluginService>,
     /// Hook callback token store; None disables callback tokens (fail-closed).
     pub callbacks: Option<Arc<CallbackTokens>>,
+    /// One-time PKCE-bound desktop login handoff codes. Redis is used when
+    /// configured; single-node deployments intentionally use process memory.
+    pub desktop_handoff_tokens: crate::desktop_handoff::DesktopHandoffTokens,
     /// Absolute base URL used in hook callback_url; empty omits the field.
     pub callback_base_url: String,
     /// Production event-hook workers and their bus subscriptions. `None` in
@@ -626,6 +632,7 @@ impl HandlerState {
             heartbeat_scheduler,
             liveness_store: Arc::new(crate::runtime_liveness::NoopLivenessStore),
             auth_settings: crate::auth::AuthSettings::from_env(),
+            clerk_auth: None,
             email_service: Arc::new(EmailService::new()),
             analytics,
             auth_rate_limit,
@@ -641,6 +648,7 @@ impl HandlerState {
             issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
+            desktop_handoff_tokens: crate::desktop_handoff::DesktopHandoffTokens::new(),
             callback_base_url: String::new(),
             plugin_events: None,
             autopilot_event_listeners: None,
@@ -1006,6 +1014,15 @@ impl HandlerState {
         self
     }
 
+    pub fn with_clerk_auth_from_config(
+        mut self,
+        config: &patchbay_config::AuthConfig,
+    ) -> anyhow::Result<Self> {
+        self.clerk_auth = crate::clerk_auth::ClerkAuthClient::from_config(config)?
+            .map(|client| Arc::new(client) as Arc<dyn crate::clerk_auth::ClerkSessionVerifier>);
+        Ok(self)
+    }
+
     pub fn with_cloud_pat_fleet_url(mut self, fleet_url: Option<&str>) -> Self {
         let url = fleet_url
             .map(str::trim)
@@ -1086,6 +1103,7 @@ impl HandlerState {
     /// client: auth/member caches, empty-claim cache, runtime liveness,
     /// invitation/webhook gates, and pending request stores.
     pub fn with_redis(mut self, client: redis::Client) -> Self {
+        let desktop_handoff_connection = patchbay_redis::RecoveringConnection::new(client.clone());
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
         self.rate_limit_client = Some(client.clone());
@@ -1112,6 +1130,9 @@ impl HandlerState {
         self.liveness_store = crate::runtime_liveness::RedisLivenessStore::new(conn.clone());
         self.webhook_rate_limits =
             crate::webhook_rate_limit::WebhookRateLimits::redis(conn.clone());
+        self.desktop_handoff_tokens = self
+            .desktop_handoff_tokens
+            .with_connection(desktop_handoff_connection);
         self.local_skill_list_store = Some(Arc::new(
             crate::pending_store::LocalSkillListStore::new(conn.clone()),
         ));
@@ -1172,13 +1193,19 @@ impl HandlerState {
         // connections prevent cold-start stampedes while the existing
         // operation timeouts keep requests bounded.
         let invitation_redis = patchbay_redis::RecoveringConnection::new(client.clone());
-        self.rate_limit_client = Some(client);
+        self.rate_limit_client = Some(client.clone());
+        self.desktop_handoff_tokens = self
+            .desktop_handoff_tokens
+            .with_connection(patchbay_redis::RecoveringConnection::new(client.clone()));
         self.invitation_admission = self.invitation_admission.with_redis(invitation_redis);
         self
     }
 
     /// Installs lazy, fail-open Redis auth limiting without connecting during boot.
     pub fn with_auth_redis(mut self, client: redis::Client) -> Self {
+        self.desktop_handoff_tokens = self
+            .desktop_handoff_tokens
+            .with_connection(patchbay_redis::RecoveringConnection::new(client.clone()));
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client);
         self

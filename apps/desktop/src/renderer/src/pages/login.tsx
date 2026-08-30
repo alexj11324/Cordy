@@ -3,7 +3,7 @@ import { useAuthStore } from "@patchbay/core/auth";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { LoginPage } from "@patchbay/views/auth";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { buildDesktopLoginUrl } from "./login-url";
+import { createDesktopLoginUrl } from "./login-handoff";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 
@@ -62,10 +62,11 @@ function GuestSessionEntry() {
 
 export function DesktopLoginPage() {
   const webUrl = requireRuntimeAppUrl();
-  const handleGoogleLogin = () => {
-    // Open web login page in the default browser with platform=desktop flag.
-    // The web callback will redirect back via patchbay:// deep link with the token.
-    window.desktopAPI.openExternal(buildDesktopLoginUrl(webUrl));
+  const handleGoogleLogin = async () => {
+    // Open web login page in the default browser with a PKCE-bound desktop
+    // handoff. The web callback returns a one-time code, never the bearer.
+    const url = await createDesktopLoginUrl(webUrl);
+    await window.desktopAPI.openExternal(url);
   };
 
   return (

@@ -6,6 +6,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   header: {
     github: "GitHub",
     cta: "\u5f00\u59cb\u4f7f\u7528",
+    signIn: "\u767b\u5f55",
     dashboard: "\u8fdb\u5165\u5de5\u4f5c\u53f0",
     docs: "\u6587\u6863",
     changelog: "\u66f4\u65b0\u65e5\u5fd7",

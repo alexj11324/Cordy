@@ -72,14 +72,19 @@ describe("DesktopLoginPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the configured public accounts login path for formal login", () => {
+  it("opens the configured public accounts login path for formal login", async () => {
     render(<DesktopLoginPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Log in" }));
 
-    expect(mocks.openExternal).toHaveBeenCalledWith(
-      "https://accounts.aspectlylabs.com/login?platform=desktop",
-    );
+    await waitFor(() => expect(mocks.openExternal).toHaveBeenCalledOnce());
+    const [url] = mocks.openExternal.mock.calls[0] as [string];
+    const parsed = new URL(url);
+    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
+    expect(parsed.pathname).toBe("/login");
+    expect(parsed.searchParams.get("platform")).toBe("desktop");
+    expect(parsed.searchParams.get("code_challenge")).toHaveLength(43);
+    expect(parsed.searchParams.get("state")).toHaveLength(43);
     expect(mocks.createGuestSession).not.toHaveBeenCalled();
   });
 

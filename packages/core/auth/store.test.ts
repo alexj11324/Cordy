@@ -105,6 +105,96 @@ describe("authStore", () => {
     expect(store.getState().status).toBe("unauthenticated");
   });
 
+  it("exchanges a Clerk session for the UUID-backed cookie session", async () => {
+    const storage = makeStorage();
+    const onLogin = vi.fn();
+    const api = {
+      clerkLogin: vi.fn().mockResolvedValue({
+        token: "patchbay-token",
+        user: fakeUser,
+      }),
+      setToken: vi.fn(),
+      setTokenProvider: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({
+      api,
+      storage,
+      cookieAuth: true,
+      onLogin,
+    });
+    const signal = new AbortController().signal;
+
+    await expect(
+      store.getState().loginWithClerk("clerk-session", signal),
+    ).resolves.toEqual(fakeUser);
+
+    expect(api.clerkLogin).toHaveBeenCalledWith("clerk-session", signal);
+    expect(api.setTokenProvider).toHaveBeenCalledWith(null);
+    expect(api.setToken).toHaveBeenCalledWith(null);
+    expect(storage.snapshot()).toEqual({});
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(store.getState()).toMatchObject({
+      user: fakeUser,
+      isLoading: false,
+      status: "authenticated",
+    });
+  });
+
+  it("does not publish a stale Clerk exchange after cancellation", async () => {
+    const storage = makeStorage();
+    const onLogin = vi.fn();
+    const api = {
+      clerkLogin: vi.fn().mockResolvedValue({
+        token: "patchbay-token",
+        user: fakeUser,
+      }),
+      setToken: vi.fn(),
+      setTokenProvider: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage, cookieAuth: true, onLogin });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      store.getState().loginWithClerk("clerk-session", controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(api.setTokenProvider).not.toHaveBeenCalled();
+    expect(api.setToken).not.toHaveBeenCalled();
+    expect(onLogin).not.toHaveBeenCalled();
+    expect(store.getState().user).toBeNull();
+  });
+
+  it("keeps cookie logout pending until the server revocation finishes", async () => {
+    let resolveLogout: (() => void) | undefined;
+    const logout = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLogout = resolve;
+        }),
+    );
+    const api = {
+      logout,
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({
+      api,
+      storage: makeStorage(),
+      cookieAuth: true,
+    });
+
+    let settled = false;
+    const pending = store.getState().logout().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(logout).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+
+    resolveLogout?.();
+    await pending;
+    expect(settled).toBe(true);
+  });
+
   it("revokes a server-backed guest session on logout", () => {
     const storage = makeStorage({ patchbay_token: "pbg_guest-token" });
     const api = {

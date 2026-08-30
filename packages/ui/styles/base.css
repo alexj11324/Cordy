@@ -249,8 +249,8 @@
 
 /* Sidebar: open triggers (dropdown/popover) get active background */
 [data-sidebar="menu-button"][data-popup-open] {
-  background-color: var(--sidebar-accent);
-  color: var(--sidebar-accent-foreground);
+  background-color: var(--sidebar-item-active);
+  color: var(--sidebar-item-active-foreground);
 }
 
 /* Sidebar resizing follows the same cursor contract as

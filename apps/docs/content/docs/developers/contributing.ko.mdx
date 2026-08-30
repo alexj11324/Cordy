@@ -81,8 +81,10 @@ make build            # server, CLI, migrate binary 빌드
 
 ```bash
 pnpm install
-pnpm dev:web
-pnpm dev:desktop
+pnpm dev:web          # Vite를 통해 브라우저에서 Desktop renderer 실행
+pnpm dev:web:next     # Next.js Web 클라이언트
+pnpm dev:desktop      # 동일한 Vite renderer를 사용하는 Electron 셸
+# 브라우저 renderer가 실제 API 세션을 사용해야 하면 VITE_DESKTOP_PREVIEW=false를 설정합니다.
 pnpm build
 pnpm typecheck
 pnpm lint
