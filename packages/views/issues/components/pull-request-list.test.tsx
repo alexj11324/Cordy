@@ -121,6 +121,7 @@ describe("PullRequestList sidebar rows", () => {
     hookMocks.attachIssuePullRequest.mockClear();
     mockPRs = [];
     renderList();
+    await screen.findByTestId("attach-pull-request-form");
 
     fireEvent.click(
       screen.getByRole("checkbox", { name: "Close the issue when this PR merges" }),
