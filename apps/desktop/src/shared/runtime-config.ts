@@ -223,9 +223,14 @@ function normalizeHttpUrl(value: string, field: string): string {
 
 function isLoopbackHttpUrl(value: string): boolean {
   const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+
+  const hostname = url.hostname.toLowerCase();
   return (
-    (url.protocol === "http:" || url.protocol === "https:") &&
-    (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(hostname)
   );
 }
 
