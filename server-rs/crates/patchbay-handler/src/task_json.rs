@@ -217,6 +217,10 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
         "error".into(),
         t.error.clone().map(Value::String).unwrap_or(Value::Null),
     );
+    value.insert(
+        "execution_lane_key".into(),
+        Value::String(t.execution_lane_key.to_string()),
+    );
     value.insert("attempt".into(), json!(t.attempt));
     value.insert("max_attempts".into(), json!(t.max_attempts));
     value.insert(
@@ -279,6 +283,7 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+    use patchbay_db::models::ExecutionLaneKey;
     use uuid::Uuid;
 
     fn task_fixture() -> AgentTaskQueue {
@@ -302,6 +307,12 @@ mod tests {
             dispatched_at: None,
             durable_work_dir: None,
             error: None,
+            execution_lane_key: ExecutionLaneKey::for_task(
+                Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap(),
+                Some(Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap()),
+                None,
+                None,
+            ),
             escalation_for_task_id: None,
             failure_reason: None,
             fire_at: None,
@@ -345,6 +356,10 @@ mod tests {
         let value = task_to_map(&task_fixture(), "workspace-1");
         assert_eq!(value["created_at"], "2026-08-23T07:00:00Z");
         assert_eq!(value["delivered_comment_ids"], json!([]));
+        assert_eq!(
+            value["execution_lane_key"],
+            "issue:018f03a0-c4d2-7a37-ae4d-5aa45de12f13:agent:018f03a0-c4d2-7a37-ae4d-5aa45de12f12:main"
+        );
         assert_eq!(value["attribution"]["source"], "unattributed");
         assert_eq!(value["attribution"]["precise"], false);
         for absent in [
@@ -398,9 +413,19 @@ mod tests {
             "side_chat_root_comment_id": "comment-root-1",
             "internal_secret": "must-not-leak",
         }));
+        task.execution_lane_key = ExecutionLaneKey::for_task(
+            task.agent_id,
+            task.issue_id,
+            task.chat_session_id,
+            task.context.as_ref(),
+        );
 
         let value = task_to_map(&task, "workspace-1");
 
+        assert_eq!(
+            value["execution_lane_key"],
+            "issue:018f03a0-c4d2-7a37-ae4d-5aa45de12f13:agent:018f03a0-c4d2-7a37-ae4d-5aa45de12f12:side:comment-root-1"
+        );
         assert_eq!(value["side_chat_parent_task_id"], "main-task-1");
         assert_eq!(value["side_chat_root_comment_id"], "comment-root-1");
         assert!(value.get("internal_secret").is_none());

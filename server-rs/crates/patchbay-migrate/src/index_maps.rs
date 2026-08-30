@@ -482,6 +482,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "406_agent_coordination_assignment_id_index",
         "agent_coordination_assignment_pkey_uidx",
     ),
+    (
+        "410_agent_task_queue_execution_lane_active_unique",
+        "idx_agent_task_queue_execution_lane_active_unique",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -536,5 +540,9 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "375_drop_issue_last_activity_index",
         "idx_issue_workspace_last_activity",
+    ),
+    (
+        "410_agent_task_queue_execution_lane_active_unique",
+        "idx_agent_task_queue_execution_lane_active_unique",
     ),
 ];
