@@ -70,7 +70,7 @@ describe("GoogleOAuthPage", () => {
     );
   });
 
-  it("starts only the Google provider with the renderer handoff intact", async () => {
+  it("starts a provider-specific Google sign-in with the renderer handoff intact", async () => {
     const codeChallenge = "a".repeat(43);
     const state = "b".repeat(43);
     search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;

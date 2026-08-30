@@ -83,6 +83,15 @@ describe("GoogleOAuthCallbackPage", () => {
         return { error: null };
       },
     );
+    mocks.signUp.finalize.mockImplementation(
+      async ({ navigate }: { navigate: Navigate }) => {
+        await navigate({
+          session: { currentTask: null },
+          decorateUrl: (url: string) => url,
+        });
+        return { error: null };
+      },
+    );
   });
 
   it("preserves an allowlisted browser app origin after Clerk finalizes", async () => {
@@ -102,7 +111,7 @@ describe("GoogleOAuthCallbackPage", () => {
     );
   });
 
-  it("finalizes Clerk and returns to the existing desktop handoff page", async () => {
+  it("keeps an existing Google user on the sign-in flow", async () => {
     const codeChallenge = "a".repeat(43);
     const state = "b".repeat(43);
     mocks.search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
@@ -110,6 +119,34 @@ describe("GoogleOAuthCallbackPage", () => {
     render(<GoogleOAuthCallbackPage />);
 
     await waitFor(() => expect(mocks.signIn.finalize).toHaveBeenCalledOnce());
+    expect(mocks.signUp.create).not.toHaveBeenCalled();
+    expect(mocks.signIn.create).not.toHaveBeenCalled();
+    expect(mocks.signUp.finalize).not.toHaveBeenCalled();
+    expect(mocks.replace).toHaveBeenCalledWith(
+      `/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
+    );
+  });
+
+  it("transfers a first-time Google user from sign-in to sign-up", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    mocks.search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    mocks.signIn.status = "needs_first_factor";
+    mocks.signIn.isTransferable = true;
+    mocks.signUp.status = "missing_requirements";
+    mocks.signUp.create.mockImplementation(async () => {
+      mocks.signUp.status = "complete";
+      return { error: null };
+    });
+
+    render(<GoogleOAuthCallbackPage />);
+
+    await waitFor(() =>
+      expect(mocks.signUp.create).toHaveBeenCalledWith({ transfer: true }),
+    );
+    await waitFor(() => expect(mocks.signUp.finalize).toHaveBeenCalledOnce());
+    expect(mocks.signIn.create).not.toHaveBeenCalled();
+    expect(mocks.signIn.finalize).not.toHaveBeenCalled();
     expect(mocks.replace).toHaveBeenCalledWith(
       `/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
     );
