@@ -16,8 +16,8 @@ use crate::error::error_response;
 use crate::issue::TaskAuthorizationContext;
 use crate::state::HandlerState;
 use patchbay_authorization::{
-    Action, AuthorizationContext, AuthorizationRequest, Authorizer, Principal, PrincipalType,
-    Resource, ResourceType, WorkspaceRole,
+    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
+    ResourceType, WorkspaceRole,
 };
 
 pub fn router() -> Router<HandlerState> {

@@ -2052,7 +2052,8 @@ async fn repair_stale_comment_plan(
 /// when the payload carries Remote MCP connections or plugin hook tools (Go
 /// remoteMCPDaemonTokenForClaim + FinalizeTaskClaim), recording the exact
 /// comment-delivery receipt for comment-backed tasks.
-/// Returns (raw task token, optional raw daemon token, persisted receipt).
+/// Returns (raw task token, optional raw daemon token, persisted receipt,
+/// provider authorization descriptor).
 /// Runtime-aware variant used by the per-runtime claim path so the Remote MCP
 /// daemon token can be bound to the claiming runtime's daemon.
 #[allow(clippy::too_many_arguments)]
@@ -2490,7 +2491,7 @@ async fn finalize_claim_enriched_with_runtime(
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
     runtime: Option<&AgentRuntime>,
-) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
+) -> Result<(String, Option<String>, Vec<Uuid>, Value), bool> {
     finalize_claim_enriched_full(state, task, owner_id, built, runtime).await
 }
 
