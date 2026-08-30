@@ -82,10 +82,9 @@ impl ProviderCredentialBroker {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .context("build provider broker client")?;
-        let credential_mode =
-            current_host_credential(&authorization.provider, &http, None)
-                .await?
-                .mode();
+        let credential_mode = current_host_credential(&authorization.provider, &http, None)
+            .await?
+            .mode();
         let mut random = [0_u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut random);
         let task_bearer = format!("pbpl_{}", hex::encode(random));
@@ -631,11 +630,7 @@ async fn refresh_codex_credential(
     tokens.insert("access_token".into(), Value::String(refreshed.access_token));
     tokens.insert(
         "refresh_token".into(),
-        Value::String(
-            refreshed
-                .refresh_token
-                .unwrap_or(source.refresh_token),
-        ),
+        Value::String(refreshed.refresh_token.unwrap_or(source.refresh_token)),
     );
     if let Some(id_token) = refreshed.id_token {
         tokens.insert("id_token".into(), Value::String(id_token));
@@ -690,11 +685,7 @@ async fn refresh_claude_credential(
     oauth.insert("accessToken".into(), Value::String(refreshed.access_token));
     oauth.insert(
         "refreshToken".into(),
-        Value::String(
-            refreshed
-                .refresh_token
-                .unwrap_or(source.refresh_token),
-        ),
+        Value::String(refreshed.refresh_token.unwrap_or(source.refresh_token)),
     );
     oauth.insert(
         "expiresAt".into(),
@@ -722,18 +713,16 @@ async fn refresh_claude_credential(
 }
 
 fn read_json_document(path: &Path, provider: &str) -> anyhow::Result<Value> {
-    serde_json::from_slice(
-        &fs::read(path).with_context(|| format!("read host {provider} login"))?,
-    )
-    .with_context(|| format!("parse host {provider} login"))
+    serde_json::from_slice(&fs::read(path).with_context(|| format!("read host {provider} login"))?)
+        .with_context(|| format!("parse host {provider} login"))
 }
 
 fn atomic_write_private_json(path: &Path, document: &Value) -> anyhow::Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("host credential path has no parent"))?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)
-        .context("create host credential refresh file")?;
+    let mut temp =
+        tempfile::NamedTempFile::new_in(parent).context("create host credential refresh file")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -870,7 +859,10 @@ mod tests {
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(json!({ "exp": expiry }).to_string());
         let token = format!("header.{payload}.signature");
-        assert_eq!(jwt_expiry(&token).map(|value| value.timestamp()), Some(expiry));
+        assert_eq!(
+            jwt_expiry(&token).map(|value| value.timestamp()),
+            Some(expiry)
+        );
         assert_eq!(
             unix_timestamp(expiry * 1000).map(|value| value.timestamp()),
             Some(expiry)
