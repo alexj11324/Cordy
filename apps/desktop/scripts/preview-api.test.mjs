@@ -60,11 +60,11 @@ describe("local Vite preview API", () => {
     });
 
     expect(members.handled).toBe(true);
-    expect(members.body.total).toBe(4);
+    expect(members.body.total).toBe(2);
     expect(members.body.rows.map(({ issue }) => issue.identifier)).not.toContain(
       "PRE-104",
     );
-    expect(agents.body.total).toBe(2);
+    expect(agents.body.total).toBe(4);
     expect(agents.body.rows.map(({ issue }) => issue.identifier)).toEqual(
       expect.arrayContaining(["PRE-104", "PRE-105"]),
     );
@@ -123,16 +123,16 @@ describe("local Vite preview API", () => {
 
     expect(assigned.body.rows.map(({ issue }) => issue.identifier)).toEqual([
       "PRE-101",
-      "PRE-102",
       "PRE-103",
-      "PRE-106",
     ]);
     expect(assigned.body.rows.map(({ issue }) => issue.identifier)).not.toEqual(
       expect.arrayContaining(["PRE-104", "PRE-105"]),
     );
     expect(involved.body.rows.map(({ issue }) => issue.identifier)).toEqual([
+      "PRE-102",
       "PRE-104",
       "PRE-105",
+      "PRE-106",
     ]);
     expect(noAssignee.body).toMatchObject({ total: 0, rows: [] });
     expect(byPriority.body.rows.map(({ issue }) => issue.identifier)).toEqual([
@@ -178,7 +178,7 @@ describe("local Vite preview API", () => {
       .secondary_groups.find((candidate) => candidate.value.status === "in_progress");
 
     expect(groups.body.total).toBe(6);
-    expect(agentGroup.count).toBe(2);
+    expect(agentGroup.count).toBe(1);
     expect(agentGroup.secondary_groups).toHaveLength(7);
     expect(inProgress.key).toContain(":status:in_progress");
     expect(inProgress.count).toBe(1);
@@ -291,6 +291,7 @@ describe("local Vite preview API", () => {
     const issue = await call("GET", "/api/issues/PRE-105");
     const tasks = await call("GET", "/api/issues/PRE-105/task-runs");
     const snapshot = await call("GET", "/api/agent-task-snapshot");
+    const activity = await call("GET", "/api/agent-activity-30d");
 
     expect(agents.body.map((agent) => agent.name)).toEqual(
       expect.arrayContaining(["Atlas", "Mika", "Nova", "Quill"]),
@@ -300,9 +301,11 @@ describe("local Vite preview API", () => {
     });
     expect(issue.body).toMatchObject({
       assignee_type: "agent",
-      assignee_id: "agent-preview",
+      assignee_id: "agent-mika",
       reviewer_type: "agent",
       reviewer_id: "agent-mika",
+      creator_type: "agent",
+      creator_id: "agent-mika",
     });
     expect(tasks.body).toEqual(
       expect.arrayContaining([
@@ -332,6 +335,13 @@ describe("local Vite preview API", () => {
       )) {
         expect(Date.parse(agent.created_at)).toBeLessThanOrEqual(
           Date.parse(task.created_at),
+        );
+      }
+      for (const bucket of activity.body.filter(
+        (candidate) => candidate.agent_id === agent.id,
+      )) {
+        expect(Date.parse(agent.created_at)).toBeLessThan(
+          Date.parse(bucket.bucket_at),
         );
       }
     }
@@ -548,6 +558,12 @@ describe("local Vite preview API", () => {
         autopilot_run_id: run.id,
         kind: "autopilot",
         trigger_summary: autopilot.title,
+      });
+      expect(issuesById.get(task.issue_id)).toMatchObject({
+        assignee_type: autopilot.assignee_type,
+        assignee_id: autopilot.assignee_id,
+        creator_type: "agent",
+        creator_id: autopilot.assignee_id,
       });
       expect(task.issue_id).not.toBe("");
     }

@@ -192,20 +192,51 @@ const PREVIEW_MEMBER = {
 
 const PREVIEW_ISSUES = [
   previewIssue("101", "backlog", "Refine workspace onboarding", "Make the first-run path easier to understand.", "high"),
-  previewIssue("102", "todo", "Polish issue board empty states", "Keep the board useful before real work arrives.", "medium", "member", null, previewTime(-29)),
+  previewIssue(
+    "102",
+    "todo",
+    "Polish issue board empty states",
+    "Keep the board useful before real work arrives.",
+    "medium",
+    { type: "agent", id: "agent-mika" },
+    null,
+    previewTime(-29),
+    { type: "agent", id: "agent-mika" },
+  ),
   previewIssue("103", "todo", "Add keyboard shortcuts", "Expose the common actions without extra chrome.", "low", "member", null, previewTime(-20)),
-  previewIssue("104", "in_progress", "Add real-time status indicator", "Show when an agent is actively working on an issue.", "urgent", "agent", null, previewTime(-242)),
+  previewIssue(
+    "104",
+    "in_progress",
+    "Add real-time status indicator",
+    "Show when an agent is actively working on an issue.",
+    "urgent",
+    { type: "agent", id: PREVIEW_AGENT_ID },
+    null,
+    previewTime(-242),
+    { type: "agent", id: PREVIEW_AGENT_ID },
+  ),
   previewIssue(
     "105",
     "in_review",
     "Check responsive sidebar",
     "Make the workspace navigation feel balanced at every width.",
     "medium",
-    "agent",
+    { type: "agent", id: "agent-mika" },
     { type: "agent", id: "agent-mika" },
     previewTime(-1501),
+    { type: "agent", id: "agent-mika" },
   ),
-  previewIssue("106", "done", "Split web and API dev commands", "Let visual work start without the full local stack.", "none", "member", null, previewTime(-4322)),
+  previewIssue(
+    "106",
+    "done",
+    "Split web and API dev commands",
+    "Let visual work start without the full local stack.",
+    "none",
+    { type: "agent", id: "agent-mika" },
+    null,
+    previewTime(-4322),
+    { type: "agent", id: "agent-mika" },
+  ),
 ];
 
 const PREVIEW_DIRECTORY_AGENT = {
@@ -523,7 +554,7 @@ const PREVIEW_TASKS = [
 const PREVIEW_ACTIVITY = [
   { agent_id: PREVIEW_AGENT_ID, bucket_at: previewTime(-240), task_count: 1, failed_count: 0 },
   { agent_id: "agent-mika", bucket_at: previewTime(-1440), task_count: 1, failed_count: 0 },
-  { agent_id: "agent-nova", bucket_at: previewTime(-4320), task_count: 1, failed_count: 0 },
+  { agent_id: "agent-nova", bucket_at: previewTime(-18), task_count: 1, failed_count: 0 },
 ];
 
 const PREVIEW_RUN_COUNTS = [
@@ -1025,9 +1056,16 @@ function previewIssue(
   assignee = "member",
   reviewer = null,
   createdAt = NOW,
+  creator = null,
 ) {
   const id = issueId(number);
-  const isAgent = assignee === "agent";
+  const assigneeActor = typeof assignee === "string"
+    ? {
+        type: assignee,
+        id: assignee === "agent" ? PREVIEW_AGENT_ID : PREVIEW_USER_ID,
+      }
+    : assignee;
+  const creatorActor = creator ?? { type: "member", id: PREVIEW_USER_ID };
   return {
     id,
     workspace_id: WORKSPACE_ID,
@@ -1038,13 +1076,13 @@ function previewIssue(
     status,
     status_category: status,
     priority,
-    assignee_type: isAgent ? "agent" : "member",
-    assignee_id: isAgent ? PREVIEW_AGENT_ID : PREVIEW_USER_ID,
+    assignee_type: assigneeActor.type,
+    assignee_id: assigneeActor.id,
     ...(reviewer
       ? { reviewer_type: reviewer.type, reviewer_id: reviewer.id }
       : {}),
-    creator_type: "member",
-    creator_id: PREVIEW_USER_ID,
+    creator_type: creatorActor.type,
+    creator_id: creatorActor.id,
     parent_issue_id: null,
     project_id: null,
     position: Number(number),
