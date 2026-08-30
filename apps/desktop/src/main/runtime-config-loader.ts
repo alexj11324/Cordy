@@ -30,11 +30,18 @@ export async function loadRuntimeConfig(options: {
     const config = parseRuntimeConfig(raw);
     if (isStaleDevelopmentRuntimeConfig(config)) {
       const migrated = { ...DEFAULT_RUNTIME_CONFIG };
-      await writeFile(
-        configPath,
-        `${JSON.stringify(migrated, null, 2)}\n`,
-        "utf-8",
-      );
+      try {
+        await writeFile(
+          configPath,
+          `${JSON.stringify(migrated, null, 2)}\n`,
+          "utf-8",
+        );
+      } catch (err) {
+        console.warn(
+          "[runtime-config] using cloud defaults; failed to persist the migrated desktop config:",
+          err,
+        );
+      }
       return { ok: true, config: migrated };
     }
     return {
@@ -61,9 +68,9 @@ export function desktopConfigPath(): string {
 function isMissingFileError(err: unknown): boolean {
   return Boolean(
     err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as NodeJS.ErrnoException).code === "ENOENT",
+    typeof err === "object" &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "ENOENT",
   );
 }
 

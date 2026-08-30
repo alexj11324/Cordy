@@ -10,10 +10,7 @@ import {
   googleOAuthAttemptIsReady,
 } from "@/features/auth/google-oauth";
 import { useT } from "@patchbay/views/i18n";
-import {
-  useWebRouter,
-  useWebSearchParams,
-} from "@/platform/client-navigation";
+import { useWebRouter, useWebSearchParams } from "@/platform/client-navigation";
 
 export default function GoogleOAuthCallbackPage() {
   return (
@@ -36,6 +33,7 @@ function GoogleOAuthCallbackContent() {
   const { t } = useT("auth");
   const attempted = useRef(false);
   const nonceConsumed = useRef(false);
+  const nonceReload = useRef<Promise<boolean> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,9 +61,7 @@ function GoogleOAuthCallbackContent() {
         router.replace(url);
       }
     };
-    type FinalizeOptions = NonNullable<
-      Parameters<typeof signIn.finalize>[0]
-    >;
+    type FinalizeOptions = NonNullable<Parameters<typeof signIn.finalize>[0]>;
     const handleNavigate: NonNullable<FinalizeOptions["navigate"]> = async ({
       session,
       decorateUrl,
@@ -112,7 +108,9 @@ function GoogleOAuthCallbackContent() {
       }
 
       if (signUp.isTransferable) {
-        const { error: transferError } = await signIn.create({ transfer: true });
+        const { error: transferError } = await signIn.create({
+          transfer: true,
+        });
         if (transferError) return failClosed();
         if ((signIn.status as string) === "complete") {
           await finalizeSignIn();
@@ -145,14 +143,22 @@ function GoogleOAuthCallbackContent() {
 
     const run = async () => {
       if (!nonceConsumed.current) {
-        const ready = await consumeGoogleOAuthNonce(
-          signIn,
-          searchParams.get("rotating_token_nonce"),
-        );
-        if (!ready) return;
+        const pendingReload =
+          nonceReload.current ??
+          consumeGoogleOAuthNonce(
+            signIn,
+            searchParams.get("rotating_token_nonce"),
+          );
+        nonceReload.current = pendingReload;
+        const ready = await pendingReload;
+        if (!ready) {
+          if (nonceReload.current === pendingReload) nonceReload.current = null;
+          return;
+        }
         nonceConsumed.current = true;
       }
 
+      if (attempted.current) return;
       if (googleOAuthAttemptIsReady(signIn, signUp)) {
         attempted.current = true;
         await complete();

@@ -5,6 +5,9 @@ use async_trait::async_trait;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 
+// Match Clerk's documented Backend SDK default for cross-service clock skew.
+const CLERK_SESSION_CLOCK_SKEW_MS: i64 = 5_000;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClerkIdentity {
     pub email: String,
@@ -22,11 +25,13 @@ pub enum ClerkAuthError {
 pub trait ClerkSessionVerifier: Send + Sync {
     async fn verify(&self, token: &str) -> Result<ClerkIdentity, ClerkAuthError>;
 
-    /// Verifies that the token belongs to a new, active Google OAuth session
-    /// created after the server registered the desktop authorization attempt.
+    /// Verifies that the token belongs to a new, active session created after
+    /// the server registered the desktop authorization attempt. The browser
+    /// route owns provider selection because Clerk's Backend API exposes the
+    /// last authentication strategy only at client scope, not per session.
     /// Implementations used by tests that do not exercise desktop OAuth fail
     /// closed by default.
-    async fn verify_fresh_google_session(
+    async fn verify_fresh_session(
         &self,
         _token: &str,
         _not_before_ms: i64,
@@ -199,30 +204,6 @@ impl ClerkAuthClient {
             .map_err(|_| ClerkAuthError::Unavailable)
     }
 
-    async fn fetch_client(&self, client_id: &str) -> Result<ClerkClient, ClerkAuthError> {
-        let mut url = url::Url::parse("https://api.clerk.com/v1/clients/")
-            .map_err(|_| ClerkAuthError::Unavailable)?;
-        url.path_segments_mut()
-            .map_err(|_| ClerkAuthError::Unavailable)?
-            .push(client_id);
-        let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.secret_key)
-            .send()
-            .await
-            .map_err(|_| ClerkAuthError::Unavailable)?;
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(ClerkAuthError::Invalid);
-        }
-        if !response.status().is_success() {
-            return Err(ClerkAuthError::Unavailable);
-        }
-        response
-            .json::<ClerkClient>()
-            .await
-            .map_err(|_| ClerkAuthError::Unavailable)
-    }
 }
 
 #[async_trait]
@@ -232,7 +213,7 @@ impl ClerkSessionVerifier for ClerkAuthClient {
         self.fetch_identity(&claims.sub).await
     }
 
-    async fn verify_fresh_google_session(
+    async fn verify_fresh_session(
         &self,
         token: &str,
         not_before_ms: i64,
@@ -249,14 +230,8 @@ impl ClerkSessionVerifier for ClerkAuthClient {
             || session.user_id != claims.sub
             || session.status != "active"
             || session.actor.is_some()
-            || session.created_at < not_before_ms
+            || !session_is_fresh(session.created_at, not_before_ms)
             || session.client_id.trim().is_empty()
-        {
-            return Err(ClerkAuthError::Invalid);
-        }
-        let client = self.fetch_client(&session.client_id).await?;
-        if client.id != session.client_id
-            || client.last_authentication_strategy.as_deref() != Some("oauth_google")
         {
             return Err(ClerkAuthError::Invalid);
         }
@@ -284,13 +259,6 @@ struct ClerkSession {
     status: String,
     #[serde(default)]
     actor: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClerkClient {
-    id: String,
-    #[serde(default)]
-    last_authentication_strategy: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -356,6 +324,10 @@ fn is_authorized_party(authorized_parties: &[String], party: Option<&str>) -> bo
     })
 }
 
+fn session_is_fresh(created_at_ms: i64, not_before_ms: i64) -> bool {
+    created_at_ms >= not_before_ms.saturating_sub(CLERK_SESSION_CLOCK_SKEW_MS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +358,23 @@ mod tests {
         assert!(is_authorized_party(
             &allowed,
             Some("https://app.example.com/")
+        ));
+    }
+
+    #[test]
+    fn fresh_session_allows_only_bounded_clock_skew() {
+        let attempt_started_at_ms = 100_000;
+        assert!(session_is_fresh(
+            attempt_started_at_ms + 1,
+            attempt_started_at_ms,
+        ));
+        assert!(session_is_fresh(
+            attempt_started_at_ms - CLERK_SESSION_CLOCK_SKEW_MS,
+            attempt_started_at_ms,
+        ));
+        assert!(!session_is_fresh(
+            attempt_started_at_ms - CLERK_SESSION_CLOCK_SKEW_MS - 1,
+            attempt_started_at_ms,
         ));
     }
 }

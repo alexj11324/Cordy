@@ -801,9 +801,10 @@ export class ApiClient {
   }
 
   /**
-   * Complete the registered attempt with the current Clerk token. The Rust
-   * API independently proves that this is a newly-created Google session
-   * before issuing the one-time PKCE-bound app handoff code.
+   * Complete the registered attempt with the current Clerk token. The browser
+   * route owns Google provider selection; Rust independently proves that the
+   * token belongs to a newly-created active Clerk session before issuing the
+   * one-time PKCE-bound app handoff code.
    */
   async completeDesktopGoogleAttempt(
     sessionToken: string,
