@@ -123,6 +123,17 @@ pub fn is_duplicate_pending_task_err(err: &sqlx::Error) -> bool {
     )
 }
 
+/// Reports whether the active-writer lane fence rejected a concurrent claim.
+/// The claim transaction is intentionally rolled back and the caller retries
+/// on a later poll; a lane race is expected contention, not a service error.
+pub fn is_execution_lane_conflict_err(err: &sqlx::Error) -> bool {
+    let Some(db_err) = err.as_database_error() else {
+        return false;
+    };
+    db_err.code().as_deref() == Some("23505")
+        && db_err.constraint() == Some("idx_agent_task_queue_execution_lane_active_unique")
+}
+
 /// Extracts the sqlx error from the anyhow error the generated query layer
 /// returns, so unique-violation classification keeps working through the
 /// wrapper.
@@ -1575,6 +1586,10 @@ impl TaskService {
             "agent_id".into(),
             serde_json::json!(task.agent_id.to_string()),
         );
+        payload.insert(
+            "execution_lane_key".into(),
+            serde_json::json!(task.execution_lane_key.as_str()),
+        );
         if let Some(cs) = task.chat_session_id {
             // Routing key the chat window uses to writethrough pendingTask →
             // status="running" the moment the daemon claims the task.
@@ -2038,6 +2053,7 @@ impl TaskService {
             task_id = %task.id,
             issue_id = %issue.id,
             agent_id = %prep.assignee_id,
+            execution_lane_key = %task.execution_lane_key,
             force_fresh_session,
             "task enqueued"
         );
@@ -2716,6 +2732,7 @@ impl TaskService {
             task_id = %task.id,
             issue_id = %issue.id,
             agent_id = %agent_id,
+            execution_lane_key = %task.execution_lane_key,
             is_leader_task = is_leader,
             "mention task enqueued"
         );
@@ -2812,6 +2829,7 @@ impl TaskService {
             task_id = %task.id,
             issue_id = %issue.id,
             agent_id = %agent_id,
+            execution_lane_key = %task.execution_lane_key,
             fire_at = %fire_at,
             "deferred fallback task enqueued"
         );
@@ -2902,6 +2920,7 @@ impl TaskService {
         tracing::info!(
             task_id = %task.id,
             agent_id = %agent_id,
+            execution_lane_key = %task.execution_lane_key,
             team_id = %payload.team_id,
             requester_id = %requester_id,
             workspace_id = %workspace_id,
@@ -2931,6 +2950,7 @@ impl TaskService {
             task_id = %task.id,
             issue_id = ?task.issue_id,
             agent_id = %task.agent_id,
+            execution_lane_key = %task.execution_lane_key,
             "channel media-ready issue task promoted"
         );
         self.broadcast_task_event(
@@ -2960,6 +2980,7 @@ impl TaskService {
                 task_id = %task.id,
                 chat_session_id = %session_id,
                 agent_id = %task.agent_id,
+                execution_lane_key = %task.execution_lane_key,
                 "channel media-ready chat task promoted"
             );
             self.broadcast_task_event(
@@ -4607,8 +4628,18 @@ impl TaskService {
                 return Ok(None);
             }
             Err(e) => {
+                let err = downcast_sqlx(e);
+                if is_execution_lane_conflict_err(&err) {
+                    tracing::debug!(
+                        agent_id = %agent_id,
+                        runtime_id = %claim_runtime_id,
+                        "task claim: execution lane is busy"
+                    );
+                    outcome.set("lane_busy");
+                    return Ok(None);
+                }
                 outcome.set("error_claim");
-                return Err(TaskServiceError::Sql(downcast_sqlx(e)));
+                return Err(TaskServiceError::Sql(err));
             }
         };
 
@@ -4629,7 +4660,12 @@ impl TaskService {
             TaskServiceError::Sql(e)
         })?;
 
-        tracing::info!(task_id = %claimed.id, agent_id = %agent_id, "task claimed");
+        tracing::info!(
+            task_id = %claimed.id,
+            agent_id = %agent_id,
+            execution_lane_key = %claimed.execution_lane_key,
+            "task claimed"
+        );
         self.capture_task_dispatched(&claimed).await;
         self.reconcile_agent_status(agent_id).await;
         self.broadcast_task_dispatch(&claimed).await;
@@ -4664,6 +4700,7 @@ impl TaskService {
                     task_id = %stale.id,
                     runtime_id = %runtime_id,
                     agent_id = %stale.agent_id,
+                    execution_lane_key = %stale.execution_lane_key,
                     "stale dispatched task reclaimed"
                 );
                 return Ok(Some(stale));
@@ -4752,6 +4789,7 @@ impl TaskService {
         tracing::info!(
             task_id = %requeued.id,
             runtime_id = ?requeued.runtime_id,
+            execution_lane_key = %requeued.execution_lane_key,
             "task requeued after claim finalization failure"
         );
         Ok(requeued)
@@ -4812,6 +4850,7 @@ impl TaskService {
                 task_id = %task.id,
                 runtime_id = ?task.runtime_id,
                 agent_id = %task.agent_id,
+                execution_lane_key = %task.execution_lane_key,
                 "deferred fallback task promoted (batch)"
             );
             self.broadcast_task_event(
@@ -4839,6 +4878,7 @@ impl TaskService {
                 task_id = %r.id,
                 runtime_id = ?r.runtime_id,
                 agent_id = %r.agent_id,
+                execution_lane_key = %r.execution_lane_key,
                 "stale dispatched task reclaimed (batch)"
             );
             claimed.push(r);
@@ -4955,6 +4995,7 @@ impl TaskService {
                 task_id = %task.id,
                 issue_id = ?task.issue_id,
                 agent_id = %task.agent_id,
+                execution_lane_key = %task.execution_lane_key,
                 "deferred auto-retry cancelled: superseded by an active task"
             );
             self.capture_task_cancelled(&task).await;
@@ -5000,6 +5041,7 @@ impl TaskService {
                 task_id = %task.id,
                 runtime_id = %runtime_id,
                 agent_id = %task.agent_id,
+                execution_lane_key = %task.execution_lane_key,
                 "deferred fallback task promoted"
             );
             self.broadcast_task_event(
@@ -5152,7 +5194,12 @@ impl TaskService {
             .ok_or_else(|| TaskServiceError::Internal("start task: no row written".into()))?;
         self.cancel_deferred_escalations_for_task(task.id).await;
 
-        tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task started");
+        tracing::info!(
+            task_id = %task.id,
+            issue_id = ?task.issue_id,
+            execution_lane_key = %task.execution_lane_key,
+            "task started"
+        );
         self.capture_task_started(&task).await;
         // A local-directory waiter was reconciled out of the persisted working
         // status while parked. Restore working as soon as it enters running;
@@ -5180,6 +5227,7 @@ impl TaskService {
             tracing::info!(
                 task_id = %task.id,
                 primary_task_id = %primary_task_id,
+                execution_lane_key = %task.execution_lane_key,
                 reason = "primary_acknowledged",
                 "deferred fallback task cancelled"
             );
@@ -5199,6 +5247,7 @@ impl TaskService {
                         task_id = ?task.id,
                         issue_id = %issue_id,
                         agent_id = %agent_id,
+                        execution_lane_key = %task.execution_lane_key,
                         reason = "agent_comment_acknowledged",
                         "deferred fallback task cancelled"
                     );
@@ -5253,7 +5302,14 @@ impl TaskService {
             TaskServiceError::Internal("mark task waiting_local_directory: no row".into())
         })?;
 
-        tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, reason, "task waiting_local_directory");
+        tracing::info!(
+            task_id = %task.id,
+            issue_id = ?task.issue_id,
+            execution_lane_key = %task.execution_lane_key,
+            wait_reason = "local_directory",
+            reason_present = !reason.is_empty(),
+            "task waiting_local_directory"
+        );
         // waiting_local_directory is owned/queued work, not executing work. The
         // claim path marked the agent working while the row was dispatched, so
         // reconcile immediately when it parks instead of leaving that persisted
@@ -5272,6 +5328,7 @@ impl TaskService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use patchbay_db::models::ExecutionLaneKey;
 
     fn task_fixture() -> AgentTaskQueue {
         let id = Uuid::nil();
@@ -5296,6 +5353,7 @@ mod tests {
             dispatched_at: None,
             durable_work_dir: None,
             error: None,
+            execution_lane_key: ExecutionLaneKey::for_task(id, None, None, None),
             escalation_for_task_id: None,
             failure_reason: None,
             fire_at: None,

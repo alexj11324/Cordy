@@ -4,6 +4,128 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
+/// Stable routing identity for one serialized execution lane.
+///
+/// The database stores the same value on every task row. Keep the constructor
+/// in sync with the generated-column expression in migration 409: this value
+/// is routing metadata, not provider transcript or prompt content.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, sqlx::Decode, sqlx::Encode, sqlx::Type)]
+#[sqlx(transparent)]
+#[serde(transparent)]
+pub struct ExecutionLaneKey(String);
+
+impl ExecutionLaneKey {
+    pub fn for_task(
+        agent_id: Uuid,
+        issue_id: Option<Uuid>,
+        chat_session_id: Option<Uuid>,
+        context: Option<&serde_json::Value>,
+    ) -> Self {
+        if let Some(chat_session_id) = chat_session_id {
+            return Self(format!("chat:{chat_session_id}"));
+        }
+
+        let side_chat_key = context
+            .and_then(serde_json::Value::as_object)
+            .and_then(|context| {
+                context
+                    .get("side_chat_root_comment_id")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        context
+                            .get("side_chat_parent_task_id")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|value| !value.is_empty())
+                    })
+            });
+
+        match (issue_id, side_chat_key) {
+            (Some(issue_id), Some(side_chat_key)) => Self(format!(
+                "issue:{issue_id}:agent:{agent_id}:side:{side_chat_key}"
+            )),
+            (Some(issue_id), None) => Self(format!("issue:{issue_id}:agent:{agent_id}:main")),
+            (None, _) => Self(format!("agent:{agent_id}:default")),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for ExecutionLaneKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl From<String> for ExecutionLaneKey {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+#[cfg(test)]
+mod execution_lane_tests {
+    use super::ExecutionLaneKey;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    const AGENT: Uuid = Uuid::from_u128(1);
+    const ISSUE: Uuid = Uuid::from_u128(2);
+    const CHAT: Uuid = Uuid::from_u128(3);
+
+    #[test]
+    fn execution_lane_key_covers_chat_issue_side_and_default() {
+        assert_eq!(
+            ExecutionLaneKey::for_task(AGENT, None, Some(CHAT), None).to_string(),
+            format!("chat:{CHAT}")
+        );
+        assert_eq!(
+            ExecutionLaneKey::for_task(AGENT, Some(ISSUE), None, None).to_string(),
+            format!("issue:{ISSUE}:agent:{AGENT}:main")
+        );
+        assert_eq!(
+            ExecutionLaneKey::for_task(
+                AGENT,
+                Some(ISSUE),
+                None,
+                Some(&json!({"side_chat_root_comment_id": "root-1"})),
+            )
+            .to_string(),
+            format!("issue:{ISSUE}:agent:{AGENT}:side:root-1")
+        );
+        assert_eq!(
+            ExecutionLaneKey::for_task(
+                AGENT,
+                Some(ISSUE),
+                None,
+                Some(&json!({"side_chat_parent_task_id": "parent-1"})),
+            )
+            .to_string(),
+            format!("issue:{ISSUE}:agent:{AGENT}:side:parent-1")
+        );
+        assert_eq!(
+            ExecutionLaneKey::for_task(AGENT, None, None, None).to_string(),
+            format!("agent:{AGENT}:default")
+        );
+    }
+
+    #[test]
+    fn chat_lane_wins_over_issue_context_without_copying_context_content() {
+        let context = json!({
+            "side_chat_root_comment_id": "root-1",
+            "internal_prompt": "must not become routing metadata",
+        });
+
+        assert_eq!(
+            ExecutionLaneKey::for_task(AGENT, Some(ISSUE), Some(CHAT), Some(&context)).to_string(),
+            format!("chat:{CHAT}")
+        );
+    }
+}
+
 /// Row of `activity_log`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ActivityLog {
@@ -130,6 +252,7 @@ pub struct AgentTaskQueue {
     pub dispatched_at: Option<DateTime<Utc>>,
     pub durable_work_dir: Option<String>,
     pub error: Option<String>,
+    pub execution_lane_key: ExecutionLaneKey,
     pub escalation_for_task_id: Option<Uuid>,
     pub failure_reason: Option<String>,
     pub fire_at: Option<DateTime<Utc>>,
