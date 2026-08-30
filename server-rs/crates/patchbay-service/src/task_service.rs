@@ -5423,9 +5423,10 @@ impl TaskService {
         Ok(())
     }
 
-    /// Atomically persists the task-scoped agent token, an optional
-    /// short-lived daemon token used by the Remote MCP broker, and, for a
-    /// comment-backed task, the exact comment ids embedded in the response.
+    /// Atomically persists the task-scoped agent token, the short-lived daemon
+    /// capability used for execution provenance (and optionally by the Remote
+    /// MCP broker), and, for a comment-backed task, the exact comment ids
+    /// embedded in the response.
     /// The handler must call this only after the full payload has been built
     /// and before writing any response bytes; a failure rolls every write back
     /// so the claim can be safely returned to the queue.
@@ -5486,7 +5487,7 @@ impl TaskService {
             )
             .await
             .map_err(|e| {
-                TaskServiceError::Internal(format!("create remote MCP daemon token: {e}"))
+                TaskServiceError::Internal(format!("create execution daemon token: {e}"))
             })?;
         }
         if record_comment_receipt {

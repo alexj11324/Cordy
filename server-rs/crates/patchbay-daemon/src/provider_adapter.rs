@@ -45,7 +45,7 @@ use crate::execution_plan::{
     strip_hermes_profile_selectors, PreparedEnvironmentInputs, ProviderExecutionInputs,
     ProviderExecutionPlan,
 };
-use crate::health::{ActiveRepoCheckoutTask, HealthResponse};
+use crate::health::{ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry};
 use crate::local_directory::{
     is_git_work_tree, local_directory_assignment_for_task, validate_local_path,
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
@@ -867,19 +867,29 @@ impl ProductionProviderAdapter {
             return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
                 .await;
         }
+        // Keep the daemon-owned checkout authorization alive through terminal
+        // provenance refresh. `/repo/checkout` records each path while this
+        // guard is active; the final heads are read below before it is
+        // dropped. The task token remains the localhost-only registry key, not
+        // the credential used for server provenance writes.
+        let checkout_guard = runtime.checkout_registry().register_owned(
+            task.auth_token.trim().to_string(),
+            ActiveRepoCheckoutTask {
+                workspace_id: task.workspace_id.clone(),
+                task_id: task.id.clone(),
+                agent_id: task.agent_id.clone(),
+                agent_name: task
+                    .agent
+                    .as_ref()
+                    .map(|agent| agent.name.clone())
+                    .unwrap_or_default(),
+                work_dir: environment.work_dir.clone(),
+                execution_daemon_token: task.execution_daemon_token.clone(),
+                ..ActiveRepoCheckoutTask::default()
+            },
+        );
         let run = async {
-            let provenance = execution_provenance_for_start(&preparation_ctx, &environment).await;
-            let start_result = client
-                .start_task(
-                    &preparation_ctx,
-                    &task.id,
-                    &provenance.repo_identity,
-                    &provenance.execution_workspace,
-                    &provenance.head_branch,
-                    &provenance.head_sha,
-                    &provenance.head_state,
-                )
-                .await;
+            let start_result = client.start_task(&preparation_ctx, &task.id).await;
             // The dispatched-task lease remains owned through temp allocation
             // and stops only after the server returns the running transition.
             // Join it on both success and failure instead of relying on Drop's
@@ -977,21 +987,6 @@ impl ProductionProviderAdapter {
             let backend = patchbay_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
             let _provider_broker = provider_broker;
-            let token = task.auth_token.trim().to_string();
-            let _checkout = runtime.checkout_registry().register_owned(
-                token,
-                ActiveRepoCheckoutTask {
-                    workspace_id: task.workspace_id.clone(),
-                    task_id: task.id.clone(),
-                    agent_id: task.agent_id.clone(),
-                    agent_name: task
-                        .agent
-                        .as_ref()
-                        .map(|agent| agent.name.clone())
-                        .unwrap_or_default(),
-                    work_dir: environment.work_dir.clone(),
-                },
-            );
             let prompt = build_prompt(task.clone(), &target.provider);
             let _running = CounterGuard::new(&self.running_tasks);
             let mut transcript = TranscriptBatch::default();
@@ -1087,6 +1082,15 @@ impl ProductionProviderAdapter {
         };
         close_task_temp_dir(&task.id, task_temp_dir);
         outcome = finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
+        record_checkout_terminal_provenance(
+            &ctx,
+            &client,
+            &task.execution_daemon_token,
+            &task.id,
+            &runtime.checkout_registry(),
+        )
+        .await;
+        drop(checkout_guard);
         drop(path_guard);
         outcome
     }
@@ -2745,6 +2749,13 @@ async fn execution_provenance_for_start(
         return ExecutionProvenanceFacts::default();
     }
 
+    execution_provenance_for_work_dir(ctx, work_dir).await
+}
+
+async fn execution_provenance_for_work_dir(
+    ctx: &Ctx,
+    work_dir: &str,
+) -> ExecutionProvenanceFacts {
     let repo_identity = git_fact(ctx, work_dir, ["remote", "get-url", "origin"]).await;
     let execution_workspace = git_fact(ctx, work_dir, ["rev-parse", "--show-toplevel"]).await;
     let head_branch = git_fact(
@@ -2775,6 +2786,67 @@ async fn execution_provenance_for_start(
         head_branch,
         head_sha,
         head_state: head_state.to_string(),
+    }
+}
+
+/// Refreshes every provider checkout from its actual terminal filesystem
+/// state. A task may check out several repositories; each exact checkout path
+/// gets its own terminal head before the server queues branch discovery.
+async fn record_checkout_terminal_provenance(
+    ctx: &Ctx,
+    client: &Client,
+    daemon_token: &str,
+    task_id: &str,
+    registry: &RepoCheckoutRegistry,
+) {
+    for checkout in registry.checkouts_for_task(task_id) {
+        let mut facts = execution_provenance_for_work_dir(ctx, &checkout.path).await;
+        if facts.repo_identity.is_empty() {
+            // The repository identity was captured when this daemon-owned
+            // checkout was created. It is safe to retain that exact identity;
+            // no provider text or branch name is consulted here.
+            facts.repo_identity = checkout.repo_identity.clone();
+        }
+        // The execution workspace is the exact path returned by checkout, not
+        // a newly inferred parent path. This keeps the database natural key
+        // stable across the initial and terminal provenance writes.
+        facts.execution_workspace = checkout.path.clone();
+        if facts.head_branch.is_empty() && facts.head_state == "unknown" {
+            tracing::warn!(
+                task_id = %task_id,
+                path = %checkout.path,
+                "terminal checkout head could not be inspected; recording unknown provenance"
+            );
+        }
+        if daemon_token.trim().is_empty() {
+            tracing::warn!(
+                task_id = %task_id,
+                path = %checkout.path,
+                "terminal checkout provenance skipped because execution daemon credential is missing"
+            );
+            continue;
+        }
+        if let Err(error) = client
+            .record_execution_provenance(
+                ctx,
+                daemon_token,
+                task_id,
+                &facts.repo_identity,
+                &facts.execution_workspace,
+                &facts.head_branch,
+                &facts.head_sha,
+                &facts.head_state,
+                true,
+            )
+            .await
+        {
+            tracing::warn!(
+                %error,
+                task_id = %task_id,
+                path = %checkout.path,
+                "terminal checkout provenance refresh failed"
+            );
+        }
     }
 }
 

@@ -180,6 +180,14 @@ pub struct Task {
         skip_serializing_if = "Option::is_none"
     )]
     pub provider_authorization: Option<ProviderAuthorization>,
+    /// Server-issued `mdt_` credential bound to this task's claiming daemon.
+    /// It stays inside daemon orchestration and is never exposed to the child
+    /// agent; only the daemon may submit execution provenance with it.
+    #[serde(
+        rename = "execution_daemon_token",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub execution_daemon_token: String,
     /// PluginHookTools are this workspace's agent-trigger plugin hooks, which
     /// the local MCP server presents to the agent as tools. Resolved by the
     /// server at claim time; the daemon never reads plugin state itself.
@@ -519,6 +527,10 @@ impl std::fmt::Debug for Task {
                 "has_provider_authorization",
                 &self.provider_authorization.is_some(),
             )
+            .field(
+                "has_execution_daemon_token",
+                &!self.execution_daemon_token.is_empty(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -583,6 +595,7 @@ mod tests {
             id: "task-1".to_string(),
             auth_token: "mat_task_secret".to_string(),
             remote_mcp_daemon_token: "daemon_secret".to_string(),
+            execution_daemon_token: "execution_secret".to_string(),
             agent: Some(AgentData {
                 custom_env: Some(std::collections::HashMap::from([(
                     "API_KEY".to_string(),
@@ -600,6 +613,7 @@ mod tests {
         for secret in [
             "mat_task_secret",
             "daemon_secret",
+            "execution_secret",
             "env_secret",
             "arg_secret",
             "mcp_secret",

@@ -527,9 +527,9 @@ pub async fn list_execution_provenances(
 /// Records one task-owned checkout before the agent starts and refreshes that
 /// same checkout at terminal delivery. The natural key includes the exact
 /// repository and execution workspace so one task can own several checkouts;
-/// a terminal delivery replaces known execution head fields, while an adapter
-/// that has no local checkout reports `unknown` and preserves facts already
-/// recorded by the checkout endpoint.
+/// a terminal delivery replaces execution head fields. An adapter that cannot
+/// inspect its checkout reports `unknown`, which clears any initial hint so a
+/// stale branch can never be used for discovery.
 pub async fn upsert_execution_provenance(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_id: Uuid,
@@ -556,24 +556,19 @@ pub async fn upsert_execution_provenance(
 ON CONFLICT (workspace_id, task_id, repo_identity, execution_workspace) DO UPDATE SET
     run_id = COALESCE(agent_task_execution_provenance.run_id, EXCLUDED.run_id),
     head_branch = CASE
-        WHEN $9 AND EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_branch
-        WHEN $9 THEN COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch)
+        WHEN $9 THEN EXCLUDED.head_branch
         WHEN agent_task_execution_provenance.finished_at IS NOT NULL
         THEN agent_task_execution_provenance.head_branch
         ELSE COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch)
     END,
     head_sha = CASE
-        WHEN $9 AND EXCLUDED.head_state <> 'unknown'
-        THEN EXCLUDED.head_sha
-        WHEN $9
-        THEN COALESCE(agent_task_execution_provenance.head_sha, EXCLUDED.head_sha)
+        WHEN $9 THEN EXCLUDED.head_sha
         WHEN agent_task_execution_provenance.finished_at IS NOT NULL
         THEN agent_task_execution_provenance.head_sha
         ELSE COALESCE(agent_task_execution_provenance.head_sha, EXCLUDED.head_sha)
     END,
     head_state = CASE
-        WHEN $9 AND EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_state
-        WHEN $9 THEN agent_task_execution_provenance.head_state
+        WHEN $9 THEN EXCLUDED.head_state
         WHEN agent_task_execution_provenance.finished_at IS NOT NULL
         THEN agent_task_execution_provenance.head_state
         WHEN agent_task_execution_provenance.head_state <> 'unknown'

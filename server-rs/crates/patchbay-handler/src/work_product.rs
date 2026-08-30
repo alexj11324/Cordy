@@ -453,9 +453,8 @@ pub(crate) async fn record_execution_provenance(
         _ => "unknown",
     };
     // An omitted terminal fact means that this adapter did not have a local
-    // checkout to inspect. Preserve the server-recorded checkout provenance
-    // in that case; an explicit detached/default state still remains
-    // authoritative and can clear the branch as appropriate.
+    // checkout to inspect. The terminal `unknown` state is authoritative and
+    // prevents an earlier branch hint from being used for discovery.
     if head_branch.is_none() && head_state == "attached" {
         head_state = "detached";
     } else if repo_identity.is_none() {
@@ -629,31 +628,22 @@ pub(crate) async fn queue_task_discovery(
     state: &HandlerState,
     task: &patchbay_db::models::AgentTaskQueue,
     workspace_id: Uuid,
-    input: &ExecutionProvenanceInput,
 ) -> anyhow::Result<()> {
-    // A terminal adapter may have no local checkout facts. Do not create a
-    // synthetic second row when the checkout endpoint already recorded one;
-    // create an empty audit row only when the task has no provenance at all.
-    let has_facts = [
-        input.repo_identity.trim(),
-        input.execution_workspace.trim(),
-        input.head_branch.trim(),
-        input.head_sha.trim(),
-        input.head_state.trim(),
-    ]
-    .into_iter()
-    .any(|value| !value.is_empty());
-    if has_facts
-        || work_product_q::list_execution_provenances(&state.pool, workspace_id, task.id)
-            .await?
-            .is_empty()
+    // A task may finish without a provider checkout. Keep that outcome
+    // observable with one empty, unknown provenance row; all real facts must
+    // have arrived through the daemon-authenticated route before this queue is
+    // entered. Never accept lifecycle-request fields as provenance.
+    if work_product_q::list_execution_provenances(&state.pool, workspace_id, task.id)
+        .await?
+        .is_empty()
     {
+        let input = ExecutionProvenanceInput::default();
         record_execution_provenance(
             state,
             task.id,
             workspace_id,
             task.autopilot_run_id,
-            input,
+            &input,
             true,
         )
         .await?;

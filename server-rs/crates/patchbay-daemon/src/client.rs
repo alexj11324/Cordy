@@ -443,31 +443,18 @@ impl Client {
         .await
     }
 
-    /// `StartTask` (client.go:352).
-    #[allow(clippy::too_many_arguments)]
+    /// `StartTask` (client.go:352). Execution facts are submitted through the
+    /// daemon-authenticated provenance endpoint, never through the task-token
+    /// lifecycle callback.
     pub(crate) async fn start_task(
         &self,
         ctx: &crate::repocache::Ctx,
         task_id: &str,
-        execution_repo_identity: &str,
-        execution_workspace: &str,
-        execution_head_branch: &str,
-        execution_head_sha: &str,
-        execution_head_state: &str,
     ) -> anyhow::Result<()> {
-        let mut body = serde_json::Map::new();
-        Self::add_execution_provenance(
-            &mut body,
-            execution_repo_identity,
-            execution_workspace,
-            execution_head_branch,
-            execution_head_sha,
-            execution_head_state,
-        );
         self.post_json_unit(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/start"),
-            Value::Object(body),
+            json!({}),
         )
         .await
     }
@@ -479,25 +466,39 @@ impl Client {
     pub(crate) async fn record_execution_provenance(
         &self,
         ctx: &crate::repocache::Ctx,
+        daemon_token: &str,
         task_id: &str,
         execution_repo_identity: &str,
         execution_workspace: &str,
         execution_head_branch: &str,
         execution_head_sha: &str,
         execution_head_state: &str,
+        finished: bool,
     ) -> anyhow::Result<()> {
         let mut body = serde_json::Map::new();
-        Self::add_execution_provenance(
-            &mut body,
-            execution_repo_identity,
-            execution_workspace,
-            execution_head_branch,
-            execution_head_sha,
-            execution_head_state,
-        );
-        self.post_json_unit(
+        if !execution_repo_identity.is_empty() {
+            body.insert(
+                "execution_repo_identity".into(),
+                json!(execution_repo_identity),
+            );
+        }
+        if !execution_workspace.is_empty() {
+            body.insert("execution_workspace".into(), json!(execution_workspace));
+        }
+        if !execution_head_branch.is_empty() {
+            body.insert("execution_head_branch".into(), json!(execution_head_branch));
+        }
+        if !execution_head_sha.is_empty() {
+            body.insert("execution_head_sha".into(), json!(execution_head_sha));
+        }
+        if !execution_head_state.is_empty() {
+            body.insert("execution_head_state".into(), json!(execution_head_state));
+        }
+        body.insert("finished".into(), json!(finished));
+        self.post_json_unit_with_token(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/execution-provenance"),
+            daemon_token,
             Value::Object(body),
         )
         .await
@@ -573,7 +574,6 @@ impl Client {
     }
 
     /// `CompleteTask` (client.go:441): terminal callback with bounded retry.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn complete_task(
         &self,
         ctx: &crate::repocache::Ctx,
@@ -585,11 +585,6 @@ impl Client {
         session_rollout_missing: bool,
         retired_session_id: &str,
         durable_work_dir: &str,
-        execution_repo_identity: &str,
-        execution_workspace: &str,
-        execution_head_branch: &str,
-        execution_head_sha: &str,
-        execution_head_state: &str,
     ) -> anyhow::Result<()> {
         let mut body = serde_json::Map::new();
         body.insert("output".into(), json!(output));
@@ -611,14 +606,6 @@ impl Client {
         if !retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(retired_session_id));
         }
-        Self::add_execution_provenance(
-            &mut body,
-            execution_repo_identity,
-            execution_workspace,
-            execution_head_branch,
-            execution_head_sha,
-            execution_head_state,
-        );
         self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/complete"),
@@ -629,7 +616,6 @@ impl Client {
     }
 
     /// `FailTask` (client.go:473): terminal callback with bounded retry.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn fail_task(
         &self,
         ctx: &crate::repocache::Ctx,
@@ -642,11 +628,6 @@ impl Client {
         session_rollout_missing: bool,
         retired_session_id: &str,
         durable_work_dir: &str,
-        execution_repo_identity: &str,
-        execution_workspace: &str,
-        execution_head_branch: &str,
-        execution_head_sha: &str,
-        execution_head_state: &str,
     ) -> anyhow::Result<()> {
         let mut body = serde_json::Map::new();
         body.insert("error".into(), json!(error_msg));
@@ -674,14 +655,6 @@ impl Client {
         if !retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(retired_session_id));
         }
-        Self::add_execution_provenance(
-            &mut body,
-            execution_repo_identity,
-            execution_workspace,
-            execution_head_branch,
-            execution_head_sha,
-            execution_head_state,
-        );
         self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/fail"),
@@ -689,31 +662,6 @@ impl Client {
             DEFAULT_TERMINAL_RETRY_SCHEDULE,
         )
         .await
-    }
-
-    fn add_execution_provenance(
-        body: &mut serde_json::Map<String, Value>,
-        repo_identity: &str,
-        execution_workspace: &str,
-        head_branch: &str,
-        head_sha: &str,
-        head_state: &str,
-    ) {
-        if !repo_identity.is_empty() {
-            body.insert("execution_repo_identity".into(), json!(repo_identity));
-        }
-        if !execution_workspace.is_empty() {
-            body.insert("execution_workspace".into(), json!(execution_workspace));
-        }
-        if !head_branch.is_empty() {
-            body.insert("execution_head_branch".into(), json!(head_branch));
-        }
-        if !head_sha.is_empty() {
-            body.insert("execution_head_sha".into(), json!(head_sha));
-        }
-        if !head_state.is_empty() {
-            body.insert("execution_head_state".into(), json!(head_state));
-        }
     }
 
     /// `PinTaskSession` (client.go:504): persists the agent's session_id and
@@ -763,11 +711,6 @@ pub struct TaskCancelAck {
     /// The adapter withheld a Codex session whose rollout never became
     /// durable. The cancelled terminal path must clear the pinned pointer too.
     pub session_rollout_missing: bool,
-    pub execution_repo_identity: String,
-    pub execution_workspace: String,
-    pub execution_head_branch: String,
-    pub execution_head_sha: String,
-    pub execution_head_state: String,
 }
 
 /// `TaskMessageData` (client.go:426): a single agent execution message for
@@ -815,14 +758,6 @@ impl Client {
         if ack.session_rollout_missing {
             body.insert("session_rollout_missing".into(), json!(true));
         }
-        Self::add_execution_provenance(
-            &mut body,
-            &ack.execution_repo_identity,
-            &ack.execution_workspace,
-            &ack.execution_head_branch,
-            &ack.execution_head_sha,
-            &ack.execution_head_state,
-        );
         self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/cancel-ack"),
@@ -1690,6 +1625,40 @@ impl Client {
         req_body: Value,
     ) -> anyhow::Result<()> {
         let builder = self.builder_post(path, req_body.clone())?;
+        let _: Option<serde_json::Value> = self
+            .execute_json(
+                apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),
+                ctx.clone(),
+                false,
+                "POST",
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// `postJSON` without the profile/task credential. This is reserved for
+    /// daemon-capability routes whose authorization must be bound to the
+    /// claiming daemon, such as execution provenance.
+    async fn post_json_unit_with_token(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        token: &str,
+        req_body: Value,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !token.trim().is_empty(),
+            "daemon capability is required for {path}"
+        );
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("Content-Type", "application/json".parse().unwrap());
+        headers.insert("Authorization", format!("Bearer {token}").parse().unwrap());
+        let builder = self
+            .http_client()
+            .post(format!("{}{path}", self.base_url))
+            .headers(headers)
+            .json(&req_body);
+        let builder = self.set_identity_headers(builder);
         let _: Option<serde_json::Value> = self
             .execute_json(
                 apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),

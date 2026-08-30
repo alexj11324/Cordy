@@ -25,8 +25,8 @@ use crate::config::{
 };
 use crate::daemon_core::DaemonCoreServices;
 use crate::health::{
-    ActiveRepoCheckoutTask, AgentHealthSnapshot, HealthResponse, RepoCheckoutRegistry,
-    RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
+    ActiveRepoCheckoutTask, AgentHealthSnapshot, HealthResponse, RepoCheckoutProvenance,
+    RepoCheckoutRegistry, RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
@@ -403,15 +403,23 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 // input only; durable identity remains the Work Product
                 // relation written by the server.
                 let execution_workspace = result.path.to_string_lossy().into_owned();
+                if active_task.execution_daemon_token.trim().is_empty() {
+                    return Err(checkout_failure(
+                        500,
+                        "execution daemon credential is missing",
+                    ));
+                }
                 self.client
                     .record_execution_provenance(
                         &ctx,
+                        &active_task.execution_daemon_token,
                         &task_id,
                         &repo_identity,
                         &execution_workspace,
                         &result.branch_name,
                         "",
                         "attached",
+                        false,
                     )
                     .await
                     .map_err(|error| {
@@ -422,6 +430,19 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                             ),
                         )
                     })?;
+                if !self.checkout_registry.record_checkout(
+                    &task_id,
+                    RepoCheckoutProvenance {
+                        path: execution_workspace,
+                        repo_identity,
+                        branch_name: result.branch_name.clone(),
+                    },
+                ) {
+                    return Err(checkout_failure(
+                        500,
+                        "execution checkout ownership expired",
+                    ));
+                }
                 serde_json::to_value(result)
                     .map_err(|error| checkout_failure(500, error.to_string()))
             }
