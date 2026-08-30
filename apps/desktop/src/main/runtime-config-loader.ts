@@ -3,7 +3,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import {
   DEFAULT_RUNTIME_CONFIG,
-  isStaleDevelopmentRuntimeConfig,
+  normalizePackagedRuntimeConfig,
   parseRuntimeConfig,
   runtimeConfigFromDevEnv,
   type RuntimeConfig,
@@ -30,9 +30,7 @@ export async function loadRuntimeConfig(options: {
     const config = parseRuntimeConfig(raw);
     return {
       ok: true,
-      config: isStaleDevelopmentRuntimeConfig(config)
-        ? { ...DEFAULT_RUNTIME_CONFIG }
-        : config,
+      config: normalizePackagedRuntimeConfig(config),
     };
   } catch (err) {
     if (isMissingFileError(err)) {
