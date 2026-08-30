@@ -593,6 +593,21 @@ struct ChannelRuntimeDeps<'a> {
     outbound_tasks: &'a Arc<patchbay_channel::RuntimeTasks>,
 }
 
+fn configured_wecom_relay_url(
+    explicit_url: Option<&str>,
+    cfg: &patchbay_config::Config,
+) -> Option<String> {
+    explicit_url
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            cfg.redis
+                .channel_ws_lease_url
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+        })
+}
+
 fn configure_wecom(
     deps: &ChannelRuntimeDeps<'_>,
     metrics: Option<Arc<patchbay_metrics::WecomMetrics>>,
@@ -625,21 +640,11 @@ fn configure_wecom(
     };
     configure_wecom_security(cfg);
     let senders = Arc::new(patchbay_wecom::senders_registry::SendersRegistry::new());
-    let relay_url = std::env::var("WECOM_OUTBOUND_RELAY_REDIS_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            cfg.redis
-                .channel_ws_lease_url
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-        })
-        .or_else(|| {
-            cfg.redis
-                .url
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-        });
+    // REDIS_URL is the shared auth-rate-limit/cache URL. It must not
+    // implicitly enable the optional WeCom relay: a malformed rate-limit
+    // URL is allowed to fail open without preventing router assembly.
+    let relay_env = std::env::var("WECOM_OUTBOUND_RELAY_REDIS_URL").ok();
+    let relay_url = configured_wecom_relay_url(relay_env.as_deref(), cfg);
     let relay = relay_url
         .as_deref()
         .map(|url| {
@@ -1425,9 +1430,9 @@ impl patchbay_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 mod tests {
     use super::{
         app_url, configure_dingtalk, configure_lark, configure_slack, configure_telegram,
-        configure_wecom, configure_wecom_security, lease_backend_settings, start_media_reconciler,
-        ChannelRouter, ChannelRuntimeDeps, ChannelServices, ChannelStorage, LeaseBackendSettings,
-        RouterConfig,
+        configure_wecom, configure_wecom_security, configured_wecom_relay_url,
+        lease_backend_settings, start_media_reconciler, ChannelRouter, ChannelRuntimeDeps,
+        ChannelServices, ChannelStorage, LeaseBackendSettings, RouterConfig,
     };
     use std::path::PathBuf;
     use std::sync::{Arc, OnceLock};
@@ -1813,9 +1818,28 @@ mod tests {
         assert_eq!(defaults_observed, (false, false));
     }
 
+    #[test]
+    fn wecom_relay_does_not_fall_back_to_auth_rate_limit_redis() {
+        let mut cfg = patchbay_config::Config::default();
+        cfg.redis.url = Some("not a redis URL".into());
+
+        assert_eq!(configured_wecom_relay_url(None, &cfg), None);
+
+        cfg.redis.channel_ws_lease_url = Some("redis://lease.example/".into());
+        assert_eq!(
+            configured_wecom_relay_url(None, &cfg),
+            Some("redis://lease.example/".into())
+        );
+        assert_eq!(
+            configured_wecom_relay_url(Some("redis://wecom.example/"), &cfg),
+            Some("redis://wecom.example/".into())
+        );
+    }
+
     #[tokio::test]
     async fn wecom_security_config_applies_bounded_cidrs_and_exact_trace_flag() {
         let _env_lock = production_env_lock().lock().await;
+
         let mut cfg = patchbay_config::Config::default();
         cfg.integrations.wecom_media_allow_cidrs = Some(" 198.18.0.0/15,not-a-network, ".into());
         cfg.integrations.wecom_trace = Some(" 1 ".into());
