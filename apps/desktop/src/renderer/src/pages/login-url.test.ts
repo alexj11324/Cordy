@@ -15,6 +15,12 @@ describe("buildDesktopGoogleLoginUrl", () => {
     );
   });
 
+  it("preserves a self-hosted accounts base path", () => {
+    expect(buildDesktopGoogleLoginUrl("https://example.com/patchbay/")).toBe(
+      "https://example.com/patchbay/oauth/google?platform=desktop",
+    );
+  });
+
   it("carries an explicit browser app origin without assuming localhost", () => {
     expect(
       buildDesktopGoogleLoginUrl(
