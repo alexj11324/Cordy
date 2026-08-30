@@ -8,7 +8,7 @@ require_rendered_value() {
   local rendered=$1
   local expected=$2
 
-  if ! grep -Fq "$expected" <<<"$rendered"; then
+  if ! grep -Fq -- "$expected" <<<"$rendered"; then
     echo "Missing expected Helm-rendered config value:"
     echo "  $expected"
     exit 1
@@ -19,7 +19,7 @@ reject_rendered_value() {
   local rendered=$1
   local forbidden=$2
 
-  if grep -Fq "$forbidden" <<<"$rendered"; then
+  if grep -Fq -- "$forbidden" <<<"$rendered"; then
     echo "Forbidden Helm-rendered config value:"
     echo "  $forbidden"
     exit 1
