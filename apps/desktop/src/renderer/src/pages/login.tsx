@@ -12,7 +12,7 @@ import {
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { GoogleIcon } from "@patchbay/views/onboarding/components/brand-icons";
+import { GoogleIcon } from "@patchbay/views/onboarding";
 import { LoginPage } from "@patchbay/views/auth";
 import { buildDesktopGoogleLoginUrl } from "./login-url";
 import { useT } from "@patchbay/views/i18n";
