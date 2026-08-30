@@ -34,7 +34,6 @@ import {
   Copy,
   RotateCw,
 } from "lucide-react";
-import { ThinkingOrb } from "thinking-orbs";
 import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@patchbay/core/chat/queries";
 import { RichContent } from "../../rich-content";
@@ -53,6 +52,8 @@ import type {
 } from "@patchbay/core/types";
 import type { ChatTimelineItem } from "@patchbay/core/chat";
 import { buildTimeline } from "../../common/agent-thread-events";
+import { redactSecrets } from "../../common/agent-thread-events/redact";
+import { traceEventSummary } from "../../common/agent-thread-events/trace-event-presenter";
 import { OnboardingStarterCards } from "./onboarding-starter-cards";
 import { TaskStatusPill } from "./task-status-pill";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
@@ -721,7 +722,9 @@ function AssistantMessage({
     () => transformTimeline(buildTimeline(taskMessages ?? []), transformContent),
     [taskMessages, transformContent],
   );
-  const hasVisibleTimeline = getVisibleTimelineBlocks(timeline).length > 0;
+  const visibleTimeline = getVisibleTimelineBlocks(timeline);
+  const hasVisibleTimeline = visibleTimeline.length > 0;
+  const hasVisibleText = visibleTimeline.some((block) => block.type === "text");
 
   // Content is settled once the persisted message exists; until then text is
   // still arriving and a trailing fence may be half-written.
@@ -743,7 +746,7 @@ function AssistantMessage({
   }
 
   // no_response path (PB-4351): the agent completed this direct-chat turn
-  // without any text. Keep whatever tool/thinking timeline the run produced and
+  // without any text. Keep whatever public event timeline the run produced and
   // show a localized "no text reply" notice instead of an empty markdown block.
   const isNoResponse = message?.message_kind === "no_response";
 
@@ -754,12 +757,11 @@ function AssistantMessage({
           items={timeline}
           attachments={message?.attachments}
           phase={phase}
-          isStreaming={!message}
         />
       )}
       {isNoResponse ? (
         <NoResponseNotice />
-      ) : message && !hasVisibleTimeline ? (
+      ) : message && !hasVisibleText ? (
         <RichContent
           content={message.content}
           attachments={message.attachments}
@@ -1184,45 +1186,63 @@ function FailureBubble({
   );
 }
 
-// ─── Timeline: document text + inline reasoning ──────────────────────────
+// ─── Timeline: document text + public execution events ───────────────────
 
-type VisibleTimelineBlock = {
-  seq: number;
-  type: "text" | "thinking" | "error";
-  content: string;
-};
+type VisibleTimelineBlock =
+  | {
+      seq: number;
+      type: "text" | "error";
+      content: string;
+    }
+  | {
+      seq: number;
+      type: "tool_use" | "tool_result";
+      event: ChatTimelineItem;
+    };
 
 /**
- * Tool payloads are execution diagnostics, not chat prose. Keep them in the
- * task-message cache for operator surfaces, but remove them from this product
- * surface. Text stays in chronological document flow, while thinking fragments
- * on either side of hidden tool events merge into one stable inline block.
+ * Project the task event stream into the public Agent thread contract.
+ * Provider thinking is intentionally retained in the cache for audit and
+ * status decisions, but its content is never a user-visible message. Tool
+ * calls/results and errors are compact structured rows; final agent text stays
+ * in the normal document flow.
  */
 function getVisibleTimelineBlocks(
   items: ChatTimelineItem[],
 ): VisibleTimelineBlock[] {
   const blocks: VisibleTimelineBlock[] = [];
-  let crossedHiddenTool = false;
 
   for (const item of items) {
-    if (item.type === "tool_use" || item.type === "tool_result") {
-      crossedHiddenTool = true;
+    // Internal provider reasoning must never become a disclosure, copied text,
+    // or DOM content. TaskStatusPill still uses its type as a generic state.
+    if (item.type === "thinking") {
       continue;
     }
+
+    if (item.type === "tool_use" || item.type === "tool_result") {
+      blocks.push({ seq: item.seq, type: item.type, event: item });
+      continue;
+    }
+
+    if (item.type !== "text" && item.type !== "error") continue;
 
     const content = item.content?.trim() ? item.content : "";
     if (!content) continue;
 
     const previous = blocks.at(-1);
-    if (previous && item.type !== "error" && previous.type === item.type) {
+    if (
+      previous &&
+      (previous.type === "text" || previous.type === "error") &&
+      item.type !== "error" &&
+      previous.type === item.type
+    ) {
       blocks[blocks.length - 1] = {
         ...previous,
-        content: `${previous.content}${crossedHiddenTool ? "\n\n" : ""}${content}`,
+        content: `${previous.content}${content}`,
       };
     } else {
       blocks.push({ seq: item.seq, type: item.type, content });
     }
-    crossedHiddenTool = false;
   }
 
   return blocks;
@@ -1230,12 +1250,10 @@ function getVisibleTimelineBlocks(
 
 function TimelineView({
   items,
-  isStreaming,
   attachments,
   phase = "settled",
 }: {
   items: ChatTimelineItem[];
-  isStreaming?: boolean;
   attachments?: import("@patchbay/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
@@ -1244,15 +1262,8 @@ function TimelineView({
   return (
     <div className="space-y-3">
       {blocks.map((block) => {
-        if (block.type === "thinking") {
-          return (
-            <ThinkingBlock
-              key={`thinking:${block.seq}`}
-              content={block.content}
-              isStreaming={!!isStreaming}
-              phase={phase}
-            />
-          );
+        if (block.type === "tool_use" || block.type === "tool_result") {
+          return <ToolEventRow key={`${block.type}:${block.seq}`} event={block.event} />;
         }
         if (block.type === "error") {
           return <ErrorRow key={`error:${block.seq}`} content={block.content} />;
@@ -1272,71 +1283,26 @@ function TimelineView({
   );
 }
 
-function ThinkingBlock({
-  content,
-  isStreaming,
-  phase = "settled",
-}: {
-  content: string;
-  isStreaming?: boolean;
-  phase?: "streaming" | "settled";
-}) {
+function ToolEventRow({ event }: { event: ChatTimelineItem }) {
   const { t } = useT("chat");
-  const [open, setOpen] = useState(!!isStreaming);
-  const wasStreaming = useRef(!!isStreaming);
-
-  // The live row and persisted reply share one React identity. Express the
-  // LobeHub-style live-open → settled-closed transition directly so expensive
-  // rich content stays mounted during the handoff.
-  useEffect(() => {
-    if (wasStreaming.current && !isStreaming) setOpen(false);
-    wasStreaming.current = !!isStreaming;
-  }, [isStreaming]);
-
-  const label = isStreaming
-    ? t(($) => $.message_list.reasoning_active)
-    : t(($) => $.message_list.reasoning_complete);
+  const isResult = event.type === "tool_result";
+  const tool = event.tool?.trim();
+  const label = isResult
+    ? tool
+      ? t(($) => $.message_list.tool_result_named, { tool })
+      : t(($) => $.message_list.tool_result_unnamed)
+    : tool || t(($) => $.message_list.tool_fallback);
+  const summary = redactSecrets(traceEventSummary(event)).trim();
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="group/reasoning flex items-center gap-2 rounded-md text-caption text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-surface-border bg-surface-raised">
-          <ThinkingOrb
-            aria-label={label}
-            aria-hidden="true"
-            paused={!isStreaming}
-            size={20}
-            state="breathing"
-          />
-        </span>
-        <span className={cn(isStreaming && "animate-chat-text-shimmer")}>
-          {label}
-        </span>
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            "size-3 transition-transform",
-            open && "rotate-90",
-          )}
-        />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="ml-8 mt-1 max-h-[min(40vh,20rem)] overflow-y-auto pr-2 text-caption text-muted-foreground">
-          {isStreaming ? (
-            <div className="whitespace-pre-wrap break-words leading-relaxed">
-              {content}
-            </div>
-          ) : (
-            <RichContent
-              content={content}
-              density="compact"
-              phase={phase}
-              className="leading-relaxed text-muted-foreground [&_*]:text-muted-foreground"
-            />
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+    <div
+      data-agent-thread-event={event.type}
+      data-testid={`agent-thread-event-${event.type}`}
+      className="flex min-w-0 items-baseline gap-2 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5 text-caption text-muted-foreground"
+    >
+      <span className="shrink-0 font-medium text-foreground">{label}</span>
+      {summary ? <span className="min-w-0 truncate">{summary}</span> : null}
+    </div>
   );
 }
 

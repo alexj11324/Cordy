@@ -5,8 +5,8 @@
 //   1. Agent text is the primary layer and reads without a click.
 //   2. Errors stand out and also read without a click.
 //   3. Tool calls are compact — provider-native name + most-informative arg.
-//   4. Tool results and thinking are de-emphasized; their body opens in the
-//      step inspector rather than in the list.
+//   4. Tool results are de-emphasized; provider thinking is a status/audit
+//      signal only and its private body never enters a public projection.
 //   5. Unknown event types are retained as a generic event, never dropped.
 //
 // This module owns no React and no fetching, so it is unit-testable in
@@ -155,7 +155,7 @@ function collapseWhitespace(value: string | undefined): string {
 export function traceEventSummary(event: TraceEvent, labels?: TraceSummaryLabels): string {
   switch (traceEventKind(event)) {
     case "thinking":
-      return clip(firstLine(event.content), 200);
+      return "";
     case "tool_use":
       return traceToolArgSummary(event.input, labels);
     case "tool_result":
@@ -168,15 +168,19 @@ export function traceEventSummary(event: TraceEvent, labels?: TraceSummaryLabels
 }
 
 /**
- * Full, untruncated text for "copy all" — the complete body, not the one-line
- * summary. Tool calls copy their full input JSON; results and prose copy their
- * whole content. An RFC 3339 timestamp prefixes the line when the event has a
- * valid `created_at` (#5873). Callers apply secret redaction on the result.
+ * Full, untruncated text for "copy all" — the complete public body, not the
+ * one-line summary. Tool calls copy their full input JSON; results and prose
+ * copy their whole content; provider thinking deliberately copies no body.
+ * An RFC 3339 timestamp prefixes the line when the event has a valid
+ * `created_at` (#5873). Callers apply secret redaction on the result.
  */
 export function traceEventCopyText(event: TraceEvent): string {
   const label = traceEventLabel(event);
   let body: string;
   switch (traceEventKind(event)) {
+    case "thinking":
+      body = "";
+      break;
     case "tool_use":
       body = event.input ? JSON.stringify(event.input, null, 2) : "";
       break;
@@ -507,10 +511,13 @@ function readFileMutation(input: Record<string, unknown>): FileMutation | null {
 /**
  * Structured body for the expanded row. Edits become a diff so a reviewer sees
  * what changed rather than two escaped string literals; results are unwrapped;
- * every other tool call falls back to pretty JSON.
+ * every other tool call falls back to pretty JSON. Provider thinking has no
+ * public body.
  */
 export function traceEventDetail(event: TraceEvent): TraceEventDetail {
   switch (traceEventKind(event)) {
+    case "thinking":
+      return { kind: "text", text: "" };
     case "tool_use": {
       if (!event.input) return { kind: "text", text: "" };
       const patch = readPatchChanges(event.input);
@@ -594,6 +601,8 @@ export function base64ByteLength(base64: string): number {
 
 export function traceEventHasDetail(event: TraceEvent): boolean {
   switch (traceEventKind(event)) {
+    case "thinking":
+      return false;
     case "tool_use":
       return !!event.input && Object.keys(event.input).length > 0;
     case "tool_result":

@@ -59,8 +59,6 @@
     "failed_after": "{{elapsed}} 후 실패",
     "finished_in": "{{elapsed}} 만에 완료",
     "no_response": "에이전트가 텍스트 답변 없이 이 턴을 마쳤습니다.",
-    "reasoning_active": "생각 중…",
-    "reasoning_complete": "사고 과정",
     "failure": {
       "agent_error": "에이전트에 오류가 발생하여 답변을 완료하지 못했습니다. 다시 시도해 주세요.",
       "timeout": "시간이 너무 오래 걸려 완료 전에 중단되었습니다. 다시 시도하거나 요청을 더 작게 나눠 보세요.",
@@ -80,6 +78,7 @@
       "fallback": "문제가 발생하여 에이전트가 답변을 완료하지 못했습니다. 다시 시도해 주세요."
     },
     "tools_other": "도구 {{count}}개",
+    "tool_fallback": "도구",
     "tool_result_named": "{{tool}} 결과: ",
     "tool_result_unnamed": "결과: ",
     "process_steps_other": "단계 {{count}}개",

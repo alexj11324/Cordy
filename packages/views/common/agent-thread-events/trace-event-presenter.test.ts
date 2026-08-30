@@ -34,6 +34,21 @@ describe("traceEventKind / traceEventLabel", () => {
   });
 });
 
+describe("public projections", () => {
+  it("never exposes provider thinking content", () => {
+    const event = {
+      type: "thinking",
+      content: "private chain of thought must stay private",
+      created_at: "2026-08-30T12:00:00Z",
+    };
+
+    expect(traceEventSummary(event)).toBe("");
+    expect(traceEventCopyText(event)).toBe("[2026-08-30T12:00:00.000Z] [Thinking]");
+    expect(traceEventDetail(event)).toEqual({ kind: "text", text: "" });
+    expect(traceEventHasDetail(event)).toBe(false);
+  });
+});
+
 describe("stripShellWrapper", () => {
   it("strips login-shell wrappers but keeps bare commands", () => {
     expect(stripShellWrapper("/bin/zsh -lc 'rm ./reply.md'")).toBe("rm ./reply.md");

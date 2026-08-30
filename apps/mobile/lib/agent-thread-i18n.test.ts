@@ -22,6 +22,14 @@ describe("mobile Agent thread locale resources", () => {
     ).toBe("Open Agent thread for Task");
   });
 
+  it("provides localized labels for public task event steps", () => {
+    expect(
+      formatAgentThreadCopy(en.process_steps_other, { count: "2" }),
+    ).toBe("2 steps");
+    expect(en.tool_fallback).toBe("Tool");
+    expect(en.tool_result_ready).toBe("result ready");
+  });
+
   it("localizes known availability codes and only falls back to server copy for unknown codes", () => {
     expect(
       agentThreadAvailabilityMessage(
