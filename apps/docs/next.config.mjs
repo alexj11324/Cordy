@@ -4,6 +4,7 @@ const withMDX = createMDX();
 
 /** @type {import('next').NextConfig} */
 const config = {
+  output: "standalone",
   reactStrictMode: true,
   basePath: "/docs",
   // Visiting http://host/ (outside basePath) would otherwise 404 — redirect
