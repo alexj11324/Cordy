@@ -2,14 +2,14 @@
 
 import { describe, expect, it } from "vitest";
 import type {
-  AutopilotQuotaUsage,
+  AutomationQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
 } from "@patchbay/core/types";
 import {
   canPurchaseWorkspaceSubscription,
   hasManagedWorkspaceSubscription,
-  resolveAutopilotUsage,
+  resolveAutomationUsage,
 } from "./billing-state";
 
 const freeEntitlements: WorkspaceSubscriptionEntitlements = {
@@ -18,13 +18,13 @@ const freeEntitlements: WorkspaceSubscriptionEntitlements = {
   status: "inactive",
   seats: 3,
   issueWindow: 17,
-  autopilotRuns: 7,
+  automationRuns: 7,
   currentPeriodEnd: null,
   snapshotExpiresAt: null,
   version: 1,
 };
 
-const quotaUsage: AutopilotQuotaUsage = {
+const quotaUsage: AutomationQuotaUsage = {
   action: "enforce",
   used: 3,
   reserved: 2,
@@ -35,10 +35,10 @@ const quotaUsage: AutopilotQuotaUsage = {
   blocked_counts: {},
 };
 
-describe("resolveAutopilotUsage", () => {
+describe("resolveAutomationUsage", () => {
   it("counts reserved runs toward progress and the reached decision", () => {
     expect(
-      resolveAutopilotUsage(freeEntitlements, quotaUsage, false, false),
+      resolveAutomationUsage(freeEntitlements, quotaUsage, false, false),
     ).toEqual({
       kind: "metered",
       used: 3,
@@ -51,7 +51,7 @@ describe("resolveAutopilotUsage", () => {
     });
 
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         freeEntitlements,
         { ...quotaUsage, used: 5 },
         false,
@@ -62,8 +62,8 @@ describe("resolveAutopilotUsage", () => {
 
   it("shows Pro as unlimited from entitlement even when usage is unavailable", () => {
     expect(
-      resolveAutopilotUsage(
-        { ...freeEntitlements, plan: "pro", autopilotRuns: null },
+      resolveAutomationUsage(
+        { ...freeEntitlements, plan: "pro", automationRuns: null },
         undefined,
         true,
         true,
@@ -73,10 +73,10 @@ describe("resolveAutopilotUsage", () => {
 
   it("does not turn missing or disabled limited usage into zero or unlimited", () => {
     expect(
-      resolveAutopilotUsage(freeEntitlements, undefined, true, false),
+      resolveAutomationUsage(freeEntitlements, undefined, true, false),
     ).toEqual({ kind: "unavailable" });
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         freeEntitlements,
         {
           ...quotaUsage,
@@ -94,8 +94,8 @@ describe("resolveAutopilotUsage", () => {
 
   it("keeps authoritative metered usage independent of entitlement unlimited", () => {
     expect(
-      resolveAutopilotUsage(
-        { ...freeEntitlements, plan: "pro", autopilotRuns: null },
+      resolveAutomationUsage(
+        { ...freeEntitlements, plan: "pro", automationRuns: null },
         quotaUsage,
         false,
         false,
@@ -105,8 +105,8 @@ describe("resolveAutopilotUsage", () => {
 
   it("does not derive unlimited when the entitlement fact is not trusted", () => {
     expect(
-      resolveAutopilotUsage(
-        { ...freeEntitlements, plan: "pro", autopilotRuns: null },
+      resolveAutomationUsage(
+        { ...freeEntitlements, plan: "pro", automationRuns: null },
         undefined,
         true,
         false,

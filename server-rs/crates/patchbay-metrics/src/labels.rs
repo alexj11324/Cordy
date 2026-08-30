@@ -121,7 +121,7 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ("patchbay_chat_message_sent_total", &[PLATFORM]),
     ("patchbay_agent_created_total", &[RUNTIME_MODE, SOURCE]),
     ("patchbay_team_created_total", &[]),
-    ("patchbay_autopilot_created_total", &[CADENCE]),
+    ("patchbay_automation_created_total", &[CADENCE]),
     ("patchbay_issue_executed_total", &[SOURCE]),
     (
         "patchbay_runtime_registered_total",
@@ -136,14 +136,14 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ("patchbay_runtime_offline_total", &[RUNTIME_MODE, PROVIDER]),
     ("patchbay_daemon_ws_message_received_total", &[KIND]),
     (
-        "patchbay_autopilot_run_started_total",
+        "patchbay_automation_run_started_total",
         &[CADENCE, TRIGGER_KIND],
     ),
     (
-        "patchbay_autopilot_run_terminal_total",
+        "patchbay_automation_run_terminal_total",
         &[CADENCE, TRIGGER_KIND, TERMINAL_STATUS],
     ),
-    ("patchbay_autopilot_run_skipped_total", &[CADENCE, REASON]),
+    ("patchbay_automation_run_skipped_total", &[CADENCE, REASON]),
     ("patchbay_webhook_delivery_total", &[PROVIDER, STATUS]),
     ("patchbay_webhook_rate_limited_total", &[GATE]),
     ("patchbay_email_rate_limited_total", &[ACTION, GATE]),
@@ -166,15 +166,15 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
     ),
     ("patchbay_entitlement_version_regression_total", &[SOURCE]),
     (
-        "patchbay_autopilot_quota_decision_total",
+        "patchbay_automation_quota_decision_total",
         &[ACTION, SOURCE, RESULT],
     ),
     (
-        "patchbay_autopilot_failure_monitor_total",
+        "patchbay_automation_failure_monitor_total",
         &[ACTION, OUTCOME],
     ),
     (
-        "patchbay_autopilot_quota_reconciler_total",
+        "patchbay_automation_quota_reconciler_total",
         &[ACTION, OUTCOME],
     ),
 ];
@@ -222,8 +222,8 @@ pub(crate) fn metric_labels(metric: &str) -> &'static [&'static str] {
 const KNOWN_SOURCES: &[&str] = &[
     "issue",
     "chat",
-    "autopilot",
-    "autopilot_issue",
+    "automation",
+    "automation_issue",
     "quick_create",
     "manual",
     "api",

@@ -330,7 +330,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.29",
         date: "2026-08-18",
-        title: "MiniMax Code, cleaner run transcripts, and Hermes agent fixes",
+        title: "MiniMax Code, cleaner Agent threads, and Hermes agent fixes",
         changes: [],
         features: [
           "You can now run agents with MiniMax Code.",
@@ -338,7 +338,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Hermes agent runs now show tools while they are working.",
-          "Agent transcripts are easier to scan without repeated names.",
+          "Agent threads are easier to scan without repeated names.",
         ],
         fixes: [
           "Tasks keep running through brief runtime connection drops.",
@@ -371,12 +371,12 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         version: "0.4.27",
         date: "2026-08-17",
         title:
-          "Workspace MCP servers, share-link invites, and a rebuilt transcript",
+          "Workspace MCP servers, share-link invites, and a rebuilt Agent thread",
         changes: [],
         features: [
           "You can now set up MCP servers once for a workspace and hand them to individual agents.",
           "You can now create a share link that lets someone join your workspace directly.",
-          "The transcript now reads as steps, with a two-lane timeline and an outcome summary.",
+          "The Agent thread now reads as steps, with a two-lane event timeline and an outcome summary.",
           "Files sent in Slack now arrive in the conversation as attachments.",
           "You can now add Patchbay to your phone's home screen and open it like an app.",
           "Browser tabs are now named after the workspace page you have open.",
@@ -459,7 +459,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Clicking the avatar on a Board card now changes the assignee.",
           "Runtime activity and gantt dates now follow your interface language.",
           "In dark mode the keyline between a tab and the page no longer shifts colour.",
-          "The built-in Bug triage Autopilot now runs.",
+          "The built-in Bug triage Automation now runs.",
         ],
       },
       {
@@ -604,7 +604,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "Your agents can now live in DingTalk — DM them or @-mention them in a group.",
           "Signing up now ends with Mika ready to talk, plus cards to start your first task.",
-          "The execution log shows what each run cost, and the whole Issue's total.",
+          "The Agent thread shows what each run cost, and the whole Issue's total.",
           "Muting comment notifications no longer hides messages that @-mention you.",
           "Chat on a phone opens full screen and the composer rides above the keyboard.",
           "Replacing your patchbay or agent CLI now takes effect on its own, no restart.",
@@ -613,7 +613,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Agents read shorter instructions each run, leaving more room for your work.",
           "Runtimes with no reasoning dial now say so instead of rejecting your setting.",
           "Issue detail and the discussion list on a phone use more of the screen.",
-          "The execution log header stays on one line instead of wrapping.",
+          "The Agent thread header stays on one line instead of wrapping.",
         ],
         fixes: [
           "Images sent with /issue in chat now arrive as attachments on the new Issue.",
@@ -652,7 +652,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "A long Codex conversation resumes again instead of failing every time.",
           "A run that fills up its context now fails clearly instead of returning an empty answer.",
-          "Scheduled autopilots start on time instead of waiting for the next wake-up.",
+          "Scheduled automations start on time instead of waiting for the next wake-up.",
           "Filing with /issue in chat no longer runs the same command twice.",
           "Skills with similar names all reach QwenPaw instead of overwriting each other.",
           "The first message in an idle chat appears right away instead of waiting in the queue.",
@@ -690,7 +690,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "In newly connected chat channels, agents no longer report sending a file they cannot send.",
           "A long project or label name no longer stretches its pill across the whole row.",
           "Clearing a field is now the first row of every picker.",
-          "A wide Autopilot runbook no longer pushes the settings panel out of the dialog.",
+          "A wide Automation runbook no longer pushes the settings panel out of the dialog.",
           "The Discord link in the Chinese sidebar is no longer truncated.",
           "Assigning an Issue to a team no longer produces errors.",
         ],
@@ -709,14 +709,14 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Disk usage now matches what your file manager shows, down to the last folder.",
           "The command line now tells you how to fix a conflict instead of asking you to retry.",
-          "Creating an autopilot now points at the required field that is still missing.",
-          "The Issue sidebar puts the execution log first and Details underneath.",
+          "Creating an automation now points at the required field that is still missing.",
+          "The Issue sidebar puts the Agent thread first and Details underneath.",
           "The license now says plainly that free public hosting still needs a commercial license.",
         ],
         fixes: [
           "Kimi replies no longer repeat the previous answer when a conversation picks back up.",
           "Agents with their own Codex instructions file now start their tasks correctly.",
-          "Picking a schedule for an autopilot that had no triggers now saves it.",
+          "Picking a schedule for an automation that had no triggers now saves it.",
           "Opening a Skill an agent imported no longer shows edits you never made.",
           "/new starts a fresh conversation in both Slack and Feishu now.",
           "Issues you file with /issue in chat now notify you about what happens next.",
@@ -762,11 +762,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.15",
         date: "2026-07-30",
-        title: "Sharper skills, clearer transcripts, and dependable workspaces",
+        title: "Sharper skills, clearer Agent event histories, and dependable workspaces",
         changes: [],
         features: [
           "Skills now separate overview and files, with a clear Save prompt for unsaved edits.",
-          "Task transcripts now show file edits as readable diffs and clean command output.",
+          "Task Agent event histories now show file edits as readable diffs and clean command output.",
           "You can now toggle the floating chat window with a keyboard shortcut.",
           "Issue links use readable keys and can open in a new browser tab.",
           "Mention and command pickers now support Ctrl+N/J/P/K navigation.",
@@ -778,7 +778,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Self-hosted setup now carries your configuration into the daemon.",
         ],
         fixes: [
-          "Codex file changes are now preserved in task transcripts.",
+          "Codex file changes are now preserved in task Agent event histories.",
           "Hermes agents now recover from a lost resumed session.",
           "Qoder CLI is now found when Patchbay starts from a desktop app.",
           "Daemon updates no longer wait forever while the machine is idle.",
@@ -856,7 +856,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "The thread quick-jump rail now sits on the right edge.",
-          "The transcript now follows live task output as it streams in.",
+          "The Agent thread now follows live task output as it streams in.",
         ],
         fixes: [
           "Searching for someone to mention now works even with spaces in the name.",
@@ -890,9 +890,9 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "You can now connect self-hosted Git providers — Forgejo, Gitea, and GitLab — alongside GitHub.",
           "Chat can now use your project's context to give more relevant answers.",
-          "The execution log is now easier to read and stays smooth on long runs.",
+          "The Agent thread is now easier to read and stays smooth on long runs.",
           "The issue table now shows which agents are working, right in the list.",
-          "Copied transcripts now include a timestamp for each event.",
+          "Copied Agent event histories now include a timestamp for each event.",
         ],
         improvements: [
           "Cursor agents now show their thinking and tool activity as they work.",
@@ -1018,10 +1018,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.4",
         date: "2026-07-17",
-        title: "A new autopilot scheduler and interactive diagrams",
+        title: "A new automation scheduler and interactive diagrams",
         changes: [],
         features: [
-          "Set up autopilot schedules in a clearer editor that previews the next run times.",
+          "Set up automation schedules in a clearer editor that previews the next run times.",
           "Diagrams now open in a viewer you can pan and zoom, and save as an image.",
         ],
         improvements: [
@@ -1042,7 +1042,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Self-hosted upgrades no longer get stuck partway through.",
           "Codex agent tasks now run with the right credentials.",
           "Cursor agents handle terminal errors more reliably.",
-          "Updating an autopilot no longer drops its assigned agent.",
+          "Updating an automation no longer drops its assigned agent.",
         ],
       },
       {
@@ -1065,8 +1065,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         fixes: [
           "Switching the agent while writing a new chat no longer loses what you typed.",
-          "Agents can again hand off work by @mentioning each other during autopilot runs.",
-          "Autopilot runs now use the latest project settings.",
+          "Agents can again hand off work by @mentioning each other during automation runs.",
+          "Automation runs now use the latest project settings.",
           "Long agent tasks no longer end silently or get marked done before they finish.",
           "Completed tasks on the new Codex gpt-5.6 Sol model are no longer flipped to failed.",
           "Codex agents no longer fail on slow startups or when writing files on Linux.",
@@ -1107,7 +1107,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Fetching recent context from Lark is fast and reliable again.",
           "Dropdown selections now show proper names instead of internal values.",
           "With the sidebar collapsed, page content is now evenly aligned.",
-          "Cancelling a task no longer scrambles the agent's transcript.",
+          "Cancelling a task no longer scrambles the agent's Agent thread.",
           "Running several Codex tasks at once no longer makes them block each other.",
           "Your scroll position is now reliably kept as you move around an issue.",
           "Pasting content with unusual characters into a comment no longer breaks it.",
@@ -1133,8 +1133,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "A queued task now starts as soon as the one before it finishes.",
           "Chat unread badges are accurate now — replies that arrive while the app is backgrounded get marked, and archived chats no longer keep a stale unread.",
           "Near the bottom of the screen, the @ and / menus now open upward instead of getting cut off.",
-          "Autopilot's schedule trigger now reads more complex timing rules correctly.",
-          "Autopilot webhook triggers are no longer lost.",
+          "Automation's schedule trigger now reads more complex timing rules correctly.",
+          "Automation webhook triggers are no longer lost.",
           "Self-hosted sites now redirect correctly when you open the home address.",
           "Runtime names and providers now show consistently across the agents list.",
           "You can turn an agent's skills on and off at any time now.",
@@ -1169,7 +1169,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         fixes: [
           "Marking an issue cancelled no longer interrupts agent work that is still running.",
-          "An agent's task transcript now stays complete and in the right order.",
+          "An agent's task events now stay complete and in the right order.",
           "Pressing Enter no longer cuts off text you are still typing in Chinese, Japanese, or Korean.",
           "Unread counts now match across the sidebar, mobile, and your thread list.",
           "Archiving a chat now clears its outside channel link and removes it from unread.",
@@ -1247,7 +1247,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The desktop app now always shows a correct version number.",
           "After a task moves between statuses, the board's count and the rows it shows stay in sync.",
           "Files brought in through a skill import are now kept instead of being lost.",
-          "Deleting an autopilot now archives it cleanly, with nothing left behind.",
+          "Deleting an automation now archives it cleanly, with nothing left behind.",
         ],
       },
       {
@@ -1297,7 +1297,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Browser MCP now starts correctly on Windows agents.",
           "The Codex agent's MCP settings are applied correctly again.",
           "The Pi agent's task result now shows only the final answer — intermediate thinking is hidden.",
-          "Autopilots no longer accidentally run the same Issue twice in a row when a run takes longer than expected.",
+          "Automations no longer accidentally run the same Issue twice in a row when a run takes longer than expected.",
           "An Issue's PR list only shows PRs that really target that Issue — PRs that just mention the key in passing (\"Related to PB-…\") no longer appear.",
           "The Issue action menu's nested \"More\" item is now called \"Relations\", so you can tell what's inside without opening it.",
           "Every attachment upload button — chat, Issue creation, Issue description, feedback — now lets you pick multiple files at once from the system file dialog.",
@@ -1306,10 +1306,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.36",
         date: "2026-07-03",
-        title: "Transcript view memory, external PostgreSQL for Helm, and reliability fixes",
+        title: "Agent thread view memory, external PostgreSQL for Helm, and reliability fixes",
         changes: [],
         features: [
-          "The task transcript remembers your filter and expansion choices, and restores them the next time you open the run.",
+          "The Agent thread remembers your filter and expansion choices, and restores them the next time you open the run.",
           "Self-hosted (Helm): a new `postgres.external.enabled` toggle points Patchbay at an externally managed PostgreSQL (RDS, CNPG, Cloud SQL, Neon…) and skips the built-in database.",
         ],
         fixes: [
@@ -1318,7 +1318,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "PR review agents re-run when a new commit is pushed instead of silently reusing the previous verdict on the older commit.",
           "Realtime clients no longer miss events published while a server pod restarts — a bounded 5-minute replay window covers the gap.",
           "Kiro ACP runtime task usage is accounted correctly in the usage log again.",
-          "Autopilot 'create issue' runs stay visible on the runs list even when the runtime is offline.",
+          "Automation 'create issue' runs stay visible on the runs list even when the runtime is offline.",
           "Slack alert cards (Grafana, incoming webhooks) whose real message body lives in the attachment are now read from the attachment instead of the short fallback line.",
           "Codex agent tasks see the daemon's Codex model catalog inside the task home again. (Community-reported.)",
           "Legacy `/teams/…` and `/usage` web routes redirect to their current equivalents instead of 404-ing.",
@@ -1348,7 +1348,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Slack alert cards (Grafana, webhooks) whose body lives only in attachments, blocks, or rich_text are recovered on chat history reads.",
           "Inline base64 images (QR codes, screenshots, charts) render in Markdown and read-only Issue comments.",
           "Comment attachment links keep resolving when the comment moves between Issues.",
-          "Antigravity runs completing with empty stdout now surface the recovered transcript in the run timeline.",
+          "Antigravity runs completing with empty stdout now surface recovered Agent events in the run timeline.",
           "Attachment preview accepts the same text file types the frontend advertises.",
           "The Mermaid renderer no longer leaks its built-in error graphic on invalid syntax.",
           "Local skills are exposed to ACP-based runtimes again.",
@@ -1372,13 +1372,13 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Each task run records a prompt-cache hit ratio in the usage log.",
         ],
         improvements: [
-          "Autopilot access management now lives in the Edit dialog as a compact popover instead of a standalone header button.",
+          "Automation access management now lives in the Edit dialog as a compact popover instead of a standalone header button.",
           "The Issue and comment editor upgrades Tiptap to 3.27.1, fixing an inline `code` shortcut that could drop the character before it.",
         ],
         fixes: [
           "The Slack chat agent no longer narrates its channel-history reads — it reads silently and replies with the answer.",
           "Attachment previews again open on self-hosted local-disk deployments. (Community-reported.)",
-          "Cursor and Kiro runtime completion transcripts are recovered so the final result no longer goes missing.",
+          "Cursor and Kiro runtime completion Agent event histories are recovered so the final result no longer goes missing.",
           "Self-host: PATCHBAY_SLACK_SECRET_KEY is now passed through to the backend container in docker-compose.selfhost.yml. (Community-reported.)",
           "The Issues board \"N working\" chip counts distinct Issues instead of distinct agents.",
           "Anonymous self-host source-channel reports go back to the official Patchbay API endpoint.",
@@ -1388,10 +1388,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.33",
         date: "2026-06-30",
-        title: "Autopilot access controls, Slack history backfill, and skill-archive imports",
+        title: "Automation access controls, Slack history backfill, and skill-archive imports",
         changes: [],
         features: [
-          "Autopilots now have a clear write-permission layer, plus a Manage Access dialog that lets the creator grant write access to specific workspace members.",
+          "Automations now have a clear write-permission layer, plus a Manage Access dialog that lets the creator grant write access to specific workspace members.",
           "Slack channels can backfill their conversation history into Patchbay, so an agent has the prior context the moment it joins.",
           "Slack messages show a 👀 reaction while an agent is preparing its reply, and the reaction is always cleared on the way out.",
           "Skill bundles can be installed from a local .skill or .zip archive.",
@@ -1424,7 +1424,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The daemon now bounds each runtime probe with its own timeout, so a single wedged CLI can no longer block every other runtime from coming online.",
         ],
         fixes: [
-          "Scheduled autopilots advance their next-run time the moment a run is dispatched, so a slow runner can no longer cause back-to-back duplicate dispatches.",
+          "Scheduled automations advance their next-run time the moment a run is dispatched, so a slow runner can no longer cause back-to-back duplicate dispatches.",
           "Attachment previews open correctly whether the URL redirects inside a frame, comes back from the same origin, or was uploaded locally — and local upload URLs are now preferred when available.",
           "When the failed-task handler unsticks an Issue, the Issue view refreshes immediately instead of waiting for a manual reload.",
           "Sticky Issue comment headers share the same background fade as the highlight, so settling on a comment no longer looks out of sync.",
@@ -1486,7 +1486,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.29",
         date: "2026-06-24",
-        title: "Feishu Channel Upgrade, Feature Rollout Controls, and More Reliable Autopilots",
+        title: "Feishu Channel Upgrade, Feature Rollout Controls, and More Reliable Automations",
         changes: [],
         features: [
           "Feishu conversations now run on a new unified collaboration channel, making message handling more stable and consistent and laying the groundwork for more chat platforms",
@@ -1495,7 +1495,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Feishu users can start a fresh conversation with the `/new` command, and Feishu WebSocket connections can use a configured proxy",
         ],
         improvements: [
-          "Scheduled autopilots are more dependable: even with missed schedules, retries, or several runners working at once, they settle on the intended single run",
+          "Scheduled automations are more dependable: even with missed schedules, retries, or several runners working at once, they settle on the intended single run",
           "Agent runtime briefings can switch to a slimmer version that drops redundant detail, with the full version still available as a fallback",
           "Runtime provider docs now match the current provider list, with Qoder, CodeBuddy, and Antigravity guidance added and the outdated Gemini CLI runtime removed",
           "The branch or version pinned in a project's repository settings now takes effect during local agent work, so agents no longer end up on the wrong branch",
@@ -1505,7 +1505,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Attachment previews now open correctly inside Issues",
           "The @mention picker now selects the highlighted person or Issue even when search results reorder",
           "Cancelled chat drafts stay deleted after you navigate away and come back",
-          "Autopilot cold starts, the agent status in the Issue header, and Antigravity provider errors now report more accurately",
+          "Automation cold starts, the agent status in the Issue header, and Antigravity provider errors now report more accurately",
         ],
       },
       {
@@ -1521,7 +1521,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Project descriptions now travel with agent work, giving agents more durable context from the project they are working in",
-          "Command line workflows now cover comment resolve actions, Issue usage summaries, and autopilot subscriber management",
+          "Command line workflows now cover comment resolve actions, Issue usage summaries, and automation subscriber management",
           "Readonly code blocks include a copy button, and the marketing header now shows the live GitHub star count",
           "Agent skill delivery is more efficient for newer daemons while keeping older daemons compatible",
         ],
@@ -1529,7 +1529,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Issue batch edit menus now show the real shared status, priority, and assignee for the selected Issues",
           "Dragging Issues across board and list views no longer snaps cards back before settling",
           "GitHub PR links and check updates are routed to the workspace that owns the repository",
-          "Live task transcripts now keep updating while a run is still in progress",
+          "Live task Agent event histories now keep updating while a run is still in progress",
           "Custom runtime deletion now removes the saved profile instead of only removing a row that could return later",
         ],
       },
@@ -1559,11 +1559,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.25",
         date: "2026-06-18",
-        title: "More Reliable Agent Work Across Skills, Autopilots, and Chat",
+        title: "More Reliable Agent Work Across Skills, Automations, and Chat",
         changes: [],
         features: [
           "Local skill libraries on a developer machine can now be picked up automatically for agent runs",
-          "Autopilots can include default subscribers so the right teammates are included when new Issues are created",
+          "Automations can include default subscribers so the right teammates are included when new Issues are created",
           "Chat attachments now stay tied to the current workspace and messages can continue sending without blocking the conversation",
           "Failed agent comments can be retried directly from the Issue timeline",
         ],
@@ -1576,7 +1576,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "Issue mention chips in chat and comments now fit their container and no longer overlap nearby text",
           "Workspace links now use the correct deployment host more reliably",
-          "Autopilot run folders are cleaned up after terminal runs finish",
+          "Automation run folders are cleaned up after terminal runs finish",
           "Desktop builds now handle commit-based version names correctly",
           "Tencent CodeBuddy shows the correct provider logo",
           "Daemon claim responses are smaller and faster to transfer",
@@ -1623,7 +1623,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Plain Issue IDs in comments now stay as text unless they are intentionally linked",
           "Google sign-in from command line login now returns to the command line correctly after browser authentication",
           "Chat file uploads wait until an active agent is ready, avoiding failed uploads during loading",
-          "Transcript actions remain visible on touch devices where hover is unavailable",
+          "Agent thread actions remain visible on touch devices where hover is unavailable",
           "Agent instructions for posting comments now avoid shell formatting problems that could drop assignees, projects, or other fields",
         ],
       },
@@ -1633,7 +1633,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Faster Lists, Easier Runtime Setup, and Safer Issue Editing",
         changes: [],
         features: [
-          "Agents, autopilots, projects, runtimes, skills, and teams now use a faster, more consistent list experience with clearer rows, filters, selections, and actions",
+          "Agents, automations, projects, runtimes, skills, and teams now use a faster, more consistent list experience with clearer rows, filters, selections, and actions",
           "The command line can now manage workspace repositories, so local agents can pick up project repo context more easily",
           "Cursor and OpenClaw are easier to set up: Cursor connection settings can be managed for you, and OpenClaw can connect through an existing gateway",
           "When editing a comment, you can preview and control which agents or teams will run before saving",
@@ -1681,7 +1681,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Import results now clearly show which skills were added, updated, skipped, blocked by a conflict, or could not be imported",
         ],
         improvements: [
-          "Execution logs now show the newest past runs first on web and mobile, so recent progress is easier to scan",
+          "Agent threads now show the newest past runs first on web and mobile, so recent progress is easier to scan",
           "Changelog content was cleaned up so the latest release notes stay grouped under the right release",
         ],
         fixes: [
@@ -1697,8 +1697,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Comment boxes now show which agents or teams will start work before you send, with controls to avoid accidental runs",
-          "Run transcripts now include timestamps, making agent progress and handoffs easier to review",
-          "Autopilot detail pages now show who created each autopilot",
+          "Run Agent event histories now include timestamps, making agent progress and handoffs easier to review",
+          "Automation detail pages now show who created each automation",
           "Claude Fable 5 is now available in Patchbay's supported model and pricing list",
           "Issue conversations can now resolve a specific reply, making long threads easier to close while keeping the final answer visible",
           "Lark and Feishu conversations now show a typing reaction while Patchbay is preparing a reply, then clear it before the answer is sent",
@@ -1718,7 +1718,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Agent task initiator history now works more reliably for older task records",
           "Sticky Issue comments keep a cleaner visual edge while scrolling",
           "Newly posted attachments now use stable private download links, so images and files stay visible after temporary upload links expire",
-          "Autopilot runs started from newly created Issues now fail cleanly when the assigned task cannot complete, instead of staying stuck",
+          "Automation runs started from newly created Issues now fail cleanly when the assigned task cannot complete, instead of staying stuck",
           "Inbox deep links now scroll inside the Issue timeline without pushing the desktop window out of place",
           "Cursor and Codex sessions now end more cleanly after terminal results, preserving completion state and final telemetry",
           "Self-host setup now respects configured server URLs, and project creation returns clear validation errors instead of a generic failure",
@@ -1746,8 +1746,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "Swimlane filters now apply correctly",
           "Mobile workspace switching now shows workspace logos reliably and uses clearer English copy",
-          "Desktop update and transcript dialogs no longer act on windows or pages that have already closed",
-          "Runtime deletion now cleans archived teams and pauses autopilots as part of the same teardown",
+          "Desktop update and Agent thread dialogs no longer act on windows or pages that have already closed",
+          "Runtime deletion now cleans archived teams and pauses automations as part of the same teardown",
           "Daemon runs now surface self-restart failures, stop local agents when terminal tasks are ended from the server, and clean stale branches during repository maintenance",
           "Self-hosted WebSocket connections work correctly behind proxies that set X-Forwarded-Host",
           "Project list headers keep their compact blurred styling",
@@ -1854,7 +1854,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Desktop and web recover better from blank workspace states, no-access pages, renderer errors, and renderer crashes",
           "Images and file cards keep rendering when names contain Markdown characters",
           "Chat, labels, and invitations refresh correctly after a realtime reconnect",
-          "Run-only autopilot tasks, quick-create tasks, and their retries can be cancelled from the activity view",
+          "Run-only automation tasks, quick-create tasks, and their retries can be cancelled from the activity view",
           "Skill descriptions with multi-line frontmatter now import and display correctly",
           "Windows Copilot runs preserve multiline prompts and clean up shell-style custom arguments",
         ],
@@ -1882,7 +1882,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Claude runs are less likely to stall while prompts are being sent",
           "Self-hosted local runtime setup links now point users to the right addresses",
           "MCP setup guidance and runtime support checks now match what the product can run",
-          "Execution logs now clear active-row highlights after the related work finishes",
+          "Agent threads now clear active-row highlights after the related work finishes",
         ],
       },
       {
@@ -1922,7 +1922,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Helm charts can be published to GHCR, and email setup docs are clearer",
-          "Task transcripts show shorter, safer working-folder labels",
+          "Task Agent event histories show shorter, safer working-folder labels",
           "New Issues stay at the top in manual boards, and deleted Issues stay out of recents",
           "Local runtime machines are grouped by device name",
         ],
@@ -1941,7 +1941,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Projects can now use a local working directory on Desktop, so tasks can run in an existing folder while Patchbay shows when another task is waiting for that directory",
-          "Autopilot webhook triggers can now filter incoming events and actions before work starts, with docs linked directly from the setup flow",
+          "Automation webhook triggers can now filter incoming events and actions before work starts, with docs linked directly from the setup flow",
           "Swimlane views can group Issues by parent Issue, project, or assignee, making large boards easier to slice by how the team plans work",
           "Comments now support selecting multiple attachments and keeping, removing, or replacing attachments while editing",
         ],
@@ -1953,7 +1953,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "Swimlane lanes no longer appear empty when nested Issues load beyond the first page",
           "Creating a sub-Issue with an intelligent agent now preserves the parent Issue relationship",
-          "Scheduled autopilot titles and descriptions now use the trigger's configured timezone",
+          "Scheduled automation titles and descriptions now use the trigger's configured timezone",
           "Comment editors avoid duplicate live-update flashes, keep text after failed sends, and apply mention behavior consistently when edited",
           "Code blocks without a detected language now render their text instead of an empty block",
           "Desktop and web avatars now resolve relative upload paths correctly",
@@ -2068,10 +2068,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.4",
         date: "2026-05-20",
-        title: "Smarter Autopilots, Agent Controls & Desktop Reliability",
+        title: "Smarter Automations, Agent Controls & Desktop Reliability",
         changes: [],
         features: [
-          "Autopilots can assign new work through teams and place created Issues directly into a selected Project",
+          "Automations can assign new work through teams and place created Issues directly into a selected Project",
           "Agent settings now include per-agent thinking controls for Claude and Codex, with an inspector picker that updates instantly",
           "Desktop tabs can be pinned so important workspace pages stay parked while new links open in fresh tabs",
           "User profiles can add requester context, giving coding agents better background for assigned Issues",
@@ -2088,7 +2088,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "List editing exits cleanly from an empty top-level item when pressing Enter",
           "The installer falls back to release binaries when Homebrew setup fails and reports clearer diagnostics",
-          "Retrying an execution log row now reruns the agent that handled that row",
+          "Retrying from an Agent thread now reruns the agent that handled that work",
           "Chat and task-message loading ignore temporary IDs instead of calling invalid task routes",
           "OpenCode-backed daemon runs no longer enter invisible interactive question prompts",
           "Gemini runtimes use the correct official icon",
@@ -2110,7 +2110,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         improvements: [
           "The onboarding flow now asks one focused question at a time and can guide runtime setup with fewer manual steps",
           "My Issues now includes team-assigned work and labels the team-related tab more clearly",
-          "Agent execution logs can be sorted in either direction when reviewing a run",
+          "Agent thread events can be sorted in either direction when reviewing a run",
         ],
         fixes: [
           "HTML previews open more predictably from desktop, close the full-screen modal when needed, and support in-page links",
@@ -2124,10 +2124,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         version: "0.3.2",
         date: "2026-05-18",
         title:
-          "Webhook Autopilots, Clearer Workboards & Better Runtime Control",
+          "Webhook Automations, Clearer Workboards & Better Runtime Control",
         changes: [],
         features: [
-          "Autopilots can now start from webhook events, show delivery history, and replay a delivery when a connected system needs another attempt",
+          "Automations can now start from webhook events, show delivery history, and replay a delivery when a connected system needs another attempt",
           "Issue boards can group work by assignee, show linked pull request status, and include start dates for clearer planning",
           "Runtime pages now have a redesigned machine view plus time and task trends in usage charts",
           "Skills can be copied from local runtimes in bulk, making workspace setup faster",
@@ -2140,7 +2140,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Search results are ranked more usefully and include better snippets",
         ],
         fixes: [
-          "Autopilot-created issues can repeat reliably and are attributed to the right assignee agent",
+          "Automation-created issues can repeat reliably and are attributed to the right assignee agent",
           "Runtime setup now prefers the local machine by default and uses cleaner labels in machine lists",
           "Team pages scroll correctly and show which members are already working",
           "Desktop zoom shortcuts work again across the common keyboard combinations",
@@ -2276,7 +2276,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Daemon suppresses extra git console pop-ups on Windows",
           "Pi extension tools are no longer filtered by a hardcoded `--tools` allowlist",
           "Inbox scrolls to the target comment once the issue finishes loading",
-          "`autopilot create/update` accepts `--mode run_only`",
+          "`automation create/update` accepts `--mode run_only`",
           "Changelog header link styled to match the GitHub ghost button",
           "OpenAI Codex / GPT model pricing populated — cost no longer shows $0",
         ],
@@ -2290,13 +2290,13 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Quick Create lets you pick a project, and remembers your last choice",
           "Comment threads can be resolved and collapsed, keeping long discussions tidy",
           "Issue live banner now shows agent tasks waiting in queue",
-          "Failed or cancelled tasks can be rerun in one click from the Execution Log",
+          "Failed or cancelled tasks can be rerun in one click from the Agent thread",
           "Agent Create modal gains an expand button for editing long descriptions",
         ],
         improvements: [
           "Issue timeline no longer fully re-renders on every WebSocket event — long issues scroll smoothly",
           "Editor skips parsing very large or JSON pastes, eliminating freezes",
-          "Autopilot skips dispatch when the assignee runtime is offline, avoiding empty runs",
+          "Automation skips dispatch when the assignee runtime is offline, avoiding empty runs",
           "Inbox auto-archives `task_failed` rows once they reach a terminal state",
           "Hermes sends agent instructions inline with each request",
           "Timeline and Comment switched to client-side virtualization, dropping server-side pagination",
@@ -2326,7 +2326,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "New `patchbay daemon disk-usage` CLI surfaces per-task and per-workspace disk footprint",
           "Skill picker in agent settings has a search box for fast lookup",
-          "Daemon GC extends to chat, autopilot, and quick-create tasks",
+          "Daemon GC extends to chat, automation, and quick-create tasks",
           "Issue detail breadcrumb now shows the PB-xxxx identifier for quick reference",
         ],
         improvements: [
@@ -2356,7 +2356,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Chat and Inbox feel smoother, with clearer history, easier reply copying, and faster triage after archiving",
           "Issue actions keep more context, from easier access to the local folder to sub-issues inheriting the right project and status",
-          "Autopilots pause themselves after repeated failures, so noisy automations are easier to catch and fix",
+          "Automations pause themselves after repeated failures, so noisy automations are easier to catch and fix",
         ],
         fixes: [
           "Chinese input, desktop updates, long issue timelines, and live status updates are more reliable",
@@ -2425,7 +2425,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "CLI update completion status is now reliable",
           "Session resume is guarded by runtime, preventing cross-runtime resume",
           "Kanban display settings survive when dragging issues across columns",
-          "Autopilot list is responsive on mobile viewports",
+          "Automation list is responsive on mobile viewports",
           "Quick Create prompts produce higher-fidelity descriptions from the user's input",
           "Skill upsert sanitizes null bytes, fixing a PostgreSQL UTF8 error",
           "Connect Remote dialog points to the correct install script URL",
@@ -2461,7 +2461,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Create Issue by Agent — press `c`, write one line, pick an agent; issue creation runs async and the result lands in your inbox",
-          "Agent Presence v3 — availability and last-task split into clearer signals, with an execution log on the issue panel showing active and recent runs",
+          "Agent Presence v3 — availability and last-task split into clearer signals, with an Agent thread on the issue panel showing active and recent runs",
           "Daemon ↔ server heartbeat now flows over WebSocket with HTTP fallback, cutting task wakeup latency",
           "Mention picker ranks suggestions by your local recency",
         ],
@@ -2540,7 +2540,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Server validates `assignee_id` on issue create/update so phantom IDs are rejected, and `DeleteIssue` uses the resolved issue ID",
           "Pi runtime now reads/writes `.pi/skills` instead of the old `.pi/agent/skills` path",
           "Windows daemon uses `CREATE_NEW_CONSOLE` so grandchild console popups no longer appear when launching agents",
-          "Autopilot run-only context is now properly forwarded to the agent",
+          "Automation run-only context is now properly forwarded to the agent",
         ],
       },
       {
@@ -2552,7 +2552,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Chat V2 — dedicated sidebar entry and full main-area page for AI conversations",
           "Right-click context menu on issues with a unified action set across list, board, and detail",
           "In-app feedback flow with a new Help launcher centralizing docs, support, and feedback",
-          "Autopilot modal redesigned — simpler schema and consistent schedule UI across creation and edit",
+          "Automation modal redesigned — simpler schema and consistent schedule UI across creation and edit",
           "Skills page redesigned — list + detail pages, scroll-fade card layout, shared PageHeader and mobile nav",
           "Bilingual flat-content rewrite of the docs site — English and Chinese sections share one tree",
         ],
@@ -2654,10 +2654,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.5",
         date: "2026-04-17",
-        title: "CLI Autopilot, Cmd+K & Daemon Identity",
+        title: "CLI Automation, Cmd+K & Daemon Identity",
         changes: [],
         features: [
-          "CLI `autopilot` commands for managing scheduled and triggered automations",
+          "CLI `automation` commands for managing scheduled and triggered automations",
           "CLI `issue subscriber` commands for subscription management",
           "Cmd+K palette extended — theme toggle, quick new issue/project, copy link, switch workspace",
           "Project and sub-issue progress as optional card properties on the issue list",
@@ -2669,8 +2669,8 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Agents now triggered on comments regardless of issue status",
           "Codex sandbox config fixed for macOS network access",
           "Editor bubble menu rewritten with @floating-ui/dom for reliable scroll hiding",
-          "Autopilot creator automatically subscribed to autopilot-created issues",
-          "Autopilot workspace ID correctly resolved for run-only tasks",
+          "Automation creator automatically subscribed to automation-created issues",
+          "Automation workspace ID correctly resolved for run-only tasks",
           "Desktop restricts `shell.openExternal` to http/https schemes (security)",
           "Duplicate agent names return 409 instead of silently failing",
           "New tabs in desktop inherit current workspace",
@@ -2691,7 +2691,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Codex threads resume across tasks on the same issue",
           "Codex turn errors surfaced instead of reporting empty output",
           "Workspace usage correctly bucketed by task completion time",
-          "Autopilot run history rows fully clickable",
+          "Automation run history rows fully clickable",
           "Workspace isolation enforced on additional daemon and GC endpoints (security)",
           "HTML-escape workspace and inviter names in invitation emails",
           "Dev and production desktop instances can now coexist",
@@ -2700,11 +2700,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.0",
         date: "2026-04-15",
-        title: "Desktop App, Autopilot & Invitations",
+        title: "Desktop App, Automation & Invitations",
         changes: [],
         features: [
           "Desktop app for macOS — native Electron app with tab system, built-in daemon management, immersive mode, and auto-update",
-          "Autopilot — scheduled and triggered automations for AI agents",
+          "Automation — scheduled and triggered automations for AI agents",
           "Workspace invitations with email notifications and dedicated accept page",
           "Custom CLI arguments per agent for advanced runtime configuration",
           "Chat redesign with unread tracking and improved session management",
@@ -2879,7 +2879,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Project picker in the create-issue modal and CLI project commands",
           "Full-text search for issues with pg_bigm",
           "Monorepo extraction — shared packages for core, UI, and views (Turborepo)",
-          "Fullscreen agent execution transcript view",
+          "Fullscreen Agent thread view",
           "Drag-and-drop file upload with file card display in the editor",
           "Attachment section with image grid and file cards on issues",
           "Runtime owner tracking, filtering, avatar display, and point-to-point update notifications",

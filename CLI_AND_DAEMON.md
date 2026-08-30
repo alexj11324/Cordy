@@ -271,13 +271,13 @@ The daemon periodically scans `PATCHBAY_WORKSPACES_ROOT` and applies several dis
   - Removing an environment discards work an agent left uncommitted or unpushed on its branch, along with that task's `output/` and `logs/`. The per-issue Codex session store lives outside `PATCHBAY_WORKSPACES_ROOT` under its own TTL, so a later rerun still resumes the agent's prior session — it just starts from a fresh checkout. Size the TTL against that trade, and keep it comfortably above `PATCHBAY_GC_INTERVAL`: the active-root guard protects a task that is currently running, not one whose follow-up run is queued but unclaimed.
 - **Orphan cleanup** — task directories with no `.gc_meta.json` (e.g. left over from a daemon crash) are removed once they exceed `PATCHBAY_GC_ORPHAN_TTL`.
 - **Artifact-only cleanup** — when a task has been completed for at least `PATCHBAY_GC_ARTIFACT_TTL` but the issue is still open, regenerable build outputs whose directory basename matches `PATCHBAY_GC_ARTIFACT_PATTERNS` are removed. The daemon also reclaims the exact managed path `codex-home/.sandbox-bin`; old task metadata without `completed_at` becomes eligible for this managed-only cleanup after its `.gc_meta.json` file has been idle for `PATCHBAY_GC_ORPHAN_TTL`. The rest of the task (source, `.git`, `output/`, `logs/`, `.gc_meta.json`, Codex auth/config/session state) is preserved so the agent can resume it.
-- **Managed-cache reclamation** — the exact managed path above is reclaimed for *every* task kind once the task has been completed for `PATCHBAY_GC_ARTIFACT_TTL`, not just for issue tasks whose issue is still open. It applies even while the parent record says the directory itself must stay — an active chat session, a still-running autopilot run — and even when the parent record could not be reached this cycle, because the contents are regenerable and the next run re-provisions them on demand. A task currently running on the directory is never touched. Set `PATCHBAY_GC_ARTIFACT_TTL=0` to disable this along with the rest of artifact cleanup.
+- **Managed-cache reclamation** — the exact managed path above is reclaimed for *every* task kind once the task has been completed for `PATCHBAY_GC_ARTIFACT_TTL`, not just for issue tasks whose issue is still open. It applies even while the parent record says the directory itself must stay — an active chat session, a still-running automation run — and even when the parent record could not be reached this cycle, because the contents are regenerable and the next run re-provisions them on demand. A task currently running on the directory is never touched. Set `PATCHBAY_GC_ARTIFACT_TTL=0` to disable this along with the rest of artifact cleanup.
 
 - **Repo cache eviction** — the bare git clones under `.repos/` are shared object stores: each task workdir is a `git worktree` off one of them rather than its own clone, so a task's `.git` is only a pointer file. They are evicted only when all of the following hold: the repo is no longer attached to any workspace this daemon watches, it has no worktrees left, and no task has created a worktree from it for `PATCHBAY_GC_REPO_TTL`. A cache created before this stamp existed is not treated as ancient — its clock starts at the first GC cycle that sees it, so upgrading does not wipe every cache. Evicting is safe by construction: the next task that needs the repo re-clones it on demand, so a wrong eviction costs a clone, not a failure.
 
   Short worktree cleanup and eligible cache eviction continue on every GC cycle, including while agents are active. Heavy repo maintenance (`reflog expire` and `git gc`) starts only while the daemon is otherwise idle. A checkout or newly claimed task cancels it and takes priority; interrupted work remains pending for a later idle GC cycle. Operators can disable only these heavy commands with `PATCHBAY_GC_REPO_MAINTENANCE_ENABLED=false` without disabling worktree cleanup or cache eviction.
 
-- **Hermes session store reclamation** — a conversation's Hermes transcript (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full transcripts, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
+- **Hermes session store reclamation** — a conversation's Hermes Agent event history (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full Agent event histories, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
 - **Hermes memory store reclamation** — a Hermes agent's long-term memory (`memories/`) lives at `<profile dir>/hermes-state/<agent-id>/<hermes-profile>/`, outside any task directory, so it survives across tasks and issues (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_MEMORY_TTL` is removed, giving a deleted agent's memory an eventual-reclamation guarantee. The default is deliberately long: these are a handful of markdown files, and reclaiming one is user-visible amnesia rather than a cache miss. A store a running task holds is never reclaimed.
 
 Configured patterns are basename-only — entries containing `/` or `\` are silently dropped — and `.git` subtrees are never descended into. The managed Codex cache is matched by its exact relative path, so a repository's own `.sandbox-bin` is not removed unless an operator explicitly adds that basename to `PATCHBAY_GC_ARTIFACT_PATTERNS`. The default list (`node_modules`, `.next`, `.turbo`) is intentionally narrow; extend it per deployment if your repos consistently produce other regenerable directories (for example, `PATCHBAY_GC_ARTIFACT_PATTERNS=node_modules,.next,.turbo,target,__pycache__`). To disable artifact cleanup entirely, including the managed Codex cache, set `PATCHBAY_GC_ARTIFACT_TTL=0`.
@@ -376,7 +376,7 @@ Consequences worth knowing:
 
 - **Memory is agent-scoped but runtime-local.** One agent's memory is never visible to another, and the user's own `~/.hermes/memories` is never read or written. The store lives in this runtime's Patchbay profile directory, so it does **not** follow the agent to another machine — an agent that runs on two runtimes has a separate memory line on each. Everything else in the home — auth, config, plugins — is still shared from the user's real home by symlink, so the agent does not need its own login.
 - **To carry existing local memory in**, copy it into the store once: `cp -R ~/.hermes/memories/. "<profile dir>/hermes-state/<agent-id>/default/"`. To wipe an agent's memory, delete that directory.
-- **Conversation history is covered too, in a separate store.** Hermes keeps every ACP session in `<HERMES_HOME>/state.db`, which the overlay links to a per-conversation store at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<issue-id | chat_\<chat-session-id\>>/`, so a follow-up turn resumes the actual transcript. The shard is per conversation rather than per agent on purpose: tasks of one conversation run one after another, so a shard has a single writer at a time, while two issues never share a database. A host that cannot create the link (Windows without symlink privileges) keeps the database task-local instead, untouched — the link is proven creatable before anything is moved, and a copy is never used, because a copied SQLite database would absorb the turn's writes into a file the next task discards.
+- **Conversation history is covered too, in a separate store.** Hermes keeps every ACP session in `<HERMES_HOME>/state.db`, which the overlay links to a per-conversation store at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<issue-id | chat_\<chat-session-id\>>/`, so a follow-up turn resumes the actual Agent event history. The shard is per conversation rather than per agent on purpose: tasks of one conversation run one after another, so a shard has a single writer at a time, while two issues never share a database. A host that cannot create the link (Windows without symlink privileges) keeps the database task-local instead, untouched — the link is proven creatable before anything is moved, and a copy is never used, because a copied SQLite database would absorb the turn's writes into a file the next task discards.
 - **Concurrent tasks of one agent are last-writer-wins.** Hermes rewrites its memory files whole, so two tasks writing memory at the same time can overwrite each other.
 - **Every Hermes agent gets the overlay in practice**, so every one of them gets a persistent memory store. The daemon builds the overlay only when a task carries skills, but the server appends Patchbay's built-in skills to every agent's skill set (`LoadAgentSkillBundles`), so that list is never empty — leaving an agent's own skill list empty does not opt out of the overlay, and is not a way to keep using the host's `~/.hermes/memories`.
 
@@ -806,66 +806,66 @@ patchbay config set workspace_id <workspace-id>
 
 `config set workspace_id <id>` is the low-level interface — it writes the value verbatim without checking that the workspace exists or that you have access. Prefer `patchbay workspace switch <id|slug>` for day-to-day workspace changes; it does both checks before saving.
 
-## Autopilot Commands
+## Automation Commands
 
-Autopilots are scheduled/triggered automations that dispatch agent tasks (either by creating an issue or by running an agent directly).
+Automations are scheduled/triggered automations that dispatch agent tasks (either by creating an issue or by running an agent directly).
 
-### List Autopilots
+### List Automations
 
 ```bash
-patchbay autopilot list
-patchbay autopilot list --full-id
-patchbay autopilot list --status active --output json
+patchbay automation list
+patchbay automation list --full-id
+patchbay automation list --status active --output json
 ```
 
-Autopilot table IDs are short UUID prefixes; follow-up autopilot commands accept copied prefixes when they are unique in the current workspace. Use `--full-id` to print canonical UUIDs.
+Automation table IDs are short UUID prefixes; follow-up automation commands accept copied prefixes when they are unique in the current workspace. Use `--full-id` to print canonical UUIDs.
 
-### Get Autopilot Details
+### Get Automation Details
 
 ```bash
-patchbay autopilot get <id>
-patchbay autopilot get <id> --output json   # includes triggers
+patchbay automation get <id>
+patchbay automation get <id> --output json   # includes triggers
 ```
 
 ### Create / Update / Delete
 
 ```bash
-patchbay autopilot create \
+patchbay automation create \
   --title "Nightly bug triage" \
   --description "Scan todo issues and prioritize." \
   --agent "Lambda" \
   --mode create_issue \
   --subscriber "Alice"
 
-patchbay autopilot update <id> --status paused
-patchbay autopilot update <id> --description "New prompt"
-patchbay autopilot update <id> --subscriber "Alice" --subscriber "Bob"
-patchbay autopilot update <id> --clear-subscribers
-patchbay autopilot delete <id>
+patchbay automation update <id> --status paused
+patchbay automation update <id> --description "New prompt"
+patchbay automation update <id> --subscriber "Alice" --subscriber "Bob"
+patchbay automation update <id> --clear-subscribers
+patchbay automation delete <id>
 ```
 
 `--mode` accepts `create_issue` (creates a new issue on each run and assigns it to the agent) or `run_only` (enqueues a direct agent task without creating an issue). `--agent` accepts either a name or UUID.
-`--subscriber` accepts a workspace member name or user ID and may be repeated; on update it replaces the autopilot's subscriber template. Subscribers receive inbox notifications for issues created by a `create_issue` autopilot. Use `--clear-subscribers` to remove all autopilot subscribers.
+`--subscriber` accepts a workspace member name or user ID and may be repeated; on update it replaces the automation's subscriber template. Subscribers receive inbox notifications for issues created by a `create_issue` automation. Use `--clear-subscribers` to remove all automation subscribers.
 
 ### Manual Trigger
 
 ```bash
-patchbay autopilot trigger <id>            # Fires the autopilot once, returns the run
+patchbay automation trigger <id>            # Fires the automation once, returns the run
 ```
 
 ### Run History
 
 ```bash
-patchbay autopilot runs <id>
-patchbay autopilot runs <id> --limit 50 --output json
+patchbay automation runs <id>
+patchbay automation runs <id> --limit 50 --output json
 ```
 
 ### Schedule Triggers
 
 ```bash
-patchbay autopilot trigger-add <autopilot-id> --cron "0 9 * * 1-5" --timezone "America/New_York"
-patchbay autopilot trigger-update <autopilot-id> <trigger-id> --enabled=false
-patchbay autopilot trigger-delete <autopilot-id> <trigger-id>
+patchbay automation trigger-add <automation-id> --cron "0 9 * * 1-5" --timezone "America/New_York"
+patchbay automation trigger-update <automation-id> <trigger-id> --enabled=false
+patchbay automation trigger-delete <automation-id> <trigger-id>
 ```
 
 Only cron-based `schedule` triggers are currently exposed via the CLI. The data model also defines `webhook` and `api` kinds, but there is no server endpoint that fires them yet, so they're not surfaced here.

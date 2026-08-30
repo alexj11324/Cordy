@@ -368,30 +368,30 @@ pub struct Task {
         skip_serializing_if = "String::is_empty"
     )]
     pub regenerate_quick_actions_for: String,
-    /// Non-empty for autopilot run_only tasks.
-    #[serde(rename = "autopilot_run_id", skip_serializing_if = "String::is_empty")]
-    pub autopilot_run_id: String,
-    /// Autopilot that spawned this run.
-    #[serde(rename = "autopilot_id", skip_serializing_if = "String::is_empty")]
-    pub autopilot_id: String,
-    /// Autopilot title used as task context.
-    #[serde(rename = "autopilot_title", skip_serializing_if = "String::is_empty")]
-    pub autopilot_title: String,
-    /// Autopilot description used as task prompt.
+    /// Non-empty for automation run_only tasks.
+    #[serde(rename = "automation_run_id", skip_serializing_if = "String::is_empty")]
+    pub automation_run_id: String,
+    /// Automation that spawned this run.
+    #[serde(rename = "automation_id", skip_serializing_if = "String::is_empty")]
+    pub automation_id: String,
+    /// Automation title used as task context.
+    #[serde(rename = "automation_title", skip_serializing_if = "String::is_empty")]
+    pub automation_title: String,
+    /// Automation description used as task prompt.
     #[serde(
-        rename = "autopilot_description",
+        rename = "automation_description",
         skip_serializing_if = "String::is_empty"
     )]
-    pub autopilot_description: String,
+    pub automation_description: String,
     /// Manual, schedule, webhook, or api.
-    #[serde(rename = "autopilot_source", skip_serializing_if = "String::is_empty")]
-    pub autopilot_source: String,
+    #[serde(rename = "automation_source", skip_serializing_if = "String::is_empty")]
+    pub automation_source: String,
     /// Optional trigger payload for webhook/api runs.
     #[serde(
-        rename = "autopilot_trigger_payload",
+        rename = "automation_trigger_payload",
         skip_serializing_if = "Option::is_none"
     )]
-    pub autopilot_trigger_payload: Option<serde_json::Value>,
+    pub automation_trigger_payload: Option<serde_json::Value>,
     /// User's natural-language input for quick-create tasks.
     #[serde(
         rename = "quick_create_prompt",
@@ -461,7 +461,7 @@ pub struct Task {
     /// distinct from the runtime owner whose credentials the agent runs with.
     /// Comment-triggered tasks resolve to the triggering comment's author;
     /// chat tasks resolve to the chat session creator. Empty for task kinds
-    /// with no attributable human initiator (on-assign, autopilot,
+    /// with no attributable human initiator (on-assign, automation,
     /// quick-create). InitiatorEmail is set only for member initiators. The
     /// daemon emits these into the brief under `## Task Initiator` so a
     /// workspace-visible agent can attribute the request per person. The
@@ -494,7 +494,7 @@ impl std::fmt::Debug for Task {
             .field("workspace_id", &self.workspace_id)
             .field("issue_id", &self.issue_id)
             .field("chat_session_id", &self.chat_session_id)
-            .field("autopilot_run_id", &self.autopilot_run_id)
+            .field("automation_run_id", &self.automation_run_id)
             .field(
                 "has_quick_create_prompt",
                 &!self.quick_create_prompt.is_empty(),

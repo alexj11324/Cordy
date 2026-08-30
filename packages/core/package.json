@@ -63,6 +63,9 @@
     "./chat/pending": "./chat/pending.ts",
     "./chat/message-cache": "./chat/message-cache.ts",
     "./chat/use-quick-actions-pending-timeout": "./chat/use-quick-actions-pending-timeout.ts",
+    "./agent-thread": "./agent-thread/index.ts",
+    "./agent-thread/queries": "./agent-thread/queries.ts",
+    "./agent-thread/mutations": "./agent-thread/mutations.ts",
     "./chat/unread": "./chat/unread.ts",
     "./channels": "./channels/index.ts",
     "./channels/queries": "./channels/queries.ts",
@@ -99,9 +102,9 @@
     "./quick-actions": "./quick-actions/index.ts",
     "./quick-actions/queries": "./quick-actions/queries.ts",
     "./quick-actions/mutations": "./quick-actions/mutations.ts",
-    "./autopilots": "./autopilots/index.ts",
-    "./autopilots/queries": "./autopilots/queries.ts",
-    "./autopilots/mutations": "./autopilots/mutations.ts",
+    "./automations": "./automations/index.ts",
+    "./automations/queries": "./automations/queries.ts",
+    "./automations/mutations": "./automations/mutations.ts",
     "./pins": "./pins/index.ts",
     "./pins/queries": "./pins/queries.ts",
     "./pins/mutations": "./pins/mutations.ts",
@@ -161,7 +164,7 @@
     "./skills": "./skills/index.ts",
     "./skills/frontmatter": "./skills/frontmatter.ts",
     "./skills/stores": "./skills/stores/index.ts",
-    "./autopilots/stores": "./autopilots/stores/index.ts"
+    "./automations/stores": "./automations/stores/index.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

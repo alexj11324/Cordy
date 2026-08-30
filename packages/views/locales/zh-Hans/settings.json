@@ -43,7 +43,7 @@
       "backlog": "搁置。把任务移到这里不会启动 agent。",
       "todo": "排队中。把任务移到这里会启动指派的 agent。",
       "in_progress": "正在进行。",
-      "in_review": "已交付，等待人工 review。会结束 autopilot 运行。",
+      "in_review": "已交付，等待人工 review。会结束 automation 运行。",
       "done": "已完成。",
       "blocked": "被外部依赖阻塞。",
       "cancelled": "决定不做。"
@@ -94,7 +94,7 @@
     "prompt_hint": "原样发送。Agent 本来就能看到这个任务。",
     "template_not_supported": "暂不支持变量，请删除 {{token}}。Agent 本来就能读到这个任务。",
     "delete_title": "删除这条快捷操作？",
-    "delete_description": "它会从所有任务侧边栏消失，历史运行记录仍保留在执行日志中。如果以后可能还要用，建议改为归档。"
+    "delete_description": "它会从所有任务侧边栏消失，历史运行记录仍保留在 Agent 对话中。如果以后可能还要用，建议改为归档。"
   },
   "auto_save": {
     "saving": "正在保存…",
@@ -219,7 +219,7 @@
         "label": "前往项目",
         "description": "打开项目列表。"
       },
-      "goAutopilots": {
+      "goAutomations": {
         "label": "前往自动化",
         "description": "打开工作区自动化。"
       },

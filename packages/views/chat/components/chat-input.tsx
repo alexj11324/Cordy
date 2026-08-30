@@ -113,7 +113,7 @@ interface ChatInputProps {
   agentArchived?: boolean;
   /** True when `disabled` is because the caller may no longer INVOKE the bound
    *  agent (flipped to personal, ownership moved, dropped from the allow-list).
-   *  Distinct from `noAgent`: an agent IS bound and its transcript is readable,
+   *  Distinct from `noAgent`: an agent IS bound and its Agent event history is readable,
    *  the caller just cannot run it (PB-6380). Takes precedence over `noAgent`
    *  in the placeholder — when the only agent in the workspace is the revoked
    *  one, both are true and "create an agent" would be the wrong instruction. */

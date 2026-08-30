@@ -16,9 +16,9 @@ pub mod agent_mcp;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
-pub mod autopilot;
-pub mod autopilot_listeners;
-pub mod autopilot_webhook;
+pub mod automation;
+pub mod automation_listeners;
+pub mod automation_webhook;
 pub mod avatar;
 pub mod binding_redeem;
 pub mod chat_api;
@@ -423,7 +423,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
-            autopilot::router().route_layer(middleware::from_fn_with_state(
+            automation::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 patchbay_middleware::workspace::require_workspace,
             )),
@@ -631,7 +631,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     ));
     // Stripe ingress gets a coarse per-IP budget before body buffering or a
     // cloud-runtime call. Redis absence is the documented self-hosted
-    // fail-open path. Autopilot webhooks apply their separate token/IP gates
+    // fail-open path. Automation webhooks apply their separate token/IP gates
     // inside their handler because successful and bad-credential deliveries
     // intentionally consume different budgets.
     let webhook_ip_limit = patchbay_middleware::ratelimit::RateLimitState::configured(
@@ -659,7 +659,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(workspace::public_router())
         .merge(attachment::public_router(&state))
         .merge(avatar::router())
-        .merge(autopilot_webhook::router())
+        .merge(automation_webhook::router())
         .merge(github::public_router())
         .merge(config::router())
         .merge(contact_sales)
@@ -780,14 +780,14 @@ mod tests {
             "/api/chat/pinned-agents",
             "/api/chat/history?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/chat/thread?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
-            "/api/autopilots",
-            "/api/autopilots/cron-preview?expression=0+9+*+*+*",
-            "/api/autopilots/usage",
-            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
-            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs",
-            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
-            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries",
-            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            "/api/automations",
+            "/api/automations/cron-preview?expression=0+9+*+*+*",
+            "/api/automations/usage",
+            "/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs",
+            "/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            "/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries",
+            "/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/skills",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
@@ -1162,40 +1162,40 @@ mod tests {
             Request::delete("/api/chat/pinned-agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .body(Body::empty())
                 .unwrap(),
-            Request::post("/api/autopilots")
+            Request::post("/api/automations")
                 .body(Body::from(r#"{"name":"Daily triage"}"#))
                 .unwrap(),
-            Request::patch("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+            Request::patch("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .body(Body::from(r#"{"name":"Daily review"}"#))
                 .unwrap(),
-            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+            Request::delete("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .body(Body::empty())
                 .unwrap(),
-            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/trigger")
+            Request::post("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/trigger")
                 .body(Body::empty())
                 .unwrap(),
-            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/replay")
+            Request::post("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/replay")
                 .body(Body::empty())
                 .unwrap(),
-            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers")
+            Request::post("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers")
                 .body(Body::from(r#"{"type":"manual"}"#))
                 .unwrap(),
-            Request::patch("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+            Request::patch("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::from(r#"{"enabled":true}"#))
                 .unwrap(),
-            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+            Request::delete("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
-            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/rotate-webhook-token")
+            Request::post("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/rotate-webhook-token")
                 .body(Body::empty())
                 .unwrap(),
-            Request::put("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/signing-secret")
+            Request::put("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/signing-secret")
                 .body(Body::from(r#"{"secret":"secret"}"#))
                 .unwrap(),
-            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators")
+            Request::post("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators")
                 .body(Body::from(r#"{"user_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
                 .unwrap(),
-            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+            Request::delete("/api/automations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
             Request::post(

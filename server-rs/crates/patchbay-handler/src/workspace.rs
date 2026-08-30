@@ -1624,22 +1624,22 @@ async fn delete_workspace(
         patchbay_db::queries::workspace_delete::delete_workspace_leaf_data(&mut *tx, workspace_id)
     );
     step!(
-        "delete autopilot runs",
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_runs(
+        "delete automation runs",
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_runs(
             &mut *tx,
             workspace_id
         )
     );
     step!(
         "delete quota reservations",
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_quota_reservations(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_quota_reservations(
             &mut *tx,
             workspace_id
         )
     );
     step!(
         "delete quota periods",
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_quota_periods(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_quota_periods(
             &mut *tx,
             workspace_id
         )
@@ -1677,15 +1677,15 @@ async fn delete_workspace(
         )
     );
     step!(
-        "delete autopilot children",
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_children(
+        "delete automation children",
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_children(
             &mut *tx,
             workspace_id
         )
     );
     step!(
-        "delete autopilots",
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
+        "delete automations",
+        patchbay_db::queries::workspace_delete::delete_workspace_automations(&mut *tx, workspace_id)
     );
     step!(
         "delete pull requests",

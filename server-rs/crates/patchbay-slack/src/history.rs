@@ -25,7 +25,7 @@ pub struct ErrNoSlackSession;
 
 /// The page size used when the caller asks for none.
 const DEFAULT_HISTORY_LIMIT: i64 = 20;
-/// Caps a single page so a pull can't dump an unbounded transcript into the
+/// Caps a single page so a pull can't dump an unbounded Agent event history into the
 /// agent's context.
 const MAX_HISTORY_LIMIT: i64 = 50;
 

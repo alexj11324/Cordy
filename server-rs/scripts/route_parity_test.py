@@ -51,7 +51,10 @@ class RouteParityTest(unittest.TestCase):
             contract = Path(directory) / "routes.tsv"
             contract.write_text("GET\t/health\n", encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "expected 424 routes"):
+            with self.assertRaisesRegex(
+                ValueError,
+                f"expected {route_parity.EXPECTED_CONTRACT_SIZE} routes",
+            ):
                 route_parity.load_contract(contract)
 
     def test_normalizes_bare_and_named_wildcards_to_the_same_contract(self):

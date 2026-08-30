@@ -221,7 +221,7 @@ export interface WorkspaceWorkingAgent {
   issue_ids: string[];
 }
 
-export type WorkspaceWorkingAgentType = "issue" | "autopilot" | "chat";
+export type WorkspaceWorkingAgentType = "issue" | "automation" | "chat";
 
 export type WorkspaceWorkingAgentMineRelation =
   | "assigned"
@@ -242,7 +242,7 @@ export interface AttributionUser {
   avatar_url?: string;
 }
 
-/** The kind-tagged handle to a run's direct cause (comment, autopilot run, ...). */
+/** The kind-tagged handle to a run's direct cause (comment, automation run, ...). */
 export interface TaskEvidence {
   kind: string;
   ref_id: string;
@@ -263,7 +263,7 @@ export interface TaskAttribution {
   precise: boolean;
   /** The accountable human ("on behalf of"). Absent when unattributed. */
   initiator?: AttributionUser;
-  /** The authorization human; absent for autopilot runs (rule_owner / owner_fallback). */
+  /** The authorization human; absent for automation runs (rule_owner / owner_fallback). */
   originator?: AttributionUser;
   /** The direct cause of the run, for a jump-to-evidence affordance. */
   evidence?: TaskEvidence;
@@ -278,7 +278,7 @@ export interface AgentTask {
   agent_id: string;
   runtime_id: string;
   // Empty string ("") when the task has no linked issue — either chat- or
-  // autopilot-spawned. Check chat_session_id / autopilot_run_id to tell
+  // automation-spawned. Check chat_session_id / automation_run_id to tell
   // which source produced it.
   issue_id: string;
   // `waiting_local_directory` is the daemon-emitted hold state for the
@@ -313,8 +313,8 @@ export interface AgentTask {
   created_at: string;
   /** Non-empty when the task was spawned from a chat session. */
   chat_session_id?: string;
-  /** Non-empty when the task was spawned by an autopilot run. */
-  autopilot_run_id?: string;
+  /** Non-empty when the task was spawned by an automation run. */
+  automation_run_id?: string;
   /** Set when this task was created as an auto-retry of a parent task. */
   parent_task_id?: string;
   /** Main issue task that owns this isolated Side Chat branch. */
@@ -343,16 +343,16 @@ export interface AgentTask {
   /**
    * Canonical short description of what triggered this task — snapshot
    * taken at creation time. For comment-triggered tasks it's the
-   * comment text (truncated to ~200 chars); for autopilot it's the
-   * autopilot title; NULL for direct assignments and chat tasks.
-   * Persists even if the source comment / autopilot is later edited
+   * comment text (truncated to ~200 chars); for automation it's the
+   * automation title; NULL for direct assignments and chat tasks.
+   * Persists even if the source comment / automation is later edited
    * or deleted.
    */
   trigger_summary?: string;
   /**
    * Handoff instruction the assigner attached when starting this run (PB-3375).
-   * Present only on assignment-triggered runs that carried a note; the execution
-   * log shows it inline as the trigger reason. Absent (legacy / no note) falls
+   * Present only on assignment-triggered runs that carried a note; the Agent
+   * thread shows it inline as the trigger reason. Absent (legacy / no note) falls
    * back to the generic "initial run" label.
    */
   handoff_note?: string;
@@ -363,7 +363,7 @@ export interface AgentTask {
    */
   kind?:
     | "comment"
-    | "autopilot"
+    | "automation"
     | "chat"
     | "quick_create"
     | "direct"
@@ -422,7 +422,7 @@ export interface AgentTask {
   attribution?: TaskAttribution;
   /**
    * This run's own token consumption, one entry per (provider, model) it used.
-   * Present on the issue execution-log endpoint only; the daemon claim path
+   * Present on the issue Agent thread endpoint only; the daemon claim path
    * omits it.
    *
    * `undefined` (old backend, or a surface that doesn't hydrate it) and `[]`

@@ -50,7 +50,7 @@ const mocks = vi.hoisted(() => ({
     status: "inactive",
     seats: 3,
     issueWindow: 17,
-    autopilotRuns: 7,
+    automationRuns: 7,
     currentPeriodEnd: null as string | null,
     snapshotExpiresAt: null as string | null,
     version: 0,
@@ -105,9 +105,9 @@ vi.mock("@patchbay/core/billing", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/autopilots", () => ({
-  autopilotQuotaUsageOptions: (wsId: string) => ({
-    queryKey: ["autopilots", wsId, "usage"],
+vi.mock("@patchbay/core/automations", () => ({
+  automationQuotaUsageOptions: (wsId: string) => ({
+    queryKey: ["automations", wsId, "usage"],
   }),
 }));
 
@@ -179,7 +179,7 @@ describe("BillingTab", () => {
       status: "inactive",
       seats: 3,
       issueWindow: 17,
-      autopilotRuns: 7,
+      automationRuns: 7,
       currentPeriodEnd: null,
       snapshotExpiresAt: null,
       version: 0,
@@ -398,7 +398,7 @@ describe("BillingTab", () => {
     );
     expect(mocks.useQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        queryKey: ["autopilots", "workspace-2", "usage"],
+        queryKey: ["automations", "workspace-2", "usage"],
       }),
     );
   });
@@ -570,7 +570,7 @@ describe("BillingTab", () => {
       plan: "pro",
       status: "active",
       issueWindow: null,
-      autopilotRuns: null,
+      automationRuns: null,
     });
     mocks.entitlementsDataUpdatedAt = Date.now() - 1;
     mocks.entitlementsFetchedAfterMount = true;
@@ -600,7 +600,7 @@ describe("BillingTab", () => {
       plan: "pro",
       status: "active",
       issueWindow: null,
-      autopilotRuns: null,
+      automationRuns: null,
     });
     Object.assign(mocks.usage, {
       action: "off",
@@ -642,7 +642,7 @@ describe("BillingTab", () => {
       plan: "pro",
       status: "active",
       issueWindow: null,
-      autopilotRuns: null,
+      automationRuns: null,
       currentPeriodEnd: "2030-02-01T00:00:00Z",
     });
     Object.assign(mocks.usage, {
@@ -765,7 +765,7 @@ describe("BillingTab", () => {
       plan: "pro",
       status: "past_due",
       issueWindow: null,
-      autopilotRuns: null,
+      automationRuns: null,
     });
     mocks.summary.graceUntil = "2000-01-01T00:00:00Z";
     Object.assign(mocks.usage, {
@@ -822,7 +822,7 @@ describe("BillingTab", () => {
       plan: "pro",
       status: "active",
       issueWindow: null,
-      autopilotRuns: null,
+      automationRuns: null,
       currentPeriodEnd: "2026-09-13T00:00:00Z",
       version: 3,
     });

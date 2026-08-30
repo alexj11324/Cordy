@@ -1,15 +1,15 @@
 //! Per-turn prompt assembly for
-//! issue / comment / chat / autopilot / quick-create tasks, plus the
+//! issue / comment / chat / automation / quick-create tasks, plus the
 //! run-scoped context blocks (PB-5377) appended after the cached prefix.
 //! Shared context sections live in [`crate::runtime_config_sections`].
 
 use crate::execenv::channel_type::{
     audience_of, channel_carries_files, channel_display_name as execenv_channel_display_name,
-    surface_persists_transcript, ChatAudience, CHANNEL_TYPE_SLACK,
+    surface_persists_agent_events, ChatAudience, CHANNEL_TYPE_SLACK,
 };
 use crate::runtime_config_sections::{
     build_connected_apps_block, build_task_initiator_block,
-    session_continuity_notice_channel_history, session_continuity_notice_chat_transcript,
+    session_continuity_notice_channel_history, session_continuity_notice_chat_history,
     session_continuity_notice_issue, session_continuity_notice_unrecoverable,
 };
 use crate::slash_skill::extract_slash_skills;
@@ -26,10 +26,10 @@ pub(crate) fn session_continuity_notice_for(task: &Task) -> &'static str {
     if task.chat_channel_type == CHANNEL_TYPE_SLACK {
         return session_continuity_notice_channel_history();
     }
-    // Every other transcript-persisting surface reads back via `patchbay chat
-    // history`; only a surface that never stored a transcript falls through.
-    if surface_persists_transcript(&task.chat_channel_type) {
-        return session_continuity_notice_chat_transcript();
+    // Every other agent event history-persisting surface reads back via `patchbay chat
+    // history`; only a surface that never stored a agent event history falls through.
+    if surface_persists_agent_events(&task.chat_channel_type) {
+        return session_continuity_notice_chat_history();
     }
     session_continuity_notice_unrecoverable()
 }
@@ -66,7 +66,7 @@ fn build_active_sibling_runs_block(
     runs: &[ActiveSiblingRunData],
 ) -> String {
     // Sibling work is useful context only for another issue task. Rendering it
-    // on chat/autopilot/quick-create creates an unactionable warning.
+    // on chat/automation/quick-create creates an unactionable warning.
     if current_issue_id.is_empty() || runs.is_empty() {
         return String::new();
     }
@@ -121,11 +121,11 @@ pub(crate) fn build_prompt(task: Task, provider: &str) -> String {
 }
 
 fn build_prompt_body(task: &Task, provider: &str) -> String {
-    if !task.chat_session_id.is_empty() {
-        return build_chat_prompt(task);
-    }
     if !task.message_bus_messages.is_empty() {
         return build_message_bus_prompt(task, provider);
+    }
+    if !task.chat_session_id.is_empty() {
+        return build_chat_prompt(task);
     }
     if !task.side_chat_parent_task_id.is_empty() {
         return build_side_chat_prompt(task, provider);
@@ -133,8 +133,8 @@ fn build_prompt_body(task: &Task, provider: &str) -> String {
     if !task.trigger_comment_id.is_empty() {
         return build_comment_prompt(task, provider);
     }
-    if !task.autopilot_run_id.is_empty() {
-        return build_autopilot_prompt(task);
+    if !task.automation_run_id.is_empty() {
+        return build_automation_prompt(task);
     }
     if !task.quick_create_prompt.is_empty() {
         return build_quick_create_prompt(task);
@@ -217,12 +217,12 @@ fn build_side_chat_prompt(task: &Task, provider: &str) -> String {
     b
 }
 
-/// Follow-up work delivered by a Side Chat is a new turn on the exact main
-/// task/session. Every provider receives the same prompt contract; native
-/// session resume remains an adapter detail.
+/// Follow-up work delivered from the Agent thread is a new turn on the exact
+/// parent task/session. Every provider receives the same prompt contract;
+/// native session resume remains an adapter detail.
 fn build_message_bus_prompt(task: &Task, provider: &str) -> String {
     let mut b = String::new();
-    b.push_str("You are continuing a Patchbay main conversation after its Side Chat confirmed that implementation work is needed.\n\n");
+    b.push_str("You are continuing a Patchbay Agent thread after a follow-up instruction was confirmed.\n\n");
     b.push_str(&format!(
         "Main conversation anchor task: `{}`\nIssue: `{}`\n\n",
         task.message_bus_parent_task_id, task.issue_id
@@ -230,34 +230,38 @@ fn build_message_bus_prompt(task: &Task, provider: &str) -> String {
     b.push_str("Patchbay Message Bus instructions, in delivery order:\n\n");
     for message in &task.message_bus_messages {
         b.push_str(&format!(
-            "- From Side Chat task `{}`: {}\n",
+            "- From Agent thread task `{}`: {}\n",
             message.source_task_id,
             message.content.trim().replace('\n', "\n  ")
         ));
     }
-    b.push_str("\nTreat these as the confirmed next steps for the same Agent and main conversation. Resume that conversation's latest provider session when available, inspect the current workspace state, carry the requested edits through to completion, and report the result in the originating issue discussion. Do not turn this back into another Side Chat and do not ask the user to relay the instruction.\n\n");
-    b.push_str(&format!(
-        "Start by running `patchbay issue get {} --output json`, then inspect the existing work before editing.\n\n",
-        task.issue_id
-    ));
-    let targets = comment_reply_threads(task);
-    if targets.len() >= 2 {
-        b.push_str(
-            &crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
-                &task.issue_id,
-                &targets,
-                false,
-            ),
-        );
+    b.push_str("\nTreat these as the confirmed next steps for the same Agent and parent conversation. Resume that conversation's latest provider session when available, inspect the current workspace state, carry the requested edits through to completion, and report the result in the originating conversation. Do not ask the user to relay the instruction.\n\n");
+    if !task.issue_id.is_empty() {
+        b.push_str(&format!(
+            "Start by running `patchbay issue get {} --output json`, then inspect the existing work before editing.\n\n",
+            task.issue_id
+        ));
+        let targets = comment_reply_threads(task);
+        if targets.len() >= 2 {
+            b.push_str(
+                &crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
+                    &task.issue_id,
+                    &targets,
+                    false,
+                ),
+            );
+        } else {
+            b.push_str(
+                &crate::runtime_config_sections::build_comment_reply_instructions(
+                    provider,
+                    &task.issue_id,
+                    &task.trigger_comment_id,
+                    false,
+                ),
+            );
+        }
     } else {
-        b.push_str(
-            &crate::runtime_config_sections::build_comment_reply_instructions(
-                provider,
-                &task.issue_id,
-                &task.trigger_comment_id,
-                false,
-            ),
-        );
+        b.push_str("Start by inspecting the current workspace and the parent task's existing work, then carry the requested follow-up through to completion.\n");
     }
     b
 }
@@ -497,9 +501,9 @@ pub(crate) fn build_chat_prompt(task: &Task) -> String {
                 b.push_str("You were @mentioned at the channel top level: start with `patchbay chat history` to see the channel, then read a specific thread's contents with `patchbay chat thread <thread_id>`.\n");
             }
             b.push_str("Do these reads SILENTLY as an internal step — they are how you gather context, not part of your answer.\n");
-        } else if surface_persists_transcript(&task.chat_channel_type) {
+        } else if surface_persists_agent_events(&task.chat_channel_type) {
             b.push_str(&format!(
-                "The conversation happens in {platform}, and Patchbay stores a transcript of it. The message below may be only what triggered you — read it back with `patchbay chat history` when you need earlier context that is not below.\n"
+                "The conversation happens in {platform}, and Patchbay stores a agent event history of it. The message below may be only what triggered you — read it back with `patchbay chat history` when you need earlier context that is not below.\n"
             ));
         } else {
             b.push_str(&format!(
@@ -586,40 +590,40 @@ pub(crate) fn channel_display_name(channel_type: &str) -> String {
     execenv_channel_display_name(channel_type)
 }
 
-/// `buildAutopilotPrompt`.
-pub(crate) fn build_autopilot_prompt(task: &Task) -> String {
+/// `buildAutomationPrompt`.
+pub(crate) fn build_automation_prompt(task: &Task) -> String {
     let mut b = String::new();
     b.push_str("You are running as a local coding agent for a Patchbay workspace.\n\n");
-    b.push_str("This task was triggered by an Autopilot in run-only mode. There is no assigned Patchbay issue for this run.\n\n");
-    b.push_str(&format!("Autopilot run ID: {}\n", task.autopilot_run_id));
-    if !task.autopilot_id.is_empty() {
-        b.push_str(&format!("Autopilot ID: {}\n", task.autopilot_id));
+    b.push_str("This task was triggered by an Automation in run-only mode. There is no assigned Patchbay issue for this run.\n\n");
+    b.push_str(&format!("Automation run ID: {}\n", task.automation_run_id));
+    if !task.automation_id.is_empty() {
+        b.push_str(&format!("Automation ID: {}\n", task.automation_id));
     }
-    if !task.autopilot_title.is_empty() {
-        b.push_str(&format!("Autopilot title: {}\n", task.autopilot_title));
+    if !task.automation_title.is_empty() {
+        b.push_str(&format!("Automation title: {}\n", task.automation_title));
     }
-    if !task.autopilot_source.is_empty() {
-        b.push_str(&format!("Trigger source: {}\n", task.autopilot_source));
+    if !task.automation_source.is_empty() {
+        b.push_str(&format!("Trigger source: {}\n", task.automation_source));
     }
-    if let Some(payload) = &task.autopilot_trigger_payload {
+    if let Some(payload) = &task.automation_trigger_payload {
         let trimmed = payload.to_string().trim().to_string();
         if !trimmed.is_empty() && trimmed != "null" {
             b.push_str(&format!("Trigger payload:\n{trimmed}\n\n"));
         }
     }
-    b.push_str("\nAutopilot instructions:\n");
-    if !task.autopilot_description.trim().is_empty() {
-        b.push_str(&task.autopilot_description);
+    b.push_str("\nAutomation instructions:\n");
+    if !task.automation_description.trim().is_empty() {
+        b.push_str(&task.automation_description);
         b.push_str("\n\n");
-    } else if !task.autopilot_title.is_empty() {
-        b.push_str(&format!("{}\n\n", task.autopilot_title));
+    } else if !task.automation_title.is_empty() {
+        b.push_str(&format!("{}\n\n", task.automation_title));
     } else {
-        b.push_str("No additional autopilot instructions were provided. Inspect the autopilot configuration before proceeding.\n\n");
+        b.push_str("No additional automation instructions were provided. Inspect the automation configuration before proceeding.\n\n");
     }
-    if !task.autopilot_id.is_empty() {
+    if !task.automation_id.is_empty() {
         b.push_str(&format!(
-            "Start by running `patchbay autopilot get {} --output json` if you need the full autopilot configuration, then complete the instructions above.\n",
-            task.autopilot_id
+            "Start by running `patchbay automation get {} --output json` if you need the full automation configuration, then complete the instructions above.\n",
+            task.automation_id
         ));
     } else {
         b.push_str("Complete the instructions above.\n");
@@ -834,7 +838,7 @@ mod tests {
         }];
         let out = build_prompt(t, "claude");
         assert!(out.contains("Main conversation anchor task: `main-task-1`"));
-        assert!(out.contains("From Side Chat task `side-chat-1`"));
+        assert!(out.contains("From Agent thread task `side-chat-1`"));
         assert!(out.contains("Add the bounded retry"));
     }
 
@@ -872,12 +876,12 @@ mod tests {
     }
 
     #[test]
-    fn autopilot_branch() {
+    fn automation_branch() {
         let mut t = base_task();
-        t.autopilot_run_id = "ap-1".to_string();
-        t.autopilot_title = "Nightly sweep".to_string();
+        t.automation_run_id = "ap-1".to_string();
+        t.automation_title = "Nightly sweep".to_string();
         let out = build_prompt(t, "claude");
-        assert!(out.contains("Autopilot run ID: ap-1"));
+        assert!(out.contains("Automation run ID: ap-1"));
         assert!(out.contains("Nightly sweep"));
         assert!(!out.contains("`patchbay issue get"));
     }
@@ -914,13 +918,13 @@ mod tests {
             session_continuity_notice_for(&s),
             session_continuity_notice_channel_history()
         );
-        // Transcript-persisting surface (feishu).
+        // Agent event history-persisting surface (feishu).
         let mut f = base_task();
         f.chat_session_id = "cs".into();
         f.chat_channel_type = "feishu".into();
         assert_eq!(
             session_continuity_notice_for(&f),
-            session_continuity_notice_chat_transcript()
+            session_continuity_notice_chat_history()
         );
         // Backend suppression when the prompt already carries the notice.
         f.prior_session_resume_unavailable = true;

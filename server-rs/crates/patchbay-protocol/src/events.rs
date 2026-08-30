@@ -80,7 +80,7 @@ pub const EVENT_CHAT_DONE: &str = "chat:done";
 /// simply never resolve the (equally unknown) pending state.
 pub const EVENT_CHAT_QUICK_ACTIONS: &str = "chat:quick_actions";
 /// Carries the deferred outcome of a cancelled chat task once the daemon has
-/// flushed its transcript (or the sweeper grace period expired): either a
+/// flushed its Agent event history (or the sweeper grace period expired): either a
 /// late "Stopped." assistant message or a draft restore (#5219). Channel
 /// outbounds (Slack/Lark) deliberately do not subscribe to it — cancellation
 /// stays silent on external channels.
@@ -132,12 +132,12 @@ pub const EVENT_INVITATION_ACCEPTED: &str = "invitation:accepted";
 pub const EVENT_INVITATION_DECLINED: &str = "invitation:declined";
 pub const EVENT_INVITATION_REVOKED: &str = "invitation:revoked";
 
-// Autopilot events
-pub const EVENT_AUTOPILOT_CREATED: &str = "autopilot:created";
-pub const EVENT_AUTOPILOT_UPDATED: &str = "autopilot:updated";
-pub const EVENT_AUTOPILOT_DELETED: &str = "autopilot:deleted";
-pub const EVENT_AUTOPILOT_RUN_START: &str = "autopilot:run_start";
-pub const EVENT_AUTOPILOT_RUN_DONE: &str = "autopilot:run_done";
+// Automation events
+pub const EVENT_AUTOMATION_CREATED: &str = "automation:created";
+pub const EVENT_AUTOMATION_UPDATED: &str = "automation:updated";
+pub const EVENT_AUTOMATION_DELETED: &str = "automation:deleted";
+pub const EVENT_AUTOMATION_RUN_START: &str = "automation:run_start";
+pub const EVENT_AUTOMATION_RUN_DONE: &str = "automation:run_done";
 
 // Team events
 pub const EVENT_TEAM_CREATED: &str = "team:created";

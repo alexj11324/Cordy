@@ -33,7 +33,7 @@
     "install-agent-runtime",
     "providers",
     "---自动化---",
-    "autopilots",
+    "automations",
     "---集成---",
     "channels",
     "weixin-integration",

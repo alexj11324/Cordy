@@ -23,7 +23,7 @@ use patchbay_daemon::hub::{
 };
 use patchbay_db::models::AgentRuntime;
 use patchbay_db::queries::{
-    agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
+    agent, automation, chat, comment as comment_q, issue, member, runtime, runtime_profile,
     task_message, task_token, workspace,
 };
 use patchbay_middleware::daemon_auth::DaemonContext;
@@ -167,8 +167,8 @@ pub fn router() -> Router<HandlerState> {
             get(chat_session_gc_check),
         )
         .route(
-            "/api/daemon/autopilot-runs/{run_id}/gc-check",
-            get(autopilot_run_gc_check),
+            "/api/daemon/automation-runs/{run_id}/gc-check",
+            get(automation_run_gc_check),
         )
         .route("/api/daemon/tasks/{task_id}/gc-check", get(task_gc_check))
 }
@@ -2876,9 +2876,10 @@ pub(crate) fn task_message_payload(
     payload.insert("task_id".into(), Value::String(m.task_id.to_string()));
     payload.insert("seq".into(), json!(m.seq));
     payload.insert("type".into(), Value::String(m.type_.clone()));
-    if let Some(issue_id) = issue_id {
-        payload.insert("issue_id".into(), Value::String(issue_id.to_string()));
-    }
+    payload.insert(
+        "issue_id".into(),
+        Value::String(issue_id.map(|id| id.to_string()).unwrap_or_default()),
+    );
     if let Some(tool) = m.tool.as_deref().filter(|value| !value.is_empty()) {
         payload.insert("tool".into(), Value::String(tool.into()));
     }
@@ -3375,7 +3376,7 @@ async fn chat_session_gc_check(
     .into_response()
 }
 
-async fn autopilot_run_gc_check(
+async fn automation_run_gc_check(
     State(state): State<HandlerState>,
     Path(run_id): Path<String>,
     headers: HeaderMap,
@@ -3385,21 +3386,21 @@ async fn autopilot_run_gc_check(
         Ok(u) => u,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid run_id"),
     };
-    let Some(run) = autopilot::get_autopilot_run(&state.pool, run_uuid)
+    let Some(run) = automation::get_automation_run(&state.pool, run_uuid)
         .await
         .ok()
         .flatten()
     else {
-        return error_response(StatusCode::NOT_FOUND, "autopilot run not found");
+        return error_response(StatusCode::NOT_FOUND, "automation run not found");
     };
-    // Parent autopilot gone → 404 rather than 500 so the daemon falls through
+    // Parent automation gone → 404 rather than 500 so the daemon falls through
     // to its orphan-by-mtime path.
-    let Some(ap) = autopilot::get_autopilot(&state.pool, run.autopilot_id)
+    let Some(ap) = automation::get_automation(&state.pool, run.automation_id)
         .await
         .ok()
         .flatten()
     else {
-        return error_response(StatusCode::NOT_FOUND, "autopilot run not found");
+        return error_response(StatusCode::NOT_FOUND, "automation run not found");
     };
     if check_daemon_workspace_access(&access, None, &ap.workspace_id.to_string())
         .await
@@ -4627,6 +4628,23 @@ mod tests {
         assert!(payload.get("tool").is_none());
         assert!(payload.get("content").is_none());
         assert!(payload.get("output").is_none());
+    }
+
+    #[test]
+    fn task_message_payload_uses_empty_issue_id_for_agent_threads_without_issue() {
+        let message = patchbay_db::models::TaskMessage {
+            content: Some("follow up".into()),
+            created_at: "2026-08-23T12:34:56.123400Z".parse().unwrap(),
+            id: Uuid::parse_str("018f946a-9abc-7890-abcd-1234567890ab").unwrap(),
+            input: None,
+            output: None,
+            seq: 1,
+            task_id: Uuid::parse_str("018f946a-1234-7890-abcd-1234567890ab").unwrap(),
+            tool: None,
+            type_: "text".into(),
+        };
+
+        assert_eq!(task_message_payload(&message, None)["issue_id"], json!(""));
     }
 
     #[test]

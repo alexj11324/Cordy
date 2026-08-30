@@ -14,9 +14,9 @@ provider session.
   surface and use the same message, queue, tool-event, status, error, handoff,
   and composer components.
 - No shipping route, button, dialog, panel, menu item, accessibility label, or
-  test exposes a transcript, execution-log, read-only run detail, or equivalent
-  inspection product surface. Audit data may remain in the thread as structured
-  events/cards and expandable allowed tool/result/error details.
+  test exposes a dedicated static inspection shell or equivalent inspection
+  product surface. Audit data may remain in the thread as structured events,
+  cards, and expandable allowed tool/result/error details.
 - A visible historical run is interactive whenever its provider session exists.
   The thread resolves provider, session identity, workspace/issue/Automation
   ownership, permissions, and execution lane before allowing a continuation.
@@ -52,19 +52,19 @@ provider session.
 | Issue Agent Working / issue activity | Shared interactive Agent thread |
 | Agent activity/history list | Shared interactive Agent thread |
 | Mobile Issue Runs active and past rows | Shared interactive Agent thread |
-| Automation run history and run detail | Shared interactive Agent thread |
+| Automation history and run entry | Shared interactive Agent thread |
 | Side Chat and direct Agent chat | Same Agent message/composer tree |
 | Provider/session failure | Same thread with explicit unavailable terminal state |
 
 ## Explicit deletion list
 
-Delete rather than hide every dedicated transcript or execution inspection
-surface, including its route, component, trigger, dialog, copy, ARIA/title,
-fixture, screenshot, and test. In particular, do not reintroduce a separate
-run-detail dialog for independent or scheduled runs when resolving dependency
-PRs. The task/run message and timeline data models may remain when they are
-used as structured thread events, persistence, audit, or provider recovery
-inputs; they are not a user-facing transcript product.
+Delete rather than hide every dedicated run-inspection surface, including its
+route, component, trigger, dialog, copy, ARIA/title, fixture, screenshot, and
+test. In particular, do not reintroduce a separate event-inspection dialog for
+independent or scheduled runs when resolving dependency PRs. The task/run
+message and timeline data models may remain when they are used as structured
+thread events, persistence, audit, or provider recovery inputs; they are not a
+separate user-facing product surface.
 
 ## Verification ledger
 

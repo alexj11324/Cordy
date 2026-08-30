@@ -56,7 +56,7 @@ patchbay config show
 
 ## Issue does not start executing
 
-Open the issue's **execution log** and check the task's current status and what it is waiting for.
+Open the issue's **Agent thread** and check the task's current status and what it is waiting for.
 
 ### `queued` status
 
@@ -83,11 +83,11 @@ This means another in-flight task is using the same local directory. Patchbay wa
 
 This wait only exists in the directory's `in_place` ("Direct") mode. If the directory is a git repository, switching the resource to `worktree` ("Parallel") removes the queue altogether: each task gets its own worktree and hands its work back as a branch, so nothing waits on anything. See [Project resources](/project-resources#how-tasks-share-the-directory).
 
-Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its execution log, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `patchbay daemon restart` releases it; there is nothing to delete manually.
+Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its Agent thread, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `patchbay daemon restart` releases it; there is nothing to delete manually.
 
 ## AI coding tool fails to start
 
-An online daemon does not mean the tool itself works. Open the run's detailed record and focus on:
+An online daemon does not mean the tool itself works. Open the run's Agent thread and focus on:
 
 - Whether the tool has completed sign-in.
 - Whether the API key, quota, or model permissions are available.
@@ -95,7 +95,7 @@ An online daemon does not mean the tool itself works. Open the run's detailed re
 - Whether the local working directory exists and is writable.
 - Whether the agent's custom arguments or environment variables are valid.
 
-Run the same tool directly in a terminal on the executing computer first. If the tool cannot start on its own, fix its sign-in or configuration, then retry the task from the execution log.
+Run the same tool directly in a terminal on the executing computer first. If the tool cannot start on its own, fix its sign-in or configuration, then continue the task from the Agent thread.
 
 ## Realtime updates stop working
 

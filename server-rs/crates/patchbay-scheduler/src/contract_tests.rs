@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use patchbay_db::dbid::new_v7;
-use patchbay_db::models::{Autopilot, AutopilotRun};
+use patchbay_db::models::{Automation, AutomationRun};
 use serde_json::Value;
 use sqlx::{PgPool, Row as _};
 use tokio::sync::{Barrier, Notify};
@@ -119,15 +119,15 @@ async fn db_now(pool: &PgPool) -> DateTime<Utc> {
 struct ContractDispatcher;
 
 #[async_trait::async_trait]
-impl crate::AutopilotScheduleDispatcher for ContractDispatcher {
-    async fn dispatch_autopilot_for_plan(
+impl crate::AutomationScheduleDispatcher for ContractDispatcher {
+    async fn dispatch_automation_for_plan(
         &self,
-        _autopilot: &Autopilot,
+        _automation: &Automation,
         _trigger_id: Uuid,
         _source: &str,
         _payload: &Value,
         _planned_at: DateTime<Utc>,
-    ) -> anyhow::Result<AutopilotRun> {
+    ) -> anyhow::Result<AutomationRun> {
         anyhow::bail!("contract dispatcher must not be called")
     }
 }
@@ -135,7 +135,7 @@ impl crate::AutopilotScheduleDispatcher for ContractDispatcher {
 #[tokio::test]
 async fn production_scheduler_assembly_registers_both_real_jobs() {
     let rows = ExecutionRows::required().await;
-    let dispatcher: Arc<dyn crate::AutopilotScheduleDispatcher> = Arc::new(ContractDispatcher);
+    let dispatcher: Arc<dyn crate::AutomationScheduleDispatcher> = Arc::new(ContractDispatcher);
     let scheduler = crate::production_manager(rows.pool.clone(), dispatcher.clone())
         .expect("build production scheduler assembly");
 
@@ -145,15 +145,15 @@ async fn production_scheduler_assembly_registers_both_real_jobs() {
     assert!(task_usage_error
         .to_string()
         .contains(crate::TASK_USAGE_HOURLY_JOB));
-    let autopilot_error = scheduler
-        .register(crate::autopilot_schedule_dispatch_job(
+    let automation_error = scheduler
+        .register(crate::automation_schedule_dispatch_job(
             rows.pool.clone(),
             dispatcher,
         ))
-        .expect_err("production assembly omitted autopilot schedule job");
-    assert!(autopilot_error
+        .expect_err("production assembly omitted automation schedule job");
+    assert!(automation_error
         .to_string()
-        .contains(crate::AUTOPILOT_SCHEDULE_DISPATCH_JOB));
+        .contains(crate::AUTOMATION_SCHEDULE_DISPATCH_JOB));
 
     let cancel = CancellationToken::new();
     cancel.cancel();

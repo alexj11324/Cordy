@@ -16,24 +16,11 @@ import { attachmentToDraftUpload } from "@patchbay/core/drafts";
 import { useChatStore } from "@patchbay/core/chat";
 import type { AgentTask } from "@patchbay/core/types";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "../../common/actor-avatar";
-import { ChatInput } from "../../chat/components/chat-input";
-import { ChatQueue } from "../../chat/components/chat-queue";
-import {
-  ChatMessageList,
-  ChatMessageSkeleton,
-} from "../../chat/components/chat-message-list";
+import { AgentThreadSurface } from "../../agent-thread";
 import { escapeMarkdownLabel } from "../../editor/utils/escape-markdown-label";
 import { useT } from "../../i18n";
 import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
@@ -152,7 +139,7 @@ export function useIssueAgentMessageSend({
         );
         if (missedTarget) {
           toast.warning(
-            t(($) => $.execution_log.conversation_not_triggered, {
+            t(($) => $.agent_thread.conversation_not_triggered, {
               name: agentName,
             }),
           );
@@ -162,7 +149,7 @@ export function useIssueAgentMessageSend({
         toast.error(
           error instanceof Error && error.message
             ? error.message
-            : t(($) => $.execution_log.conversation_send_failed),
+            : t(($) => $.agent_thread.conversation_send_failed),
         );
         return false;
       }
@@ -194,7 +181,7 @@ export function useIssueAgentMessageSend({
           toast.error(
             error instanceof Error && error.message
               ? error.message
-              : t(($) => $.execution_log.cancel_failed),
+              : t(($) => $.agent_thread.cancel_failed),
           );
           return false;
         }
@@ -213,14 +200,14 @@ export function useIssueAgentMessageSend({
         );
         if (missedTarget) {
           toast.warning(
-            t(($) => $.execution_log.conversation_not_triggered, {
+            t(($) => $.agent_thread.conversation_not_triggered, {
               name: agentName,
             }),
           );
         }
         return comment.id;
       } catch (error) {
-        toast.error(t(($) => $.execution_log.conversation_steer_send_failed));
+        toast.error(t(($) => $.agent_thread.conversation_steer_send_failed));
         return false;
       }
     },
@@ -246,7 +233,7 @@ export function IssueAgentConversationTrigger({
   onClick: () => void;
 }) {
   const { t } = useT("issues");
-  const title = t(($) => $.execution_log.conversation_tooltip);
+  const title = t(($) => $.agent_thread.conversation_tooltip);
 
   return (
     <Tooltip>
@@ -325,7 +312,7 @@ export function IssueAgentConversationDialog({
         agentId,
         tasks: agentTasks,
         timeline,
-        initialRunPrompt: t(($) => $.execution_log.conversation_initial_prompt),
+        initialRunPrompt: t(($) => $.agent_thread.conversation_initial_prompt),
       }),
     [agentId, agentTasks, issueId, t, timeline],
   );
@@ -376,7 +363,7 @@ export function IssueAgentConversationDialog({
       toast.error(
         error instanceof Error && error.message
           ? error.message
-          : t(($) => $.execution_log.cancel_failed),
+          : t(($) => $.agent_thread.cancel_failed),
       );
     }
   }, [currentTask, issueId, t]);
@@ -390,7 +377,7 @@ export function IssueAgentConversationDialog({
         toast.error(
           error instanceof Error && error.message
             ? error.message
-            : t(($) => $.execution_log.cancel_failed),
+            : t(($) => $.agent_thread.cancel_failed),
         );
         return false;
       }
@@ -437,85 +424,39 @@ export function IssueAgentConversationDialog({
   }, [cancelQueuedFollowUp, queuedFollowUps]);
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(52rem,90svh)] w-[min(52rem,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b px-5 py-3.5 text-left">
-          <div className="flex items-start gap-3 pr-8">
-            <ActorAvatar
-              actorType="agent"
-              actorId={agentId}
-              size="md"
-              enableHoverCard
-            />
-            <div className="min-w-0 flex-1">
-              <DialogTitle className="truncate text-body">
-                {t(($) => $.execution_log.conversation_title, { name: agentName })}
-              </DialogTitle>
-              <DialogDescription className="mt-0.5 text-caption">
-                <span className="block">
-                  {t(($) => $.execution_log.conversation_description, {
-                    count: agentTasks.length,
-                  })}
-                </span>
-                {supportsGoal && (
-                  <span className="mt-0.5 block">
-                    {t(($) => $.execution_log.conversation_goal_hint)}
-                  </span>
-                )}
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <div className="flex min-h-0 flex-1 flex-col @container">
-          {isLoading ? (
-            <ChatMessageSkeleton />
-          ) : (
-            <ChatMessageList
-              messages={conversation.messages}
-              messageActors={conversation.messageActors}
-              agentId={agentId}
-              agentName={agentName}
-              userId={user?.id}
-              userName={user?.name}
-              pendingTask={conversation.pendingTask}
-              availability={undefined}
-              quickActionsDisabled
-            />
-          )}
-          <ChatInput
-            onSend={handleSend}
-            onSteer={handleSteer}
-            onStop={() => void handleStop()}
-            isRunning={!!conversation.pendingTask?.task_id}
-            allowSubmitWhileRunning
-            chooseFollowUp
-            queueSlot={
-              <ChatQueue
-                tasks={queuedFollowUps}
-                headStatus={conversation.pendingTask?.status}
-                onEdit={handleEditQueuedFollowUp}
-                onRemove={async (taskId) => {
-                  await cancelQueuedFollowUp(taskId);
-                }}
-                onClear={handleClearQueuedFollowUps}
-              />
-            }
-            agentName={agentName}
-            leftAdornment={
-              <ActorAvatar
-                actorType="agent"
-                actorId={agentId}
-                size="lg"
-                profileLink={false}
-                enableHoverCard
-              />
-            }
-            draftKeyOverride={draftKey}
-            editorKeyOverride={draftKey}
-          />
-        </div>
-      </DialogContent>
-    </Dialog>
+    <AgentThreadSurface
+      open
+      onOpenChange={onOpenChange}
+      agentId={agentId}
+      agentName={agentName}
+      userId={user?.id}
+      userName={user?.name}
+      title={t(($) => $.agent_thread.conversation_title, { name: agentName })}
+      description={t(($) => $.agent_thread.conversation_description, {
+        count: agentTasks.length,
+      })}
+      descriptionHint={
+        supportsGoal ? t(($) => $.agent_thread.conversation_goal_hint) : undefined
+      }
+      messages={conversation.messages}
+      messageActors={conversation.messageActors}
+      pendingTask={conversation.pendingTask}
+      availability={undefined}
+      isLoading={isLoading}
+      quickActionsDisabled
+      allowSubmitWhileRunning
+      chooseFollowUp
+      onSend={handleSend}
+      onSteer={handleSteer}
+      onStop={() => void handleStop()}
+      queueTasks={queuedFollowUps}
+      onEditQueuedTask={handleEditQueuedFollowUp}
+      onRemoveQueuedTask={async (taskId) => {
+        await cancelQueuedFollowUp(taskId);
+      }}
+      onClearQueuedTasks={handleClearQueuedFollowUps}
+      draftKey={draftKey}
+      editorKey={draftKey}
+    />
   );
 }

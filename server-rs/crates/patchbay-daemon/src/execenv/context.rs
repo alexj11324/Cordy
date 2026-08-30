@@ -31,7 +31,7 @@
 //! - writeSkillFiles              → write_skill_files
 //! - renderIssueContext           → render_issue_context
 //! - renderQuickCreateContext     → render_quick_create_context
-//! - renderAutopilotContext       → render_autopilot_context
+//! - renderAutomationContext       → render_automation_context
 //!
 //! Shared package helpers hosted here for sidecar manifests and runtime skill
 //! policy:
@@ -1162,8 +1162,8 @@ pub(crate) fn write_skill_files(
 
 /// Builds the markdown content for issue_context.md.
 pub(crate) fn render_issue_context(ctx: &TaskContextForEnv) -> String {
-    if !ctx.autopilot_run_id.is_empty() {
-        return render_autopilot_context(ctx);
+    if !ctx.automation_run_id.is_empty() {
+        return render_automation_context(ctx);
     }
     if !ctx.quick_create_prompt.is_empty() {
         return render_quick_create_context(ctx);
@@ -1215,41 +1215,41 @@ fn render_quick_create_context(ctx: &TaskContextForEnv) -> String {
     b
 }
 
-fn render_autopilot_context(ctx: &TaskContextForEnv) -> String {
+fn render_automation_context(ctx: &TaskContextForEnv) -> String {
     let mut b = String::new();
 
-    b.push_str("# Autopilot Run\n\n");
+    b.push_str("# Automation Run\n\n");
     b.push_str(&format!(
-        "**Autopilot run ID:** {}\n\n",
-        ctx.autopilot_run_id
+        "**Automation run ID:** {}\n\n",
+        ctx.automation_run_id
     ));
-    if !ctx.autopilot_id.is_empty() {
-        b.push_str(&format!("**Autopilot ID:** {}\n\n", ctx.autopilot_id));
+    if !ctx.automation_id.is_empty() {
+        b.push_str(&format!("**Automation ID:** {}\n\n", ctx.automation_id));
     }
-    if !ctx.autopilot_title.is_empty() {
-        b.push_str(&format!("**Title:** {}\n\n", ctx.autopilot_title));
+    if !ctx.automation_title.is_empty() {
+        b.push_str(&format!("**Title:** {}\n\n", ctx.automation_title));
     }
-    if !ctx.autopilot_source.is_empty() {
-        b.push_str(&format!("**Trigger source:** {}\n\n", ctx.autopilot_source));
+    if !ctx.automation_source.is_empty() {
+        b.push_str(&format!("**Trigger source:** {}\n\n", ctx.automation_source));
     }
-    if !ctx.autopilot_trigger_payload.is_empty() {
+    if !ctx.automation_trigger_payload.is_empty() {
         b.push_str(&format!(
             "## Trigger Payload\n\n```json\n{}\n```\n\n",
-            ctx.autopilot_trigger_payload
+            ctx.automation_trigger_payload
         ));
     }
 
     b.push_str("## Quick Start\n\n");
-    b.push_str("This is a run-only autopilot task with no assigned issue. Do not run `patchbay issue get` unless the autopilot instructions explicitly ask you to create or update an issue.\n\n");
-    if !ctx.autopilot_id.is_empty() {
+    b.push_str("This is a run-only automation task with no assigned issue. Do not run `patchbay issue get` unless the automation instructions explicitly ask you to create or update an issue.\n\n");
+    if !ctx.automation_id.is_empty() {
         b.push_str(&format!(
-            "Run `patchbay autopilot get {} --output json` if you need the full autopilot configuration.\n\n",
-            ctx.autopilot_id
+            "Run `patchbay automation get {} --output json` if you need the full automation configuration.\n\n",
+            ctx.automation_id
         ));
     }
-    if !ctx.autopilot_description.trim().is_empty() {
-        b.push_str("## Autopilot Instructions\n\n");
-        b.push_str(&ctx.autopilot_description);
+    if !ctx.automation_description.trim().is_empty() {
+        b.push_str("## Automation Instructions\n\n");
+        b.push_str(&ctx.automation_description);
         b.push_str("\n\n");
     }
 
@@ -1712,23 +1712,23 @@ mod tests {
         assert!(md.contains("> build a thing"));
 
         let ap = TaskContextForEnv {
-            autopilot_run_id: "run_1".into(),
-            autopilot_id: "ap_1".into(),
-            autopilot_title: "Nightly".into(),
-            autopilot_source: "cron".into(),
-            autopilot_trigger_payload: "{\"k\":1}".into(),
-            autopilot_description: "Do the rounds".into(),
+            automation_run_id: "run_1".into(),
+            automation_id: "ap_1".into(),
+            automation_title: "Nightly".into(),
+            automation_source: "cron".into(),
+            automation_trigger_payload: "{\"k\":1}".into(),
+            automation_description: "Do the rounds".into(),
             ..Default::default()
         };
         let md = render_issue_context(&ap);
-        assert!(md.starts_with("# Autopilot Run\n"));
-        assert!(md.contains("**Autopilot run ID:** run_1"));
-        assert!(md.contains("**Autopilot ID:** ap_1"));
+        assert!(md.starts_with("# Automation Run\n"));
+        assert!(md.contains("**Automation run ID:** run_1"));
+        assert!(md.contains("**Automation ID:** ap_1"));
         assert!(md.contains("**Title:** Nightly"));
         assert!(md.contains("**Trigger source:** cron"));
         assert!(md.contains("```json\n{\"k\":1}\n```"));
-        assert!(md.contains("## Autopilot Instructions\n\nDo the rounds"));
-        assert!(md.contains("patchbay autopilot get ap_1 --output json"));
+        assert!(md.contains("## Automation Instructions\n\nDo the rounds"));
+        assert!(md.contains("patchbay automation get ap_1 --output json"));
     }
 
     // Port of TestSkillsDirPath (provider table spot checks).

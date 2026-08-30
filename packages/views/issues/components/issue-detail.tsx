@@ -2623,8 +2623,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>}
       </div>
 
-      {/* Token usage used to live in the execution-log header. That panel
-          is gone; the `/api/issues/:id/usage` endpoint stays for the CLI. */}
+      {/* Token usage remains available through the CLI endpoint. The issue
+          surface renders Agent events in the unified thread. */}
 
       {/* Metadata — agent-facing free-form KV bag. The values almost
           never mean anything to humans, so the trigger row matches the

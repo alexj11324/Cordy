@@ -43,7 +43,7 @@
       "backlog": "Parked. Assigning an issue here never starts an agent run.",
       "todo": "Queued. Moving an issue here starts the assigned agent.",
       "in_progress": "Actively being worked on.",
-      "in_review": "Delivered, waiting on human review. Finalizes the autopilot run.",
+      "in_review": "Delivered, waiting on human review. Finalizes the automation run.",
       "done": "Completed.",
       "blocked": "Stalled on an external dependency.",
       "cancelled": "Decided not to do."
@@ -94,7 +94,7 @@
     "prompt_hint": "Sent as written. The agent already sees the issue.",
     "template_not_supported": "Variables aren’t supported yet — remove {{token}}. The agent already reads this issue.",
     "delete_title": "Delete this quick action?",
-    "delete_description": "It disappears from every issue sidebar. Past runs stay in the execution log. Archive instead if you may want it back."
+    "delete_description": "It disappears from every issue sidebar. Past runs stay in the Agent thread. Archive instead if you may want it back."
   },
   "auto_save": {
     "saving": "Saving…",
@@ -219,8 +219,8 @@
         "label": "Go to Projects",
         "description": "Open the project list."
       },
-      "goAutopilots": {
-        "label": "Go to Autopilot",
+      "goAutomations": {
+        "label": "Go to Automation",
         "description": "Open workspace automations."
       },
       "goAgents": {

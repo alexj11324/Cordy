@@ -70,14 +70,14 @@ pub trait Enricher: Send + Sync {
     /// quoted-reply parent and/or forwarded bundle. Composition order goes
     /// broadest-to-narrowest: the surrounding group history first, then the
     /// explicitly-quoted parent (a specific reference), then the message's
-    /// own content (or, for a forward, the rendered transcript).
+    /// own content (or, for a forward, the rendered Agent event history).
     ///
     /// ```text
     /// <recent_context …>…</recent_context>
     ///
     /// <quoted_message …>…</quoted_message>
     ///
-    /// <[sender name]: the user's own message, or the forwarded transcript>
+    /// <[sender name]: the user's own message, or the forwarded Agent event history>
     /// ```
     ///
     /// The <recent_context> block is only produced for a group message
@@ -295,7 +295,7 @@ impl InboundEnricher {
         }
 
         // The list endpoint returns newest-first; render oldest-first so the
-        // transcript reads top-to-bottom like the chat does.
+        // Agent event history reads top-to-bottom like the chat does.
         kept.sort_by_key(|m| parse_lark_millis(&m.create_time));
         Ok(kept)
     }
@@ -334,7 +334,7 @@ impl InboundEnricher {
 
     /// Renders a <quoted_message> block from the already-fetched
     /// GetMessage(parentID) result. A parent that is itself a merge_forward
-    /// nests a <forwarded_messages> transcript inside the quoted block (the
+    /// nests a <forwarded_messages> Agent event history inside the quoted block (the
     /// GetMessage response already carries both the forward sentinel and its
     /// children). A fetch error / empty / deleted parent degrades to the
     /// documented error block. Speakers are labeled from `names` (the shared,

@@ -16,7 +16,7 @@ use crate::labels::{
     normalize_task_source,
 };
 use crate::labels_pr3::{
-    normalize_autopilot_cadence, normalize_autopilot_skip_reason, normalize_autopilot_trigger,
+    normalize_automation_cadence, normalize_automation_skip_reason, normalize_automation_trigger,
     normalize_chat_output_local_path_kind, normalize_cloud_runtime_op,
     normalize_cloud_runtime_status, normalize_contact_sales_source, normalize_daemon_ws_kind,
     normalize_email_rate_limit_action, normalize_email_rate_limit_gate, normalize_feedback_kind,
@@ -64,7 +64,7 @@ pub(crate) struct BusinessEventMetrics {
     chat_message_sent: CounterVec,
     agent_created: CounterVec,
     team_created: CounterVec,
-    autopilot_created: CounterVec,
+    automation_created: CounterVec,
     issue_executed: CounterVec,
     runtime_registered: CounterVec,
     runtime_ready: CounterVec,
@@ -72,9 +72,9 @@ pub(crate) struct BusinessEventMetrics {
     runtime_failed: CounterVec,
     runtime_offline: CounterVec,
     daemon_ws_message_received: CounterVec,
-    autopilot_run_started: CounterVec,
-    autopilot_run_terminal: CounterVec,
-    autopilot_run_skipped: CounterVec,
+    automation_run_started: CounterVec,
+    automation_run_terminal: CounterVec,
+    automation_run_skipped: CounterVec,
     webhook_delivery: CounterVec,
     webhook_rate_limited: CounterVec,
     email_rate_limited: CounterVec,
@@ -123,7 +123,7 @@ impl BusinessEventMetrics {
             ),
             agent_created: cvec("patchbay_agent_created_total", "Total agents created."),
             team_created: cvec("patchbay_team_created_total", "Total teams created."),
-            autopilot_created: cvec("patchbay_autopilot_created_total", "Total autopilots created."),
+            automation_created: cvec("patchbay_automation_created_total", "Total automations created."),
             issue_executed: cvec(
                 "patchbay_issue_executed_total",
                 "First task completion per issue (per-issue exactly-once activation keystone).",
@@ -151,14 +151,14 @@ impl BusinessEventMetrics {
                 "patchbay_daemon_ws_message_received_total",
                 "Total daemon WebSocket inbound messages by handler kind.",
             ),
-            autopilot_run_started: cvec("patchbay_autopilot_run_started_total", "Total autopilot runs started."),
-            autopilot_run_terminal: cvec(
-                "patchbay_autopilot_run_terminal_total",
-                "Total autopilot runs that reached a terminal status.",
+            automation_run_started: cvec("patchbay_automation_run_started_total", "Total automation runs started."),
+            automation_run_terminal: cvec(
+                "patchbay_automation_run_terminal_total",
+                "Total automation runs that reached a terminal status.",
             ),
-            autopilot_run_skipped: cvec(
-                "patchbay_autopilot_run_skipped_total",
-                "Total autopilot runs that admission-skipped (concurrency / cooldown / other).",
+            automation_run_skipped: cvec(
+                "patchbay_automation_run_skipped_total",
+                "Total automation runs that admission-skipped (concurrency / cooldown / other).",
             ),
             webhook_delivery: cvec(
                 "patchbay_webhook_delivery_total",
@@ -228,7 +228,7 @@ impl BusinessEventMetrics {
             Box::new(self.chat_message_sent.clone()),
             Box::new(self.agent_created.clone()),
             Box::new(self.team_created.clone()),
-            Box::new(self.autopilot_created.clone()),
+            Box::new(self.automation_created.clone()),
             Box::new(self.issue_executed.clone()),
             Box::new(self.runtime_registered.clone()),
             Box::new(self.runtime_ready.clone()),
@@ -236,9 +236,9 @@ impl BusinessEventMetrics {
             Box::new(self.runtime_failed.clone()),
             Box::new(self.runtime_offline.clone()),
             Box::new(self.daemon_ws_message_received.clone()),
-            Box::new(self.autopilot_run_started.clone()),
-            Box::new(self.autopilot_run_terminal.clone()),
-            Box::new(self.autopilot_run_skipped.clone()),
+            Box::new(self.automation_run_started.clone()),
+            Box::new(self.automation_run_terminal.clone()),
+            Box::new(self.automation_run_skipped.clone()),
             Box::new(self.webhook_delivery.clone()),
             Box::new(self.webhook_rate_limited.clone()),
             Box::new(self.email_rate_limited.clone()),
@@ -257,13 +257,13 @@ impl BusinessEventMetrics {
 // ---- non-PostHog Record* helpers (typed; no analytics.Event source) -------
 
 impl BusinessMetrics {
-    /// Counts an autopilot admission-skip with reason.
-    pub fn record_autopilot_run_skipped(&self, cadence: &str, reason: &str) {
+    /// Counts an automation admission-skip with reason.
+    pub fn record_automation_run_skipped(&self, cadence: &str, reason: &str) {
         self.events
-            .autopilot_run_skipped
+            .automation_run_skipped
             .with_label_values(&[
-                &normalize_autopilot_cadence(cadence),
-                &normalize_autopilot_skip_reason(reason),
+                &normalize_automation_cadence(cadence),
+                &normalize_automation_skip_reason(reason),
             ])
             .inc();
     }
@@ -501,10 +501,10 @@ impl BusinessMetrics {
                 .team_created
                 .with_label_values(&[] as &[&str])
                 .inc(),
-            analytics::EVENT_AUTOPILOT_CREATED => self
+            analytics::EVENT_AUTOMATION_CREATED => self
                 .events
-                .autopilot_created
-                .with_label_values(&[&normalize_autopilot_cadence(&string_prop(props, "cadence"))])
+                .automation_created
+                .with_label_values(&[&normalize_automation_cadence(&string_prop(props, "cadence"))])
                 .inc(),
             analytics::EVENT_ISSUE_EXECUTED => self
                 .events
@@ -552,29 +552,29 @@ impl BusinessMetrics {
                     &normalize_runtime_provider(&string_prop(props, "provider")),
                 ])
                 .inc(),
-            analytics::EVENT_AUTOPILOT_RUN_STARTED => self
+            analytics::EVENT_AUTOMATION_RUN_STARTED => self
                 .events
-                .autopilot_run_started
+                .automation_run_started
                 .with_label_values(&[
-                    &normalize_autopilot_cadence(&string_prop(props, "cadence")),
-                    &normalize_autopilot_trigger(&string_prop(props, "trigger_kind")),
+                    &normalize_automation_cadence(&string_prop(props, "cadence")),
+                    &normalize_automation_trigger(&string_prop(props, "trigger_kind")),
                 ])
                 .inc(),
-            analytics::EVENT_AUTOPILOT_RUN_COMPLETED => self
+            analytics::EVENT_AUTOMATION_RUN_COMPLETED => self
                 .events
-                .autopilot_run_terminal
+                .automation_run_terminal
                 .with_label_values(&[
-                    &normalize_autopilot_cadence(&string_prop(props, "cadence")),
-                    &normalize_autopilot_trigger(&string_prop(props, "trigger_kind")),
+                    &normalize_automation_cadence(&string_prop(props, "cadence")),
+                    &normalize_automation_trigger(&string_prop(props, "trigger_kind")),
                     "completed",
                 ])
                 .inc(),
-            analytics::EVENT_AUTOPILOT_RUN_FAILED => self
+            analytics::EVENT_AUTOMATION_RUN_FAILED => self
                 .events
-                .autopilot_run_terminal
+                .automation_run_terminal
                 .with_label_values(&[
-                    &normalize_autopilot_cadence(&string_prop(props, "cadence")),
-                    &normalize_autopilot_trigger(&string_prop(props, "trigger_kind")),
+                    &normalize_automation_cadence(&string_prop(props, "cadence")),
+                    &normalize_automation_trigger(&string_prop(props, "trigger_kind")),
                     "failed",
                 ])
                 .inc(),
@@ -609,10 +609,10 @@ mod tests {
     #[test]
     fn typed_helpers_normalize_and_count() {
         let m = BusinessMetrics::new();
-        m.record_autopilot_run_skipped("Daily", "ALREADY_RUNNING");
+        m.record_automation_run_skipped("Daily", "ALREADY_RUNNING");
         assert_eq!(
             m.events
-                .autopilot_run_skipped
+                .automation_run_skipped
                 .with_label_values(&["daily", "already_running"])
                 .get(),
             1.0
@@ -793,17 +793,17 @@ mod tests {
             "ready_duration_ms>0 observed as seconds"
         );
 
-        let assignee = patchbay_analytics::AutopilotAssignee {
+        let assignee = patchbay_analytics::AutomationAssignee {
             agent_id: "ag".into(),
             ..Default::default()
         };
-        let done = patchbay_analytics::autopilot_run_completed(
+        let done = patchbay_analytics::automation_run_completed(
             "u", "ws", "ap", "run", "daily", &assignee, "schedule", 100,
         );
         m.inc_for_event(&done);
         assert_eq!(
             m.events
-                .autopilot_run_terminal
+                .automation_run_terminal
                 .with_label_values(&["daily", "schedule", "completed"])
                 .get(),
             1.0

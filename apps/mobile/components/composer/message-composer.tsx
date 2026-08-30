@@ -121,6 +121,10 @@ interface Props {
   disabled?: boolean;
   disabledReason?: string;
 
+  /** Hide file/image controls when the owning endpoint cannot bind
+   *  attachments to its message contract. */
+  showAttachments?: boolean;
+
   /** When true the composer renders flush at the bottom of its parent
    *  WITHOUT the KeyboardStickyView keyboard-aware lift + safe-area
    *  inset. Chat's parent owns its own KeyboardAvoidingView and
@@ -169,6 +173,7 @@ export function MessageComposer({
   renderStop,
   disabled = false,
   disabledReason,
+  showAttachments = true,
   manageKeyboard = true,
 }: Props) {
   const { colorScheme } = useColorScheme();
@@ -557,20 +562,24 @@ export function MessageComposer({
             accessibilityLabel="Mention someone or an issue"
             className="h-8 w-8"
           />
-          <IconButton
-            name="image-outline"
-            iconSize={20}
-            onPress={onImagePress}
-            accessibilityLabel="Upload image"
-            className="h-8 w-8"
-          />
-          <IconButton
-            name="attach-outline"
-            iconSize={20}
-            onPress={onFilePress}
-            accessibilityLabel="Upload file"
-            className="h-8 w-8"
-          />
+          {showAttachments ? (
+            <>
+              <IconButton
+                name="image-outline"
+                iconSize={20}
+                onPress={onImagePress}
+                accessibilityLabel="Upload image"
+                className="h-8 w-8"
+              />
+              <IconButton
+                name="attach-outline"
+                iconSize={20}
+                onPress={onFilePress}
+                accessibilityLabel="Upload file"
+                className="h-8 w-8"
+              />
+            </>
+          ) : null}
           <View className="flex-1" />
           {isSending && renderStop ? (
             renderStop()

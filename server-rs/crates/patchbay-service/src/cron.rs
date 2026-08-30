@@ -108,7 +108,7 @@ pub fn next_occurrences_after_utc(
 
 /// Parses cronExpr in `timezone` and returns every activation in the
 /// half-open interval `(after, until]`, in canonical UTC order (ascending).
-/// Used by the Autopilot schedule dispatch job to enumerate every plan_time
+/// Used by the Automation schedule dispatch job to enumerate every plan_time
 /// that became due between the last stored occurrence and DB now().
 ///
 /// The slice is capped at 1024 entries — a safety net against an accidental
@@ -144,7 +144,7 @@ pub fn next_occurrences_utc(
 }
 
 /// Evaluates the cron at the app's local now() and backs the display-only
-/// autopilot_trigger.next_run_at column for the trigger create/update
+/// automation_trigger.next_run_at column for the trigger create/update
 /// handlers and the failure monitor. Using the local clock for this display
 /// value is deliberate: app/DB clock skew under NTP is far below the column's
 /// minute-level granularity, so threading DB time through these UI write

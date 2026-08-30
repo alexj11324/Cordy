@@ -160,7 +160,7 @@ snake_case names and reuse them consistently within your workspace.
 
 Never store secrets, tokens, or API keys in metadata.
 Not metadata: logs or summaries; runtime bookkeeping such as timestamps,
-attempt counts, or agent IDs; or other single-run details such as
+attempt counts, or agent IDs; or other run metadata such as
 files touched and investigation notes — those belong in the result comment.
 
 ```bash

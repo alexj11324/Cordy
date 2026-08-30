@@ -84,7 +84,7 @@ const bannedPatterns = [
   },
   /**
    * Hand-written CSS is the blind spot a class-only guard leaves open, and it
-   * is where the worst of the old drift survived longest: the transcript kept
+   * is where the worst of the old drift survived longest: the Agent event history kept
    * a 12.5px body long after every Tailwind call site was on the scale, so the
    * "no half-pixel sizes" claim was true of the classes and false of the
    * product. A literal length here is off-scale by definition — the steps are

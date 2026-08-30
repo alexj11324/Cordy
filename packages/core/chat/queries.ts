@@ -220,7 +220,7 @@ export function taskMessagesOptions(taskId: string) {
  * arrives so React Query observers don't re-render on duplicate events.
  *
  * Both the realtime `task:message` handler (a single payload) and the
- * transcript backfill (a full refetch) write this cache. Routing both through
+ * Agent event history backfill (a full refetch) write this cache. Routing both through
  * one helper keeps a forced backfill from blind-replacing a seq the WebSocket
  * already delivered — and keeps a late WS event from being lost to an
  * in-flight backfill.
@@ -292,7 +292,7 @@ export function unionTaskMessagesBySeq(
  * The realtime layer uses this to decide whether a `task:message` frame is
  * worth caching. Every client in the workspace receives every run's frames,
  * but only a handful of runs are ever opened; without this gate every client
- * accumulates the transcript of runs its user will never look at (PB-6396).
+ * accumulates the Agent event history of runs its user will never look at (PB-6396).
  *
  * Presence, not data: mounting a `useQuery` registers the entry before the
  * fetch resolves, so a frame that lands mid-backfill is still kept. Dropping

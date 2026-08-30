@@ -283,7 +283,7 @@ describe("useRealtimeSync — ws instance change", () => {
 });
 
 describe("useRealtimeSync — queued chat promotion", () => {
-  it("refetches the transcript when a queued prompt starts running", () => {
+  it("refetches the Agent event history when a queued prompt starts running", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const ws = createMockWs();
     const invalidate = vi.spyOn(qc, "invalidateQueries");

@@ -57,6 +57,9 @@ interface Props {
   disabled?: boolean;
   /** When `disabled`, replaces the pill label with the reason. */
   disabledReason?: string;
+  /** File/image controls are disabled for endpoints without attachment
+   *  binding support, such as a task-session continuation. */
+  allowAttachments?: boolean;
 }
 
 const IS_IOS = process.env.EXPO_OS === "ios";
@@ -70,6 +73,7 @@ export function ChatComposer({
   allowStop = true,
   disabled = false,
   disabledReason,
+  allowAttachments = true,
 }: Props) {
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
 
@@ -115,6 +119,7 @@ export function ChatComposer({
       pillIcon="chatbubble-ellipses-outline"
       disabled={disabled}
       disabledReason={disabledReason}
+      showAttachments={allowAttachments}
       isSending={sending}
       renderStop={allowStop ? () => <StopButton onPress={handleStop} /> : undefined}
       manageKeyboard={false}

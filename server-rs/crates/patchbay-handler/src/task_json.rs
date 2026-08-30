@@ -118,8 +118,8 @@ fn compute_task_kind(t: &AgentTaskQueue) -> &'static str {
     if t.chat_session_id.is_some() {
         return "chat";
     }
-    if t.autopilot_run_id.is_some() {
-        return "autopilot";
+    if t.automation_run_id.is_some() {
+        return "automation";
     }
     if t.issue_id.is_none() {
         return "quick_create";
@@ -269,7 +269,7 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
         Some(&relative_durable),
     );
     insert_uuid(&mut value, "chat_session_id", t.chat_session_id);
-    insert_uuid(&mut value, "autopilot_run_id", t.autopilot_run_id);
+    insert_uuid(&mut value, "automation_run_id", t.automation_run_id);
     insert_string(&mut value, "branch_name", t.branch_name.as_deref());
     // These two IDs are safe routing metadata for the issue conversation UI.
     // Keep the rest of the internal task context server-private.
@@ -293,7 +293,7 @@ mod tests {
             agent_id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap(),
             accountable_user_id: None,
             attempt: 1,
-            autopilot_run_id: None,
+            automation_run_id: None,
             branch_name: None,
             chat_finalize_deferred_at: None,
             chat_input_task_id: None,

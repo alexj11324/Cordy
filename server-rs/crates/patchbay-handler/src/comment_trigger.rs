@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use axum::http::HeaderMap;
 use patchbay_db::models::{Agent, AgentTaskQueue, Comment, Issue};
-use patchbay_db::queries::{agent, autopilot, comment, team};
+use patchbay_db::queries::{agent, automation, comment, team};
 use patchbay_middleware::workspace::WorkspaceContext;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -142,7 +142,7 @@ pub(crate) async fn invoke_originator(
         .and_then(|task| task.originator_user_id)
 }
 
-pub(crate) async fn autopilot_delegation_authority(
+pub(crate) async fn automation_delegation_authority(
     state: &HandlerState,
     issue: &Issue,
     actor_type: &str,
@@ -152,7 +152,7 @@ pub(crate) async fn autopilot_delegation_authority(
     if actor_type != "agent" {
         return None;
     }
-    if issue.origin_type.as_deref() != Some("autopilot") {
+    if issue.origin_type.as_deref() != Some("automation") {
         return None;
     }
     let origin_id = issue.origin_id?;
@@ -164,15 +164,15 @@ pub(crate) async fn autopilot_delegation_authority(
     if task.agent_id != actor_id || task.issue_id != Some(issue.id) {
         return None;
     }
-    let autopilot =
-        autopilot::get_autopilot_in_workspace(&state.pool, origin_id, issue.workspace_id)
+    let automation =
+        automation::get_automation_in_workspace(&state.pool, origin_id, issue.workspace_id)
             .await
             .ok()
             .flatten()?;
-    if autopilot.created_by_type != "member" {
+    if automation.created_by_type != "member" {
         return None;
     }
-    Some(autopilot.created_by_id)
+    Some(automation.created_by_id)
 }
 
 pub(crate) async fn effective_invoker(
@@ -187,7 +187,7 @@ pub(crate) async fn effective_invoker(
     {
         return Some(originator);
     }
-    autopilot_delegation_authority(state, issue, actor_type, actor_id, task_id).await
+    automation_delegation_authority(state, issue, actor_type, actor_id, task_id).await
 }
 
 pub(crate) async fn compute_comment_agent_triggers(
@@ -735,7 +735,7 @@ pub(crate) async fn retrigger_cancelled_task_survivors(
                 row.source_task_id,
             )
             .await
-            .or(autopilot_delegation_authority(
+            .or(automation_delegation_authority(
                 state,
                 issue,
                 &row.author_type,

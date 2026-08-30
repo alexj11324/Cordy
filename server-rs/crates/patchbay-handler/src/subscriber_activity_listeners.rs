@@ -106,7 +106,7 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
     subscribe_delegated_human(pool, bus, fields.workspace_id, fields.id).await?;
 
     // Go records creation activity only for handler.IssueResponse, not the map
-    // used by Autopilot. The handler payload uniquely carries `labels`.
+    // used by Automation. The handler payload uniquely carries `labels`.
     if event
         .payload
         .get("issue")

@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { ApiError } from "@patchbay/core/api";
-import { autopilotQuotaUsageOptions } from "@patchbay/core/autopilots";
+import { automationQuotaUsageOptions } from "@patchbay/core/automations";
 import {
   useCreateWorkspaceSubscriptionCheckout,
   useCreateWorkspaceSubscriptionPortal,
@@ -61,7 +61,7 @@ import {
 import {
   canPurchaseWorkspaceSubscription,
   hasManagedWorkspaceSubscription,
-  resolveAutopilotUsage,
+  resolveAutomationUsage,
 } from "./billing-state";
 
 const CHECKOUT_SYNC_TIMEOUT_MS = 30_000;
@@ -328,7 +328,7 @@ function BillingTabContent() {
   const summaryUnavailable =
     summaryQuery.isError ||
     (!summaryQuery.isPending && summaryQuery.data == null);
-  const quotaUsageQuery = useQuery(autopilotQuotaUsageOptions(wsId));
+  const quotaUsageQuery = useQuery(automationQuotaUsageOptions(wsId));
   const hasManagedSubscription = entitlements
     ? hasManagedWorkspaceSubscription(entitlements, summaryQuery.data)
     : false;
@@ -570,7 +570,7 @@ function BillingTabContent() {
   const actualSeats = summaryQuery.data?.actualSeats ?? entitlements.seats;
   const billedSeats = summaryQuery.data?.billedSeats;
   const pendingSeatQuantity = summaryQuery.data?.pendingSeatQuantity;
-  const quotaUsage = resolveAutopilotUsage(
+  const quotaUsage = resolveAutomationUsage(
     entitlements,
     quotaUsageQuery.data,
     quotaUsageQuery.isError,
@@ -993,8 +993,8 @@ function BillingTabContent() {
             </span>
           </SettingsRow>
           <SettingsRow
-            label={t(($) => $.workspace.limits.autopilots)}
-            description={t(($) => $.workspace.limits.autopilots_description)}
+            label={t(($) => $.workspace.limits.automations)}
+            description={t(($) => $.workspace.limits.automations_description)}
           >
             {quotaUsage.kind === "unlimited" ? (
               <span className="tabular-nums">
@@ -1045,10 +1045,10 @@ function BillingTabContent() {
               </div>
             ) : (
               <div className="flex flex-col gap-2 sm:items-end">
-                {entitlements.autopilotRuns !== null ? (
+                {entitlements.automationRuns !== null ? (
                   <span className="tabular-nums">
                     {t(($) => $.workspace.limits.per_month, {
-                      count: entitlements.autopilotRuns,
+                      count: entitlements.automationRuns,
                     })}
                   </span>
                 ) : null}
@@ -1059,7 +1059,7 @@ function BillingTabContent() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  aria-label={t(($) => $.workspace.actions.retry_autopilots)}
+                  aria-label={t(($) => $.workspace.actions.retry_automations)}
                   aria-busy={quotaUsageQuery.isFetching}
                   disabled={quotaUsageQuery.isFetching}
                   onClick={() => void quotaUsageQuery.refetch()}

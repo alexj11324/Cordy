@@ -8,12 +8,10 @@
  * AgentHeaderBadge) now `router.push("/[workspace]/issue/[id]/runs")` —
  * the legacy `useRunsSheetStore` is gone since the route system is the
  * single source of truth for what's open.
- *
- * Past-row tap is a no-op in v1 — transcript drilldown is deferred.
  */
 import { useMemo } from "react";
 import { ScrollView, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { AgentTask } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
@@ -37,6 +35,7 @@ const PAST_STATUS_ORDER: Record<AgentTask["status"], number> = {
 export default function IssueRunsRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
   const { data: activeTasks = [] } = useQuery(
     issueActiveTasksOptions(wsId, id),
   );
@@ -76,14 +75,24 @@ export default function IssueRunsRoute() {
           {active.length > 0 ? (
             <Section title="Active">
               {active.map((task) => (
-                <RunRow key={task.id} task={task} issueId={id} />
+                <RunRow
+                  key={task.id}
+                  task={task}
+                  issueId={id}
+                  onOpen={() => openTaskThread(wsSlug, id, task.id)}
+                />
               ))}
             </Section>
           ) : null}
           {past.length > 0 ? (
             <Section title="Past">
               {past.map((task) => (
-                <RunRow key={task.id} task={task} issueId={id} />
+                <RunRow
+                  key={task.id}
+                  task={task}
+                  issueId={id}
+                  onOpen={() => openTaskThread(wsSlug, id, task.id)}
+                />
               ))}
             </Section>
           ) : null}
@@ -91,6 +100,18 @@ export default function IssueRunsRoute() {
       </ScrollView>
     </View>
   );
+}
+
+function openTaskThread(
+  workspace: string | null,
+  issueId: string,
+  taskId: string,
+) {
+  if (!workspace) return;
+  router.push({
+    pathname: "/[workspace]/issue/[id]/runs/[taskId]",
+    params: { workspace, id: issueId, taskId },
+  });
 }
 
 function Section({

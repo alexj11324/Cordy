@@ -21,7 +21,7 @@ SET response_status = $2,
     response_body = $3,
     last_attempt_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .bind(response_status)
@@ -32,7 +32,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -46,7 +46,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -70,7 +70,7 @@ pub async fn bump_webhook_delivery_attempt(
 SET attempt_count = attempt_count + 1,
     last_attempt_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -79,7 +79,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -93,7 +93,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -127,7 +127,7 @@ SET lease_token = gen_random_uuid(),
     lease_expires_at = now() + interval '2 minutes'
 FROM candidate
 WHERE d.id = candidate.id
-RETURNING d.id, d.workspace_id, d.autopilot_id, d.trigger_id, d.provider, d.event, d.dedupe_key, d.dedupe_source, d.signature_status, d.status, d.attempt_count, d.selected_headers, d.content_type, d.raw_body, d.response_status, d.response_body, d.autopilot_run_id, d.replayed_from_delivery_id, d.error, d.received_at, d.last_attempt_at, d.created_at, d.available_at, d.lease_token, d.lease_expires_at, d.dispatch_attempts, d.reason_code, d.replay_idempotency_key"#
+RETURNING d.id, d.workspace_id, d.automation_id, d.trigger_id, d.provider, d.event, d.dedupe_key, d.dedupe_source, d.signature_status, d.status, d.attempt_count, d.selected_headers, d.content_type, d.raw_body, d.response_status, d.response_body, d.automation_run_id, d.replayed_from_delivery_id, d.error, d.received_at, d.last_attempt_at, d.created_at, d.available_at, d.lease_token, d.lease_expires_at, d.dispatch_attempts, d.reason_code, d.replay_idempotency_key"#
     )
         .fetch_optional(executor)
         .await?;
@@ -135,7 +135,7 @@ RETURNING d.id, d.workspace_id, d.autopilot_id, d.trigger_id, d.provider, d.even
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -149,7 +149,7 @@ RETURNING d.id, d.workspace_id, d.autopilot_id, d.trigger_id, d.provider, d.even
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -169,14 +169,14 @@ pub async fn complete_claimed_webhook_delivery(
     id: Uuid,
     lease_token: Uuid,
     status: &str,
-    autopilot_run_id: Option<Uuid>,
+    automation_run_id: Option<Uuid>,
     error: Option<&str>,
     reason_code: Option<&str>,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
         r#"UPDATE webhook_delivery
 SET status = $3,
-    autopilot_run_id = $4,
+    automation_run_id = $4,
     dispatch_attempts = dispatch_attempts + 1,
     error = $5,
     reason_code = $6,
@@ -186,12 +186,12 @@ SET status = $3,
 WHERE id = $1
   AND lease_token = $2
   AND status = 'queued'
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .bind(lease_token)
         .bind(status)
-        .bind(autopilot_run_id)
+        .bind(automation_run_id)
         .bind(error)
         .bind(reason_code)
         .fetch_optional(executor)
@@ -200,7 +200,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -214,7 +214,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -232,7 +232,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
 pub async fn create_webhook_delivery(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
-    autopilot_id: Uuid,
+    automation_id: Uuid,
     trigger_id: Uuid,
     provider: &str,
     event: &str,
@@ -250,7 +250,7 @@ pub async fn create_webhook_delivery(
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
         r#"INSERT INTO webhook_delivery (
-    workspace_id, autopilot_id, trigger_id, provider, event,
+    workspace_id, automation_id, trigger_id, provider, event,
     dedupe_key, dedupe_source, signature_status, status,
     selected_headers, content_type, raw_body,
     replayed_from_delivery_id, replay_idempotency_key, reason_code, id
@@ -260,10 +260,10 @@ pub async fn create_webhook_delivery(
     $8, $11, $12,
     $13, $14,
     $15, COALESCE($16::uuid, gen_random_uuid())
-) RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+) RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(workspace_id)
-        .bind(autopilot_id)
+        .bind(automation_id)
         .bind(trigger_id)
         .bind(provider)
         .bind(event)
@@ -284,7 +284,7 @@ pub async fn create_webhook_delivery(
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -298,7 +298,7 @@ pub async fn create_webhook_delivery(
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -327,7 +327,7 @@ SET available_at = $3,
 WHERE id = $1
   AND lease_token = $2
   AND status = 'queued'
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .bind(lease_token)
@@ -338,7 +338,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -352,7 +352,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -372,7 +372,7 @@ pub async fn get_webhook_delivery(
     id: Uuid,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
+        r#"SELECT id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
 WHERE id = $1"#
     )
         .bind(id)
@@ -382,7 +382,7 @@ WHERE id = $1"#
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -396,7 +396,7 @@ WHERE id = $1"#
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -417,7 +417,7 @@ pub async fn get_webhook_delivery_by_trigger_and_dedupe(
     dedupe_key: Option<&str>,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
+        r#"SELECT id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
 WHERE trigger_id = $1
   AND dedupe_key = $2
 ORDER BY (status IN ('rejected', 'failed')), created_at DESC
@@ -431,7 +431,7 @@ LIMIT 1"#
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -445,7 +445,7 @@ LIMIT 1"#
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -466,7 +466,7 @@ pub async fn get_webhook_delivery_in_workspace(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
+        r#"SELECT id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
 WHERE id = $1 AND workspace_id = $2"#
     )
         .bind(id)
@@ -477,7 +477,7 @@ WHERE id = $1 AND workspace_id = $2"#
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -491,7 +491,7 @@ WHERE id = $1 AND workspace_id = $2"#
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -512,7 +512,7 @@ pub async fn get_webhook_replay_by_idempotency_key(
     replay_idempotency_key: Option<&str>,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
+        r#"SELECT id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key FROM webhook_delivery
 WHERE replayed_from_delivery_id = $1 AND replay_idempotency_key = $2
 LIMIT 1"#
     )
@@ -524,7 +524,7 @@ LIMIT 1"#
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -538,7 +538,7 @@ LIMIT 1"#
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -554,10 +554,10 @@ LIMIT 1"#
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ListWebhookDeliveriesByAutopilotRow {
+pub struct ListWebhookDeliveriesByAutomationRow {
     pub id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
-    pub autopilot_id: Option<Uuid>,
+    pub automation_id: Option<Uuid>,
     pub trigger_id: Option<Uuid>,
     pub provider: String,
     pub event: String,
@@ -568,7 +568,7 @@ pub struct ListWebhookDeliveriesByAutopilotRow {
     pub attempt_count: i32,
     pub content_type: Option<String>,
     pub response_status: Option<i32>,
-    pub autopilot_run_id: Option<Uuid>,
+    pub automation_run_id: Option<Uuid>,
     pub replayed_from_delivery_id: Option<Uuid>,
     pub error: Option<String>,
     pub received_at: Option<DateTime<Utc>>,
@@ -580,29 +580,29 @@ pub struct ListWebhookDeliveriesByAutopilotRow {
     pub replay_idempotency_key: Option<String>,
 }
 
-pub async fn list_webhook_deliveries_by_autopilot(
+pub async fn list_webhook_deliveries_by_automation(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    autopilot_id: Uuid,
+    automation_id: Uuid,
     workspace_id: Uuid,
     limit: i32,
     offset: i32,
-) -> anyhow::Result<Vec<ListWebhookDeliveriesByAutopilotRow>> {
+) -> anyhow::Result<Vec<ListWebhookDeliveriesByAutomationRow>> {
     let rows = sqlx::query(
         r#"SELECT
-    d.id, d.workspace_id, d.autopilot_id, d.trigger_id, d.provider, d.event,
+    d.id, d.workspace_id, d.automation_id, d.trigger_id, d.provider, d.event,
     d.dedupe_key, d.dedupe_source, d.signature_status, d.status,
     d.attempt_count, d.content_type, d.response_status,
-    d.autopilot_run_id, d.replayed_from_delivery_id, d.error,
+    d.automation_run_id, d.replayed_from_delivery_id, d.error,
     d.received_at, d.last_attempt_at, d.created_at,
     d.available_at, d.dispatch_attempts, d.reason_code, d.replay_idempotency_key
 FROM webhook_delivery d
-JOIN autopilot a ON a.id = d.autopilot_id
-WHERE d.autopilot_id = $1
+JOIN automation a ON a.id = d.automation_id
+WHERE d.automation_id = $1
   AND a.workspace_id = $2
 ORDER BY d.created_at DESC
 LIMIT $3 OFFSET $4"#,
     )
-    .bind(autopilot_id)
+    .bind(automation_id)
     .bind(workspace_id)
     .bind(limit)
     .bind(offset)
@@ -610,10 +610,10 @@ LIMIT $3 OFFSET $4"#,
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in &rows {
-        out.push(ListWebhookDeliveriesByAutopilotRow {
+        out.push(ListWebhookDeliveriesByAutomationRow {
             id: row.try_get(0)?,
             workspace_id: row.try_get(1)?,
-            autopilot_id: row.try_get(2)?,
+            automation_id: row.try_get(2)?,
             trigger_id: row.try_get(3)?,
             provider: row.try_get(4)?,
             event: row.try_get(5)?,
@@ -624,7 +624,7 @@ LIMIT $3 OFFSET $4"#,
             attempt_count: row.try_get(10)?,
             content_type: row.try_get(11)?,
             response_status: row.try_get(12)?,
-            autopilot_run_id: row.try_get(13)?,
+            automation_run_id: row.try_get(13)?,
             replayed_from_delivery_id: row.try_get(14)?,
             error: row.try_get(15)?,
             received_at: row.try_get(16)?,
@@ -657,7 +657,7 @@ SET available_at = $3,
 WHERE id = $1
   AND lease_token = $2
   AND status = 'queued'
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .bind(lease_token)
@@ -669,7 +669,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -683,7 +683,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -702,23 +702,23 @@ pub async fn update_webhook_delivery_dispatched(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
     status: &str,
-    autopilot_run_id: Uuid,
+    automation_run_id: Uuid,
     response_status: Option<i32>,
     response_body: Option<&str>,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
     let row = sqlx::query(
         r#"UPDATE webhook_delivery
 SET status = $2,
-    autopilot_run_id = $3,
+    automation_run_id = $3,
     response_status = $4,
     response_body = $5,
     last_attempt_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .bind(status)
-        .bind(autopilot_run_id)
+        .bind(automation_run_id)
         .bind(response_status)
         .bind(response_body)
         .fetch_optional(executor)
@@ -727,7 +727,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -741,7 +741,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,
@@ -774,7 +774,7 @@ SET status = $2,
     response_body = $6,
     last_attempt_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, autopilot_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
+RETURNING id, workspace_id, automation_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status, attempt_count, selected_headers, content_type, raw_body, response_status, response_body, automation_run_id, replayed_from_delivery_id, error, received_at, last_attempt_at, created_at, available_at, lease_token, lease_expires_at, dispatch_attempts, reason_code, replay_idempotency_key"#
     )
         .bind(id)
         .bind(status)
@@ -788,7 +788,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
     Ok(Some(WebhookDelivery {
         id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
-        autopilot_id: row.try_get(2)?,
+        automation_id: row.try_get(2)?,
         trigger_id: row.try_get(3)?,
         provider: row.try_get(4)?,
         event: row.try_get(5)?,
@@ -802,7 +802,7 @@ RETURNING id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_ke
         raw_body: row.try_get(13)?,
         response_status: row.try_get(14)?,
         response_body: row.try_get(15)?,
-        autopilot_run_id: row.try_get(16)?,
+        automation_run_id: row.try_get(16)?,
         replayed_from_delivery_id: row.try_get(17)?,
         error: row.try_get(18)?,
         received_at: row.try_get(19)?,

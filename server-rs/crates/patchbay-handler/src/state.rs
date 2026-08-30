@@ -7,7 +7,7 @@ use patchbay_auth::daemon_token_cache::DaemonTokenCache;
 use patchbay_auth::membership_cache::MembershipCache;
 use patchbay_auth::pat_cache::PatCache;
 use patchbay_realtime::hub::Hub;
-use patchbay_service::autopilot::{AutopilotService, EntitlementProvider};
+use patchbay_service::automation::{AutomationService, EntitlementProvider};
 use patchbay_service::email::EmailService;
 use patchbay_service::issue_service::IssueService;
 use patchbay_service::plugin::PluginService;
@@ -444,9 +444,9 @@ pub struct HandlerState {
     /// Durable task-completion/review-return coordinator. Its PostgreSQL
     /// outbox is authoritative; the worker is started only by production.
     pub coordinator: Arc<patchbay_service::coordination::CoordinatorService>,
-    /// Shared Autopilot service. It must be reused by HTTP paths and durable
+    /// Shared Automation service. It must be reused by HTTP paths and durable
     /// workers so entitlement/quota configuration cannot disappear per request.
-    pub autopilots: Arc<AutopilotService>,
+    pub automations: Arc<AutomationService>,
     /// Issue domain service (Go h.IssueService).
     pub issues: Arc<IssueService>,
     /// Plugin service (Go h.PluginService).
@@ -461,8 +461,8 @@ pub struct HandlerState {
     /// Production event-hook workers and their bus subscriptions. `None` in
     /// lightweight tests and before production side effects are started.
     plugin_events: Option<Arc<PluginEventDispatcher>>,
-    /// Owned Autopilot issue/task terminal listener set.
-    autopilot_event_listeners: Option<Arc<crate::autopilot_listeners::AutopilotEventListeners>>,
+    /// Owned Automation issue/task terminal listener set.
+    automation_event_listeners: Option<Arc<crate::automation_listeners::AutomationEventListeners>>,
     /// Ordered subscriber → activity → notification pipeline. The bus retains
     /// its callback; this field guards registration and exposes lifecycle.
     ordered_event_side_effects:
@@ -599,7 +599,7 @@ impl HandlerState {
             tasks.clone(),
             bus.clone(),
         );
-        let autopilots = Arc::new(AutopilotService::new(
+        let automations = Arc::new(AutomationService::new(
             pool.clone(),
             bus.clone(),
             tasks.clone(),
@@ -653,14 +653,14 @@ impl HandlerState {
             composio,
             tasks,
             coordinator,
-            autopilots,
+            automations,
             issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
             desktop_handoff_tokens: crate::desktop_handoff::DesktopHandoffTokens::new(),
             callback_base_url: String::new(),
             plugin_events: None,
-            autopilot_event_listeners: None,
+            automation_event_listeners: None,
             ordered_event_side_effects: None,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
@@ -929,29 +929,29 @@ impl HandlerState {
         (self, runtime)
     }
 
-    /// Wires the issue/task terminal events that settle linked Autopilot runs.
+    /// Wires the issue/task terminal events that settle linked Automation runs.
     /// Lightweight state construction stays side-effect free; production calls
-    /// this only after the shared Autopilot service has its final dependencies.
-    pub fn start_autopilot_event_listeners(
+    /// this only after the shared Automation service has its final dependencies.
+    pub fn start_automation_event_listeners(
         mut self,
         cancel: tokio_util::sync::CancellationToken,
     ) -> (
         Self,
-        Option<crate::autopilot_listeners::AutopilotEventListenersRuntime>,
+        Option<crate::automation_listeners::AutomationEventListenersRuntime>,
     ) {
-        if self.autopilot_event_listeners.is_some() {
+        if self.automation_event_listeners.is_some() {
             return (self, None);
         }
-        let listeners = crate::autopilot_listeners::AutopilotEventListeners::new(
+        let listeners = crate::automation_listeners::AutomationEventListeners::new(
             self.bus.clone(),
-            self.autopilots.clone(),
+            self.automations.clone(),
         );
         let runtime = listeners.start(cancel);
-        self.autopilot_event_listeners = Some(listeners);
+        self.automation_event_listeners = Some(listeners);
         (self, runtime)
     }
 
-    /// Starts the owned subscriber → activity → notification → Autopilot
+    /// Starts the owned subscriber → activity → notification → Automation
     /// pipeline. One FIFO preserves Go's synchronous registration order for
     /// consecutive publications without blocking the synchronous Rust bus.
     pub fn start_ordered_event_side_effects(
@@ -967,7 +967,7 @@ impl HandlerState {
         let side_effects = crate::ordered_event_side_effects::OrderedEventSideEffects::new(
             self.pool.clone(),
             self.bus.clone(),
-            self.autopilots.clone(),
+            self.automations.clone(),
         );
         let runtime = side_effects.start(cancel);
         self.ordered_event_side_effects = Some(side_effects);
@@ -975,20 +975,20 @@ impl HandlerState {
     }
 
     /// Installs the production entitlement provider on the one shared
-    /// Autopilot service. `None` is the self-hosted/off policy and deliberately
+    /// Automation service. `None` is the self-hosted/off policy and deliberately
     /// avoids all quota-table reads.
-    pub fn with_autopilot_entitlements(
+    pub fn with_automation_entitlements(
         mut self,
         entitlements: Option<Arc<dyn EntitlementProvider>>,
     ) -> Self {
         let mut service =
-            AutopilotService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
+            AutomationService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
         service.entitlements = entitlements;
         service.quota_metrics = self
             .business_metrics
             .clone()
-            .map(|metrics| metrics as Arc<dyn patchbay_service::autopilot::AutopilotQuotaMetrics>);
-        self.autopilots = Arc::new(service);
+            .map(|metrics| metrics as Arc<dyn patchbay_service::automation::AutomationQuotaMetrics>);
+        self.automations = Arc::new(service);
         self
     }
 
@@ -1003,7 +1003,7 @@ impl HandlerState {
         let notify = Arc::new(tokio::sync::Notify::new());
         let worker = crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
             self.pool.clone(),
-            self.autopilots.clone(),
+            self.automations.clone(),
             notify.clone(),
             self.webhook_rate_limits.token.clone(),
             self.business_metrics.clone(),

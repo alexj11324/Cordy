@@ -3,7 +3,7 @@
 //! This module deliberately stops before environment preparation and process
 //! spawn. It converts the claim payload into the exact execenv context, then
 //! binds the resulting [`Environment`] into provider options and a child-only
-//! environment. Transcript draining, usage, terminal callbacks, and process
+//! environment. Agent event history draining, usage, terminal callbacks, and process
 //! ownership remain the responsibility of `ProviderRuntimeAdapter`.
 
 use std::collections::BTreeMap;
@@ -37,8 +37,8 @@ const LEGACY_AGENT_NAME_ENV: &str = "CORDY_AGENT_NAME"; // legacy-brand-compat
 const LEGACY_AGENT_ID_ENV: &str = "CORDY_AGENT_ID"; // legacy-brand-compat
 const LEGACY_TASK_ID_ENV: &str = "CORDY_TASK_ID"; // legacy-brand-compat
 const LEGACY_TASK_SLOT_ENV: &str = "CORDY_TASK_SLOT"; // legacy-brand-compat
-const LEGACY_AUTOPILOT_RUN_ID_ENV: &str = "CORDY_AUTOPILOT_RUN_ID"; // legacy-brand-compat
-const LEGACY_AUTOPILOT_ID_ENV: &str = "CORDY_AUTOPILOT_ID"; // legacy-brand-compat
+const LEGACY_AUTOMATION_RUN_ID_ENV: &str = "CORDY_AUTOMATION_RUN_ID"; // legacy-brand-compat
+const LEGACY_AUTOMATION_ID_ENV: &str = "CORDY_AUTOMATION_ID"; // legacy-brand-compat
 const LEGACY_QUICK_CREATE_TASK_ID_ENV: &str = "CORDY_QUICK_CREATE_TASK_ID"; // legacy-brand-compat
 const LEGACY_QUICK_CREATE_ATTACHMENT_IDS_ENV: &str = "CORDY_QUICK_CREATE_ATTACHMENT_IDS"; // legacy-brand-compat
 
@@ -350,24 +350,24 @@ impl ProviderExecutionPlan {
         for (key, value) in canonical {
             values.insert(key.to_string(), value);
         }
-        if !task.autopilot_run_id.is_empty() {
+        if !task.automation_run_id.is_empty() {
             values.insert(
-                "PATCHBAY_AUTOPILOT_RUN_ID".to_string(),
-                task.autopilot_run_id.clone(),
+                "PATCHBAY_AUTOMATION_RUN_ID".to_string(),
+                task.automation_run_id.clone(),
             );
             values.insert(
-                LEGACY_AUTOPILOT_RUN_ID_ENV.to_string(),
-                task.autopilot_run_id.clone(),
+                LEGACY_AUTOMATION_RUN_ID_ENV.to_string(),
+                task.automation_run_id.clone(),
             );
         }
-        if !task.autopilot_id.is_empty() {
+        if !task.automation_id.is_empty() {
             values.insert(
-                "PATCHBAY_AUTOPILOT_ID".to_string(),
-                task.autopilot_id.clone(),
+                "PATCHBAY_AUTOMATION_ID".to_string(),
+                task.automation_id.clone(),
             );
             values.insert(
-                LEGACY_AUTOPILOT_ID_ENV.to_string(),
-                task.autopilot_id.clone(),
+                LEGACY_AUTOMATION_ID_ENV.to_string(),
+                task.automation_id.clone(),
             );
         }
         if !task.quick_create_prompt.is_empty() {
@@ -628,9 +628,9 @@ pub(crate) fn validate_identity<'a>(
     anyhow::ensure!(
         !task.issue_id.trim().is_empty()
             || !task.chat_session_id.trim().is_empty()
-            || !task.autopilot_run_id.trim().is_empty()
+            || !task.automation_run_id.trim().is_empty()
             || !task.quick_create_prompt.trim().is_empty(),
-        "invalid task identity: missing issue, chat, autopilot, or quick-create identity"
+        "invalid task identity: missing issue, chat, automation, or quick-create identity"
     );
     Ok(agent)
 }
@@ -714,13 +714,13 @@ fn task_context(task: &Task, agent: &AgentData, provider: &str) -> TaskContextFo
         chat_session_id: task.chat_session_id.clone(),
         chat_channel_type: task.chat_channel_type.clone(),
         chat_channel_delivers_files: task.chat_channel_delivers_files,
-        autopilot_run_id: task.autopilot_run_id.clone(),
-        autopilot_id: task.autopilot_id.clone(),
-        autopilot_title: task.autopilot_title.clone(),
-        autopilot_description: task.autopilot_description.clone(),
-        autopilot_source: task.autopilot_source.clone(),
-        autopilot_trigger_payload: task
-            .autopilot_trigger_payload
+        automation_run_id: task.automation_run_id.clone(),
+        automation_id: task.automation_id.clone(),
+        automation_title: task.automation_title.clone(),
+        automation_description: task.automation_description.clone(),
+        automation_source: task.automation_source.clone(),
+        automation_trigger_payload: task
+            .automation_trigger_payload
             .as_ref()
             .map(|value| value.to_string())
             .unwrap_or_default(),
@@ -905,7 +905,7 @@ mod tests {
             }],
             chat_channel_type: "slack".to_string(),
             chat_channel_delivers_files: true,
-            autopilot_id: "autopilot-1".to_string(),
+            automation_id: "automation-1".to_string(),
             quick_create_attachment_ids: vec!["attachment-1".to_string()],
             connected_apps: vec![ConnectedAppData {
                 provider: "composio".to_string(),
@@ -1143,17 +1143,17 @@ mod tests {
     }
 
     #[test]
-    fn chat_autopilot_and_quick_create_markers_are_preserved() {
+    fn chat_automation_and_quick_create_markers_are_preserved() {
         let mut claim = task();
         claim.issue_id.clear();
         claim.chat_session_id = "chat-1".to_string();
         claim.chat_message = "hello".to_string();
-        claim.autopilot_run_id = "run-1".to_string();
+        claim.automation_run_id = "run-1".to_string();
         claim.quick_create_prompt = "create an issue".to_string();
         let plan = ProviderExecutionPlan::build(&config(), &claim, &target(), inputs()).unwrap();
         let ctx = plan.task_context();
         assert_eq!(ctx.chat_session_id, "chat-1");
-        assert_eq!(ctx.autopilot_run_id, "run-1");
+        assert_eq!(ctx.automation_run_id, "run-1");
         assert_eq!(ctx.quick_create_prompt, "create an issue");
         let bound = plan
             .bind_environment(
@@ -1167,11 +1167,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            bound.child_env.get("PATCHBAY_AUTOPILOT_RUN_ID"),
+            bound.child_env.get("PATCHBAY_AUTOMATION_RUN_ID"),
             Some("run-1")
         );
         assert_eq!(
-            bound.child_env.get(LEGACY_AUTOPILOT_RUN_ID_ENV),
+            bound.child_env.get(LEGACY_AUTOMATION_RUN_ID_ENV),
             Some("run-1")
         );
         assert_eq!(

@@ -32,10 +32,7 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { issueDetailOptions } from "@patchbay/core/issues/queries";
 import { AppLink } from "../../../navigation";
-import {
-  IssueAgentConversationOpener,
-  IssueAgentConversationTrigger,
-} from "../../../issues/components/issue-agent-conversation-dialog";
+import { TaskAgentThreadDialog } from "../../../agent-thread";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
 import { taskStatusConfig } from "../../config";
 import { cancelReasonLabel, failureReasonLabel } from "./task-failure";
@@ -559,8 +556,8 @@ function TaskRow({
         : t(($) => $.tab_body.activity.source_creating_issue)
       : task.chat_session_id
         ? t(($) => $.tab_body.activity.source_chat_session)
-        : task.autopilot_run_id
-          ? t(($) => $.tab_body.activity.source_autopilot_run)
+        : task.automation_run_id
+          ? t(($) => $.tab_body.activity.source_automation_run)
           : t(($) => $.tab_body.activity.source_untracked)
     : null;
 
@@ -568,15 +565,15 @@ function TaskRow({
     ? Hash
     : task.chat_session_id
       ? MessageSquare
-      : task.autopilot_run_id
+      : task.automation_run_id
         ? Workflow
         : CircleHelp;
   const sourceLabel = hasIssue
     ? t(($) => $.tab_body.activity.source_issue)
     : task.chat_session_id
       ? t(($) => $.tab_body.activity.source_chat)
-      : task.autopilot_run_id
-        ? t(($) => $.tab_body.activity.source_autopilot)
+      : task.automation_run_id
+        ? t(($) => $.tab_body.activity.source_automation)
         : t(($) => $.tab_body.activity.source_untracked);
 
   const timeText =
@@ -710,10 +707,8 @@ function TaskRow({
         </div>
       </div>
 
-      {/* Hover-only actions. The row is intentionally non-clickable so
-          neither destination is privileged — issue detail and the agent
-          conversation are equally valid follow-ups. focus-within keeps the
-          slot reachable for keyboard users. */}
+      {/* Secondary destinations stay beside the canonical Agent thread opener.
+          focus-within keeps the slot reachable for keyboard users. */}
       <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
         {hasIssue && (
           <Tooltip>
@@ -727,17 +722,29 @@ function TaskRow({
             <TooltipContent>{t(($) => $.tab_body.activity.open_issue_tooltip)}</TooltipContent>
           </Tooltip>
         )}
-        {hasIssue && (
-          <>
-            <IssueAgentConversationTrigger onClick={() => setConversationOpen(true)} />
-            {conversationOpen && (
-              <IssueAgentConversationOpener
-                issueId={task.issue_id}
-                agentId={agent.id}
-                onOpenChange={setConversationOpen}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={() => setConversationOpen(true)}
+                aria-label={t(($) => $.tab_body.activity.open_thread_aria)}
               />
-            )}
-          </>
+            }
+            className="flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+          >
+            <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>
+            {t(($) => $.tab_body.activity.open_thread_tooltip)}
+          </TooltipContent>
+        </Tooltip>
+        {conversationOpen && (
+          <TaskAgentThreadDialog
+            taskId={task.id}
+            open
+            onOpenChange={setConversationOpen}
+          />
         )}
         {showChat && chatSessionId && (
           <Tooltip>

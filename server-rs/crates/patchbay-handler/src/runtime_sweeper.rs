@@ -557,17 +557,17 @@ mod tests {
         }
         patchbay_db::queries::workspace_delete::delete_workspace_leaf_data(&mut *tx, workspace_id)
             .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_runs(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_runs(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_quota_reservations(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_quota_reservations(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_quota_periods(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_quota_periods(
             &mut *tx,
             workspace_id,
         )
@@ -594,12 +594,12 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_children(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_children(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_automations(&mut *tx, workspace_id)
             .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
             &mut *tx,
@@ -2161,7 +2161,7 @@ mod tests {
                 mark_task_terminal(&rows.pool, task_id, status).await?;
             }
             sqlx::query(
-                "INSERT INTO task_message (task_id, seq, type, content) VALUES ($1, 1, 'assistant', 'runtime GC preserves this transcript')",
+                "INSERT INTO task_message (task_id, seq, type, content) VALUES ($1, 1, 'assistant', 'runtime GC preserves this agent events')",
             )
             .bind(completed)
             .execute(&rows.pool)
@@ -3245,9 +3245,9 @@ mod tests {
             )
         }
 
-        async fn insert_transcript(&self) -> anyhow::Result<()> {
+        async fn insert_agent_events(&self) -> anyhow::Result<()> {
             sqlx::query(
-                "INSERT INTO task_message (task_id, seq, type, content) VALUES ($1, 1, 'text', 'late transcript')",
+                "INSERT INTO task_message (task_id, seq, type, content) VALUES ($1, 1, 'text', 'late agent events')",
             )
             .bind(self.task_id)
             .execute(&self.pool)
@@ -3538,7 +3538,7 @@ mod tests {
 
         let nonempty = ChatFinalizeRows::required("running", true).await?;
         let nonempty_result = async {
-            nonempty.insert_transcript().await?;
+            nonempty.insert_agent_events().await?;
             let tasks = TaskService::new(nonempty.pool.clone(), Arc::new(Bus::new()));
             let cancelled = tasks
                 .cancel_task_with_result(
@@ -3623,7 +3623,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deferred_finalize_late_transcript_claims_once_and_stops() -> anyhow::Result<()> {
+    async fn deferred_finalize_late_agent_events_claims_once_and_stops() -> anyhow::Result<()> {
         let rows = ChatFinalizeRows::required("running", true).await?;
         let result = async {
             let bus = Arc::new(Bus::new());
@@ -3649,7 +3649,7 @@ mod tests {
                 .await
                 .map_err(|error| anyhow::anyhow!("cancel task: {error}"))?;
             rows.backdate_marker(120.0).await?;
-            rows.insert_transcript().await?;
+            rows.insert_agent_events().await?;
             anyhow::ensure!(
                 tasks.finalize_deferred_cancelled_chat(rows.task_id).await,
                 "first finalizer did not settle the task"
@@ -3661,15 +3661,15 @@ mod tests {
             anyhow::ensure!(rows.marker_is_null().await?, "marker was not claimed");
             anyhow::ensure!(
                 rows.user_message_exists().await?,
-                "late transcript deleted input"
+                "late agent events deleted input"
             );
             anyhow::ensure!(
                 rows.restore_count().await? == 0,
-                "late transcript created restore"
+                "late agent events created restore"
             );
             anyhow::ensure!(
                 rows.assistant_contents().await? == vec!["Stopped.".to_string()],
-                "late transcript outcome was not exactly one Stopped."
+                "late agent events outcome was not exactly one Stopped."
             );
             anyhow::ensure!(
                 cancel_finalized_events(&events).len() == 1,

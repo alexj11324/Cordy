@@ -59,11 +59,11 @@ const KNOWN_ONBOARDING_PATHS: &[&str] = &[
     "invite_accept",
     "unknown",
 ];
-const KNOWN_AUTOPILOT_CADENCES: &[&str] = &[
+const KNOWN_AUTOMATION_CADENCES: &[&str] = &[
     "hourly", "daily", "weekly", "monthly", "manual", "webhook", "unknown",
 ];
-const KNOWN_AUTOPILOT_TRIGGERS: &[&str] = &["schedule", "webhook", "manual", "unknown"];
-const KNOWN_AUTOPILOT_SKIP_REASONS: &[&str] = &[
+const KNOWN_AUTOMATION_TRIGGERS: &[&str] = &["schedule", "webhook", "manual", "unknown"];
+const KNOWN_AUTOMATION_SKIP_REASONS: &[&str] = &[
     "already_running",
     "recent_run",
     "runtime_offline",
@@ -276,16 +276,16 @@ pub fn normalize_onboarding_path(value: &str) -> String {
     normalize_from(KNOWN_ONBOARDING_PATHS, value, "unknown")
 }
 
-pub fn normalize_autopilot_cadence(value: &str) -> String {
-    normalize_from(KNOWN_AUTOPILOT_CADENCES, value, "unknown")
+pub fn normalize_automation_cadence(value: &str) -> String {
+    normalize_from(KNOWN_AUTOMATION_CADENCES, value, "unknown")
 }
 
-pub fn normalize_autopilot_trigger(value: &str) -> String {
-    normalize_from(KNOWN_AUTOPILOT_TRIGGERS, value, "unknown")
+pub fn normalize_automation_trigger(value: &str) -> String {
+    normalize_from(KNOWN_AUTOMATION_TRIGGERS, value, "unknown")
 }
 
-pub fn normalize_autopilot_skip_reason(value: &str) -> String {
-    normalize_from(KNOWN_AUTOPILOT_SKIP_REASONS, value, "other")
+pub fn normalize_automation_skip_reason(value: &str) -> String {
+    normalize_from(KNOWN_AUTOMATION_SKIP_REASONS, value, "other")
 }
 
 pub fn normalize_webhook_provider(value: &str) -> String {
@@ -380,10 +380,10 @@ mod tests {
     fn platform_and_cadence_buckets() {
         assert_eq!(normalize_platform(" Desktop "), "desktop");
         assert_eq!(normalize_platform("watchos"), "unknown");
-        assert_eq!(normalize_autopilot_cadence("Weekly"), "weekly");
-        assert_eq!(normalize_autopilot_cadence("cron"), "unknown");
-        assert_eq!(normalize_autopilot_skip_reason("THROTTLED"), "throttled");
-        assert_eq!(normalize_autopilot_skip_reason("vibe"), "other");
+        assert_eq!(normalize_automation_cadence("Weekly"), "weekly");
+        assert_eq!(normalize_automation_cadence("cron"), "unknown");
+        assert_eq!(normalize_automation_skip_reason("THROTTLED"), "throttled");
+        assert_eq!(normalize_automation_skip_reason("vibe"), "other");
     }
 
     #[test]

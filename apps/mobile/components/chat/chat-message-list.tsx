@@ -124,7 +124,7 @@ export function ChatMessageList({
   // Above the loading / empty early returns because hooks must run on every
   // render — an empty `messages` just yields an empty block list.
   //
-  // Persisted messages only — same boundary web draws: a task transcript's
+  // Persisted messages only — same boundary web draws: a task Agent thread's
   // images live behind a separate cache and inside a folded section, so they
   // keep opening on their own rather than joining a sequence the reader
   // cannot see the rest of.

@@ -3,7 +3,7 @@
 //! The outer task orchestrator owns claim/cancel/terminal delivery. This
 //! adapter owns the strictly ordered interior: validate and prepare one task
 //! environment, transition it to running, launch a real `patchbay-agent`
-//! backend, persist its bounded transcript, and finalize any disposable local
+//! backend, persist its bounded agent_events, and finalize any disposable local
 //! worktree before returning the normalized result.
 
 use std::collections::{BTreeMap, HashMap};
@@ -73,12 +73,12 @@ use crate::types::{
     TaskUsageEntry,
 };
 
-const TRANSCRIPT_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
-const TRANSCRIPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-const TRANSCRIPT_DRAIN_GRACE: Duration = Duration::from_secs(10);
+const AGENT_EVENT_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
+const AGENT_EVENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const AGENT_EVENT_DRAIN_GRACE: Duration = Duration::from_secs(10);
 const CODEX_ROLLOUT_FLUSH_WAIT: Duration = Duration::from_secs(2);
 const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const TRANSCRIPT_BATCH_LIMIT: usize = 32;
+const AGENT_EVENT_BATCH_LIMIT: usize = 32;
 const TOOL_OUTPUT_BYTES: usize = 8 * 1024;
 const TOOL_INPUT_BYTES: usize = 64 * 1024;
 const PREPARE_LEASE_REFRESH: Duration = Duration::from_secs(15);
@@ -935,7 +935,7 @@ impl ProductionProviderAdapter {
             );
             let prompt = build_prompt(task.clone(), &target.provider);
             let _running = CounterGuard::new(&self.running_tasks);
-            let mut transcript = TranscriptBatch::default();
+            let mut agent_events = AgentEventBatch::default();
             let (first, first_tools) = execute_and_drain(
                 backend.as_ref(),
                 &ctx,
@@ -947,7 +947,7 @@ impl ProductionProviderAdapter {
                 bound.options,
                 self.config.agent_idle_watchdog,
                 self.config.agent_tool_watchdog,
-                &mut transcript,
+                &mut agent_events,
             )
             .await
             .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
@@ -957,6 +957,7 @@ impl ProductionProviderAdapter {
                 &requested_session_id,
                 first_tools,
                 &target.provider,
+                !is_message_bus_continuation,
             ) {
                 (first, String::new())
             } else {
@@ -977,7 +978,7 @@ impl ProductionProviderAdapter {
                         ctx.token().clone(),
                     ),
                 )?;
-                transcript.begin_attempt();
+                agent_events.begin_attempt();
                 let retry = execute_and_drain(
                     backend.as_ref(),
                     &ctx,
@@ -989,7 +990,7 @@ impl ProductionProviderAdapter {
                     fresh.options,
                     self.config.agent_idle_watchdog,
                     self.config.agent_tool_watchdog,
-                    &mut transcript,
+                    &mut agent_events,
                 )
                 .await;
                 (
@@ -1946,13 +1947,13 @@ async fn drain_session(
     session: Session,
     idle_watchdog: Duration,
     tool_watchdog: Duration,
-    transcript: &mut TranscriptBatch,
+    agent_events: &mut AgentEventBatch,
 ) -> anyhow::Result<ExecutionResult> {
     let Session {
         mut messages,
         mut result,
     } = session;
-    let mut ticker = tokio::time::interval(TRANSCRIPT_FLUSH_INTERVAL);
+    let mut ticker = tokio::time::interval(AGENT_EVENT_FLUSH_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut terminal: Option<ExecutionResult> = None;
     let mut cancelled = false;
@@ -1990,10 +1991,10 @@ async fn drain_session(
                 terminal = Some(ExecutionResult {
                     status: "cancelled".to_string(),
                     error: ctx.cause().to_string(),
-                    session_id: transcript.session_id.clone(),
+                    session_id: agent_events.session_id.clone(),
                     ..ExecutionResult::default()
                 });
-                drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
+                drain_deadline.as_mut().reset(tokio::time::Instant::now() + AGENT_EVENT_DRAIN_GRACE);
                 drain_armed = true;
             }
             received = messages.recv(), if !messages_closed => {
@@ -2019,7 +2020,7 @@ async fn drain_session(
                                 .as_mut()
                                 .reset(tokio::time::Instant::now() + watchdog_threshold);
                         }
-                        if let Some(session_id) = transcript.push(message) {
+                        if let Some(session_id) = agent_events.push(message) {
                             let client = Arc::clone(client);
                             let task_id = task_id.to_string();
                             let work_dir = work_dir.to_string();
@@ -2047,15 +2048,15 @@ async fn drain_session(
                                     &session_id,
                                     &work_dir,
                                 );
-                                match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
+                                match tokio::time::timeout(AGENT_EVENT_REQUEST_TIMEOUT, pin).await {
                                     Ok(Ok(())) => {}
                                     Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "pin task session failed"),
                                     Err(_) => tracing::debug!(task = %task_id, "pin task session timed out"),
                                 }
                             });
                         }
-                        if transcript.ready() {
-                            flush_transcript(client, task_id, transcript).await;
+                        if agent_events.ready() {
+                            flush_agent_events(client, task_id, agent_events).await;
                         }
                     }
                     None => messages_closed = true,
@@ -2087,10 +2088,10 @@ async fn drain_session(
                         }
                     }
                 }
-                drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
+                drain_deadline.as_mut().reset(tokio::time::Instant::now() + AGENT_EVENT_DRAIN_GRACE);
                 drain_armed = true;
             }
-            _ = ticker.tick() => flush_transcript(client, task_id, transcript).await,
+            _ = ticker.tick() => flush_agent_events(client, task_id, agent_events).await,
             () = &mut watchdog_deadline, if watchdog_armed && terminal.is_none() => {
                 // A buffered message means the consumer is behind rather than
                 // the provider being silent. Give it a complete fresh window.
@@ -2107,19 +2108,19 @@ async fn drain_session(
                     error: format!(
                         "agent produced no new messages for {watchdog_threshold:?} and message queue was empty; force-stopped by idle watchdog"
                     ),
-                    session_id: transcript.session_id.clone(),
+                    session_id: agent_events.session_id.clone(),
                     ..ExecutionResult::default()
                 });
-                drain_deadline.as_mut().reset(tokio::time::Instant::now() + TRANSCRIPT_DRAIN_GRACE);
+                drain_deadline.as_mut().reset(tokio::time::Instant::now() + AGENT_EVENT_DRAIN_GRACE);
                 drain_armed = true;
             }
             () = &mut drain_deadline, if drain_armed => {
-                tracing::warn!(task = %task_id, "provider transcript did not close within drain grace");
+                tracing::warn!(task = %task_id, "provider agent_events did not close within drain grace");
                 break;
             }
         }
     }
-    flush_transcript(client, task_id, transcript).await;
+    flush_agent_events(client, task_id, agent_events).await;
     pin_owner.cancel();
     while pin_waiters.join_next().await.is_some() {}
     let mut terminal = terminal.unwrap_or_else(|| ExecutionResult {
@@ -2130,13 +2131,13 @@ async fn drain_session(
     if matches!(terminal.status.as_str(), "cancelled" | "idle_watchdog")
         && terminal.session_id.is_empty()
     {
-        terminal.session_id.clone_from(&transcript.session_id);
+        terminal.session_id.clone_from(&agent_events.session_id);
     }
     Ok(terminal)
 }
 
 #[derive(Default)]
-struct TranscriptBatch {
+struct AgentEventBatch {
     next_seq: i32,
     messages: Vec<TaskMessageData>,
     tools: HashMap<String, String>,
@@ -2145,7 +2146,7 @@ struct TranscriptBatch {
     session_id: String,
 }
 
-impl TranscriptBatch {
+impl AgentEventBatch {
     fn begin_attempt(&mut self) {
         self.tools.clear();
         self.session_pinned = false;
@@ -2153,7 +2154,7 @@ impl TranscriptBatch {
     }
 
     fn ready(&self) -> bool {
-        self.messages.len() >= TRANSCRIPT_BATCH_LIMIT
+        self.messages.len() >= AGENT_EVENT_BATCH_LIMIT
     }
 
     fn push(&mut self, message: Message) -> Option<String> {
@@ -2175,7 +2176,7 @@ impl TranscriptBatch {
             seq: self.next_seq,
             r#type: message_type_name(message.message_type).to_string(),
             tool: message.tool.clone(),
-            // Content is the user-visible transcript and must remain intact;
+            // Content is the user-visible agent_events and must remain intact;
             // only untrusted tool output is bounded to protect the control
             // plane from a runaway command response.
             content: message.content.clone(),
@@ -2220,9 +2221,9 @@ async fn execute_and_drain(
     mut options: ExecOptions,
     idle_watchdog: Duration,
     tool_watchdog: Duration,
-    transcript: &mut TranscriptBatch,
+    agent_events: &mut AgentEventBatch,
 ) -> anyhow::Result<(ExecutionResult, usize)> {
-    let tools_before = transcript.tool_use_count;
+    let tools_before = agent_events.tool_use_count;
     let effective_idle_watchdog = if idle_watchdog.is_zero() {
         Duration::ZERO
     } else if !options.idle_watchdog_timeout.is_zero()
@@ -2247,23 +2248,23 @@ async fn execute_and_drain(
         session,
         effective_idle_watchdog,
         tool_watchdog,
-        transcript,
+        agent_events,
     )
     .await?;
     Ok((
         result,
-        transcript.tool_use_count.saturating_sub(tools_before),
+        agent_events.tool_use_count.saturating_sub(tools_before),
     ))
 }
 
-async fn flush_transcript(client: &Client, task_id: &str, batch: &mut TranscriptBatch) {
+async fn flush_agent_events(client: &Client, task_id: &str, batch: &mut AgentEventBatch) {
     if batch.messages.is_empty() {
         return;
     }
     let messages = std::mem::take(&mut batch.messages);
     let ctx = Ctx::new();
     let report = client.report_task_messages(&ctx, task_id, messages);
-    match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, report).await {
+    match tokio::time::timeout(AGENT_EVENT_REQUEST_TIMEOUT, report).await {
         Ok(Ok(())) => {}
         Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "report task messages failed"),
         Err(_) => tracing::debug!(task = %task_id, "report task messages timed out"),
@@ -2331,8 +2332,13 @@ fn should_retry_with_fresh_session(
     requested_session_id: &str,
     tool_uses: usize,
     provider: &str,
+    allow_fresh_session_retry: bool,
 ) -> bool {
-    if result.status != "failed" || requested_session_id.is_empty() || tool_uses != 0 {
+    if !allow_fresh_session_retry
+        || result.status != "failed"
+        || requested_session_id.is_empty()
+        || tool_uses != 0
+    {
         return false;
     }
     if result.resume_rejected
@@ -3036,7 +3042,7 @@ mod tests {
                 })
                 .unwrap();
         });
-        let mut transcript = TranscriptBatch::default();
+        let mut agent_events = AgentEventBatch::default();
         let result = drain_session(
             &Ctx::new(),
             &backend_cancel,
@@ -3050,7 +3056,7 @@ mod tests {
             },
             Duration::from_millis(10),
             Duration::from_millis(50),
-            &mut transcript,
+            &mut agent_events,
         )
         .await
         .unwrap();
@@ -3395,7 +3401,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_input_is_redacted_before_it_becomes_transcript_data() {
+    fn tool_input_is_redacted_before_it_becomes_agent_events_data() {
         let input = BTreeMap::from([
             (
                 "authorization".to_string(),
@@ -3412,8 +3418,8 @@ mod tests {
     }
 
     #[test]
-    fn transcript_sequence_and_tool_name_are_daemon_authoritative() {
-        let mut batch = TranscriptBatch::default();
+    fn agent_events_sequence_and_tool_name_are_daemon_authoritative() {
+        let mut batch = AgentEventBatch::default();
         batch.push(Message {
             message_type: MessageType::ToolUse,
             content: String::new(),
@@ -3515,7 +3521,7 @@ mod tests {
                     .unwrap();
             }
         });
-        let mut transcript = TranscriptBatch::default();
+        let mut agent_events = AgentEventBatch::default();
         let backend_cancel = CancellationToken::new();
         let result = drain_session(
             &Ctx::new(),
@@ -3530,7 +3536,7 @@ mod tests {
             },
             Duration::ZERO,
             Duration::ZERO,
-            &mut transcript,
+            &mut agent_events,
         )
         .await
         .unwrap();
@@ -3564,7 +3570,7 @@ mod tests {
                 ..ExecutionResult::default()
             })
             .unwrap();
-        let mut transcript = TranscriptBatch::default();
+        let mut agent_events = AgentEventBatch::default();
         let backend_cancel = CancellationToken::new();
         let mut missing = drain_session(
             &Ctx::new(),
@@ -3579,7 +3585,7 @@ mod tests {
             },
             Duration::ZERO,
             Duration::ZERO,
-            &mut transcript,
+            &mut agent_events,
         )
         .await
         .unwrap();
@@ -3623,15 +3629,30 @@ mod tests {
             &rejected,
             "old-session",
             0,
-            "qwen"
+            "qwen",
+            true,
         ));
         assert!(!should_retry_with_fresh_session(
             &rejected,
             "old-session",
             1,
-            "qwen"
+            "qwen",
+            true,
         ));
-        assert!(!should_retry_with_fresh_session(&rejected, "", 0, "qwen"));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "",
+            0,
+            "qwen",
+            true
+        ));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "old-session",
+            0,
+            "qwen",
+            false
+        ));
 
         let broken_history = ExecutionResult {
             status: "failed".to_string(),
@@ -3642,7 +3663,8 @@ mod tests {
             &broken_history,
             "old-session",
             0,
-            "claude"
+            "claude",
+            true,
         ));
         let stale_provider_identity = ExecutionResult {
             status: "failed".to_string(),
@@ -3653,7 +3675,8 @@ mod tests {
             &stale_provider_identity,
             "old-session",
             0,
-            "qwen"
+            "qwen",
+            true,
         ));
 
         let undetectable_process_failure = ExecutionResult {
@@ -3665,7 +3688,8 @@ mod tests {
             &undetectable_process_failure,
             "old-session",
             0,
-            "cursor"
+            "cursor",
+            true,
         ));
         let network = ExecutionResult {
             status: "failed".to_string(),
@@ -3676,7 +3700,8 @@ mod tests {
             &network,
             "old-session",
             0,
-            "cursor"
+            "cursor",
+            true,
         ));
     }
 
@@ -3870,10 +3895,10 @@ mod tests {
     }
 
     #[test]
-    fn transcript_preserves_content_but_bounds_tool_output() {
+    fn agent_events_preserves_content_but_bounds_tool_output() {
         let content = "c".repeat(TOOL_OUTPUT_BYTES + 256);
         let output = "o".repeat(TOOL_OUTPUT_BYTES + 256);
-        let mut batch = TranscriptBatch::default();
+        let mut batch = AgentEventBatch::default();
         batch.push(Message {
             message_type: MessageType::Text,
             content: content.clone(),

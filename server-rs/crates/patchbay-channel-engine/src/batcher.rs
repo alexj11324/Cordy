@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 /// The silence window the inbound debouncer waits before triggering an
 /// agent run for a chat session. 3s (PB-2968): long enough to absorb a
-/// "forward a transcript, then type a note" burst into one run, short
+/// "forward a Agent event history, then type a note" burst into one run, short
 /// enough that the bot's first reply is not perceptibly late.
 pub const DEFAULT_CHAT_RUN_BATCH_WINDOW: Duration = Duration::from_secs(3);
 

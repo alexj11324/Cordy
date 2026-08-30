@@ -91,7 +91,7 @@ export function useBuilderSession(options: {
   const messages = messagesQuery.data ?? EMPTY_CHAT_MESSAGES;
   const pending = !!pendingQuery.data?.task_id;
   // The conversation named by the URL is gone — discarded here, deleted from
-  // another tab, or a link that outlived it. Read off the transcript fetch
+  // another tab, or a link that outlived it. Read off the Agent event history fetch
   // rather than "absent from the drafts list", because a conversation is only
   // listed once it has a message: a session created a second ago is legitimately
   // missing from the list and must not be mistaken for a dead one.
@@ -140,7 +140,7 @@ export function useBuilderSession(options: {
       await api.deleteChatSession(sessionId);
       qc.removeQueries({ queryKey: chatKeys.messages(sessionId) });
       // The send seeds both caches, so both must be dropped here. Leaving the
-      // paged one behind would keep a deleted session's transcript sitting
+      // paged one behind would keep a deleted session's Agent event history sitting
       // fresh forever — it is staleTime: Infinity, so no reader self-corrects.
       qc.removeQueries({ queryKey: chatKeys.messagesPage(sessionId) });
       qc.removeQueries({ queryKey: chatKeys.pendingTask(sessionId) });

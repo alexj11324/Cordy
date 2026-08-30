@@ -6,9 +6,9 @@
  * dispatched, running}`, and the status badge / colour swaps based on the
  * AgentTask.status enum.
  *
- * Tapping a past row is a no-op in v1 — the transcript-detail screen is
- * explicitly out of scope per /Users/qingnaiyuan/.claude/plans/
- * ok-plan-linked-taco.md.
+ * Every row opens the same interactive Agent thread route. A terminal task
+ * remains conversational when the provider session is available, while the
+ * server-provided unavailable reason disables continuation explicitly.
  */
 import { Alert, Pressable, View } from "react-native";
 import type { AgentTask } from "@patchbay/core/types";
@@ -21,15 +21,17 @@ import { timeAgo } from "@/lib/time-ago";
 interface Props {
   task: AgentTask;
   issueId: string;
+  onOpen: () => void;
 }
 
 const ACTIVE_STATUSES: readonly AgentTask["status"][] = [
   "queued",
   "dispatched",
+  "waiting_local_directory",
   "running",
 ];
 
-export function RunRow({ task, issueId }: Props) {
+export function RunRow({ task, issueId, onOpen }: Props) {
   const { getName } = useActorLookup();
   const isActive = ACTIVE_STATUSES.includes(task.status);
   const summary = task.trigger_summary?.trim() || fallbackSummary(task);
@@ -39,7 +41,12 @@ export function RunRow({ task, issueId }: Props) {
   const timestamp = task.completed_at || task.created_at;
 
   return (
-    <View className="flex-row items-start gap-3 py-2">
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`Open Agent thread for ${summary}`}
+      className="flex-row items-start gap-3 py-2 active:opacity-70"
+    >
       <ActorAvatar type="agent" id={task.agent_id} size={28} showPresence />
       <View className="flex-1 gap-1">
         <Text
@@ -57,7 +64,7 @@ export function RunRow({ task, issueId }: Props) {
         </View>
       </View>
       {isActive ? <CancelButton taskId={task.id} issueId={issueId} /> : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -105,7 +112,10 @@ function CancelButton({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
       disabled={mutation.isPending}
       className="px-3 py-1.5 rounded-md bg-secondary active:opacity-70"
     >
@@ -118,8 +128,8 @@ function fallbackSummary(task: AgentTask): string {
   switch (task.kind) {
     case "comment":
       return "Comment task";
-    case "autopilot":
-      return "Autopilot run";
+    case "automation":
+      return "Automation run";
     case "chat":
       return "Chat task";
     case "quick_create":

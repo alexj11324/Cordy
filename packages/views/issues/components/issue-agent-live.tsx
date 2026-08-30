@@ -111,7 +111,7 @@ function IssueAgentWorkingCard({
     task.status === "running"
       ? t(($) => $.agent_live.working)
       : task.status === "waiting_local_directory"
-        ? t(($) => $.execution_log.status_waiting_local_directory)
+        ? t(($) => $.agent_thread.status_waiting_local_directory)
         : t(($) => $.agent_activity.status_queued);
   const happenedAt = task.started_at ?? task.created_at;
 

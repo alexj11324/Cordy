@@ -1900,7 +1900,7 @@ async fn session_channel_type(state: &HandlerState, session_id: Uuid) -> anyhow:
     )
 }
 
-async fn transcript_history(
+async fn chat_history(
     state: &HandlerState,
     session_id: Uuid,
     query: &HistoryQuery,
@@ -2015,7 +2015,7 @@ async fn history(
             }
         }
     }
-    match transcript_history(&state, session_id, &query).await {
+    match chat_history(&state, session_id, &query).await {
         Ok(page) => history_response(page, None),
         Err(error) => internal("failed to read channel history")(error),
     }

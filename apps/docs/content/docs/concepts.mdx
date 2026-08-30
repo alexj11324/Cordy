@@ -3,7 +3,7 @@ title: Core concepts
 description: All of Patchbay's core objects and how they relate, on one page.
 ---
 
-![Patchbay core object diagram: inside a workspace, an issue triggers an agent via assignment or mention, the agent creates a task, the task executes on a runtime, and results are written back to the issue; chat and Autopilot are two more trigger sources, skills and teams attach to agents, projects organize issues, and notifications go to the inbox](/images/docs/concepts-core-objects.webp)
+![Patchbay core object diagram: inside a workspace, an issue triggers an agent via assignment or mention, the agent creates a task, the task executes on a runtime, and results are written back to the issue; chat and Automation are two more trigger sources, skills and teams attach to agents, projects organize issues, and notifications go to the inbox](/images/docs/concepts-core-objects.webp)
 
 ## Basic objects
 
@@ -51,15 +51,15 @@ A way to talk that is not attached to an issue — good for questions and quick 
 
 A member's notification center: activity on subscribed issues, mentions, and assignments all land here. Agents do not use the inbox. See [Inbox and subscriptions](/inbox).
 
-### Autopilot
+### Automation
 
-Triggers agent runs automatically on a schedule or from external events; you can also run one manually. See [Autopilots](/autopilots).
+Triggers agent runs automatically on a schedule or from external events; you can also run one manually. See [Automations](/automations).
 
 ## How the objects relate
 
 - The **workspace** is the container for everything; humans and **agents** collaborate inside it.
 - An **issue** records a piece of work; related issues are organized with **projects**.
-- Assigning, @-mentioning, **chat**, or an **Autopilot** triggers an agent, producing a **task**.
+- Assigning, @-mentioning, **chat**, or an **Automation** triggers an agent, producing a **task**.
 - The task completes on a **runtime**, and the results are written back to where it was triggered.
 - **Skills** let what works be reused across agents; **teams** let multiple agents work together.
 - Every notification for humans along the way goes to the **inbox**.

@@ -27,7 +27,7 @@ function PopoverContent({
     "align" | "alignOffset" | "side" | "sideOffset"
   > &
   // Keep the popup in the DOM while closed. Needed when the content hosts a
-  // modal (confirm dialog / transcript) that opens on click: without it the
+  // modal (confirm dialog / Agent event history) that opens on click: without it the
   // popup unmounts the moment focus leaves for the dialog, tearing the dialog
   // down with it.
   Pick<PopoverPrimitive.Portal.Props, "keepMounted">) {

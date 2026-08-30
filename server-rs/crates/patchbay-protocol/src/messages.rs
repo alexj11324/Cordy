@@ -49,10 +49,10 @@ pub const PENDING_WORK_KIND_MODEL_LIST: &str = "model_list";
 
 // --- Chat cancel outcomes ---------------------------------------------------
 
-/// The transcript turned out non-empty, so a "Stopped." assistant message was
+/// The Agent event history turned out non-empty, so a "Stopped." assistant message was
 /// persisted.
 pub const CHAT_CANCEL_OUTCOME_STOPPED: &str = "stopped";
-/// The transcript stayed empty, so the triggering user message was deleted and
+/// The Agent event history stayed empty, so the triggering user message was deleted and
 /// its content should be restored into the composer as a draft.
 pub const CHAT_CANCEL_OUTCOME_RESTORED: &str = "restored";
 

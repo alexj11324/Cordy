@@ -143,7 +143,7 @@ type Conn<'c> = sqlx::PgConnection;
 
 /// Resolves and validates the backward edge from a failed delegated task to
 /// its source coordinator. Returning `None` is an intentional no-op:
-/// non-terminal rows, retry-pending rows, autopilot work, recovery tasks
+/// non-terminal rows, retry-pending rows, automation work, recovery tasks
 /// themselves, terminal/backlog source issues, unavailable source agents, and
 /// self-delegation must never start a recovery loop.
 pub(crate) async fn load_delegated_failure_recover_target(
@@ -152,7 +152,7 @@ pub(crate) async fn load_delegated_failure_recover_target(
 ) -> Result<Option<DelegatedFailureRecoveryTarget>, TaskServiceError> {
     if failed.status != "failed"
         || failed.delegated_from_task_id.is_none()
-        || failed.autopilot_run_id.is_some()
+        || failed.automation_run_id.is_some()
         || failed.trigger_evidence_kind.as_deref()
             == Some(attribution::evidence_delegated_failure().as_str())
     {
@@ -174,7 +174,7 @@ pub(crate) async fn load_delegated_failure_recover_target(
     else {
         return Ok(None);
     };
-    if source.autopilot_run_id.is_some()
+    if source.automation_run_id.is_some()
         || source.issue_id.is_none()
         || source.agent_id == failed.agent_id
     {
@@ -943,17 +943,17 @@ mod tests {
         }
         patchbay_db::queries::workspace_delete::delete_workspace_leaf_data(&mut *tx, workspace_id)
             .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_runs(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_runs(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_quota_reservations(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_quota_reservations(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_quota_periods(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_quota_periods(
             &mut *tx,
             workspace_id,
         )
@@ -980,12 +980,12 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilot_children(
+        patchbay_db::queries::workspace_delete::delete_workspace_automation_children(
             &mut *tx,
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_automations(&mut *tx, workspace_id)
             .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
             &mut *tx,
@@ -1351,9 +1351,9 @@ mod tests {
             .await?)
         }
 
-        async fn autopilot_run(&self) -> anyhow::Result<Uuid> {
-            let autopilot_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO autopilot (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) \
+        async fn automation_run(&self) -> anyhow::Result<Uuid> {
+            let automation_id: Uuid = sqlx::query_scalar(
+                "INSERT INTO automation (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) \
                  VALUES ($1, 'delegated recovery contract', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
             )
             .bind(self.workspace_id)
@@ -1362,10 +1362,10 @@ mod tests {
             .fetch_one(&self.pool)
             .await?;
             Ok(sqlx::query_scalar(
-                "INSERT INTO autopilot_run (autopilot_id, source, status, issue_id) \
+                "INSERT INTO automation_run (automation_id, source, status, issue_id) \
                  VALUES ($1, 'manual', 'running', $2) RETURNING id",
             )
-            .bind(autopilot_id)
+            .bind(automation_id)
             .bind(self.source_issue_id)
             .fetch_one(&self.pool)
             .await?)
@@ -2120,7 +2120,7 @@ mod tests {
                 .execute(&rows.pool)
                 .await?;
 
-            let failed_autopilot = rows
+            let failed_automation = rows
                 .worker_task(
                     "failed",
                     "comment",
@@ -2130,26 +2130,26 @@ mod tests {
                     Some("worker exited"),
                 )
                 .await?;
-            let autopilot_run_id = rows.autopilot_run().await?;
-            sqlx::query("UPDATE agent_task_queue SET autopilot_run_id = $2 WHERE id = $1")
-                .bind(failed_autopilot)
-                .bind(autopilot_run_id)
+            let automation_run_id = rows.automation_run().await?;
+            sqlx::query("UPDATE agent_task_queue SET automation_run_id = $2 WHERE id = $1")
+                .bind(failed_automation)
+                .bind(automation_run_id)
                 .execute(&rows.pool)
                 .await?;
             anyhow::ensure!(
-                svc.ensure_delegated_failure_recovery_comment(failed_autopilot)
+                svc.ensure_delegated_failure_recovery_comment(failed_automation)
                     .await?
                     .0
                     .is_none(),
-                "autopilot failed task woke coordinator"
+                "automation failed task woke coordinator"
             );
 
-            sqlx::query("UPDATE agent_task_queue SET autopilot_run_id = $2 WHERE id = $1")
+            sqlx::query("UPDATE agent_task_queue SET automation_run_id = $2 WHERE id = $1")
                 .bind(rows.source_task_id)
-                .bind(autopilot_run_id)
+                .bind(automation_run_id)
                 .execute(&rows.pool)
                 .await?;
-            let source_autopilot_failed = rows
+            let source_automation_failed = rows
                 .worker_task(
                     "failed",
                     "comment",
@@ -2160,11 +2160,11 @@ mod tests {
                 )
                 .await?;
             anyhow::ensure!(
-                svc.ensure_delegated_failure_recovery_comment(source_autopilot_failed)
+                svc.ensure_delegated_failure_recovery_comment(source_automation_failed)
                     .await?
                     .0
                     .is_none(),
-                "autopilot source task woke coordinator"
+                "automation source task woke coordinator"
             );
 
             let recursive_id = rows

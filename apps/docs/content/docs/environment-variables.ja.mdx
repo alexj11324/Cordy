@@ -151,7 +151,7 @@ allowlist の正確な判定順序は[ログインとサインアップ](/auth-s
 | `RATE_LIMIT_INVITATION_WORKSPACE_24H` | `50` | ワークスペース内の全管理者による 24 時間スライディングウィンドウ内の招待総数。`0` でこの制限を無効化 |
 | `RATE_LIMIT_INVITATION_RECIPIENT_24H` | `6` | 正規化された同一受信メールアドレスがワークスペースをまたいで 24 時間スライディングウィンドウ内に受け取れる招待数。`0` でこの制限を無効化 |
 | `RATE_LIMIT_TRUSTED_PROXIES` | 空 | `X-Forwarded-For` の提供を許可するプロキシ CIDR。カンマ区切り |
-| `PATCHBAY_TRUSTED_PROXIES` | 空 | オートパイロット webhook とリアルタイム接続が使う信頼済みプロキシ CIDR |
+| `PATCHBAY_TRUSTED_PROXIES` | 空 | 自動化 webhook とリアルタイム接続が使う信頼済みプロキシ CIDR |
 
 リバースプロキシ配下のデプロイでは、実際のプロキシのネットワーク範囲を設定してください。すべての送信元を無条件に信頼してはいけません。クライアントが転送元 IP を偽装できてしまいます。
 

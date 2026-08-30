@@ -1,7 +1,7 @@
 //! Port of `dispatch.go`: decouples inbound processing from the Stream read
 //! loop. Frames are ACKed immediately and jobs run on per-conversation serial
 //! queues, so a slow media download can neither starve ping/system frames nor
-//! reorder a conversation's transcript. Cross-conversation jobs run in
+//! reorder a conversation's Agent event history. Cross-conversation jobs run in
 //! parallel, bounded by a global semaphore per installation. The
 //! per-conversation queue is bounded only as a memory backstop, set high enough
 //! that a real human burst never reaches it; the engine's dedup makes any

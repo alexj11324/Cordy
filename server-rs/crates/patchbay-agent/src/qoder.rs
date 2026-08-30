@@ -4717,7 +4717,7 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn qwenpaw_preserves_partial_transcript_on_prompt_error() {
+    async fn qwenpaw_preserves_partial_agent_events_on_prompt_error() {
         let (_directory, _requests, backend) = fake_qwenpaw_backend(
             r#"#!/bin/sh
 while IFS= read -r line; do

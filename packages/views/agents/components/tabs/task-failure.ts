@@ -1,5 +1,5 @@
 // Human-readable copy for the back-end task failure reason. Surfaced in the
-// agent detail Recent Work list and the issue execution log — the two places
+// agent detail Recent Work list and the issue Agent thread events — the two places
 // the front-end exposes failure_reason directly to the user, and the
 // destination the Usage page's Errors breakdown drills into.
 //

@@ -592,7 +592,7 @@ impl IssueService {
         actor_id: &str,
         opts: &IssueCreateOpts,
     ) {
-        let (source, task_id, autopilot_run_id) = classify_origin(issue);
+        let (source, task_id, automation_run_id) = classify_origin(issue);
         let analytics_actor_id = if creator_type == "agent" {
             format!("agent:{actor_id}")
         } else {
@@ -604,7 +604,7 @@ impl IssueService {
             &issue.id.to_string(),
             &opts.analytics_agent_id,
             &task_id,
-            &autopilot_run_id,
+            &automation_run_id,
             source,
             &opts.platform,
         );
@@ -1077,7 +1077,7 @@ fn classify_origin(issue: &Issue) -> (&'static str, String, String) {
         // (agent_create is the ordinary `issue create` path, PB-4305);
         // surface that task id under the manual source label.
         "quick_create" | "agent_create" => (analytics::SOURCE_MANUAL, origin_id, String::new()),
-        "autopilot" => (analytics::SOURCE_AUTOPILOT, String::new(), origin_id),
+        "automation" => (analytics::SOURCE_AUTOMATION, String::new(), origin_id),
         other => {
             tracing::warn!(
                 origin_type = other,
@@ -1522,7 +1522,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recent_autopilot_guard_preserves_scope_window_and_active_semantics() {
+    async fn recent_automation_guard_preserves_scope_window_and_active_semantics() {
         let pool = required_pool().await;
         let workspace_id = workspace(&pool).await;
         let agent_id: Uuid = sqlx::query_scalar(
@@ -1532,38 +1532,38 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("create agent");
-        let autopilot_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO autopilot (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) VALUES ($1, 'contract autopilot', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
+        let automation_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO automation (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) VALUES ($1, 'contract automation', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
         )
         .bind(workspace_id)
         .bind(agent_id)
         .bind(Uuid::now_v7())
         .fetch_one(&pool)
         .await
-        .expect("create autopilot");
+        .expect("create automation");
         let issue_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number, position, origin_type, origin_id) VALUES ($1, '  Recurring\tWork  ', 'todo', 'none', 'agent', $2, 1, -1, 'autopilot', $3) RETURNING id",
+            "INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, number, position, origin_type, origin_id) VALUES ($1, '  Recurring\tWork  ', 'todo', 'none', 'agent', $2, 1, -1, 'automation', $3) RETURNING id",
         )
         .bind(workspace_id)
         .bind(agent_id)
-        .bind(autopilot_id)
+        .bind(automation_id)
         .fetch_one(&pool)
         .await
-        .expect("create autopilot issue");
+        .expect("create automation issue");
         sqlx::query(
-            "INSERT INTO autopilot_run (autopilot_id, source, status, issue_id) VALUES ($1, 'manual', 'running', $2)",
+            "INSERT INTO automation_run (automation_id, source, status, issue_id) VALUES ($1, 'manual', 'running', $2)",
         )
-        .bind(autopilot_id)
+        .bind(automation_id)
         .bind(issue_id)
         .execute(&pool)
         .await
         .expect("create active run");
 
         let mut tx = pool.begin().await.expect("guard transaction");
-        let (duplicate, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(
+        let (duplicate, found) = crate::issue_guard::lock_and_find_recent_automation_duplicate(
             &mut tx,
             workspace_id,
-            Some(autopilot_id),
+            Some(automation_id),
             None,
             "recurring work",
             chrono::Duration::hours(1),
@@ -1574,20 +1574,20 @@ mod tests {
         assert_eq!(duplicate.expect("recent duplicate").id, issue_id);
         tx.rollback().await.expect("release guard lock");
 
-        for (autopilot, title, window) in [
+        for (automation, title, window) in [
             (None, "recurring work", chrono::Duration::hours(1)),
-            (Some(autopilot_id), "   ", chrono::Duration::hours(1)),
+            (Some(automation_id), "   ", chrono::Duration::hours(1)),
             (
-                Some(autopilot_id),
+                Some(automation_id),
                 "recurring work",
                 chrono::Duration::zero(),
             ),
         ] {
             let mut tx = pool.begin().await.expect("no-op transaction");
-            let (_, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(
+            let (_, found) = crate::issue_guard::lock_and_find_recent_automation_duplicate(
                 &mut tx,
                 workspace_id,
-                autopilot,
+                automation,
                 None,
                 title,
                 window,
@@ -1604,10 +1604,10 @@ mod tests {
             .await
             .expect("age issue");
         let mut tx = pool.begin().await.expect("expired transaction");
-        let (_, found) = crate::issue_guard::lock_and_find_recent_autopilot_duplicate(
+        let (_, found) = crate::issue_guard::lock_and_find_recent_automation_duplicate(
             &mut tx,
             workspace_id,
-            Some(autopilot_id),
+            Some(automation_id),
             None,
             "recurring work",
             chrono::Duration::hours(1),
@@ -1617,21 +1617,21 @@ mod tests {
         assert!(!found);
         tx.rollback().await.expect("release expired guard lock");
 
-        sqlx::query("DELETE FROM autopilot_run WHERE autopilot_id = $1")
-            .bind(autopilot_id)
+        sqlx::query("DELETE FROM automation_run WHERE automation_id = $1")
+            .bind(automation_id)
             .execute(&pool)
             .await
-            .expect("delete autopilot runs");
+            .expect("delete automation runs");
         sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
             .bind(workspace_id)
             .execute(&pool)
             .await
-            .expect("delete autopilot issues");
-        sqlx::query("DELETE FROM autopilot WHERE id = $1")
-            .bind(autopilot_id)
+            .expect("delete automation issues");
+        sqlx::query("DELETE FROM automation WHERE id = $1")
+            .bind(automation_id)
             .execute(&pool)
             .await
-            .expect("delete autopilot");
+            .expect("delete automation");
         sqlx::query("DELETE FROM agent WHERE id = $1")
             .bind(agent_id)
             .execute(&pool)

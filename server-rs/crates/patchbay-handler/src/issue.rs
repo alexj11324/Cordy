@@ -23,7 +23,7 @@ use patchbay_db::models::{
 };
 use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
-    activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
+    activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
     issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
     subscriber, task_usage, team, user, workspace,
 };
@@ -2246,7 +2246,7 @@ async fn batch_delete_issues(
         if state.tasks.cancel_tasks_for_issue(issue.id).await.is_err() {
             continue;
         }
-        let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+        let _ = automation::fail_automation_runs_by_issue(&state.pool, issue.id).await;
         let Ok(attachment_urls) = delete_issue_and_collect_attachment_urls(&state, &issue).await
         else {
             continue;
@@ -2279,7 +2279,7 @@ async fn delete_issue(
         tracing::warn!(%error, issue_id=%issue.id, "failed to cancel issue tasks");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue");
     }
-    let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+    let _ = automation::fail_automation_runs_by_issue(&state.pool, issue.id).await;
     match delete_issue_and_collect_attachment_urls(&state, &issue).await {
         Ok(attachment_urls) => {
             delete_attachment_objects(&state, attachment_urls).await;

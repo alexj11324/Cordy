@@ -166,7 +166,7 @@ where
 /// On an unresolvable key it returns the key unchanged. That is the fail-safe
 /// direction: an unrecognized status matches none of the canonical
 /// comparisons, so the issue is left alone rather than being swept,
-/// auto-triggered, or having its autopilot run finalized on a guess.
+/// auto-triggered, or having its automation run finalized on a guess.
 pub async fn effective<'e, E>(executor: E, workspace_id: Uuid, status: &str) -> String
 where
     E: Executor<'e, Database = sqlx::Postgres>,

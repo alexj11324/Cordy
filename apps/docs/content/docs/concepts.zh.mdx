@@ -3,7 +3,7 @@ title: 核心概念
 description: 一页认识 Patchbay 的全部核心对象，以及它们之间的关系。
 ---
 
-![Patchbay 核心对象关系图：Workspace 内，Issue 经分配或提及触发 Agent，Agent 创建 Task，Task 在 Runtime 上执行，结果写回 Issue；Chat 和 Autopilot 是另两个触发源，Skill 和 Team 挂载于 Agent，Project 组织 issue，通知进入 Inbox](/images/docs/concepts-core-objects.webp)
+![Patchbay 核心对象关系图：Workspace 内，Issue 经分配或提及触发 Agent，Agent 创建 Task，Task 在 Runtime 上执行，结果写回 Issue；Chat 和自动化是另两个触发源，Skill 和 Team 挂载于 Agent，Project 组织 issue，通知进入 Inbox](/images/docs/concepts-core-objects.webp)
 
 ## 基础对象
 
@@ -35,7 +35,7 @@ description: 一页认识 Patchbay 的全部核心对象，以及它们之间的
 
 ### 执行任务（task）
 
-智能体的一次具体执行记录。每次触发产生一条执行任务，由某个运行时完成后把结果写回。一个 issue 可以先后产生多条执行任务；执行结束不等于 issue 完成。详见[执行任务](/tasks)。
+智能体的一次具体Agent 事件。每次触发产生一条执行任务，由某个运行时完成后把结果写回。一个 issue 可以先后产生多条执行任务；执行结束不等于 issue 完成。详见[执行任务](/tasks)。
 
 ## 协作与自动化
 
@@ -53,7 +53,7 @@ description: 一页认识 Patchbay 的全部核心对象，以及它们之间的
 
 ### 自动化
 
-按时间表或外部事件自动触发智能体执行，也可以手动运行一次。详见[自动化](/autopilots)。
+按时间表或外部事件自动触发智能体执行，也可以手动运行一次。详见[自动化](/automations)。
 
 ## 对象之间的关系
 

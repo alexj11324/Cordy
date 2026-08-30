@@ -1,7 +1,7 @@
 //! Task thread-name derivation.
 //!
 //! Derives the Codex thread name shown for a task: the first non-empty
-//! candidate among the task's thread name, autopilot title, quick-create
+//! candidate among the task's thread name, automation title, quick-create
 //! prompt, chat message, and trigger comment content — whitespace-collapsed
 //! and rune-truncated to [`CODEX_THREAD_NAME_MAX_RUNES`].
 
@@ -12,7 +12,7 @@ pub(crate) const CODEX_THREAD_NAME_MAX_RUNES: usize = 120;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadNameSource {
     pub thread_name: String,
-    pub autopilot_title: String,
+    pub automation_title: String,
     pub quick_create_prompt: String,
     pub chat_message: String,
     pub trigger_comment_content: String,
@@ -22,7 +22,7 @@ impl From<&crate::types::Task> for ThreadNameSource {
     fn from(task: &crate::types::Task) -> Self {
         Self {
             thread_name: task.thread_name.clone(),
-            autopilot_title: task.autopilot_title.clone(),
+            automation_title: task.automation_title.clone(),
             quick_create_prompt: task.quick_create_prompt.clone(),
             chat_message: task.chat_message.clone(),
             trigger_comment_content: task.trigger_comment_content.clone(),
@@ -39,7 +39,7 @@ pub(crate) fn derive_task_thread_name_from_task(task: &crate::types::Task) -> St
 pub(crate) fn derive_task_thread_name(task: &ThreadNameSource) -> String {
     let candidates = [
         &task.thread_name,
-        &task.autopilot_title,
+        &task.automation_title,
         &task.quick_create_prompt,
         &task.chat_message,
         &task.trigger_comment_content,

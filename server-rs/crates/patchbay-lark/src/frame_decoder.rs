@@ -225,7 +225,7 @@ pub struct LarkMentionId {
 /// receives a body that reads naturally and does not require resolving the
 /// mentions array itself. The bot's OWN mention is stripped (the dispatcher
 /// already routes the event on addressed_to_bot — re-emitting `@<bot>` in
-/// front of every message makes both the chat transcript and any downstream
+/// front of every message makes both the chat Agent event history and any downstream
 /// LLM context noisier without adding signal). Other participants render as
 /// `@<displayName>`, falling back to leaving the placeholder alone when name
 /// is empty (defensive — Lark always populates it in practice).

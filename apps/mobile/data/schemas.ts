@@ -14,10 +14,12 @@ import type {
   Agent,
   AgentInvocationTarget,
   AgentTask,
+  AgentThreadResponse,
   Attachment,
   ChatMessage,
   ChatPendingTask,
   ChatSession,
+  ContinueAgentThreadResponse,
   Comment,
   InboxItem,
   IssueLabelsResponse,
@@ -404,9 +406,9 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
 // Mirrors AgentTask in packages/core/types/agent.ts. Backend handlers:
 //   GET  /api/issues/{id}/active-task → { tasks: AgentTask[] } (may be empty)
 //   GET  /api/issues/{id}/task-runs   → AgentTask[]
-// Lenient on every field — status / kind / failure_reason all use `.catch()`
-// so a future server-side enum value renders a generic fallback rather than
-// crashing the row (root AGENTS.md "Enum drift downgrades, not crashes").
+// Lenient on every field — status and kind use `.catch()`, while
+// failure_reason remains an open string so a future server-side value renders
+// without crashing the row (root AGENTS.md "Enum drift downgrades, not crashes").
 
 export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   id: z.string(),
@@ -414,7 +416,15 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   runtime_id: z.string().default(""),
   issue_id: z.string().default(""),
   status: z
-    .enum(["queued", "dispatched", "running", "completed", "failed", "cancelled"])
+    .enum([
+      "queued",
+      "dispatched",
+      "waiting_local_directory",
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+    ])
     .catch("queued"),
   priority: z.number().default(0),
   dispatched_at: z.string().nullable().default(null),
@@ -422,27 +432,57 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   completed_at: z.string().nullable().default(null),
   result: z.unknown().default(null),
   error: z.string().nullable().default(null),
-  // Backend uses empty string ("") as the "not failed" sentinel in the wire
-  // contract. Normalize that to `undefined`
-  // so downstream truthy checks (`if (task.failure_reason)`) don't have to
-  // special-case both null/undefined AND "".
+  // Keep provider-specific failure reasons forward-compatible. The server
+  // may add a refined `agent_error.*` value without making mobile discard the
+  // whole task record.
   failure_reason: z
-    .enum(["agent_error", "timeout", "runtime_offline", "runtime_recovery", "manual", ""])
+    .string()
+    .nullable()
     .optional()
-    .catch("")
-    .transform((v) => (v === "" ? undefined : v)),
+    .transform((value) => value ?? undefined),
   created_at: z.string().default(""),
   chat_session_id: z.string().optional(),
-  autopilot_run_id: z.string().optional(),
+  automation_run_id: z.string().optional(),
   parent_task_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
   trigger_summary: z.string().optional(),
-  kind: z.enum(["comment", "autopilot", "chat", "quick_create", "direct"]).optional().catch("direct"),
+  kind: z
+    .enum(["comment", "automation", "chat", "quick_create", "direct", "message_bus"])
+    .optional()
+    .catch("direct"),
   work_dir: z.string().optional(),
 }).loose();
 
 export const AgentTaskListSchema = z.array(AgentTaskSchema).default([]);
+
+const AgentThreadAvailabilitySchema = z.object({
+  state: z.enum(["available", "unavailable"]).default("unavailable"),
+  reason_code: z.string().optional(),
+  reason: z.string().optional(),
+}).loose();
+
+const AgentThreadAgentSchema = z.object({
+  id: z.string().default(""),
+  name: z.string().default(""),
+  avatar_url: z.string().nullable().default(null),
+}).loose();
+
+/** Canonical task-to-thread envelope shared with web and desktop. */
+export const AgentThreadResponseSchema: z.ZodType<AgentThreadResponse> = z.object({
+  task: AgentTaskSchema,
+  thread_tasks: z.array(AgentTaskSchema).default([]),
+  current_task_id: z.string().default(""),
+  agent: AgentThreadAgentSchema,
+  events: z.array(TaskMessagePayloadSchema).default([]),
+  availability: AgentThreadAvailabilitySchema,
+  can_continue: z.boolean().default(false),
+}).loose() as unknown as z.ZodType<AgentThreadResponse>;
+
+export const ContinueAgentThreadResponseSchema: z.ZodType<ContinueAgentThreadResponse> = z.object({
+  continuation_task_id: z.string().default(""),
+  status: z.enum(["queued", "coalesced"]).default("queued"),
+}).loose();
 
 export const ActiveTasksResponseSchema = z.object({
   tasks: z.array(AgentTaskSchema).default([]),

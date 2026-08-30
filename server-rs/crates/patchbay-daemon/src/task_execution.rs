@@ -57,7 +57,7 @@ pub struct TaskRunOutcome {
 /// Required daemon-core boundary for runtime lookup and provider execution.
 ///
 /// `run_task` owns the established prepare/start/runner/finalize pipeline. It
-/// must not return until transcript flushing and local finalization have
+/// must not return until Agent event history flushing and local finalization have
 /// completed; that ordering is what makes the subsequent cancel ack and
 /// terminal callback safe. `ctx` is cancelled when the authoritative server
 /// task becomes terminal or disappears.
@@ -451,7 +451,7 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
 }
 
 /// Classifies a finished task for the persistent GC decision tree. Priority
-/// matches Go: chat and autopilot parents outlive issue linkage, while a
+/// matches Go: chat and automation parents outlive issue linkage, while a
 /// quick-create task has no issue ID yet and is keyed by task ID.
 fn gc_meta_for_task(task: &Task) -> Option<GcMeta> {
     let mut meta = GcMeta {
@@ -461,9 +461,9 @@ fn gc_meta_for_task(task: &Task) -> Option<GcMeta> {
     if !task.chat_session_id.is_empty() {
         meta.kind = Some(GCMetaKind::Chat);
         meta.chat_session_id.clone_from(&task.chat_session_id);
-    } else if !task.autopilot_run_id.is_empty() {
-        meta.kind = Some(GCMetaKind::AutopilotRun);
-        meta.autopilot_run_id.clone_from(&task.autopilot_run_id);
+    } else if !task.automation_run_id.is_empty() {
+        meta.kind = Some(GCMetaKind::AutomationRun);
+        meta.automation_run_id.clone_from(&task.automation_run_id);
     } else if !task.issue_id.is_empty() {
         meta.kind = Some(GCMetaKind::Issue);
         meta.issue_id.clone_from(&task.issue_id);
@@ -795,7 +795,7 @@ mod tests {
             workspace_id: "workspace-1".into(),
             issue_id: "issue-1".into(),
             chat_session_id: "chat-1".into(),
-            autopilot_run_id: "run-1".into(),
+            automation_run_id: "run-1".into(),
             quick_create_prompt: "prompt".into(),
             ..Task::default()
         };

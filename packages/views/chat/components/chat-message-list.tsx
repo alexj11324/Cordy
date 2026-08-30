@@ -52,7 +52,7 @@ import type {
   TaskMessagePayload,
 } from "@patchbay/core/types";
 import type { ChatTimelineItem } from "@patchbay/core/chat";
-import { buildTimeline } from "../../common/task-transcript";
+import { buildTimeline } from "../../common/agent-thread-events";
 import { OnboardingStarterCards } from "./onboarding-starter-cards";
 import { TaskStatusPill } from "./task-status-pill";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
@@ -336,7 +336,7 @@ export function ChatMessageList({
   // reader page through the rest (PB-5752). Built from the message data, not
   // from what Virtuoso currently has mounted.
   //
-  // Persisted messages only: a task transcript's own attachments live behind a
+  // Persisted messages only: a task Agent event history's own attachments live behind a
   // separate query and its blocks are collapsed by default, so an image in
   // there keeps its standalone preview instead of entering a sequence the
   // reader can't see the rest of.
@@ -1101,7 +1101,7 @@ function FailureBubble({
   const [open, setOpen] = useState(false);
   // Chat gets its own friendly, reassuring copy per failure reason — plain
   // language + a "try again" nudge — instead of the terse developer labels
-  // (`failureReasonLabel`) used on the agent-detail / execution-log surfaces.
+  // (`failureReasonLabel`) used on the Agent thread surface.
   // The raw error stays tucked under the collapsible below for anyone who
   // wants the technical detail.
   //

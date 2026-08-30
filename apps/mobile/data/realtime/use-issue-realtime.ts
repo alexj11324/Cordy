@@ -53,6 +53,7 @@ import {
   removeFromMyIssuesList,
   removeIssueReaction,
 } from "./issue-ws-updaters";
+import { appendTaskMessage } from "./chat-ws-updaters";
 
 type TaskEventPayload =
   | TaskQueuedPayload
@@ -220,6 +221,10 @@ export function useIssueRealtime(
         ws.on("task:completed", onTaskEvent),
         ws.on("task:failed", onTaskEvent),
         ws.on("task:cancelled", onTaskEvent),
+        ws.on("task:message", (payload) => {
+          if (payload.issue_id !== issueId) return;
+          appendTaskMessage(qc, payload);
+        }),
 
         // ----- Reconnect -----
         ws.onReconnect(() => {

@@ -130,6 +130,7 @@ export type {
 } from "./activity";
 export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";
+export type * from "./agent-thread";
 export type * from "./api";
 export type { Attachment } from "./attachment";
 export {
@@ -250,34 +251,34 @@ export type {
   RedeemTelegramBindingTokenResponse,
 } from "./telegram";
 export type {
-  Autopilot,
-  AutopilotStatus,
-  AutopilotExecutionMode,
-  AutopilotAssigneeType,
-  AutopilotSubscriber,
-  AutopilotSubscriberInput,
-  AutopilotCollaborator,
-  AutopilotCollaboratorsResponse,
-  AutopilotTrigger,
-  AutopilotTriggerKind,
-  AutopilotRun,
-  AutopilotRunStatus,
-  AutopilotRunSource,
-  AutopilotQuotaUsage,
+  Automation,
+  AutomationStatus,
+  AutomationExecutionMode,
+  AutomationAssigneeType,
+  AutomationSubscriber,
+  AutomationSubscriberInput,
+  AutomationCollaborator,
+  AutomationCollaboratorsResponse,
+  AutomationTrigger,
+  AutomationTriggerKind,
+  AutomationRun,
+  AutomationRunStatus,
+  AutomationRunSource,
+  AutomationQuotaUsage,
   WebhookEventFilter,
-  CreateAutopilotRequest,
-  UpdateAutopilotRequest,
-  CreateAutopilotTriggerRequest,
-  UpdateAutopilotTriggerRequest,
-  ListAutopilotsResponse,
+  CreateAutomationRequest,
+  UpdateAutomationRequest,
+  CreateAutomationTriggerRequest,
+  UpdateAutomationTriggerRequest,
+  ListAutomationsResponse,
   CronPreviewResponse,
-  GetAutopilotResponse,
-  ListAutopilotRunsResponse,
+  GetAutomationResponse,
+  ListAutomationRunsResponse,
   WebhookDelivery,
   WebhookDeliveryStatus,
   WebhookSignatureStatus,
   ListWebhookDeliveriesResponse,
-} from "./autopilot";
+} from "./automation";
 export type {
   Team,
   TeamMember,

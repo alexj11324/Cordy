@@ -44,14 +44,14 @@ impl Source {
     pub fn comment_source() -> Source {
         Source("comment_source".to_string())
     }
-    /// An autopilot schedule/webhook trigger fired; the accountable human is
+    /// An automation schedule/webhook trigger fired; the accountable human is
     /// the member who CREATED that trigger. Preferred over [`Source::rule_owner`]
     /// (PB-4302; Bohan's refinement). originator stays NULL — authz-safe
     /// audit-only divergence.
     pub fn trigger_owner() -> Source {
         Source("trigger_owner".to_string())
     }
-    /// Autopilot trigger whose creator is not recoverable; degrades to the
+    /// Automation trigger whose creator is not recoverable; degrades to the
     /// publisher of the rule's active version (PB-4302 §3.4).
     pub fn rule_owner() -> Source {
         Source("rule_owner".to_string())
@@ -99,8 +99,8 @@ pub fn evidence_comment() -> EvidenceKind {
 pub fn evidence_issue_assignment() -> EvidenceKind {
     EvidenceKind("issue_assignment".to_string())
 }
-pub fn evidence_autopilot_run() -> EvidenceKind {
-    EvidenceKind("autopilot_run".to_string())
+pub fn evidence_automation_run() -> EvidenceKind {
+    EvidenceKind("automation_run".to_string())
 }
 pub fn evidence_rule_version() -> EvidenceKind {
     EvidenceKind("rule_version".to_string())
@@ -114,7 +114,7 @@ pub fn evidence_delegated_failure() -> EvidenceKind {
     EvidenceKind("delegated_failure".to_string())
 }
 /// Points the uniform evidence pair at the chat session that triggered the
-/// run — the chat analogue of autopilot_run/issue_assignment (PB-4302 §2).
+/// run — the chat analogue of automation_run/issue_assignment (PB-4302 §2).
 pub fn evidence_chat() -> EvidenceKind {
     EvidenceKind("chat".to_string())
 }
@@ -133,9 +133,9 @@ pub enum TriggerKind {
     StageWakeup,
     QuickCreate,
     Chat,
-    AutopilotSchedule,
-    AutopilotWebhook,
-    AutopilotManual,
+    AutomationSchedule,
+    AutomationWebhook,
+    AutomationManual,
     Retry,
     Rerun,
     DeferredFallback,
@@ -153,9 +153,9 @@ impl TriggerKind {
             TriggerKind::StageWakeup => "stage_wakeup",
             TriggerKind::QuickCreate => "quick_create",
             TriggerKind::Chat => "chat",
-            TriggerKind::AutopilotSchedule => "autopilot_schedule",
-            TriggerKind::AutopilotWebhook => "autopilot_webhook",
-            TriggerKind::AutopilotManual => "autopilot_manual",
+            TriggerKind::AutomationSchedule => "automation_schedule",
+            TriggerKind::AutomationWebhook => "automation_webhook",
+            TriggerKind::AutomationManual => "automation_manual",
             TriggerKind::Retry => "retry",
             TriggerKind::Rerun => "rerun",
             TriggerKind::DeferredFallback => "deferred_fallback",
@@ -218,7 +218,7 @@ pub struct CommentFacts {
     pub parent_originator: Option<Uuid>,
 
     /// The source task's accountable_user_id (PB-4302 §3.2): lets an
-    /// autopilot-rooted chain copy its responsible human down the delegation
+    /// automation-rooted chain copy its responsible human down the delegation
     /// instead of dropping the chain root to unattributed.
     pub parent_accountable: Option<Uuid>,
 }
@@ -254,7 +254,7 @@ pub fn classify_comment(f: CommentFacts, agent_authored_source: Source) -> Resul
                 r.user_id = f.parent_originator;
                 r.source = Some(agent_authored_source);
             } else if f.parent_accountable.is_some() {
-                // The parent had no authorizing human (autopilot-rooted chain)
+                // The parent had no authorizing human (automation-rooted chain)
                 // but IS accountable to someone. Copy that down so the chain
                 // root stays stable at any depth; originator stays NULL so
                 // authorization is unchanged and a fail-closed workspace does
@@ -334,7 +334,7 @@ pub fn classify_direct(f: DirectFacts) -> Result_ {
                 r.user_id = f.origin_originator;
                 r.source = Some(Source::delegation());
             } else if f.origin_accountable.is_some() {
-                // Autopilot-rooted origin task: copy accountable down; the
+                // Automation-rooted origin task: copy accountable down; the
                 // chain root stays stable, originator stays NULL (§3.2).
                 r.accountable_user_id = f.origin_accountable;
                 r.source = Some(Source::delegation());
@@ -391,7 +391,7 @@ pub fn unattributed(evidence_kind: EvidenceKind, evidence_ref_id: Option<Uuid>) 
     })
 }
 
-/// Builds attribution for an autopilot-triggered run keyed to the publisher
+/// Builds attribution for an automation-triggered run keyed to the publisher
 /// of the active rule version (PB-4302 §3.4). No human authorized the run:
 /// user_id stays None; accountable is publisher_user_id — THE divergence the
 /// two-column split exists for. A missing publisher degrades to unattributed
@@ -417,7 +417,7 @@ pub fn rule_owner(
     finalize_attribution(r)
 }
 
-/// Builds attribution for an autopilot schedule/webhook run keyed to the
+/// Builds attribution for an automation schedule/webhook run keyed to the
 /// human who created the firing trigger (Bohan's refinement). Like
 /// [`rule_owner`], only the audit-accountable side is set. An invalid creator
 /// degrades to unattributed so callers fall back to rule_owner rather than
@@ -463,7 +463,7 @@ pub struct SubscriptionFacts {
 /// - quick_create → 'creator' (direct intent, full notifications);
 ///   agent_create → 'delegated' (agent's own decision under a broader
 ///   mandate, reduced tier).
-/// - Anything else → none. origin_type='autopilot' excluded: an autopilot has
+/// - Anything else → none. origin_type='automation' excluded: an automation has
 ///   its own configured subscriber template. Degraded attribution excluded:
 ///   we do not fabricate a human to notify.
 pub fn delegated_subscriber(f: SubscriptionFacts) -> Option<(Uuid, &'static str)> {
@@ -514,7 +514,7 @@ mod tests {
         assert_eq!(Source::unattributed().as_str(), "unattributed");
         assert_eq!(evidence_chat().as_str(), "chat");
         assert_eq!(evidence_delegated_failure().as_str(), "delegated_failure");
-        assert_eq!(TriggerKind::AutopilotWebhook.as_str(), "autopilot_webhook");
+        assert_eq!(TriggerKind::AutomationWebhook.as_str(), "automation_webhook");
     }
 
     #[test]
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(out.delegated_from_task_id, Some(id(10)));
         assert_eq!(out.source, Some(Source::delegation()));
 
-        // Autopilot-rooted parent: no originator but accountable set →
+        // Automation-rooted parent: no originator but accountable set →
         // accountable copied down, user stays None (authz unchanged).
         let out = classify_comment(
             CommentFacts {
@@ -679,7 +679,7 @@ mod tests {
 
         let out = classify_direct(DirectFacts {
             issue_id: Some(id(100)),
-            origin_type: "autopilot".into(),
+            origin_type: "automation".into(),
             ..Default::default()
         });
         assert_eq!(out.source, Some(Source::unattributed()));
@@ -690,7 +690,7 @@ mod tests {
         let out = rule_owner(
             Some(id(40)),
             Some(id(41)),
-            evidence_autopilot_run(),
+            evidence_automation_run(),
             Some(id(42)),
         );
         assert_eq!(out.user_id, None, "no human authorized the run");
@@ -699,19 +699,19 @@ mod tests {
         assert_eq!(out.source, Some(Source::rule_owner()));
 
         // Missing publisher degrades to unattributed, never fabricated.
-        let out = rule_owner(None, None, evidence_autopilot_run(), Some(id(42)));
+        let out = rule_owner(None, None, evidence_automation_run(), Some(id(42)));
         assert_eq!(out.source, Some(Source::unattributed()));
         assert_eq!(out.accountable_user_id, None);
     }
 
     #[test]
     fn trigger_owner_and_invalid_creator_fallback() {
-        let out = trigger_owner(Some(id(50)), evidence_autopilot_run(), Some(id(51)));
+        let out = trigger_owner(Some(id(50)), evidence_automation_run(), Some(id(51)));
         assert_eq!(out.user_id, None);
         assert_eq!(out.accountable_user_id, Some(id(50)));
         assert_eq!(out.source, Some(Source::trigger_owner()));
 
-        let out = trigger_owner(None, evidence_autopilot_run(), Some(id(51)));
+        let out = trigger_owner(None, evidence_automation_run(), Some(id(51)));
         assert_eq!(out.source, Some(Source::unattributed()));
     }
 
@@ -772,11 +772,11 @@ mod tests {
             }),
             None
         );
-        // Autopilot origin excluded: it has its own subscriber template.
+        // Automation origin excluded: it has its own subscriber template.
         assert_eq!(
             delegated_subscriber(SubscriptionFacts {
                 creator_type: "agent".into(),
-                origin_type: "autopilot".into(),
+                origin_type: "automation".into(),
                 origin_originator: Some(id(80)),
             }),
             None

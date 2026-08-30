@@ -30,6 +30,9 @@ import type {
   AgentEnvResponse,
   UpdateAgentEnvRequest,
   AgentTask,
+  AgentThreadResponse,
+  ContinueAgentThreadRequest,
+  ContinueAgentThreadResponse,
   AgentActivityBucket,
   AgentRunCount,
   WorkspaceWorkingAgent,
@@ -136,19 +139,19 @@ import type {
   Invitation,
   ShareLink,
   ShareLinkInfo,
-  Autopilot,
-  AutopilotTrigger,
-  AutopilotRun,
-  AutopilotQuotaUsage,
-  CreateAutopilotRequest,
-  UpdateAutopilotRequest,
-  CreateAutopilotTriggerRequest,
-  UpdateAutopilotTriggerRequest,
-  ListAutopilotsResponse,
+  Automation,
+  AutomationTrigger,
+  AutomationRun,
+  AutomationQuotaUsage,
+  CreateAutomationRequest,
+  UpdateAutomationRequest,
+  CreateAutomationTriggerRequest,
+  UpdateAutomationTriggerRequest,
+  ListAutomationsResponse,
   CronPreviewResponse,
-  GetAutopilotResponse,
-  AutopilotCollaboratorsResponse,
-  ListAutopilotRunsResponse,
+  GetAutomationResponse,
+  AutomationCollaboratorsResponse,
+  ListAutomationRunsResponse,
   ListWebhookDeliveriesResponse,
   WebhookDelivery,
   NotificationPreferenceResponse,
@@ -237,8 +240,10 @@ import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
 import {
   AgentTaskListSchema,
+  AgentThreadResponseSchema,
   AttachmentResponseSchema,
   CancelTaskResponseSchema,
+  ContinueAgentThreadResponseSchema,
   ChatDraftRestoresResponseSchema,
   ChatMessageListSchema,
   ChannelListSchema,
@@ -298,11 +303,11 @@ import {
   IssueTableFacetsResponseSchema,
   IssueTableGroupsResponseSchema,
   IssueTableRowsResponseSchema,
-  ListAutopilotsResponseSchema,
-  EMPTY_LIST_AUTOPILOTS_RESPONSE,
-  AutopilotRunSchema,
-  AutopilotQuotaUsageSchema,
-  FALLBACK_AUTOPILOT_RUN,
+  ListAutomationsResponseSchema,
+  EMPTY_LIST_AUTOMATIONS_RESPONSE,
+  AutomationRunSchema,
+  AutomationQuotaUsageSchema,
+  FALLBACK_AUTOMATION_RUN,
   CronPreviewResponseSchema,
   UNREADABLE_CRON_PREVIEW_RESPONSE,
   ListIssuesResponseSchema,
@@ -532,7 +537,7 @@ export function dispatchReasonCode(err: unknown): string | undefined {
 }
 
 // clientErrorMessage returns the server's message only when it is a CLIENT
-// error (4xx). Handlers write those for the user — "autopilot is not active",
+// error (4xx). Handlers write those for the user — "automation is not active",
 // "Idempotency-Key is too long" — so they are worth rendering. A 5xx message is
 // internal detail (backend error chains, database table/constraint names, internal ids)
 // that must never reach a toast (PB-6472), and a non-ApiError is a transport
@@ -1864,7 +1869,7 @@ export class ApiClient {
     agents_unbound?: number;
     agents_archived?: number;
     tasks_cancelled: number;
-    autopilots_paused?: number;
+    automations_paused?: number;
   }> {
     return this.fetch(`/api/runtimes/${runtimeId}/unbind-agents-and-delete`, {
       method: "POST",
@@ -2271,6 +2276,58 @@ export class ApiClient {
 
   async listTaskMessages(taskId: string): Promise<TaskMessagePayload[]> {
     return this.fetch(`/api/tasks/${taskId}/messages`);
+  }
+
+  async getAgentThread(taskId: string): Promise<AgentThreadResponse> {
+    const raw = await this.fetch<unknown>(`/api/tasks/${taskId}/agent-thread`);
+    return parseWithFallback(raw, AgentThreadResponseSchema, {
+      task: {
+        id: "",
+        agent_id: "",
+        runtime_id: "",
+        issue_id: "",
+        status: "cancelled",
+        priority: 0,
+        dispatched_at: null,
+        started_at: null,
+        completed_at: null,
+        result: null,
+        error: null,
+        created_at: "",
+      },
+      thread_tasks: [],
+      current_task_id: "",
+      agent: { id: "", name: "", avatar_url: null },
+      events: [],
+      availability: {
+        state: "unavailable",
+        reason_code: "invalid_response",
+        reason: "The Agent thread response was invalid.",
+      },
+      can_continue: false,
+    }, {
+      endpoint: "GET /api/tasks/{taskId}/agent-thread",
+    });
+  }
+
+  async continueAgentThread(
+    taskId: string,
+    request: ContinueAgentThreadRequest,
+  ): Promise<ContinueAgentThreadResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/tasks/${taskId}/agent-thread/continue`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": request.idempotency_key },
+        body: JSON.stringify(request),
+      },
+    );
+    return parseWithFallback(raw, ContinueAgentThreadResponseSchema, {
+      continuation_task_id: "",
+      status: "queued",
+    }, {
+      endpoint: "POST /api/tasks/{taskId}/agent-thread/continue",
+    });
   }
 
   async listTasksByIssue(issueId: string): Promise<AgentTask[]> {
@@ -3290,7 +3347,7 @@ export class ApiClient {
   }
 
   // Advertises the durable draft-restore capability (#5219). The server only
-  // defers the empty-transcript judgment — and therefore only withholds the
+  // defers the empty-Agent event history judgment — and therefore only withholds the
   // synchronous restore from the response — for clients that send this; without
   // it we would be treated as a pre-#5219 client and get the legacy behaviour.
   async cancelTaskById(
@@ -3938,75 +3995,75 @@ export class ApiClient {
     }) as TeamMemberStatusListResponse;
   }
 
-  // Autopilots
-  async listAutopilots(params?: { status?: string }): Promise<ListAutopilotsResponse> {
+  // Automations
+  async listAutomations(params?: { status?: string }): Promise<ListAutomationsResponse> {
     const search = new URLSearchParams();
     if (params?.status) search.set("status", params.status);
-    const raw = await this.fetch<unknown>(`/api/autopilots?${search}`);
+    const raw = await this.fetch<unknown>(`/api/automations?${search}`);
     return parseWithFallback(
       raw,
-      ListAutopilotsResponseSchema,
-      EMPTY_LIST_AUTOPILOTS_RESPONSE as ListAutopilotsResponse,
-      { endpoint: "GET /api/autopilots" },
+      ListAutomationsResponseSchema,
+      EMPTY_LIST_AUTOMATIONS_RESPONSE as ListAutomationsResponse,
+      { endpoint: "GET /api/automations" },
     );
   }
 
-  async getAutopilot(id: string): Promise<GetAutopilotResponse> {
-    return this.fetch(`/api/autopilots/${id}`);
+  async getAutomation(id: string): Promise<GetAutomationResponse> {
+    return this.fetch(`/api/automations/${id}`);
   }
 
-  async createAutopilot(data: CreateAutopilotRequest): Promise<Autopilot> {
-    return this.fetch("/api/autopilots", {
+  async createAutomation(data: CreateAutomationRequest): Promise<Automation> {
+    return this.fetch("/api/automations", {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async updateAutopilot(id: string, data: UpdateAutopilotRequest): Promise<Autopilot> {
-    return this.fetch(`/api/autopilots/${id}`, {
+  async updateAutomation(id: string, data: UpdateAutomationRequest): Promise<Automation> {
+    return this.fetch(`/api/automations/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     });
   }
 
-  async deleteAutopilot(id: string): Promise<void> {
-    await this.fetch(`/api/autopilots/${id}`, { method: "DELETE" });
+  async deleteAutomation(id: string): Promise<void> {
+    await this.fetch(`/api/automations/${id}`, { method: "DELETE" });
   }
 
-  // Grant a workspace member explicit write access to the autopilot. Both
+  // Grant a workspace member explicit write access to the automation. Both
   // grant and revoke return the full updated collaborator list so callers can
   // refresh without a second round-trip.
-  async grantAutopilotAccess(id: string, userId: string): Promise<AutopilotCollaboratorsResponse> {
-    return this.fetch(`/api/autopilots/${id}/collaborators`, {
+  async grantAutomationAccess(id: string, userId: string): Promise<AutomationCollaboratorsResponse> {
+    return this.fetch(`/api/automations/${id}/collaborators`, {
       method: "POST",
       body: JSON.stringify({ user_id: userId }),
     });
   }
 
-  async revokeAutopilotAccess(id: string, userId: string): Promise<AutopilotCollaboratorsResponse> {
-    return this.fetch(`/api/autopilots/${id}/collaborators/${userId}`, {
+  async revokeAutomationAccess(id: string, userId: string): Promise<AutomationCollaboratorsResponse> {
+    return this.fetch(`/api/automations/${id}/collaborators/${userId}`, {
       method: "DELETE",
     });
   }
 
-  async triggerAutopilot(id: string): Promise<AutopilotRun> {
+  async triggerAutomation(id: string): Promise<AutomationRun> {
     // Manual "run now" usually returns a run, including downstream admission
     // failures. Quota rejection is the exception and returns 429. The UI
     // handles both paths without presenting a false-success toast.
-    const raw = await this.fetch<unknown>(`/api/autopilots/${id}/trigger`, {
+    const raw = await this.fetch<unknown>(`/api/automations/${id}/trigger`, {
       method: "POST",
       headers: { "Idempotency-Key": createSafeId() },
     });
-    return parseWithFallback(raw, AutopilotRunSchema, FALLBACK_AUTOPILOT_RUN, {
-      endpoint: "POST /api/autopilots/:id/trigger",
+    return parseWithFallback(raw, AutomationRunSchema, FALLBACK_AUTOMATION_RUN, {
+      endpoint: "POST /api/automations/:id/trigger",
     });
   }
 
-  async getAutopilotQuotaUsage(): Promise<AutopilotQuotaUsage> {
-    const raw = await this.fetch<unknown>("/api/autopilots/usage");
+  async getAutomationQuotaUsage(): Promise<AutomationQuotaUsage> {
+    const raw = await this.fetch<unknown>("/api/automations/usage");
     return parseWithFallback(
       raw,
-      AutopilotQuotaUsageSchema,
+      AutomationQuotaUsageSchema,
       {
         action: "off",
         used: null,
@@ -4017,61 +4074,61 @@ export class ApiClient {
         reset_at: null,
         blocked_counts: null,
       },
-      { endpoint: "GET /api/autopilots/usage" },
+      { endpoint: "GET /api/automations/usage" },
     );
   }
 
-  async listAutopilotRuns(id: string, params?: { limit?: number; offset?: number }): Promise<ListAutopilotRunsResponse> {
+  async listAutomationRuns(id: string, params?: { limit?: number; offset?: number }): Promise<ListAutomationRunsResponse> {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", params.limit.toString());
     if (params?.offset) search.set("offset", params.offset.toString());
-    return this.fetch(`/api/autopilots/${id}/runs?${search}`);
+    return this.fetch(`/api/automations/${id}/runs?${search}`);
   }
 
   // Returns a single run including its full trigger_payload. List responses
   // omit trigger_payload to keep them small (a webhook envelope can be
   // up to 256 KiB × limit rows), so the detail view fetches via this route.
-  async getAutopilotRun(autopilotId: string, runId: string): Promise<AutopilotRun> {
-    return this.fetch(`/api/autopilots/${autopilotId}/runs/${runId}`);
+  async getAutomationRun(automationId: string, runId: string): Promise<AutomationRun> {
+    return this.fetch(`/api/automations/${automationId}/runs/${runId}`);
   }
 
-  async createAutopilotTrigger(autopilotId: string, data: CreateAutopilotTriggerRequest): Promise<AutopilotTrigger> {
-    return this.fetch(`/api/autopilots/${autopilotId}/triggers`, {
+  async createAutomationTrigger(automationId: string, data: CreateAutomationTriggerRequest): Promise<AutomationTrigger> {
+    return this.fetch(`/api/automations/${automationId}/triggers`, {
       method: "POST",
       body: JSON.stringify(data),
     });
   }
 
-  async updateAutopilotTrigger(autopilotId: string, triggerId: string, data: UpdateAutopilotTriggerRequest): Promise<AutopilotTrigger> {
-    return this.fetch(`/api/autopilots/${autopilotId}/triggers/${triggerId}`, {
+  async updateAutomationTrigger(automationId: string, triggerId: string, data: UpdateAutomationTriggerRequest): Promise<AutomationTrigger> {
+    return this.fetch(`/api/automations/${automationId}/triggers/${triggerId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     });
   }
 
-  async deleteAutopilotTrigger(autopilotId: string, triggerId: string): Promise<void> {
-    await this.fetch(`/api/autopilots/${autopilotId}/triggers/${triggerId}`, { method: "DELETE" });
+  async deleteAutomationTrigger(automationId: string, triggerId: string): Promise<void> {
+    await this.fetch(`/api/automations/${automationId}/triggers/${triggerId}`, { method: "DELETE" });
   }
 
   async cronPreview(params: { expr: string; tz: string }): Promise<CronPreviewResponse> {
     const search = new URLSearchParams();
     search.set("expr", params.expr);
     search.set("tz", params.tz);
-    const raw = await this.fetch<unknown>(`/api/autopilots/cron-preview?${search}`);
+    const raw = await this.fetch<unknown>(`/api/automations/cron-preview?${search}`);
     return parseWithFallback(
       raw,
       CronPreviewResponseSchema,
       UNREADABLE_CRON_PREVIEW_RESPONSE,
-      { endpoint: "GET /api/autopilots/cron-preview" },
+      { endpoint: "GET /api/automations/cron-preview" },
     );
   }
 
-  async rotateAutopilotTriggerWebhookToken(
-    autopilotId: string,
+  async rotateAutomationTriggerWebhookToken(
+    automationId: string,
     triggerId: string,
-  ): Promise<AutopilotTrigger> {
+  ): Promise<AutomationTrigger> {
     return this.fetch(
-      `/api/autopilots/${autopilotId}/triggers/${triggerId}/rotate-webhook-token`,
+      `/api/automations/${automationId}/triggers/${triggerId}/rotate-webhook-token`,
       { method: "POST" },
     );
   }
@@ -4081,36 +4138,36 @@ export class ApiClient {
   // through a lenient schema so an unknown server-side `status` /
   // `signature_status` value degrades to a generic row instead of dropping
   // the whole list.
-  async listAutopilotDeliveries(
-    autopilotId: string,
+  async listAutomationDeliveries(
+    automationId: string,
     params?: { limit?: number; offset?: number },
   ): Promise<ListWebhookDeliveriesResponse> {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", params.limit.toString());
     if (params?.offset) search.set("offset", params.offset.toString());
     const raw = await this.fetch<unknown>(
-      `/api/autopilots/${autopilotId}/deliveries?${search}`,
+      `/api/automations/${automationId}/deliveries?${search}`,
     );
     return parseWithFallback(
       raw,
       ListWebhookDeliveriesResponseSchema,
       EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
-      { endpoint: "GET /api/autopilots/:id/deliveries" },
+      { endpoint: "GET /api/automations/:id/deliveries" },
     );
   }
 
-  async getAutopilotDelivery(
-    autopilotId: string,
+  async getAutomationDelivery(
+    automationId: string,
     deliveryId: string,
   ): Promise<WebhookDelivery> {
     const raw = await this.fetch<unknown>(
-      `/api/autopilots/${autopilotId}/deliveries/${deliveryId}`,
+      `/api/automations/${automationId}/deliveries/${deliveryId}`,
     );
     return parseWithFallback(
       raw,
       WebhookDeliveryResponseSchema,
-      { ...EMPTY_WEBHOOK_DELIVERY, id: deliveryId, autopilot_id: autopilotId },
-      { endpoint: "GET /api/autopilots/:id/deliveries/:deliveryId" },
+      { ...EMPTY_WEBHOOK_DELIVERY, id: deliveryId, automation_id: automationId },
+      { endpoint: "GET /api/automations/:id/deliveries/:deliveryId" },
     );
   }
 
@@ -4118,19 +4175,19 @@ export class ApiClient {
   // `replayed_from_delivery_id`. Server rejects replays of
   // signature-invalid / rejected deliveries with 400 — the UI keeps the
   // button disabled for those rows, but the server is the source of truth.
-  async replayAutopilotDelivery(
-    autopilotId: string,
+  async replayAutomationDelivery(
+    automationId: string,
     deliveryId: string,
   ): Promise<WebhookDelivery> {
     const raw = await this.fetch<unknown>(
-      `/api/autopilots/${autopilotId}/deliveries/${deliveryId}/replay`,
+      `/api/automations/${automationId}/deliveries/${deliveryId}/replay`,
       { method: "POST", headers: { "Idempotency-Key": createSafeId() } },
     );
     return parseWithFallback(
       raw,
       WebhookDeliveryResponseSchema,
-      { ...EMPTY_WEBHOOK_DELIVERY, autopilot_id: autopilotId },
-      { endpoint: "POST /api/autopilots/:id/deliveries/:deliveryId/replay" },
+      { ...EMPTY_WEBHOOK_DELIVERY, automation_id: automationId },
+      { endpoint: "POST /api/automations/:id/deliveries/:deliveryId/replay" },
     );
   }
 

@@ -58,9 +58,9 @@ pub struct BusinessMetrics {
     entitlement_refresh_duration: HistogramVec,
     entitlement_decision: CounterVec,
     entitlement_version_regression: CounterVec,
-    autopilot_quota_decision: CounterVec,
-    autopilot_failure_monitor: CounterVec,
-    autopilot_quota_reconciler: CounterVec,
+    automation_quota_decision: CounterVec,
+    automation_failure_monitor: CounterVec,
+    automation_quota_reconciler: CounterVec,
 
     active_tasks: Mutex<HashMap<String, ActiveTaskLabels>>,
 
@@ -216,17 +216,17 @@ impl BusinessMetrics {
                 "patchbay_entitlement_version_regression_total",
                 "Total rejected entitlement version regressions.",
             ),
-            autopilot_quota_decision: counter_vec(
-                "patchbay_autopilot_quota_decision_total",
-                "Total autopilot quota admission outcomes.",
+            automation_quota_decision: counter_vec(
+                "patchbay_automation_quota_decision_total",
+                "Total automation quota admission outcomes.",
             ),
-            autopilot_failure_monitor: counter_vec(
-                "patchbay_autopilot_failure_monitor_total",
-                "Total autopilot failure monitor outcomes by bounded stage.",
+            automation_failure_monitor: counter_vec(
+                "patchbay_automation_failure_monitor_total",
+                "Total automation failure monitor outcomes by bounded stage.",
             ),
-            autopilot_quota_reconciler: counter_vec(
-                "patchbay_autopilot_quota_reconciler_total",
-                "Total autopilot quota reconciler outcomes by bounded stage.",
+            automation_quota_reconciler: counter_vec(
+                "patchbay_automation_quota_reconciler_total",
+                "Total automation quota reconciler outcomes by bounded stage.",
             ),
             active_tasks: Mutex::new(HashMap::new()),
             events: BusinessEventMetrics::new(),
@@ -268,9 +268,9 @@ impl BusinessMetrics {
             Box::new(self.entitlement_refresh_duration.clone()),
             Box::new(self.entitlement_decision.clone()),
             Box::new(self.entitlement_version_regression.clone()),
-            Box::new(self.autopilot_quota_decision.clone()),
-            Box::new(self.autopilot_failure_monitor.clone()),
-            Box::new(self.autopilot_quota_reconciler.clone()),
+            Box::new(self.automation_quota_decision.clone()),
+            Box::new(self.automation_failure_monitor.clone()),
+            Box::new(self.automation_quota_reconciler.clone()),
         ];
         for c in collectors {
             registry.register(c).expect("unique collector");
@@ -307,17 +307,17 @@ impl BusinessMetrics {
             .inc();
     }
 
-    pub fn record_autopilot_quota_decision(&self, action: &str, source: &str, result: &str) {
+    pub fn record_automation_quota_decision(&self, action: &str, source: &str, result: &str) {
         let source = match source {
             "schedule" | "webhook" | "manual" | "api" => source,
             _ => "other",
         };
-        self.autopilot_quota_decision
+        self.automation_quota_decision
             .with_label_values(&[action, source, result])
             .inc();
     }
 
-    pub fn record_autopilot_failure_monitor(&self, action: &str, outcome: &str) {
+    pub fn record_automation_failure_monitor(&self, action: &str, outcome: &str) {
         let action = match action {
             "sweep" | "candidate" | "pause" | "rule_version" | "recipient" | "inbox"
             | "shutdown" => action,
@@ -328,12 +328,12 @@ impl BusinessMetrics {
             | "no_recipient" | "cancelled" | "timed_out" => outcome,
             _ => "permanent_error",
         };
-        self.autopilot_failure_monitor
+        self.automation_failure_monitor
             .with_label_values(&[action, outcome])
             .inc();
     }
 
-    pub fn record_autopilot_quota_reconciler(&self, action: &str, outcome: &str) {
+    pub fn record_automation_quota_reconciler(&self, action: &str, outcome: &str) {
         let action = match action {
             "reconcile" | "shutdown" => action,
             _ => "reconcile",
@@ -344,7 +344,7 @@ impl BusinessMetrics {
             }
             _ => "permanent_error",
         };
-        self.autopilot_quota_reconciler
+        self.automation_quota_reconciler
             .with_label_values(&[action, outcome])
             .inc();
     }
@@ -688,8 +688,8 @@ impl BusinessMetrics {
             [
                 "issue",
                 "chat",
-                "autopilot",
-                "autopilot_issue",
+                "automation",
+                "automation_issue",
                 "quick_create",
                 "other",
             ]
@@ -912,18 +912,18 @@ mod tests {
     }
 
     #[test]
-    fn autopilot_quota_source_allowlist() {
+    fn automation_quota_source_allowlist() {
         let m = BusinessMetrics::new();
-        m.record_autopilot_quota_decision("admit", "schedule", "allowed");
-        m.record_autopilot_quota_decision("admit", "bogus", "allowed");
+        m.record_automation_quota_decision("admit", "schedule", "allowed");
+        m.record_automation_quota_decision("admit", "bogus", "allowed");
         assert_eq!(
-            m.autopilot_quota_decision
+            m.automation_quota_decision
                 .with_label_values(&["admit", "schedule", "allowed"])
                 .get(),
             1.0
         );
         assert_eq!(
-            m.autopilot_quota_decision
+            m.automation_quota_decision
                 .with_label_values(&["admit", "other", "allowed"])
                 .get(),
             1.0

@@ -6,7 +6,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use patchbay_db::models::{Agent, AgentInvocationTarget};
-use patchbay_db::queries::{agent, agent_invocation_target, chat, task_message};
+use patchbay_db::queries::{
+    agent, agent_invocation_target, automation as automation_query, chat, issue as issue_query,
+    task_message,
+};
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_service::task_service::{CancelTaskOptions, TaskServiceError};
 use serde::Deserialize;
@@ -19,6 +22,14 @@ use crate::state::HandlerState;
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/tasks/{task_id}/messages", get(list_messages))
+        .route(
+            "/api/tasks/{task_id}/agent-thread",
+            get(get_agent_thread),
+        )
+        .route(
+            "/api/tasks/{task_id}/agent-thread/continue",
+            post(continue_agent_thread),
+        )
         .route(
             "/api/tasks/{task_id}/message-bus",
             post(send_message_to_main_task),
@@ -45,6 +56,295 @@ struct CancelQuery {
 struct TaskMessageBusRequest {
     #[serde(default)]
     content: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ContinueAgentThreadRequest {
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    idempotency_key: String,
+}
+
+struct AgentThreadAccess {
+    task: patchbay_db::models::AgentTaskQueue,
+    agent: Agent,
+}
+
+fn unavailable_reason(
+    reason: patchbay_service::task_service::AgentThreadUnavailableReason,
+) -> (&'static str, &'static str) {
+    use patchbay_service::task_service::AgentThreadUnavailableReason as Reason;
+    match reason {
+        Reason::RetiredSession => (
+            "provider_session_retired",
+            "The provider session was deleted or retired and cannot be restored.",
+        ),
+        Reason::SessionRolloutMissing => (
+            "provider_session_missing",
+            "The provider session data is missing, so this Agent thread cannot continue safely.",
+        ),
+        Reason::FreshSessionRequired => (
+            "fresh_session_required",
+            "This run was explicitly started with a fresh provider session and cannot continue the previous thread.",
+        ),
+        Reason::SessionNotEstablished => (
+            "provider_session_not_established",
+            "The provider has not established a session for this run yet.",
+        ),
+    }
+}
+
+async fn load_agent_thread_access(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    task_id: Uuid,
+) -> Result<AgentThreadAccess, Response> {
+    let task = match agent::get_agent_task_in_workspace(
+        &state.pool,
+        task_id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(task)) => task,
+        Ok(None) | Err(_) => return Err(error_response(StatusCode::NOT_FOUND, "task not found")),
+    };
+    let target = match agent::get_agent_in_workspace(
+        &state.pool,
+        task.agent_id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(agent)) => agent,
+        Ok(None) | Err(_) => return Err(error_response(StatusCode::NOT_FOUND, "task not found")),
+    };
+
+    if let Some(issue_id) = task.issue_id {
+        match issue_query::get_issue(&state.pool, issue_id).await {
+            Ok(Some(issue)) if issue.workspace_id == context.member.workspace_id => {}
+            Ok(Some(_)) | Ok(None) | Err(_) => {
+                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+            }
+        }
+    }
+    if let Some(chat_session_id) = task.chat_session_id {
+        let session = match chat::get_chat_session_in_workspace(
+            &state.pool,
+            chat_session_id,
+            context.member.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(session)) => session,
+            Ok(None) | Err(_) => {
+                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+            }
+        };
+        if session.creator_id != context.member.user_id {
+            return Err(error_response(
+                StatusCode::FORBIDDEN,
+                "you do not have access to this Agent thread",
+            ));
+        }
+    }
+    if let Some(run_id) = task.automation_run_id {
+        let run = match automation_query::get_automation_run(&state.pool, run_id).await {
+            Ok(Some(run)) => run,
+            Ok(None) | Err(_) => {
+                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+            }
+        };
+        let automation = match automation_query::get_automation(&state.pool, run.automation_id).await
+        {
+            Ok(Some(automation)) if automation.workspace_id == context.member.workspace_id => {
+                automation
+            }
+            Ok(Some(_)) | Ok(None) | Err(_) => {
+                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+            }
+        };
+        let owns_automation = matches!(context.member.role.as_str(), "owner" | "admin")
+            || (automation.created_by_type == "member"
+                && automation.created_by_id == context.member.user_id);
+        let collaborates = matches!(
+            automation_query::is_automation_collaborator(
+                &state.pool,
+                automation.id,
+                context.member.user_id,
+            )
+            .await,
+            Ok(Some(true))
+        );
+        if !owns_automation && !collaborates {
+            return Err(error_response(
+                StatusCode::FORBIDDEN,
+                "you do not have access to this Automation run",
+            ));
+        }
+    }
+
+    if !can_member_invoke_agent(state, &target, context.member.user_id).await {
+        return Err(error_response(
+            StatusCode::FORBIDDEN,
+            "you do not have permission to continue this Agent thread",
+        ));
+    }
+    Ok(AgentThreadAccess {
+        task,
+        agent: target,
+    })
+}
+
+async fn get_agent_thread(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_task_id): Path<String>,
+) -> Response {
+    let task_id = match Uuid::parse_str(raw_task_id.trim()) {
+        Ok(task_id) => task_id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid task id"),
+    };
+    let access = match load_agent_thread_access(&state, &context, task_id).await {
+        Ok(access) => access,
+        Err(response) => return response,
+    };
+    let thread_tasks = match agent::list_agent_thread_tasks(&state.pool, task_id).await {
+        Ok(tasks) if !tasks.is_empty() => tasks,
+        Ok(_) => vec![access.task.clone()],
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "failed to load Agent thread tasks");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Agent thread tasks",
+            );
+        }
+    };
+    let current_task = thread_tasks
+        .last()
+        .cloned()
+        .unwrap_or_else(|| access.task.clone());
+    let mut events = Vec::new();
+    for thread_task in &thread_tasks {
+        match task_message::list_task_messages(&state.pool, thread_task.id).await {
+            Ok(task_events) => events.extend(task_events.iter().map(|event| {
+                crate::daemon::task_message_payload(event, thread_task.issue_id)
+            })),
+            Err(error) => {
+                tracing::warn!(%error, task_id = %thread_task.id, "failed to load Agent thread events");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Agent thread events",
+                );
+            }
+        }
+    }
+    let (availability, can_continue) =
+        match patchbay_service::task_service::agent_thread_availability(&current_task) {
+            Ok(()) => (json!({ "state": "available" }), true),
+            Err(reason) => {
+                let (code, message) = unavailable_reason(reason);
+                (
+                    json!({ "state": "unavailable", "reason_code": code, "reason": message }),
+                    false,
+                )
+            }
+        };
+    Json(json!({
+        "task": crate::task_json::task_to_map(&current_task, &context.workspace_id),
+        "thread_tasks": thread_tasks
+            .iter()
+            .map(|task| crate::task_json::task_to_map(task, &context.workspace_id))
+            .collect::<Vec<_>>(),
+        "current_task_id": current_task.id.to_string(),
+        "agent": {
+            "id": access.agent.id.to_string(),
+            "name": access.agent.name,
+            "avatar_url": access.agent.avatar_url,
+        },
+        "events": events,
+        "availability": availability,
+        "can_continue": can_continue,
+    }))
+    .into_response()
+}
+
+async fn continue_agent_thread(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_task_id): Path<String>,
+    Json(request): Json<ContinueAgentThreadRequest>,
+) -> Response {
+    let task_id = match Uuid::parse_str(raw_task_id.trim()) {
+        Ok(task_id) => task_id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid task id"),
+    };
+    let access = match load_agent_thread_access(&state, &context, task_id).await {
+        Ok(access) => access,
+        Err(response) => return response,
+    };
+    let parent_task = match agent::list_agent_thread_tasks(&state.pool, task_id).await {
+        Ok(tasks) => tasks.last().cloned().unwrap_or_else(|| access.task.clone()),
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "failed to resolve current Agent thread task");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to resolve current Agent thread task",
+            );
+        }
+    };
+    if let Err(reason) = patchbay_service::task_service::agent_thread_availability(&parent_task) {
+        let (reason_code, message) = unavailable_reason(reason);
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "agent_thread_unavailable",
+                "reason_code": reason_code,
+                "reason": message,
+            })),
+        )
+            .into_response();
+    }
+    match state
+        .tasks
+        .continue_agent_thread(parent_task.id, &request.content, &request.idempotency_key)
+        .await
+    {
+        Ok(receipt) => Json(json!({
+            "continuation_task_id": receipt.continuation_task_id,
+            "status": if receipt.coalesced { "coalesced" } else { "queued" },
+        }))
+        .into_response(),
+        Err(TaskServiceError::AgentThreadUnavailable(reason)) => {
+            let (reason_code, message) = unavailable_reason(reason);
+            (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": "agent_thread_unavailable",
+                    "reason_code": reason_code,
+                    "reason": message,
+                })),
+            )
+                .into_response()
+        }
+        Err(TaskServiceError::AgentThreadIdempotencyConflict) => (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "agent_thread_idempotency_conflict",
+                "reason": "The idempotency key was already used for different content.",
+            })),
+        )
+            .into_response(),
+        Err(TaskServiceError::Sql(error)) => {
+            tracing::warn!(%error, %task_id, "Agent thread continuation failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to queue Agent thread continuation",
+            )
+        }
+        Err(error) => error_response(StatusCode::BAD_REQUEST, &error.to_string()),
+    }
 }
 
 /// A Side Chat may address only the exact main task recorded in its immutable
@@ -135,18 +435,11 @@ async fn list_messages(
         Ok(task_id) => task_id,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid task_id"),
     };
-    let task = match agent::get_agent_task(&state.pool, task_id).await {
-        Ok(Some(task)) => task,
-        Ok(None) => return error_response(StatusCode::NOT_FOUND, "task not found"),
-        Err(error) => {
-            tracing::warn!(%error, %task_id, "failed to load task messages owner");
-            return error_response(StatusCode::NOT_FOUND, "task not found");
-        }
+    let access = match load_agent_thread_access(&state, &context, task_id).await {
+        Ok(access) => access,
+        Err(response) => return response,
     };
-    let task_workspace = state.tasks.resolve_task_workspace_id(&task).await;
-    if task_workspace.as_deref() != Some(context.workspace_id.as_str()) {
-        return error_response(StatusCode::NOT_FOUND, "task not found");
-    }
+    let task = access.task;
 
     let messages = match query.since {
         Some(since) => {

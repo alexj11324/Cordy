@@ -1180,7 +1180,7 @@ describe("useChatController.handleSend — compose target tracking", () => {
 
 // PB-6380: a chat session outlives the permission that created it. The agent can
 // be flipped to personal, change owner, or drop this member from its allow-list;
-// the server keeps serving the transcript (view gate) but refuses every send
+// the server keeps serving the Agent event history (view gate) but refuses every send
 // (invoke gate, PB-4525). The controller must reach that verdict up front so the
 // composer is read-only, instead of the user learning it from a 403 after typing.
 describe("useChatController revoked invoke permission", () => {
@@ -1199,7 +1199,7 @@ describe("useChatController revoked invoke permission", () => {
     invokableAgentIds.current = [];
     const result = setup("revoked", [revokedSession], [agentA]);
 
-    // Still bound — the transcript stays readable and the header keeps naming
+    // Still bound — the Agent event history stays readable and the header keeps naming
     // the real agent; only running is refused.
     expect(result.current.activeAgent?.id).toBe("agent-a");
     expect(result.current.isAgentAccessRevoked).toBe(true);

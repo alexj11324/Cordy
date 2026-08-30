@@ -14,7 +14,7 @@ pub(crate) fn session_continuity_notice_channel_history() -> &'static str {
     "## Session Continuity Notice\n\nThis run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The channel conversation itself is unaffected — read it back with `patchbay chat history` / `patchbay chat thread` before acting, and treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
 }
 
-pub(crate) fn session_continuity_notice_chat_transcript() -> &'static str {
+pub(crate) fn session_continuity_notice_chat_history() -> &'static str {
     "## Session Continuity Notice\n\nThis run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The conversation itself is unaffected — Patchbay stored it, and you can read it back with `patchbay chat history` before acting; treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
 }
 
