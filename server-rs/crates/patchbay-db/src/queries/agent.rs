@@ -5813,6 +5813,10 @@ SET status = 'queued', fire_at = NULL
 WHERE task.id = $1
   AND task.issue_id IS NOT NULL
   AND task.status = 'deferred'
+  AND dependency_graph_issue_gate_open(
+      (SELECT i.workspace_id FROM issue i WHERE i.id = task.issue_id),
+      task.issue_id
+  )
   AND task.context->>'coordination_assignment_id' IS NULL
   AND NOT EXISTS (
       SELECT 1
@@ -5905,6 +5909,13 @@ pub async fn promote_due_deferred_tasks_for_runtime(
     WHERE t.runtime_id = $1
       AND t.status = 'deferred'
       AND t.fire_at <= now()
+      AND (
+        t.issue_id IS NULL
+        OR dependency_graph_issue_gate_open(
+            (SELECT i.workspace_id FROM issue i WHERE i.id = t.issue_id),
+            t.issue_id
+        )
+      )
       AND (
         COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
         OR EXISTS (
@@ -6026,6 +6037,13 @@ pub async fn promote_due_deferred_tasks_for_runtimes(
     WHERE t.runtime_id = ANY($1::uuid[])
       AND t.status = 'deferred'
       AND t.fire_at <= now()
+      AND (
+        t.issue_id IS NULL
+        OR dependency_graph_issue_gate_open(
+            (SELECT i.workspace_id FROM issue i WHERE i.id = t.issue_id),
+            t.issue_id
+        )
+      )
       AND (
         COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
         OR EXISTS (
