@@ -555,7 +555,7 @@ async fn retire_dependency_graph(
                     &state,
                     &previous,
                     &updated,
-                    &actor_type,
+                    actor_type,
                     actor_id,
                     None,
                 )

@@ -2214,7 +2214,7 @@ async fn delete_issue_and_collect_attachment_urls(
     )
     .await?;
     let mut cancellation = patchbay_service::dependency_graph::cancel_dependency_graph_children(
-        &mut *tx,
+        &mut tx,
         issue.workspace_id,
         child_issue_ids,
     )
