@@ -339,9 +339,6 @@ pub async fn delete_issue(
         r#"WITH target AS (
     SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
 ),
-cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT target.id FROM target)
-),
 cleared_work_product_relations AS (
     DELETE FROM work_product_relation
     WHERE issue_id IN (SELECT target.id FROM target)
