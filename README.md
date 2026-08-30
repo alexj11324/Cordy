@@ -75,7 +75,10 @@ Desktop renderer in a browser through Vite.
 
 For the actual Next.js web client, use `pnpm dev:web:next`. To run the same
 renderer inside Electron, use `pnpm dev:desktop`; both renderer paths share
-the Desktop source and TabBar.
+the Desktop source and TabBar. The default Desktop command does not compile
+Rust, so renderer and Electron edits stay on the Vite development loop. When
+changing `server-rs` and testing it through Desktop, use
+`pnpm dev:desktop:rust` to bundle a source-matched incremental development CLI.
 
 For an explicit build:
 
@@ -83,6 +86,10 @@ For an explicit build:
 make build
 pnpm build
 ```
+
+`pnpm build` builds the frontend and Electron bundles without compiling Rust.
+Formal Desktop packaging still uses `pnpm --filter @patchbay/desktop package`,
+which always builds and embeds the release Rust CLI before creating installers.
 
 ## Documentation
 

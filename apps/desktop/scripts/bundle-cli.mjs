@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 // Builds the Rust `patchbay` CLI from server-rs and copies the binary
-// into apps/desktop/resources/bin/ so electron-vite (dev) and electron-
-// builder (prod) pick it up. Running this on every dev/build/package
-// invocation guarantees the bundled CLI always matches the current Rust
-// source — no more stale binary surprises. Cargo's build cache makes the
-// no-op case (nothing changed) effectively free.
+// into apps/desktop/resources/bin/ so electron-vite (explicit source-matched
+// development) and electron-builder (production packaging) pick it up.
 //
 // Build environment variables mirror `make build` so `patchbay --version`
 // reports a meaningful version / commit / date.
@@ -30,6 +27,7 @@ const PLATFORM_TO_OS = {
 };
 
 const SUPPORTED_ARCHS = new Set(["x64", "arm64"]);
+const BUILD_PROFILES = new Set(["dev", "release"]);
 
 const RUST_TARGETS = {
   darwin: {
@@ -101,6 +99,36 @@ export function cargoTargetDirectory(env = process.env, cwd = serverRsDir) {
   return configured ? resolve(cwd, configured) : join(cwd, "target");
 }
 
+export function buildProfileFromArgs(argv) {
+  const flagIndex = argv.indexOf("--profile");
+  const profile = flagIndex === -1 ? "release" : (argv[flagIndex + 1] ?? "");
+  if (BUILD_PROFILES.has(profile)) return profile;
+  throw new Error(
+    `[bundle-cli] unsupported build profile: ${profile}. Use dev or release.`,
+  );
+}
+
+export function cargoProfileDirectory(profile) {
+  return profile === "dev" ? "debug" : "release";
+}
+
+export function cargoBuildArguments(profile, rustTarget) {
+  return [
+    "build",
+    ...(profile === "release" ? ["--release"] : []),
+    "--locked",
+    "-p",
+    "patchbay-cli",
+    "--target",
+    rustTarget,
+  ];
+}
+
+export function buildDateForProfile(profile, commitDate, now = new Date()) {
+  if (profile === "dev") return commitDate || "unknown";
+  return now.toISOString().replace(/\.\d+Z$/, "Z");
+}
+
 // Hand git arguments straight to the binary (no shell). A match pattern like
 // `v[0-9]*` must reach git as one literal argument; routing it through a shell
 // string breaks on Windows, where cmd.exe keeps the POSIX single quotes and
@@ -134,6 +162,7 @@ async function exists(p) {
 
 async function main() {
   const argv = process.argv.slice(2);
+  const profile = buildProfileFromArgs(argv);
   const targetPlatform = normalizeRuntimePlatform(
     runtimePlatformFromArgs(argv),
   );
@@ -146,7 +175,12 @@ async function main() {
   // Normalize it once and give the same absolute directory to both the build
   // and copy phases so a stale server-rs/target binary can never win.
   const cargoTargetDir = cargoTargetDirectory(process.env, serverRsDir);
-  const srcBinary = join(cargoTargetDir, rustTarget, "release", binName);
+  const srcBinary = join(
+    cargoTargetDir,
+    rustTarget,
+    cargoProfileDirectory(profile),
+    binName,
+  );
   const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
   const destBinary = join(destDir, binName);
 
@@ -155,35 +189,30 @@ async function main() {
       git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
       "dev";
     const commit = git("rev-parse", "--short", "HEAD") || "unknown";
-    const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    // A wall-clock timestamp makes Cargo rerun patchbay-cli's build script on
+    // every launch because build.rs watches PATCHBAY_BUILD_DATE. Development
+    // uses the commit date instead: it stays stable across no-op restarts,
+    // while Cargo still sees and recompiles actual Rust source changes.
+    const date = buildDateForProfile(
+      profile,
+      git("show", "-s", "--format=%cI", "HEAD"),
+    );
 
     console.log(
-      `[bundle-cli] cargo build → ${srcBinary} (${targetOs}/${targetArchLabel}, target=${rustTarget}, version=${version} commit=${commit})`,
+      `[bundle-cli] cargo build (${profile}) → ${srcBinary} (${targetOs}/${targetArchLabel}, target=${rustTarget}, version=${version} commit=${commit})`,
     );
-    execFileSync(
-      "cargo",
-      [
-        "build",
-        "--release",
-        "--locked",
-        "-p",
-        "patchbay-cli",
-        "--target",
-        rustTarget,
-      ],
-      {
-        cwd: serverRsDir,
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          CARGO_TARGET_DIR: cargoTargetDir,
-          PATCHBAY_BUILD_VERSION: version,
-          PATCHBAY_BUILD_COMMIT: commit,
-          PATCHBAY_BUILD_DATE: date,
-          PATCHBAY_GIT_COMMIT: commit,
-        },
+    execFileSync("cargo", cargoBuildArguments(profile, rustTarget), {
+      cwd: serverRsDir,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        CARGO_TARGET_DIR: cargoTargetDir,
+        PATCHBAY_BUILD_VERSION: version,
+        PATCHBAY_BUILD_COMMIT: commit,
+        PATCHBAY_BUILD_DATE: date,
+        PATCHBAY_GIT_COMMIT: commit,
       },
-    );
+    });
   } else {
     console.warn(
       "[bundle-cli] `cargo` not found in PATH — skipping CLI build. " +

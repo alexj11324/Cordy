@@ -501,16 +501,24 @@ To test the Electron desktop app against a local backend:
 ```bash
 # After backend is running (make dev)
 pnpm dev:desktop
+
+# Only when testing server-rs changes through Desktop
+pnpm dev:desktop:rust
 ```
 
-This automatically:
+The default command automatically:
 
-1. Compiles the `patchbay` CLI from the Rust `patchbay-cli` package in the
-   `server-rs` Cargo workspace into
-   `apps/desktop/resources/bin/patchbay`
+1. Resolves an available bundled, managed, downloadable, or PATH `patchbay`
+   CLI without compiling Rust
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance
 4. Connects to the local backend
+
+`pnpm dev:desktop:rust` first bundles the current `server-rs` source with
+Cargo's incremental development profile. Use it when the Rust CLI itself
+changed; ordinary renderer and Electron work should stay on the default fast
+path. Formal `pnpm --filter @patchbay/desktop package` builds and embeds the
+release CLI regardless of which development command was used.
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
 backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting

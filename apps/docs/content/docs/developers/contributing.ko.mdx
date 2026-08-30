@@ -83,12 +83,16 @@ make build            # server, CLI, migrate binary 빌드
 pnpm install
 pnpm dev:web          # Vite를 통해 브라우저에서 Desktop renderer 실행
 pnpm dev:web:next     # Next.js Web 클라이언트
-pnpm dev:desktop      # 동일한 Vite renderer를 사용하는 Electron 셸
+pnpm dev:desktop      # Rust를 컴파일하지 않는 빠른 Electron/Vite 개발
+pnpm dev:desktop:rust # 현재 server-rs를 증분 개발 profile로 번들링
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
+
+Desktop에서 `server-rs` 변경을 검증할 때만 `pnpm dev:desktop:rust`를
+사용하세요. 정식 Desktop 패키지는 계속 release CLI를 빌드해 포함합니다.
 
 루트 명령은 기본적으로 Mobile을 제외합니다. Mobile에는 별도 스크립트와 CI가 있으므로 변경하기 전에 `apps/mobile/AGENTS.md`를 읽으세요.
 

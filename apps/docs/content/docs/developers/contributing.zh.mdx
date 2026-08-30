@@ -83,12 +83,16 @@ make build            # 构建 server、CLI 和 migrate 二进制
 pnpm install
 pnpm dev:web          # 通过 Vite 在浏览器中运行 Desktop renderer
 pnpm dev:web:next     # Next.js Web 客户端
-pnpm dev:desktop      # 使用同一 Vite renderer 的 Electron 外壳
+pnpm dev:desktop      # Electron/Vite 快速开发，不编译 Rust
+pnpm dev:desktop:rust # 用增量开发 profile 打包当前 server-rs
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
+
+只有通过 Desktop 验证 `server-rs` 改动时才使用
+`pnpm dev:desktop:rust`。正式 Desktop 打包仍会构建并内置 release CLI。
 
 根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/AGENTS.md`。
 

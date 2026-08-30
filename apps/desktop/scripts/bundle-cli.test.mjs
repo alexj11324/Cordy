@@ -2,6 +2,10 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   binaryNameForPlatform,
+  buildDateForProfile,
+  buildProfileFromArgs,
+  cargoBuildArguments,
+  cargoProfileDirectory,
   cargoTargetDirectory,
   normalizeRuntimeArch,
   normalizeRuntimePlatform,
@@ -47,5 +51,31 @@ describe("bundle-cli Rust target selection", () => {
     expect(
       cargoTargetDirectory({ CARGO_TARGET_DIR: "/var/cache/patchbay" }, serverRs),
     ).toBe(resolve("/var/cache/patchbay"));
+  });
+
+  it("keeps release as the packaging default and makes development incremental", () => {
+    const target = "aarch64-apple-darwin";
+
+    expect(buildProfileFromArgs([])).toBe("release");
+    expect(buildProfileFromArgs(["--profile", "dev"])).toBe("dev");
+    expect(() => buildProfileFromArgs(["--profile", "fast"])).toThrow(
+      /unsupported build profile/,
+    );
+    expect(cargoBuildArguments("release", target)).toContain("--release");
+    expect(cargoBuildArguments("dev", target)).not.toContain("--release");
+    expect(cargoProfileDirectory("release")).toBe("release");
+    expect(cargoProfileDirectory("dev")).toBe("debug");
+  });
+
+  it("uses stable commit metadata for repeated development bundles", () => {
+    const firstNow = new Date("2026-08-30T10:00:00Z");
+    const secondNow = new Date("2026-08-30T11:00:00Z");
+    const commitDate = "2026-08-29T18:00:00-04:00";
+
+    expect(buildDateForProfile("dev", commitDate, firstNow)).toBe(commitDate);
+    expect(buildDateForProfile("dev", commitDate, secondNow)).toBe(commitDate);
+    expect(buildDateForProfile("release", commitDate, firstNow)).toBe(
+      "2026-08-30T10:00:00Z",
+    );
   });
 });

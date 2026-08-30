@@ -83,12 +83,16 @@ make build            # Build the server, CLI, and migrate binaries
 pnpm install
 pnpm dev:web          # Desktop renderer in a browser through Vite
 pnpm dev:web:next     # Next.js web client
-pnpm dev:desktop      # Electron shell with the same Vite renderer
+pnpm dev:desktop      # Fast Electron/Vite loop; does not compile Rust
+pnpm dev:desktop:rust # Bundle current server-rs with the incremental dev profile
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
+
+Use `pnpm dev:desktop:rust` only when testing `server-rs` changes through
+Desktop. Formal Desktop packaging still builds and embeds the release CLI.
 
 Root commands exclude Mobile by default. Mobile has separate scripts and CI; read `apps/mobile/AGENTS.md` before changing it.
 
